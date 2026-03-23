@@ -3,6 +3,8 @@ import { join, resolve, relative } from 'node:path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SessionCache } from '../core/session-cache.js';
+import { trackSavings } from '../core/token-counter.js';
+import { shortenPath } from '../core/protocol.js';
 
 const DEFAULT_IGNORE = [
   'node_modules', '.git', 'dist', 'build', '.svelte-kit',
@@ -35,10 +37,12 @@ export function registerCtxTree(server: McpServer, cache: SessionCache): void {
 
       try {
         const tree = await buildTree(root, root, depth, ignoreSet, show_sizes);
-        const output = renderTree(tree, '', true);
+        const compactOutput = renderCompact(tree, 0);
+        const verboseOutput = renderTree(tree, '', true);
+        const savings = trackSavings(verboseOutput, compactOutput);
 
         return {
-          content: [{ type: 'text' as const, text: output }],
+          content: [{ type: 'text' as const, text: compactOutput + (savings ? `\n${savings}` : '') }],
         };
       } catch (err) {
         return {
@@ -101,6 +105,43 @@ async function buildTree(
   }
 
   return entry;
+}
+
+function renderCompact(entry: TreeEntry, depth: number): string {
+  const indent = '  '.repeat(depth);
+  const lines: string[] = [];
+
+  if (depth === 0) {
+    const shortName = shortenPath(entry.name) || entry.name;
+    lines.push(`${shortName}/`);
+  }
+
+  if (entry.isDir && entry.children) {
+    for (const child of entry.children) {
+      if (child.isDir) {
+        const count = child.fileCount !== undefined
+          ? ` (${child.fileCount})`
+          : child.children?.length === 0
+            ? ' (0)'
+            : '';
+        lines.push(`${indent}${child.name}/${count}`);
+
+        if (child.children && child.children.length > 0) {
+          lines.push(renderCompact(child, depth + 1));
+        }
+      } else {
+        const meta: string[] = [];
+        if (child.lineCount !== undefined) meta.push(`${child.lineCount}L`);
+        if (child.size !== undefined) meta.push(formatSize(child.size));
+        const suffix = meta.length > 0 ? ` [${meta.join(' ')}]` : '';
+        lines.push(`${indent}${child.name}${suffix}`);
+      }
+    }
+  } else if (entry.isDir && entry.fileCount !== undefined) {
+    lines.push(`${indent}(${entry.fileCount} files)`);
+  }
+
+  return lines.join('\n');
 }
 
 function renderTree(entry: TreeEntry, prefix: string, isRoot: boolean): string {

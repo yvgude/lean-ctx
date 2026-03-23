@@ -1,28 +1,32 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SessionCache } from '../core/session-cache.js';
+import { getSessionStats } from '../core/token-counter.js';
+import { getAllRefs } from '../core/protocol.js';
 
 export function registerCtxMetrics(server: McpServer, cache: SessionCache): void {
   server.tool(
     'ctx_metrics',
-    'Show token savings statistics for this session. Reports cache hits, misses, and estimated tokens saved by lean-ctx.',
+    'Token savings statistics for this session. Shows real token counts (via tiktoken), cache stats, and file references.',
     {},
     async () => {
-      const stats = cache.getStats();
+      const cacheStats = cache.getStats();
+      const tokenStats = getSessionStats();
+      const refs = getAllRefs();
 
-      const hitRate = stats.totalReads > 0
-        ? Math.round((stats.cacheHits / stats.totalReads) * 100)
+      const hitRate = cacheStats.totalReads > 0
+        ? Math.round((cacheStats.cacheHits / cacheStats.totalReads) * 100)
         : 0;
 
       const lines = [
-        'lean-ctx Session Metrics',
-        '========================',
-        `Files tracked: ${stats.filesTracked}`,
-        `Total reads: ${stats.totalReads}`,
-        `Cache hits: ${stats.cacheHits} (${hitRate}%)`,
-        `Cache misses: ${stats.cacheMisses}`,
-        `Estimated tokens saved: ~${stats.estimatedTokensSaved.toLocaleString()}`,
+        'lean-ctx session',
+        `files: ${cacheStats.filesTracked} tracked, ${cacheStats.totalReads} reads, ${cacheStats.cacheHits} hits (${hitRate}%)`,
+        `tokens: ${tokenStats.totalOriginal} original → ${tokenStats.totalOriginal - tokenStats.totalSaved} sent (−${tokenStats.totalSaved} saved, ${tokenStats.percent}%)`,
       ];
+
+      if (refs.size > 0) {
+        lines.push(`refs: ${Array.from(refs.entries()).map(([path, ref]) => `${ref}=${path.split('/').pop()}`).join(' ')}`);
+      }
 
       return {
         content: [{ type: 'text' as const, text: lines.join('\n') }],

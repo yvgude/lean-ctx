@@ -5,6 +5,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SessionCache } from '../core/session-cache.js';
 import { Compressor } from '../core/compressor.js';
 import { getAllPatterns } from '../patterns/index.js';
+import { trackSavings } from '../core/token-counter.js';
 
 const MAX_OUTPUT_BYTES = 1024 * 512; // 512KB max raw output
 const TIMEOUT_MS = 60_000;
@@ -39,15 +40,11 @@ export function registerCtxShell(server: McpServer, cache: SessionCache): void {
           : combined;
 
         const result = compressor.compressShellOutput(command, truncated);
-
-        const header = `$ ${command}`;
-        const meta = result.reductionPercent > 5
-          ? `\n[lean-ctx: ${result.reductionPercent}% compressed, ${result.originalLength} → ${result.compressedLength} chars]`
-          : '';
+        const tokSavings = trackSavings(truncated, result.output);
 
         return {
           content: [
-            { type: 'text' as const, text: `${header}\n${result.output}${meta}` },
+            { type: 'text' as const, text: `$ ${command}\n${result.output}${tokSavings ? `\n${tokSavings}` : ''}` },
           ],
         };
       } catch (err) {

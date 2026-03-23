@@ -6,6 +6,8 @@ import type { SessionCache } from '../core/session-cache.js';
 import { Compressor } from '../core/compressor.js';
 import { computeDiff, formatDiff } from '../core/differ.js';
 import { extractSignatures } from '../core/signature-extractor.js';
+import { trackSavings } from '../core/token-counter.js';
+import { formatCacheHit, formatFileHeader, formatCompactSignature, shortenPath } from '../core/protocol.js';
 
 const compressor = new Compressor();
 
@@ -98,16 +100,18 @@ function handleCacheHit(
     return handleSignaturesMode(entry.content, absPath);
   }
 
-  const summary = `File already in context (read ${turnsAgo} turn${turnsAgo !== 1 ? 's' : ''} ago, ${lines} lines, unchanged).`;
+  const summary = formatCacheHit(absPath, turnsAgo, lines);
+  const verbose = `File already in context (read ${turnsAgo} turns ago, ${lines} lines, unchanged).`;
+  const savings = trackSavings(verbose, summary);
 
   if (query) {
     const filtered = filterByQuery(entry.content, query);
     if (filtered) {
-      return textResult(`${summary}\nFiltered for "${query}":\n\n${filtered}`);
+      return textResult(`${summary}\n"${query}":\n${filtered}`);
     }
   }
 
-  return textResult(summary);
+  return textResult(`${summary} ${savings}`);
 }
 
 async function handleDiffMode(
@@ -131,11 +135,10 @@ async function handleDiffMode(
   }
 
   const formatted = formatDiff(diff);
-  const totalLines = newContent.split('\n').length;
-  const diffLines = formatted.split('\n').length;
-  const savings = Math.round(((totalLines - diffLines) / totalLines) * 100);
+  const fullFile = newContent;
+  const tokSavings = trackSavings(fullFile, formatted);
 
-  return textResult(`${formatted}\n[lean-ctx diff: ${savings}% smaller than full file, ${diff.addedLines}+ ${diff.removedLines}- lines]`);
+  return textResult(`${formatted}\n${diff.addedLines}+ ${diff.removedLines}- ${tokSavings}`);
 }
 
 function handleSignaturesMode(
@@ -143,15 +146,22 @@ function handleSignaturesMode(
   absPath: string
 ): { content: { type: 'text'; text: string }[] } {
   const result = extractSignatures(content, absPath);
-  const savings = Math.round(((result.originalLines - result.extractedLines) / result.originalLines) * 100);
 
-  return textResult(`${result.formatted}\n[lean-ctx signatures: ${savings}% smaller, ${result.extractedLines} of ${result.originalLines} lines]`);
+  const compactSigs = result.signatures
+    .map(formatCompactSignature)
+    .filter(Boolean)
+    .join('\n');
+
+  const header = formatFileHeader(absPath, result.originalLines, 'new');
+  const compactOutput = `${header}\n${compactSigs}`;
+  const tokSavings = trackSavings(content, compactOutput);
+
+  return textResult(`${compactOutput}\n${tokSavings}`);
 }
 
-function buildMeta(reductionPercent: number, lineCount: number, mode: string): string {
+function buildMeta(reductionPercent: number, lineCount: number, _mode: string): string {
   if (reductionPercent <= 0) return '';
-  const modeLabel = mode === 'aggressive' ? ', aggressive stripping' : '';
-  return `\n[lean-ctx: ${reductionPercent}% compressed, ${lineCount} lines${modeLabel}]`;
+  return `\n[${reductionPercent}% ${lineCount}L]`;
 }
 
 function textResult(text: string) {

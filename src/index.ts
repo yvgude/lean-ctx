@@ -7,10 +7,11 @@ import { registerCtxRead } from './tools/ctx-read.js';
 import { registerCtxTree } from './tools/ctx-tree.js';
 import { registerCtxShell } from './tools/ctx-shell.js';
 import { registerCtxMetrics } from './tools/ctx-metrics.js';
+import { registerCtxBenchmark } from './tools/ctx-benchmark.js';
 
 const server = new McpServer({
   name: 'lean-ctx',
-  version: '0.1.0',
+  version: '0.2.0',
 });
 
 const cache = new SessionCache();
@@ -19,6 +20,7 @@ registerCtxRead(server, cache);
 registerCtxTree(server, cache);
 registerCtxShell(server, cache);
 registerCtxMetrics(server, cache);
+registerCtxBenchmark(server, cache);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
