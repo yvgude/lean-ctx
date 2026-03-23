@@ -131,14 +131,10 @@ pub fn cmd_grep(args: &[String]) {
         std::process::exit(1);
     }
 
-    let mut cmd_parts = vec!["grep", "-rn"];
     let pattern = &args[0];
-    cmd_parts.push(pattern);
-
     let path = args.get(1).map(|s| s.as_str()).unwrap_or(".");
-    cmd_parts.push(path);
 
-    let command = cmd_parts.join(" ");
+    let command = format!("grep -rn '{}' {}", pattern.replace('\'', "'\\''"), path);
     let code = crate::shell::exec(&command);
     std::process::exit(code);
 }

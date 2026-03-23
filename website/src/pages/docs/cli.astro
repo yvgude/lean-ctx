@@ -49,12 +49,12 @@ lean-ctx read src/auth.ts --mode map
 lean-ctx read src/auth.ts --mode signatures</code></pre>
 
   <h3>diff</h3>
-  <p>Show only lines that changed since the last read of a file.</p>
-  <pre><code>lean-ctx diff src/auth.ts</code></pre>
+  <p>Compare two files and show a compressed diff.</p>
+  <pre><code>lean-ctx diff src/auth.ts src/auth.backup.ts</code></pre>
 
   <h3>grep</h3>
   <p>Compressed grep — searches for patterns and returns compact results.</p>
-  <pre><code>lean-ctx grep "createUser" --ext ts</code></pre>
+  <pre><code>lean-ctx grep "createUser" src/</code></pre>
 
   <h3>find</h3>
   <p>Compressed find — locates files with token-efficient output.</p>
