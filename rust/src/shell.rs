@@ -70,7 +70,7 @@ pub fn exec(command: &str) -> i32 {
 pub fn interactive() {
     let real_shell = detect_shell();
 
-    eprintln!("lean-ctx shell v1.5.4 (wrapping {real_shell})");
+    eprintln!("lean-ctx shell v1.6.0 (wrapping {real_shell})");
     eprintln!("All command output is automatically compressed.");
     eprintln!("Type 'exit' to quit.\n");
 

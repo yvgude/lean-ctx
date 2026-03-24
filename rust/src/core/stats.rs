@@ -296,3 +296,99 @@ fn truncate_cmd(cmd: &str, max: usize) -> String {
         format!("{}…", &cmd[..max - 1])
     }
 }
+
+pub fn format_gain_graph() -> String {
+    let store = load();
+    if store.daily.is_empty() {
+        return "No daily data yet. Use lean-ctx for a few days to see the graph.".to_string();
+    }
+
+    let days: Vec<_> = store.daily.iter().rev().take(30).collect::<Vec<_>>().into_iter().rev().collect();
+
+    let max_saved = days
+        .iter()
+        .map(|d| d.input_tokens.saturating_sub(d.output_tokens))
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    let bar_width = 40;
+    let mut out = Vec::new();
+    out.push("lean-ctx Token Savings (last 30 days)".to_string());
+    out.push("=".repeat(60));
+    out.push(String::new());
+
+    for day in &days {
+        let saved = day.input_tokens.saturating_sub(day.output_tokens);
+        let bar_len = (saved as f64 / max_saved as f64 * bar_width as f64) as usize;
+        let bar: String = "#".repeat(bar_len);
+        let date_short = day.date.get(5..).unwrap_or(&day.date);
+        out.push(format!("{date_short} |{bar:<width$}| {}", format_big(saved), width = bar_width));
+    }
+
+    let total_saved: u64 = days.iter().map(|d| d.input_tokens.saturating_sub(d.output_tokens)).sum();
+    let total_cmds: u64 = days.iter().map(|d| d.commands).sum();
+    out.push(String::new());
+    out.push(format!("Period: {} saved across {} commands", format_big(total_saved), format_num(total_cmds)));
+    out.push("=".repeat(60));
+
+    out.join("\n")
+}
+
+pub fn format_gain_daily() -> String {
+    let store = load();
+    if store.daily.is_empty() {
+        return "No daily data yet.".to_string();
+    }
+
+    let mut out = Vec::new();
+    out.push("lean-ctx Daily Breakdown".to_string());
+    out.push("=".repeat(60));
+    out.push(format!(
+        "{:<12} {:>6}  {:>9}  {:>9}  {:>5}",
+        "Date", "Cmds", "Input", "Saved", "Pct"
+    ));
+    out.push("-".repeat(60));
+
+    for day in store.daily.iter().rev().take(30).collect::<Vec<_>>().into_iter().rev() {
+        let saved = day.input_tokens.saturating_sub(day.output_tokens);
+        let pct = if day.input_tokens > 0 {
+            saved as f64 / day.input_tokens as f64 * 100.0
+        } else {
+            0.0
+        };
+        out.push(format!(
+            "{:<12} {:>6}  {:>9}  {:>9}  {:>4.1}%",
+            &day.date,
+            day.commands,
+            format_big(day.input_tokens),
+            format_big(saved),
+            pct
+        ));
+    }
+
+    let total_input: u64 = store.daily.iter().map(|d| d.input_tokens).sum();
+    let total_saved: u64 = store.daily.iter().map(|d| d.input_tokens.saturating_sub(d.output_tokens)).sum();
+    let total_pct = if total_input > 0 {
+        total_saved as f64 / total_input as f64 * 100.0
+    } else {
+        0.0
+    };
+    out.push("-".repeat(60));
+    out.push(format!(
+        "{:<12} {:>6}  {:>9}  {:>9}  {:>4.1}%",
+        "TOTAL",
+        format_num(store.total_commands),
+        format_big(total_input),
+        format_big(total_saved),
+        total_pct
+    ));
+    out.push("=".repeat(60));
+
+    out.join("\n")
+}
+
+pub fn format_gain_json() -> String {
+    let store = load();
+    serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string())
+}

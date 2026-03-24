@@ -1,8 +1,8 @@
 [package]
 name = "lean-ctx"
-version = "1.5.4"
+version = "1.6.0"
 edition = "2021"
-description = "Hybrid Context Optimizer with Token Dense Dialect (TDD). 50+ compression patterns, Shell Hook + MCP Server. Reduces LLM token consumption by 89-99%."
+description = "Hybrid Context Optimizer with Token Dense Dialect (TDD). 60+ compression patterns, Shell Hook + MCP Server. Reduces LLM token consumption by 89-99%."
 license = "MIT"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"

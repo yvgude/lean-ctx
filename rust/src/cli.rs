@@ -348,7 +348,7 @@ pub fn cmd_init(args: &[String]) {
             .map(|h| h.join(".config/fish/config.fish"))
             .unwrap_or_default();
 
-        let aliases = "\n# lean-ctx shell hook — transparent CLI compression (50+ patterns)\n\
+        let aliases = "\n# lean-ctx shell hook — transparent CLI compression (60+ patterns)\n\
             if not set -q LEAN_CTX_ACTIVE\n\
             \talias git 'lean-ctx -c git'\n\
             \talias npm 'lean-ctx -c npm'\n\
@@ -398,7 +398,7 @@ pub fn cmd_init(args: &[String]) {
         };
 
         let aliases = r#"
-# lean-ctx shell hook — transparent CLI compression (50+ patterns)
+# lean-ctx shell hook — transparent CLI compression (60+ patterns)
 if [ -z "$LEAN_CTX_ACTIVE" ]; then
 alias git='lean-ctx -c git'
 alias npm='lean-ctx -c npm'

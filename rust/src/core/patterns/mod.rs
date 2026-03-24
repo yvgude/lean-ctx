@@ -19,6 +19,7 @@ pub mod pip;
 pub mod playwright;
 pub mod pnpm;
 pub mod prettier;
+pub mod ruby;
 pub mod ruff;
 pub mod test;
 pub mod typescript;
@@ -99,12 +100,19 @@ fn try_specific_pattern(cmd_lower: &str, output: &str) -> Option<String> {
         return playwright::compress(cmd_lower, output);
     }
 
+    if cmd_lower.starts_with("vitest") || cmd_lower.starts_with("npx vitest") || cmd_lower.starts_with("pnpm vitest") {
+        return test::compress(output);
+    }
+
     if cmd_lower.starts_with("next ") || cmd_lower.starts_with("npx next") || cmd_lower.starts_with("vite ") || cmd_lower.starts_with("npx vite") {
         return next_build::compress(cmd_lower, output);
     }
 
     if cmd_lower.starts_with("tsc") || cmd_lower.contains("typescript") {
         return typescript::compress(output);
+    }
+    if cmd_lower.starts_with("rubocop") || cmd_lower.starts_with("bundle ") || cmd_lower.starts_with("rake ") || cmd_lower.starts_with("rails test") {
+        return ruby::compress(cmd_lower, output);
     }
     if cmd_lower.starts_with("grep ") || cmd_lower.starts_with("rg ") {
         return grep::compress(output);

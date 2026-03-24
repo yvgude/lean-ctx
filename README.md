@@ -65,7 +65,7 @@ cp target/release/lean-ctx ~/.local/bin/
 ### Verify Installation
 
 ```bash
-lean-ctx --version   # Should show "lean-ctx 1.4.1"
+lean-ctx --version   # Should show "lean-ctx 1.6.0"
 lean-ctx gain        # Should show token savings stats
 ```
 
@@ -167,6 +167,9 @@ lean-ctx deps .                          # Project dependencies summary
 ```bash
 lean-ctx init --global         # Install 23 shell aliases (.zshrc/.bashrc/.config/fish)
 lean-ctx gain                  # Persistent token savings (CLI)
+lean-ctx gain --graph          # ASCII chart of last 30 days
+lean-ctx gain --daily          # Day-by-day breakdown
+lean-ctx gain --json           # Raw JSON export of all stats
 lean-ctx dashboard             # Web dashboard at localhost:3333
 lean-ctx dashboard --port=8080 # Custom port
 lean-ctx discover              # Find uncompressed commands in shell history
@@ -183,9 +186,9 @@ lean-ctx --help                # Full help
 lean-ctx                       # Start MCP server (stdio) — used by editors
 ```
 
-## Shell Hook Patterns (50+)
+## Shell Hook Patterns (60+)
 
-The shell hook applies pattern-based compression for 50+ commands across 12 categories:
+The shell hook applies pattern-based compression for 60+ commands across 14 categories:
 
 | Category | Commands | Savings |
 |---|---|---|
@@ -196,9 +199,10 @@ The shell hook applies pattern-based compression for 50+ commands across 12 cate
 | **GitHub CLI** (9) | pr list/view/create/merge, issue list/view/create, run list/view | -60-80% |
 | **Kubernetes** (8) | get pods/services/deployments, logs, describe, apply, delete, exec, top, rollout | -60-85% |
 | **Python** (7) | pip install/list/outdated/uninstall/check, ruff check/format | -60-80% |
+| **Ruby** (4) | rubocop, bundle install/update, rake test, rails test (minitest) | -60-85% |
 | **Linters** (4) | eslint, biome, prettier, stylelint | -60-70% |
 | **Build Tools** (3) | tsc, next build, vite build | -60-80% |
-| **Test Runners** (6) | jest, pytest, go test, playwright, cypress, rspec | -90% |
+| **Test Runners** (8) | jest, vitest, pytest, go test, playwright, cypress, rspec, minitest | -90% |
 | **Utils** (5) | curl, grep/rg, find, ls, wget | -50-89% |
 | **Data** (3) | env (filtered), JSON schema extraction, log deduplication | -50-80% |
 
@@ -505,7 +509,16 @@ lean-ctx tracks all compressions (both MCP tools and shell hook) in `~/.lean-ctx
 - Total lifetime savings
 - First/last use timestamps
 
-View in the terminal with `lean-ctx gain`, or open the web dashboard:
+View in the terminal:
+
+```bash
+lean-ctx gain             # Summary
+lean-ctx gain --graph     # ASCII chart (last 30 days)
+lean-ctx gain --daily     # Day-by-day table
+lean-ctx gain --json      # Raw JSON export
+```
+
+Or open the web dashboard:
 
 ```bash
 lean-ctx dashboard
@@ -524,7 +537,7 @@ Opens `http://localhost:3333` with:
 |---|---|---|
 | **Architecture** | Shell hook only | **Hybrid: Shell hook + MCP server** |
 | **Language** | Rust | Rust |
-| **CLI compression** | ~30 commands | **50+ patterns** (git, npm, cargo, docker, gh, kubectl, pip, ruff, eslint, prettier, tsc, go, playwright, curl, wget, JSON, logs...) |
+| **CLI compression** | ~50 commands | **60+ patterns** (git, npm, cargo, docker, gh, kubectl, pip, ruff, eslint, prettier, tsc, go, playwright, rubocop, bundle, vitest, curl, wget, JSON, logs...) |
 | **File reading** | `rtk read` (signatures mode) | **6 modes: full (cached), map, signatures, diff, aggressive, entropy** |
 | **File caching** | ✗ | ✓ MD5 session cache (re-reads = ~13 tokens) |
 | **Signature engine** | Line-by-line regex | **tree-sitter AST (10 languages)** |
@@ -535,7 +548,7 @@ Opens `http://localhost:3333` with:
 | **Cost tracking** | ✗ | ✓ USD estimates per session |
 | **Token Dense Dialect** | ✗ | ✓ TDD mode: symbol shorthand (λ, §, ∂) + identifier mapping (8-25% extra) |
 | **Thinking reduction** | ✗ | ✓ CRP v2 (30-60% fewer thinking tokens via Cursor Rules) |
-| **Persistent stats** | ✓ `rtk gain` | ✓ `lean-ctx gain` + web dashboard |
+| **Stats & Graphs** | ✓ `rtk gain` (SQLite + ASCII graph) | ✓ `lean-ctx gain` + `--graph` + `--daily` + `--json` + web dashboard |
 | **Auto-setup** | ✓ `rtk init` | ✓ `lean-ctx init` |
 | **Editors** | Claude Code, OpenCode, Gemini CLI | **All MCP editors (Cursor, Copilot, Claude Code, Windsurf, Codex, Antigravity, OpenCode) + shell hook (OpenClaw, any terminal)** |
 | **Config file** | TOML | ✓ TOML (`~/.lean-ctx/config.toml`) |

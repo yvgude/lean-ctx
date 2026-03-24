@@ -27,7 +27,16 @@ fn main() {
                 return;
             }
             "gain" => {
-                println!("{}", core::stats::format_gain());
+                let output = if rest.iter().any(|a| a == "--graph") {
+                    core::stats::format_gain_graph()
+                } else if rest.iter().any(|a| a == "--daily") {
+                    core::stats::format_gain_daily()
+                } else if rest.iter().any(|a| a == "--json") {
+                    core::stats::format_gain_json()
+                } else {
+                    core::stats::format_gain()
+                };
+                println!("{output}");
                 return;
             }
             "dashboard" => {
@@ -79,7 +88,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 1.5.4");
+                println!("lean-ctx 1.6.0");
                 return;
             }
             "--help" | "-h" => {
@@ -130,7 +139,7 @@ fn run_mcp_server() -> Result<()> {
             .with_writer(std::io::stderr)
             .init();
 
-        tracing::info!("lean-ctx v1.5.4 MCP server starting");
+        tracing::info!("lean-ctx v1.6.0 MCP server starting");
 
         let server = tools::create_server();
         let transport = rmcp::transport::io::stdio();
@@ -162,9 +171,9 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 1.5.4 — Hybrid Context Optimizer with TDD (Shell Hook + MCP Server)
+        "lean-ctx 1.6.0 — Hybrid Context Optimizer with TDD (Shell Hook + MCP Server)
 
-50+ compression patterns | 9 MCP tools | Token Dense Dialect
+60+ compression patterns | 9 MCP tools | Token Dense Dialect
 
 USAGE:
     lean-ctx                       Start MCP server (stdio)
@@ -174,6 +183,9 @@ USAGE:
 
 COMMANDS:
     gain                           Show persistent token savings stats
+    gain --graph                   ASCII chart of last 30 days
+    gain --daily                   Day-by-day breakdown
+    gain --json                    Raw JSON export of all stats
     dashboard [--port=N]           Open web dashboard (default: http://localhost:3333)
     init [--global]                Install shell aliases (.zshrc/.bashrc)
     read <file> [-m mode]          Read file with compression
@@ -186,7 +198,7 @@ COMMANDS:
     session                        Show adoption statistics
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
 
-SHELL HOOK PATTERNS (50+):
+SHELL HOOK PATTERNS (60+):
     git       status, log, diff, add, commit, push, pull, fetch, clone,
               branch, checkout, switch, merge, stash, tag, reset, remote
     docker    build, ps, images, logs, compose, exec, network
@@ -197,7 +209,8 @@ SHELL HOOK PATTERNS (50+):
     python    pip install/list/outdated, ruff check/format
     linters   eslint, biome, prettier, golangci-lint
     builds    tsc, next build, vite build
-    tests     jest, pytest, go test, playwright, rspec
+    ruby      rubocop, bundle install/update, rake test, rails test
+    tests     jest, vitest, pytest, go test, playwright, rspec, minitest
     utils     curl, grep/rg, find, ls, wget, env
     data      JSON schema extraction, log deduplication
 
@@ -218,6 +231,8 @@ EXAMPLES:
     lean-ctx -c \"kubectl get pods\" Compressed k8s output
     lean-ctx -c \"gh pr list\"       Compressed GitHub CLI output
     lean-ctx gain                  Show savings statistics
+    lean-ctx gain --graph          ASCII savings chart
+    lean-ctx gain --daily          Day-by-day breakdown
     lean-ctx dashboard             Open web dashboard at localhost:3333
     lean-ctx discover              Find missed savings in shell history
     lean-ctx init --global         Install shell aliases

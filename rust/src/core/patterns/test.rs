@@ -2,6 +2,9 @@ pub fn compress(output: &str) -> Option<String> {
     if let Some(r) = try_pytest(output) {
         return Some(r);
     }
+    if let Some(r) = try_vitest(output) {
+        return Some(r);
+    }
     if let Some(r) = try_jest(output) {
         return Some(r);
     }
@@ -178,6 +181,78 @@ fn try_go_test(output: &str) -> Option<String> {
     }
 
     Some(result)
+}
+
+fn try_vitest(output: &str) -> Option<String> {
+    if !output.contains("PASS") && !output.contains("FAIL") {
+        return None;
+    }
+    if !output.contains(" Tests ") && !output.contains("Test Files") {
+        return None;
+    }
+
+    let mut test_files_line = String::new();
+    let mut tests_line = String::new();
+    let mut duration_line = String::new();
+    let mut failures = Vec::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let plain = strip_ansi(trimmed);
+        if plain.contains("Test Files") {
+            test_files_line = plain.clone();
+        } else if plain.starts_with("Tests") && plain.contains("passed") {
+            tests_line = plain.clone();
+        } else if plain.contains("Duration") || plain.contains("Time") {
+            if plain.contains("ms") || plain.contains("s") {
+                duration_line = plain.clone();
+            }
+        } else if plain.contains("FAIL") && (plain.contains(".test.") || plain.contains(".spec.") || plain.contains("_test.")) {
+            failures.push(plain.clone());
+        }
+    }
+
+    if tests_line.is_empty() && test_files_line.is_empty() {
+        return None;
+    }
+
+    let mut result = String::new();
+    if !test_files_line.is_empty() {
+        result.push_str(&test_files_line);
+    }
+    if !tests_line.is_empty() {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&tests_line);
+    }
+    if !duration_line.is_empty() {
+        result.push('\n');
+        result.push_str(&duration_line);
+    }
+
+    for f in failures.iter().take(10) {
+        result.push_str(&format!("\n  FAIL: {f}"));
+    }
+
+    Some(result)
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut in_escape = false;
+    for c in s.chars() {
+        if c == '\x1b' {
+            in_escape = true;
+        } else if in_escape {
+            if c.is_ascii_alphabetic() {
+                in_escape = false;
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 fn try_rspec(output: &str) -> Option<String> {
