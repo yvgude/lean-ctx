@@ -1,6 +1,6 @@
 [package]
 name = "lean-ctx"
-version = "1.3.0"
+version = "1.3.1"
 edition = "2021"
 description = "Hybrid Context Optimizer with Token Dense Dialect (TDD). Shell Hook + MCP Server. Reduces LLM token consumption by 89-99%."
 license = "MIT"

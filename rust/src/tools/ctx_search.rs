@@ -4,9 +4,11 @@ use regex::Regex;
 use walkdir::WalkDir;
 
 use crate::core::protocol;
+use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
+use crate::tools::CrpMode;
 
-pub fn handle(pattern: &str, dir: &str, ext_filter: Option<&str>, max_results: usize) -> String {
+pub fn handle(pattern: &str, dir: &str, ext_filter: Option<&str>, max_results: usize, crp_mode: CrpMode) -> String {
     let re = match Regex::new(pattern) {
         Ok(r) => r,
         Err(e) => return format!("ERROR: invalid regex: {e}"),
@@ -70,12 +72,24 @@ pub fn handle(pattern: &str, dir: &str, ext_filter: Option<&str>, max_results: u
         return format!("0 matches for '{pattern}' in {files_searched} files");
     }
 
-    let result = format!(
+    let mut result = format!(
         "{} matches in {} files:\n{}",
         matches.len(),
         files_searched,
         matches.join("\n")
     );
+
+    if crp_mode.is_tdd() {
+        let file_ext = ext_filter.unwrap_or("rs");
+        let mut sym = SymbolMap::new();
+        let idents = symbol_map::extract_identifiers(&result, file_ext);
+        for ident in &idents {
+            sym.register(ident);
+        }
+        let compressed = sym.apply(&result);
+        let sym_table = sym.format_table();
+        result = format!("{compressed}{sym_table}");
+    }
 
     let sent = count_tokens(&result);
     let savings = protocol::format_savings(total_original_tokens, sent);

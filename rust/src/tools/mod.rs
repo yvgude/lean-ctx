@@ -106,7 +106,7 @@ impl LeanCtxServer {
         if cache.get_all_entries().is_empty() {
             return None;
         }
-        let checkpoint = ctx_compress::handle(&cache, true);
+        let checkpoint = ctx_compress::handle(&cache, true, self.crp_mode);
         drop(cache);
         self.record_call("ctx_compress", 0, 0, Some("auto".to_string())).await;
         Some(checkpoint)

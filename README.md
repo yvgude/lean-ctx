@@ -56,13 +56,13 @@ cp target/release/lean-ctx ~/.local/bin/
 ### Verify Installation
 
 ```bash
-lean-ctx --version   # Should show "lean-ctx 1.3.0"
+lean-ctx --version   # Should show "lean-ctx 1.3.1"
 lean-ctx gain        # Should show token savings stats
 ```
 
 ## Token Dense Dialect (TDD)
 
-lean-ctx v1.3.0 introduces **TDD mode** — enabled by default. TDD compresses LLM communication using mathematical symbols and short identifiers:
+lean-ctx v1.3.1 introduces **TDD mode** — enabled by default. TDD compresses LLM communication using mathematical symbols and short identifiers:
 
 | Symbol | Meaning |
 |---|---|

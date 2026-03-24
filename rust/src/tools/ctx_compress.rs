@@ -2,8 +2,9 @@ use crate::core::cache::SessionCache;
 use crate::core::protocol;
 use crate::core::signatures;
 use crate::core::tokens::count_tokens;
+use crate::tools::CrpMode;
 
-pub fn handle(cache: &SessionCache, include_signatures: bool) -> String {
+pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode) -> String {
     let entries = cache.get_all_entries();
     let file_count = entries.len();
 
@@ -29,17 +30,26 @@ pub fn handle(cache: &SessionCache, include_signatures: bool) -> String {
                 .and_then(|e| e.to_str())
                 .unwrap_or("");
             let sigs = signatures::extract_signatures(&entry.content, ext);
-            let sig_names: Vec<String> = sigs.iter().take(5).map(|s| s.to_compact()).collect();
+            let sig_names: Vec<String> = sigs
+                .iter()
+                .take(5)
+                .map(|s| {
+                    if crp_mode.is_tdd() {
+                        s.to_tdd()
+                    } else {
+                        s.to_compact()
+                    }
+                })
+                .collect();
             let more = if sigs.len() > 5 {
-                format!(", ... +{}", sigs.len() - 5)
+                format!("+{}", sigs.len() - 5)
             } else {
                 String::new()
             };
             sections.push(format!(
-                "{file_ref} {short} [{}L]: {}{}",
+                "{file_ref} {short} [{}L]: {}{more}",
                 entry.line_count,
                 sig_names.join(", "),
-                more
             ));
         } else {
             sections.push(format!(

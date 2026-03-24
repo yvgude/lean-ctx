@@ -17,7 +17,7 @@ impl ServerHandler for LeanCtxServer {
         let instructions = build_instructions(self.crp_mode);
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "1.3.0"))
+            .with_server_info(Implementation::new("lean-ctx", "1.3.1"))
             .with_instructions(instructions)
     }
 
@@ -170,7 +170,7 @@ impl ServerHandler for LeanCtxServer {
                     let command = get_str(args, "command")
                         .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
                     let output = execute_command(&command);
-                    let result = crate::tools::ctx_shell::handle(&command, &output);
+                    let result = crate::tools::ctx_shell::handle(&command, &output, self.crp_mode);
                     let original = crate::core::tokens::count_tokens(&output);
                     let sent = crate::core::tokens::count_tokens(&result);
                     self.record_call("ctx_shell", original, original.saturating_sub(sent), None).await;
@@ -182,7 +182,7 @@ impl ServerHandler for LeanCtxServer {
                     let path = get_str(args, "path").unwrap_or_else(|| ".".to_string());
                     let ext = get_str(args, "ext");
                     let max = get_int(args, "max_results").unwrap_or(20) as usize;
-                    let result = crate::tools::ctx_search::handle(&pattern, &path, ext.as_deref(), max);
+                    let result = crate::tools::ctx_search::handle(&pattern, &path, ext.as_deref(), max, self.crp_mode);
                     let sent = crate::core::tokens::count_tokens(&result);
                     self.record_call("ctx_search", sent, 0, None).await;
                     result
@@ -190,7 +190,7 @@ impl ServerHandler for LeanCtxServer {
                 "ctx_compress" => {
                     let include_sigs = get_bool(args, "include_signatures").unwrap_or(true);
                     let cache = self.cache.read().await;
-                    let result = crate::tools::ctx_compress::handle(&cache, include_sigs);
+                    let result = crate::tools::ctx_compress::handle(&cache, include_sigs, self.crp_mode);
                     drop(cache);
                     self.record_call("ctx_compress", 0, 0, None).await;
                     result
@@ -198,14 +198,14 @@ impl ServerHandler for LeanCtxServer {
                 "ctx_benchmark" => {
                     let path = get_str(args, "path")
                         .ok_or_else(|| ErrorData::invalid_params("path is required", None))?;
-                    let result = crate::tools::ctx_benchmark::handle(&path);
+                    let result = crate::tools::ctx_benchmark::handle(&path, self.crp_mode);
                     self.record_call("ctx_benchmark", 0, 0, None).await;
                     result
                 }
                 "ctx_metrics" => {
                     let cache = self.cache.read().await;
                     let calls = self.tool_calls.read().await;
-                    let result = crate::tools::ctx_metrics::handle(&cache, &calls);
+                    let result = crate::tools::ctx_metrics::handle(&cache, &calls, self.crp_mode);
                     drop(cache);
                     drop(calls);
                     self.record_call("ctx_metrics", 0, 0, None).await;
@@ -214,7 +214,7 @@ impl ServerHandler for LeanCtxServer {
                 "ctx_analyze" => {
                     let path = get_str(args, "path")
                         .ok_or_else(|| ErrorData::invalid_params("path is required", None))?;
-                    let result = crate::tools::ctx_analyze::handle(&path);
+                    let result = crate::tools::ctx_analyze::handle(&path, self.crp_mode);
                     self.record_call("ctx_analyze", 0, 0, None).await;
                     result
                 }
