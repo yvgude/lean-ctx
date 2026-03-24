@@ -1,0 +1,69 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_compress" description="Context checkpoint for long conversations — compresses all cached files into an ultra-compact summary.">
+  <p>
+    <code>ctx_compress</code> creates a compact snapshot of all files currently in the session cache.
+    Use it as a memory checkpoint during long coding sessions — paste the output into a fresh chat
+    to carry over project understanding at minimal token cost.
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>include_signatures</code></td><td>boolean</td><td>No</td><td>Include top-5 function signatures per file (default: true)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Example</h2>
+  <pre><code>{`$ ctx_compress
+
+CTX CHECKPOINT (12 files)
+
+F1 auth.ts [123L]: λ+createUser(email:s,pwd:s)→User, λ+authenticate(email:s,pwd:s)→Session
+F2 db.ts [89L]: §+Database, λ+query(sql:s)→R, λ+migrate()→∅
+F3 routes.ts [234L]: λ+setupRoutes(app:Express), λ+authMiddleware(req,res,next)
+F4 config.ts [45L]: ν+DB_URL:s, ν+JWT_SECRET:s
+...
+
+STATS: 34 reads, 22 hits (65%)
+COMPRESSION: 28450 → 890 tok
+[27560 tok saved (97%)]`}</code></pre>
+
+  <h2>Token Savings</h2>
+  <p>
+    Typical savings are <strong>90-99%</strong>. A 12-file project context that normally takes
+    ~28,000 tokens can be represented in under 900 tokens.
+  </p>
+
+  <h2>TDD Integration</h2>
+  <p>
+    When <a href="/docs/tdd">TDD mode</a> is active, file signatures use TDD notation
+    (<code>λ</code>, <code>§</code>, <code>∂</code>) instead of verbose keywords,
+    further reducing the checkpoint size.
+  </p>
+
+  <h2>Auto-Checkpoint</h2>
+  <p>
+    lean-ctx can automatically generate checkpoints after every N tool calls.
+    Configure with the <code>LEAN_CTX_CHECKPOINT_INTERVAL</code> environment variable:
+  </p>
+  <pre><code>{`# Auto-checkpoint every 15 tool calls (default: 0 = disabled)
+LEAN_CTX_CHECKPOINT_INTERVAL=15`}</code></pre>
+  <p>
+    When enabled, the checkpoint is appended to the tool response, giving the LLM
+    a compact summary of the project state without requiring explicit calls.
+  </p>
+
+  <h2>Use Cases</h2>
+  <ul>
+    <li><strong>Context window management</strong> — when a conversation gets long, compress context to free up tokens</li>
+    <li><strong>Chat continuation</strong> — paste checkpoint into a fresh chat to carry over project knowledge</li>
+    <li><strong>Team handoff</strong> — share compact project summaries with colleagues</li>
+    <li><strong>Debugging</strong> — quickly understand which files are in the session and their structure</li>
+  </ul>
+</DocsLayout>

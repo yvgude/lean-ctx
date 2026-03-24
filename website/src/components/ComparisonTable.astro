@@ -1,0 +1,63 @@
+---
+const rows = [
+  { feature: 'Architecture', leanctx: 'Hybrid: Shell Hook + MCP', rtk: 'Shell hook only', orbital: 'Chat panel' },
+  { feature: 'Language', leanctx: 'Rust (single binary)', rtk: 'Rust', orbital: 'TypeScript' },
+  { feature: 'Token Savings', leanctx: '89-99%', rtk: '60-90% CLI only', orbital: '20-25%' },
+  { feature: 'CLI Patterns', leanctx: '50+ (12 categories)', rtk: '~30 commands', orbital: 'None' },
+  { feature: 'Scope', leanctx: 'Files + CLI + Search + Deps + grep/find/ls/curl', rtk: 'Shell output', orbital: 'Chat panel' },
+  { feature: 'Session Caching', leanctx: 'MD5-based', rtk: 'None', orbital: 'None' },
+  { feature: 'Read Modes', leanctx: '6 (full, map, signatures, diff, aggressive, entropy)', rtk: 'None', orbital: 'None' },
+  { feature: 'Dependency Maps', leanctx: 'Import/export extraction (TS/JS/Rust/Python/Go)', rtk: 'None', orbital: 'None' },
+  { feature: 'Diff Mode', leanctx: 'Line-level diffs', rtk: 'None', orbital: 'None' },
+  { feature: 'Context Compress', leanctx: 'Checkpoint snapshots', rtk: 'None', orbital: 'None' },
+  { feature: 'Token Counting', leanctx: 'tiktoken-exact (o200k_base)', rtk: 'Estimated', orbital: 'None' },
+  { feature: 'Cost Tracking', leanctx: 'USD estimates per session + persistent lifetime stats', rtk: 'None', orbital: 'None' },
+  { feature: 'Token Dense Dialect', leanctx: 'TDD mode: symbol shorthand (8-25% extra)', rtk: 'None', orbital: 'None' },
+  { feature: 'Thinking Reduction', leanctx: 'CRP v2 (30-60% fewer thinking tokens)', rtk: 'None', orbital: 'None' },
+  { feature: 'Config File', leanctx: 'TOML (~/.lean-ctx/config.toml)', rtk: 'TOML', orbital: 'None' },
+  { feature: 'History Analysis', leanctx: 'lean-ctx discover', rtk: 'None', orbital: 'None' },
+  { feature: 'Auto-Setup', leanctx: 'lean-ctx init --global (23 aliases)', rtk: 'Manual', orbital: 'Manual' },
+  { feature: 'Homebrew', leanctx: 'brew tap yvgude/tap', rtk: 'Yes', orbital: 'None' },
+  { feature: 'CLI Commands', leanctx: 'gain, init, read, diff, grep, find, ls, deps, discover, session, config', rtk: 'None', orbital: 'None' },
+  { feature: 'Persistent Stats', leanctx: 'Lifetime savings + web dashboard', rtk: 'None', orbital: 'None' },
+  { feature: 'Multi-Editor', leanctx: 'Cursor, Copilot, Claude Code, Windsurf + Shell', rtk: 'Claude Code', orbital: 'Cursor only' },
+  { feature: 'Open Source', leanctx: 'Yes (MIT)', rtk: 'Yes (MIT)', orbital: 'No' },
+];
+---
+
+<section class="relative py-28 overflow-hidden">
+  <div class="relative max-w-5xl mx-auto px-6">
+    <div class="text-center mb-20">
+      <h2 class="text-3xl sm:text-4xl font-bold mb-5">How we <span class="text-accent">compare</span></h2>
+      <p class="text-muted text-lg max-w-2xl mx-auto leading-relaxed">
+        Session caching, signature extraction, context compression, and diff-based updates
+        deliver savings no other tool can match.
+      </p>
+    </div>
+
+    <div class="rounded-2xl bg-surface border border-border overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-border/50">
+              <th class="text-left text-xs uppercase tracking-widest text-muted/60 font-medium py-5 px-6">Feature</th>
+              <th class="text-left text-xs uppercase tracking-widest font-semibold py-5 px-6 text-accent bg-accent/5">lean-ctx</th>
+              <th class="text-left text-xs uppercase tracking-widest text-muted/60 font-medium py-5 px-6">RTK</th>
+              <th class="text-left text-xs uppercase tracking-widest text-muted/60 font-medium py-5 px-6">OrbitalMCP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr class="border-b border-border/30 last:border-b-0">
+                <td class="py-3.5 px-6 text-sm font-medium text-text">{row.feature}</td>
+                <td class="py-3.5 px-6 text-sm font-semibold text-accent bg-accent/[0.03]">{row.leanctx}</td>
+                <td class="py-3.5 px-6 text-sm text-muted">{row.rtk}</td>
+                <td class="py-3.5 px-6 text-sm text-muted">{row.orbital}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,86 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Token Cost Reduction Guide" description="The complete guide to actually reducing your AI coding costs. Beyond MCP tool optimization.">
+  <p>
+    lean-ctx MCP tools save 89-99% of tokens on file reads and CLI output. But that's only
+    ~3-5% of your total token budget. This guide covers the other 95%.
+  </p>
+
+  <h2>Where Your Tokens Actually Go</h2>
+  <p>A typical Cursor request with claude-4.6-opus-high-thinking breaks down like this:</p>
+
+  <table>
+    <thead>
+      <tr><th>Category</th><th>% of Total</th><th>Controllable?</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Thinking tokens</strong> (model internal reasoning)</td><td>60-80%</td><td>Yes (model choice)</td></tr>
+      <tr><td>Conversation history</td><td>10-15%</td><td>Yes (fresh chats)</td></tr>
+      <tr><td>System prompt + rules</td><td>3-5%</td><td>Partially</td></tr>
+      <tr><td>Open file context</td><td>2-5%</td><td>Yes (close files)</td></tr>
+      <tr><td>Subagent contexts</td><td>5-15%</td><td>Yes (fewer agents)</td></tr>
+      <tr><td>Tool outputs (MCP)</td><td>3-5%</td><td>Yes (lean-ctx)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>1. Choose the Right Model (Biggest Impact)</h2>
+  <p>
+    The difference between models is enormous:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Model</th><th>Cost Factor</th><th>Thinking Tokens</th><th>When to Use</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>composer-2-fast</td><td>1x</td><td>Minimal</td><td>Quick edits, simple tasks</td></tr>
+      <tr><td>claude-4.5-sonnet</td><td>3x</td><td>None</td><td>Standard coding tasks</td></tr>
+      <tr><td>claude-4.6-opus-high-thinking</td><td>10-20x</td><td>100K-1M+</td><td>Complex architecture only</td></tr>
+    </tbody>
+  </table>
+  <p>
+    <strong>Rule of thumb:</strong> Use opus-high-thinking only for tasks that genuinely require
+    deep multi-step reasoning. For 90% of coding tasks, composer-2-fast or sonnet is sufficient
+    and 10-20x cheaper.
+  </p>
+
+  <h2>2. Close Unused Files</h2>
+  <p>
+    Cursor automatically sends the contents of all open files as context. A single large file
+    like a documentation file (3000+ lines) adds ~25,000 tokens to every request.
+  </p>
+  <p><strong>Action:</strong> Close all files you're not actively working on. Especially:</p>
+  <ul>
+    <li>Documentation files (README, guides, server access docs)</li>
+    <li>Lock files (package-lock.json)</li>
+    <li>Large data files</li>
+  </ul>
+
+  <h2>3. Start Fresh Conversations</h2>
+  <p>
+    Conversation history grows with every turn. After 10-15 turns, you're sending 100K+ tokens
+    of history with each new request.
+  </p>
+  <p><strong>Action:</strong> Start a new chat every 10-15 turns, or whenever switching tasks.</p>
+
+  <h2>4. Minimize Subagents</h2>
+  <p>
+    Each parallel subagent (explore, generalPurpose, etc.) gets its own context copy.
+    3 parallel agents = 3x the token cost for that turn.
+  </p>
+  <p><strong>Action:</strong> Use sequential tool calls instead of parallel subagents when possible.</p>
+
+  <h2>5. Optimize Rules and Memory</h2>
+  <p>
+    Custom rules (.cursor/rules/*.mdc) and memory bank files are loaded with every request.
+    Keep them concise.
+  </p>
+
+  <h2>6. Use lean-ctx MCP Tools</h2>
+  <p>
+    After implementing steps 1-5, lean-ctx provides additional savings on the remaining
+    tool interaction tokens. The session cache prevents redundant file reads, and signature
+    extraction reduces dependency context.
+  </p>
+</DocsLayout>

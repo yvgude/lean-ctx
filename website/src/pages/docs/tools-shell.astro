@@ -1,0 +1,125 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_shell — CLI Compression" description="50+ compression patterns across 12 categories — git, npm, cargo, docker, kubectl, gh, pip, and more.">
+  <p>
+    <code>ctx_shell</code> executes shell commands and applies pattern-based compression to the output.
+    It recognizes 50+ common developer tools across 12 categories and strips verbose boilerplate while preserving actionable information.
+  </p>
+  <p>
+    The same compression is also available via the <strong>shell hook</strong> (<code>lean-ctx -c command</code>),
+    which compresses output transparently without requiring the LLM to use MCP tools.
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>command</code></td><td>string</td><td>Yes</td><td>Shell command to execute</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Supported Patterns (50+)</h2>
+
+  <table>
+    <thead>
+      <tr><th>Category</th><th>Commands</th><th>Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Git</strong> (16)</td><td>status, log, diff, add, commit, push, pull, fetch, clone, branch, checkout, switch, merge, stash, tag, reset, remote, blame, cherry-pick</td><td>70-95%</td></tr>
+      <tr><td><strong>Docker</strong> (10)</td><td>build, ps, images, logs, compose ps/up/down, exec, network, volume, inspect</td><td>70-90%</td></tr>
+      <tr><td><strong>npm/pnpm/yarn</strong> (6)</td><td>install, test, run, list, outdated, audit</td><td>70-90%</td></tr>
+      <tr><td><strong>Cargo</strong> (3)</td><td>build, test, clippy</td><td>80%</td></tr>
+      <tr><td><strong>GitHub CLI</strong> (8)</td><td>pr list/view/create/merge, issue list/view/create, run list/view</td><td>60-80%</td></tr>
+      <tr><td><strong>Kubernetes</strong> (8)</td><td>get, logs, describe, apply, delete, exec, top, rollout, scale</td><td>60-85%</td></tr>
+      <tr><td><strong>Python</strong> (8)</td><td>pip install/list/outdated/uninstall/check, ruff check/format</td><td>60-80%</td></tr>
+      <tr><td><strong>Linters</strong> (3)</td><td>eslint, biome, prettier, stylelint</td><td>60-70%</td></tr>
+      <tr><td><strong>Build Tools</strong> (3)</td><td>tsc, next build, vite build</td><td>60-80%</td></tr>
+      <tr><td><strong>Test Runners</strong> (5)</td><td>jest, pytest, go test, playwright, cypress</td><td>90%</td></tr>
+      <tr><td><strong>Utils</strong> (5)</td><td>curl, grep/rg, find, ls, wget</td><td>50-89%</td></tr>
+      <tr><td><strong>Data</strong> (3)</td><td>env (filtered), JSON schema extraction, log deduplication</td><td>50-80%</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Examples</h2>
+
+  <h3>git status</h3>
+  <pre><code>ctx_shell "git status"
+→ feature/auth ↑3
+  staged: +session.ts ~login.ts ~api.ts
+  unstaged: ~session.ts
+  untracked: session.test.ts
+  [534 tok saved (87%)]</code></pre>
+
+  <h3>npm install</h3>
+  <pre><code>ctx_shell "npm install express"
+→ +express@4.18.2 (3 deps, 847ms)
+  [82 tok saved (71%)]</code></pre>
+
+  <h3>TypeScript Compiler</h3>
+  <pre><code>ctx_shell "npx tsc --noEmit"
+→ 3 errors in 2 files:
+  auth.ts:42 TS2345 type mismatch
+  db.ts:15 TS2304 name not found
+  db.ts:28 TS2304 name not found</code></pre>
+
+  <h3>kubectl get pods</h3>
+  <pre><code>ctx_shell "kubectl get pods"
+→ 5 pods: 4 Running, 1 CrashLoopBackOff
+  api-7d8f-abc12     1/1 Running   0 2d
+  web-5c4e-def34     1/1 Running   0 1d
+  worker-crash-xyz   0/1 CrashLoop 12 4h</code></pre>
+
+  <h3>docker compose ps</h3>
+  <pre><code>ctx_shell "docker compose ps"
+→ 3 services: 3 running
+  api    :8080 Up 2h
+  db     :5432 Up 2h
+  redis  :6379 Up 2h</code></pre>
+
+  <h3>Test Runners</h3>
+  <pre><code>ctx_shell "npm test"
+→ 42 passed, 2 failed, 1 skipped (3.2s)
+  FAIL auth.test.ts:23 "should validate token"
+    Expected: true, Received: false
+  FAIL db.test.ts:45 "should retry on connection error"
+    Timeout after 5000ms</code></pre>
+
+  <h3>curl (JSON)</h3>
+  <pre><code>ctx_shell "curl -s https://api.example.com/users"
+→ 200 OK | application/json | 2.3KB
+  [item1, item2, ... +48 items]</code></pre>
+
+  <h2>Shell Hook Mode</h2>
+  <p>
+    Use lean-ctx as a transparent shell wrapper for automatic compression:
+  </p>
+  <pre><code># Auto-install 23 aliases
+lean-ctx init --global
+
+# Or single command
+lean-ctx -c git status
+
+# Or manual aliases
+alias git='lean-ctx -c git'
+alias kubectl='lean-ctx -c kubectl'
+
+# Interactive shell
+lean-ctx --shell</code></pre>
+
+  <h2>Error Recovery (Tee)</h2>
+  <p>
+    When a command fails (non-zero exit code), lean-ctx automatically saves the full uncompressed
+    output to <code>~/.lean-ctx/tee/</code> for debugging. This ensures compressed output
+    doesn't hide error details you might need.
+  </p>
+
+  <h2>Fallback</h2>
+  <p>
+    For unrecognized commands, generic compression applies: removes empty lines,
+    strips ANSI codes, and truncates very long output with a summary.
+  </p>
+</DocsLayout>

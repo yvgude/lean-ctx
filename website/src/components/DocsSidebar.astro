@@ -1,0 +1,112 @@
+---
+const sections = [
+  {
+    title: 'Getting Started',
+    items: [
+      { label: 'Introduction', href: '/docs/getting-started' },
+      { label: 'Installation', href: '/docs/installation' },
+      { label: 'Quick Start', href: '/docs/quick-start' },
+    ],
+  },
+  {
+    title: 'Tools',
+    items: [
+      { label: 'ctx_read', href: '/docs/tools' },
+      { label: 'ctx_tree', href: '/docs/tools-tree' },
+      { label: 'ctx_shell', href: '/docs/tools-shell' },
+      { label: 'ctx_search', href: '/docs/tools-search' },
+      { label: 'ctx_compress', href: '/docs/tools-compress' },
+      { label: 'ctx_analyze', href: '/docs/tools-analyze' },
+      { label: 'ctx_benchmark', href: '/docs/tools-benchmark' },
+      { label: 'ctx_metrics', href: '/docs/tools-metrics' },
+    ],
+  },
+  {
+    title: 'Reference',
+    items: [
+      { label: 'Token Dense Dialect', href: '/docs/tdd' },
+      { label: 'Configuration', href: '/docs/configuration' },
+      { label: 'Session Metrics', href: '/docs/dashboard' },
+      { label: 'CLI', href: '/docs/cli' },
+      { label: 'Token Cost Guide', href: '/docs/token-guide' },
+    ],
+  },
+];
+
+const currentPath = Astro.url.pathname;
+---
+
+<!-- Mobile: sticky top bar with dropdown -->
+<div class="lg:hidden sticky top-16 z-40 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 glass-strong border-b border-border/30">
+  <button
+    id="docs-sidebar-toggle"
+    class="w-full flex items-center justify-between px-4 py-2.5 rounded-lg bg-surface-2 border border-border/40 text-sm text-muted hover:text-text-bright transition-colors"
+  >
+    <span class="font-medium">Documentation Menu</span>
+    <svg class="w-4 h-4 transition-transform" id="docs-sidebar-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+    </svg>
+  </button>
+  <div id="docs-sidebar-mobile" class="hidden mt-2 p-3 rounded-xl bg-surface border border-border/40 max-h-[60vh] overflow-y-auto">
+    {sections.map(section => (
+      <div class="mb-4 last:mb-0">
+        <h4 class="text-xs font-semibold uppercase tracking-widest text-muted/50 mb-2 px-3">{section.title}</h4>
+        <ul class="space-y-0.5">
+          {section.items.map(item => (
+            <li>
+              <a
+                href={item.href}
+                class:list={[
+                  'block text-sm py-2 px-3 rounded-lg transition-all duration-200',
+                  currentPath === item.href
+                    ? 'text-accent bg-accent/8 border border-accent/10 font-medium'
+                    : 'text-muted hover:text-text-bright hover:bg-surface-2'
+                ]}
+              >
+                {item.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))}
+  </div>
+</div>
+
+<!-- Desktop: sticky sidebar -->
+<aside class="hidden lg:block">
+  <nav class="sticky top-24 space-y-8">
+    {sections.map(section => (
+      <div>
+        <h4 class="text-xs font-semibold uppercase tracking-widest text-muted/50 mb-3">{section.title}</h4>
+        <ul class="space-y-1">
+          {section.items.map(item => (
+            <li>
+              <a
+                href={item.href}
+                class:list={[
+                  'block text-sm py-1.5 px-3 rounded-lg transition-all duration-300',
+                  currentPath === item.href
+                    ? 'text-accent bg-accent/8 border border-accent/10 font-medium'
+                    : 'text-muted hover:text-text-bright hover:bg-surface-2'
+                ]}
+              >
+                {item.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))}
+  </nav>
+</aside>
+
+<script>
+  const toggle = document.getElementById('docs-sidebar-toggle');
+  const mobile = document.getElementById('docs-sidebar-mobile');
+  const chevron = document.getElementById('docs-sidebar-chevron');
+  toggle?.addEventListener('click', () => {
+    mobile?.classList.toggle('hidden');
+    chevron?.classList.toggle('rotate-180');
+  });
+</script>

@@ -1,0 +1,125 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Installation" description="Install lean-ctx and configure it for Cursor, GitHub Copilot, Claude Code, and Windsurf.">
+  <p>
+    lean-ctx is a single Rust binary with zero runtime dependencies. It works as both a transparent
+    shell hook and an MCP server for any compatible editor.
+  </p>
+
+  <h2>Install</h2>
+
+  <h3>Homebrew (macOS)</h3>
+  <pre><code>brew tap yvgude/tap
+brew install lean-ctx</code></pre>
+
+  <h3>Cargo (all platforms)</h3>
+  <p>Via <a href="https://crates.io/crates/lean-ctx">crates.io</a> (requires <a href="https://rustup.rs">Rust toolchain</a>):</p>
+  <pre><code>cargo install lean-ctx</code></pre>
+
+  <h3>Build from source</h3>
+  <pre><code>git clone https://github.com/yvgude/lean-ctx.git
+cd lean-ctx/rust
+cargo build --release
+cp target/release/lean-ctx ~/.local/bin/</code></pre>
+
+  <h2>MCP Server Setup</h2>
+
+  <h3>Cursor</h3>
+  <p>Add to <code>~/.cursor/mcp.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+
+  <h3>GitHub Copilot</h3>
+  <p>Add <code>.github/copilot/mcp.json</code> to your project:</p>
+  <pre><code>{`{
+  "servers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+
+  <h3>Claude Code</h3>
+  <pre><code>claude mcp add lean-ctx lean-ctx</code></pre>
+
+  <h3>Windsurf</h3>
+  <p>Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+
+  <h2>Shell Hook Setup</h2>
+  <p>
+    The shell hook compresses CLI output transparently, without requiring the LLM to use MCP tools.
+    Both approaches can be used simultaneously.
+  </p>
+
+  <h3>Automatic Setup (Recommended)</h3>
+  <p>One command installs 23 aliases globally:</p>
+  <pre><code>lean-ctx init --global</code></pre>
+  <p>
+    This adds aliases for <code>git</code>, <code>npm</code>, <code>pnpm</code>, <code>yarn</code>,
+    <code>cargo</code>, <code>docker</code>, <code>docker-compose</code>, <code>kubectl</code>,
+    <code>gh</code>, <code>pip</code>, <code>ruff</code>, <code>go</code>, <code>eslint</code>,
+    <code>prettier</code>, <code>tsc</code>, <code>curl</code>, <code>wget</code>, and more
+    to your shell profile (<code>.zshrc</code> or <code>.bashrc</code>).
+    Restart your shell or run <code>source ~/.zshrc</code> afterwards.
+  </p>
+
+  <h3>Manual Shell Aliases</h3>
+  <p>Alternatively, add individual aliases to your <code>.zshrc</code> or <code>.bashrc</code>:</p>
+  <pre><code>alias git='lean-ctx -c git'
+alias npm='lean-ctx -c npm'
+alias cargo='lean-ctx -c cargo'
+alias docker='lean-ctx -c docker'
+alias kubectl='lean-ctx -c kubectl'
+alias gh='lean-ctx -c gh'
+alias pip='lean-ctx -c pip'
+alias curl='lean-ctx -c curl'
+# ... run lean-ctx init --global for all 23</code></pre>
+
+  <h3>Cursor Terminal Profile</h3>
+  <p>Add a lean-ctx terminal profile in VS Code / Cursor settings:</p>
+  <pre><code>{`{
+  "terminal.integrated.profiles.osx": {
+    "lean-ctx": {
+      "path": "/path/to/lean-ctx",
+      "args": ["shell"],
+      "icon": "terminal"
+    }
+  }
+}`}</code></pre>
+
+  <h3>Interactive Shell</h3>
+  <p>Run lean-ctx as a shell wrapper:</p>
+  <pre><code>lean-ctx shell</code></pre>
+
+  <h2>Cursor Rule (Optional)</h2>
+  <p>
+    For maximum token savings, add a Cursor rule to your project. Copy the example from
+    <code>examples/lean-ctx.mdc</code> to <code>.cursor/rules/lean-ctx.mdc</code> in your project.
+    This instructs the LLM to prefer lean-ctx tools and use compact output.
+  </p>
+
+  <h2>Verify Installation</h2>
+  <p>After configuring your editor:</p>
+  <ol>
+    <li>Restart the editor completely</li>
+    <li>Open a project file</li>
+    <li>Check that 8 tools appear: <code>ctx_read</code>, <code>ctx_tree</code>, <code>ctx_shell</code>,
+        <code>ctx_search</code>, <code>ctx_compress</code>, <code>ctx_benchmark</code>,
+        <code>ctx_metrics</code>, <code>ctx_analyze</code></li>
+    <li>Run <code>ctx_benchmark</code> on a file to verify token counting works</li>
+  </ol>
+</DocsLayout>

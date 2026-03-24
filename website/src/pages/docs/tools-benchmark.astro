@@ -1,0 +1,54 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_benchmark — Measure Savings" description="Benchmark all compression strategies on any file with exact tiktoken counts.">
+  <p>
+    <code>ctx_benchmark</code> runs all compression strategies on a file and reports exact token
+    counts measured with tiktoken (the same tokenizer used by GPT-4 and Claude).
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>File to benchmark</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Example Output</h2>
+  <pre><code>ctx_benchmark auth.ts
+
+Benchmark: auth.ts (123L)
+
+Strategy             Tokens  Savings
+──────────────────────────────────────────
+raw                     915  —
+full (default)          915  —
+aggressive              946  —
+signatures (verbose)    154  -761 (83%)
+signatures (compact)    121  -794 (87%)
+cache hit                13  -902 (99%)
+──────────────────────────────────────────
+Best: "cache hit" saves 902 tokens (99%)</code></pre>
+
+  <h2>Interpreting Results</h2>
+  <ul>
+    <li><strong>raw:</strong> Token count for the unmodified file content</li>
+    <li><strong>full:</strong> Same as raw on first read (caching happens after)</li>
+    <li><strong>aggressive:</strong> Syntax stripping applied — may be slightly larger if stripping adds separators</li>
+    <li><strong>signatures (verbose):</strong> Full signature names with standard formatting</li>
+    <li><strong>signatures (compact):</strong> Signatures with compact protocol abbreviations</li>
+    <li><strong>cache hit:</strong> The 13-token message returned on re-reads</li>
+  </ul>
+
+  <h2>When to Use</h2>
+  <p>
+    Run benchmarks when deciding which <code>ctx_read</code> mode to use for specific file types.
+    For example, large utility files might benefit most from <code>signatures</code> mode,
+    while config files are best read in <code>full</code> mode (they're small enough that caching
+    alone provides the biggest win).
+  </p>
+</DocsLayout>

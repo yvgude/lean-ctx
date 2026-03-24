@@ -4,11 +4,8 @@ dist/
 *.tsbuildinfo
 .env
 deploy.sh
-Dockerfile.web
-website/
-tsconfig.json
+/src/
 /package.json
 /package-lock.json
-/src/
-.gitlab-ci.yml
+/tsconfig.json
 lean-ctx.config.example.json

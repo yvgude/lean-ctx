@@ -1,0 +1,70 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Quick Start" description="Start saving tokens in 2 minutes.">
+  <p>
+    This guide gets you from zero to saving tokens in the shortest possible time.
+  </p>
+
+  <h2>Step 1: Install</h2>
+  <pre><code># Homebrew (macOS)
+brew tap yvgude/tap && brew install lean-ctx
+
+# Or via crates.io
+cargo install lean-ctx</code></pre>
+
+  <h2>Step 2: Set Up Shell Hook</h2>
+  <pre><code>lean-ctx init --global</code></pre>
+  <p>Installs 23 aliases for git, npm, cargo, docker, kubectl, gh, pip, ruff, eslint, curl, and more.</p>
+
+  <h2>Step 3: Configure Your Editor</h2>
+  <p>For Cursor, add to <code>~/.cursor/mcp.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+
+  <h2>Step 4: Restart and Verify</h2>
+  <p>Restart your editor. The lean-ctx tools will appear in the MCP tool list.</p>
+
+  <p>Test the shell hook from the terminal:</p>
+  <pre><code>git status
+lean-ctx gain</code></pre>
+
+  <p>
+    Inside your editor, use the <code>ctx_benchmark</code> MCP tool on any file
+    to see token savings for each compression strategy.
+  </p>
+
+  <h2>Step 5: Monitor Savings</h2>
+  <pre><code>lean-ctx gain
+lean-ctx dashboard</code></pre>
+
+  <p>
+    <code>lean-ctx gain</code> shows cumulative token savings in the terminal.
+    <code>lean-ctx dashboard</code> opens a web dashboard at <code>localhost:3333</code>
+    with interactive charts, KPIs, and per-tool breakdowns.
+    For per-session stats inside your editor, use <code>ctx_metrics</code>.
+  </p>
+
+  <h2>Step 6: Analyze Adoption</h2>
+  <pre><code>lean-ctx discover
+lean-ctx session</code></pre>
+  <p>
+    <code>lean-ctx discover</code> scans your shell history for commands that could benefit from compression.
+    <code>lean-ctx session</code> shows your adoption rate.
+  </p>
+
+  <h2>What's Next</h2>
+  <ul>
+    <li><a href="/docs/installation">Installation</a> — detailed setup per editor</li>
+    <li><a href="/docs/tdd">Token Dense Dialect</a> — how TDD reduces tokens by 8-25% more</li>
+    <li><a href="/docs/tools">ctx_read</a> — the core tool with 6 compression modes</li>
+    <li><a href="/docs/dashboard">Dashboard</a> — track savings over time</li>
+    <li><a href="/docs/configuration">Configuration</a> — TOML config and environment variables</li>
+  </ul>
+</DocsLayout>

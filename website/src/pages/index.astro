@@ -1,0 +1,37 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+import ProblemCards from '../components/ProblemCards.astro';
+import BeforeAfter from '../components/BeforeAfter.astro';
+import FeatureCards from '../components/FeatureCards.astro';
+import EditorCards from '../components/EditorCards.astro';
+import ComparisonTable from '../components/ComparisonTable.astro';
+import QuickStart from '../components/QuickStart.astro';
+---
+
+<BaseLayout title="lean-ctx — Smart Context MCP Server for AI Coding Tools">
+  <Hero />
+  <ProblemCards />
+  <BeforeAfter />
+  <FeatureCards />
+  <EditorCards />
+  <ComparisonTable />
+  <QuickStart />
+
+  <section class="relative py-28 overflow-hidden">
+    <div class="relative max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl sm:text-4xl font-bold mb-5">Your AI doesn't need to<br /><span class="text-accent">read all that.</span></h2>
+      <p class="text-muted text-lg mb-10 max-w-xl mx-auto leading-relaxed">
+        Install lean-ctx. Better reasoning, longer sessions, lower costs.
+      </p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="/docs/getting-started" class="btn-glossy inline-flex items-center px-10 py-4 text-sm font-bold rounded-xl text-bg">
+          Install lean-ctx
+        </a>
+        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline-glossy inline-flex items-center px-10 py-4 text-sm font-medium rounded-xl text-text">
+          View Source on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

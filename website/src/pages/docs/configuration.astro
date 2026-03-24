@@ -1,0 +1,116 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Configuration" description="Configure lean-ctx for your editor, shell, and project.">
+  <p>
+    lean-ctx works out of the box with zero configuration. The Rust binary handles MCP server mode,
+    shell hook mode, and all compression patterns automatically. TDD mode is enabled by default.
+  </p>
+
+  <h2>Config File</h2>
+  <p>
+    lean-ctx supports an optional TOML configuration file at <code>~/.lean-ctx/config.toml</code>.
+    Create the default config with:
+  </p>
+  <pre><code>lean-ctx config init</code></pre>
+  <p>View the current configuration:</p>
+  <pre><code>lean-ctx config</code></pre>
+
+  <h3>Config Options</h3>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>ultra_compact</code></td><td>bool</td><td>false</td><td>Enable ultra-compact output mode</td></tr>
+      <tr><td><code>tee_on_error</code></td><td>bool</td><td>true</td><td>Save full output to ~/.lean-ctx/tee/ when commands fail</td></tr>
+      <tr><td><code>checkpoint_interval</code></td><td>u32</td><td>0</td><td>Auto-checkpoint every N tool calls (0 = disabled)</td></tr>
+      <tr><td><code>excluded_commands</code></td><td>list</td><td>[]</td><td>Commands to skip compression for</td></tr>
+      <tr><td><code>custom_aliases</code></td><td>list</td><td>[]</td><td>Custom command-to-alias mappings</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Environment Variables</h2>
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>LEAN_CTX_CRP_MODE</code></td><td>tdd (default), compact, off</td><td>Controls Token Dense Dialect compression level</td></tr>
+      <tr><td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td><td>number</td><td>Auto-checkpoint every N tool calls</td></tr>
+    </tbody>
+  </table>
+
+  <h2>MCP Server Configuration</h2>
+  <p>
+    Configure your editor to use lean-ctx as an MCP server. See the
+    <a href="/docs/installation">Installation guide</a> for editor-specific instructions.
+  </p>
+
+  <h2>Shell Hook Configuration</h2>
+  <p>The fastest way is automatic setup:</p>
+  <pre><code>lean-ctx init --global</code></pre>
+  <p>This installs 23 aliases into your shell profile. Or add manually:</p>
+  <pre><code>alias git='lean-ctx -c git'
+alias npm='lean-ctx -c npm'
+alias pnpm='lean-ctx -c pnpm'
+alias cargo='lean-ctx -c cargo'
+alias docker='lean-ctx -c docker'
+alias kubectl='lean-ctx -c kubectl'
+alias gh='lean-ctx -c gh'
+alias pip='lean-ctx -c pip'
+alias curl='lean-ctx -c curl'
+# ... run lean-ctx init --global for all 23</code></pre>
+
+  <p>Or use lean-ctx as a Cursor terminal profile:</p>
+  <pre><code>{`{
+  "terminal.integrated.profiles.osx": {
+    "lean-ctx": {
+      "path": "/path/to/lean-ctx",
+      "args": ["shell"],
+      "icon": "terminal"
+    }
+  }
+}`}</code></pre>
+
+  <h2>Cursor Rule</h2>
+  <p>
+    For maximum token savings, add a <code>.cursor/rules/lean-ctx.mdc</code> to your project.
+    This instructs the LLM to prefer lean-ctx tools and use compact output patterns.
+    An example is included in <code>examples/lean-ctx.mdc</code> in the repository.
+  </p>
+  <p>
+    The Cursor rule includes CRP v2 (Compact Response Protocol) which reduces
+    both output tokens (50-80%) and thinking tokens (30-60%) through structured
+    task parsing and one-hypothesis reasoning.
+  </p>
+
+  <h2>Command-Line Reference</h2>
+  <p>For the full CLI reference, see the <a href="/docs/cli">CLI documentation</a>.</p>
+  <table>
+    <thead>
+      <tr><th>Command</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>lean-ctx</code></td><td>Start MCP server (default, used by editors)</td></tr>
+      <tr><td><code>lean-ctx init --global</code></td><td>Install 23 shell aliases globally</td></tr>
+      <tr><td><code>lean-ctx gain</code></td><td>Show persistent token savings dashboard</td></tr>
+      <tr><td><code>lean-ctx dashboard</code></td><td>Open web dashboard at localhost:3333</td></tr>
+      <tr><td><code>lean-ctx discover</code></td><td>Find uncompressed commands in shell history</td></tr>
+      <tr><td><code>lean-ctx session</code></td><td>Show adoption statistics</td></tr>
+      <tr><td><code>lean-ctx config</code></td><td>Show current configuration</td></tr>
+      <tr><td><code>lean-ctx config init</code></td><td>Create default config file</td></tr>
+      <tr><td><code>lean-ctx -c &lt;command&gt;</code></td><td>Execute command with compressed output</td></tr>
+      <tr><td><code>lean-ctx shell</code></td><td>Interactive shell with compression</td></tr>
+      <tr><td><code>lean-ctx read &lt;file&gt; [-m mode]</code></td><td>Read file with compression</td></tr>
+      <tr><td><code>lean-ctx diff &lt;file1&gt; &lt;file2&gt;</code></td><td>Compressed file diff</td></tr>
+      <tr><td><code>lean-ctx grep &lt;pattern&gt; [path]</code></td><td>Compressed search</td></tr>
+      <tr><td><code>lean-ctx find &lt;pattern&gt; [path]</code></td><td>Compact file finder</td></tr>
+      <tr><td><code>lean-ctx ls [path]</code></td><td>Token-optimized directory listing</td></tr>
+      <tr><td><code>lean-ctx deps [path]</code></td><td>Project dependencies summary</td></tr>
+      <tr><td><code>lean-ctx --version</code></td><td>Print version</td></tr>
+      <tr><td><code>lean-ctx --help</code></td><td>Print usage information</td></tr>
+    </tbody>
+  </table>
+</DocsLayout>

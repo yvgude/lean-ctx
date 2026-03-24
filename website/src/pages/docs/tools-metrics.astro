@@ -1,0 +1,54 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_metrics — Session Statistics" description="Real-time token savings with tiktoken-measured counts, USD cost estimates, and per-tool breakdowns.">
+  <p>
+    <code>ctx_metrics</code> displays comprehensive session statistics including token savings,
+    USD cost estimates, per-tool and per-mode breakdowns, and file reference mappings.
+  </p>
+
+  <h2>Parameters</h2>
+  <p>No parameters. Returns current session statistics.</p>
+
+  <h2>Example Output</h2>
+  <pre><code>ctx_metrics
+
+lean-ctx session metrics
+══════════════════════════════════════════════════
+Files tracked: 12 | Reads: 34 | Cache hits: 22 (65%)
+Input tokens:  28.5K original → 4.1K sent | 24.3K saved (85.5%)
+Cost estimate: $0.4270 without → $0.0620 with lean-ctx | $0.3650 saved
+
+By Tool:
+Tool           Calls  Original     Saved   Avg%
+──────────────────────────────────────────────────
+ctx_read          18     22.4K    19.2K    91%
+ctx_shell          8      4.8K     3.1K    74%
+ctx_tree           4      1.8K     1.2K    40%
+
+By Mode:
+Mode           Calls     Saved
+──────────────────────────────
+map                6    12.1K
+signatures         4     5.2K
+full               8     1.9K
+
+File Refs:
+  F1=auth.ts [123L 915t reads:5]
+  F2=db.ts [89L 412t reads:3]
+
+Projected session savings (incl. thinking): $0.512</code></pre>
+
+  <h2>Understanding the Output</h2>
+  <ul>
+    <li><strong>Files tracked:</strong> Number of unique files cached in the session</li>
+    <li><strong>Cache hits:</strong> Times a file was served from cache (saving nearly all tokens)</li>
+    <li><strong>Input tokens:</strong> Original vs. sent tokens (measured with tiktoken o200k_base)</li>
+    <li><strong>Cost estimate:</strong> USD cost based on $15/M input tokens pricing</li>
+    <li><strong>By Tool:</strong> Calls, original tokens, saved tokens, and average savings per tool</li>
+    <li><strong>By Mode:</strong> Breakdown of ctx_read mode usage and savings</li>
+    <li><strong>File Refs:</strong> All tracked files with reference IDs, line counts, token counts, and read counts</li>
+    <li><strong>Projected savings:</strong> Estimated total including thinking token reduction impact</li>
+  </ul>
+</DocsLayout>

@@ -1,0 +1,127 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_read — Smart File Read" description="Read files with session caching, dependency maps, signature extraction, diff mode, and entropy filtering.">
+  <p>
+    <code>ctx_read</code> is the most impactful tool in lean-ctx. It replaces your editor's built-in
+    file read with an intelligent, session-aware reader that caches content, extracts dependency maps,
+    and computes diffs. Every response includes structured headers with file references, dependencies,
+    and exports.
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Absolute file path</td></tr>
+      <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>full</code> (default), <code>map</code>, <code>signatures</code>, <code>diff</code>, <code>aggressive</code>, <code>entropy</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Mode: full (default)</h2>
+  <p>
+    Reads the entire file with structured headers (dependencies, exports) and stores it in the session cache
+    with an MD5 hash. On subsequent reads, returns a compact cache-hit message instead of the full content.
+  </p>
+  <pre><code># First read: returns full content with structured header
+ctx_read auth.ts
+→ F1=auth.ts [123L +] deps:[db,crypto] exports:[createUser,validateSession]
+  [full file content...]
+
+# Second read: returns cache hit (~13 tokens)
+ctx_read auth.ts
+→ F1=auth.ts [cached 2t 123L ∅]</code></pre>
+  <p>Savings: <strong>~99%</strong> on re-reads.</p>
+
+  <h2>Mode: map</h2>
+  <p>
+    Returns a dependency graph, exports list, and API signatures — everything the LLM needs to understand
+    a file's role without reading its implementation. Use for context files you won't edit.
+  </p>
+  <pre><code>ctx_read server.rs --mode map
+→ F2=server.rs [262L]
+    deps: rmcp::model::, rmcp::handler::server::ServerHandler, ...
+    exports: -
+    API:
+      fn tool_def(name:&'static str, ...) → Tool
+      fn get_str(args:...) → Option&lt;String&gt;
+      fn execute_command(command:s) → String
+  [2135 tok saved (93%)]</code></pre>
+  <p>
+    Supports TS/JS, Rust, Python, and Go import/export extraction. Savings: <strong>85-95%</strong>.
+  </p>
+
+  <h2>Mode: signatures</h2>
+  <p>
+    Extracts function signatures, interface definitions, type aliases, and class declarations.
+    More detail than <code>map</code> mode — includes private functions and nested signatures.
+    Uses compact notation with type abbreviations.
+  </p>
+  <pre><code>ctx_read auth.ts --mode signatures
+→ F1=auth.ts [123L] deps:[db,crypto]
+  fn generateToken():s
+  fn ⊛ createUser(email:s, password:s, name:s, locale:s)
+  fn ⊛ authenticateUser(email:s, password:s)
+  fn ⊛ validateSession(token:s)
+  [794 tok saved (87%)]</code></pre>
+
+  <h2>Mode: diff</h2>
+  <p>
+    If the file was previously cached and has changed, returns only the changed lines.
+  </p>
+  <pre><code>ctx_read auth.ts --mode diff
+→ F1=auth.ts [diff]
+  L42: - const TOKEN_EXPIRY = 3600;
+  L42: + const TOKEN_EXPIRY = 7200;
+  [saved 890 tokens (97%)]</code></pre>
+
+  <h2>Mode: aggressive</h2>
+  <p>
+    Returns full file content with syntax stripping: reduced indentation, removed comments,
+    stripped empty lines. Savings: <strong>20-40%</strong>.
+  </p>
+
+  <h2>Mode: entropy</h2>
+  <p>
+    Shannon entropy filtering removes low-information lines. Jaccard similarity deduplicates
+    similar code blocks. Best for files with boilerplate or repetitive patterns.
+    Savings: <strong>60-85%</strong>.
+  </p>
+
+  <h2>Structured Headers</h2>
+  <p>Every <code>ctx_read</code> response includes a structured header:</p>
+  <pre><code>F1=auth.ts [123L +] deps:[db,crypto] exports:[createUser,validateSession]</code></pre>
+  <ul>
+    <li><code>F1</code>, <code>F2</code>, ... — file reference IDs that persist for the session</li>
+    <li><code>=short_path</code> — abbreviated file path</li>
+    <li><code>[NL]</code> — line count</li>
+    <li><code>+</code> — first read, <code>∅</code> — unchanged (cache hit)</li>
+    <li><code>deps:[...]</code> — imported modules</li>
+    <li><code>exports:[...]</code> — exported names</li>
+  </ul>
+
+  <h2>Compact Notation</h2>
+  <ul>
+    <li><code>⊛</code> — async function</li>
+    <li><code>:s</code>, <code>:n</code>, <code>:b</code> — type abbreviations (string, number, boolean)</li>
+    <li><code>fn</code>, <code>cl</code>, <code>if</code>, <code>tp</code> — keyword abbreviations</li>
+  </ul>
+
+  <h2>Mode Selection Guide</h2>
+  <table>
+    <thead>
+      <tr><th>Situation</th><th>Mode</th><th>Tokens</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Understanding a file's role</td><td><code>map</code></td><td>~5-15%</td></tr>
+      <tr><td>Understanding an API surface</td><td><code>signatures</code></td><td>~10-20%</td></tr>
+      <tr><td>Editing a file</td><td><code>full</code></td><td>100% first, ~0% cached</td></tr>
+      <tr><td>Checking changes</td><td><code>diff</code></td><td>Only changed lines</td></tr>
+      <tr><td>Large boilerplate files</td><td><code>aggressive</code></td><td>~30-50%</td></tr>
+      <tr><td>Repetitive patterns</td><td><code>entropy</code></td><td>~20-40%</td></tr>
+    </tbody>
+  </table>
+</DocsLayout>

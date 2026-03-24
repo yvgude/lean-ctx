@@ -1,0 +1,41 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_tree — Project Map" description="Token-efficient directory listings with file counts.">
+  <p>
+    <code>ctx_tree</code> generates compact project structure maps using indentation instead of
+    Unicode box-drawing characters. Each directory shows a file count for quick orientation.
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>No</td><td>Directory to list (default: project root)</td></tr>
+      <tr><td><code>depth</code></td><td>number</td><td>No</td><td>Maximum depth (default: 3)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Example</h2>
+  <pre><code>ctx_tree --depth 2
+
+→ lean-ctx/rust/
+    src/ (22)
+      core/ (9)
+      tools/ (8)
+      patterns/ (5)
+    examples/ (1)
+    Cargo.toml
+    README.md
+  [64 tok saved (34%)]</code></pre>
+
+  <h2>Why It Saves Tokens</h2>
+  <p>
+    Traditional directory listings use Unicode box-drawing characters (<code>├──</code>, <code>└──</code>)
+    which consume 3-4 tokens each. lean-ctx uses simple indentation (1 token per level), and shows
+    file counts per directory instead of listing every file. For large projects, this saves 30-50% tokens.
+  </p>
+</DocsLayout>

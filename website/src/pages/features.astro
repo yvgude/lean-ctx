@@ -1,0 +1,290 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const tools = [
+  {
+    id: 'ctx_read',
+    name: 'ctx_read',
+    tagline: 'Smart File Read with 6 Modes',
+    savings: '89-99%',
+    description: 'The core tool. Session-aware caching means files are only transmitted once. Re-reads return a 13-token cache hit. Six distinct modes let you choose exactly how much context the LLM receives — from dependency maps to full content.',
+    modes: [
+      { name: 'full', desc: 'Default. Reads the file with structured headers (deps, exports) and caches it. Re-reads return a compact cache-hit message.', savings: '~99% on re-reads' },
+      { name: 'map', desc: 'Dependency graph + exports + API signatures. Use for context files you won\'t edit. Structured headers show imports/exports at a glance.', savings: '85-95%' },
+      { name: 'signatures', desc: 'Extracts function signatures, interfaces, types, and exports. More detail than map mode. Supports TS/JS, Rust, Python, Go.', savings: '83-96%' },
+      { name: 'diff', desc: 'Returns only lines that changed since the last read. Perfect for monitoring edits.', savings: '70-95%' },
+      { name: 'aggressive', desc: 'Full content with syntax stripping: reduced indentation, removed comments, stripped empty lines.', savings: '20-40%' },
+      { name: 'entropy', desc: 'Shannon entropy filtering removes low-information lines. Jaccard deduplication collapses similar blocks.', savings: '60-85%' },
+    ],
+    example: {
+      input: 'ctx_read auth.ts --mode map',
+      output: `F1=auth.ts [123L]
+  deps: db, crypto, session
+  exports: createUser, authenticateUser, validateSession
+  API:
+    fn async createUser(email:s, password:s) → User
+    fn async authenticateUser(email:s, password:s) → Session
+    fn async validateSession(token:s) → boolean
+[794 tok saved (93%)]`,
+    },
+  },
+  {
+    id: 'ctx_tree',
+    name: 'ctx_tree',
+    tagline: 'Compact Project Structure',
+    savings: '40%',
+    description: 'Token-efficient directory listings using indentation instead of Unicode box-drawing. Shows file counts per directory so the LLM understands project scale without reading every path.',
+    modes: [],
+    example: {
+      input: 'ctx_tree --depth 2',
+      output: `src/ (45)
+  core/ (8)
+  tools/ (5)
+  dashboard/ (2)
+  patterns/ (5)
+package.json
+README.md
+[64 tok saved (34%)]`,
+    },
+  },
+  {
+    id: 'ctx_shell',
+    name: 'ctx_shell',
+    tagline: 'CLI Output Compression',
+    savings: '60-90%',
+    description: '50+ compression patterns across 12 categories — git, npm, cargo, docker, kubectl, gh, pip, ruff, eslint, prettier, tsc, curl, wget, and test runners. Also available as a transparent shell hook that compresses output automatically without LLM cooperation.',
+    modes: [],
+    example: {
+      input: 'ctx_shell "git status"',
+      output: `feature/auth ↑3
+staged: +session.ts ~login.ts ~api.ts
+unstaged: ~session.ts
+untracked: session.test.ts
+[534 tok saved (87%)]`,
+    },
+  },
+  {
+    id: 'ctx_compress',
+    name: 'ctx_compress',
+    tagline: 'Context Checkpoint',
+    savings: '90-95%',
+    description: 'Compresses all cached files into an ultra-compact signature map. Use as a memory checkpoint when conversations get long — paste the output into a fresh chat to carry over full project understanding at minimal token cost.',
+    modes: [],
+    example: {
+      input: 'ctx_compress',
+      output: `CTX CHECKPOINT (12 files)
+
+F1 auth.ts [123L]: fn generateToken, fn createUser, ...
+F2 db.ts [89L]: cl Database, fn query, fn migrate
+F3 routes.ts [234L]: fn setupRoutes, fn authMiddleware
+
+STATS: 34 reads, 22 hits (65%)
+COMPRESSION: 28450 -> 890 tok (97% saved)`,
+    },
+  },
+  {
+    id: 'ctx_benchmark',
+    name: 'ctx_benchmark',
+    tagline: 'Exact Token Measurements',
+    savings: 'Data-driven',
+    description: 'Benchmarks any file against all compression strategies using tiktoken. Shows exact token counts side-by-side so you can make data-driven decisions about which mode to use.',
+    modes: [],
+    example: {
+      input: 'ctx_benchmark auth.ts',
+      output: `Benchmark: auth.ts (123L)
+
+Strategy                     Tokens   Savings
+──────────────────────────────────────────────
+raw                             915  —
+aggressive                      860  -55 (6%)
+signatures (compact)            121  -794 (87%)
+signatures (tdd)                 98  -817 (89%)
+entropy                         198  -717 (78%)
+full + §MAP (tdd)               880  -35 (4%)
+aggressive + §MAP (tdd)         825  -90 (10%)
+cache hit                        13  -902 (99%)
+──────────────────────────────────────────────
+Best: "cache hit" saves 902 tokens (99%)
+TDD bonus (signatures): 23 extra tokens saved (19%)`,
+    },
+  },
+  {
+    id: 'ctx_metrics',
+    name: 'ctx_metrics',
+    tagline: 'Real-time Session Statistics',
+    savings: 'Monitoring',
+    description: 'Session-wide statistics with tiktoken-measured token counts and USD cost estimates. Tracks cache hit rates, per-tool and per-mode savings, and projected session costs.',
+    modes: [],
+    example: {
+      input: 'ctx_metrics',
+      output: `§metrics
+════════════════════════════════════════
+files:12 reads:34 hits:22 (65%)
+tok: 28.5K→4.1K | saved:24.3K (85.5%)
+cost: $0.4270→$0.0620 | -$0.3650
+
+tool            n    orig   saved    %
+────────────────────────────────────────
+ctx_read       18   22.1K   19.2K  87%
+ctx_shell       8    4.2K    3.1K  74%
+ctx_search      5    1.8K    1.4K  78%
+
+§refs:
+  F1=auth.ts [123L 915t r:4]
+  F2=db.ts [89L 678t r:3]
+
+∴ session savings (incl. thinking): $0.912`,
+    },
+  },
+  {
+    id: 'ctx_analyze',
+    name: 'ctx_analyze',
+    tagline: 'Information-Theoretic Analysis',
+    savings: 'Diagnostic',
+    description: 'Deep analysis of a file using Shannon entropy and Jaccard similarity. Shows exactly which lines carry real information vs. boilerplate, and recommends the optimal compression mode.',
+    modes: [],
+    example: {
+      input: 'ctx_analyze middleware.ts',
+      output: `ANALYSIS: middleware.ts (78L, 1856 tok)
+
+Entropy Distribution:
+  H̄ = 3.2 bits/char (σ = 1.1)
+  Low-entropy (H<2.0): 14 lines (18%)
+  High-entropy (H>4.0): 22 lines (28%)
+
+Pattern Analysis:
+  3 similar blocks (Jaccard ≥ 0.7)
+  Dedup potential: ~240 tokens
+
+Strategy Comparison:
+  raw           1,856 tok  —
+  signatures      312 tok  -83%
+  entropy         298 tok  -84%  ← recommended
+  cache hit        13 tok  -99%
+
+Recommendation: entropy (best first-read savings)`,
+    },
+  },
+  {
+    id: 'ctx_search',
+    name: 'ctx_search',
+    tagline: 'Token-efficient Code Search',
+    savings: '50-80%',
+    description: 'Searches files for patterns and returns only matching lines with compact context. Avoids the need to read entire files when looking for specific code.',
+    modes: [],
+    example: {
+      input: 'ctx_search "createUser" --ext ts',
+      output: `3 matches in 2 files:
+auth.ts:18 fn createUser(email:s, password:s, ...)
+routes.ts:45 await createUser(body.email, body.pwd, ...)
+routes.ts:89 // createUser validation
+[~1200 tok saved vs full reads]`,
+    },
+  },
+  {
+    id: 'cli_init',
+    name: 'lean-ctx init',
+    tagline: 'One-Command Setup',
+    savings: 'Auto-setup',
+    description: 'Initializes lean-ctx in the current project or globally. With --global, auto-installs 23 shell aliases for git, npm, cargo, docker, kubectl, gh, pip, ruff, and more into your shell profile (.zshrc / .bashrc).',
+    modes: [],
+    example: {
+      input: 'lean-ctx init --global',
+      output: `Installing lean-ctx shell aliases...
+Added to ~/.zshrc:
+  alias git='lean-ctx -c git'
+  alias npm='lean-ctx -c npm'
+  alias cargo='lean-ctx -c cargo'
+  alias docker='lean-ctx -c docker'
+  alias kubectl='lean-ctx -c kubectl'
+  alias gh='lean-ctx -c gh'
+  alias pip='lean-ctx -c pip'
+  ... (23 aliases total)
+Done! Restart your shell or run: source ~/.zshrc`,
+    },
+  },
+  {
+    id: 'cli_gain',
+    name: 'lean-ctx gain',
+    tagline: 'Persistent Savings Dashboard',
+    savings: 'Lifetime stats',
+    description: 'Shows cumulative token savings across all sessions. Stats are persisted to ~/.lean-ctx/stats.json. See total tokens saved, total cost avoided, and per-tool breakdowns over your entire usage history.',
+    modes: [],
+    example: {
+      input: 'lean-ctx gain',
+      output: `lean-ctx Token Savings
+══════════════════════════════════════════════════
+Total commands:  47
+Input tokens:    12.4K
+Output tokens:   4.8K
+Tokens saved:    7.6K (61.3%)
+Tracking since:  2026-03-23
+
+By Command:
+──────────────────────────────────────────────────
+Command               Count      Saved   Avg%
+ctx_read                 18      5.2K  91.0%
+ls                       12      2.1K  74.1%
+ctx_shell                 8      1.4K  74.0%
+git status                8        680  39.9%`,
+    },
+  },
+];
+---
+
+<BaseLayout title="Features — lean-ctx" description="8 MCP tools and 50+ CLI patterns that reduce LLM token consumption by 89-99%. Smart caching, signature extraction, entropy filtering, context compression, and more.">
+  <div class="relative max-w-7xl mx-auto px-6 py-24">
+    <div class="relative text-center mb-24">
+      <p class="text-xs font-semibold uppercase tracking-widest text-accent mb-3">Tool reference</p>
+      <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-5">Every Tool, <span class="text-accent">Explained</span></h1>
+      <p class="text-lg text-muted max-w-2xl mx-auto leading-relaxed">
+        8 MCP tools + a full CLI working together to minimize tokens while preserving the context your AI needs for high-quality reasoning.
+      </p>
+    </div>
+
+    <div class="relative space-y-20">
+      {tools.map((tool, i) => (
+        <section id={tool.id} class="scroll-mt-24">
+          <div class:list={['grid lg:grid-cols-2 gap-10 items-start', i % 2 === 1 && 'lg:grid-flow-dense']}>
+            <div class:list={[i % 2 === 1 && 'lg:col-start-2']}>
+              <div class="inline-flex items-center gap-2 px-3.5 py-1.5 mb-5 rounded-full bg-accent/8 border border-accent/10 text-xs font-semibold text-accent">
+                {tool.savings} savings
+              </div>
+              <h2 class="text-2xl font-bold mb-2 font-mono text-text-bright">{tool.name}</h2>
+              <p class="text-lg text-accent-2 mb-4">{tool.tagline}</p>
+              <p class="text-muted leading-relaxed mb-6">{tool.description}</p>
+
+              {tool.modes.length > 0 && (
+                <div class="space-y-3">
+                  <h3 class="text-xs font-semibold uppercase tracking-widest text-muted/60">Modes</h3>
+                  {tool.modes.map(mode => (
+                    <div class="card-premium rounded-xl p-4">
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-sm font-mono font-semibold text-text-bright">{mode.name}</span>
+                        <span class="text-xs text-accent font-medium">{mode.savings}</span>
+                      </div>
+                      <p class="text-xs text-muted">{mode.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div class:list={['rounded-2xl glass-strong overflow-hidden', i % 2 === 1 && 'lg:col-start-1']}>
+              <div class="flex items-center gap-2 px-5 py-3.5 border-b border-border/30">
+                <span class="w-2.5 h-2.5 rounded-full bg-danger/60"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-[#fbbf24]/60"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-accent/60"></span>
+                <span class="ml-2 text-xs text-muted/50 font-mono">{tool.name}</span>
+              </div>
+              <div class="p-6 font-mono text-sm leading-relaxed">
+                <p class="text-muted/60">$ {tool.example.input}</p>
+                <pre class="mt-3 text-text whitespace-pre-wrap">{tool.example.output}</pre>
+              </div>
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
+  </div>
+</BaseLayout>

@@ -1,0 +1,122 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Session Metrics & Savings Dashboard" description="Track token savings with ctx_metrics (per session), lean-ctx gain (CLI), and lean-ctx dashboard (web UI).">
+  <p>
+    lean-ctx tracks token savings at three levels:
+  </p>
+  <ul>
+    <li><strong>Per-session</strong> via the <code>ctx_metrics</code> MCP tool (in-editor)</li>
+    <li><strong>Lifetime CLI</strong> via <code>lean-ctx gain</code> (terminal)</li>
+    <li><strong>Web Dashboard</strong> via <code>lean-ctx dashboard</code> (browser)</li>
+  </ul>
+  <p>
+    Both MCP tool calls and shell hook invocations are tracked in <code>~/.lean-ctx/stats.json</code>.
+  </p>
+
+  <h2>lean-ctx dashboard (Web UI)</h2>
+  <p>
+    Opens an interactive web dashboard at <code>http://localhost:3333</code>:
+  </p>
+  <pre><code>lean-ctx dashboard
+lean-ctx dashboard --port=8080</code></pre>
+  <p>The dashboard includes:</p>
+  <ul>
+    <li><strong>5 KPI cards</strong> — Tokens Saved, Savings Rate, Total Commands, Days Active, Cost Saved</li>
+    <li><strong>5 interactive charts</strong> — Cumulative savings (area), daily rate (line), daily activity (stacked bar), top commands (horizontal bar), command distribution (doughnut)</li>
+    <li><strong>MCP vs Shell Hook breakdown</strong> — separate stats and badges for MCP tools (ctx_read etc.) and shell hook commands (git, npm etc.)</li>
+    <li><strong>Command table</strong> — all commands with count, input/output tokens, savings rate, and visual compression bars</li>
+    <li><strong>Daily history</strong> — last 30 days with activity bars</li>
+  </ul>
+
+  <h2>lean-ctx gain (CLI)</h2>
+  <p>
+    Quick terminal view of lifetime savings:
+  </p>
+  <pre><code>lean-ctx gain
+
+lean-ctx Token Savings
+══════════════════════════════════════════════════
+Total commands:  47
+Input tokens:    12.4K
+Output tokens:   4.8K
+Tokens saved:    7.6K (61.3%)
+Tracking since:  2026-03-23
+
+By Command:
+──────────────────────────────────────────────────
+Command               Count      Saved   Avg%
+ctx_read                 18      5.2K  91.0%
+ls                       12      2.1K  74.1%
+ctx_shell                 8      1.4K  74.0%
+══════════════════════════════════════════════════</code></pre>
+
+  <h2>ctx_metrics (Per-Session)</h2>
+  <p>Call <code>ctx_metrics</code> at any point during an MCP session to see current savings:</p>
+
+  <pre><code>ctx_metrics
+
+lean-ctx session metrics
+══════════════════════════════════════════════════
+Files tracked: 12 | Reads: 34 | Cache hits: 22 (65%)
+Input tokens:  28.5K original → 4.1K sent | 24.3K saved (85.5%)
+Cost estimate: $0.4270 without → $0.0620 with lean-ctx | $0.3650 saved
+
+By Tool:
+Tool           Calls  Original     Saved   Avg%
+──────────────────────────────────────────────────
+ctx_read          18     22.4K    19.2K    91%
+ctx_shell          8      4.8K     3.1K    74%
+ctx_tree           4      1.8K     1.2K    40%
+
+By Mode:
+Mode           Calls     Saved
+──────────────────────────────
+map                6    12.1K
+signatures         4     5.2K
+full               8     1.9K
+
+File Refs:
+  F1=auth.ts [123L 915t reads:5]
+  F2=db.ts [89L 412t reads:3]
+  F3=routes.ts [234L 1856t reads:2]
+
+Projected session savings (incl. thinking): $0.512</code></pre>
+
+  <h2>What's Tracked</h2>
+  <ul>
+    <li><strong>Files tracked:</strong> Number of unique files cached in the session</li>
+    <li><strong>Cache hits:</strong> Times a file was re-read from cache instead of disk</li>
+    <li><strong>Input tokens:</strong> Original vs. sent token counts (tiktoken-exact, o200k_base)</li>
+    <li><strong>Cost estimate:</strong> USD cost based on current API pricing ($15/M input tokens)</li>
+    <li><strong>By Tool:</strong> Calls, original tokens, saved tokens, and average savings per tool</li>
+    <li><strong>By Mode:</strong> How many calls used each ctx_read mode and how much each saved</li>
+    <li><strong>File Refs:</strong> All tracked files with their reference IDs, sizes, and read counts</li>
+    <li><strong>Projected savings:</strong> Estimated total session savings including thinking token impact</li>
+  </ul>
+
+  <h2>Token Counting</h2>
+  <p>
+    lean-ctx uses <code>tiktoken-rs</code> with the <code>o200k_base</code> encoding (same as GPT-4o,
+    Claude, and other modern models) for exact token counting. No estimation, no heuristics.
+  </p>
+
+  <h2>Using ctx_benchmark</h2>
+  <p>
+    To find the optimal compression mode for a specific file, use <code>ctx_benchmark</code>:
+  </p>
+  <pre><code>ctx_benchmark auth.ts
+
+Benchmark: auth.ts (123L)
+
+Strategy             Tokens  Savings
+──────────────────────────────────────
+raw                     915  —
+aggressive              782  -133 (15%)
+signatures              121  -794 (87%)
+entropy                 198  -717 (78%)
+cache hit                13  -902 (99%)
+──────────────────────────────────────
+Best: cache hit (99% savings)</code></pre>
+</DocsLayout>

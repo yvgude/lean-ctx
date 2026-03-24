@@ -1,0 +1,140 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Token Dense Dialect (TDD)" description="TDD compresses LLM communication using mathematical symbols and short identifiers for 8-25% additional token savings.">
+  <p>
+    Token Dense Dialect (TDD) is a neural shorthand system that compresses LLM communication beyond structural compression.
+    While other strategies compress <strong>file content</strong> sent to the LLM, TDD compresses
+    <strong>how the LLM communicates</strong> — both in tool responses and in the LLM's own output.
+  </p>
+
+  <h2>How TDD Works</h2>
+
+  <p>TDD operates on three levels:</p>
+
+  <h3>1. Signature Notation</h3>
+  <p>Code signatures are compressed using mathematical symbols instead of verbose keywords:</p>
+  <table>
+    <thead>
+      <tr><th>Symbol</th><th>Meaning</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>λ</code></td><td>function / handler</td><td><code>λ+handle(⊕,path:s)→s</code></td></tr>
+      <tr><td><code>§</code></td><td>struct / class / module</td><td><code>§+UserService</code></td></tr>
+      <tr><td><code>∂</code></td><td>interface / trait</td><td><code>∂+Serializable</code></td></tr>
+      <tr><td><code>τ</code></td><td>type alias</td><td><code>τ+UserId</code></td></tr>
+      <tr><td><code>ε</code></td><td>enum</td><td><code>ε+Status</code></td></tr>
+      <tr><td><code>ν</code></td><td>const / variable</td><td><code>ν+MAX_RETRIES:n</code></td></tr>
+      <tr><td><code>+</code> / <code>-</code></td><td>public / private</td><td><code>λ+</code> = pub fn</td></tr>
+      <tr><td><code>~</code></td><td>async</td><td><code>~λ+fetch(url:s)→R</code></td></tr>
+      <tr><td><code>⊕</code></td><td>self / this</td><td><code>λ+handle(⊕,req:R)→R</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>2. Compact Types</h3>
+  <p>Common types are shortened to single characters:</p>
+  <table>
+    <thead>
+      <tr><th>Short</th><th>Type</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>s</code></td><td>String</td></tr>
+      <tr><td><code>n</code></td><td>number / i32 / u64 / etc.</td></tr>
+      <tr><td><code>b</code></td><td>bool</td></tr>
+      <tr><td><code>∅</code></td><td>void / unit</td></tr>
+      <tr><td><code>[]</code></td><td>Vec / Array</td></tr>
+      <tr><td><code>?</code></td><td>Option / Maybe</td></tr>
+      <tr><td><code>R</code></td><td>Result</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3. Symbol Mapping Engine (§MAP)</h3>
+  <p>
+    Long identifiers (more than 12 characters) are automatically mapped to short IDs
+    like <code>α1</code>, <code>α2</code>, <code>α3</code>. A <code>§MAP</code> table at the end
+    provides the mapping, allowing the LLM to reference symbols compactly in follow-up messages.
+  </p>
+  <pre><code>{`§MAP:
+α1=authenticateUser
+α2=validateSession
+α3=createSessionToken
+α4=refreshAuthToken`}</code></pre>
+
+  <h2>Before &amp; After</h2>
+
+  <h3>Without TDD (compact mode)</h3>
+  <pre><code>{`fn ⊛ pub async handle(&self, path: String) -> String
+fn ⊛ pub create_session_token(user_id: u64, expiry: Duration) -> Result<Token>
+fn ⊛ pub validate_session(token: &str) -> Result<Session>`}</code></pre>
+
+  <h3>With TDD</h3>
+  <pre><code>{`~λ+handle(⊕,path:s)→s
+λ+α1(user_id:n,expiry:Duration)→R
+λ+α2(token:&s)→R
+
+§MAP:
+α1=create_session_token
+α2=validate_session`}</code></pre>
+
+  <h2>Where TDD Is Applied</h2>
+  <p>TDD is integrated across all 8 MCP tools:</p>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>TDD Feature</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>ctx_read</code></td><td>λ/§/∂ notation in signatures + §MAP in full/aggressive mode</td></tr>
+      <tr><td><code>ctx_compress</code></td><td>TDD signatures in context checkpoints</td></tr>
+      <tr><td><code>ctx_benchmark</code></td><td>TDD as additional strategy comparison (signatures tdd, full+§MAP, aggressive+§MAP)</td></tr>
+      <tr><td><code>ctx_analyze</code></td><td>TDD strategies in the recommendation engine</td></tr>
+      <tr><td><code>ctx_metrics</code></td><td>Compact §metrics format with short labels</td></tr>
+      <tr><td><code>ctx_search</code></td><td>§MAP symbol mapping on code search results</td></tr>
+      <tr><td><code>ctx_shell</code></td><td>Auto-detected symbol mapping on code output</td></tr>
+      <tr><td><code>ctx_tree</code></td><td>Already ultra-compact (no additional TDD needed)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>LLM Response Compression</h2>
+  <p>
+    When TDD mode is active, the MCP server injects special instructions that tell the LLM
+    to respond in Token Dense Dialect. This means the LLM's own responses become shorter:
+  </p>
+  <ul>
+    <li>Uses symbol shorthand: <code>→ ∴ ≈ ✓ ✗ λ ∂ §</code></li>
+    <li>Drops articles and filler words</li>
+    <li>References files by short IDs (F1, F2...)</li>
+    <li>Shows only diff lines for code changes</li>
+    <li>Uses abbreviations: <code>fn, cfg, impl, deps, req, res, ctx, err</code></li>
+  </ul>
+  <p>
+    <strong>Result</strong>: 8-25% additional savings on top of structural compression, applying to
+    both input tokens (tool responses) and output/thinking tokens (LLM reasoning).
+  </p>
+
+  <h2>Configuration</h2>
+  <p>TDD is controlled via the <code>LEAN_CTX_CRP_MODE</code> environment variable:</p>
+  <table>
+    <thead>
+      <tr><th>Value</th><th>Description</th><th>Default</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>tdd</code></td><td>Maximum compression — symbol shorthand, §MAP, LLM instruction injection</td><td>✓</td></tr>
+      <tr><td><code>compact</code></td><td>Moderate — skip filler words, use abbreviations, no symbols</td><td></td></tr>
+      <tr><td><code>off</code></td><td>Standard output, no CRP instructions</td><td></td></tr>
+    </tbody>
+  </table>
+  <p>
+    TDD is <strong>enabled by default</strong> — no configuration needed. Just install lean-ctx
+    and all tools automatically use TDD compression.
+  </p>
+
+  <h2>Supported Languages</h2>
+  <p>TDD signature extraction and symbol mapping works across:</p>
+  <ul>
+    <li><strong>TypeScript / JavaScript</strong> — functions, classes, interfaces, types, enums</li>
+    <li><strong>Rust</strong> — fn, struct, impl, trait, enum, type, const</li>
+    <li><strong>Python</strong> — def, class, async def</li>
+    <li><strong>Go</strong> — func, type, interface, struct</li>
+  </ul>
+</DocsLayout>

@@ -1,0 +1,114 @@
+---
+const editors = [
+  {
+    name: 'Cursor',
+    price: '$20 — $200/mo',
+    limits: '500 fast, then on-demand',
+    context: 'Up to 200K tokens',
+    benefit: 'Credits stretch ~3x further',
+  },
+  {
+    name: 'GitHub Copilot',
+    price: 'Free — $39/mo',
+    limits: '50-1,500 premium req/mo',
+    context: 'Up to 200K tokens',
+    benefit: 'Better context per request',
+  },
+  {
+    name: 'Claude Code',
+    price: '$20 — $200/mo',
+    limits: '~45 msgs/5h (Pro)',
+    context: '200K tokens',
+    benefit: 'Sessions ~3x longer',
+  },
+  {
+    name: 'Windsurf',
+    price: '$15 — $60/mo',
+    limits: '500 credits/mo (Pro)',
+    context: '200K tokens',
+    benefit: 'Credits last ~2x longer',
+  },
+  {
+    name: 'Zed AI',
+    price: '$10 — $50/mo',
+    limits: 'Credit-based',
+    context: 'Up to 128K tokens',
+    benefit: 'More completions per credit',
+  },
+  {
+    name: 'Cline',
+    price: 'Bring your API key',
+    limits: 'Pay per token (API)',
+    context: '200K tokens',
+    benefit: 'Direct API cost reduction',
+  },
+  {
+    name: 'Continue',
+    price: 'Free + API costs',
+    limits: 'Pay per token (API)',
+    context: '200K tokens',
+    benefit: 'Fewer tokens per autocomplete',
+  },
+  {
+    name: 'Aider',
+    price: 'Free + API costs',
+    limits: 'Pay per token (API)',
+    context: '128K tokens',
+    benefit: 'Lower per-session API bills',
+  },
+];
+---
+
+<section class="relative py-28 overflow-hidden">
+  <div class="relative max-w-7xl mx-auto px-6">
+    <div class="text-center mb-16">
+      <p class="text-xs font-semibold uppercase tracking-widest text-accent mb-3">Universal compatibility</p>
+      <h2 class="text-3xl sm:text-4xl font-bold mb-5">No AI tool offers unlimited usage.<br /><span class="text-accent">Every token counts.</span></h2>
+      <p class="text-muted text-lg max-w-3xl mx-auto leading-relaxed">
+        Whether you pay per request, per credit, or per token — lean-ctx compresses context so your limits stretch further.
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-center gap-8 mb-16">
+      <div class="text-center">
+        <p class="text-3xl font-extrabold text-accent">~40</p>
+        <p class="text-xs text-muted mt-1">file reads per session</p>
+      </div>
+      <div class="w-px h-10 bg-border/30 hidden sm:block"></div>
+      <div class="text-center">
+        <p class="text-3xl font-extrabold text-accent">~85K</p>
+        <p class="text-xs text-muted mt-1">tokens of context noise</p>
+      </div>
+      <div class="w-px h-10 bg-border/30 hidden sm:block"></div>
+      <div class="text-center">
+        <p class="text-3xl font-extrabold text-accent">~9K</p>
+        <p class="text-xs text-muted mt-1">with lean-ctx (89% less)</p>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      {editors.map(e => (
+        <div class="card-premium rounded-2xl p-6">
+          <h3 class="text-lg font-bold text-text-bright mb-4">{e.name}</h3>
+          <div class="space-y-3 text-sm">
+            <div>
+              <p class="text-muted/50 text-xs uppercase tracking-widest">Price</p>
+              <p class="text-muted">{e.price}</p>
+            </div>
+            <div>
+              <p class="text-muted/50 text-xs uppercase tracking-widest">Limits</p>
+              <p class="text-muted">{e.limits}</p>
+            </div>
+            <div>
+              <p class="text-muted/50 text-xs uppercase tracking-widest">Context</p>
+              <p class="text-muted">{e.context}</p>
+            </div>
+          </div>
+          <div class="mt-5 pt-4 border-t border-border/20">
+            <p class="text-sm font-semibold text-accent">{e.benefit}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

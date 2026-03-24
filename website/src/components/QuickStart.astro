@@ -1,0 +1,166 @@
+---
+const editorConfigs = [
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    file: '~/.cursor/mcp.json',
+    code: `{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`,
+  },
+  {
+    id: 'copilot',
+    label: 'GitHub Copilot',
+    file: '.github/copilot/mcp.json',
+    code: `{
+  "servers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`,
+  },
+  {
+    id: 'claude',
+    label: 'Claude Code',
+    file: 'Terminal',
+    code: `claude mcp add lean-ctx lean-ctx`,
+  },
+  {
+    id: 'windsurf',
+    label: 'Windsurf',
+    file: '~/.codeium/windsurf/mcp_config.json',
+    code: `{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`,
+  },
+];
+---
+
+<section class="relative py-28 overflow-hidden">
+  <div class="relative max-w-5xl mx-auto px-6">
+    <div class="text-center mb-16">
+      <p class="text-xs font-semibold uppercase tracking-widest text-accent mb-3">Get started</p>
+      <h2 class="text-3xl sm:text-4xl font-bold mb-5">Running in <span class="text-accent">60 seconds</span></h2>
+      <p class="text-muted text-lg max-w-2xl mx-auto leading-relaxed">
+        No cloud account. No API keys. No subscription. Install, configure, done.
+      </p>
+    </div>
+
+    <div class="card-premium rounded-2xl overflow-hidden mb-5">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-border/30">
+        <span class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-sm font-bold text-accent">1</span>
+        <div>
+          <p class="text-sm font-bold text-text-bright">Install</p>
+          <p class="text-xs text-muted/50">Single Rust binary via Homebrew or crates.io</p>
+        </div>
+      </div>
+      <pre class="p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto"><code># Homebrew (macOS)
+brew tap yvgude/tap && brew install lean-ctx
+
+# Or via crates.io
+cargo install lean-ctx</code></pre>
+    </div>
+
+    <div class="card-premium rounded-2xl overflow-hidden mb-5">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-border/30">
+        <span class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-sm font-bold text-accent">2</span>
+        <div>
+          <p class="text-sm font-bold text-text-bright">Set Up Shell Hook</p>
+          <p class="text-xs text-muted/50">Installs 23 aliases for git, npm, docker, kubectl, gh, and more</p>
+        </div>
+      </div>
+      <pre class="p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto"><code>lean-ctx init --global</code></pre>
+    </div>
+
+    <div class="card-premium rounded-2xl overflow-hidden mb-5">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-border/30">
+        <span class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-sm font-bold text-accent">3</span>
+        <div>
+          <p class="text-sm font-bold text-text-bright">Configure Your Editor</p>
+          <p class="text-xs text-muted/50">Add lean-ctx to your MCP configuration</p>
+        </div>
+      </div>
+      <div class="border-b border-border/20">
+        <div class="flex gap-1 px-5 pt-3" id="editor-tabs">
+          {editorConfigs.map((e, i) => (
+            <button
+              data-editor={e.id}
+              class:list={[
+                'px-3.5 py-2 rounded-t-lg text-xs font-medium transition-all duration-200 editor-tab cursor-pointer',
+                i === 0 ? 'bg-surface-2 text-accent border-t border-l border-r border-accent/20' : 'text-muted hover:text-text'
+              ]}
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {editorConfigs.map((e, i) => (
+        <div data-editor-panel={e.id} class:list={['editor-panel', i !== 0 && 'hidden']}>
+          <p class="px-5 pt-3 text-xs text-muted/50 font-mono">{e.file}</p>
+          <pre class="p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto"><code>{e.code}</code></pre>
+        </div>
+      ))}
+    </div>
+
+    <div class="card-premium rounded-2xl overflow-hidden mb-12">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-border/30">
+        <span class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-sm font-bold text-accent">4</span>
+        <div>
+          <p class="text-sm font-bold text-text-bright">Watch Your Savings</p>
+          <p class="text-xs text-muted/50">Every read is now optimized</p>
+        </div>
+      </div>
+      <pre class="p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto"><code>$ ctx_metrics
+
+lean-ctx session metrics
+Files tracked: 12 | Reads: 34 | Cache hits: 22 (65%)
+Input tokens: 28.5K → 4.1K sent | 24.3K saved (85%)
+Cost estimate: $0.427 → $0.062 | $0.365 saved</code></pre>
+    </div>
+
+    <div class="text-center">
+      <a href="/docs/getting-started" class="btn-glossy inline-flex items-center px-8 py-3.5 text-sm font-bold rounded-xl text-bg">
+        Full Installation Guide
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<script>
+  const editorTabs = document.querySelectorAll('.editor-tab');
+  const editorPanels = document.querySelectorAll('.editor-panel');
+
+  editorTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-editor');
+
+      editorTabs.forEach(t => {
+        t.classList.remove('bg-surface-2', 'text-accent', 'border-t', 'border-l', 'border-r', 'border-accent/20');
+        t.classList.add('text-muted');
+      });
+      tab.classList.add('bg-surface-2', 'text-accent', 'border-t', 'border-l', 'border-r', 'border-accent/20');
+      tab.classList.remove('text-muted');
+
+      editorPanels.forEach(p => {
+        if (p.getAttribute('data-editor-panel') === target) {
+          p.classList.remove('hidden');
+        } else {
+          p.classList.add('hidden');
+        }
+      });
+    });
+  });
+</script>

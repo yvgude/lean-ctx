@@ -1,0 +1,124 @@
+---
+const navItems = [
+  { label: 'Features', href: '/features' },
+  { label: 'Docs', href: '/docs/getting-started' },
+];
+
+const currentPath = Astro.url.pathname;
+const isDocsActive = currentPath.startsWith('/docs');
+---
+
+<header class="sticky top-0 z-50 glass-strong">
+  <nav class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 group">
+      <svg class="w-7 h-7 shrink-0" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="32" height="32" rx="7" fill="#0d0d16" class="group-hover:fill-[#111120] transition-colors"/>
+        <path d="M6 16L13 9" stroke="#6ee7b7" stroke-width="2.8" stroke-linecap="round"/>
+        <path d="M6 16L13 23" stroke="#6ee7b7" stroke-width="2.8" stroke-linecap="round"/>
+        <rect x="17" y="10" width="2.2" height="12" rx="1.1" fill="#6ee7b7"/>
+        <rect x="22" y="12" width="2.2" height="8" rx="1.1" fill="#6ee7b7" opacity="0.6"/>
+        <rect x="27" y="14" width="2.2" height="4" rx="1.1" fill="#6ee7b7" opacity="0.3"/>
+      </svg>
+      <span class="text-xl font-bold tracking-tight text-text-bright">lean</span>
+      <span class="text-xl font-light text-accent -ml-1">-ctx</span>
+    </a>
+
+    <div class="hidden md:flex items-center gap-8">
+      <a
+        href="/features"
+        class:list={[
+          'text-sm transition-all duration-300',
+          currentPath === '/features' || currentPath === '/features/'
+            ? 'text-accent font-medium'
+            : 'text-muted hover:text-text-bright'
+        ]}
+      >
+        Features
+      </a>
+      <a
+        href="/docs/getting-started"
+        class:list={[
+          'text-sm transition-all duration-300',
+          isDocsActive
+            ? 'text-accent font-medium'
+            : 'text-muted hover:text-text-bright'
+        ]}
+      >
+        Docs
+      </a>
+    </div>
+
+    <div class="flex items-center gap-3 sm:gap-4">
+      <span class="hidden lg:inline text-xs font-mono text-muted/30">v1.4.0</span>
+      <a
+        href="https://buymeacoffee.com/yvgude"
+        target="_blank"
+        rel="noopener"
+        class="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted hover:text-[#FFDD00] transition-colors duration-300"
+        aria-label="Buy me a coffee"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20.216 6.415l-.132-.666c-.119-.598-.388-1.163-1.001-1.379-.197-.069-.42-.098-.57-.241-.152-.143-.196-.366-.231-.572-.065-.378-.125-.756-.192-1.133-.057-.325-.102-.69-.25-.987-.195-.4-.597-.634-.996-.788a5.723 5.723 0 00-.626-.194c-1-.263-2.05-.36-3.077-.416a25.834 25.834 0 00-3.7.062c-.915.083-1.88.184-2.75.5-.318.116-.646.256-.888.501-.297.302-.393.77-.177 1.146.154.267.415.456.692.58.36.162.737.284 1.123.366 1.075.238 2.189.331 3.287.37 1.218.05 2.437.01 3.65-.118.299-.033.598-.073.896-.119.352-.054.578-.513.474-.834-.124-.383-.457-.531-.834-.473-.466.074-.96.108-1.382.146-1.177.08-2.358.082-3.536.006a22.228 22.228 0 01-1.157-.107c.505-.024.853-.087 1.35-.156.734-.102 1.471-.19 2.209-.28.53-.064 1.074-.098 1.6-.182.488-.078.953-.217 1.405-.422.457-.208.757-.537.905-.996.034-.114.054-.232.074-.35l.088-.455c.025-.132.05-.264.073-.396zM9.333 12.64l.007.009c-.003-.003-.007-.006-.007-.009zm9.34-4.025c-.024.073-.065.144-.08.22-.023.121-.015.247-.016.371-.003.327-.015.654-.04.98-.024.32-.058.637-.105.953-.085.565-.202 1.124-.354 1.675-.118.426-.256.844-.412 1.256-.068.179-.139.357-.227.527-.14.27-.336.396-.642.389-.36-.009-.72-.019-1.079-.035a48.395 48.395 0 01-3.614-.249c-1.033-.104-2.061-.234-3.082-.405l-.138-.025c.003.009.007.013.013.022l-.01-.018a.74.74 0 00-.045-.083c-.204-.335-.502-.59-.861-.716-.354-.124-.74-.125-1.109-.064-.316.053-.582.192-.82.36a5.87 5.87 0 00-.32.263c-.071.062-.16.118-.189.209-.037.112.015.239.094.329.207.235.534.339.836.32a.75.75 0 00.265-.073c.102-.052.197-.122.31-.148.175-.04.355-.012.53.027.25.056.495.137.73.236.476.203.917.466 1.324.775.148.112.286.242.45.33.323.175.73.162 1.081.064.293-.082.555-.234.8-.402.362-.249.688-.537.984-.856.304-.327.564-.692.756-1.094.074-.156.137-.317.184-.483.134.148.261.303.384.46.483.613.897 1.278 1.214 1.987a16.55 16.55 0 01.727 2.055c.068.244.124.491.159.743.005.037.008.075.01.112l.012.152c.001.048-.003.097.01.143a.38.38 0 00.105.19c.053.05.121.074.188.083a.596.596 0 00.184-.003c.068-.012.127-.042.178-.09.056-.052.084-.124.098-.198.017-.093.004-.187-.007-.279a7.368 7.368 0 00-.215-1.148c-.26-.96-.633-1.88-1.095-2.757a14.47 14.47 0 00-.765-1.298c.14-.07.273-.154.395-.253.203-.163.37-.37.484-.609.1-.21.162-.44.187-.671z"/>
+        </svg>
+        Support
+      </a>
+      <a
+        href="https://discord.gg/pTHkG9Hew9"
+        target="_blank"
+        rel="noopener"
+        class="text-muted hover:text-[#5865F2] transition-colors duration-300"
+        aria-label="Discord"
+      >
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+        </svg>
+      </a>
+      <a
+        href="https://github.com/yvgude/lean-ctx"
+        target="_blank"
+        rel="noopener"
+        class="text-muted hover:text-accent transition-colors duration-300"
+        aria-label="GitHub"
+      >
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+        </svg>
+      </a>
+      <a
+        href="/docs/getting-started"
+        class="hidden sm:inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg btn-glossy text-bg"
+      >
+        Get Started
+      </a>
+    </div>
+
+    <button
+      id="mobile-menu-btn"
+      class="md:hidden text-muted hover:text-text"
+      aria-label="Menu"
+    >
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+      </svg>
+    </button>
+  </nav>
+
+  <div id="mobile-menu" class="hidden md:hidden border-t border-border/50 px-4 py-4 space-y-1">
+    <a href="/features" class="block py-2.5 px-3 text-sm text-muted hover:text-accent hover:bg-surface-2 rounded-lg transition-all">Features</a>
+    <a href="/docs/getting-started" class="block py-2.5 px-3 text-sm text-muted hover:text-accent hover:bg-surface-2 rounded-lg transition-all">Getting Started</a>
+    <a href="/docs/installation" class="block py-2.5 px-3 text-sm text-muted hover:text-accent hover:bg-surface-2 rounded-lg transition-all">Installation</a>
+    <a href="/docs/tdd" class="block py-2.5 px-3 text-sm text-muted hover:text-accent hover:bg-surface-2 rounded-lg transition-all">Token Dense Dialect</a>
+    <a href="/docs/cli" class="block py-2.5 px-3 text-sm text-muted hover:text-accent hover:bg-surface-2 rounded-lg transition-all">CLI Reference</a>
+    <div class="pt-3 flex flex-col gap-2">
+      <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="block text-center py-2.5 text-sm font-medium rounded-lg border border-[#5865F2]/30 bg-[#5865F2]/10 text-[#5865F2]">Discord</a>
+      <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="block text-center py-2.5 text-sm font-medium rounded-lg btn-outline-glossy text-accent">GitHub</a>
+      <a href="/docs/getting-started" class="block text-center py-2.5 text-sm font-semibold rounded-lg btn-glossy text-bg">Get Started</a>
+    </div>
+  </div>
+</header>
+
+<script>
+  const btn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  btn?.addEventListener('click', () => menu?.classList.toggle('hidden'));
+</script>

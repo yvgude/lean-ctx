@@ -1,0 +1,169 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="CLI Reference" description="lean-ctx v1.4.0 command-line interface — MCP server, shell hook, CLI commands, and persistent stats.">
+  <p>
+    lean-ctx is a single Rust binary that operates in multiple modes depending on the command-line arguments.
+    It includes a full set of CLI commands alongside the MCP server and shell hook.
+  </p>
+
+  <h2>Installation</h2>
+
+  <h3>Homebrew (macOS)</h3>
+  <pre><code>brew tap yvgude/tap
+brew install lean-ctx</code></pre>
+
+  <h3>Cargo</h3>
+  <pre><code>cargo install lean-ctx</code></pre>
+
+  <h2>Usage</h2>
+  <pre><code>lean-ctx [command] [options]</code></pre>
+
+  <h2>Commands</h2>
+
+  <h3>MCP Server (default, no args)</h3>
+  <p>Starts the MCP server via stdio. This is the mode used by editors like Cursor, Claude Code, Copilot, and Windsurf.</p>
+  <pre><code>lean-ctx</code></pre>
+
+  <h3>init</h3>
+  <p>Initialize lean-ctx for the current project or globally. With <code>--global</code>, auto-installs 23 shell aliases into your shell profile (<code>.zshrc</code> / <code>.bashrc</code>).</p>
+  <pre><code># Project-local setup
+lean-ctx init
+
+# Global shell alias installation (23 aliases)
+lean-ctx init --global</code></pre>
+
+  <h3>gain</h3>
+  <p>Shows the persistent savings in the terminal — cumulative token savings across all sessions (MCP tools + shell hook). Stats are stored in <code>~/.lean-ctx/stats.json</code>.</p>
+  <pre><code>lean-ctx gain</code></pre>
+  <pre><code>lean-ctx Token Savings
+══════════════════════════════════════════════════
+Total commands:  47
+Input tokens:    12.4K
+Output tokens:   4.8K
+Tokens saved:    7.6K (61.3%)
+Tracking since:  2026-03-23
+
+By Command:
+──────────────────────────────────────────────────
+Command               Count      Saved   Avg%
+ctx_read                 18      5.2K  91.0%
+ls                       12      2.1K  74.1%
+ctx_shell                 8      1.4K  74.0%
+git status                8        680  39.9%
+══════════════════════════════════════════════════</code></pre>
+
+  <h3>dashboard</h3>
+  <p>Opens a web dashboard at <code>http://localhost:3333</code> with interactive charts, KPI cards, and detailed breakdowns of MCP vs Shell Hook usage.</p>
+  <pre><code>lean-ctx dashboard
+lean-ctx dashboard --port=8080</code></pre>
+
+  <h3>discover</h3>
+  <p>Analyzes your shell history and identifies commands that could be compressed by lean-ctx but are not currently using the shell hook.</p>
+  <pre><code>lean-ctx discover</code></pre>
+
+  <h3>session</h3>
+  <p>Shows adoption statistics — how many of your commands are using lean-ctx compression.</p>
+  <pre><code>lean-ctx session</code></pre>
+
+  <h3>config</h3>
+  <p>Manage the lean-ctx configuration file at <code>~/.lean-ctx/config.toml</code>.</p>
+  <pre><code># Show current configuration
+lean-ctx config
+
+# Create default config file
+lean-ctx config init</code></pre>
+
+  <h3>read</h3>
+  <p>Read a file with lean-ctx compression directly from the terminal.</p>
+  <pre><code>lean-ctx read src/auth.ts
+lean-ctx read src/auth.ts --mode map
+lean-ctx read src/auth.ts --mode signatures</code></pre>
+
+  <h3>diff</h3>
+  <p>Compare two files and show a compressed diff.</p>
+  <pre><code>lean-ctx diff src/auth.ts src/auth.backup.ts</code></pre>
+
+  <h3>grep</h3>
+  <p>Compressed grep — searches for patterns and returns compact results.</p>
+  <pre><code>lean-ctx grep "createUser" src/</code></pre>
+
+  <h3>find</h3>
+  <p>Compressed find — locates files with token-efficient output.</p>
+  <pre><code>lean-ctx find "*.ts" src/</code></pre>
+
+  <h3>ls</h3>
+  <p>Compressed directory listing with indentation-based format.</p>
+  <pre><code>lean-ctx ls src/</code></pre>
+
+  <h3>deps</h3>
+  <p>Shows the dependency graph for a file — imports, exports, and connections.</p>
+  <pre><code>lean-ctx deps src/auth.ts</code></pre>
+
+  <h3>Shell Hook: -c / exec</h3>
+  <p>Execute a command and compress the output before printing.</p>
+  <pre><code>lean-ctx -c git status
+lean-ctx exec cargo build</code></pre>
+  <p>Ideal for shell aliases (or use <code>lean-ctx init --global</code> to auto-install 23 of them):</p>
+  <pre><code>alias git='lean-ctx -c git'
+alias cargo='lean-ctx -c cargo'</code></pre>
+
+  <h3>shell</h3>
+  <p>Launch a shell wrapper that compresses all command output:</p>
+  <pre><code>lean-ctx shell
+lean-ctx --shell</code></pre>
+
+  <h3>--version</h3>
+  <pre><code>lean-ctx --version
+# lean-ctx 1.4.0</code></pre>
+
+  <h3>--help</h3>
+  <pre><code>lean-ctx --help</code></pre>
+
+  <h2>Supported Shell Hook Patterns (50+)</h2>
+  <p>The shell hook (via <code>-c</code>, <code>exec</code>, <code>shell</code>, or aliases) applies pattern-based compression across 12 categories:</p>
+
+  <table>
+    <thead>
+      <tr><th>Category</th><th>Commands</th><th>Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Git</strong> (16)</td><td>status, log, diff, add, commit, push, pull, fetch, clone, branch, checkout, switch, merge, stash, tag, reset, remote, blame, cherry-pick</td><td>70-95%</td></tr>
+      <tr><td><strong>Docker</strong> (10)</td><td>build, ps, images, logs, compose ps/up/down, exec, network, volume, inspect</td><td>70-90%</td></tr>
+      <tr><td><strong>npm/pnpm/yarn</strong> (6)</td><td>install, test, run, list, outdated, audit</td><td>70-90%</td></tr>
+      <tr><td><strong>Cargo</strong> (3)</td><td>build, test, clippy</td><td>80%</td></tr>
+      <tr><td><strong>GitHub CLI</strong> (8)</td><td>pr list/view/create/merge, issue list/view/create, run list/view</td><td>60-80%</td></tr>
+      <tr><td><strong>Kubernetes</strong> (8)</td><td>get, logs, describe, apply, delete, exec, top, rollout, scale</td><td>60-85%</td></tr>
+      <tr><td><strong>Python</strong> (8)</td><td>pip install/list/outdated/uninstall/check, ruff check/format</td><td>60-80%</td></tr>
+      <tr><td><strong>Linters</strong> (3)</td><td>eslint, biome, prettier, stylelint</td><td>60-70%</td></tr>
+      <tr><td><strong>Build Tools</strong> (3)</td><td>tsc, next build, vite build</td><td>60-80%</td></tr>
+      <tr><td><strong>Test Runners</strong> (5)</td><td>jest, pytest, go test, playwright, cypress</td><td>90%</td></tr>
+      <tr><td><strong>Utils</strong> (5)</td><td>curl, grep/rg, find, ls, wget</td><td>50-89%</td></tr>
+      <tr><td><strong>Data</strong> (3)</td><td>env (filtered), JSON schema extraction, log deduplication</td><td>50-80%</td></tr>
+    </tbody>
+  </table>
+
+  <p>Unrecognized commands get generic compression: ANSI stripping, empty line removal, and long output truncation.</p>
+
+  <h2>23 Auto-Rewritten Aliases</h2>
+  <p>After <code>lean-ctx init --global</code>, these commands are transparently compressed:</p>
+  <pre><code>git, npm, pnpm, yarn, cargo, docker, docker-compose, kubectl, k,
+gh, pip, pip3, ruff, go, golangci-lint, eslint, prettier, tsc,
+ls, find, grep, curl, wget</code></pre>
+
+  <h2>Persistent Stats</h2>
+  <p>
+    lean-ctx tracks savings persistently in <code>~/.lean-ctx/stats.json</code>.
+    Every MCP session and shell hook invocation contributes to the cumulative stats.
+    Use <code>lean-ctx gain</code> to view in the terminal, or <code>lean-ctx dashboard</code>
+    for the web UI at localhost:3333.
+  </p>
+
+  <h2>Exit Codes</h2>
+  <p>
+    In shell hook mode (<code>-c</code>), lean-ctx forwards the exit code of the wrapped command.
+    This ensures scripts and CI pipelines work correctly. If the command fails (non-zero exit),
+    the full original output is saved to <code>~/.lean-ctx/tee/</code> for debugging.
+  </p>
+</DocsLayout>
