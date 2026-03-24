@@ -13,7 +13,7 @@
 lean-ctx reduces LLM token consumption by **89-99%** through two complementary strategies in a single binary:
 
 1. **Shell Hook** — Transparently compresses CLI output before it reaches the LLM. Works without LLM cooperation.
-2. **MCP Server** — 8 tools for cached file reads, dependency maps, entropy analysis, and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, and any MCP-compatible editor.
+2. **MCP Server** — 8 tools for cached file reads, dependency maps, entropy analysis, and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, OpenCode, and any MCP-compatible editor. Shell hook also benefits OpenClaw via transparent compression.
 
 ## Token Savings (Typical Cursor/Claude Code Session)
 
@@ -368,6 +368,39 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
+### OpenCode
+
+Add to `~/.config/opencode/opencode.json` (global) or `opencode.json` (project):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "lean-ctx": {
+      "type": "local",
+      "command": ["lean-ctx"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### OpenClaw
+
+OpenClaw uses a skills-based system instead of MCP. LeanCTX integrates via the **shell hook** — all commands OpenClaw runs through its `exec` tool are automatically compressed when the lean-ctx aliases are active.
+
+```bash
+# 1. Install shell aliases (if not done already)
+lean-ctx init --global
+source ~/.zshrc
+
+# 2. (Optional) Install the LeanCTX skill for deeper integration
+mkdir -p ~/.openclaw/skills/lean-ctx
+cp skills/lean-ctx/SKILL.md ~/.openclaw/skills/lean-ctx/
+```
+
+The skill teaches OpenClaw to prefer `lean-ctx -c <command>` for shell operations, use compressed file reads, and leverage the dashboard for analytics.
+
 ### Cursor Terminal Profile
 
 Add a lean-ctx terminal profile for automatic shell hook in Cursor:
@@ -466,7 +499,7 @@ Opens `http://localhost:3333` with:
 | **Thinking reduction** | ✗ | ✓ CRP v2 (30-60% fewer thinking tokens via Cursor Rules) |
 | **Persistent stats** | ✓ `rtk gain` | ✓ `lean-ctx gain` + web dashboard |
 | **Auto-setup** | ✓ `rtk init` | ✓ `lean-ctx init` |
-| **Editors** | Claude Code, OpenCode, Gemini CLI | **All MCP editors (Cursor, Copilot, Claude Code, Windsurf) + shell** |
+| **Editors** | Claude Code, OpenCode, Gemini CLI | **All MCP editors (Cursor, Copilot, Claude Code, Windsurf, OpenCode) + shell hook (OpenClaw, any terminal)** |
 | **Config file** | TOML | ✓ TOML (`~/.lean-ctx/config.toml`) |
 | **History analysis** | ✗ | ✓ `lean-ctx discover` — find uncompressed commands |
 | **Homebrew** | ✓ | ✓ `brew tap yvgude/tap && brew install lean-ctx` |
