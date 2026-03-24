@@ -74,7 +74,7 @@ cp target/release/lean-ctx ~/.local/bin/
 ### Verify Installation
 
 ```bash
-lean-ctx --version   # Should show "lean-ctx 1.6.0"
+lean-ctx --version   # Should show "lean-ctx 1.6.1"
 lean-ctx gain        # Should show token savings stats
 ```
 
@@ -307,7 +307,7 @@ $ lean-ctx gain
   03-24    419 cmds      1.7M saved   77.0%
 
   ────────────────────────────────────────────────────────
-  lean-ctx v1.6.0  |  leanctx.com  |  lean-ctx dashboard
+  lean-ctx v1.6.1  |  leanctx.com  |  lean-ctx dashboard
 ```
 
 **30-day savings chart** with `lean-ctx gain --graph`:

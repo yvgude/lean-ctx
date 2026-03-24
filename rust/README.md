@@ -3,6 +3,8 @@
 **Hybrid Context Optimizer with Token Dense Dialect (TDD). Shell Hook + MCP Server. tree-sitter AST parsing for 10 languages. Single Rust binary.**
 
 [![Crates.io](https://img.shields.io/crates/v/lean-ctx)](https://crates.io/crates/lean-ctx)
+[![Downloads](https://img.shields.io/crates/d/lean-ctx)](https://crates.io/crates/lean-ctx)
+[![AUR](https://img.shields.io/aur/version/lean-ctx)](https://aur.archlinux.org/packages/lean-ctx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/pTHkG9Hew9)
 
@@ -72,7 +74,7 @@ cp target/release/lean-ctx ~/.local/bin/
 ### Verify Installation
 
 ```bash
-lean-ctx --version   # Should show "lean-ctx 1.6.0"
+lean-ctx --version   # Should show "lean-ctx 1.6.1"
 lean-ctx gain        # Should show token savings stats
 ```
 
@@ -302,7 +304,7 @@ $ lean-ctx gain
   03-23    101 cmds      9.4K saved   46.0%
   03-24    419 cmds      1.7M saved   77.0%
 
-  lean-ctx v1.6.0  |  leanctx.com  |  lean-ctx dashboard
+  lean-ctx v1.6.1  |  leanctx.com  |  lean-ctx dashboard
 ```
 
 ## 9 MCP Tools
