@@ -17,7 +17,7 @@ impl ServerHandler for LeanCtxServer {
         let instructions = build_instructions(self.crp_mode);
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "1.5.3"))
+            .with_server_info(Implementation::new("lean-ctx", "1.5.4"))
             .with_instructions(instructions)
     }
 
@@ -167,6 +167,8 @@ impl ServerHandler for LeanCtxServer {
         _context: RequestContext<RoleServer>,
     ) -> impl std::future::Future<Output = Result<CallToolResult, ErrorData>> + Send + '_ {
         async move {
+            self.check_idle_expiry().await;
+
             let name = &request.name;
             let args = &request.arguments;
 
@@ -343,6 +345,9 @@ ON DEMAND:\n\
 \n\
 AUTO-CHECKPOINT: Every 10 tool calls, a compressed checkpoint is automatically appended \
 to the response. This keeps context compact in long sessions. Configurable via LEAN_CTX_CHECKPOINT_INTERVAL.\n\
+\n\
+IDLE CACHE TTL: Cache auto-clears after 5 min of inactivity (new chat, context compaction). \
+Configurable via LEAN_CTX_CACHE_TTL (seconds, 0=disabled).\n\
 \n\
 Write, StrReplace, Delete, Glob have no lean-ctx equivalent — use normally.";
 

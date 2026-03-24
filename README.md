@@ -320,9 +320,11 @@ When configured as an MCP server, lean-ctx provides 9 tools that replace or augm
 | `aggressive` | Large files with boilerplate | ~30-50% |
 | `entropy` | Files with repetitive patterns (Shannon + Jaccard filtering) | ~20-40% |
 
-### Subagent Cache Safety
+### Cache Safety
 
-When a subagent is spawned without the parent's context, it can:
+The session cache auto-clears after 5 minutes of inactivity (configurable via `LEAN_CTX_CACHE_TTL`). This handles new chats, context compaction, and session resets server-side without relying on the LLM.
+
+For explicit control:
 - Use `ctx_read` with `fresh=true` to bypass cache and get full content
 - Call `ctx_cache(action: "clear")` to reset the entire cache
 - Call `ctx_cache(action: "invalidate", path: "...")` to reset a single file

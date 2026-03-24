@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 use tokio::sync::RwLock;
 
 use crate::core::cache::SessionCache;
@@ -14,6 +15,7 @@ pub mod ctx_metrics;
 pub mod ctx_analyze;
 
 const DEFAULT_CHECKPOINT_INTERVAL: usize = 10;
+const DEFAULT_CACHE_TTL_SECS: u64 = 300;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CrpMode {
@@ -53,6 +55,8 @@ pub struct LeanCtxServer {
     pub tool_calls: Arc<RwLock<Vec<ToolCallRecord>>>,
     pub call_count: Arc<AtomicUsize>,
     pub checkpoint_interval: usize,
+    pub cache_ttl_secs: u64,
+    pub last_call: Arc<RwLock<Instant>>,
     pub crp_mode: CrpMode,
 }
 
@@ -72,6 +76,11 @@ impl LeanCtxServer {
             .and_then(|v| v.parse().ok())
             .unwrap_or(DEFAULT_CHECKPOINT_INTERVAL);
 
+        let ttl = std::env::var("LEAN_CTX_CACHE_TTL")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(DEFAULT_CACHE_TTL_SECS);
+
         let crp_mode = CrpMode::from_env();
 
         Self {
@@ -79,8 +88,25 @@ impl LeanCtxServer {
             tool_calls: Arc::new(RwLock::new(Vec::new())),
             call_count: Arc::new(AtomicUsize::new(0)),
             checkpoint_interval: interval,
+            cache_ttl_secs: ttl,
+            last_call: Arc::new(RwLock::new(Instant::now())),
             crp_mode,
         }
+    }
+
+    pub async fn check_idle_expiry(&self) {
+        if self.cache_ttl_secs == 0 {
+            return;
+        }
+        let last = *self.last_call.read().await;
+        if last.elapsed().as_secs() >= self.cache_ttl_secs {
+            let mut cache = self.cache.write().await;
+            let count = cache.clear();
+            if count > 0 {
+                tracing::info!("Cache auto-cleared after {}s idle ({count} file(s))", self.cache_ttl_secs);
+            }
+        }
+        *self.last_call.write().await = Instant::now();
     }
 
     pub async fn record_call(&self, tool: &str, original: usize, saved: usize, mode: Option<String>) {
