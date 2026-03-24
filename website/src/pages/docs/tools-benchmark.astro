@@ -1,0 +1,68 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_benchmark — Measure Savings" description="Benchmark all compression strategies on any file with exact tiktoken counts.">
+  <p>
+    <code>ctx_benchmark</code> runs all compression strategies on a file and reports exact token
+    counts measured with tiktoken (the same tokenizer used by GPT-4 and Claude).
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>File to benchmark</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Example Output</h2>
+  <pre><code>ctx_benchmark auth.ts
+
+Benchmark: auth.ts (123L)
+
+Strategy             Tokens  Savings
+──────────────────────────────────────────
+raw                     915  —
+full (default)          915  —
+map                     120  -795 (87%)
+aggressive              412  -503 (55%)
+entropy                 348  -567 (62%)
+signatures (compact)    121  -794 (87%)
+signatures (tdd)         98  -817 (89%)
+full + §MAP             780  -135 (15%)
+aggressive + §MAP       365  -550 (60%)
+cache hit                13  -902 (99%)
+──────────────────────────────────────────
+Best: "cache hit" saves 902 tokens (99%)</code></pre>
+
+  <h2>Interpreting Results</h2>
+  <ul>
+    <li><strong>raw:</strong> Token count for the unmodified file content</li>
+    <li><strong>full:</strong> Same as raw on first read (caching happens after)</li>
+    <li><strong>map:</strong> Dependency graph + exports + key API signatures</li>
+    <li><strong>aggressive:</strong> Syntax stripping (comments, whitespace, blank lines removed)</li>
+    <li><strong>entropy:</strong> Shannon entropy + Jaccard similarity filtering</li>
+    <li><strong>signatures (compact):</strong> Function/class signatures with compact notation</li>
+    <li><strong>signatures (tdd):</strong> TDD mode — uses λ, §, ∂ symbols for maximum compression</li>
+    <li><strong>full + §MAP / aggressive + §MAP:</strong> Content with long identifiers mapped to short IDs (α1, α2...)</li>
+    <li><strong>cache hit:</strong> The 13-token message returned on re-reads</li>
+  </ul>
+
+  <h2>TDD Integration</h2>
+  <p>
+    When <code>LEAN_CTX_CRP_MODE=tdd</code> (default), benchmarks include TDD-specific strategies
+    like <code>signatures (tdd)</code> and <code>+ §MAP</code> variants. These show the additional
+    savings achievable through symbol shorthand and identifier mapping.
+  </p>
+
+  <h2>When to Use</h2>
+  <p>
+    Run benchmarks when deciding which <code>ctx_read</code> mode to use for specific file types.
+    For example, large utility files might benefit most from <code>signatures</code> mode,
+    while config files are best read in <code>full</code> mode (they're small enough that caching
+    alone provides the biggest win).
+  </p>
+</DocsLayout>

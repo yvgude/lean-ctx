@@ -1,0 +1,56 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_search" description="Token-efficient code search with regex support, file filtering, and automatic symbol mapping.">
+  <p>
+    <code>ctx_search</code> searches files for patterns using regex and returns only matching lines
+    with compact file paths. Avoids reading entire files when looking for specific code.
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>pattern</code></td><td>string</td><td>Yes</td><td>Regex pattern to search for</td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>No</td><td>Directory to search in (default: current dir)</td></tr>
+      <tr><td><code>ext</code></td><td>string</td><td>No</td><td>File extension filter (e.g. "rs", "ts")</td></tr>
+      <tr><td><code>max_results</code></td><td>number</td><td>No</td><td>Maximum matches to return (default: 20)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Example</h2>
+  <pre><code>{`$ ctx_search "pub fn" --path src/core --ext rs --max_results 5
+
+5 matches in 1 files:
+cache.rs:27 pub fn hit_rate(&self) -> f64
+cache.rs:34 pub fn tokens_saved(&self) -> u64
+cache.rs:38 pub fn savings_percent(&self) -> f64
+cache.rs:54 pub fn new() -> Self
+cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
+[~1200 tok saved vs full reads]`}</code></pre>
+
+  <h2>Token Savings</h2>
+  <p>
+    Instead of reading entire files to find code, <code>ctx_search</code> returns only the matching
+    lines. Typical savings are <strong>50-80%</strong> compared to reading all files that contain matches.
+  </p>
+
+  <h2>TDD Integration</h2>
+  <p>
+    When <a href="/docs/tdd">TDD mode</a> is active, long identifiers in search results are
+    automatically mapped to short IDs (<code>α1, α2...</code>) with a <code>§MAP</code> table appended.
+    This further reduces token cost for large search result sets.
+  </p>
+
+  <h2>Features</h2>
+  <ul>
+    <li>Full regex support (Rust <code>regex</code> crate)</li>
+    <li>File extension filtering</li>
+    <li>Automatic binary file exclusion (images, compiled files, lock files)</li>
+    <li>Compact path shortening (home directory → <code>~</code>)</li>
+    <li>Token savings summary appended to results</li>
+  </ul>
+</DocsLayout>

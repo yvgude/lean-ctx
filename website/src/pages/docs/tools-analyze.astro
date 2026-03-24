@@ -1,0 +1,71 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="ctx_analyze" description="Shannon entropy analysis with strategy recommendation — understand your file's information density and pick the optimal compression mode.">
+  <p>
+    <code>ctx_analyze</code> performs deep information-theoretic analysis on a file using Shannon entropy
+    and Jaccard similarity. It tells you exactly how much real information the file contains
+    and recommends the best compression strategy.
+  </p>
+
+  <h2>Parameters</h2>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Path to the file to analyze</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Example</h2>
+  <pre><code>{`$ ctx_analyze middleware.ts
+
+ANALYSIS: middleware.ts (78L, 1856 tok)
+
+Entropy Distribution:
+  H̄ = 3.2 bits/char
+  Low-entropy (H<2.0): 14 lines (18%)
+  High-entropy (H>4.0): 22 lines (28%)
+
+Strategy Comparison:
+  raw                      1856 tok  —
+  aggressive               1420 tok  -23%
+  signatures (tdd)          312 tok  -83%
+  entropy                   298 tok  -84%
+  aggressive + §MAP        1380 tok  -26%
+  cache hit                  13 tok  -99%
+
+Recommendation: signatures (best first-read savings)`}</code></pre>
+
+  <h2>Understanding the Output</h2>
+
+  <h3>Entropy Distribution</h3>
+  <ul>
+    <li><strong>H̄ (average entropy)</strong> — bits of information per character. Higher = more unique content.</li>
+    <li><strong>Low-entropy lines (H &lt; 2.0)</strong> — boilerplate, imports, closing braces. Safe to remove.</li>
+    <li><strong>High-entropy lines (H &gt; 4.0)</strong> — unique logic, algorithms, configuration. Must keep.</li>
+  </ul>
+
+  <h3>Strategy Comparison</h3>
+  <p>
+    Shows exact tiktoken-measured token counts for each compression strategy.
+    The recommendation tells you which mode saves the most tokens on the first read.
+  </p>
+
+  <h2>TDD Integration</h2>
+  <p>
+    When <a href="/docs/tdd">TDD mode</a> is active, the strategy comparison includes additional
+    TDD-specific strategies like <code>aggressive + §MAP</code> and uses TDD notation
+    for signature counts.
+  </p>
+
+  <h2>When to Use</h2>
+  <ul>
+    <li>Deciding which <code>ctx_read</code> mode to use for a large file</li>
+    <li>Understanding why a file compresses well (or poorly)</li>
+    <li>Identifying files with high boilerplate content</li>
+    <li>Optimizing token usage for cost-sensitive projects</li>
+  </ul>
+</DocsLayout>
