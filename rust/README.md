@@ -199,8 +199,9 @@ lean-ctx wrapped --period=week # Weekly savings report
 lean-ctx sessions list         # List CCP sessions
 lean-ctx sessions show <id>    # Show session details
 lean-ctx sessions cleanup      # Remove old sessions
-lean-ctx benchmark             # Reproducible benchmark vs. baselines
-lean-ctx benchmark --scenario=litm  # LITM efficiency analysis
+lean-ctx benchmark run         # Real project benchmark (terminal)
+lean-ctx benchmark run --json  # Machine-readable JSON output
+lean-ctx benchmark report      # Shareable Markdown report
 lean-ctx --version             # Show version
 lean-ctx --help                # Full help
 ```
@@ -383,7 +384,7 @@ When configured as an MCP server, lean-ctx provides 21 tools that replace or aug
 
 | Tool | Purpose |
 |---|---|
-| `ctx_benchmark` | Compare all compression strategies with tiktoken counts |
+| `ctx_benchmark` | Single-file or project-wide benchmark with preservation scores |
 | `ctx_metrics` | Session statistics with USD cost estimates ($2.50/1M) |
 | `ctx_analyze` | Shannon entropy analysis + mode recommendation |
 | `ctx_cache` | Cache management: status, clear, invalidate |
@@ -427,8 +428,8 @@ lean-ctx sessions show <id>         # Show session details
 lean-ctx sessions cleanup           # Remove old sessions
 lean-ctx wrapped                    # Shareable savings report
 lean-ctx wrapped --period=week      # Weekly report
-lean-ctx benchmark                  # Reproducible benchmark vs. baselines
-lean-ctx benchmark --scenario=litm  # LITM efficiency analysis
+lean-ctx benchmark run              # Real project benchmark
+lean-ctx benchmark report           # Shareable Markdown report
 ```
 
 **MCP usage:**
@@ -667,7 +668,7 @@ Opens `http://localhost:3333` with:
 | **Cross-session memory** | ✗ | ✓ CCP — persists task, findings, decisions across chats |
 | **LITM-aware positioning** | ✗ | ✓ Attention-optimal context placement (primacy/recency) |
 | **Savings reports** | ✗ | ✓ `lean-ctx wrapped` — shareable savings summary |
-| **Reproducible benchmarks** | ✗ | ✓ `lean-ctx benchmark` — vs. raw/cursorrules baselines |
+| **Real project benchmarks** | ✗ | ✓ `lean-ctx benchmark run` — scans project files, measures tokens/latency/quality |
 
 **Key difference**: RTK compresses CLI output only. lean-ctx compresses CLI output *and* file reads, search results, and project context through the MCP protocol — reaching up to 99% savings on cached re-reads and 60-90% on CLI output. With CCP (v2.0.0), lean-ctx additionally eliminates cold-start overhead by persisting session state across conversations.
 

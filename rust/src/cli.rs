@@ -357,10 +357,32 @@ pub fn cmd_sessions(args: &[String]) {
 }
 
 pub fn cmd_benchmark(args: &[String]) {
-    let scenario = args.first().map(|s| s.as_str()).unwrap_or("cold-start");
+    use crate::core::benchmark;
 
-    let result = crate::core::benchmark::run_benchmark(scenario);
-    println!("{}", crate::core::benchmark::format_benchmark(&result));
+    let action = args.first().map(|s| s.as_str()).unwrap_or("run");
+
+    match action {
+        "run" => {
+            let path = args.get(1).map(|s| s.as_str()).unwrap_or(".");
+            let is_json = args.iter().any(|a| a == "--json");
+
+            let result = benchmark::run_project_benchmark(path);
+            if is_json {
+                println!("{}", benchmark::format_json(&result));
+            } else {
+                println!("{}", benchmark::format_terminal(&result));
+            }
+        }
+        "report" => {
+            let path = args.get(1).map(|s| s.as_str()).unwrap_or(".");
+            let result = benchmark::run_project_benchmark(path);
+            println!("{}", benchmark::format_markdown(&result));
+        }
+        _ => {
+            let result = benchmark::run_project_benchmark(action);
+            println!("{}", benchmark::format_terminal(&result));
+        }
+    }
 }
 
 fn format_tokens_cli(tokens: u64) -> String {

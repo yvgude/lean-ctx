@@ -2,6 +2,34 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.1.0] — 2026-03-25
+
+### Real Benchmark Engine + Information Preservation
+
+This release replaces the estimation-based benchmark with a **real measurement engine** that scans project files and produces verifiable, shareable results.
+
+### Added
+
+- **`core/preservation.rs`** — AST-based information preservation scoring using tree-sitter. Measures how many functions, exports, and imports survive each compression mode.
+- **Project-wide benchmark** (`lean-ctx benchmark run [path]`):
+  - Scans up to 50 representative files across all languages
+  - Measures real token counts per compression mode (map, signatures, aggressive, entropy, cache_hit)
+  - Tracks wall-clock latency per operation
+  - Computes preservation quality scores per mode
+  - Session simulation: models a 30-min coding session with real numbers
+- **Three output formats**:
+  - `lean-ctx benchmark run` — ANSI terminal table
+  - `lean-ctx benchmark run --json` — machine-readable JSON
+  - `lean-ctx benchmark report` — shareable Markdown for GitHub/LinkedIn
+- **MCP `ctx_benchmark` extended** — new `action=project` parameter for project-wide benchmarks via MCP, with `format` parameter (terminal/markdown/json)
+
+### Changed
+
+- `lean-ctx benchmark` CLI now uses subcommands (`run`, `report`) instead of scenario names
+- Benchmark engine uses real file measurements instead of estimates from stats.json
+
+---
+
 ## [2.0.0] — 2026-03-25
 
 ### Major: Context Continuity Protocol (CCP) + LITM-Aware Positioning

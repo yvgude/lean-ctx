@@ -6,6 +6,7 @@ pub mod deps;
 pub mod entropy;
 pub mod litm;
 pub mod patterns;
+pub mod preservation;
 pub mod protocol;
 pub mod session;
 pub mod signatures;

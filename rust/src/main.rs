@@ -110,7 +110,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 2.0.0");
+                println!("lean-ctx 2.1.0");
                 return;
             }
             "--help" | "-h" => {
@@ -162,7 +162,7 @@ fn run_mcp_server() -> Result<()> {
             .with_writer(std::io::stderr)
             .init();
 
-        tracing::info!("lean-ctx v2.0.0 MCP server starting");
+        tracing::info!("lean-ctx v2.1.0 MCP server starting");
 
         let server = tools::create_server();
         let transport = rmcp::transport::io::stdio();
@@ -194,7 +194,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.0.0 — The Cognitive Filter for AI Engineering
+        "lean-ctx 2.1.0 — The Cognitive Filter for AI Engineering
 
 90+ compression patterns | 21 MCP tools | Context Continuity Protocol
 
@@ -212,7 +212,8 @@ COMMANDS:
     dashboard [--port=N]           Open web dashboard (default: http://localhost:3333)
     wrapped [--week|--month|--all] Savings report card (shareable)
     sessions [list|show|cleanup]   Manage CCP sessions (~/.lean-ctx/sessions/)
-    benchmark [scenario]           Run benchmark (cold-start|session-resume|litm)
+    benchmark run [path] [--json]  Run real benchmark on project files
+    benchmark report [path]        Generate shareable Markdown report
     init [--global]                Install shell aliases (zsh/bash/fish/PowerShell)
     read <file> [-m mode]          Read file with compression
     diff <file1> <file2>           Compressed file diff

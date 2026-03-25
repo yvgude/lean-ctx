@@ -126,11 +126,13 @@ impl ServerHandler for LeanCtxServer {
                     ),
                     tool_def(
                         "ctx_benchmark",
-                        "Benchmark a file against all compression strategies with exact tiktoken counts.",
+                        "Benchmark compression strategies. action=file (default): single file. action=project: scan project directory with real token measurements, latency, and preservation scores.",
                         json!({
                             "type": "object",
                             "properties": {
-                                "path": { "type": "string", "description": "File path to benchmark" }
+                                "path": { "type": "string", "description": "File path (action=file) or project directory (action=project)" },
+                                "action": { "type": "string", "description": "file (default) or project", "default": "file" },
+                                "format": { "type": "string", "description": "Output format for project benchmark: terminal, markdown, json", "default": "terminal" }
                             },
                             "required": ["path"]
                         }),
@@ -450,7 +452,18 @@ impl ServerHandler for LeanCtxServer {
                 "ctx_benchmark" => {
                     let path = get_str(args, "path")
                         .ok_or_else(|| ErrorData::invalid_params("path is required", None))?;
-                    let result = crate::tools::ctx_benchmark::handle(&path, self.crp_mode);
+                    let action = get_str(args, "action").unwrap_or_default();
+                    let result = if action == "project" {
+                        let fmt = get_str(args, "format").unwrap_or_default();
+                        let bench = crate::core::benchmark::run_project_benchmark(&path);
+                        match fmt.as_str() {
+                            "json" => crate::core::benchmark::format_json(&bench),
+                            "markdown" | "md" => crate::core::benchmark::format_markdown(&bench),
+                            _ => crate::core::benchmark::format_terminal(&bench),
+                        }
+                    } else {
+                        crate::tools::ctx_benchmark::handle(&path, self.crp_mode)
+                    };
                     self.record_call("ctx_benchmark", 0, 0, None).await;
                     result
                 }
