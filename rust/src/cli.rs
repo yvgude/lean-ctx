@@ -379,8 +379,14 @@ pub fn cmd_benchmark(args: &[String]) {
             println!("{}", benchmark::format_markdown(&result));
         }
         _ => {
-            let result = benchmark::run_project_benchmark(action);
-            println!("{}", benchmark::format_terminal(&result));
+            if std::path::Path::new(action).exists() {
+                let result = benchmark::run_project_benchmark(action);
+                println!("{}", benchmark::format_terminal(&result));
+            } else {
+                eprintln!("Usage: lean-ctx benchmark run [path] [--json]");
+                eprintln!("       lean-ctx benchmark report [path]");
+                std::process::exit(1);
+            }
         }
     }
 }

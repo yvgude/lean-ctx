@@ -114,7 +114,13 @@ fn scan_project(root: &str) -> Vec<PathBuf> {
 
     for entry in WalkDir::new(root).max_depth(8).into_iter().filter_entry(|e| {
         let name = e.file_name().to_string_lossy();
-        !name.starts_with('.') || e.depth() == 0
+        if e.file_type().is_dir() {
+            if e.depth() > 0 && name.starts_with('.') {
+                return false;
+            }
+            return !is_skipped_dir(&name);
+        }
+        true
     }) {
         let entry = match entry {
             Ok(e) => e,
@@ -122,10 +128,6 @@ fn scan_project(root: &str) -> Vec<PathBuf> {
         };
 
         if entry.file_type().is_dir() {
-            let name = entry.file_name().to_string_lossy();
-            if is_skipped_dir(&name) {
-                continue;
-            }
             continue;
         }
 

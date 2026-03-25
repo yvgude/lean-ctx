@@ -4,7 +4,7 @@ description: Context Intelligence Engine with CCP — 21 MCP tools, 90+ shell pa
 metadata: {"openclaw": {"requires": {"bins": ["lean-ctx"]}, "install": [{"id": "brew", "kind": "brew", "formula": "lean-ctx", "bins": ["lean-ctx"], "label": "Install LeanCTX (brew tap yvgude/lean-ctx)"}]}}
 ---
 
-# LeanCTX v2.0.0 — Context Intelligence Engine + CCP
+# LeanCTX v2.1.0 — Context Intelligence Engine + CCP
 
 LeanCTX is a Rust binary that optimizes LLM context through 21 MCP tools, 90+ shell compression patterns, and tree-sitter AST parsing for 14 languages (TS/JS, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP). It provides adaptive file reading, incremental deltas, intent detection, cross-file deduplication, a project intelligence graph, and the **Context Continuity Protocol (CCP)** for cross-session memory with LITM-aware information positioning.
 

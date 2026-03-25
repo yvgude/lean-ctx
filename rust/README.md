@@ -75,7 +75,7 @@ cp target/release/lean-ctx ~/.local/bin/
 ### Verify Installation
 
 ```bash
-lean-ctx --version   # Should show "lean-ctx 2.0.0"
+lean-ctx --version   # Should show "lean-ctx 2.1.0"
 lean-ctx gain        # Should show token savings stats
 ```
 
@@ -341,7 +341,7 @@ $ lean-ctx gain
   03-23    101 cmds      9.4K saved   46.0%
   03-24    419 cmds      1.7M saved   77.0%
 
-  lean-ctx v2.0.0  |  leanctx.com  |  lean-ctx dashboard
+  lean-ctx v2.1.0  |  leanctx.com  |  lean-ctx dashboard
 ```
 
 ## 21 MCP Tools
