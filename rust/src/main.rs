@@ -93,7 +93,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 1.7.0");
+                println!("lean-ctx 1.8.1");
                 return;
             }
             "--help" | "-h" => {
@@ -145,7 +145,7 @@ fn run_mcp_server() -> Result<()> {
             .with_writer(std::io::stderr)
             .init();
 
-        tracing::info!("lean-ctx v1.7.0 MCP server starting");
+        tracing::info!("lean-ctx v1.8.1 MCP server starting");
 
         let server = tools::create_server();
         let transport = rmcp::transport::io::stdio();
@@ -177,7 +177,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 1.7.0 — The Cognitive Filter for AI Engineering
+        "lean-ctx 1.8.1 — The Cognitive Filter for AI Engineering
 
 75+ compression patterns | 10 MCP tools | Token Dense Dialect
 
