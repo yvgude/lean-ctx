@@ -13,4 +13,5 @@ website/
 /tsconfig.json
 lean-ctx.config.example.json
 INTERNAL_ARCHITECTURE.md
+RELEASE_SUMMARY.md
 aur/
