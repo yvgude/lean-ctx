@@ -2,6 +2,28 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.1.1] — 2026-03-25
+
+### Tool Enforcement + Editor Hook Improvements
+
+This release ensures AI coding tools (Cursor, Claude Code, Windsurf, etc.) reliably use lean-ctx MCP tools instead of built-in alternatives.
+
+### Changed
+
+- **MCP tool descriptions** now start with "REPLACES built-in X tool — ALWAYS use this instead of X" so LLMs see the replacement directive directly in the tool listing
+- **Server instructions** include a LITM-optimized REMINDER at the end: "NEVER use Read, Shell, or Grep directly"
+- **`lean-ctx init --agent cursor`** now auto-creates `.cursor/rules/lean-ctx.mdc` in the project directory
+- **`lean-ctx init --agent claude`** now auto-creates `CLAUDE.md` in the project directory with lean-ctx MCP tool mapping
+- **`lean-ctx init --agent windsurf`** now uses bundled template from `examples/.windsurfrules`
+- Example files now embedded via `include_str!` for consistent deployment
+
+### Added
+
+- `rust/examples/CLAUDE.md` — Claude Code project instructions template
+- `rust/examples/.windsurfrules` — Windsurf rules template
+
+---
+
 ## [2.1.0] — 2026-03-25
 
 ### Real Benchmark Engine + Information Preservation
