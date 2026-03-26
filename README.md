@@ -1,6 +1,6 @@
 # lean-ctx
 
-**Context Intelligence Engine with CCP + TDD. Shell Hook + MCP Server. 21 MCP tools, 90+ shell patterns, cross-session memory (CCP), LITM-aware positioning, tree-sitter AST for 14 languages. Single Rust binary.**
+**Context Intelligence Engine with CEP + CCP + TDD. Shell Hook + MCP Server. 21 MCP tools, 90+ shell patterns, Cognitive Efficiency Protocol (CEP), cross-session memory (CCP), Token Dense Dialect (TDD), LITM-aware positioning, tree-sitter AST for 14 languages. Single Rust binary.**
 
 [![CI](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml)
 [![Security Check](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml)
@@ -14,11 +14,19 @@
 
 ---
 
-lean-ctx reduces LLM token consumption by **up to 99%** through two complementary strategies in a single binary:
+lean-ctx reduces LLM token consumption by **up to 99%** through three complementary strategies in a single binary:
 
 1. **Shell Hook** — Transparently compresses CLI output (90+ patterns) before it reaches the LLM. Works without LLM cooperation.
 2. **MCP Server** — 21 tools for cached file reads, adaptive mode selection, incremental deltas, dependency maps, intent detection, cross-file dedup, project graph, cross-session memory (CCP), and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, OpenAI Codex, Google Antigravity, OpenCode, and any MCP-compatible editor.
 3. **AI Tool Hooks** — One-command integration for Claude Code, Cursor, Gemini CLI, Codex, Windsurf, and Cline via `lean-ctx init --agent <tool>`.
+
+### Three Intelligence Protocols
+
+| Protocol | Since | Purpose | Impact |
+|---|---|---|---|
+| **CEP** (Cognitive Efficiency Protocol) | v2.2.0 | Adaptive LLM communication optimization with compliance scoring (0-100), task complexity classification, quality scoring, auto-validation pipeline | Measurable efficiency gains |
+| **CCP** (Context Continuity Protocol) | v2.0.0 | Cross-session memory that persists task, findings, decisions across chats. LITM-aware positioning for optimal attention placement | -99.2% cold-start tokens |
+| **TDD** (Token Dense Dialect) | v1.7.0 | Symbol shorthand (λ, §, ∂, τ, ε) and ROI-based identifier mapping for compact LLM communication | 8-25% extra savings |
 
 ## Token Savings (Typical Cursor/Claude Code Session)
 
@@ -105,6 +113,28 @@ Configure with `LEAN_CTX_CRP_MODE`:
 - `tdd` (default) — Maximum compression with symbol shorthand
 - `compact` — Moderate: skip filler words, use abbreviations
 - `off` — Standard output, no CRP instructions
+
+## Cognitive Efficiency Protocol (CEP)
+
+New in v2.2.0: CEP is a holistic approach to LLM communication optimization that measures, scores, and adapts how efficiently the model processes context.
+
+**CEP Compliance Score** (0-100): Tracks four dimensions:
+- **Cache Utilization** — percentage of file reads served from session cache
+- **Mode Diversity** — use of different read modes (map, signatures, aggressive, entropy) vs. always using full
+- **Compression Rate** — overall token reduction across all operations
+- **Action-first Behavior** — structured notation over prose
+
+**Adaptive Instructions Engine**: Classifies task complexity automatically:
+- `Mechanical` — simple renames, format fixes → minimal reasoning guidance
+- `Standard` — feature implementation, refactoring → balanced guidance
+- `Architectural` — system design, cross-cutting changes → full reasoning with edge case analysis
+
+**Additional CEP features**:
+- Smart Context Prefill Hints — suggests optimal read modes after session restore
+- Quality Scorer — measures AST, identifier, and line preservation (>95% target)
+- Auto-Validation Pipeline — syntax checks for Rust, JS/TS, Python, JSON, TOML after file changes
+- Dashboard CEP Intelligence Card — real-time CEP metrics in the web dashboard
+- MCP Live Stats — persists session metrics to `~/.lean-ctx/mcp-live.json` for external tooling
 
 ## Quick Start
 
