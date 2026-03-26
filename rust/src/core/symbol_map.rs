@@ -12,6 +12,12 @@ pub struct SymbolMap {
     next_id: usize,
 }
 
+impl Default for SymbolMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolMap {
     pub fn new() -> Self {
         Self {

@@ -1,4 +1,5 @@
 use crate::core::cache::SessionCache;
+use crate::core::mode_predictor::{FileSignature, ModePredictor};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -30,17 +31,25 @@ pub fn select_mode(cache: &SessionCache, path: &str) -> String {
         return "full".to_string();
     }
 
+    let sig = FileSignature::from_path(path, token_count);
+    let predictor = ModePredictor::new();
+    if let Some(predicted) = predictor.predict_best_mode(&sig) {
+        return predicted;
+    }
+
+    heuristic_mode(ext, token_count)
+}
+
+fn heuristic_mode(ext: &str, token_count: usize) -> String {
     if token_count > 5000 {
         if is_code(ext) {
             return "signatures".to_string();
         }
         return "aggressive".to_string();
     }
-
     if token_count > 2000 && is_code(ext) {
         return "map".to_string();
     }
-
     "full".to_string()
 }
 

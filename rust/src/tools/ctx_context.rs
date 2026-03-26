@@ -152,7 +152,7 @@ pub fn handle_status(cache: &SessionCache, turn_count: usize, crp_mode: CrpMode)
     result.push(format!("\n  CRP mode: {mode_label}"));
 
     let complexity = crate::core::adaptive::classify_from_context(cache);
-    result.push(format!("\n  {}", complexity.instruction_suffix()));
+    result.push(format!("\n  {}", complexity.encoded_suffix()));
 
     let hints = generate_prefill_hints(cache);
     if !hints.is_empty() {

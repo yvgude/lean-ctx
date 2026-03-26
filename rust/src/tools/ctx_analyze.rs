@@ -121,6 +121,13 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
         best.0
     ));
 
+    let k = entropy::kolmogorov_proxy(&content);
+    let k_class = entropy::compressibility_class(&content);
+    sections.push(format!(
+        "Kolmogorov proxy: K={k:.3} — compressibility: {}",
+        k_class.label()
+    ));
+
     sections.join("\n")
 }
 

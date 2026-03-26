@@ -370,9 +370,7 @@ fn format_cep_live(lv: &serde_json::Value) -> String {
     let tool_calls = lv["tool_calls"].as_u64().unwrap_or(0);
     let cache_hits = lv["cache_hits"].as_u64().unwrap_or(0);
     let total_reads = lv["total_reads"].as_u64().unwrap_or(0);
-    let complexity = lv["task_complexity"]
-        .as_str()
-        .unwrap_or("Standard");
+    let complexity = lv["task_complexity"].as_str().unwrap_or("Standard");
 
     o.push(String::new());
     o.push(format!(
@@ -602,9 +600,7 @@ pub fn format_cep_report() -> String {
 
     o.push(String::new());
     o.push(format!("  {DIM}{ln56}{RST}"));
-    o.push(format!(
-        "  {DIM}Improve your CEP score:{RST}"
-    ));
+    o.push(format!("  {DIM}Improve your CEP score:{RST}"));
     if cache_hit_rate < 50.0 {
         o.push(format!(
             "    {YELLOW}↑{RST} Re-read files with ctx_read to leverage caching"
@@ -746,7 +742,7 @@ pub fn format_gain() -> String {
     o.push(String::new());
     o.push(format!("  {DIM}{ln56}{RST}"));
     o.push(format!(
-        "  {DIM}lean-ctx v2.2.0  |  leanctx.com  |  lean-ctx dashboard{RST}"
+        "  {DIM}lean-ctx v2.3.0  |  leanctx.com  |  lean-ctx dashboard{RST}"
     ));
     o.push(String::new());
 

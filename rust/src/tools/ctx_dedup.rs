@@ -1,9 +1,85 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::core::cache::SessionCache;
+use crate::core::cache::{SessionCache, SharedBlock};
 use crate::core::tokens::count_tokens;
 
 pub fn handle(cache: &SessionCache) -> String {
+    analyze(cache)
+}
+
+pub fn handle_action(cache: &mut SessionCache, action: &str) -> String {
+    match action {
+        "apply" => apply_dedup(cache),
+        _ => analyze(cache),
+    }
+}
+
+fn apply_dedup(cache: &mut SessionCache) -> String {
+    let entries = cache.get_all_entries();
+    if entries.len() < 2 {
+        return "Need at least 2 cached files for cross-file dedup.".to_string();
+    }
+
+    let mut block_occurrences: HashMap<String, Vec<(String, usize)>> = HashMap::new();
+    for (path, entry) in &entries {
+        let lines: Vec<&str> = entry.content.lines().collect();
+        for (idx, chunk) in lines.chunks(5).enumerate() {
+            if chunk.len() == 5 {
+                let block = chunk.join("\n");
+                let trimmed = block.trim().to_string();
+                if !trimmed.is_empty() && count_tokens(&trimmed) > 10 {
+                    block_occurrences
+                        .entry(trimmed)
+                        .or_default()
+                        .push((path.to_string(), idx * 5 + 1));
+                }
+            }
+        }
+    }
+
+    let mut shared = Vec::new();
+    for (content, occurrences) in &block_occurrences {
+        let unique_files: HashSet<&str> = occurrences.iter().map(|(p, _)| p.as_str()).collect();
+        if unique_files.len() >= 2 {
+            let (canonical_path, start_line) = &occurrences[0];
+            let ref_label = cache
+                .file_ref_map()
+                .get(canonical_path)
+                .cloned()
+                .unwrap_or_else(|| "F?".to_string());
+            shared.push(SharedBlock {
+                canonical_path: canonical_path.clone(),
+                canonical_ref: ref_label,
+                start_line: *start_line,
+                end_line: start_line + 4,
+                content: content.clone(),
+            });
+        }
+    }
+
+    let count = shared.len();
+    let savings: usize = shared
+        .iter()
+        .map(|b| {
+            let occurrences = block_occurrences
+                .get(&b.content)
+                .map(|o| {
+                    let unique: HashSet<&str> = o.iter().map(|(p, _)| p.as_str()).collect();
+                    unique.len() - 1
+                })
+                .unwrap_or(0);
+            count_tokens(&b.content) * occurrences
+        })
+        .sum();
+
+    cache.set_shared_blocks(shared);
+
+    format!(
+        "Applied cross-file dedup: {count} shared blocks registered (~{savings} tokens saveable)"
+    )
+}
+
+fn analyze(cache: &SessionCache) -> String {
     let entries = cache.get_all_entries();
     if entries.len() < 2 {
         return "Need at least 2 cached files for cross-file deduplication analysis.".to_string();

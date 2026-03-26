@@ -1,13 +1,5 @@
 use anyhow::Result;
-
-mod cli;
-mod core;
-mod dashboard;
-mod doctor;
-mod hooks;
-mod server;
-mod shell;
-mod tools;
+use lean_ctx::{cli, core, dashboard, doctor, shell, tools};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -114,7 +106,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 2.2.0");
+                println!("lean-ctx 2.3.0");
                 return;
             }
             "--help" | "-h" => {
@@ -166,7 +158,7 @@ fn run_mcp_server() -> Result<()> {
             .with_writer(std::io::stderr)
             .init();
 
-        tracing::info!("lean-ctx v2.2.0 MCP server starting");
+        tracing::info!("lean-ctx v2.3.0 MCP server starting");
 
         let server = tools::create_server();
         let transport = rmcp::transport::io::stdio();
@@ -198,7 +190,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.2.0 — The Cognitive Filter for AI Engineering
+        "lean-ctx 2.3.0 — The Cognitive Filter for AI Engineering
 
 90+ compression patterns | 21 MCP tools | Context Continuity Protocol
 

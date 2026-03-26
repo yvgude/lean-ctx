@@ -24,7 +24,7 @@ lean-ctx reduces LLM token consumption by **up to 99%** through three complement
 
 | Protocol | Since | Purpose | Impact |
 |---|---|---|---|
-| **CEP** (Cognitive Efficiency Protocol) | v2.2.0 | Adaptive LLM communication optimization with compliance scoring (0-100), task complexity classification, quality scoring, auto-validation pipeline | Measurable efficiency gains |
+| **CEP** (Cognitive Efficiency Protocol) | v2.3.0 | Adaptive LLM communication optimization with compliance scoring (0-100), task complexity classification, quality scoring, auto-validation pipeline | Measurable efficiency gains |
 | **CCP** (Context Continuity Protocol) | v2.0.0 | Cross-session memory that persists task, findings, decisions across chats. LITM-aware positioning for optimal attention placement | -99.2% cold-start tokens |
 | **TDD** (Token Dense Dialect) | v1.7.0 | Symbol shorthand (λ, §, ∂, τ, ε) and ROI-based identifier mapping for compact LLM communication | 8-25% extra savings |
 
@@ -85,7 +85,7 @@ cp target/release/lean-ctx ~/.local/bin/
 ### Verify Installation
 
 ```bash
-lean-ctx --version   # Should show "lean-ctx 2.2.0"
+lean-ctx --version   # Should show "lean-ctx 2.3.0"
 lean-ctx gain        # Should show token savings stats
 ```
 
@@ -116,7 +116,7 @@ Configure with `LEAN_CTX_CRP_MODE`:
 
 ## Cognitive Efficiency Protocol (CEP)
 
-New in v2.2.0: CEP is a holistic approach to LLM communication optimization that measures, scores, and adapts how efficiently the model processes context.
+New in v2.3.0: CEP is a holistic approach to LLM communication optimization that measures, scores, and adapts how efficiently the model processes context.
 
 **CEP Compliance Score** (0-100): Tracks four dimensions:
 - **Cache Utilization** — percentage of file reads served from session cache
@@ -373,7 +373,7 @@ $ lean-ctx gain
   03-23    101 cmds      9.4K saved   46.0%
   03-24    419 cmds      1.7M saved   77.0%
 
-  lean-ctx v2.2.0  |  leanctx.com  |  lean-ctx dashboard
+  lean-ctx v2.3.0  |  leanctx.com  |  lean-ctx dashboard
 ```
 
 ## 21 MCP Tools

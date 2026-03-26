@@ -6,6 +6,7 @@ pub mod config;
 pub mod deps;
 pub mod entropy;
 pub mod litm;
+pub mod mode_predictor;
 pub mod patterns;
 pub mod preservation;
 pub mod protocol;

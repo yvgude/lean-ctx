@@ -92,6 +92,12 @@ struct LatestPointer {
     id: String,
 }
 
+impl Default for SessionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionState {
     pub fn new() -> Self {
         let now = Utc::now();

@@ -13,3 +13,10 @@ pub fn count_tokens(text: &str) -> usize {
     }
     get_bpe().encode_with_special_tokens(text).len()
 }
+
+pub fn encode_tokens(text: &str) -> Vec<u32> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    get_bpe().encode_with_special_tokens(text)
+}

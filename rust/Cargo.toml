@@ -1,6 +1,6 @@
 [package]
 name = "lean-ctx"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 description = "Context Intelligence Engine with CCP. 21 MCP tools, 90+ compression patterns, cross-session memory (CCP), LITM-aware positioning. Reduces LLM token consumption by up to 99%."
 license = "MIT"
@@ -10,6 +10,10 @@ readme = "README.md"
 keywords = ["mcp", "llm", "tokens", "compression", "ai"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = ["examples/", "tests/"]
+
+[lib]
+name = "lean_ctx"
+path = "src/lib.rs"
 
 [[bin]]
 name = "lean-ctx"
@@ -50,6 +54,7 @@ dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8"
 similar = "2"
+flate2 = "1"
 tree-sitter = { version = "0.26", optional = true }
 tree-sitter-rust = { version = "0.24", optional = true }
 tree-sitter-typescript = { version = "0.23", optional = true }

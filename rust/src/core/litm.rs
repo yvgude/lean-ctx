@@ -1,13 +1,58 @@
 use crate::core::session::SessionState;
 
-/// LITM-aware positioning constants based on Liu et al., 2023.
-/// LLMs have a U-shaped attention curve:
-///   - Begin (alpha ~= 0.9): highest recall
-///   - Middle (beta ~= 0.55): lowest recall
-///   - End (gamma ~= 0.85): high recall
-///
-/// CCP places critical information at begin and end positions,
-/// eliminating the lossy middle entirely.
+#[derive(Debug, Clone, Copy)]
+pub struct LitmProfile {
+    pub alpha: f64,
+    pub beta: f64,
+    pub gamma: f64,
+    pub name: &'static str,
+}
+
+impl LitmProfile {
+    pub const CLAUDE: Self = Self {
+        alpha: 0.92,
+        beta: 0.50,
+        gamma: 0.88,
+        name: "claude",
+    };
+    pub const GPT: Self = Self {
+        alpha: 0.90,
+        beta: 0.55,
+        gamma: 0.85,
+        name: "gpt",
+    };
+    pub const GEMINI: Self = Self {
+        alpha: 0.88,
+        beta: 0.60,
+        gamma: 0.82,
+        name: "gemini",
+    };
+    pub const DEFAULT: Self = Self::GPT;
+
+    pub fn from_client_name(client: &str) -> Self {
+        if let Ok(override_val) = std::env::var("LEAN_CTX_LITM_PROFILE") {
+            return Self::from_name(&override_val);
+        }
+        let lower = client.to_lowercase();
+        if lower.contains("claude") || lower.contains("cursor") {
+            Self::CLAUDE
+        } else if lower.contains("gemini") {
+            Self::GEMINI
+        } else {
+            Self::GPT
+        }
+    }
+
+    pub fn from_name(name: &str) -> Self {
+        match name.to_lowercase().as_str() {
+            "claude" | "cursor" => Self::CLAUDE,
+            "gemini" => Self::GEMINI,
+            "gpt" | "openai" | "codex" => Self::GPT,
+            _ => Self::DEFAULT,
+        }
+    }
+}
+
 const _ALPHA: f64 = 0.9;
 const _BETA: f64 = 0.55;
 const _GAMMA: f64 = 0.85;
@@ -132,6 +177,39 @@ pub fn compute_litm_efficiency(
     (eff_without, eff_with)
 }
 
+#[allow(dead_code)]
+/// Profile-aware LITM efficiency using model-specific attention weights.
+pub fn compute_litm_efficiency_for_profile(
+    begin_tokens: usize,
+    middle_tokens: usize,
+    end_tokens: usize,
+    ccp_begin_tokens: usize,
+    ccp_end_tokens: usize,
+    profile: &LitmProfile,
+) -> (f64, f64) {
+    let total_without = (begin_tokens + middle_tokens + end_tokens) as f64;
+    let effective_without = profile.alpha * begin_tokens as f64
+        + profile.beta * middle_tokens as f64
+        + profile.gamma * end_tokens as f64;
+
+    let total_with = (ccp_begin_tokens + ccp_end_tokens) as f64;
+    let effective_with =
+        profile.alpha * ccp_begin_tokens as f64 + profile.gamma * ccp_end_tokens as f64;
+
+    let eff_without = if total_without > 0.0 {
+        effective_without / total_without * 100.0
+    } else {
+        0.0
+    };
+    let eff_with = if total_with > 0.0 {
+        effective_with / total_with * 100.0
+    } else {
+        0.0
+    };
+
+    (eff_without, eff_with)
+}
+
 fn short_path(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() <= 2 {
@@ -187,5 +265,43 @@ mod tests {
         assert_eq!(short_path("file.rs"), "file.rs");
         assert_eq!(short_path("src/file.rs"), "src/file.rs");
         assert_eq!(short_path("a/b/c/file.rs"), "file.rs");
+    }
+
+    #[test]
+    fn litm_profile_from_client_claude() {
+        let p = LitmProfile::from_client_name("Claude Desktop");
+        assert_eq!(p.name, "claude");
+        assert!((p.alpha - 0.92).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn litm_profile_from_client_cursor() {
+        let p = LitmProfile::from_client_name("Cursor");
+        assert_eq!(p.name, "claude");
+    }
+
+    #[test]
+    fn litm_profile_from_client_gemini() {
+        let p = LitmProfile::from_client_name("Gemini CLI");
+        assert_eq!(p.name, "gemini");
+        assert!((p.beta - 0.60).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn litm_profile_unknown_defaults_to_gpt() {
+        let p = LitmProfile::from_client_name("unknown-tool");
+        assert_eq!(p.name, "gpt");
+    }
+
+    #[test]
+    fn litm_profile_efficiency_differs_by_model() {
+        let (_, claude_eff) =
+            compute_litm_efficiency_for_profile(200, 0, 100, 200, 100, &LitmProfile::CLAUDE);
+        let (_, gemini_eff) =
+            compute_litm_efficiency_for_profile(200, 0, 100, 200, 100, &LitmProfile::GEMINI);
+        assert!(
+            (claude_eff - gemini_eff).abs() > 0.1,
+            "different profiles should yield different efficiencies"
+        );
     }
 }

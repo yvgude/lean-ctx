@@ -15,7 +15,7 @@ impl ServerHandler for LeanCtxServer {
         let instructions = build_instructions(self.crp_mode);
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "2.2.0"))
+            .with_server_info(Implementation::new("lean-ctx", "2.3.0"))
             .with_instructions(instructions)
     }
 
@@ -220,11 +220,18 @@ impl ServerHandler for LeanCtxServer {
                     ),
                     tool_def(
                         "ctx_dedup",
-                        "Cross-file deduplication analysis. Finds shared imports, boilerplate blocks, \
-                        and repeated patterns across all cached files. Reports potential token savings.",
+                        "Cross-file deduplication analysis and active dedup. Finds shared imports, boilerplate blocks, \
+                        and repeated patterns across all cached files. Use action=apply to register shared blocks \
+                        so subsequent ctx_read calls auto-replace duplicates with cross-file references.",
                         json!({
                             "type": "object",
-                            "properties": {}
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "description": "analyze (default) or apply (register shared blocks for auto-dedup in ctx_read)",
+                                    "default": "analyze"
+                                }
+                            }
                         }),
                     ),
                     tool_def(
@@ -389,9 +396,27 @@ impl ServerHandler for LeanCtxServer {
                     "ctx_read",
                     original,
                     original.saturating_sub(tokens),
-                    Some(mode),
+                    Some(mode.clone()),
                 )
                 .await;
+                {
+                    let sig =
+                        crate::core::mode_predictor::FileSignature::from_path(&path, original);
+                    let density = if tokens > 0 {
+                        original as f64 / tokens as f64
+                    } else {
+                        1.0
+                    };
+                    let outcome = crate::core::mode_predictor::ModeOutcome {
+                        mode,
+                        tokens_in: original,
+                        tokens_out: tokens,
+                        density: density.min(1.0),
+                    };
+                    let mut predictor = crate::core::mode_predictor::ModePredictor::new();
+                    predictor.record(sig, outcome);
+                    predictor.save();
+                }
                 output
             }
             "ctx_multi_read" => {
@@ -543,11 +568,20 @@ impl ServerHandler for LeanCtxServer {
                 output
             }
             "ctx_dedup" => {
-                let cache = self.cache.read().await;
-                let result = crate::tools::ctx_dedup::handle(&cache);
-                drop(cache);
-                self.record_call("ctx_dedup", 0, 0, None).await;
-                result
+                let action = get_str(args, "action").unwrap_or_default();
+                if action == "apply" {
+                    let mut cache = self.cache.write().await;
+                    let result = crate::tools::ctx_dedup::handle_action(&mut cache, &action);
+                    drop(cache);
+                    self.record_call("ctx_dedup", 0, 0, None).await;
+                    result
+                } else {
+                    let cache = self.cache.read().await;
+                    let result = crate::tools::ctx_dedup::handle(&cache);
+                    drop(cache);
+                    self.record_call("ctx_dedup", 0, 0, None).await;
+                    result
+                }
             }
             "ctx_fill" => {
                 let paths = get_str_array(args, "paths")
@@ -715,12 +749,17 @@ impl ServerHandler for LeanCtxServer {
 }
 
 fn build_instructions(crp_mode: CrpMode) -> String {
+    build_instructions_with_client(crp_mode, "")
+}
+
+fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> String {
+    let profile = crate::core::litm::LitmProfile::from_client_name(client_name);
     let session_block = match crate::core::session::SessionState::load_latest() {
         Some(session) => {
             let positioned = crate::core::litm::position_optimize(&session);
             format!(
-                "\n\n--- ACTIVE SESSION (LITM P1: begin position) ---\n{}\n---\n",
-                positioned.begin_block
+                "\n\n--- ACTIVE SESSION (LITM P1: begin position, profile: {}) ---\n{}\n---\n",
+                profile.name, positioned.begin_block
             )
         }
         None => String::new(),
@@ -784,7 +823,11 @@ COMMUNICATION PROTOCOL (Cognitive Efficiency Protocol v1):\n\
    Bad:  \"I've successfully applied the edit to fix the token validation...\"\n\
    Good: \"Fixed F3:42 — was comparing UTC vs local timestamp\"\n\
 5. QUALITY ANCHOR — NEVER skip edge case analysis or error handling to save tokens.\n\
-   Complex tasks require full reasoning. Only reduce prose, never reduce thinking.");
+   Complex tasks require full reasoning. Only reduce prose, never reduce thinking.\n\
+\n\
+{decoder_block}",
+        decoder_block = crate::core::protocol::instruction_decoder_block()
+    );
 
     match crp_mode {
         CrpMode::Off => base,

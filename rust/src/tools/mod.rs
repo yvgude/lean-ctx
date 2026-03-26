@@ -82,6 +82,12 @@ pub struct ToolCallRecord {
     pub mode: Option<String>,
 }
 
+impl Default for LeanCtxServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LeanCtxServer {
     pub fn new() -> Self {
         let config = crate::core::config::Config::load();
@@ -98,7 +104,7 @@ impl LeanCtxServer {
 
         let crp_mode = CrpMode::from_env();
 
-        let session = SessionState::load_latest().unwrap_or_else(SessionState::new);
+        let session = SessionState::load_latest().unwrap_or_default();
 
         Self {
             cache: Arc::new(RwLock::new(SessionCache::new())),
