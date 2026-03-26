@@ -176,6 +176,21 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
     output.to_string()
 }
 
+/// Windows only: argument that passes one command string to the shell binary.
+/// `exe_basename` must already be ASCII-lowercase (e.g. `bash.exe`, `cmd.exe`).
+fn windows_shell_flag_for_exe_basename(exe_basename: &str) -> &'static str {
+    if exe_basename.contains("powershell") || exe_basename.contains("pwsh") {
+        "-Command"
+    } else if exe_basename == "cmd.exe" || exe_basename == "cmd" {
+        "/C"
+    } else {
+        // POSIX-style shells: Git Bash / MSYS (`bash`, `sh`, `zsh`, `fish`, …).
+        // `/C` is only valid for `cmd.exe`; using it with bash produced
+        // `/C: Is a directory` and exit 126 (see github.com/yvgude/lean-ctx/issues/7).
+        "-c"
+    }
+}
+
 pub fn shell_and_flag() -> (String, String) {
     let shell = detect_shell();
     let flag = if cfg!(windows) {
@@ -184,11 +199,7 @@ pub fn shell_and_flag() -> (String, String) {
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        if name.contains("powershell") || name.contains("pwsh") {
-            "-Command".to_string()
-        } else {
-            "/C".to_string()
-        }
+        windows_shell_flag_for_exe_basename(&name).to_string()
     } else {
         "-c".to_string()
     };
@@ -305,5 +316,34 @@ fn cleanup_old_tee_logs(tee_dir: &std::path::Path) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod windows_shell_flag_tests {
+    use super::windows_shell_flag_for_exe_basename;
+
+    #[test]
+    fn cmd_uses_slash_c() {
+        assert_eq!(windows_shell_flag_for_exe_basename("cmd.exe"), "/C");
+        assert_eq!(windows_shell_flag_for_exe_basename("cmd"), "/C");
+    }
+
+    #[test]
+    fn powershell_uses_command() {
+        assert_eq!(
+            windows_shell_flag_for_exe_basename("powershell.exe"),
+            "-Command"
+        );
+        assert_eq!(windows_shell_flag_for_exe_basename("pwsh.exe"), "-Command");
+    }
+
+    #[test]
+    fn posix_shells_use_dash_c() {
+        assert_eq!(windows_shell_flag_for_exe_basename("bash.exe"), "-c");
+        assert_eq!(windows_shell_flag_for_exe_basename("bash"), "-c");
+        assert_eq!(windows_shell_flag_for_exe_basename("sh.exe"), "-c");
+        assert_eq!(windows_shell_flag_for_exe_basename("zsh.exe"), "-c");
+        assert_eq!(windows_shell_flag_for_exe_basename("fish.exe"), "-c");
     }
 }
