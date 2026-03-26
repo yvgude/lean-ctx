@@ -2,6 +2,14 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.3.3] — 2026-03-26
+
+### Added
+
+- **Pi Coding Agent integration** — New `pi-lean-ctx` npm package that overrides Pi's `bash`, `read`, `grep`, `find`, and `ls` tools to route all output through lean-ctx. Smart read mode selection based on file type and size (full/map/signatures). Includes compression stats footer and `/lean-ctx` slash command
+- **`lean-ctx init --agent pi`** — One-command setup: auto-installs the `pi-lean-ctx` Pi Package and creates project-local `AGENTS.md` with lean-ctx instructions
+- **Pi AGENTS.md template** — Skill file teaching Pi to leverage lean-ctx compression transparently
+
 ## [2.3.2] — 2026-03-26
 
 ### Fixed

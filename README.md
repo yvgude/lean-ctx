@@ -17,8 +17,8 @@
 lean-ctx reduces LLM token consumption by **up to 99%** through three complementary strategies in a single binary:
 
 1. **Shell Hook** — Transparently compresses CLI output (90+ patterns) before it reaches the LLM. Works without LLM cooperation.
-2. **MCP Server** — 21 tools for cached file reads, adaptive mode selection, incremental deltas, dependency maps, intent detection, cross-file dedup, project graph, cross-session memory (CCP), and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, Zed, OpenAI Codex, Google Antigravity, OpenCode, and any MCP-compatible editor.
-3. **AI Tool Hooks** — One-command integration for Claude Code, Cursor, Gemini CLI, Codex, Windsurf, and Cline via `lean-ctx init --agent <tool>`.
+2. **MCP Server** — 21 tools for cached file reads, adaptive mode selection, incremental deltas, dependency maps, intent detection, cross-file dedup, project graph, cross-session memory (CCP), and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, Zed, Pi, OpenAI Codex, Google Antigravity, OpenCode, and any MCP-compatible editor.
+3. **AI Tool Hooks** — One-command integration for Claude Code, Cursor, Gemini CLI, Codex, Windsurf, Cline, and Pi via `lean-ctx init --agent <tool>`.
 
 ### Three Intelligence Protocols
 
@@ -85,7 +85,7 @@ cp target/release/lean-ctx ~/.local/bin/
 ### Verify Installation
 
 ```bash
-lean-ctx --version   # Should show "lean-ctx 2.3.2"
+lean-ctx --version   # Should show "lean-ctx 2.3.3"
 lean-ctx gain        # Should show token savings stats
 ```
 
@@ -215,6 +215,7 @@ lean-ctx init --agent gemini   # Install Gemini CLI BeforeTool hook
 lean-ctx init --agent codex    # Install Codex AGENTS.md
 lean-ctx init --agent windsurf # Install .windsurfrules
 lean-ctx init --agent cline    # Install .clinerules
+lean-ctx init --agent pi       # Install Pi Coding Agent extension
 lean-ctx gain                  # Persistent token savings (CLI)
 lean-ctx gain --graph          # ASCII chart of last 30 days
 lean-ctx gain --daily          # Day-by-day breakdown
@@ -543,6 +544,20 @@ Add to `~/.config/zed/settings.json`:
 ```
 
 > **Note:** Zed requires `source: "custom"` for manually configured MCP servers. Use the full path to the binary if `lean-ctx` is not in Zed's PATH (e.g., `"/Users/you/.cargo/bin/lean-ctx"`). Verify the server status in the Agent Panel settings — a green dot indicates the server is active.
+
+### Pi Coding Agent
+
+```bash
+# Install the Pi extension (auto-installs pi-lean-ctx npm package)
+lean-ctx init --agent pi
+
+# Or install manually
+pi install pi-lean-ctx
+```
+
+Once installed, Pi's `bash`, `read`, `grep`, `find`, and `ls` tools are automatically routed through lean-ctx. No manual prefixing needed — the extension handles compression transparently.
+
+> **Smart reads:** The extension automatically selects the optimal read mode based on file type and size (full for small files, map for medium code, signatures for large code files).
 
 ### OpenAI Codex
 

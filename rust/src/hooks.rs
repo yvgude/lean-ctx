@@ -30,9 +30,10 @@ pub fn install_agent_hook(agent: &str, global: bool) {
         "windsurf" => install_windsurf_rules(global),
         "cline" | "roo" => install_cline_rules(global),
         "copilot" => install_claude_hook(global),
+        "pi" => install_pi_hook(global),
         _ => {
             eprintln!("Unknown agent: {agent}");
-            eprintln!("Supported: claude, cursor, gemini, codex, windsurf, cline, copilot");
+            eprintln!("Supported: claude, cursor, gemini, codex, windsurf, cline, copilot, pi");
             std::process::exit(1);
         }
     }
@@ -417,6 +418,62 @@ Supported commands: git, cargo, npm, pnpm, docker, kubectl, pip, ruff, go, curl,
 
     write_file(&rules_path, &rules);
     println!("Installed .clinerules in current project.");
+}
+
+fn install_pi_hook(global: bool) {
+    let has_pi = std::process::Command::new("pi")
+        .arg("--version")
+        .output()
+        .is_ok();
+
+    if !has_pi {
+        println!("Pi Coding Agent not found in PATH.");
+        println!("Install Pi first: npm install -g @mariozechner/pi-coding-agent");
+        println!();
+    }
+
+    println!("Installing pi-lean-ctx Pi Package...");
+    println!();
+
+    let install_result = std::process::Command::new("pi")
+        .args(["install", "pi-lean-ctx"])
+        .status();
+
+    match install_result {
+        Ok(status) if status.success() => {
+            println!("Installed pi-lean-ctx Pi Package.");
+        }
+        _ => {
+            println!("Could not auto-install pi-lean-ctx. Install manually:");
+            println!("  pi install pi-lean-ctx");
+            println!();
+        }
+    }
+
+    if !global {
+        let agents_md = PathBuf::from("AGENTS.md");
+        if !agents_md.exists()
+            || !std::fs::read_to_string(&agents_md)
+                .unwrap_or_default()
+                .contains("lean-ctx")
+        {
+            let content = include_str!("templates/PI_AGENTS.md");
+            write_file(&agents_md, content);
+            println!("Created AGENTS.md in current project directory.");
+        } else {
+            println!("AGENTS.md already contains lean-ctx configuration.");
+        }
+    } else {
+        println!(
+            "Global mode: skipping project-local AGENTS.md (use without --global in a project)."
+        );
+    }
+
+    println!();
+    println!(
+        "Setup complete. All Pi tools (bash, read, grep, find, ls) now route through lean-ctx."
+    );
+    println!("Use /lean-ctx in Pi to verify the binary path.");
 }
 
 fn write_file(path: &PathBuf, content: &str) {

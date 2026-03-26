@@ -1,0 +1,28 @@
+{
+  "name": "pi-lean-ctx",
+  "version": "1.0.0",
+  "description": "Pi Coding Agent extension that routes bash, read, grep, find, and ls through lean-ctx for 60-90% token savings",
+  "keywords": ["pi-package", "lean-ctx", "token-optimization", "compression"],
+  "license": "MIT",
+  "author": "Yves Gugger",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yvgude/lean-ctx.git",
+    "directory": "packages/pi-lean-ctx"
+  },
+  "homepage": "https://leanctx.com",
+  "bugs": {
+    "url": "https://github.com/yvgude/lean-ctx/issues"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.50.0",
+    "@mariozechner/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "files": [
+    "extensions/",
+    "README.md"
+  ]
+}

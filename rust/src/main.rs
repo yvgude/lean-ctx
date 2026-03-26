@@ -110,7 +110,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 2.3.2");
+                println!("lean-ctx 2.3.3");
                 return;
             }
             "--help" | "-h" => {
@@ -162,7 +162,7 @@ fn run_mcp_server() -> Result<()> {
             .with_writer(std::io::stderr)
             .init();
 
-        tracing::info!("lean-ctx v2.3.2 MCP server starting");
+        tracing::info!("lean-ctx v2.3.3 MCP server starting");
 
         let server = tools::create_server();
         let transport = rmcp::transport::io::stdio();
@@ -194,7 +194,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.3.2 — The Cognitive Filter for AI Engineering
+        "lean-ctx 2.3.3 — The Cognitive Filter for AI Engineering
 
 90+ compression patterns | 21 MCP tools | Context Continuity Protocol
 
@@ -217,6 +217,7 @@ COMMANDS:
     benchmark run [path] [--json]  Run real benchmark on project files
     benchmark report [path]        Generate shareable Markdown report
     init [--global]                Install shell aliases (zsh/bash/fish/PowerShell)
+    init --agent pi                Install Pi Coding Agent extension (pi-lean-ctx)
     read <file> [-m mode]          Read file with compression
     diff <file1> <file2>           Compressed file diff
     grep <pattern> [path]          Search with compressed output
@@ -274,6 +275,7 @@ EXAMPLES:
     lean-ctx sessions show         Show latest session state
     lean-ctx discover              Find missed savings in shell history
     lean-ctx init --global         Install shell aliases
+    lean-ctx init --agent pi       Install Pi Coding Agent extension
     lean-ctx doctor                Check PATH, config, MCP, and dashboard port
     lean-ctx read src/main.rs -m map
     lean-ctx grep \"pub fn\" src/
