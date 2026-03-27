@@ -1,6 +1,6 @@
 {
   "name": "pi-lean-ctx",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Pi Coding Agent extension that routes bash, read, grep, find, and ls through lean-ctx for 60-90% token savings",
   "keywords": ["pi-package", "lean-ctx", "token-optimization", "compression"],
   "license": "MIT",
