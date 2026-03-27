@@ -635,15 +635,18 @@ Add a lean-ctx terminal profile for automatic shell hook in Cursor:
 }
 ```
 
-### Cursor Rule (Optional)
+### Cursor Rules (Optional)
 
-For maximum token savings, add a Cursor rule to your project:
+Copy the examples into `.cursor/rules/`:
 
 ```bash
-cp rust/examples/lean-ctx.mdc .cursor/rules/lean-ctx.mdc
+mkdir -p .cursor/rules
+cp rust/examples/lean-ctx.mdc .cursor/rules/
+cp rust/examples/lean-ctx-session-metrics.mdc .cursor/rules/
 ```
 
-This instructs the LLM to prefer lean-ctx tools and use compact output patterns (CRP v2).
+- **`lean-ctx.mdc`** — Instructs the LLM to prefer lean-ctx MCP tools over the built-in equivalents (`Read` → `ctx_read`, terminal → `ctx_shell`, etc.) and to use compact output patterns (**CRP v2**).
+- **`lean-ctx-session-metrics.mdc`** — After substantive replies, call **`ctx_metrics`** once and append the token/cost footer; figures are **lean-ctx MCP session** totals only, not full Cursor chat billing.
 
 ## Configuration
 

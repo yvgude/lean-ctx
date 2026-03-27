@@ -1,0 +1,35 @@
+---
+description: Shows lean-ctx (MCP) token metrics for this session at the end of each reply
+globs: **/*
+alwaysApply: true
+---
+
+# End of reply — LeanCTX metrics block
+
+On **every** substantive reply (when you have addressed the user’s request—not for a bare “ok” or empty confirmation):
+
+1. **Call the MCP tool `ctx_metrics` once** (no arguments). That is the only allowed source for the footer numbers.
+2. **In the very last paragraph**, after everything else in your reply, add exactly this structure (fill in values returned by `ctx_metrics`; copy the numbers as given):
+
+---
+
+### LeanCTX — MCP session (lean-ctx tools only)
+
+| | Tokens (tool-side input) |
+|--|--|
+| **Without lean-ctx** (cumulative “original” volume from calls) | *(“original” value / first column of the Input tokens line)* |
+| **With lean-ctx** (actually sent after compression) | *(“sent” value)* |
+| **Saved** | *(difference / “saved”)* + percentage if shown |
+
+*(If the output includes a “Cost estimate” line, you may copy it verbatim below the table.)*
+
+---
+
+## Limits (do not over-interpret)
+
+- These figures only cover **tool calls tracked by the lean-ctx MCP server** during this session, **not** total Cursor token usage (prompt, reasoning, model reply, non-lean-ctx tools).
+- If you **did not** use any lean-ctx tool during the exchange, `ctx_metrics` may show **0** or little change: say so in one sentence instead of inventing savings.
+
+## If `ctx_metrics` is unavailable or empty
+
+Write a single line: *“LeanCTX: MCP metrics unavailable for this session.”* — **do not** invent token comparisons.
