@@ -7,7 +7,8 @@
 [![Crates.io](https://img.shields.io/crates/v/lean-ctx)](https://crates.io/crates/lean-ctx)
 [![Downloads](https://img.shields.io/crates/d/lean-ctx)](https://crates.io/crates/lean-ctx)
 [![AUR](https://img.shields.io/aur/version/lean-ctx)](https://aur.archlinux.org/packages/lean-ctx)
-[![npm](https://img.shields.io/npm/v/lean-ctx-bin)](https://www.npmjs.com/package/lean-ctx-bin)
+[![npm](https://img.shields.io/npm/v/lean-ctx-bin?label=npm)](https://www.npmjs.com/package/lean-ctx-bin)
+[![pi-lean-ctx](https://img.shields.io/npm/v/pi-lean-ctx?label=pi-lean-ctx)](https://www.npmjs.com/package/pi-lean-ctx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/pTHkG9Hew9)
 
