@@ -31,6 +31,8 @@ const FULL_READ_EXTENSIONS = new Set([
 ]);
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+const CODE_FULL_READ_MAX_BYTES = 8 * 1024;
+const CODE_SIGNATURES_MIN_BYTES = 96 * 1024;
 
 const readSchema = Type.Object({
   path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
@@ -101,8 +103,8 @@ async function chooseReadMode(path: string): Promise<"full" | "map" | "signature
   const size = fileStat.size;
 
   if (!CODE_EXTENSIONS.has(ext)) return size > 48 * 1024 ? "map" : "full";
-  if (size >= 160 * 1024) return "signatures";
-  if (size >= 24 * 1024) return "map";
+  if (size >= CODE_SIGNATURES_MIN_BYTES) return "signatures";
+  if (size >= CODE_FULL_READ_MAX_BYTES) return "map";
   return "full";
 }
 
