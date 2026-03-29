@@ -26,6 +26,7 @@ pub mod ls;
 pub mod make;
 pub mod maven;
 pub mod mix;
+pub mod mypy;
 pub mod mysql;
 pub mod next_build;
 pub mod npm;
@@ -118,6 +119,12 @@ fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
     }
     if c.starts_with("pip ") || c.starts_with("pip3 ") || c.starts_with("python -m pip") {
         return pip::compress(c, output);
+    }
+    if c.starts_with("mypy") || c.starts_with("python -m mypy") || c.starts_with("dmypy ") {
+        return mypy::compress(c, output);
+    }
+    if c.starts_with("pytest") || c.starts_with("python -m pytest") {
+        return test::compress(output);
     }
     if c.starts_with("ruff ") {
         return ruff::compress(c, output);
@@ -261,6 +268,20 @@ mod tests {
     fn routes_docker_commands() {
         let output = "CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES";
         assert!(compress_output("docker ps", output).is_some());
+    }
+
+    #[test]
+    fn routes_mypy_commands() {
+        let output = "src/main.py:10: error: Missing return  [return]\nFound 1 error in 1 file (checked 3 source files)";
+        assert!(compress_output("mypy .", output).is_some());
+        assert!(compress_output("python -m mypy src/", output).is_some());
+    }
+
+    #[test]
+    fn routes_pytest_commands() {
+        let output = "===== test session starts =====\ncollected 5 items\ntest_main.py ..... [100%]\n===== 5 passed in 0.5s =====";
+        assert!(compress_output("pytest", output).is_some());
+        assert!(compress_output("python -m pytest tests/", output).is_some());
     }
 
     #[test]
