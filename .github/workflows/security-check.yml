@@ -90,7 +90,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           LEAK=0
 
-          PRIVATE_PATHS="cloud/ docker-compose.yml .gitlab-ci.yml deploy.sh DEVELOPMENT.md"
+          PRIVATE_PATHS="cloud/ docker-compose.yml .gitlab-ci.yml deploy.sh DEVELOPMENT.md Makefile.deploy"
           for path in $PRIVATE_PATHS; do
             if [ -e "$path" ]; then
               echo "::error::PROPRIETARY CODE DETECTED: $path exists in the GitHub repository!"

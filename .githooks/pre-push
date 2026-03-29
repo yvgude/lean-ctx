@@ -85,7 +85,6 @@ if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then
     done
     echo ""
     echo "These paths are listed in .github-ignore."
-    echo "Use 'make push-gitlab' to push everything to GitLab."
     echo ""
     exit 1
 fi

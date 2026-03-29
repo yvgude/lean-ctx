@@ -1,5 +1,5 @@
-# Proprietary paths — NEVER push to GitHub
-# Used by .githooks/pre-push to block accidental leaks.
+# Paths excluded from this repository.
+# Used by .githooks/pre-push to enforce boundaries.
 # One path per line. Trailing slashes match directories.
 
 cloud/
@@ -8,3 +8,4 @@ docker-compose.yml
 deploy.sh
 website/
 DEVELOPMENT.md
+Makefile.deploy
