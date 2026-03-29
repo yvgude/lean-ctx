@@ -172,12 +172,7 @@ impl BM25Index {
             .into_iter()
             .map(|(idx, score)| {
                 let chunk = &self.chunks[idx];
-                let snippet = chunk
-                    .content
-                    .lines()
-                    .take(5)
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
                 SearchResult {
                     chunk_idx: idx,
                     score,
@@ -191,7 +186,11 @@ impl BM25Index {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(top_k);
         results
     }
@@ -223,15 +222,33 @@ fn index_dir(root: &Path) -> PathBuf {
 }
 
 fn is_code_file(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     matches!(
         ext,
-        "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "h"
-            | "hpp" | "rb" | "cs" | "kt" | "swift" | "php" | "scala" | "ex" | "exs"
-            | "zig" | "lua" | "dart" | "vue" | "svelte"
+        "rs" | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "py"
+            | "go"
+            | "java"
+            | "c"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "rb"
+            | "cs"
+            | "kt"
+            | "swift"
+            | "php"
+            | "scala"
+            | "ex"
+            | "exs"
+            | "zig"
+            | "lua"
+            | "dart"
+            | "vue"
+            | "svelte"
     )
 }
 
@@ -296,9 +313,7 @@ fn extract_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
         if let Some((name, kind)) = detect_symbol(trimmed) {
             let start = i;
             let end = find_block_end(&lines, i);
-            let block: String = lines[start..=end.min(lines.len() - 1)]
-                .to_vec()
-                .join("\n");
+            let block: String = lines[start..=end.min(lines.len() - 1)].to_vec().join("\n");
             let tokens = tokenize(&block);
             let token_count = tokens.len();
 
@@ -484,8 +499,8 @@ mod tests {
 
     #[test]
     fn detect_rust_function() {
-        let (name, kind) = detect_symbol("pub fn process_request(req: Request) -> Response {")
-            .unwrap();
+        let (name, kind) =
+            detect_symbol("pub fn process_request(req: Request) -> Response {").unwrap();
         assert_eq!(name, "process_request");
         assert_eq!(kind, ChunkKind::Function);
     }

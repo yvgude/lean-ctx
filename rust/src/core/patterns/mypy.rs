@@ -11,9 +11,7 @@ fn error_re() -> &'static Regex {
 }
 
 fn summary_re() -> &'static Regex {
-    MYPY_SUMMARY_RE.get_or_init(|| {
-        Regex::new(r"Found (\d+) errors? in (\d+) files?").unwrap()
-    })
+    MYPY_SUMMARY_RE.get_or_init(|| Regex::new(r"Found (\d+) errors? in (\d+) files?").unwrap())
 }
 
 pub fn compress(_command: &str, output: &str) -> Option<String> {
@@ -22,8 +20,7 @@ pub fn compress(_command: &str, output: &str) -> Option<String> {
         return Some("ok".to_string());
     }
 
-    if trimmed == "Success: no issues found in source files"
-        || trimmed.contains("no issues found")
+    if trimmed == "Success: no issues found in source files" || trimmed.contains("no issues found")
     {
         return Some("clean".to_string());
     }

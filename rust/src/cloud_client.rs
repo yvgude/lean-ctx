@@ -91,10 +91,7 @@ pub fn sync_stats(stats: &[serde_json::Value]) -> Result<String, String> {
     let json: serde_json::Value =
         serde_json::from_str(&resp_body).map_err(|e| format!("Invalid JSON: {e}"))?;
 
-    Ok(json["message"]
-        .as_str()
-        .unwrap_or("Synced")
-        .to_string())
+    Ok(json["message"].as_str().unwrap_or("Synced").to_string())
 }
 
 pub fn contribute(entries: &[serde_json::Value]) -> Result<String, String> {
@@ -141,7 +138,10 @@ pub fn push_knowledge(entries: &[serde_json::Value]) -> Result<String, String> {
     let json: serde_json::Value =
         serde_json::from_str(&resp_body).map_err(|e| format!("Invalid JSON: {e}"))?;
 
-    Ok(format!("{} entries synced", json["synced"].as_i64().unwrap_or(0)))
+    Ok(format!(
+        "{} entries synced",
+        json["synced"].as_i64().unwrap_or(0)
+    ))
 }
 
 pub fn pull_knowledge() -> Result<Vec<serde_json::Value>, String> {

@@ -31,7 +31,11 @@ pub fn handle(query: &str, path: &str, top_k: usize, crp_mode: CrpMode) -> Strin
     let compact = crp_mode.is_tdd();
 
     let header = if compact {
-        format!("semantic_search({top_k}) → {} results, {} chunks indexed\n", results.len(), index.doc_count)
+        format!(
+            "semantic_search({top_k}) → {} results, {} chunks indexed\n",
+            results.len(),
+            index.doc_count
+        )
     } else {
         format!(
             "Semantic search: \"{}\" ({} results from {} indexed chunks)\n",

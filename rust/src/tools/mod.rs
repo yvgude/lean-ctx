@@ -24,11 +24,11 @@ pub mod ctx_overview;
 pub mod ctx_read;
 pub mod ctx_response;
 pub mod ctx_search;
+pub mod ctx_semantic_search;
 pub mod ctx_session;
 pub mod ctx_shell;
 pub mod ctx_smart_read;
 pub mod ctx_tree;
-pub mod ctx_semantic_search;
 pub mod ctx_wrapped;
 
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;

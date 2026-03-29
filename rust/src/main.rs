@@ -474,7 +474,8 @@ fn cmd_team(args: &[String]) {
                     if entry.path().extension().and_then(|e| e.to_str()) == Some("json") {
                         if let Ok(content) = std::fs::read_to_string(entry.path()) {
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                                let category = json["category"].as_str().unwrap_or("general").to_string();
+                                let category =
+                                    json["category"].as_str().unwrap_or("general").to_string();
                                 let key = json["key"].as_str().unwrap_or("").to_string();
                                 let value = json["value"].as_str().unwrap_or("").to_string();
                                 if !key.is_empty() {

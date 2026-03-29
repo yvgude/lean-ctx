@@ -375,9 +375,15 @@ mod tests {
     #[test]
     fn adaptive_budget_reduces_for_repetitive() {
         let repetitive = "let x = 1;\n".repeat(50);
-        let diverse = (0..50).map(|i| format!("let var_{i} = func_{i}(arg_{i});")).collect::<Vec<_>>().join("\n");
+        let diverse = (0..50)
+            .map(|i| format!("let var_{i} = func_{i}(arg_{i});"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let budget_rep = super::adaptive_ib_budget(&repetitive, 0.7);
         let budget_div = super::adaptive_ib_budget(&diverse, 0.7);
-        assert!(budget_rep < budget_div, "repetitive content should get lower budget");
+        assert!(
+            budget_rep < budget_div,
+            "repetitive content should get lower budget"
+        );
     }
 }
