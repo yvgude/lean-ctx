@@ -9,7 +9,7 @@ license=('MIT')
 makedepends=('cargo' 'gcc')
 depends=('gcc-libs')
 source=("$pkgname-$pkgver.crate::https://static.crates.io/crates/$pkgname/$pkgname-$pkgver.crate")
-sha256sums=('45d8495b79587af501308a751f45b86fbf6af4a114f719783f4a8eaa16fff4db')
+sha256sums=('716c26bb1e1af625743058b199755e5c848960bd86e60312d855533d3031208e')
 
 prepare() {
   cd "$pkgname-$pkgver"
