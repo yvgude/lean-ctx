@@ -885,16 +885,6 @@ pub fn format_gain() -> String {
     }
 
     o.push(String::new());
-    o.push(format!("  {DIM}{ln56}{RST}"));
-    o.push(format!(
-        "  {DIM}lean-ctx v2.9.8  |  leanctx.com  |  lean-ctx dashboard{RST}"
-    ));
-    if !crate::cloud_client::check_pro() {
-        o.push(format!(
-            "  {DIM}Save ~25% more with Pro \u{2192} lean-ctx upgrade{RST}"
-        ));
-    }
-    o.push(String::new());
 
     o.join("\n")
 }

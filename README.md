@@ -392,7 +392,7 @@ $ lean-ctx gain
   ctx_read           103x  █▌                    59.1K  38%
     ... +33 more commands
 
-  lean-ctx v2.9.8  |  leanctx.com  |  lean-ctx dashboard
+  lean-ctx v2.9.9  |  leanctx.com  |  lean-ctx dashboard
 ```
 
 ## 24 Intelligent Tools

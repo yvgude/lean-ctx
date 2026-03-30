@@ -6,9 +6,9 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn run(args: &[String]) {
     let check_only = args.iter().any(|a| a == "--check");
 
-    println!("lean-ctx updater");
-    println!("Current version: {CURRENT_VERSION}");
-    println!("Checking https://github.com/yvgude/lean-ctx …");
+    println!();
+    println!("  \x1b[1m◆ lean-ctx updater\x1b[0m  \x1b[2mv{CURRENT_VERSION}\x1b[0m");
+    println!("  \x1b[2mChecking github.com/yvgude/lean-ctx …\x1b[0m");
 
     let release = match fetch_latest_release() {
         Ok(r) => r,
@@ -27,11 +27,12 @@ pub fn run(args: &[String]) {
     };
 
     if latest_tag == CURRENT_VERSION {
-        println!("Already up to date (v{CURRENT_VERSION}).");
+        println!("  \x1b[32m✓\x1b[0m Already up to date (v{CURRENT_VERSION}).");
+        println!();
         return;
     }
 
-    println!("Update available: v{CURRENT_VERSION} → v{latest_tag}");
+    println!("  Update available: v{CURRENT_VERSION} → \x1b[1;32mv{latest_tag}\x1b[0m");
 
     if check_only {
         println!("Run 'lean-ctx update' to install.");
@@ -39,7 +40,7 @@ pub fn run(args: &[String]) {
     }
 
     let asset_name = platform_asset_name();
-    println!("Downloading {asset_name} …");
+    println!("  \x1b[2mDownloading {asset_name} …\x1b[0m");
 
     let download_url = match find_asset_url(&release, &asset_name) {
         Some(u) => u,
@@ -71,8 +72,11 @@ pub fn run(args: &[String]) {
         std::process::exit(1);
     }
 
-    println!("Updated to lean-ctx v{latest_tag}");
-    println!("Binary: {}", current_exe.display());
+    println!();
+    crate::terminal_ui::print_logo_animated();
+    println!("  \x1b[1;32m✓ Updated to lean-ctx v{latest_tag}\x1b[0m");
+    println!("  \x1b[2mBinary: {}\x1b[0m", current_exe.display());
+    println!();
 }
 
 fn fetch_latest_release() -> Result<serde_json::Value, String> {

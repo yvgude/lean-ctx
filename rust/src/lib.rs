@@ -7,5 +7,6 @@ pub mod hooks;
 pub mod server;
 pub mod setup;
 pub mod shell;
+pub mod terminal_ui;
 pub mod tools;
 pub mod uninstall;

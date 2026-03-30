@@ -1,5 +1,7 @@
 use anyhow::Result;
-use lean_ctx::{cli, cloud_client, core, dashboard, doctor, setup, shell, tools, uninstall};
+use lean_ctx::{
+    cli, cloud_client, core, dashboard, doctor, setup, shell, terminal_ui, tools, uninstall,
+};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -25,16 +27,15 @@ fn main() {
                     core::stats::gain_live();
                     return;
                 }
-                let output = if rest.iter().any(|a| a == "--graph") {
-                    core::stats::format_gain_graph()
+                if rest.iter().any(|a| a == "--graph") {
+                    println!("{}", core::stats::format_gain_graph());
                 } else if rest.iter().any(|a| a == "--daily") {
-                    core::stats::format_gain_daily()
+                    println!("{}", core::stats::format_gain_daily());
                 } else if rest.iter().any(|a| a == "--json") {
-                    core::stats::format_gain_json()
+                    println!("{}", core::stats::format_gain_json());
                 } else {
-                    core::stats::format_gain()
-                };
-                println!("{output}");
+                    print_gain_with_logo();
+                }
                 return;
             }
             "cep" => {
@@ -154,7 +155,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 2.9.8");
+                println!("lean-ctx 2.9.9");
                 return;
             }
             "--help" | "-h" => {
@@ -239,7 +240,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.9.8 — The Intelligence Layer for AI Coding
+        "lean-ctx 2.9.9 — The Intelligence Layer for AI Coding
 
 90+ compression patterns | 24 MCP tools | Context Continuity Protocol
 
@@ -654,6 +655,19 @@ fn cmd_cloud(args: &[String]) {
             println!("  status      — Show cloud connection status");
         }
     }
+}
+
+fn print_gain_with_logo() {
+    terminal_ui::print_logo_animated();
+    let output = core::stats::format_gain();
+    print!("{output}");
+    let dim = "\x1b[2m";
+    let rst = "\x1b[0m";
+    println!("  {dim}lean-ctx v2.9.9  |  leanctx.com  |  lean-ctx dashboard{rst}");
+    if !cloud_client::check_pro() {
+        println!("  {dim}Save ~25% more with Pro \u{2192} lean-ctx upgrade{rst}");
+    }
+    println!();
 }
 
 fn cmd_upgrade() {

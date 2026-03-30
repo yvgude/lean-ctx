@@ -17,6 +17,8 @@ enum ConfigType {
 }
 
 pub fn run_setup() {
+    use crate::terminal_ui;
+
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => {
@@ -31,15 +33,14 @@ pub fn run_setup() {
 
     let home_str = home.to_string_lossy().to_string();
 
-    println!("\n\x1b[1;32m▶\x1b[0m \x1b[1mlean-ctx setup\x1b[0m\n");
+    terminal_ui::print_setup_header();
 
-    println!("\x1b[1mStep 1: Shell Aliases\x1b[0m");
-    println!("\x1b[2m──────────────────────────────────────────────────────────────────\x1b[0m");
+    // Step 1: Shell hook
+    terminal_ui::print_step_header(1, 5, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
-    println!();
 
-    println!("\x1b[1mStep 2: Editor Configuration\x1b[0m");
-    println!("\x1b[2m──────────────────────────────────────────────────────────────────\x1b[0m");
+    // Step 2: Editor auto-detection + configuration
+    terminal_ui::print_step_header(2, 5, "AI Tool Detection");
 
     let targets = build_targets(&home, &binary);
     let mut newly_configured: Vec<&str> = Vec::new();
@@ -47,18 +48,10 @@ pub fn run_setup() {
     let mut not_installed: Vec<&str> = Vec::new();
     let mut errors: Vec<&str> = Vec::new();
 
-    let name_width = targets.iter().map(|t| t.name.len()).max().unwrap_or(15);
-
     for target in &targets {
         let short_path = shorten_path(&target.config_path.to_string_lossy(), &home_str);
 
         if !target.detect_path.exists() {
-            println!(
-                "  \x1b[2m○\x1b[0m {:<width$}  \x1b[2m{:<44}  not installed\x1b[0m",
-                target.name,
-                "",
-                width = name_width
-            );
             not_installed.push(target.name);
             continue;
         }
@@ -69,34 +62,24 @@ pub fn run_setup() {
                 .unwrap_or(false);
 
         if has_config {
-            println!(
-                "  \x1b[32m✓\x1b[0m {:<width$}  \x1b[2m{:<44}\x1b[0m  \x1b[32malready configured\x1b[0m",
-                target.name,
-                short_path,
-                width = name_width
-            );
+            terminal_ui::print_status_ok(&format!(
+                "{:<20} \x1b[2m{short_path}\x1b[0m",
+                target.name
+            ));
             already_configured.push(target.name);
             continue;
         }
 
         match write_config(target, &binary) {
             Ok(()) => {
-                println!(
-                    "  \x1b[32m✓\x1b[0m {:<width$}  \x1b[2m{:<44}\x1b[0m  \x1b[1;32mconfigured\x1b[0m",
-                    target.name,
-                    short_path,
-                    width = name_width
-                );
+                terminal_ui::print_status_new(&format!(
+                    "{:<20} \x1b[2m{short_path}\x1b[0m",
+                    target.name
+                ));
                 newly_configured.push(target.name);
             }
             Err(e) => {
-                println!(
-                    "  \x1b[33m⚠\x1b[0m {:<width$}  \x1b[2m{:<44}\x1b[0m  \x1b[33merror: {}\x1b[0m",
-                    target.name,
-                    short_path,
-                    e,
-                    width = name_width
-                );
+                terminal_ui::print_status_warn(&format!("{}: {e}", target.name));
                 errors.push(target.name);
             }
         }
@@ -104,16 +87,21 @@ pub fn run_setup() {
 
     let total_ok = newly_configured.len() + already_configured.len();
     if total_ok == 0 && errors.is_empty() {
-        println!();
-        println!(
-            "  \x1b[33m⚠\x1b[0m No editors detected. \
-             Configure manually: https://leanctx.com/docs/getting-started"
+        terminal_ui::print_status_warn(
+            "No AI tools detected. Install one and re-run: lean-ctx setup",
         );
     }
 
-    println!();
-    println!("\x1b[1mStep 3: Agent Instructions\x1b[0m");
-    println!("\x1b[2m──────────────────────────────────────────────────────────────────\x1b[0m");
+    if !not_installed.is_empty() {
+        println!(
+            "  \x1b[2m○ {} not detected: {}\x1b[0m",
+            not_installed.len(),
+            not_installed.join(", ")
+        );
+    }
+
+    // Step 3: Agent hooks
+    terminal_ui::print_step_header(3, 5, "Agent Instructions");
     let mut agents_installed = 0;
     for target in &targets {
         if !target.detect_path.exists() || target.agent_key.is_empty() {
@@ -123,33 +111,26 @@ pub fn run_setup() {
         agents_installed += 1;
     }
     if agents_installed == 0 {
-        println!("  \x1b[2m(no agent instructions needed)\x1b[0m");
+        terminal_ui::print_status_skip("No agent instructions needed");
     }
 
-    println!();
-    println!("\x1b[1mStep 4: Data Directory\x1b[0m");
-    println!("\x1b[2m──────────────────────────────────────────────────────────────────\x1b[0m");
+    // Step 4: Data directory + diagnostics
+    terminal_ui::print_step_header(4, 5, "Environment Check");
     let lean_dir = home.join(".lean-ctx");
     if !lean_dir.exists() {
         let _ = std::fs::create_dir_all(&lean_dir);
-        println!("  \x1b[32m✓\x1b[0m Created ~/.lean-ctx/");
+        terminal_ui::print_status_new("Created ~/.lean-ctx/");
     } else {
-        println!("  \x1b[32m✓\x1b[0m ~/.lean-ctx/ already exists");
+        terminal_ui::print_status_ok("~/.lean-ctx/ ready");
     }
-
-    println!();
-    println!("\x1b[1mStep 5: Diagnostics\x1b[0m");
-    println!("\x1b[2m──────────────────────────────────────────────────────────────────\x1b[0m");
     crate::doctor::run();
 
-    println!();
-    println!("\x1b[1mStep 6: Help improve lean-ctx\x1b[0m");
-    println!("\x1b[2m──────────────────────────────────────────────────────────────────\x1b[0m");
-    println!("  Share anonymous usage stats to help improve lean-ctx for everyone.");
-    println!("  Only file types and compression efficiency are shared.");
+    // Step 5: Data sharing
+    terminal_ui::print_step_header(5, 5, "Help Improve lean-ctx");
+    println!("  Share anonymous compression stats to make lean-ctx better.");
     println!("  \x1b[1mNo code, no file names, no personal data — ever.\x1b[0m");
     println!();
-    print!("  Enable? [Y/n] ");
+    print!("  Enable anonymous data sharing? \x1b[1m[Y/n]\x1b[0m ");
     use std::io::Write;
     std::io::stdout().flush().ok();
 
@@ -173,45 +154,42 @@ pub fn run_setup() {
             config_content.push_str("\n[cloud]\ncontribute_enabled = true\n");
             let _ = std::fs::write(&config_path, config_content);
         }
-        println!("  \x1b[32m✓\x1b[0m Enabled — thank you!");
+        terminal_ui::print_status_ok("Enabled — thank you!");
     } else {
-        println!("  \x1b[2m○\x1b[0m Skipped — you can enable later with: lean-ctx config");
+        terminal_ui::print_status_skip("Skipped — enable later with: lean-ctx config");
     }
 
-    println!();
-    println!("\x1b[2m══════════════════════════════════════════════════════════════════\x1b[0m");
-    println!("\x1b[1;32m✓ Setup complete!\x1b[0m");
+    // Summary
     println!();
     println!(
-        "  \x1b[1m{}\x1b[0m editor{} configured, \x1b[2m{} already set up, {} not installed\x1b[0m",
+        "  \x1b[1;32m✓ Setup complete!\x1b[0m  \x1b[1m{}\x1b[0m configured, \x1b[2m{} already set, {} skipped\x1b[0m",
         newly_configured.len(),
-        if newly_configured.len() != 1 { "s" } else { "" },
         already_configured.len(),
         not_installed.len()
     );
 
     if !errors.is_empty() {
         println!(
-            "  \x1b[33m{} error{}: {}\x1b[0m",
+            "  \x1b[33m⚠ {} error{}: {}\x1b[0m",
             errors.len(),
             if errors.len() != 1 { "s" } else { "" },
             errors.join(", ")
         );
     }
 
-    println!();
-
+    // Next steps
     let shell = std::env::var("SHELL").unwrap_or_default();
-    if shell.contains("zsh") {
-        println!("  \x1b[1mNext:\x1b[0m  source ~/.zshrc");
+    let source_cmd = if shell.contains("zsh") {
+        "source ~/.zshrc"
     } else if shell.contains("fish") {
-        println!("  \x1b[1mNext:\x1b[0m  source ~/.config/fish/config.fish");
+        "source ~/.config/fish/config.fish"
     } else if shell.contains("bash") {
-        println!("  \x1b[1mNext:\x1b[0m  source ~/.bashrc");
+        "source ~/.bashrc"
     } else {
-        println!("  \x1b[1mNext:\x1b[0m  Restart your shell");
-    }
-
+        "Restart your shell"
+    };
+    println!();
+    println!("  \x1b[1mNext:\x1b[0m  {source_cmd}");
     if !newly_configured.is_empty() {
         println!(
             "         Restart {} to load MCP tools",
@@ -219,10 +197,10 @@ pub fn run_setup() {
         );
     }
 
-    println!(
-        "         \x1b[2mRun \x1b[0m\x1b[1mlean-ctx doctor\x1b[0m\x1b[2m to verify anytime\x1b[0m"
-    );
+    // Logo + commands
     println!();
+    terminal_ui::print_logo_animated();
+    terminal_ui::print_command_box();
 }
 
 fn shorten_path(path: &str, home: &str) -> String {

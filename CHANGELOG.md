@@ -2,6 +2,16 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.9.9] — 2026-03-30
+
+### Added
+
+- **Animated RGB logo in terminal** — `lean-ctx gain` and `lean-ctx setup` now display a cinematic ASCII art logo with animated RGB color cycling using ANSI TrueColor (24-bit). Gracefully falls back to static gradient in non-terminal environments (pipes, CI).
+- **Animated logo on `lean-ctx update`** — After successful self-update, the RGB logo animation plays with the new version confirmation.
+- **New `terminal_ui` module** — Centralized terminal UI toolkit with box-drawing, status icons (✓/○/⚠), spinner animations, and reusable step headers for consistent CLI appearance.
+- **Redesigned `lean-ctx setup` flow** — Clean 5-step onboarding: Shell Hook → AI Tool Auto-Detection → Agent Instructions → Environment Check → Data Sharing. No interactive questions for shell or editor detection (fully automatic). Ends with animated logo + command reference box.
+- **Command reference box** — After setup completion, displays all essential commands in a bordered box for quick reference.
+
 ## [2.9.8] — 2026-03-30
 
 ### Fixed
