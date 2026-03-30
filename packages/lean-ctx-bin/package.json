@@ -1,6 +1,6 @@
 {
   "name": "lean-ctx-bin",
-  "version": "2.9.9",
+  "version": "2.9.10",
   "description": "lean-ctx — the token-efficient context tool for LLM coding agents. Installs a pre-built binary, no Rust required.",
   "keywords": ["lean-ctx", "mcp", "llm", "context", "claude", "cursor", "ai", "token-optimization"],
   "homepage": "https://leanctx.com",
