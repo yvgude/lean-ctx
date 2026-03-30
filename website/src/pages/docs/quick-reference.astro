@@ -1,0 +1,159 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Quick Reference',
+    items: [
+      { label: 'Overview', href: '/docs/quick-reference' },
+      { label: 'Read Modes', href: '/docs/quick-reference#read-modes' },
+      { label: 'Context Tools', href: '/docs/quick-reference#context-tools' },
+      { label: 'CLI Commands', href: '/docs/quick-reference#cli-commands' },
+      { label: 'Detail Pages', href: '/docs/quick-reference#links' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: '/docs/getting-started' },
+      { label: 'Tool API Reference', href: '/docs/tools' },
+      { label: 'Configuration', href: '/docs/configuration' },
+      { label: 'CLI Reference', href: '/docs/cli-reference' },
+      { label: 'Analytics & Dashboards', href: '/docs/analytics' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Quick Reference" description="Daily workflow cheat sheet for lean-ctx." sidebar={sidebar}>
+
+  <p>
+    Your cheat sheet for daily use. For detailed explanations, follow the links to each section's
+    dedicated page.
+  </p>
+
+  <hr />
+
+  <h2 id="read-modes">Read Mode Decision Tree</h2>
+
+  <p>Which <code>ctx_read</code> mode should the AI use?</p>
+
+  <table>
+    <thead>
+      <tr><th>Situation</th><th>Mode</th><th>Typical savings</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>File you'll edit</td>
+        <td><code>full</code></td>
+        <td>Re-reads: ~99%</td>
+      </tr>
+      <tr>
+        <td>Context only (deps, structure)</td>
+        <td><code>map</code></td>
+        <td>~93%</td>
+      </tr>
+      <tr>
+        <td>API surface (fn/class signatures)</td>
+        <td><code>signatures</code></td>
+        <td>~95%</td>
+      </tr>
+      <tr>
+        <td>After editing a file</td>
+        <td><code>diff</code></td>
+        <td>~98%</td>
+      </tr>
+      <tr>
+        <td>Browse a large file</td>
+        <td><code>aggressive</code></td>
+        <td>~85%</td>
+      </tr>
+      <tr>
+        <td>Very large file, few relevant lines</td>
+        <td><code>entropy</code></td>
+        <td>~90%</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    <a href="/docs/tools/core#ctx_read">Full ctx_read documentation →</a>
+  </p>
+
+  <hr />
+
+  <h2 id="context-tools">Context Tools (what the AI uses)</h2>
+
+  <p>These are called by the AI automatically — you don't type them.</p>
+
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Purpose</th><th>Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>ctx_read</code></td>
+        <td>Read file with compression + caching</td>
+        <td>up to 99%</td>
+      </tr>
+      <tr>
+        <td><code>ctx_shell</code></td>
+        <td>Execute command with output compression</td>
+        <td>60–95%</td>
+      </tr>
+      <tr>
+        <td><code>ctx_search</code></td>
+        <td>Code search with compact results</td>
+        <td>50–80%</td>
+      </tr>
+      <tr>
+        <td><code>ctx_session</code></td>
+        <td>Cross-chat session memory</td>
+        <td>99% cold-start</td>
+      </tr>
+      <tr>
+        <td><code>ctx_graph</code></td>
+        <td>Dependency graph visualization</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    <a href="/docs/tools">Full tools reference →</a>
+  </p>
+
+  <hr />
+
+  <h2 id="cli-commands">CLI Commands (what you type)</h2>
+
+  <h3 id="essential">Essential</h3>
+  <table>
+    <thead>
+      <tr><th>Command</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>lean-ctx setup</code></td><td>One-time setup — detects shell + AI tools, installs everything</td></tr>
+      <tr><td><code>lean-ctx gain</code></td><td>Savings dashboard (<code>--live</code>, <code>--graph</code>, <code>--daily</code>)</td></tr>
+      <tr><td><code>lean-ctx doctor</code></td><td>Diagnose installation issues (8 checks)</td></tr>
+      <tr><td><code>lean-ctx dashboard</code></td><td>Web dashboard with charts (localhost:3333)</td></tr>
+      <tr><td><code>lean-ctx benchmark run [path]</code></td><td>Real token savings measurement</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    <a href="/docs/cli">Full CLI reference →</a>
+  </p>
+
+  <hr />
+
+  <h2 id="links">Detail Pages</h2>
+
+  <ul>
+    <li><a href="/mcp-server">Context Server — Integration with editors</a></li>
+    <li><a href="/docs/cli">CLI — All commands and options</a></li>
+    <li><a href="/protocols">Protocols — CEP, CCP, TDD</a></li>
+    <li><a href="/docs/configuration">Configuration — Config file, env vars, editor setup</a></li>
+  </ul>
+
+</DocsLayout>

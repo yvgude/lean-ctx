@@ -1,0 +1,105 @@
+---
+const protocols = [
+  {
+    abbr: 'CEP',
+    name: 'Cognitive Efficiency Protocol',
+    version: 'v2.7.0',
+    tagline: 'Measure and optimize how the LLM processes context',
+    points: [
+      'Compliance score (0-100) across cache, mode diversity, compression, action-first',
+      'Adaptive complexity — Mechanical / Standard / Architectural task classification',
+      'Quality scorer ensures >95% AST and identifier preservation',
+      'Auto-validation pipeline for Rust, JS/TS, Python, JSON, TOML',
+    ],
+    terminal: `CEP SCORE: 87/100
+Cache: 92%  Modes: 4/6  Compression: 78%
+Task: Standard (feature implementation)
+Quality: AST 98% | Identifiers 97% | Lines 96%`,
+  },
+  {
+    abbr: 'CCP',
+    name: 'Context Continuity Protocol',
+    version: 'v2.0.0',
+    tagline: 'Cross-session memory that eliminates cold starts',
+    points: [
+      'Persists task, findings, decisions, and file access across chats',
+      'LITM-aware positioning for optimal attention placement',
+      'Load previous sessions in ~400 tokens (vs ~50K cold start)',
+      'Auto-save every 5 tool calls + idle timeout protection',
+    ],
+    terminal: `ACTIVE SESSION v125 | 513 calls | 176K tok saved
+Task: CEP v1 — local verification
+Findings: 3 | Decisions: 2 | Files: 17
+Load time: 400 tokens (99.2% less than cold start)`,
+  },
+  {
+    abbr: 'TDD',
+    name: 'Token Dense Dialect',
+    version: 'v1.7.0',
+    tagline: 'Symbol shorthand for compact LLM communication',
+    points: [
+      'Unicode symbols: λ=function, §=struct, ∂=trait, τ=type, ε=enum',
+      'ROI-based identifier mapping (long names → α1, α2...)',
+      'Action vocabulary: ⊕=add, ⊖=remove, ∆=modify, ✓=ok, ✗=fail',
+      'Filler detection v2 — removes 60+ hedge/meta/closing patterns',
+    ],
+    terminal: `§MAP: α1=UserAuthService α2=validateToken
+λ+α2(⊕, req:HttpReq) → Result<Token>
+  ∆ verify_jwt → verify_rs256  // was HS256
+  ⊕ rate_limit: 100/min
+  ✓ tests: 42 passed`,
+  },
+];
+---
+
+<section class="relative py-20 sm:py-32">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="text-center mb-12 sm:mb-16">
+      <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-3">Three Protocols, One Goal</p>
+      <h2 class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.1] text-text-bright mb-4">
+        Compress smarter. <span class="gradient-text-green">Spend less.</span>
+      </h2>
+      <p class="text-sm text-muted leading-relaxed max-w-2xl mx-auto">
+        Each protocol targets a different layer of token waste — from how files are read to how sessions persist to how the LLM communicates.
+      </p>
+    </div>
+
+    <div class="space-y-8 sm:space-y-12">
+      {protocols.map((p, i) => (
+        <div class:list={['protocol-card animate-entrance grid lg:grid-cols-2 gap-6 lg:gap-10 items-start p-6 sm:p-8 rounded-2xl border border-white/[0.06] bg-surface/50', i % 2 === 1 ? 'lg:flex-row-reverse' : '']}>
+          <div>
+            <div class="flex items-baseline gap-3 mb-3">
+              <span class="text-2xl sm:text-3xl font-display font-bold text-accent">{p.abbr}</span>
+              <span class="text-sm text-muted">{p.name}</span>
+              <span class="text-[10px] text-muted/50 font-mono ml-auto">{p.version}</span>
+            </div>
+            <p class="text-sm text-text-bright font-medium mb-4">{p.tagline}</p>
+            <ul class="space-y-2">
+              {p.points.map(point => (
+                <li class="flex gap-2 text-[13px] text-muted leading-relaxed">
+                  <span class="text-accent shrink-0 mt-1">›</span>
+                  <span>{point}</span>
+                </li>
+              ))}
+            </ul>
+            <a href={`/docs/${p.abbr.toLowerCase()}`} class="inline-flex items-center mt-5 text-xs text-accent hover:text-accent/80 transition-colors font-medium">
+              Learn more
+              <svg class="ml-1 w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
+          </div>
+          <div class="terminal-chrome">
+            <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
+              <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
+              <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
+              <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
+              <span class="text-muted text-[11px] ml-2">{p.abbr.toLowerCase()}</span>
+            </div>
+            <div class="terminal-body px-4 py-3 font-mono text-[12px] sm:text-[13px] leading-relaxed">
+              <pre class="text-text whitespace-pre-wrap">{p.terminal}</pre>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

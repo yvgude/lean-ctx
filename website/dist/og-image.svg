@@ -1,0 +1,16 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#060609"/>
+  <rect x="0" y="0" width="1200" height="630" fill="url(#grad)" opacity="0.3"/>
+  <defs>
+    <radialGradient id="grad" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#060609" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <text x="600" y="240" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="#ffffff" letter-spacing="-2">LeanCTX</text>
+  <text x="600" y="310" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="400" fill="#7b7b9a">The Cognitive Filter for AI Engineering</text>
+  <line x1="480" y1="350" x2="720" y2="350" stroke="#34d399" stroke-opacity="0.3" stroke-width="1"/>
+  <text x="600" y="400" text-anchor="middle" font-family="monospace" font-size="20" fill="#34d399">24 MCP Tools  &#183;  90+ Patterns  &#183;  14 Languages</text>
+  <text x="600" y="440" text-anchor="middle" font-family="monospace" font-size="18" fill="#7b7b9a">Up to 99% token reduction per operation</text>
+  <text x="600" y="540" text-anchor="middle" font-family="monospace" font-size="16" fill="#34d399" opacity="0.6">leanctx.com</text>
+</svg>

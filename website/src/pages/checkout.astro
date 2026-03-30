@@ -1,0 +1,250 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Checkout — LeanCTX Pro" description="Subscribe to LeanCTX Pro. $9/month for adaptive compression that gets smarter over time."
+  noindex={true}>
+
+<section class="section-y">
+  <div class="content-grid" style="max-width: 32rem;">
+
+    <div class="animate-entrance" style="text-align: center; margin-bottom: 2rem;">
+      <p class="fluid-label text-accent" style="margin-bottom: 1rem;">LeanCTX Pro</p>
+      <h1 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: 0.5rem;">
+        Start Your Upgrade
+      </h1>
+      <p class="text-muted" style="font-size: 0.875rem;">$9/month &middot; Cancel anytime</p>
+    </div>
+
+    <!-- Step 1: Email -->
+    <div id="checkout-form" class="checkout-card animate-entrance stagger-1">
+      <div class="checkout-summary">
+        <div class="checkout-row">
+          <span>LeanCTX Pro</span>
+          <span class="text-text-bright">$9/mo</span>
+        </div>
+        <div class="checkout-row checkout-row-detail">
+          <span>Adaptive compression</span>
+          <span class="text-accent">Included</span>
+        </div>
+        <div class="checkout-row checkout-row-detail">
+          <span>Cloud dashboard</span>
+          <span class="text-accent">Included</span>
+        </div>
+        <div class="checkout-row checkout-row-detail">
+          <span>Cross-machine sync</span>
+          <span class="text-accent">Included</span>
+        </div>
+      </div>
+
+      <div class="checkout-divider"></div>
+
+      <label class="checkout-label" for="email-input">Your email</label>
+      <input type="email" id="email-input" placeholder="you@example.com" class="checkout-input" autofocus />
+      <p id="checkout-error" class="checkout-error" style="display: none;"></p>
+      <button id="checkout-btn" class="checkout-btn">
+        <span id="btn-text">Continue to Payment</span>
+        <span id="btn-loading" style="display: none;">Redirecting...</span>
+      </button>
+
+      <p class="checkout-fine-print">
+        You'll be redirected to Stripe for secure payment.
+        After payment, your engine upgrades automatically.
+      </p>
+    </div>
+
+    <!-- Step 2: Success (shown after redirect back) -->
+    <div id="checkout-success" class="checkout-card animate-entrance" style="display: none; text-align: center;">
+      <div class="checkout-success-icon">✓</div>
+      <h2 class="font-display text-lg font-semibold text-text-bright" style="margin-bottom: 0.5rem;">You're all set!</h2>
+      <p class="text-muted" style="font-size: 0.875rem; margin-bottom: 1.5rem;">
+        Your engine will start learning automatically.<br/>
+        No commands needed — just keep coding.
+      </p>
+      <a href="/dashboard" class="checkout-btn" style="text-decoration: none;">View Your Dashboard</a>
+    </div>
+
+  </div>
+</section>
+
+</BaseLayout>
+
+<script is:inline>
+  const API_BASE = 'https://api.leanctx.com';
+
+  function init() {
+    const params = new URLSearchParams(window.location.search);
+    const email = params.get('email');
+    const success = params.get('success');
+
+    if (success === 'true') {
+      document.getElementById('checkout-form').style.display = 'none';
+      document.getElementById('checkout-success').style.display = 'block';
+      return;
+    }
+
+    if (email) {
+      document.getElementById('email-input').value = email;
+    }
+
+    document.getElementById('checkout-btn').addEventListener('click', handleCheckout);
+    document.getElementById('email-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleCheckout();
+    });
+  }
+
+  async function handleCheckout() {
+    var emailInput = document.getElementById('email-input');
+    var email = emailInput.value.trim();
+    var errorEl = document.getElementById('checkout-error');
+    var btnText = document.getElementById('btn-text');
+    var btnLoading = document.getElementById('btn-loading');
+    var btn = document.getElementById('checkout-btn');
+
+    errorEl.style.display = 'none';
+
+    if (!email || !email.includes('@')) {
+      errorEl.textContent = 'Please enter a valid email address.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'inline';
+
+    try {
+      var resp = await fetch(API_BASE + '/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          success_url: window.location.origin + '/checkout?success=true',
+          cancel_url: window.location.origin + '/checkout?email=' + encodeURIComponent(email),
+        }),
+      });
+
+      if (!resp.ok) {
+        var errData = await resp.json().catch(function() { return {}; });
+        throw new Error(errData.error || 'Something went wrong. Please try again.');
+      }
+
+      var data = await resp.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error('No checkout URL received.');
+      }
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = 'block';
+      btn.disabled = false;
+      btnText.style.display = 'inline';
+      btnLoading.style.display = 'none';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<style>
+  .checkout-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    padding: 2rem;
+  }
+
+  .checkout-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+  .checkout-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9375rem;
+    color: var(--color-text);
+  }
+  .checkout-row-detail {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+  }
+
+  .checkout-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 1.5rem 0;
+  }
+
+  .checkout-label {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    margin-bottom: 0.5rem;
+  }
+
+  .checkout-input {
+    width: 100%;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    color: var(--color-text-bright);
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+  }
+  .checkout-input:focus {
+    border-color: var(--color-accent);
+  }
+
+  .checkout-error {
+    font-size: 0.8125rem;
+    color: #ef4444;
+    margin-top: 0.5rem;
+  }
+
+  .checkout-btn {
+    width: 100%;
+    margin-top: 1rem;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.875rem;
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+    display: block;
+    text-align: center;
+  }
+  .checkout-btn:hover { opacity: 0.88; }
+  .checkout-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .checkout-fine-print {
+    margin-top: 1rem;
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .checkout-success-icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 auto 1.5rem;
+  }
+</style>

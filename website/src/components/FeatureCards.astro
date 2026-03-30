@@ -1,0 +1,56 @@
+---
+const features = [
+  { title: 'ctx_read', desc: '6 compression modes + session caching. Re-reads cost 13 tokens.', savings: 'up to 99%' },
+  { title: 'ctx_graph', desc: 'Persistent project graph with incremental scanning. 5 actions: build, related, symbol, impact, status.', savings: 'Structural' },
+  { title: 'ctx_shell', desc: '90+ patterns across 34 categories — git, npm, cargo, docker, kubectl, aws, prisma, helm, and more.', savings: '60–90%' },
+  { title: 'ctx_intent', desc: 'Graph-enhanced intent detection. Classifies queries and auto-loads relevant files with optimal compression.', savings: 'Context-aware' },
+  { title: 'ctx_search', desc: 'Pattern search returning only matching lines with compact context.', savings: '50–80%' },
+  { title: 'ctx_compress', desc: 'Checkpoint all cached files into an ultra-compact signature map.', savings: '90–95%' },
+  { title: 'ctx_smart_read', desc: 'Bayesian mode prediction — automatically picks the optimal compression per file type and size.', savings: 'Automatic' },
+  { title: 'ctx_benchmark', desc: 'Real project benchmarks with token measurements, latency, and AST preservation scores.', savings: 'Data-driven' },
+  { title: 'ctx_metrics', desc: 'Real-time session stats: cache hits, compression ratios, costs.', savings: 'Real-time' },
+  { title: 'ctx_session', desc: 'Cross-session memory — persist task, findings, decisions across chats and context compactions.', savings: 'CCP' },
+  { title: 'ctx_wrapped', desc: 'Shareable savings report — "Spotify Wrapped" for your token savings with cost tracking.', savings: 'Report' },
+  { title: 'CEP Engine', desc: 'Cognitive Efficiency Protocol — adaptive complexity, quality scoring, auto-validation, and CEP compliance metrics.', savings: 'Smart' },
+  { title: 'lctx', desc: 'Multi-agent launcher. Auto-detects Cursor, Claude, Codex, Gemini, Windsurf, Cline and configures lean-ctx.', savings: 'One command' },
+  { title: 'lean-ctx init', desc: '23 shell aliases installed globally with --global. macOS, Linux, Windows.', savings: 'Auto-setup' },
+  { title: 'lean-ctx gain', desc: 'Visual terminal dashboard with lifetime savings and USD cost tracking.', savings: 'Persistent' },
+];
+---
+
+<section class="relative py-20 sm:py-32">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="grid lg:grid-cols-[1fr_2fr] gap-10 lg:gap-16 items-start">
+      <div class="lg:sticky lg:top-24">
+        <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-3">Your Token Budget, Optimized</p>
+        <h2 class="font-display text-2xl sm:text-[2.25rem] font-bold tracking-tight leading-[1.15] text-text-bright mb-4">
+          24 tools that <span class="gradient-text-green">cut your token spend.</span>
+        </h2>
+        <p class="text-sm text-muted leading-relaxed mb-6">Every tool reduces what gets sent to the LLM. Fewer tokens billed, more messages in your quota, lower API costs.</p>
+        <a href="/features" class="btn-outline-glossy inline-flex items-center px-6 py-2.5 text-xs font-medium rounded-lg text-text">
+          Explore all tools
+          <svg class="ml-2 w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-0">
+        {features.map((f, i) => (
+          <div class:list={['py-5 sm:py-6 px-0 sm:px-5 animate-entrance', i < 2 ? '' : 'border-t border-white/[0.06]', i % 2 === 0 ? 'sm:border-r sm:border-r-white/[0.06]' : '']}>
+            <div class="flex items-baseline justify-between gap-3 mb-1.5">
+              <h3 class="text-[13px] font-bold font-mono text-text-bright">{f.title}</h3>
+              <span class="text-[11px] text-accent font-mono shrink-0">{f.savings}</span>
+            </div>
+            <p class="text-[13px] text-muted leading-relaxed">{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div class="mt-10 sm:mt-14 flex flex-col sm:flex-row gap-3 lg:hidden">
+      <a href="/features" class="btn-outline-glossy inline-flex items-center justify-center px-8 py-3.5 text-sm font-medium rounded-xl text-text">
+        Explore all tools
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+    </div>
+  </div>
+</section>

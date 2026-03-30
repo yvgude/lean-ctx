@@ -1,0 +1,68 @@
+---
+const dimensions = [
+  {
+    title: 'Compression Layer',
+    subtitle: 'Input Efficiency',
+    badge: 'Implemented',
+    badgeColor: 'text-accent bg-accent/10 border-accent/20',
+    description: 'AST-based signatures, delta-loading, session caching, entropy filtering. Send the skeleton, not the flesh.',
+    accent: 'text-accent',
+  },
+  {
+    title: 'Project Intelligence',
+    subtitle: 'Structural Awareness',
+    badge: 'Implemented',
+    badgeColor: 'text-accent bg-accent/10 border-accent/20',
+    description: 'Persistent project graph with incremental scanning. Dependency mapping, symbol lookup, impact analysis, and graph-based intent detection.',
+    accent: 'text-accent-2',
+  },
+  {
+    title: 'Context Manager',
+    subtitle: 'Memory Architecture',
+    badge: 'Implemented',
+    badgeColor: 'text-accent bg-accent/10 border-accent/20',
+    description: 'Session cache with auto-TTL, context checkpoints, subagent isolation. Cross-session memory via CCP. The model sees the latest state, not the full history.',
+    accent: 'text-accent',
+  },
+  {
+    title: 'Quality Guardrail',
+    subtitle: 'Better Output',
+    badge: 'Implemented',
+    badgeColor: 'text-accent bg-accent/10 border-accent/20',
+    description: 'CEP compliance scoring, AST preservation validation, adaptive complexity classification. Less noise = more attention on logic nodes = better code.',
+    accent: 'text-accent-2',
+  },
+];
+---
+
+<section class="relative py-16 sm:py-28">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+
+    <div class="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
+      <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-muted mb-3">The Intelligence Layer</p>
+      <h2 class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.15] text-text-bright">
+        Less tokens. <span class="gradient-text">Better results.</span>
+      </h2>
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-px bg-white/[0.04] rounded-xl overflow-hidden mb-14 sm:mb-20">
+      {dimensions.map((d) => (
+        <div class="bg-bg p-6 sm:p-8 animate-entrance">
+          <div class="flex items-center gap-2 mb-3">
+            <p class:list={['text-[11px] font-medium uppercase tracking-wider', d.accent]}>{d.subtitle}</p>
+            <span class:list={['px-2 py-0.5 text-[10px] font-semibold rounded-full border', d.badgeColor]}>{d.badge}</span>
+          </div>
+          <h3 class="text-base font-semibold font-display text-text-bright mb-2">{d.title}</h3>
+          <p class="text-[13px] text-muted leading-relaxed">{d.description}</p>
+        </div>
+      ))}
+    </div>
+
+    <div class="text-center">
+      <p class="text-xs text-muted mb-3">The goal:</p>
+      <p class="font-display text-3xl sm:text-[3rem] font-bold tracking-tight leading-[1.1]">
+        <span class="text-accent">10K</span> <span class="text-text-bright">tokens that outperform</span> <span class="text-danger/70">200K.</span>
+      </p>
+    </div>
+  </div>
+</section>

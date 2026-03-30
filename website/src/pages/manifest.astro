@@ -1,0 +1,416 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const sections = [
+  { id: 'abstract', label: 'Abstract' },
+  { id: 'the-problem', label: 'The Problem' },
+  { id: 'information-density', label: 'Information Density' },
+  { id: 'efficiency-multiplier', label: 'Efficiency Multiplier' },
+  { id: 'architecture', label: 'Architecture' },
+  { id: 'the-shift', label: 'The Shift' },
+  { id: 'design-principles', label: 'Design Principles' },
+  { id: 'conclusion', label: 'Conclusion' },
+];
+---
+
+<BaseLayout title="Manifest — LeanCTX" description="A position paper on why information density — not context size — determines AI coding performance. Why tokens are the new gold, and why every AI engineer needs an Intelligence Layer.">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-20 sm:pt-28">
+
+    <!-- Hero -->
+    <div class="max-w-2xl mb-8 sm:mb-14">
+      <p class="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-2 sm:mb-3">Position Paper</p>
+      <h1 class="font-display text-2xl sm:text-[2.75rem] lg:text-[3.25rem] font-bold tracking-tight leading-[1.15] text-text-bright mb-3 sm:mb-4">
+        Tokens are the new gold.<br />
+        <span class="gradient-text-green">Stop wasting them.</span>
+      </h1>
+      <p class="text-sm sm:text-base text-muted leading-relaxed mb-4">
+        A position paper on why information density — not context size — determines AI coding performance. By the LeanCTX team, March 2026.
+      </p>
+      <p class="text-xs text-muted font-mono">
+        <span class="text-accent">7</span> sections
+        <span class="mx-2 text-border-light">/</span>
+        <span class="text-accent">5</span> design principles
+        <span class="mx-2 text-border-light">/</span>
+        <span class="text-accent">4</span> architecture layers
+      </p>
+    </div>
+
+    <!-- Mobile TOC -->
+    <nav class="lg:hidden mb-8">
+      <details class="manifest-mobile-nav group">
+        <summary class="flex items-center justify-between px-4 py-3 text-sm cursor-pointer select-none">
+          <span class="font-medium text-muted">On this page</span>
+          <svg class="w-4 h-4 text-muted/60 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </summary>
+        <div class="px-2 pb-3 pt-1">
+          {sections.map(s => (
+            <a href={`#${s.id}`} class="block text-[13px] py-1.5 px-2 rounded-md text-muted hover:text-text-bright transition-colors duration-150">
+              {s.label}
+            </a>
+          ))}
+        </div>
+      </details>
+    </nav>
+
+    <!-- Grid: Sidebar + Article -->
+    <div class="lg:grid lg:grid-cols-[200px_1fr] lg:gap-14 pb-12 sm:pb-20">
+
+      <!-- TOC Sidebar -->
+      <aside class="hidden lg:block">
+        <nav class="sticky top-24 space-y-0.5">
+          <p class="text-xs font-semibold uppercase tracking-widest text-muted mb-4 font-display">Contents</p>
+          {sections.map(s => (
+            <a href={`#${s.id}`} class="block text-sm py-1.5 px-3 rounded-lg text-muted hover:text-text-bright hover:bg-surface-2 transition-all duration-200 manifest-toc-link">
+              {s.label}
+            </a>
+          ))}
+        </nav>
+      </aside>
+
+      <!-- Article -->
+      <article class="min-w-0 max-w-3xl">
+
+        <!-- Abstract -->
+      <section id="abstract" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">Abstract</h2>
+        <blockquote class="border-l-2 border-accent/40 pl-4 py-0.5 text-muted italic bg-accent/[0.02] rounded-r-lg mb-4">
+          <p class="text-sm sm:text-[15px] leading-[1.8]">
+            High performance with LLMs isn't about bigger context windows. It's about maximizing information entropy per token. LeanCTX is the intelligence buffer that ensures every token carries maximum signal.
+          </p>
+        </blockquote>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          In 2026, AI coding tools send full files, raw CLI output, and uncompressed project scans into context windows — every single time. The signal-to-noise ratio is abysmal. Based on tool-call analysis in multi-step coding sessions, ~65% of file reads are re-reads. Models waste attention on boilerplate that carries zero information entropy.
+        </p>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+          This paper argues that an <strong class="text-text-bright font-semibold">Intelligence Layer</strong> — a transparent compression layer between the developer and the LLM — is the missing piece in the AI engineering stack. We present LeanCTX: a single Rust binary that achieves up to 99% per-operation token reduction (cache re-reads) while preserving all information the model needs to reason correctly.
+        </p>
+      </section>
+
+      <hr class="border-border/20 my-8" />
+
+      <!-- 1: The Problem -->
+      <section id="the-problem" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">1. The Problem</h2>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          We have models with million-token context windows and reasoning chains that span hundreds of steps. Yet most AI coding tools still send the full file on every read. That's like sending the entire library every time someone asks for a single page.
+        </p>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          The result: diluted attention, wasted compute, and reasoning that loses focus on the logic nodes that actually matter. Every redundant token competes with the actual signal in the attention mechanism — pushing the model's reasoning off the code paths that need analysis.
+        </p>
+
+        <div class="my-8 flex items-center gap-8 sm:gap-12">
+          <div>
+            <p class="stat-value text-4xl sm:text-5xl text-accent mb-1">~65%</p>
+            <p class="text-xs text-muted">of file reads are re-reads</p>
+            <p class="text-[10px] text-muted/50 mt-1">Based on tool-call patterns in multi-step coding sessions</p>
+          </div>
+          <div>
+            <p class="stat-value text-4xl sm:text-5xl text-muted mb-1">$20–200</p>
+            <p class="text-xs text-muted">per month on AI tools</p>
+          </div>
+        </div>
+
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          Every AI tool has hard limits. 500 requests per day. 45 messages per 5 hours. 1,500 premium requests per month. Tokens are the new gold — but most tools burn them on boilerplate with zero information entropy.
+        </p>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+          The problem isn't the model. <strong class="text-text-bright font-semibold">It's the input.</strong>
+        </p>
+      </section>
+
+      <hr class="border-border/20 my-8" />
+
+      <!-- 2: Information Density -->
+      <section id="information-density" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">2. Information Density</h2>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          A 200K-token context filled with boilerplate produces worse results than 10K tokens of pure signal. This isn't speculation — it's how attention mechanisms work. Every byte of noise stripped is a byte of reasoning capacity gained.
+        </p>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          <strong class="text-text-bright font-semibold">Information entropy</strong> — measured in bits per token — is what determines whether a model reasons correctly. High-entropy tokens carry decisions, branching logic, API contracts, error handling. Low-entropy tokens carry whitespace, boilerplate, repetitive imports, and verbose CLI formatting.
+        </p>
+
+        <div class="my-8 py-6 text-center">
+          <p class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.1]">
+            <span class="text-accent">10K</span> <span class="text-text-bright">tokens that outperform</span> <span class="text-danger/70">200K.</span>
+          </p>
+          <p class="text-xs text-muted mt-3">The goal of every Intelligence Layer interaction.</p>
+        </div>
+
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          Consider a typical file re-read. The model already knows the file structure, the exports, the types. Sending 3,500 tokens of full source code when a 13-token cache confirmation suffices is a 99.6% waste of context capacity.
+        </p>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+          The same logic applies to CLI output. <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">npm install</code> generates 800+ tokens of funding notices, deprecation warnings, and formatting. The information content? One line: package name, version, dependency count, timing.
+        </p>
+      </section>
+
+      <hr class="border-border/20 my-8" />
+
+      <!-- 3: Efficiency Multiplier -->
+      <section id="efficiency-multiplier" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">3. The Efficiency Multiplier</h2>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          At 80% average compression — achievable with cached reads and shell hook combined — you don't save 80% of cost. You <strong class="text-text-bright font-semibold">multiply capacity by 5x</strong>. Same budget, same subscription, five times the productive output.
+        </p>
+
+        <div class="my-8 flex items-center gap-8 sm:gap-12">
+          <div>
+            <p class="stat-value text-4xl sm:text-5xl text-accent-2 mb-1">5x</p>
+            <p class="text-xs text-muted">effective capacity</p>
+          </div>
+          <div>
+            <p class="stat-value text-4xl sm:text-5xl text-accent mb-1">80%</p>
+            <p class="text-xs text-muted">less token burn</p>
+            <p class="text-[10px] text-muted/50 mt-1">Typical session-wide average with caching + shell hook</p>
+          </div>
+        </div>
+
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          This isn't about saving money — though it does that too. It's about making every interaction count. Longer sessions without context window resets. Deeper reasoning because the model isn't distracted by noise. Fewer failed completions because the relevant code is actually in the attention window.
+        </p>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+          The cost curve shifts from linear to <strong class="text-text-bright font-semibold">logarithmic</strong>. Each additional token of context provides diminishing returns when it's noise, but compounding returns when it's signal.
+        </p>
+      </section>
+
+      <hr class="border-border/20 my-8" />
+
+      <!-- 4: Architecture -->
+      <section id="architecture" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">4. Architecture: The Intelligence Layer</h2>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-6">
+          LeanCTX implements the Intelligence Layer as four composable layers. Each layer operates independently but compounds when used together.
+        </p>
+
+        <div class="space-y-6 mb-8">
+          <div class="flex gap-4">
+            <div class="shrink-0 w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mt-0.5">
+              <span class="text-[10px] font-bold text-accent">1</span>
+            </div>
+            <div>
+              <h3 class="text-base font-medium text-text-bright mb-1 font-display">Compression Layer <span class="text-[10px] font-semibold text-accent bg-accent/10 border border-accent/20 px-1.5 py-0.5 rounded-full ml-2">Implemented</span></h3>
+              <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+                AST-based signatures via tree-sitter (14 languages), delta-loading for cached files, session caching with MD5 tracking, entropy filtering via Shannon analysis. Sends the skeleton, not the flesh. Re-reads cost 13 tokens instead of thousands.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex gap-4">
+            <div class="shrink-0 w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mt-0.5">
+              <span class="text-[10px] font-bold text-accent">2</span>
+            </div>
+            <div>
+              <h3 class="text-base font-medium text-text-bright mb-1 font-display">Semantic Router <span class="text-[10px] font-semibold text-accent bg-accent/10 border border-accent/20 px-1.5 py-0.5 rounded-full ml-2">Implemented</span></h3>
+              <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+                6 read modes + line ranges let you choose the right fidelity per task. <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">map</code> mode for understanding, <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">full</code> mode for editing, <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">signatures</code> for API surface, <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">entropy</code> for noise filtering.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex gap-4">
+            <div class="shrink-0 w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mt-0.5">
+              <span class="text-[10px] font-bold text-accent">3</span>
+            </div>
+            <div>
+              <h3 class="text-base font-medium text-text-bright mb-1 font-display">Context Manager <span class="text-[10px] font-semibold text-accent bg-accent/10 border border-accent/20 px-1.5 py-0.5 rounded-full ml-2">Implemented</span></h3>
+              <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+                Session cache with auto-TTL (5 min idle clear), context checkpoints via <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_compress</code>, subagent isolation with <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">fresh=true</code>. The model always sees the latest state, not the full history.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex gap-4">
+            <div class="shrink-0 w-6 h-6 rounded-full bg-accent-3/10 border border-accent-3/20 flex items-center justify-center mt-0.5">
+              <span class="text-[10px] font-bold text-accent-3">4</span>
+            </div>
+            <div>
+              <h3 class="text-base font-medium text-text-bright mb-1 font-display">Quality Guardrail <span class="text-[10px] font-semibold text-accent-3 bg-accent-3/10 border border-accent-3/20 px-1.5 py-0.5 rounded-full ml-2">Foundation</span></h3>
+              <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+                Focused, high-entropy input means sharper reasoning. Less noise in the attention window = more attention on logic nodes = better code output. This is the emergent benefit of all other layers working together.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+          The architecture is hybrid: a <strong class="text-text-bright font-semibold">context server</strong> with 24 intelligent tools that replace editor built-ins (file reads, directory listings, code search, intent detection, project graphs), plus a <strong class="text-text-bright font-semibold">transparent shell hook</strong> that compresses 90+ CLI patterns across 34 categories without changing your workflow.
+        </p>
+      </section>
+
+      <hr class="border-border/20 my-8" />
+
+      <!-- 5: The Shift -->
+      <section id="the-shift" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">5. The Paradigm Shift</h2>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-6">
+          The old paradigm sends everything. The new paradigm sends only signal. Here's what changes when you introduce an Intelligence Layer:
+        </p>
+
+        <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-6">
+          <table class="w-full text-xs sm:text-sm mb-0">
+            <thead>
+              <tr class="border-b border-border/30">
+                <th class="text-left text-[11px] sm:text-xs uppercase tracking-wider text-muted pb-3 pr-3 font-display whitespace-nowrap">Dimension</th>
+                <th class="text-left text-[11px] sm:text-xs uppercase tracking-wider text-muted pb-3 pr-3 font-display whitespace-nowrap">Before</th>
+                <th class="text-left text-[11px] sm:text-xs uppercase tracking-wider text-accent pb-3 font-display whitespace-nowrap">After</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-border/15"><td class="py-2.5 pr-3 text-text-bright font-medium">Data sent</td><td class="py-2.5 pr-3 text-muted">Full files, raw logs</td><td class="py-2.5 text-text">AST signatures, diffs</td></tr>
+              <tr class="border-b border-border/15"><td class="py-2.5 pr-3 text-text-bright font-medium">Re-reads</td><td class="py-2.5 pr-3 text-muted">Full file every time</td><td class="py-2.5 text-text">13 tokens (cached)</td></tr>
+              <tr class="border-b border-border/15"><td class="py-2.5 pr-3 text-text-bright font-medium">CLI output</td><td class="py-2.5 pr-3 text-muted">Uncompressed, verbose</td><td class="py-2.5 text-text">Pattern-compressed (90+)</td></tr>
+              <tr class="border-b border-border/15"><td class="py-2.5 pr-3 text-text-bright font-medium">Latency</td><td class="py-2.5 pr-3 text-muted">High (large payloads)</td><td class="py-2.5 text-text">Low (compact payloads)</td></tr>
+              <tr class="border-b border-border/15"><td class="py-2.5 pr-3 text-text-bright font-medium">Reasoning</td><td class="py-2.5 pr-3 text-muted">Distracted by noise</td><td class="py-2.5 text-text">Focused on logic nodes</td></tr>
+              <tr class="border-b border-border/15"><td class="py-2.5 pr-3 text-text-bright font-medium">Cost curve</td><td class="py-2.5 pr-3 text-muted">Linear</td><td class="py-2.5 text-text">Logarithmic</td></tr>
+              <tr><td class="py-2.5 pr-3 text-text-bright font-medium">Session length</td><td class="py-2.5 pr-3 text-muted">Burns fast</td><td class="py-2.5 text-text">5x lifespan</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+          The key insight: this isn't about seeing <em>less</em>. It's about seeing <strong class="text-text-bright font-semibold">only what matters</strong>. The model receives the same logical information — function signatures, dependencies, changed lines, error messages — without the noise that dilutes its reasoning.
+        </p>
+      </section>
+
+      <hr class="border-border/20 my-8" />
+
+      <!-- 6: Design Principles -->
+      <section id="design-principles" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">6. Design Principles</h2>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-6">
+          Five principles guide every design decision in LeanCTX:
+        </p>
+
+        <div class="space-y-6">
+          <div>
+            <h3 class="text-base font-medium text-text-bright mb-1 font-display">Lossless compression, not lossy truncation</h3>
+            <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+              Every compression preserves the information the model needs. AST signatures keep function contracts intact. Diff mode shows exactly what changed. The filter never drops anything critical — every compression reverses cleanly at the semantic level.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="text-base font-medium text-text-bright mb-1 font-display">Transparency over magic</h3>
+            <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+              Every tool reports token counts. <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_benchmark</code> measures exact savings with tiktoken (o200k_base). <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_metrics</code> tracks cumulative stats. <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">lean-ctx gain</code> shows lifetime savings with USD cost estimates. You always know what's happening.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="text-base font-medium text-text-bright mb-1 font-display">Zero cloud dependencies</h3>
+            <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+              Single Rust binary. No API keys, no accounts, no telemetry, no data collection. Your code never leaves your machine. MIT licensed, fully open source. Runs on macOS, Linux, and Windows with native binaries.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="text-base font-medium text-text-bright mb-1 font-display">Composable, not monolithic</h3>
+            <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+              24 intelligent tools that each do one thing well. Use <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_read</code> for files, <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_shell</code> for CLI, <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_compress</code> for checkpoints. Mix and match for your workflow. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, Codex, and more.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="text-base font-medium text-text-bright mb-1 font-display">Measured, not estimated</h3>
+            <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+              All token counts use tiktoken with the o200k_base encoding — the same tokenizer the models use. No approximations, no heuristics. USD cost tracking with persistent lifetime statistics. Data-driven mode selection through <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_analyze</code> and <code class="bg-surface-3 px-1.5 py-0.5 rounded-md text-accent-2 text-xs border border-border/40">ctx_benchmark</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <hr class="border-border/20 my-8" />
+
+      <!-- 7: Conclusion -->
+      <section id="conclusion" class="scroll-mt-20 mb-12">
+        <h2 class="font-display text-lg sm:text-xl font-semibold text-text-bright tracking-tight mb-5">7. Conclusion</h2>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          Token limits, request quotas, and context window sizes define the AI coding landscape in 2026. The path forward isn't bigger context windows — it's making every token carry maximum information entropy.
+        </p>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8] mb-4">
+          LeanCTX is a <strong class="text-text-bright font-semibold">lossless minifier for human thought</strong>. It doesn't make the model see less. It makes the model see only what matters: the function signatures, the changed lines, the error codes, the dependency graph — stripped of the noise that dilutes reasoning.
+        </p>
+        <blockquote class="border-l-2 border-accent/40 pl-4 py-0.5 text-muted italic bg-accent/[0.02] rounded-r-lg mb-6">
+          <p class="text-sm sm:text-[15px] leading-[1.8]">
+            10K tokens of pure signal. That's the future of AI engineering.
+          </p>
+        </blockquote>
+        <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
+          One Rust binary. Zero cloud dependencies. MIT licensed. <a href="/docs/getting-started" class="text-accent underline underline-offset-2 decoration-accent/30 hover:decoration-accent">Get started in 60 seconds.</a>
+        </p>
+      </section>
+
+      <!-- CTA -->
+      <div class="pt-8 border-t border-border/20">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a href="/docs/getting-started" class="btn-glossy inline-flex items-center justify-center px-8 py-3.5 text-sm font-bold rounded-xl text-bg">
+            Get Started
+            <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+          <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline-glossy inline-flex items-center justify-center px-8 py-3.5 text-sm font-medium rounded-xl text-text">
+            Read the source
+          </a>
+        </div>
+      </div>
+
+    </article>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .manifest-toc-link.active {
+    color: var(--color-accent);
+    background: rgba(52, 211, 153, 0.06);
+  }
+  .manifest-toc-link.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: var(--color-accent);
+    border-radius: 1px;
+  }
+  .manifest-toc-link {
+    position: relative;
+  }
+
+  .manifest-mobile-nav {
+    background: var(--color-surface);
+    border: 1px solid rgba(26, 26, 48, 0.5);
+    border-radius: 12px;
+  }
+  .manifest-mobile-nav summary {
+    list-style: none;
+  }
+  .manifest-mobile-nav summary::-webkit-details-marker {
+    display: none;
+  }
+  .manifest-mobile-nav[open] {
+    border-color: rgba(52, 211, 153, 0.15);
+  }
+</style>
+
+<script>
+  const links = document.querySelectorAll('.manifest-toc-link');
+  const sections = document.querySelectorAll('article section[id]');
+
+  function updateActive() {
+    let current = '';
+    sections.forEach(s => {
+      const rect = s.getBoundingClientRect();
+      if (rect.top <= 120) current = s.id;
+    });
+    links.forEach(l => {
+      l.classList.toggle('active', l.getAttribute('href') === `#${current}`);
+    });
+  }
+
+  window.addEventListener('scroll', updateActive, { passive: true });
+  updateActive();
+</script>

@@ -1,0 +1,237 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const mcpTools = [
+  { name: 'Cursor', setup: 'lean-ctx setup', badge: 'MCP + Shell Hook' },
+  { name: 'GitHub Copilot', setup: 'lean-ctx init --agent copilot', badge: 'MCP + Shell Hook' },
+  { name: 'Claude Code', setup: 'lean-ctx init --agent claude', badge: 'MCP + Shell Hook' },
+  { name: 'Windsurf', setup: 'lean-ctx init --agent windsurf', badge: 'MCP + Shell Hook' },
+  { name: 'Cline', setup: 'lean-ctx init --agent cline', badge: 'MCP + Shell Hook' },
+  { name: 'Roo Code', setup: 'lean-ctx init --agent roo', badge: 'MCP + Shell Hook' },
+  { name: 'OpenAI Codex', setup: 'lean-ctx init --agent codex', badge: 'MCP + Shell Hook' },
+  { name: 'Gemini CLI', setup: 'lean-ctx init --agent gemini', badge: 'MCP + Shell Hook' },
+  { name: 'Antigravity', setup: 'lean-ctx setup', badge: 'MCP + Shell Hook' },
+  { name: 'Pi', setup: 'lean-ctx init --agent pi', badge: 'MCP + Shell Hook' },
+  { name: 'Qwen Code', setup: 'lean-ctx init --agent qwen', badge: 'MCP + Shell Hook' },
+  { name: 'Trae', setup: 'lean-ctx init --agent trae', badge: 'MCP + Shell Hook' },
+  { name: 'Amazon Q Developer', setup: 'lean-ctx init --agent amazonq', badge: 'MCP + Shell Hook' },
+  { name: 'JetBrains IDEs', setup: 'lean-ctx init --agent jetbrains', badge: 'MCP + Shell Hook' },
+  { name: 'Zed AI', setup: 'lean-ctx setup', badge: 'MCP + Shell Hook' },
+  { name: 'Continue', setup: 'lean-ctx setup', badge: 'MCP + Shell Hook' },
+  { name: 'OpenCode', setup: 'lean-ctx setup', badge: 'MCP + Shell Hook' },
+];
+
+const shellOnlyTools = [
+  { name: 'Aider' },
+  { name: 'OpenClaw' },
+  { name: 'Any CLI-based AI tool' },
+];
+---
+
+<BaseLayout title="Compatibility — LeanCTX" description="lean-ctx works with every AI coding tool that supports MCP. Cursor, GitHub Copilot, Claude Code, Windsurf, Codex, Gemini CLI, and more." breadcrumbs={[{ name: 'Home', url: '/' }, { name: 'Compatibility', url: '/compatibility/' }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">Universal Compatibility</p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Works With Any <span class="gradient-text">AI Tool.</span>
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      One install. One setup command. lean-ctx supports every AI tool that uses MCP — and even those that don't get shell hook compression.
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ FULL MCP SUPPORT ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">24 MCP tools + shell hook compression</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      Full MCP <span class="gradient-text">Support</span>
+    </h2>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {mcpTools.map((tool) => (
+        <div class="card p-6 animate-entrance">
+          <div class="flex items-start justify-between mb-4">
+            <h3 class="fluid-h3 font-semibold font-display text-text-bright">{tool.name}</h3>
+            <span class="text-[9px] font-mono px-2 py-1 rounded-full bg-accent/8 text-accent border border-accent/15 whitespace-nowrap">{tool.badge}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <code class="text-[11px] font-mono text-muted bg-surface-2 px-2.5 py-1 rounded-md border border-border/50">{tool.setup}</code>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ SHELL HOOK ONLY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-2 items-center" style="gap: clamp(2rem, 1.5rem + 2vw, 3rem);">
+      <div>
+        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">No MCP? No problem.</p>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+          Shell Hook <span class="gradient-text">Only</span>
+        </h2>
+        <p class="fluid-body text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.75vw, 1.75rem);">
+          Tools that don't support MCP still benefit from lean-ctx. The shell hook intercepts CLI commands (git, npm, cargo, docker, kubectl, and 90+ more) and compresses their output before the AI sees it.
+        </p>
+        <div class="flex flex-wrap gap-3">
+          {shellOnlyTools.map((tool) => (
+            <span class="text-sm font-medium px-4 py-2 rounded-lg bg-surface-2 text-text border border-border">{tool.name}</span>
+          ))}
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <div class="card p-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">Shell Hook</span>
+          </div>
+          <p class="fluid-sm text-muted">Intercepts <code class="text-[10px]">git</code>, <code class="text-[10px]">npm</code>, <code class="text-[10px]">cargo</code>, <code class="text-[10px]">docker</code>, <code class="text-[10px]">kubectl</code>, <code class="text-[10px]">pip</code>, <code class="text-[10px]">go</code>, <code class="text-[10px]">tsc</code>, and 80+ more commands. Compresses output by 60–90%.</p>
+        </div>
+        <div class="card p-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent-2/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">MCP Server</span>
+          </div>
+          <p class="fluid-sm text-muted">24 specialized tools: <code class="text-[10px]">ctx_read</code>, <code class="text-[10px]">ctx_search</code>, <code class="text-[10px]">ctx_graph</code>, <code class="text-[10px]">ctx_intent</code>, <code class="text-[10px]">ctx_session</code>, and 19 more. File caching, session memory, project graphs.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ HOW SETUP WORKS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-2 items-center" style="gap: clamp(2rem, 1.5rem + 2vw, 3rem);">
+      <div class="terminal-chrome animate-entrance">
+        <div class="terminal-header px-4 py-3 flex items-center gap-2">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-xs text-muted font-mono ml-2">lean-ctx setup</span>
+        </div>
+        <div class="terminal-body px-4 py-4 font-mono text-[12px] leading-[1.8]">
+          <p class="text-muted">$ lean-ctx setup</p>
+          <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Setup Wizard</span></p>
+          <p class="text-border-light/40">────────────────────────────────────</p>
+          <p>&nbsp;</p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">Shell detected:</span> <span class="text-text-bright">zsh</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">Hook installed:</span> <span class="text-text-bright">~/.zshrc</span></p>
+          <p>&nbsp;</p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">AI tool detected:</span> <span class="text-text-bright">Cursor</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">MCP config written:</span> <span class="text-text-bright">~/.cursor/mcp.json</span></p>
+          <p>&nbsp;</p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">AI tool detected:</span> <span class="text-text-bright">Claude Code</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">MCP server added:</span> <span class="text-text-bright">claude mcp add</span></p>
+          <p>&nbsp;</p>
+          <p class="text-border-light/40">────────────────────────────────────</p>
+          <p class="text-accent font-bold">Setup complete. Restart your shell.</p>
+          <p class="text-muted text-[11px]">2 AI tools configured, shell hook active</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">Zero manual config</p>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+          How Setup <span class="gradient-text">Works</span>
+        </h2>
+        <div class="space-y-5">
+          <div class="flex gap-4">
+            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 mt-0.5">
+              <span class="text-sm font-bold text-accent font-display">1</span>
+            </div>
+            <div>
+              <h3 class="fluid-h3 font-semibold text-text-bright mb-1">Detects your shell</h3>
+              <p class="fluid-sm text-muted">Finds zsh, bash, or fish and installs the shell hook that intercepts CLI commands.</p>
+            </div>
+          </div>
+          <div class="flex gap-4">
+            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 mt-0.5">
+              <span class="text-sm font-bold text-accent font-display">2</span>
+            </div>
+            <div>
+              <h3 class="fluid-h3 font-semibold text-text-bright mb-1">Finds AI tools</h3>
+              <p class="fluid-sm text-muted">Scans for Cursor, Claude Code, Copilot, Windsurf, Cline, Zed, and others. Configures MCP for each.</p>
+            </div>
+          </div>
+          <div class="flex gap-4">
+            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 mt-0.5">
+              <span class="text-sm font-bold text-accent font-display">3</span>
+            </div>
+            <div>
+              <h3 class="fluid-h3 font-semibold text-text-bright mb-1">Writes MCP config</h3>
+              <p class="fluid-sm text-muted">Creates the correct JSON config for each tool. No manual editing required.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ UNIVERSAL STANDARD ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="card animate-entrance" style="padding: clamp(2rem, 1.5rem + 2vw, 3rem) clamp(1.5rem, 1rem + 2vw, 3rem);">
+      <div class="w-14 h-14 rounded-lg bg-accent/10 flex items-center justify-center" style="margin-bottom: clamp(1rem, 0.75rem + 0.75vw, 1.75rem);">
+        <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">
+        Built on an Open Standard
+      </h2>
+      <p class="fluid-body text-muted" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); max-width: 48rem;">
+        MCP (Model Context Protocol) is the open standard for connecting AI tools to external capabilities. Any future tool that supports MCP will work with lean-ctx automatically — no updates needed.
+      </p>
+      <p class="fluid-sm text-accent font-mono">
+        One binary. One protocol. Every AI tool.
+      </p>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ CTA ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Works with your <span class="gradient-text">tools. Today.</span>
+    </h2>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      One install, one <code class="text-[12px] text-accent">lean-ctx setup</code>, and every AI tool you use starts saving tokens. No per-tool configuration.
+    </p>
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        <svg class="mr-2 w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>

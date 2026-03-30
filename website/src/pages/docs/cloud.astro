@@ -1,0 +1,151 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'LeanCTX Pro',
+    items: [
+      { label: 'What is Pro?', href: '/docs/cloud' },
+      { label: 'How it works', href: '/docs/cloud#how-it-works' },
+      { label: 'Getting started', href: '/docs/cloud#getting-started' },
+      { label: 'Your data', href: '/docs/cloud#your-data' },
+      { label: 'Dashboard', href: '/docs/cloud#dashboard' },
+      { label: 'FAQ', href: '/docs/cloud#faq' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="LeanCTX Pro — Cloud Intelligence" sidebar={sidebar}>
+
+<h1>LeanCTX Pro</h1>
+
+<p class="lead">
+  Your AI tools get smarter over time. Pro learns what works best from thousands of developers and
+  applies those insights to your engine — automatically.
+</p>
+
+<h2 id="how-it-works">How it works</h2>
+
+<p>
+  Every time lean-ctx compresses a file, it picks a strategy: show the full file, just the API surface,
+  a compact summary, or something else. Some strategies work better for certain file types.
+</p>
+
+<p>
+  With Pro, your engine benefits from what all lean-ctx users have learned:
+</p>
+
+<ul>
+  <li><strong>Rust files over 2,000 lines</strong> — "map" mode saves 73% on average</li>
+  <li><strong>TypeScript React components</strong> — "signatures" mode saves 68%</li>
+  <li><strong>JSON config files</strong> — "aggressive" mode saves 91%</li>
+</ul>
+
+<p>
+  These insights are updated every day. Your engine downloads them in the background — nothing to configure.
+</p>
+
+<h2 id="getting-started">Getting started</h2>
+
+<p>Two options:</p>
+
+<h3>Option A: From your terminal</h3>
+
+<pre><code>lean-ctx upgrade</code></pre>
+
+<p>
+  Enter your email, complete payment in your browser — done. Your engine starts learning immediately.
+</p>
+
+<h3>Option B: From the website</h3>
+
+<p>
+  Visit <a href="/checkout">leanctx.com/checkout</a>, enter your email, and complete payment.
+  Next time you open your editor, lean-ctx picks up the upgrade automatically.
+</p>
+
+<h2 id="your-data">Your data</h2>
+
+<p>
+  We take privacy seriously. Here's exactly what we collect and what we don't:
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>We collect</th>
+      <th>We never collect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>File extension (e.g. ".rs", ".tsx")</td>
+      <td>File names or paths</td>
+    </tr>
+    <tr>
+      <td>File size range (e.g. "2k-10k")</td>
+      <td>File contents or code</td>
+    </tr>
+    <tr>
+      <td>Which compression mode worked best</td>
+      <td>Personal information</td>
+    </tr>
+    <tr>
+      <td>Compression ratio (a percentage)</td>
+      <td>Project structure</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  Data contribution is opt-in. You choose during <code>lean-ctx setup</code> whether to share
+  anonymized data. Pro users contribute automatically (you can disable this in your config).
+</p>
+
+<h2 id="dashboard">Cloud dashboard</h2>
+
+<p>
+  Pro includes a web dashboard at <a href="/dashboard">leanctx.com/dashboard</a> where you can see:
+</p>
+
+<ul>
+  <li>Total tokens saved and cost reduction</li>
+  <li>Savings trends over days and weeks</li>
+  <li>Compression efficiency by file type</li>
+  <li>How much Pro has improved your results</li>
+</ul>
+
+<p>
+  Log in with your email — no API key needed.
+</p>
+
+<h2 id="faq">Frequently asked questions</h2>
+
+<h3>What happens if I cancel Pro?</h3>
+<p>
+  Your local engine keeps working exactly as before — same tools, same compression.
+  You stop receiving adaptive updates and lose access to the cloud dashboard.
+  No lock-in, no data held hostage.
+</p>
+
+<h3>Does Pro work with all editors?</h3>
+<p>
+  Yes. lean-ctx Pro works with Cursor, Claude Code, GitHub Copilot, Windsurf, Codex, and any tool that
+  supports MCP or runs in a terminal.
+</p>
+
+<h3>Can I use Pro on multiple machines?</h3>
+<p>
+  Yes. Your Pro subscription is tied to your email, not a device. Use it on as many machines as you want.
+  Stats sync automatically across all of them.
+</p>
+
+<h3>How much better is Pro vs Free?</h3>
+<p>
+  On average, Pro users see approximately 25% better compression. The exact improvement depends on
+  your languages and project types. Run <code>lean-ctx gain</code> to see your current savings —
+  the Pro estimate is shown in the footer.
+</p>
+
+</DocsLayout>

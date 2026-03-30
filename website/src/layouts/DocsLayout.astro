@@ -1,0 +1,127 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import DocsSidebar from '../components/DocsSidebar.astro';
+
+interface SidebarItem {
+  label: string;
+  href: string;
+}
+
+interface SidebarSection {
+  title: string;
+  compact?: boolean;
+  items: SidebarItem[];
+}
+
+interface Props {
+  title: string;
+  description?: string;
+  keywords?: string;
+  sidebar?: SidebarSection[];
+}
+
+const { title, description, keywords, sidebar } = Astro.props;
+
+const breadcrumbs = [
+  { name: 'Home', url: '/' },
+  { name: 'Documentation', url: '/docs/getting-started' },
+  { name: title, url: Astro.url.pathname },
+];
+---
+
+<BaseLayout
+  title={`${title} — LeanCTX Docs`}
+  description={description}
+  keywords={keywords || `lean-ctx ${title.toLowerCase()}, LLM token reduction, MCP tools, AI coding documentation`}
+  breadcrumbs={breadcrumbs}
+>
+  <div class="content-grid-wide" style="padding-top: clamp(5rem, 4rem + 3vw, 8rem);">
+
+    <!-- Hero -->
+    <div class="max-w-2xl" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      <p class="fluid-label text-accent" style="margin-bottom: clamp(0.5rem, 0.375rem + 0.3vw, 0.75rem);">Documentation</p>
+      <h1 class="font-display fluid-h1 font-bold text-text-bright text-balance" style="margin-bottom: clamp(0.5rem, 0.375rem + 0.3vw, 1rem);">{title}</h1>
+      {description && <p class="fluid-sm text-muted leading-relaxed">{description}</p>}
+    </div>
+
+    <!-- Grid: Sidebar + Article -->
+    <div class="lg:grid lg:grid-cols-[240px_1fr] lg:gap-12" style="padding-bottom: clamp(3rem, 2rem + 2vw, 5rem);">
+      <DocsSidebar sections={sidebar} />
+      <article class="min-w-0 docs-prose">
+        <slot />
+      </article>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .heading-anchor {
+    color: var(--color-accent);
+    text-decoration: none;
+    opacity: 0;
+    font-weight: 400;
+    margin-left: 0.4em;
+    font-size: 0.75em;
+    transition: opacity 0.2s ease;
+    vertical-align: middle;
+  }
+  h2:hover .heading-anchor,
+  h3:hover .heading-anchor,
+  h4:hover .heading-anchor,
+  .heading-anchor:focus {
+    opacity: 0.5;
+  }
+  .heading-anchor:hover {
+    opacity: 1 !important;
+  }
+</style>
+
+<script>
+  function slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9_\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
+
+  const article = document.querySelector('article');
+  if (article) {
+    const headings = article.querySelectorAll('h2, h3, h4');
+    const usedSlugs = new Set<string>();
+
+    headings.forEach((heading) => {
+      const existingId = heading.getAttribute('id');
+      let slug: string;
+
+      if (existingId) {
+        slug = existingId;
+      } else {
+        const text = heading.textContent?.replace(/#/g, '').trim() || '';
+        slug = slugify(text);
+        if (usedSlugs.has(slug)) {
+          let i = 2;
+          while (usedSlugs.has(`${slug}-${i}`)) i++;
+          slug = `${slug}-${i}`;
+        }
+        heading.id = slug;
+      }
+      usedSlugs.add(slug);
+
+      const anchor = document.createElement('a');
+      anchor.href = `#${slug}`;
+      anchor.className = 'heading-anchor';
+      anchor.setAttribute('aria-label', `Link to ${heading.textContent?.replace(/#/g, '').trim()}`);
+      anchor.textContent = '#';
+      heading.appendChild(anchor);
+    });
+
+    if (window.location.hash) {
+      const target = document.getElementById(window.location.hash.slice(1));
+      if (target) {
+        requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth' }));
+      }
+    }
+  }
+</script>

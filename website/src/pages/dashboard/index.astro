@@ -1,0 +1,382 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Dashboard — LeanCTX" description="Your LeanCTX Cloud analytics dashboard. Track token savings, compression ratios, and cost reduction over time."
+  noindex={true}>
+
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        Dashboard
+      </p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Your <span class="gradient-text">Analytics</span>
+    </h1>
+
+    <!-- Login Gate -->
+    <div id="login-gate" class="animate-entrance stagger-2">
+      <div class="dashboard-login-card">
+        <h2 class="text-text-bright font-display text-lg font-semibold mb-4">Connect to LeanCTX Cloud</h2>
+        <p class="text-muted text-sm mb-6">
+          Enter your API key to view your cloud analytics. Get your key with <code>lean-ctx login &lt;email&gt;</code>
+        </p>
+        <div class="dashboard-input-group">
+          <input type="text" id="api-key-input" placeholder="lctx_..." class="dashboard-input" />
+          <button id="connect-btn" class="dashboard-btn-primary">Connect</button>
+        </div>
+        <p id="login-error" class="text-danger text-sm mt-2" style="display: none;"></p>
+      </div>
+    </div>
+
+    <!-- Dashboard Content (hidden until authenticated) -->
+    <div id="dashboard-content" style="display: none;">
+
+      <!-- Summary Cards -->
+      <div class="dashboard-summary-grid" id="summary-grid">
+        <div class="dashboard-card">
+          <span class="dashboard-card-label">Tokens Saved</span>
+          <span class="dashboard-card-value" id="total-tokens">—</span>
+        </div>
+        <div class="dashboard-card">
+          <span class="dashboard-card-label">Cost Saved (USD)</span>
+          <span class="dashboard-card-value" id="cost-saved">—</span>
+        </div>
+        <div class="dashboard-card">
+          <span class="dashboard-card-label">Compression Ratio</span>
+          <span class="dashboard-card-value" id="compression-ratio">—</span>
+        </div>
+        <div class="dashboard-card">
+          <span class="dashboard-card-label">Tool Calls</span>
+          <span class="dashboard-card-value" id="tool-calls">—</span>
+        </div>
+        <div class="dashboard-card">
+          <span class="dashboard-card-label">Days Active</span>
+          <span class="dashboard-card-value" id="days-active">—</span>
+        </div>
+      </div>
+
+      <!-- Chart Section -->
+      <div class="dashboard-chart-section" style="margin-top: 3rem;">
+        <h2 class="font-display text-lg font-semibold text-text-bright mb-4">Token Savings Over Time</h2>
+        <div class="dashboard-chart" id="chart-container">
+          <canvas id="savings-chart" height="300"></canvas>
+        </div>
+      </div>
+
+      <!-- Daily Table -->
+      <div class="dashboard-table-section" style="margin-top: 3rem;">
+        <h2 class="font-display text-lg font-semibold text-text-bright mb-4">Daily Breakdown</h2>
+        <div class="dashboard-table-wrapper">
+          <table class="dashboard-table" id="daily-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Saved</th>
+                <th>Calls</th>
+                <th>Cache Hits</th>
+                <th>Ratio</th>
+              </tr>
+            </thead>
+            <tbody id="daily-tbody">
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem; text-align: right;">
+        <button id="logout-btn" class="dashboard-btn-secondary">Disconnect</button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</BaseLayout>
+
+<script is:inline src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+
+<script is:inline>
+  const API_BASE = 'https://api.leanctx.com';
+  const KEY_STORAGE = 'leanctx_api_key';
+
+  const $ = (sel) => document.querySelector(sel);
+
+  function init() {
+    const saved = localStorage.getItem(KEY_STORAGE);
+    if (saved) {
+      showDashboard(saved);
+    }
+
+    $('#connect-btn').addEventListener('click', () => {
+      const key = $('#api-key-input').value.trim();
+      if (!key.startsWith('lctx_')) {
+        $('#login-error').textContent = 'Invalid API key format. Should start with lctx_';
+        $('#login-error').style.display = 'block';
+        return;
+      }
+      localStorage.setItem(KEY_STORAGE, key);
+      showDashboard(key);
+    });
+
+    $('#logout-btn').addEventListener('click', () => {
+      localStorage.removeItem(KEY_STORAGE);
+      $('#dashboard-content').style.display = 'none';
+      $('#login-gate').style.display = 'block';
+    });
+  }
+
+  async function showDashboard(apiKey) {
+    $('#login-gate').style.display = 'none';
+    $('#dashboard-content').style.display = 'block';
+
+    try {
+      const [summary, stats] = await Promise.all([
+        fetchApi('/api/stats/summary', apiKey),
+        fetchApi('/api/stats?days=30', apiKey),
+      ]);
+
+      renderSummary(summary);
+      renderChart(stats);
+      renderTable(stats);
+    } catch (e) {
+      localStorage.removeItem(KEY_STORAGE);
+      $('#dashboard-content').style.display = 'none';
+      $('#login-gate').style.display = 'block';
+      $('#login-error').textContent = 'Authentication failed. Check your API key.';
+      $('#login-error').style.display = 'block';
+    }
+  }
+
+  async function fetchApi(path, apiKey) {
+    const resp = await fetch(API_BASE + path, {
+      headers: { 'Authorization': 'Bearer ' + apiKey },
+    });
+    if (!resp.ok) throw new Error('API error: ' + resp.status);
+    return resp.json();
+  }
+
+  function renderSummary(s) {
+    $('#total-tokens').textContent = formatNumber(s.total_tokens_saved);
+    $('#cost-saved').textContent = '$' + s.cost_saved_usd.toFixed(2);
+    $('#compression-ratio').textContent = (s.avg_compression_ratio * 100).toFixed(1) + '%';
+    $('#tool-calls').textContent = formatNumber(s.total_tool_calls);
+    $('#days-active').textContent = s.days_active;
+  }
+
+  function renderChart(stats) {
+    const ctx = $('#savings-chart').getContext('2d');
+    const labels = stats.map(s => s.date.slice(5));
+    const data = stats.map(s => s.tokens_saved);
+
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Tokens Saved',
+          data,
+          backgroundColor: 'rgba(52, 211, 153, 0.6)',
+          borderColor: 'rgba(52, 211, 153, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(30, 30, 40, 0.5)' },
+            ticks: { color: '#6b6b82' },
+          },
+          y: {
+            grid: { color: 'rgba(30, 30, 40, 0.5)' },
+            ticks: {
+              color: '#6b6b82',
+              callback: (v) => formatNumber(v),
+            },
+          },
+        },
+      },
+    });
+  }
+
+  function renderTable(stats) {
+    const tbody = $('#daily-tbody');
+    tbody.innerHTML = '';
+    for (const s of stats.reverse()) {
+      const ratio = s.tokens_original > 0
+        ? ((s.tokens_saved / s.tokens_original) * 100).toFixed(1)
+        : '0.0';
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${s.date}</td>
+        <td>${formatNumber(s.tokens_saved)}</td>
+        <td>${formatNumber(s.tool_calls)}</td>
+        <td>${formatNumber(s.cache_hits)}</td>
+        <td>${ratio}%</td>
+      `;
+      tbody.appendChild(row);
+    }
+  }
+
+  function formatNumber(n) {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<style>
+  .dashboard-login-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    padding: 2rem;
+    max-width: 32rem;
+  }
+
+  .dashboard-input-group {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .dashboard-input {
+    flex: 1;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.625rem 1rem;
+    color: var(--color-text-bright);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .dashboard-input:focus {
+    border-color: var(--color-accent);
+  }
+
+  .dashboard-btn-primary {
+    background: var(--color-accent);
+    color: var(--color-bg);
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .dashboard-btn-primary:hover {
+    background: var(--color-accent-bright);
+  }
+
+  .dashboard-btn-secondary {
+    background: transparent;
+    color: var(--color-muted);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+  }
+
+  .dashboard-btn-secondary:hover {
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+  }
+
+  .dashboard-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1rem;
+  }
+
+  .dashboard-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .dashboard-card-label {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .dashboard-card-value {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-accent);
+  }
+
+  .dashboard-chart {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    height: 300px;
+  }
+
+  .dashboard-table-wrapper {
+    overflow-x: auto;
+  }
+
+  .dashboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .dashboard-table th {
+    text-align: left;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-muted);
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .dashboard-table td {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+
+  .dashboard-table tr:hover td {
+    background: var(--color-surface);
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--color-surface-2);
+    padding: 0.15em 0.4em;
+    border-radius: 0.25rem;
+    color: var(--color-accent);
+  }
+</style>

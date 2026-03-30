@@ -1,0 +1,331 @@
+---
+const demos = [
+  {
+    id: 'read-cache',
+    label: 'File Re-read',
+    before: { tokens: '3,517', code: `$ Read auth.ts
+import { createHash } from 'node:crypto';
+import { db } from './db.js';
+
+const SESSION_EXPIRY = 24 * 60 * 60 * 1000;
+
+export function generateToken(): string {
+  return createHash('sha256')
+    .update(Math.random().toString())
+    .digest('hex');
+}
+
+export async function createUser(
+  email: string, password: string,
+  name: string, locale: string
+) {
+  const hash = await hashPassword(password);
+  const token = generateToken();
+  // ... 123 lines total` },
+    after: { tokens: '13', saving: '99%', code: `$ ctx_read auth.ts
+F1 [cached 2t 123L ∅]` },
+  },
+  {
+    id: 'signatures',
+    label: 'API Surface',
+    before: { tokens: '2,536', code: `$ Read db.ts
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from './schema.js';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+});
+
+export const db = drizzle(pool, { schema });
+
+export async function query<T>(
+  sql: string, params: unknown[]
+): Promise<T[]> {
+  const result = await pool.query(sql, params);
+  return result.rows as T[];
+}
+// ... 89 lines of implementation` },
+    after: { tokens: '252', saving: '90%', code: `$ ctx_read db.ts --mode signatures
+F2 [89L +]
+fn ⊛ query<T>(sql:s, params:unknown[]) → T[]
+fn ⊛ migrate()
+fn ⊛ transaction<T>(fn:(tx) → T) → T
+fn ⊛ healthCheck() → boolean
+cl Database
+  ⊛ connect()
+  ⊛ disconnect()
+[2284 tok saved (90%)]` },
+  },
+  {
+    id: 'shell',
+    label: 'npm install',
+    before: { tokens: '847', code: `$ npm install express
+
+added 65 packages, and audited 66 packages in 2s
+
+12 packages are looking for funding
+  run \`npm fund\` for details
+
+found 0 vulnerabilities
+
+npm warn deprecated inflight@1.0.6: This module is
+not supported, and leaks memory. Do not use it. Check
+out lru-cache if you want a good and tested way to
+coalesce async requests by a key value, which is much
+more comprehensive and powerful.
+
+npm warn deprecated glob@7.2.3: Glob versions prior
+to v9 are no longer supported` },
+    after: { tokens: '24', saving: '97%', code: `$ ctx_shell "npm install express"
++express@4.18.2 (65 deps, 2s)
+[823 tok saved (97%)]` },
+  },
+  {
+    id: 'git',
+    label: 'git status',
+    before: { tokens: '612', code: `$ git status
+On branch feature/auth
+Your branch is ahead of 'origin/feature/auth' by 3 commits.
+  (use "git push" to publish your local commits)
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	new file:   src/auth/session.ts
+	modified:   src/auth/login.ts
+	modified:   src/routes/api.ts
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   src/auth/session.ts
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	src/auth/session.test.ts` },
+    after: { tokens: '78', saving: '87%', code: `$ ctx_shell "git status"
+feature/auth ↑3
+staged: +src/auth/session.ts ~src/auth/login.ts ~src/routes/api.ts
+unstaged: ~src/auth/session.ts
+untracked: src/auth/session.test.ts
+[534 tok saved (87%)]` },
+  },
+  {
+    id: 'tsc',
+    label: 'TypeScript errors',
+    before: { tokens: '1,240', code: `$ tsc --noEmit
+src/auth/session.ts(12,5): error TS2322: Type 'string | undefined'
+is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+
+src/auth/session.ts(24,9): error TS2345: Argument of type 'number'
+is not assignable to parameter of type 'string'.
+
+src/routes/api.ts(8,3): error TS2739: Type '{ id: number; }'
+is missing the following properties from type 'User':
+name, email, createdAt
+
+src/routes/api.ts(45,28): error TS2551: Property 'stauts' does
+not exist on type 'Response'. Did you mean 'status'?
+
+Found 4 errors in 2 files.
+
+Errors  Files
+     2  src/auth/session.ts:12
+     2  src/routes/api.ts:8` },
+    after: { tokens: '142', saving: '89%', code: `$ ctx_shell "tsc --noEmit"
+4 errors in 2 files:
+session.ts:12 TS2322 string|undefined ≠ string
+session.ts:24 TS2345 number ≠ string
+api.ts:8 TS2739 {id} missing name,email,createdAt
+api.ts:45 TS2551 'stauts' → 'status'
+[1098 tok saved (89%)]` },
+  },
+  {
+    id: 'tree',
+    label: 'Project Map',
+    before: { tokens: '980', code: `$ find src -type f | head -30
+src/core/compressor.ts
+src/core/config.ts
+src/core/differ.ts
+src/core/entropy-compressor.ts
+src/core/protocol.ts
+src/core/session-cache.ts
+src/core/signature-extractor.ts
+src/core/store.ts
+src/core/token-counter.ts
+src/dashboard/server.ts
+src/dashboard/ui.ts
+src/patterns/docker.ts
+src/patterns/git.ts
+src/patterns/index.ts
+src/patterns/npm.ts
+src/patterns/typescript.ts
+src/tools/ctx-analyze.ts
+src/tools/ctx-benchmark.ts
+src/tools/ctx-compress.ts
+...` },
+    after: { tokens: '588', saving: '40%', code: `$ ctx_tree --depth 2
+src/
+  core/ (9)
+  tools/ (7)
+  dashboard/ (2)
+  patterns/ (5)
+  cli.ts
+  index.ts
+[392 tok saved (40%)]` },
+  },
+  {
+    id: 'compress',
+    label: 'Checkpoint',
+    before: { tokens: '28,450', code: `$ Read all 12 cached files again...
+
+// auth.ts — 123 lines
+import { createHash } from 'node:crypto';
+...
+
+// db.ts — 89 lines
+import { Pool } from 'pg';
+...
+
+// routes.ts — 234 lines
+import { Router } from 'express';
+...
+
+// ... 9 more files, full content
+// Total: 28,450 tokens re-sent` },
+    after: { tokens: '890', saving: '97%', code: `$ ctx_compress
+CTX CHECKPOINT (12 files)
+
+F1 auth.ts [123L]: fn generateToken,
+  fn createUser, fn verifyEmail, ...
+F2 db.ts [89L]: cl Database, fn query,
+  fn migrate
+F3 routes.ts [234L]: fn setupRoutes,
+  fn authMiddleware
+
+STATS: 34 reads, 22 hits (65%)
+COMPRESSION: 28450 → 890 tok (97%)` },
+  },
+  {
+    id: 'entropy',
+    label: 'Entropy Filter',
+    before: { tokens: '1,856', code: `$ Read middleware.ts
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
+
+/**
+ * @description Authentication middleware
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ * @param {NextFunction} next - Next function
+ * @returns {void}
+ */
+export function authMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const token = req.headers.authorization;
+  if (!token) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  // ... 78 lines, mostly JSDoc + boilerplate` },
+    after: { tokens: '312', saving: '83%', code: `$ ctx_read middleware.ts --mode entropy
+F8 [78L +] (H̄=3.2 bits/char)
+⊘ 14 low-entropy lines (H<2.0)
+⊘ 3 duplicate patterns (J≥0.7)
+fn authMiddleware(req,res,next)
+  token = req.headers.authorization
+  if !token → 401
+  verify(token) → req.user
+fn rateLimiter(max,window)
+  ...
+[1544 tok saved (83%)]` },
+  },
+];
+---
+
+<section class="relative py-20 sm:py-32">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8 sm:mb-10">
+      <div>
+        <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-3">Before & After</p>
+        <h2 class="font-display text-2xl sm:text-[2.25rem] font-bold tracking-tight leading-[1.15] text-text-bright">
+          Same information. <span class="gradient-text-green">Fraction of the tokens.</span>
+        </h2>
+      </div>
+      <p class="text-[13px] text-muted sm:text-right max-w-xs">Real output from real coding sessions — click to compare.</p>
+    </div>
+
+    <div class="flex overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap gap-1 sm:gap-1.5 mb-6 sm:mb-8 pb-1" id="demo-tabs">
+      {demos.map((d, i) => (
+        <button
+          data-tab={d.id}
+          class:list={[
+            'shrink-0 px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 demo-tab cursor-pointer whitespace-nowrap',
+            i === 0 ? 'text-accent bg-white/[0.04]' : 'text-muted hover:text-text'
+          ]}
+        >
+          {d.label}
+        </button>
+      ))}
+    </div>
+
+    {demos.map((d, i) => (
+      <div
+        data-panel={d.id}
+        class:list={['demo-panel grid md:grid-cols-2 gap-4 sm:gap-6', i !== 0 && 'hidden']}
+      >
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-mono text-muted">Without LeanCTX</span>
+            <span class="text-xs font-mono text-danger/80">~{d.before.tokens} tokens</span>
+          </div>
+          <div class="rounded-xl overflow-hidden border border-white/[0.06]">
+            <pre class="terminal-body p-4 sm:p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto max-h-[300px] overflow-y-auto"><code>{d.before.code}</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-mono text-accent">With LeanCTX</span>
+            <span class="text-xs font-mono text-accent">~{d.after.tokens} tokens <span class="text-accent-bright">(-{d.after.saving})</span></span>
+          </div>
+          <div class="terminal-chrome">
+            <pre class="terminal-body p-4 sm:p-5 text-xs font-mono text-text leading-relaxed overflow-x-auto max-h-[300px] overflow-y-auto"><code>{d.after.code}</code></pre>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<script>
+  const tabs = document.querySelectorAll('.demo-tab');
+  const panels = document.querySelectorAll('.demo-panel');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-tab');
+
+      tabs.forEach(t => {
+        t.classList.remove('text-accent', 'bg-white/[0.04]');
+        t.classList.add('text-muted');
+      });
+      tab.classList.add('text-accent', 'bg-white/[0.04]');
+      tab.classList.remove('text-muted');
+
+      panels.forEach(p => {
+        if (p.getAttribute('data-panel') === target) {
+          p.classList.remove('hidden');
+        } else {
+          p.classList.add('hidden');
+        }
+      });
+    });
+  });
+</script>

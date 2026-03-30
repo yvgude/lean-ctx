@@ -1,0 +1,434 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Admin — LeanCTX" description="LeanCTX Cloud administration panel." noindex={true}>
+
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        Administration
+      </p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      System <span class="gradient-text">Overview</span>
+    </h1>
+
+    <div id="login-gate" class="animate-entrance stagger-2">
+      <div class="admin-login-card">
+        <h2 class="text-text-bright font-display text-lg font-semibold mb-4">Admin Access</h2>
+        <p class="text-muted text-sm mb-6">
+          Enter your admin API key. The first registered user is automatically admin.
+        </p>
+        <div class="admin-input-group">
+          <input type="text" id="api-key-input" placeholder="lctx_..." class="admin-input" />
+          <button id="connect-btn" class="admin-btn-primary">Connect</button>
+        </div>
+        <p id="login-error" class="text-danger text-sm mt-2" style="display: none;"></p>
+      </div>
+    </div>
+
+    <div id="admin-content" style="display: none;">
+
+      <div class="admin-toolbar">
+        <span class="text-muted text-sm" id="last-refresh">—</span>
+        <button id="refresh-btn" class="admin-btn-secondary">Refresh</button>
+      </div>
+
+      <div class="admin-summary-grid" id="summary-grid">
+        <div class="admin-card">
+          <span class="admin-card-label">Total Users</span>
+          <span class="admin-card-value" id="total-users">—</span>
+        </div>
+        <div class="admin-card">
+          <span class="admin-card-label">Tokens Saved (all)</span>
+          <span class="admin-card-value" id="total-tokens">—</span>
+        </div>
+        <div class="admin-card">
+          <span class="admin-card-label">Cost Saved (USD)</span>
+          <span class="admin-card-value" id="cost-saved">—</span>
+        </div>
+        <div class="admin-card">
+          <span class="admin-card-label">Tool Calls</span>
+          <span class="admin-card-value" id="tool-calls">—</span>
+        </div>
+        <div class="admin-card">
+          <span class="admin-card-label">Contributions</span>
+          <span class="admin-card-value" id="contributions">—</span>
+        </div>
+        <div class="admin-card">
+          <span class="admin-card-label">Active (7d)</span>
+          <span class="admin-card-value" id="active-7d">—</span>
+        </div>
+      </div>
+
+      <div class="admin-section" style="margin-top: 3rem;">
+        <h2 class="font-display text-lg font-semibold text-text-bright mb-4">Collective Intelligence</h2>
+        <div class="admin-collective-grid" id="collective-grid">
+          <div class="admin-card">
+            <span class="admin-card-label">Data Points</span>
+            <span class="admin-card-value" id="coll-total">—</span>
+          </div>
+          <div class="admin-card">
+            <span class="admin-card-label">Unique Extensions</span>
+            <span class="admin-card-value" id="coll-exts">—</span>
+          </div>
+          <div class="admin-card">
+            <span class="admin-card-label">Recommendations</span>
+            <span class="admin-card-value" id="coll-recs">—</span>
+          </div>
+        </div>
+
+        <div class="admin-table-wrapper" style="margin-top: 1.5rem;">
+          <table class="admin-table" id="ext-table">
+            <thead>
+              <tr>
+                <th>Extension</th>
+                <th>Count</th>
+                <th>Avg Ratio</th>
+                <th>Top Mode</th>
+              </tr>
+            </thead>
+            <tbody id="ext-tbody">
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="admin-section" style="margin-top: 3rem;">
+        <h2 class="font-display text-lg font-semibold text-text-bright mb-4">Users</h2>
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="users-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Plan</th>
+                <th>Admin</th>
+                <th>Tokens Saved</th>
+                <th>Tool Calls</th>
+                <th>Last Active</th>
+                <th>Registered</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem; text-align: right;">
+        <button id="logout-btn" class="admin-btn-secondary">Disconnect</button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</BaseLayout>
+
+<script is:inline>
+  const KEY_STORAGE = 'leanctx_admin_key';
+  const $ = (sel) => document.querySelector(sel);
+
+  function getApiBase() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('api') || localStorage.getItem('leanctx_api_base') || 'https://api.leanctx.com';
+  }
+
+  function init() {
+    const saved = localStorage.getItem(KEY_STORAGE);
+    if (saved) loadAdmin(saved);
+
+    $('#connect-btn').addEventListener('click', () => {
+      const key = $('#api-key-input').value.trim();
+      if (!key.startsWith('lctx_')) {
+        $('#login-error').textContent = 'Invalid API key format.';
+        $('#login-error').style.display = 'block';
+        return;
+      }
+      localStorage.setItem(KEY_STORAGE, key);
+      loadAdmin(key);
+    });
+
+    $('#logout-btn').addEventListener('click', () => {
+      localStorage.removeItem(KEY_STORAGE);
+      $('#admin-content').style.display = 'none';
+      $('#login-gate').style.display = 'block';
+    });
+
+    $('#refresh-btn').addEventListener('click', () => {
+      const key = localStorage.getItem(KEY_STORAGE);
+      if (key) loadAdmin(key);
+    });
+  }
+
+  async function loadAdmin(apiKey) {
+    $('#login-gate').style.display = 'none';
+    $('#admin-content').style.display = 'block';
+    $('#login-error').style.display = 'none';
+
+    const API = getApiBase();
+
+    try {
+      const [overview, users, collective] = await Promise.all([
+        fetchAdmin(API, '/api/admin/overview', apiKey),
+        fetchAdmin(API, '/api/admin/users', apiKey),
+        fetchAdmin(API, '/api/admin/collective', apiKey),
+      ]);
+
+      renderOverview(overview);
+      renderUsers(users);
+      renderCollective(collective);
+      $('#last-refresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      localStorage.removeItem(KEY_STORAGE);
+      $('#admin-content').style.display = 'none';
+      $('#login-gate').style.display = 'block';
+      $('#login-error').textContent = 'Access denied. Admin API key required.';
+      $('#login-error').style.display = 'block';
+    }
+  }
+
+  async function fetchAdmin(base, path, apiKey) {
+    const resp = await fetch(base + path, {
+      headers: { 'Authorization': 'Bearer ' + apiKey },
+    });
+    if (!resp.ok) throw new Error('API error: ' + resp.status);
+    return resp.json();
+  }
+
+  function renderOverview(o) {
+    $('#total-users').textContent = o.total_users;
+    $('#total-tokens').textContent = fmt(o.total_tokens_saved);
+    $('#cost-saved').textContent = '$' + o.cost_saved_usd.toFixed(2);
+    $('#tool-calls').textContent = fmt(o.total_tool_calls);
+    $('#contributions').textContent = fmt(o.total_contributions);
+    $('#active-7d').textContent = o.active_users_7d;
+  }
+
+  function renderUsers(users) {
+    const tbody = $('#users-tbody');
+    tbody.innerHTML = '';
+    for (const u of users) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${u.email}</td>
+        <td><span class="plan-badge plan-${u.plan}">${u.plan}</span></td>
+        <td>${u.is_admin ? '✓' : ''}</td>
+        <td>${fmt(u.tokens_saved)}</td>
+        <td>${fmt(u.tool_calls)}</td>
+        <td>${u.last_active || '—'}</td>
+        <td>${u.created_at.slice(0, 10)}</td>
+      `;
+      tbody.appendChild(row);
+    }
+  }
+
+  function renderCollective(c) {
+    $('#coll-total').textContent = fmt(c.total_data_points);
+    $('#coll-exts').textContent = c.unique_extensions;
+    $('#coll-recs').textContent = c.recommendations_available;
+
+    const tbody = $('#ext-tbody');
+    tbody.innerHTML = '';
+    for (const e of c.top_extensions) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><code>${e.ext}</code></td>
+        <td>${e.count}</td>
+        <td>${(e.avg_ratio * 100).toFixed(1)}%</td>
+        <td><code>${e.top_mode}</code></td>
+      `;
+      tbody.appendChild(row);
+    }
+  }
+
+  function fmt(n) {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<style>
+  .admin-login-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    padding: 2rem;
+    max-width: 32rem;
+  }
+
+  .admin-input-group {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .admin-input {
+    flex: 1;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.625rem 1rem;
+    color: var(--color-text-bright);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .admin-input:focus {
+    border-color: var(--color-accent);
+  }
+
+  .admin-btn-primary {
+    background: var(--color-accent);
+    color: var(--color-bg);
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .admin-btn-primary:hover {
+    background: var(--color-accent-bright);
+  }
+
+  .admin-btn-secondary {
+    background: transparent;
+    color: var(--color-muted);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+  }
+
+  .admin-btn-secondary:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  .admin-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .admin-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 1rem;
+  }
+
+  .admin-collective-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  .admin-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .admin-card-label {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .admin-card-value {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-accent);
+  }
+
+  .admin-section {
+    border-top: 1px solid var(--color-border);
+    padding-top: 2rem;
+  }
+
+  .admin-table-wrapper {
+    overflow-x: auto;
+  }
+
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .admin-table th {
+    text-align: left;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-muted);
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .admin-table td {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+
+  .admin-table tr:hover td {
+    background: var(--color-surface);
+  }
+
+  .plan-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .plan-free {
+    background: rgba(107, 107, 130, 0.2);
+    color: var(--color-muted);
+  }
+
+  .plan-pro {
+    background: rgba(52, 211, 153, 0.2);
+    color: var(--color-accent);
+  }
+
+  .plan-team {
+    background: rgba(96, 165, 250, 0.2);
+    color: #60a5fa;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--color-surface-2);
+    padding: 0.15em 0.4em;
+    border-radius: 0.25rem;
+    color: var(--color-accent);
+  }
+</style>

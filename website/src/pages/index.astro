@@ -1,0 +1,657 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="LeanCTX — The Intelligence Layer for AI Coding">
+
+<!-- ═══════════════════════════════════════════════════════
+     HERO
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-accent" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        Open Source &middot; MIT Licensed &middot; Built with Rust
+      </p>
+    </div>
+
+    <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2rem);">
+      Most of your AI's token budget is noise.<br/>
+      <span class="gradient-text">We strip it.</span>
+    </h1>
+
+    <div class="hero-proof animate-entrance stagger-2" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);">
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display" id="install-count">—</span>
+        <span class="hero-proof-label">installs</span>
+      </div>
+      <div class="hero-proof-divider"></div>
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display" id="github-stars-hero">—</span>
+        <span class="hero-proof-label">GitHub stars</span>
+      </div>
+      <div class="hero-proof-divider"></div>
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display">14</span>
+        <span class="hero-proof-label">languages</span>
+      </div>
+      <div class="hero-proof-divider"></div>
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display">18+</span>
+        <span class="hero-proof-label">AI tools supported</span>
+      </div>
+    </div>
+
+    <p class="fluid-body text-muted animate-entrance stagger-3" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); max-width: 44rem;">
+      lean-ctx compresses everything between your AI and the LLM. File reads get AST-aware compression, shell output gets pattern-matched and stripped, and built-in protocols make the AI respond leaner. One install, zero config — your existing workflow stays the same.
+    </p>
+
+    <div class="flex flex-wrap items-center animate-entrance stagger-4" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        Star on GitHub
+      </a>
+      <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="inline-flex items-center gap-2 text-muted hover:text-text-bright transition-colors" style="font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem); font-weight: 500;">
+        Join Discord
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     WHAT HAPPENS (replaces confusing numbers section)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      The Problem &amp; The Solution
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      AI tools send raw, uncompressed data to the LLM.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      When your AI reads a file, it sends the entire content — comments, whitespace, boilerplate — to the LLM. That wastes tokens, slows down responses, and costs you money. lean-ctx strips the noise and keeps only the signal.
+    </p>
+
+    <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <!-- Without -->
+      <div class="compare-card">
+        <div class="compare-header compare-header--bad">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+          Without lean-ctx
+        </div>
+        <div class="compare-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+          <div class="compare-line"><span class="text-muted">AI reads 800-line file</span></div>
+          <div class="compare-line"><span class="text-danger">→ Thousands of tokens sent to LLM</span></div>
+          <div class="compare-line"><span class="text-muted">Includes comments, whitespace, imports</span></div>
+          <div class="compare-line"><span class="text-danger">→ Slow, expensive, hits context limits</span></div>
+        </div>
+      </div>
+      <!-- With -->
+      <div class="compare-card">
+        <div class="compare-header compare-header--good">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          With lean-ctx
+        </div>
+        <div class="compare-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+          <div class="compare-line"><span class="text-muted">AI reads 800-line file</span></div>
+          <div class="compare-line"><span class="text-accent">→ lean-ctx compresses via AST parsing</span></div>
+          <div class="compare-line"><span class="text-muted">Keeps types, signatures, logic</span></div>
+          <div class="compare-line"><span class="text-accent">→ Up to 90% fewer tokens, same signal</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     LIVE PREVIEW: Terminal + Dashboard
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      See It In Action
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      What it looks like in your terminal.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 5rem); max-width: 48rem;">
+      lean-ctx works silently behind the scenes. When your AI reads a file, it transparently compresses the output. Here's a real ctx_read call and the metrics dashboard.
+    </p>
+
+    <div class="grid lg:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <!-- Terminal: ctx_read in action -->
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-muted font-mono">ctx_read — map mode</span>
+        </div>
+        <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.7;">
+          <div>
+            <span class="text-accent-2">AI calls:</span> <span class="text-text-bright">ctx_read("src/auth/service.ts", mode="map")</span>
+          </div>
+          <div class="term-divider"></div>
+          <div>
+            <span class="text-muted">F7=service.ts 342L</span>
+          </div>
+          <div>
+            <span class="text-accent">§ AuthService</span>
+          </div>
+          <div class="pl-4">
+            <span class="text-muted">deps:</span> <span class="text-text">jwt, bcrypt, prisma</span>
+          </div>
+          <div class="pl-4">
+            <span class="text-muted">exports:</span>
+          </div>
+          <div class="pl-8">
+            <span class="text-accent-2-bright">λ</span> <span class="text-text-bright">login</span><span class="text-muted">(email: string, pwd: string) → Promise&lt;Token&gt;</span>
+          </div>
+          <div class="pl-8">
+            <span class="text-accent-2-bright">λ</span> <span class="text-text-bright">register</span><span class="text-muted">(data: CreateUser) → Promise&lt;User&gt;</span>
+          </div>
+          <div class="pl-8">
+            <span class="text-accent-2-bright">λ</span> <span class="text-text-bright">verify</span><span class="text-muted">(token: string) → Promise&lt;Payload&gt;</span>
+          </div>
+          <div class="pl-8">
+            <span class="text-accent-2-bright">λ</span> <span class="text-text-bright">refresh</span><span class="text-muted">(rt: string) → Promise&lt;TokenPair&gt;</span>
+          </div>
+          <div class="term-divider"></div>
+          <div>
+            <span class="text-accent">342L → 48 tokens</span> <span class="text-muted">(98.6% saved)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dashboard: ctx_metrics -->
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-muted font-mono">ctx_metrics — session dashboard</span>
+        </div>
+        <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.7;">
+          <div class="flex justify-between">
+            <span class="text-muted">SESSION v287</span>
+            <span class="text-muted">42 min active</span>
+          </div>
+          <div class="term-divider"></div>
+          <div class="metrics-row">
+            <span class="text-text-bright">Tool calls</span>
+            <span class="text-accent font-semibold">847</span>
+          </div>
+          <div class="metrics-row">
+            <span class="text-text-bright">Tokens saved</span>
+            <span class="text-accent font-semibold">412,830</span>
+          </div>
+          <div class="metrics-row">
+            <span class="text-text-bright">Cache hits</span>
+            <span class="text-accent-2 font-semibold">73%</span>
+          </div>
+          <div class="metrics-row">
+            <span class="text-text-bright">Avg compression</span>
+            <span class="text-accent-3 font-semibold">91.4%</span>
+          </div>
+          <div class="term-divider"></div>
+          <div class="metrics-row">
+            <span class="text-muted">Files cached</span>
+            <span class="text-text">23</span>
+          </div>
+          <div class="metrics-row">
+            <span class="text-muted">Re-read cost</span>
+            <span class="text-text">~13 tok</span>
+          </div>
+          <div class="metrics-row">
+            <span class="text-muted">Est. cost saved</span>
+            <span class="text-accent font-semibold">$1.24</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     NUMBERS (now with context)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y-sm">
+  <div class="content-grid">
+    <div class="stats-grid animate-entrance">
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent">up to 99%</span>
+        <span class="stat-desc">token reduction per file read — measured with tiktoken across 14 programming languages</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-2">24</span>
+        <span class="stat-desc">intelligent tools that replace built-in file reads, shell commands, and code search</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-3">90+</span>
+        <span class="stat-desc">shell command patterns auto-compressed — git, npm, cargo, docker, kubectl</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-text-bright">0</span>
+        <span class="stat-desc">configuration required — install, init, done. Works with every major AI coding tool</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     THREE LAYERS
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Architecture
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Three independent compression layers.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      Each layer works on its own. Together, they compound savings. The context server compresses reads, the shell hook compresses commands, and the protocols optimize AI communication.
+    </p>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1px, 0.1vw, 1px);">
+      <a href="/mcp-server" class="layer-card group">
+        <div class="layer-icon" style="color: var(--color-accent);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008V18m-3 0h.008v.008h-.008V18m-3 0h.008v.008h-.008V18"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0;">Context Server</h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin-bottom: 1.5rem;">
+          24 intelligent tools replace built-in file reads, shell commands, and code search with AST-aware compressed versions. Six read modes for every use case.
+        </p>
+        <span class="layer-link text-accent">
+          Explore tools
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </span>
+      </a>
+
+      <a href="/shell-hook" class="layer-card group">
+        <div class="layer-icon" style="color: var(--color-accent-2);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0;">Shell Hook</h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin-bottom: 1.5rem;">
+          Intercepts shell output and recognizes 90+ command patterns — git, npm, cargo, docker, kubectl — compressing everything automatically.
+        </p>
+        <span class="layer-link text-accent-2">
+          View patterns
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </span>
+      </a>
+
+      <a href="/protocols" class="layer-card group">
+        <div class="layer-icon" style="color: var(--color-accent-3);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0;">Protocols</h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin-bottom: 1.5rem;">
+          CEP, CCP & TDD teach the AI to communicate more efficiently — act first, report concisely, use symbols. 8–25% additional token savings.
+        </p>
+        <span class="layer-link text-accent-3">
+          Learn more
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     COMPATIBILITY
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Compatibility
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Works with every major AI coding tool.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 48rem;">
+      Cursor, Claude Code, GitHub Copilot, Windsurf, Codex — lean-ctx integrates with all of them. Zero vendor lock-in, zero configuration per tool. Install once, benefit everywhere.
+    </p>
+
+    <div class="compat-grid animate-entrance stagger-3">
+      {[
+        'Cursor',
+        'GitHub Copilot',
+        'Claude Code',
+        'Windsurf',
+        'OpenAI Codex',
+        'Gemini CLI',
+        'Antigravity',
+        'Pi',
+        'Qwen Code',
+        'Trae',
+        'Amazon Q',
+        'JetBrains',
+        'Cline',
+        'Roo Code',
+        'Zed',
+        'Aider',
+        'Continue',
+        'OpenCode',
+      ].map(name => (
+        <span class="compat-item">{name}</span>
+      ))}
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <a href="/compatibility" class="fluid-sm text-muted hover:text-text-bright transition-colors inline-flex items-center gap-1.5">
+        Full compatibility matrix with setup guides
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CTA
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <h2 class="font-display fluid-h1 font-bold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+        Start saving tokens now.
+      </h2>
+      <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); max-width: 40rem;">
+        Single Rust binary. No cloud dependencies. No account. MIT licensed. Install it, run init, and your AI tools become more token-efficient.
+      </p>
+
+      <div class="flex flex-wrap items-center" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+        <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+          Get Started
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+          Star on GitHub
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  /* ── Hero Social Proof ───────────────────────────────── */
+  .hero-proof {
+    display: flex;
+    align-items: center;
+    gap: clamp(1rem, 0.75rem + 0.75vw, 1.75rem);
+    flex-wrap: wrap;
+  }
+  .hero-proof-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+  }
+  .hero-proof-number {
+    font-size: clamp(1.5rem, 1.25rem + 1vw, 2.25rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .hero-proof-label {
+    font-size: clamp(0.75rem, 0.7rem + 0.15vw, 0.875rem);
+    color: var(--color-muted);
+    font-weight: 450;
+  }
+  .hero-proof-divider {
+    width: 1px;
+    height: 1.5rem;
+    background: var(--color-border);
+  }
+  @media (max-width: 480px) {
+    .hero-proof-divider:nth-of-type(2) {
+      display: none;
+    }
+    .hero-proof {
+      gap: 0.75rem 1.25rem;
+    }
+  }
+
+  /* ── Compare Cards ──────────────────────────────────── */
+  .compare-card {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .compare-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .compare-header--bad {
+    background: rgba(248, 113, 113, 0.04);
+    color: var(--color-danger);
+  }
+  .compare-header--good {
+    background: rgba(52, 211, 153, 0.04);
+    color: var(--color-accent);
+  }
+  .compare-body {
+    padding: 1.25rem;
+    background: var(--color-surface);
+  }
+  .compare-line {
+    padding: 0.3rem 0;
+  }
+
+  /* ── Stats ──────────────────────────────────────────── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  @media (min-width: 768px) {
+    .stats-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.25rem, 1rem + 1vw, 2rem);
+    background: var(--color-bg);
+  }
+  .stat-number {
+    font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin-bottom: 0.625rem;
+  }
+  .stat-desc {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    color: var(--color-muted);
+    line-height: 1.5;
+  }
+
+  /* ── Layer Cards ────────────────────────────────────── */
+  .layer-card {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    transition: background 0.2s ease;
+    text-decoration: none;
+  }
+  .layer-card:first-child {
+    border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0;
+  }
+  .layer-card:last-child {
+    border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px);
+  }
+  .layer-card + .layer-card {
+    border-top: none;
+  }
+  @media (min-width: 768px) {
+    .layer-card:first-child {
+      border-radius: clamp(10px, 0.8vw, 14px) 0 0 clamp(10px, 0.8vw, 14px);
+    }
+    .layer-card:last-child {
+      border-radius: 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0;
+    }
+    .layer-card + .layer-card {
+      border-top: 1px solid var(--color-border);
+      border-left: none;
+    }
+  }
+  .layer-card:hover {
+    background: var(--color-surface);
+  }
+
+  .layer-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .layer-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    font-weight: 500;
+    margin-top: auto;
+    transition: gap 0.2s ease;
+  }
+  .group:hover .layer-link {
+    gap: 0.625rem;
+  }
+
+  /* ── Terminal Visualizations ──────────────────────────── */
+  .term-divider {
+    height: 1px;
+    background: var(--color-border);
+  }
+  .metrics-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* ── Compatibility ──────────────────────────────────── */
+  .compat-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: clamp(0.375rem, 0.25rem + 0.25vw, 0.625rem);
+  }
+  .compat-item {
+    padding: 0.4rem 0.875rem;
+    border-radius: 6px;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);
+    font-weight: 450;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    white-space: nowrap;
+    transition: border-color 0.15s ease;
+  }
+  .compat-item:hover {
+    border-color: var(--color-border-light);
+  }
+</style>
+
+<script is:inline>
+(function() {
+  var installEl = document.getElementById('install-count');
+  var starsEl = document.getElementById('github-stars-hero');
+  var installs = 0;
+  var installsDone = 0;
+
+  function countUp(el, target, duration) {
+    var start = 0;
+    var startTime = null;
+    function step(ts) {
+      if (!startTime) startTime = ts;
+      var progress = Math.min((ts - startTime) / duration, 1);
+      var ease = 1 - Math.pow(1 - progress, 3);
+      var current = Math.floor(ease * target);
+      el.textContent = current.toLocaleString('en-US');
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function updateInstalls() {
+    installsDone++;
+    if (installsDone >= 3 && installs > 0 && installEl) {
+      countUp(installEl, installs, 1200);
+    }
+  }
+
+  fetch('https://crates.io/api/v1/crates/lean-ctx')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { installs += d.crate.downloads || 0; updateInstalls(); })
+    .catch(updateInstalls);
+
+  fetch('https://api.npmjs.org/downloads/point/last-year/lean-ctx-bin')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { installs += d.downloads || 0; updateInstalls(); })
+    .catch(updateInstalls);
+
+  fetch('https://api.github.com/repos/yvgude/lean-ctx/releases')
+    .then(function(r) { return r.json(); })
+    .then(function(releases) {
+      if (Array.isArray(releases)) {
+        for (var i = 0; i < releases.length; i++) {
+          var assets = releases[i].assets || [];
+          for (var j = 0; j < assets.length; j++) {
+            installs += assets[j].download_count || 0;
+          }
+        }
+      }
+      updateInstalls();
+    })
+    .catch(updateInstalls);
+
+  if (starsEl) {
+    fetch('https://api.github.com/repos/yvgude/lean-ctx')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.stargazers_count) countUp(starsEl, d.stargazers_count, 1000);
+      })
+      .catch(function() {});
+  }
+})();
+</script>
+
+</BaseLayout>

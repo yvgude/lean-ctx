@@ -1,0 +1,242 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Intelligence Tools',
+    compact: true,
+    items: [
+      { label: 'ctx_smart_read', href: '/docs/tools/intelligence#ctx_smart_read' },
+      { label: 'ctx_delta', href: '/docs/tools/intelligence#ctx_delta' },
+      { label: 'ctx_fill', href: '/docs/tools/intelligence#ctx_fill' },
+      { label: 'ctx_intent', href: '/docs/tools/intelligence#ctx_intent' },
+      { label: 'ctx_context', href: '/docs/tools/intelligence#ctx_context' },
+      { label: 'ctx_graph', href: '/docs/tools/intelligence#ctx_graph' },
+      { label: 'ctx_dedup', href: '/docs/tools/intelligence#ctx_dedup' },
+      { label: 'ctx_response', href: '/docs/tools/intelligence#ctx_response' },
+      { label: 'ctx_discover', href: '/docs/tools/intelligence#ctx_discover' },
+    ],
+  },
+  {
+    title: 'Other Categories',
+    items: [
+      { label: 'All Tools', href: '/docs/tools' },
+      { label: 'Core Tools', href: '/docs/tools/core' },
+      { label: 'Session Tools', href: '/docs/tools/session' },
+      { label: 'Memory Tools', href: '/docs/tools/memory' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Intelligence Engine" description="ctx_smart_read, ctx_delta, ctx_fill, ctx_intent, ctx_context, ctx_graph, ctx_discover, ctx_dedup, ctx_response — tools that understand your workflow and code structure." sidebar={sidebar}>
+  <p>
+    The Intelligence Engine provides tools that go beyond basic compression — they understand
+    your workflow, detect intent, deduplicate context, and intelligently manage token budgets.
+  </p>
+
+  <h2 id="ctx_smart_read">ctx_smart_read</h2>
+  <p>
+    Adaptive file read that automatically selects the optimal compression mode based on
+    file size, type, cache state, and token budget.
+  </p>
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>path</code> (required) — file path to read</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_smart_read src/auth.ts
+→ [auto:map] Selected map mode (file cached, 915 tokens → 89 tokens)</code></pre>
+
+  <h2 id="ctx_delta">ctx_delta</h2>
+  <p>
+    Incremental file update using Myers diff. Only sends changed lines (hunks with context)
+    instead of full file content. Automatically updates the cache after computing the delta.
+  </p>
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>path</code> (required) — file path to diff against cached version</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_delta src/auth.ts
+→ Δ auth.ts (3 hunks, 12 lines changed)
+  @@ -45,3 +45,5 @@
+  + const token = generateJWT(user);
+  + res.cookie('session', token);</code></pre>
+
+  <h2 id="ctx_fill">ctx_fill</h2>
+  <p>
+    Priority-based context filling with a token budget. Given a list of files and a budget,
+    automatically selects the best compression mode per file to maximize information within the budget.
+    Higher-relevance files get more tokens (full mode); lower-relevance files get compressed (signatures).
+  </p>
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>paths</code> (required) — array of file paths</li>
+    <li><code>budget</code> (required) — maximum token budget</li>
+    <li><code>priorities</code> (optional) — array of priority values (1-10) matching the paths</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_fill ["src/auth.ts", "src/db.ts", "src/routes.ts"] budget=2000
+→ Budget: 2000 tokens
+  auth.ts     → full       (915 tokens, priority 10)
+  db.ts       → map        (89 tokens, priority 5)
+  routes.ts   → signatures (42 tokens, priority 3)
+  Total: 1046/2000 tokens used</code></pre>
+
+  <h2 id="ctx_intent">ctx_intent</h2>
+  <p>
+    Semantic intent detection. Analyzes a natural language query to determine intent
+    (fix bug, add feature, refactor, understand, test, config, deploy) and automatically
+    selects and reads relevant files in the optimal compression mode.
+  </p>
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>query</code> (required) — natural language description of what you want to do</li>
+    <li><code>project_root</code> (optional) — project root path (defaults to <code>.</code>)</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_intent "fix the authentication bug in the login flow"
+→ Intent: fix_bug | Confidence: 0.92
+  Loaded 3 relevant files:
+  F1=src/auth.ts (full, 915t) — contains auth logic
+  F2=src/login.ts (full, 412t) — login handler
+  F3=src/middleware.ts (map, 89t) — auth middleware</code></pre>
+
+  <h2 id="ctx_context">ctx_context</h2>
+  <p>
+    Multi-turn context manager. Shows what files the LLM has already seen,
+    which are cached, and provides a session overview to avoid redundant re-reads.
+  </p>
+  <h3>Parameters</h3>
+  <p>No parameters. Returns current context state.</p>
+  <h3>Example</h3>
+  <pre><code>ctx_context
+→ Turn 12 | Files: 8 cached | Reads: 24 | Cache hits: 16 (67%)
+  F1=auth.ts ✓cached [5 reads]
+  F2=db.ts ✓cached [3 reads]
+  F3=routes.ts ✓cached [2 reads, modified]</code></pre>
+
+  <h2 id="ctx_graph">ctx_graph</h2>
+  <p>
+    Build and query a <strong>persistent project intelligence graph</strong>. Incrementally scans your
+    codebase, extracts symbols and dependencies, and stores the index on disk for instant access
+    across sessions. Supports 5 actions for structural understanding of any project.
+  </p>
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>Yes</td><td><code>build</code>, <code>related</code>, <code>symbol</code>, <code>impact</code>, or <code>status</code></td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>For related/symbol/impact</td><td>File path or symbol name to query</td></tr>
+      <tr><td><code>project_root</code></td><td>string</td><td>No</td><td>Project root path (defaults to cwd)</td></tr>
+      <tr><td><code>depth</code></td><td>number</td><td>No</td><td>BFS traversal depth for <code>related</code> (default 2)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Action: build</h3>
+  <p>
+    Incrementally scans the project, computing MD5 hashes to skip unchanged files.
+    Extracts symbols, dependencies, and edges. Persists to <code>~/.lean-ctx/graphs/&lt;project-hash&gt;/index.json</code>.
+  </p>
+  <pre><code>ctx_graph action=build
+→ GRAPH BUILD — /Users/you/project
+  Scanned: 142 files (38 new, 104 cached)
+  Symbols: 847 exports across 12 languages
+  Edges:   1,203 import relationships
+  Index:   ~/.lean-ctx/graphs/a3f8c1/index.json
+  Build:   340ms (incremental)</code></pre>
+
+  <h3>Action: related</h3>
+  <p>
+    BFS traversal from a given file to find connected files via import/export relationships.
+    Useful for understanding the blast radius of a change.
+  </p>
+  <pre><code>ctx_graph action=related path=src/auth.ts depth=2
+→ Files related to auth.ts (depth 2):
+  src/middleware.ts — imports auth.ts
+  src/login.ts — imports auth.ts
+  src/lib/jwt.ts — imported by auth.ts
+  src/lib/session.ts — via middleware.ts</code></pre>
+
+  <h3>Action: symbol</h3>
+  <p>
+    Reads a specific exported symbol by name from the graph index, returning the source code
+    with line numbers. Avoids loading the entire file when you only need one function or type.
+  </p>
+  <pre><code>{`ctx_graph action=symbol path=createUser
+→ SYMBOL: createUser
+  File: src/auth.ts:18-42
+  async function createUser(email: string, password: string): Promise<User> {
+    const hash = await bcrypt.hash(password, 12);
+    return db.users.create({ email, passwordHash: hash });
+  }`}</code></pre>
+
+  <h3>Action: impact</h3>
+  <p>
+    Reverse dependency analysis — finds all files that depend on a given file.
+    Essential for understanding what breaks when you change something.
+  </p>
+  <pre><code>ctx_graph action=impact path=src/lib/db.ts
+→ IMPACT ANALYSIS: db.ts
+  Direct dependents (4):
+    src/auth.ts
+    src/users.ts
+    src/admin.ts
+    src/migration.ts
+  Transitive dependents (2):
+    src/routes.ts (via auth.ts)
+    src/middleware.ts (via auth.ts)</code></pre>
+
+  <h3>Action: status</h3>
+  <p>
+    Shows index metadata: file count, symbol count, edge count, last build time, and freshness.
+  </p>
+  <pre><code>ctx_graph action=status
+→ GRAPH STATUS
+  Project: /Users/you/project
+  Index:   ~/.lean-ctx/graphs/a3f8c1/index.json
+  Files:   142 | Symbols: 847 | Edges: 1,203
+  Last build: 2026-03-27 14:30 (12 min ago)
+  Stale files: 3 (re-run build to update)</code></pre>
+
+  <h2 id="ctx_dedup">ctx_dedup</h2>
+  <p>
+    Cross-file deduplication analysis. Finds shared imports, boilerplate blocks,
+    and repeated patterns across all cached files. Reports potential token savings.
+  </p>
+  <h3>Parameters</h3>
+  <p>No parameters. Analyzes all files currently in the session cache.</p>
+  <h3>Example</h3>
+  <pre><code>{`ctx_dedup
+→ Found 3 shared patterns across 8 cached files:
+  "import { db } from '../lib/db'" — 5 files (saving ~40 tokens)
+  "export default handler" — 4 files (saving ~25 tokens)`}</code></pre>
+
+  <h2 id="ctx_response">ctx_response</h2>
+  <p>
+    Bi-directional response compression. Compresses LLM response text by removing filler
+    content and applying TDD shortcuts. Use to verify compression quality of responses.
+  </p>
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>text</code> (required) — text to compress</li>
+  </ul>
+
+  <h2 id="ctx_discover">ctx_discover</h2>
+  <p>
+    Analyzes shell history to find commands that could benefit from lean-ctx compression.
+    Shows missed savings opportunities with estimated token/cost savings.
+  </p>
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>limit</code> (optional) — number of results (default 15)</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_discover
+→ Shell commands that would benefit from lean-ctx:
+  docker ps -a        — ran 12x, ~800 tokens each → ~9,600 tokens saveable
+  kubectl get pods    — ran 8x, ~1,200 tokens each → ~9,600 tokens saveable</code></pre>
+</DocsLayout>

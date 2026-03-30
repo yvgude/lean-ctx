@@ -1,0 +1,563 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Shell Hook — LeanCTX" description="lean-ctx shell hook intercepts CLI output from 90+ command patterns across 34+ categories — git, npm, cargo, docker, kubectl and more — compressing output transparently." breadcrumbs={[{ name: 'Home', url: '/' }, { name: 'Shell Hook', url: '/shell-hook/' }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">Shell Hook</p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      90+ Command Patterns.<br/><span class="gradient-text">Transparent Compression.</span>
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      The shell hook intercepts CLI output before your AI sees it. Git diffs, npm installs, cargo builds,
+      docker logs — all compressed to their essential information. No configuration, no aliases to learn.
+    </p>
+    <div class="animate-entrance stagger-3 flex flex-wrap items-center gap-3">
+      <span class="sh-hero-stat"><span class="text-accent font-bold">34+</span> command categories</span>
+      <span class="sh-hero-stat"><span class="text-accent font-bold">90+</span> specific patterns</span>
+      <span class="sh-hero-stat"><span class="text-accent font-bold">60–90%</span> output reduction</span>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ HOW IT WORKS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Flow</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      How it <span class="gradient-text">works.</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      The shell hook wraps your commands transparently. The AI sees compressed output —
+      you see nothing different.
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 sm:gap-0 animate-entrance">
+      <div class="sh-flow-step">
+        <div class="sh-flow-num">1</div>
+        <h3 class="fluid-h3 font-semibold text-text-bright mb-1 font-display">Command</h3>
+        <p class="fluid-sm text-muted">AI runs <code class="text-accent-2 bg-surface-3 px-1 py-0.5 rounded text-[10px]">git status</code></p>
+      </div>
+      <div class="sh-flow-step relative">
+        <div class="hidden sm:block sh-flow-arrow" style="left:-16px" aria-hidden="true"></div>
+        <div class="sh-flow-num text-accent">2</div>
+        <h3 class="fluid-h3 font-semibold text-accent mb-1 font-display">Hook</h3>
+        <p class="fluid-sm text-muted">lean-ctx intercepts output</p>
+      </div>
+      <div class="sh-flow-step relative">
+        <div class="hidden sm:block sh-flow-arrow" style="left:-16px" aria-hidden="true"></div>
+        <div class="sh-flow-num text-accent">3</div>
+        <h3 class="fluid-h3 font-semibold text-accent mb-1 font-display">Compress</h3>
+        <p class="fluid-sm text-muted">Pattern-matched reduction</p>
+      </div>
+      <div class="sh-flow-step relative">
+        <div class="hidden sm:block sh-flow-arrow" style="left:-16px" aria-hidden="true"></div>
+        <div class="sh-flow-num">4</div>
+        <h3 class="fluid-h3 font-semibold text-text-bright mb-1 font-display">Result</h3>
+        <p class="fluid-sm text-muted">AI sees compact output</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ SUPPORTED CATEGORIES ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">34+ Categories</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Every tool you <span class="gradient-text">already use.</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      lean-ctx recognizes output patterns from all major developer tools
+      and compresses each one with purpose-built rules.
+    </p>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="sh-category-card card animate-entrance">
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-3">Version Control</h3>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="sh-badge">git status</span>
+          <span class="sh-badge">git diff</span>
+          <span class="sh-badge">git log</span>
+          <span class="sh-badge">git branch</span>
+          <span class="sh-badge">git stash</span>
+          <span class="sh-badge">git remote</span>
+        </div>
+      </div>
+      <div class="sh-category-card card animate-entrance">
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-3">JavaScript / Node</h3>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="sh-badge">npm install</span>
+          <span class="sh-badge">npm run</span>
+          <span class="sh-badge">npm test</span>
+          <span class="sh-badge">yarn</span>
+          <span class="sh-badge">pnpm</span>
+          <span class="sh-badge">tsc</span>
+        </div>
+      </div>
+      <div class="sh-category-card card animate-entrance">
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-3">Rust</h3>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="sh-badge">cargo build</span>
+          <span class="sh-badge">cargo test</span>
+          <span class="sh-badge">cargo clippy</span>
+          <span class="sh-badge">cargo check</span>
+          <span class="sh-badge">cargo run</span>
+        </div>
+      </div>
+      <div class="sh-category-card card animate-entrance">
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-3">Containers &amp; Orchestration</h3>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="sh-badge">docker ps</span>
+          <span class="sh-badge">docker build</span>
+          <span class="sh-badge">docker logs</span>
+          <span class="sh-badge">kubectl get</span>
+          <span class="sh-badge">kubectl describe</span>
+        </div>
+      </div>
+      <div class="sh-category-card card animate-entrance">
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-3">Python</h3>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="sh-badge">pip install</span>
+          <span class="sh-badge">pytest</span>
+          <span class="sh-badge">python -m</span>
+          <span class="sh-badge">poetry</span>
+          <span class="sh-badge">uv</span>
+        </div>
+      </div>
+      <div class="sh-category-card card animate-entrance">
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-3">System &amp; Utils</h3>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="sh-badge">ls / find</span>
+          <span class="sh-badge">ps / top</span>
+          <span class="sh-badge">curl</span>
+          <span class="sh-badge">make</span>
+          <span class="sh-badge">env</span>
+          <span class="sh-badge">cat / head</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ BEFORE / AFTER ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Before &amp; After</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
+      See the <span class="gradient-text">difference.</span>
+    </h2>
+
+    <div class="grid md:grid-cols-2 animate-entrance" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <!-- Before -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="inline-block w-2 h-2 rounded-full bg-danger"></span>
+          <span class="text-[12px] font-semibold text-text-bright uppercase tracking-wider font-display">Without shell hook</span>
+          <span class="text-[11px] text-muted font-mono ml-auto">~580 tokens</span>
+        </div>
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="text-muted text-[11px] ml-2 font-mono">git status</span>
+          </div>
+          <div class="px-4 py-3">
+            <pre class="text-[10px] sm:text-[11px] font-mono leading-relaxed text-muted whitespace-pre">On branch feature/auth
+Your branch is ahead of 'origin/feature/auth'
+by 3 commits.
+  (use "git push" to publish your local
+   commits)
+
+Changes to be committed:
+  (use "git restore --staged &lt;file&gt;..."
+   to unstage)
+        new file:   src/session.ts
+        modified:   src/login.ts
+        modified:   src/api.ts
+
+Changes not staged for commit:
+  (use "git add &lt;file&gt;..." to update
+   what will be committed)
+  (use "git restore &lt;file&gt;..." to
+   discard changes in working directory)
+        modified:   src/session.ts
+
+Untracked files:
+  (use "git add &lt;file&gt;..." to include
+   in what will be committed)
+        src/session.test.ts</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- After -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="inline-block w-2 h-2 rounded-full bg-accent"></span>
+          <span class="text-[12px] font-semibold text-text-bright uppercase tracking-wider font-display">With shell hook</span>
+          <span class="text-[11px] text-accent font-mono ml-auto">~75 tokens</span>
+        </div>
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="text-muted text-[11px] ml-2 font-mono">git status (compressed)</span>
+          </div>
+          <div class="px-4 py-3">
+            <pre class="text-[10px] sm:text-[11px] font-mono leading-relaxed text-text whitespace-pre"><span class="text-accent">feature/auth</span> <span class="text-muted">↑3</span>
+staged: <span class="text-accent">+</span>session.ts <span class="text-[#eab308]">~</span>login.ts <span class="text-[#eab308]">~</span>api.ts
+unstaged: <span class="text-[#eab308]">~</span>session.ts
+untracked: session.test.ts
+<span class="text-muted/50">[534 tok saved (87%)]</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ MORE EXAMPLES ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">More Examples</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
+      Every command, <span class="gradient-text">compressed.</span>
+    </h2>
+
+    <div class="grid md:grid-cols-2 animate-entrance" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <!-- npm install Before -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="inline-block w-2 h-2 rounded-full bg-danger"></span>
+          <span class="text-[12px] font-semibold text-text-bright uppercase tracking-wider font-display">npm install — raw</span>
+          <span class="text-[11px] text-muted font-mono ml-auto">~420 tokens</span>
+        </div>
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="text-muted text-[11px] ml-2 font-mono">npm install</span>
+          </div>
+          <div class="px-4 py-3">
+            <pre class="text-[10px] sm:text-[11px] font-mono leading-relaxed text-muted whitespace-pre">npm warn deprecated inflight@1.0.6:
+  This module is not supported...
+npm warn deprecated glob@7.2.3:
+  Glob versions prior to v9...
+npm warn deprecated rimraf@3.0.2:
+  Rimraf versions prior to v4...
+
+added 847 packages, and audited
+848 packages in 12s
+
+127 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities</pre>
+          </div>
+        </div>
+      </div>
+      <!-- npm install After -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="inline-block w-2 h-2 rounded-full bg-accent"></span>
+          <span class="text-[12px] font-semibold text-text-bright uppercase tracking-wider font-display">npm install — compressed</span>
+          <span class="text-[11px] text-accent font-mono ml-auto">~35 tokens</span>
+        </div>
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="text-muted text-[11px] ml-2 font-mono">npm install (compressed)</span>
+          </div>
+          <div class="px-4 py-3">
+            <pre class="text-[10px] sm:text-[11px] font-mono leading-relaxed text-text whitespace-pre"><span class="text-accent">✓</span> 847 packages <span class="text-muted">12s</span>
+<span class="text-[#eab308]">⚠</span> 3 deprecated <span class="text-muted">(inflight, glob, rimraf)</span>
+<span class="text-accent">0</span> vulnerabilities
+<span class="text-muted/50">[385 tok saved (92%)]</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 animate-entrance" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <!-- cargo build Before -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="inline-block w-2 h-2 rounded-full bg-danger"></span>
+          <span class="text-[12px] font-semibold text-text-bright uppercase tracking-wider font-display">cargo build — raw</span>
+          <span class="text-[11px] text-muted font-mono ml-auto">~310 tokens</span>
+        </div>
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="text-muted text-[11px] ml-2 font-mono">cargo build</span>
+          </div>
+          <div class="px-4 py-3">
+            <pre class="text-[10px] sm:text-[11px] font-mono leading-relaxed text-muted whitespace-pre">   Compiling proc-macro2 v1.0.86
+   Compiling unicode-ident v1.0.12
+   Compiling syn v2.0.72
+   Compiling serde_derive v1.0.204
+   Compiling serde v1.0.204
+   Compiling tokio v1.39.2
+   Compiling lean-ctx v2.1.0
+    Finished `dev` profile [unoptimized
+    + debuginfo] target(s) in 24.3s</pre>
+          </div>
+        </div>
+      </div>
+      <!-- cargo build After -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="inline-block w-2 h-2 rounded-full bg-accent"></span>
+          <span class="text-[12px] font-semibold text-text-bright uppercase tracking-wider font-display">cargo build — compressed</span>
+          <span class="text-[11px] text-accent font-mono ml-auto">~30 tokens</span>
+        </div>
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="text-muted text-[11px] ml-2 font-mono">cargo build (compressed)</span>
+          </div>
+          <div class="px-4 py-3">
+            <pre class="text-[10px] sm:text-[11px] font-mono leading-relaxed text-text whitespace-pre"><span class="text-accent">✓</span> build dev <span class="text-muted">24.3s</span>
+<span class="text-muted">7 crates compiled</span>
+<span class="text-muted/50">[280 tok saved (90%)]</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ WORKS WITHOUT MCP ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="max-width: 48rem;">
+      <div class="card sh-callout-card">
+        <div class="flex items-start gap-4">
+          <div class="sh-callout-icon flex-shrink-0">
+            <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <div>
+            <h3 class="fluid-h3 font-bold font-display text-text-bright mb-2">Works independently</h3>
+            <p class="fluid-body text-muted mb-4">
+              The shell hook operates independently of the context server. AI tools that haven't
+              been configured yet still benefit from compressed shell output.
+              The hook intercepts at the shell level, so every tool that runs commands gets savings.
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <span class="sh-compat-tag">Cursor</span>
+              <span class="sh-compat-tag">Claude Code</span>
+              <span class="sh-compat-tag">GitHub Copilot</span>
+              <span class="sh-compat-tag">Aider</span>
+              <span class="sh-compat-tag">Any shell-based AI</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ STATS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Coverage</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
+      Pattern coverage <span class="gradient-text">at a glance.</span>
+    </h2>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 animate-entrance">
+      <div class="sh-stat-card card">
+        <div class="sh-stat-value">34+</div>
+        <div class="fluid-sm text-muted">Command categories</div>
+      </div>
+      <div class="sh-stat-card card">
+        <div class="sh-stat-value">90+</div>
+        <div class="fluid-sm text-muted">Specific patterns</div>
+      </div>
+      <div class="sh-stat-card card">
+        <div class="sh-stat-value">87%</div>
+        <div class="fluid-sm text-muted">Avg. git compression</div>
+      </div>
+      <div class="sh-stat-card card">
+        <div class="sh-stat-value">0</div>
+        <div class="fluid-sm text-muted">Config required</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CTA ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Start saving with <span class="gradient-text">every command.</span>
+    </h2>
+    <p class="fluid-body text-muted" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      One setup command enables the shell hook for your shell.
+      Every AI command thereafter is automatically compressed.
+    </p>
+    <div class="flex flex-wrap items-center gap-3">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/mcp-server" class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Explore Context Tools
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  .sh-hero-stat {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 6px 14px;
+  }
+
+  .sh-flow-step {
+    padding: 1.5rem 1rem;
+  }
+  .sh-flow-num {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--color-text-bright);
+    opacity: 0.25;
+    line-height: 1;
+    margin-bottom: 0.75rem;
+  }
+  .sh-flow-arrow {
+    position: absolute;
+    top: 50%;
+    width: 32px;
+    height: 1px;
+    background: var(--color-border);
+    transform: translateY(-8px);
+  }
+
+  .sh-category-card {
+    padding: 1.25rem;
+    border-radius: clamp(10px, 0.8vw, 14px);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    transition: border-color 0.25s ease;
+  }
+  .sh-category-card:hover {
+    border-color: var(--color-border-light);
+    background: var(--color-surface);
+  }
+
+  .sh-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 3px 8px;
+  }
+
+  .sh-callout-card {
+    padding: 1.5rem 2rem;
+    border-radius: clamp(10px, 0.8vw, 14px);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .sh-callout-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    margin-top: 2px;
+  }
+
+  .sh-compat-tag {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-bright);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 4px 12px;
+  }
+
+  .sh-stat-card {
+    padding: 1.25rem;
+    border-radius: clamp(10px, 0.8vw, 14px);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    transition: border-color 0.25s ease;
+  }
+  .sh-stat-card:hover {
+    border-color: var(--color-border-light);
+  }
+  .sh-stat-value {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-accent);
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+
+  @media (max-width: 640px) {
+    .sh-stat-value { font-size: 1.5rem; }
+    .sh-callout-card { padding: 1.25rem; }
+    .sh-flow-step { padding: 1rem 0.5rem; }
+  }
+</style>
+
+</BaseLayout>

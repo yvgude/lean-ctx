@@ -1,0 +1,34 @@
+import "./chunk-BUSYA2B4.js";
+
+// node_modules/html-escaper/esm/index.js
+var { replace } = "";
+var es = /&(?:amp|#38|lt|#60|gt|#62|apos|#39|quot|#34);/g;
+var ca = /[&<>'"]/g;
+var esca = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "'": "&#39;",
+  '"': "&quot;"
+};
+var pe = (m) => esca[m];
+var escape = (es2) => replace.call(es2, ca, pe);
+var unes = {
+  "&amp;": "&",
+  "&#38;": "&",
+  "&lt;": "<",
+  "&#60;": "<",
+  "&gt;": ">",
+  "&#62;": ">",
+  "&apos;": "'",
+  "&#39;": "'",
+  "&quot;": '"',
+  "&#34;": '"'
+};
+var cape = (m) => unes[m];
+var unescape = (un) => replace.call(un, es, cape);
+export {
+  escape,
+  unescape
+};
+//# sourceMappingURL=astro___html-escaper.js.map

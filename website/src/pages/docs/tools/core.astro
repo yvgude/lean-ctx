@@ -1,0 +1,427 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Core Tools',
+    compact: true,
+    items: [
+      { label: 'ctx_read', href: '/docs/tools/core#ctx_read' },
+      { label: 'ctx_multi_read', href: '/docs/tools/core#ctx_multi_read' },
+      { label: 'ctx_tree', href: '/docs/tools/core#ctx_tree' },
+      { label: 'ctx_shell', href: '/docs/tools/core#ctx_shell' },
+      { label: 'ctx_search', href: '/docs/tools/core#ctx_search' },
+    ],
+  },
+  {
+    title: 'Other Categories',
+    items: [
+      { label: 'All Tools', href: '/docs/tools' },
+      { label: 'Intelligence Tools', href: '/docs/tools/intelligence' },
+      { label: 'Session Tools', href: '/docs/tools/session' },
+      { label: 'Memory Tools', href: '/docs/tools/memory' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Core Tools — File & Code" description="ctx_read, ctx_multi_read, ctx_tree, ctx_shell, ctx_search — the foundation tools for file reading, directory exploration, command execution, and code search." sidebar={sidebar}>
+  <p>The foundation tools. These handle file reading, directory exploration, command execution, and code search — the operations that make up 90% of AI coding interactions.</p>
+
+  <h2 id="ctx_read">ctx_read</h2>
+  <p>
+    <code>ctx_read</code> is the most impactful tool in LeanCTX. It replaces your editor's built-in
+    file read with an intelligent, session-aware reader that caches content, extracts dependency maps,
+    and computes diffs. Every response includes structured headers with file references, dependencies,
+    and exports.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Absolute file path</td></tr>
+      <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>full</code> (default), <code>map</code>, <code>signatures</code>, <code>diff</code>, <code>aggressive</code>, <code>entropy</code>, or with a line range suffix e.g. <code>full lines:10-80</code> / <code>map lines:1-40</code> to read only lines N–M (1-based, inclusive)</td></tr>
+      <tr><td><code>fresh</code></td><td>boolean</td><td>No</td><td>Bypass cache and force a full re-read. Use after context compaction, in subagents, or when you see a cache-hit but no longer have the file content.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Mode: full (default)</h3>
+  <p>
+    Reads the entire file with structured headers (dependencies, exports) and stores it in the session cache
+    with an MD5 hash. On subsequent reads, returns a compact cache-hit message instead of the full content.
+  </p>
+  <pre><code># First read: returns full content with structured header
+ctx_read auth.ts
+→ F1=auth.ts [123L +] deps:[db,crypto] exports:[createUser,validateSession]
+  [full file content...]
+
+# Second read: returns cache hit (~13 tokens)
+ctx_read auth.ts
+→ F1=auth.ts [cached 2t 123L ∅]</code></pre>
+  <p>Savings: <strong>~99%</strong> on re-reads.</p>
+
+  <h3>Mode: map</h3>
+  <p>
+    Returns a dependency graph, exports list, and API signatures — everything the LLM needs to understand
+    a file's role without reading its implementation. Use for context files you won't edit.
+  </p>
+  <pre><code>ctx_read server.rs --mode map
+→ F2=server.rs [262L]
+    deps: rmcp::model::, rmcp::handler::server::ServerHandler, ...
+    exports: -
+    API:
+      fn tool_def(name:&'static str, ...) → Tool
+      fn get_str(args:...) → Option&lt;String&gt;
+      fn execute_command(command:s) → String
+  [2135 tok saved (93%)]</code></pre>
+  <p>
+    Supports 14 languages via tree-sitter AST parsing (TS/JS, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP). Savings: <strong>85-95%</strong>.
+  </p>
+
+  <h3>Mode: signatures</h3>
+  <p>
+    Extracts function signatures, interface definitions, type aliases, and class declarations
+    using <strong>tree-sitter AST parsing</strong> across 14 languages (TS/JS, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP).
+    More detail than <code>map</code> mode — includes private functions, nested signatures, and multi-line definitions.
+    Uses compact notation with type abbreviations.
+  </p>
+  <pre><code>ctx_read auth.ts --mode signatures
+→ F1=auth.ts [123L] deps:[db,crypto]
+  fn generateToken():s
+  fn ⊛ createUser(email:s, password:s, name:s, locale:s)
+  fn ⊛ authenticateUser(email:s, password:s)
+  fn ⊛ validateSession(token:s)
+  [794 tok saved (87%)]</code></pre>
+
+  <h3>Mode: diff</h3>
+  <p>
+    If the file was previously cached and has changed, returns only the changed lines.
+  </p>
+  <pre><code>ctx_read auth.ts --mode diff
+→ F1=auth.ts [diff]
+  L42: - const TOKEN_EXPIRY = 3600;
+  L42: + const TOKEN_EXPIRY = 7200;
+  [saved 890 tokens (97%)]</code></pre>
+
+  <h3>Mode: aggressive</h3>
+  <p>
+    Returns full file content with syntax stripping: reduced indentation, removed comments,
+    stripped empty lines. Savings: <strong>20-40%</strong>.
+  </p>
+
+  <h3>Mode: entropy</h3>
+  <p>
+    Shannon entropy filtering removes low-information lines. Jaccard similarity deduplicates
+    similar code blocks. Best for files with boilerplate or repetitive patterns.
+    Savings: <strong>60-85%</strong>.
+  </p>
+
+  <h3>Structured Headers</h3>
+  <p>Every <code>ctx_read</code> response includes a structured header:</p>
+  <pre><code>F1=auth.ts [123L +] deps:[db,crypto] exports:[createUser,validateSession]</code></pre>
+  <ul>
+    <li><code>F1</code>, <code>F2</code>, ... — file reference IDs that persist for the session</li>
+    <li><code>=short_path</code> — abbreviated file path</li>
+    <li><code>[NL]</code> — line count</li>
+    <li><code>+</code> — first read, <code>∅</code> — unchanged (cache hit)</li>
+    <li><code>deps:[...]</code> — imported modules</li>
+    <li><code>exports:[...]</code> — exported names</li>
+  </ul>
+
+  <h3>Compact Notation</h3>
+  <ul>
+    <li><code>⊛</code> — async function</li>
+    <li><code>:s</code>, <code>:n</code>, <code>:b</code> — type abbreviations (string, number, boolean)</li>
+    <li><code>fn</code>, <code>cl</code>, <code>if</code>, <code>tp</code> — keyword abbreviations</li>
+  </ul>
+
+  <h3>Cache Safety</h3>
+  <p>
+    The session cache auto-clears after 5 minutes of inactivity. For explicit control, use the
+    <code>fresh=true</code> parameter to bypass cache for a single read, or
+    <a href="/docs/tools/session#ctx_cache">ctx_cache</a> to manage the entire cache (clear, invalidate, status).
+  </p>
+
+  <h3>Mode Selection Guide</h3>
+  <table>
+    <thead>
+      <tr><th>Situation</th><th>Mode</th><th>Tokens</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Understanding a file's role</td><td><code>map</code></td><td>~5-15%</td></tr>
+      <tr><td>Understanding an API surface</td><td><code>signatures</code></td><td>~10-20%</td></tr>
+      <tr><td>Editing a file</td><td><code>full</code></td><td>100% first, ~0% cached</td></tr>
+      <tr><td>Checking changes</td><td><code>diff</code></td><td>Only changed lines</td></tr>
+      <tr><td>Large boilerplate files</td><td><code>aggressive</code></td><td>~30-50%</td></tr>
+      <tr><td>Repetitive patterns</td><td><code>entropy</code></td><td>~20-40%</td></tr>
+      <tr><td>Only a slice of a large file</td><td><code>full lines:N-M</code> (or other mode + <code>lines:N-M</code>)</td><td>Proportional to range</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="ctx_multi_read">ctx_multi_read</h2>
+  <p>
+    Batch variant of <code>ctx_read</code>: pass multiple file paths in one call. Each file uses the same
+    <code>mode</code> and line-range rules as <code>ctx_read</code>, with shared session cache and file IDs (<code>F1</code>, <code>F2</code>, …).
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>paths</code></td><td>string[]</td><td>Yes</td><td>Absolute file paths to read</td></tr>
+      <tr><td><code>mode</code></td><td>string</td><td>No</td><td>Same values as <code>ctx_read</code>, including optional <code>lines:N-M</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>ctx_multi_read paths=["/app/src/auth.ts","/app/src/db.ts"] --mode map
+→ F1=auth.ts [88L] ...
+  F2=db.ts [64L] ...</code></pre>
+
+  <h2 id="ctx_tree">ctx_tree</h2>
+  <p>
+    <code>ctx_tree</code> generates compact project structure maps using indentation instead of
+    Unicode box-drawing characters. Each directory shows a file count for quick orientation.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>No</td><td>Directory to list (default: project root)</td></tr>
+      <tr><td><code>depth</code></td><td>number</td><td>No</td><td>Maximum depth (default: 3)</td></tr>
+      <tr><td><code>show_hidden</code></td><td>boolean</td><td>No</td><td>Include hidden files and directories (default: false)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>ctx_tree --depth 2
+
+→ lean-ctx/rust/
+    src/ (22)
+      core/ (9)
+      tools/ (8)
+      patterns/ (5)
+    examples/ (1)
+    Cargo.toml
+    README.md
+  [64 tok saved (34%)]</code></pre>
+
+  <h3>Why It Saves Tokens</h3>
+  <p>
+    Traditional directory listings use Unicode box-drawing characters (<code>├──</code>, <code>└──</code>)
+    which consume 3-4 tokens each. LeanCTX uses simple indentation (1 token per level), and shows
+    file counts per directory instead of listing every file. For large projects, this saves 30-50% tokens.
+  </p>
+
+  <h3>TDD Mode</h3>
+  <p>
+    Tree output is already ultra-compact by design. TDD mode does not apply additional compression
+    to <code>ctx_tree</code> — the output format is the same regardless of <code>CRP_MODE</code>.
+  </p>
+
+  <h2 id="ctx_shell">ctx_shell</h2>
+  <p>
+    <code>ctx_shell</code> executes shell commands and applies pattern-based compression to the output.
+    It recognizes 90+ common developer tools across 34 categories and strips verbose boilerplate while preserving actionable information.
+  </p>
+  <p>
+    The same compression is also available via the <strong>shell hook</strong> (<code>lean-ctx -c command</code>),
+    which compresses output transparently without requiring the LLM to use context server tools.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>command</code></td><td>string</td><td>Yes</td><td>Shell command to execute</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Supported Patterns (90+)</h3>
+
+  <table>
+    <thead>
+      <tr><th>Category</th><th>Commands</th><th>Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Git</strong> (19)</td><td>status, log, diff, add, commit, push, pull, fetch, clone, branch, checkout, switch, merge, stash, tag, reset, remote, blame, cherry-pick</td><td>70-95%</td></tr>
+      <tr><td><strong>Docker</strong> (10)</td><td>build, ps, images, logs, compose ps/up/down, exec, network, volume, inspect</td><td>70-90%</td></tr>
+      <tr><td><strong>npm/pnpm/yarn</strong> (6)</td><td>install, test, run, list, outdated, audit</td><td>70-90%</td></tr>
+      <tr><td><strong>Cargo</strong> (3)</td><td>build, test, clippy</td><td>80%</td></tr>
+      <tr><td><strong>GitHub CLI</strong> (9)</td><td>pr list/view/create/merge, issue list/view/create, run list/view</td><td>60-80%</td></tr>
+      <tr><td><strong>Kubernetes</strong> (9)</td><td>get, logs, describe, apply, delete, exec, top, rollout, scale</td><td>60-85%</td></tr>
+      <tr><td><strong>Python</strong> (7)</td><td>pip install/list/outdated/uninstall/check, ruff check/format</td><td>60-80%</td></tr>
+      <tr><td><strong>Ruby</strong> (4)</td><td>rubocop, bundle install/update, rake test, rails test (minitest)</td><td>60-85%</td></tr>
+      <tr><td><strong>Linters</strong> (4)</td><td>eslint, biome, prettier, stylelint</td><td>60-70%</td></tr>
+      <tr><td><strong>Build Tools</strong> (3)</td><td>tsc, next build, vite build</td><td>60-80%</td></tr>
+      <tr><td><strong>Test Runners</strong> (8)</td><td>jest, vitest, pytest, go test, playwright, cypress, rspec, minitest</td><td>90%</td></tr>
+      <tr><td><strong>Utils</strong> (5)</td><td>curl, grep/rg, find, ls, wget</td><td>50-89%</td></tr>
+      <tr><td><strong>Data</strong> (3)</td><td>env (filtered), JSON schema extraction, log deduplication</td><td>50-80%</td></tr>
+      <tr><td><strong>Terraform</strong></td><td>plan, apply, fmt, validate, init, state list/show</td><td>60-85%</td></tr>
+      <tr><td><strong>Make</strong></td><td>make builds, target summaries, parallel job output</td><td>60-80%</td></tr>
+      <tr><td><strong>Maven / Gradle</strong></td><td>mvn compile/test/package, gradle build/test</td><td>60-85%</td></tr>
+      <tr><td><strong>.NET</strong></td><td>dotnet build, test, restore, publish</td><td>60-85%</td></tr>
+      <tr><td><strong>Flutter / Dart</strong></td><td>flutter build/test/analyze, dart analyze/test/pub</td><td>60-85%</td></tr>
+      <tr><td><strong>Poetry / uv</strong></td><td>poetry install/lock/show, uv pip/sync/run</td><td>60-80%</td></tr>
+      <tr><td><strong>AWS</strong> (7)</td><td>s3, ec2, lambda, cloudformation, ecs, logs, sts</td><td>60-80%</td></tr>
+      <tr><td><strong>Databases</strong> (2)</td><td>psql, mysql/mariadb</td><td>50-80%</td></tr>
+      <tr><td><strong>Prisma</strong> (6)</td><td>generate, migrate, db push/pull, format, validate</td><td>70-85%</td></tr>
+      <tr><td><strong>Helm</strong> (5)</td><td>list, install, upgrade, status, template</td><td>60-80%</td></tr>
+      <tr><td><strong>Bun</strong> (3)</td><td>test, install, build</td><td>60-85%</td></tr>
+      <tr><td><strong>Deno</strong> (5)</td><td>test, lint, check, fmt, task</td><td>60-85%</td></tr>
+      <tr><td><strong>Swift</strong> (3)</td><td>test, build, package resolve</td><td>60-80%</td></tr>
+      <tr><td><strong>Zig</strong> (2)</td><td>test, build</td><td>60-80%</td></tr>
+      <tr><td><strong>CMake</strong> (3)</td><td>configure, build, ctest</td><td>60-80%</td></tr>
+      <tr><td><strong>Ansible</strong> (2)</td><td>playbook recap, task summary</td><td>60-80%</td></tr>
+      <tr><td><strong>Composer</strong> (3)</td><td>install, update, outdated</td><td>60-80%</td></tr>
+      <tr><td><strong>Mix</strong> (5)</td><td>test, deps, compile, credo, dialyzer</td><td>60-80%</td></tr>
+      <tr><td><strong>Bazel</strong> (3)</td><td>test, build, query</td><td>60-80%</td></tr>
+      <tr><td><strong>systemd</strong> (2)</td><td>systemctl, journalctl</td><td>50-80%</td></tr>
+    </tbody>
+  </table>
+  <p class="text-xs text-muted/60 mt-2">
+    Savings measured per command execution: (raw_output_tokens - compressed_tokens) / raw_output_tokens using tiktoken o200k_base.
+    Ranges reflect variation across typical command outputs.
+  </p>
+
+  <h3>Examples</h3>
+
+  <h4>git status</h4>
+  <pre><code>ctx_shell "git status"
+→ feature/auth ↑3
+  staged: +session.ts ~login.ts ~api.ts
+  unstaged: ~session.ts
+  untracked: session.test.ts
+  [534 tok saved (87%)]</code></pre>
+
+  <h4>npm install</h4>
+  <pre><code>ctx_shell "npm install express"
+→ +express@4.18.2 (3 deps, 847ms)
+  [82 tok saved (71%)]</code></pre>
+
+  <h4>TypeScript Compiler</h4>
+  <pre><code>ctx_shell "npx tsc --noEmit"
+→ 3 errors in 2 files:
+  auth.ts:42 TS2345 type mismatch
+  db.ts:15 TS2304 name not found
+  db.ts:28 TS2304 name not found</code></pre>
+
+  <h4>kubectl get pods</h4>
+  <pre><code>ctx_shell "kubectl get pods"
+→ 5 pods: 4 Running, 1 CrashLoopBackOff
+  api-7d8f-abc12     1/1 Running   0 2d
+  web-5c4e-def34     1/1 Running   0 1d
+  worker-crash-xyz   0/1 CrashLoop 12 4h</code></pre>
+
+  <h4>docker compose ps</h4>
+  <pre><code>ctx_shell "docker compose ps"
+→ 3 services: 3 running
+  api    :8080 Up 2h
+  db     :5432 Up 2h
+  redis  :6379 Up 2h</code></pre>
+
+  <h4>Test Runners</h4>
+  <pre><code>ctx_shell "npm test"
+→ 42 passed, 2 failed, 1 skipped (3.2s)
+  FAIL auth.test.ts:23 "should validate token"
+    Expected: true, Received: false
+  FAIL db.test.ts:45 "should retry on connection error"
+    Timeout after 5000ms</code></pre>
+
+  <h4>curl (JSON)</h4>
+  <pre><code>ctx_shell "curl -s https://api.example.com/users"
+→ 200 OK | application/json | 2.3KB
+  [item1, item2, ... +48 items]</code></pre>
+
+  <h3>Shell Hook Mode</h3>
+  <p>
+    Use LeanCTX as a transparent shell wrapper for automatic compression:
+  </p>
+  <pre><code># Auto-install 23 aliases
+lean-ctx init --global
+
+# Or single command
+lean-ctx -c git status
+
+# Or manual aliases
+alias git='lean-ctx -c git'
+alias kubectl='lean-ctx -c kubectl'
+
+# Interactive shell
+lean-ctx shell</code></pre>
+
+  <h3>Error Recovery (Tee)</h3>
+  <p>
+    When a command fails (non-zero exit code), LeanCTX automatically saves the full uncompressed
+    output to <code>~/.lean-ctx/tee/</code> for debugging. This ensures compressed output
+    doesn't hide error details you might need.
+  </p>
+
+  <h3>Fallback</h3>
+  <p>
+    For unrecognized commands, generic compression applies: removes empty lines,
+    strips ANSI codes, and truncates very long output with a summary.
+  </p>
+
+  <h2 id="ctx_search">ctx_search</h2>
+  <p>
+    <code>ctx_search</code> searches files for patterns using regex and returns only matching lines
+    with compact file paths. Avoids reading entire files when looking for specific code.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>pattern</code></td><td>string</td><td>Yes</td><td>Regex pattern to search for</td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>No</td><td>Directory to search in (default: current dir)</td></tr>
+      <tr><td><code>ext</code></td><td>string</td><td>No</td><td>File extension filter (e.g. "rs", "ts")</td></tr>
+      <tr><td><code>max_results</code></td><td>number</td><td>No</td><td>Maximum matches to return (default: 20)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>{`$ ctx_search "pub fn" --path src/core --ext rs --max_results 5
+
+5 matches in 1 files:
+cache.rs:27 pub fn hit_rate(&self) -> f64
+cache.rs:34 pub fn tokens_saved(&self) -> u64
+cache.rs:38 pub fn savings_percent(&self) -> f64
+cache.rs:54 pub fn new() -> Self
+cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
+[~1200 tok saved vs full reads]`}</code></pre>
+
+  <h3>Token Savings</h3>
+  <p>
+    Instead of reading entire files to find code, <code>ctx_search</code> returns only the matching
+    lines. Typical savings are <strong>50-80%</strong> compared to reading all files that contain matches.
+  </p>
+
+  <h3>TDD Integration</h3>
+  <p>
+    When <a href="/docs/tdd">TDD mode</a> is active, long identifiers in search results are
+    automatically mapped to short IDs (<code>α1, α2...</code>) with a <code>§MAP</code> table appended.
+    This further reduces token cost for large search result sets.
+  </p>
+
+  <h3>Features</h3>
+  <ul>
+    <li>Full regex support (Rust <code>regex</code> crate)</li>
+    <li>File extension filtering</li>
+    <li>Automatic binary file exclusion (images, compiled files, lock files)</li>
+    <li>Compact path shortening (home directory → <code>~</code>)</li>
+    <li>Token savings summary appended to results</li>
+  </ul>
+</DocsLayout>

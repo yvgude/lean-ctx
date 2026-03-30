@@ -1,0 +1,1009 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Installation',
+    items: [
+      { label: 'Overview', href: '/docs/getting-started' },
+      { label: 'Install Binary', href: '/docs/getting-started#install' },
+      { label: 'Setup', href: '/docs/getting-started#shell-hook' },
+      { label: 'Verify', href: '/docs/getting-started#editor-setup' },
+    ],
+  },
+  {
+    title: 'Advanced',
+    items: [
+      { label: 'Monitor Savings', href: '/docs/getting-started#monitor' },
+      { label: 'Multi-Agent (lctx)', href: '/docs/getting-started#lctx' },
+      { label: 'Updating', href: '/docs/getting-started#update' },
+      { label: 'Uninstalling', href: '/docs/getting-started#uninstall' },
+      { label: 'Troubleshooting', href: '/docs/getting-started#troubleshooting' },
+    ],
+  },
+  {
+    title: 'Other Docs',
+    items: [
+      { label: 'CLI Reference', href: '/docs/cli-reference' },
+      { label: 'Analytics & Dashboards', href: '/docs/analytics' },
+      { label: 'Configuration', href: '/docs/configuration' },
+      { label: 'Quick Reference', href: '/docs/quick-reference' },
+      { label: 'Tool API Reference', href: '/docs/tools' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Getting Started" description="Install LeanCTX and start saving tokens in under 5 minutes. Step-by-step guide for macOS, Linux, and Windows." sidebar={sidebar}>
+  <p>
+    LeanCTX reduces your LLM's token consumption by up to 99% through a single Rust binary that provides:
+    a <strong>Shell Hook</strong> with 90+ CLI compression patterns, an <strong>MCP Server</strong>
+    with 24 tools for cached reads and session intelligence, and a <strong>Persistent Project Graph</strong>
+    for structural code understanding. Install it once, and every file read, shell command, and
+    code navigation becomes more efficient.
+  </p>
+
+  <h3 id="prompt-generator">Prompt Generator</h3>
+  <p>
+    Select your platform and AI tool below. The generated prompt can be pasted into any AI coding
+    assistant — it will walk through the full installation and configuration automatically.
+  </p>
+
+  <div class="not-prose mb-8">
+    <div class="flex flex-wrap items-end gap-4 mb-4">
+      <div>
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5">Platform</label>
+        <div class="flex gap-1" id="pg-os">
+          <button data-v="macos" class="pg-btn active">macOS</button>
+          <button data-v="linux" class="pg-btn">Linux</button>
+          <button data-v="windows" class="pg-btn">Windows</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5">AI Tool</label>
+        <div class="flex flex-wrap gap-1" id="pg-ed">
+          <button data-v="cursor" class="pg-btn active">Cursor</button>
+          <button data-v="claude" class="pg-btn">Claude</button>
+          <button data-v="copilot" class="pg-btn">Copilot</button>
+          <button data-v="windsurf" class="pg-btn">Windsurf</button>
+          <button data-v="codex" class="pg-btn">Codex</button>
+          <button data-v="gemini" class="pg-btn">Gemini</button>
+          <button data-v="antigravity" class="pg-btn">Antigravity</button>
+          <button data-v="zed" class="pg-btn">Zed</button>
+          <button data-v="qwen" class="pg-btn">Qwen</button>
+          <button data-v="trae" class="pg-btn">Trae</button>
+          <button data-v="amazonq" class="pg-btn">Amazon Q</button>
+          <button data-v="jetbrains" class="pg-btn">JetBrains</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="terminal-chrome">
+      <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
+        <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
+        <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
+        <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
+        <span class="text-muted text-[11px] ml-2">generated prompt</span>
+        <button id="pg-copy" class="ml-auto px-3 py-1 text-[11px] font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer border border-accent/20">Copy</button>
+      </div>
+      <div class="terminal-body px-4 py-3">
+        <pre id="pg-out" class="text-[12px] sm:text-[13px] font-mono text-text leading-relaxed whitespace-pre-wrap"></pre>
+      </div>
+    </div>
+  </div>
+
+  <style is:inline>
+    .pg-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 8px;
+      cursor: pointer;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--color-muted);
+      transition: all 0.15s ease;
+    }
+    .pg-btn:hover { border-color: rgba(52,211,153,0.3); color: var(--color-text); }
+    .pg-btn.active { background: rgba(52,211,153,0.1); border-color: rgba(52,211,153,0.3); color: var(--color-accent); }
+  </style>
+
+  <script is:inline>
+  (function() {
+    var os = 'macos', ed = 'cursor';
+
+    var installs = {
+      macos: 'brew tap yvgude/lean-ctx && brew install lean-ctx',
+      linux: 'curl -fsSL https://leanctx.com/install.sh | sh',
+      windows: 'cargo install lean-ctx'
+    };
+
+    var shells = {
+      macos: ['lean-ctx setup', 'source ~/.zshrc'],
+      linux: ['lean-ctx setup', 'source ~/.bashrc'],
+      windows: ['lean-ctx setup', '# Restart PowerShell after this']
+    };
+
+    var editors = {
+      cursor: {
+        name: 'Cursor',
+        note: 'lean-ctx setup auto-detects Cursor and creates ~/.cursor/mcp.json for you.',
+        manual: [
+          'If auto-setup fails, create ~/.cursor/mcp.json manually:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}'
+        ],
+        agent: 'lean-ctx init --agent cursor',
+        restart: 'Restart Cursor completely (Cmd+Q / Ctrl+Q, then reopen).'
+      },
+      claude: {
+        name: 'Claude Code',
+        note: 'lean-ctx setup auto-detects Claude Code and configures it.',
+        manual: ['Or manually: claude mcp add lean-ctx lean-ctx'],
+        agent: 'lean-ctx init --agent claude',
+        restart: 'Restart Claude Code.'
+      },
+      copilot: {
+        name: 'GitHub Copilot',
+        note: 'Copilot: create .github/copilot/mcp.json per project (below). lean-ctx init --agent copilot also creates .vscode/mcp.json for VS Code native MCP support.',
+        manual: [
+          'Create .github/copilot/mcp.json in your project:',
+          '{',
+          '  "servers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}'
+        ],
+        agent: 'lean-ctx init --agent copilot',
+        restart: 'Restart VS Code.'
+      },
+      windsurf: {
+        name: 'Windsurf',
+        note: 'lean-ctx setup auto-detects Windsurf. Important: use the FULL binary path.',
+        manual: [
+          'If auto-setup fails, create ~/.codeium/windsurf/mcp_config.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "/FULL/PATH/TO/lean-ctx" }',
+          '  }',
+          '}',
+          '(Get path from: which lean-ctx)'
+        ],
+        agent: '',
+        restart: 'Restart Windsurf completely.'
+      },
+      codex: {
+        name: 'OpenAI Codex',
+        note: 'lean-ctx setup auto-detects Codex CLI.',
+        manual: ['Or manually: codex mcp add lean-ctx'],
+        agent: 'lean-ctx init --agent codex',
+        restart: 'Restart Codex CLI.'
+      },
+      gemini: {
+        name: 'Gemini CLI',
+        note: 'lean-ctx setup auto-detects Gemini CLI.',
+        manual: [
+          'If auto-setup fails, create ~/.gemini/settings/mcp.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}'
+        ],
+        agent: '',
+        restart: 'Restart Gemini CLI.'
+      },
+      antigravity: {
+        name: 'Antigravity',
+        note: 'lean-ctx setup auto-detects Antigravity IDE.',
+        manual: [
+          'If auto-setup fails, create ~/.gemini/antigravity/mcp_config.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}',
+          '(Get path from: which lean-ctx)'
+        ],
+        agent: '',
+        restart: 'Restart Antigravity IDE.'
+      },
+      zed: {
+        name: 'Zed',
+        note: 'lean-ctx setup auto-detects Zed.',
+        manual: [
+          'If auto-setup fails, add to ~/.config/zed/settings.json:',
+          '"context_servers": {',
+          '  "lean-ctx": {',
+          '    "source": "custom",',
+          '    "command": "lean-ctx",',
+          '    "args": [], "env": {}',
+          '  }',
+          '}'
+        ],
+        agent: '',
+        restart: 'Zed auto-restarts MCP servers after saving.'
+      },
+      qwen: {
+        name: 'Qwen Code',
+        note: 'Configure via lean-ctx init --agent qwen.',
+        manual: [
+          'If auto-setup fails, create ~/.qwen/mcp.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}',
+          '(Get path from: which lean-ctx)'
+        ],
+        agent: 'qwen',
+        restart: 'Restart Qwen Code.'
+      },
+      trae: {
+        name: 'Trae',
+        note: 'Configure via lean-ctx init --agent trae.',
+        manual: [
+          'If auto-setup fails, create ~/.trae/mcp.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}',
+          '(Get path from: which lean-ctx)'
+        ],
+        agent: 'trae',
+        restart: 'Restart Trae.'
+      },
+      amazonq: {
+        name: 'Amazon Q Developer',
+        note: 'Configure via lean-ctx init --agent amazonq.',
+        manual: [
+          'If auto-setup fails, create ~/.aws/amazonq/mcp.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}',
+          '(Get path from: which lean-ctx)'
+        ],
+        agent: 'amazonq',
+        restart: 'Restart Amazon Q Developer.'
+      },
+      jetbrains: {
+        name: 'JetBrains IDEs',
+        note: 'Configure via lean-ctx init --agent jetbrains. Works with IntelliJ, WebStorm, PyCharm, and other JetBrains IDEs.',
+        manual: [
+          'If auto-setup fails, create ~/.jb-mcp.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}',
+          '(Get path from: which lean-ctx)'
+        ],
+        agent: 'jetbrains',
+        restart: 'Restart your JetBrains IDE.'
+      }
+    };
+
+    function gen() {
+      var e = editors[ed], s = shells[os], step = 1;
+      var lines = [
+        'Install and configure lean-ctx on my machine. Follow these exact steps:',
+        '',
+        step + '. INSTALL THE BINARY:',
+        '   ' + installs[os],
+        ''
+      ];
+      step++;
+      lines.push(step + '. VERIFY:');
+      lines.push('   lean-ctx --version');
+      lines.push('   (Expected: lean-ctx 2.7.0 or newer)');
+      lines.push('');
+      step++;
+      lines.push(step + '. ONE-COMMAND SETUP (shell hooks + editor config):');
+      for (var i = 0; i < s.length; i++) lines.push('   ' + s[i]);
+      lines.push('');
+      lines.push('   ' + e.note);
+      lines.push('');
+      step++;
+      lines.push(step + '. MANUAL FALLBACK (only if step 3 did not configure ' + e.name + '):');
+      for (var j = 0; j < e.manual.length; j++) lines.push('   ' + e.manual[j]);
+      lines.push('');
+      if (e.agent) {
+        step++;
+        lines.push(step + '. INSTALL AGENT INSTRUCTIONS:');
+        lines.push('   ' + e.agent);
+        lines.push('');
+      }
+      step++;
+      lines.push(step + '. RESTART:');
+      lines.push('   ' + e.restart);
+      lines.push('');
+      step++;
+      lines.push(step + '. VERIFY EVERYTHING:');
+      lines.push('   lean-ctx doctor');
+      lines.push('   All checks should show green.');
+
+      var el = document.getElementById('pg-out');
+      if (el) el.textContent = lines.join('\n');
+    }
+
+    function bind(containerId, key) {
+      var btns = document.querySelectorAll('#' + containerId + ' .pg-btn');
+      for (var i = 0; i < btns.length; i++) {
+        (function(btn) {
+          btn.addEventListener('click', function() {
+            for (var j = 0; j < btns.length; j++) btns[j].classList.remove('active');
+            btn.classList.add('active');
+            if (key === 'os') os = btn.getAttribute('data-v');
+            else ed = btn.getAttribute('data-v');
+            gen();
+          });
+        })(btns[i]);
+      }
+    }
+
+    bind('pg-os', 'os');
+    bind('pg-ed', 'ed');
+
+    var copyBtn = document.getElementById('pg-copy');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function() {
+        var el = document.getElementById('pg-out');
+        if (el && navigator.clipboard) {
+          navigator.clipboard.writeText(el.textContent || '').then(function() {
+            copyBtn.textContent = 'Copied!';
+            setTimeout(function() { copyBtn.textContent = 'Copy'; }, 2000);
+          });
+        }
+      });
+    }
+
+    gen();
+  })();
+  </script>
+
+  <h2 id="three-steps">Get Started in 3 Steps</h2>
+
+  <div class="not-prose terminal-chrome mb-8">
+    <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
+      <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
+      <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
+      <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
+      <span class="text-muted text-[11px] ml-2">3 commands — that's it</span>
+    </div>
+    <div class="terminal-body px-4 py-3 font-mono text-[13px]">
+      <pre class="text-text whitespace-pre-wrap"><span class="text-muted"># 1. Install (pick one)</span>
+curl -fsSL https://leanctx.com/install.sh | sh          <span class="text-muted"># universal</span>
+brew tap yvgude/lean-ctx && brew install lean-ctx        <span class="text-muted"># macOS / Linux</span>
+npm install -g lean-ctx-bin                              <span class="text-muted"># Node.js</span>
+cargo install lean-ctx                                   <span class="text-muted"># Rust</span>
+
+<span class="text-muted"># 2. Setup (auto-configures shell + ALL detected editors)</span>
+lean-ctx setup
+
+<span class="text-muted"># 3. Restart your shell</span>
+source ~/.zshrc  <span class="text-muted"># or ~/.bashrc</span></pre>
+    </div>
+  </div>
+
+  <p>
+    <code>lean-ctx setup</code> automatically detects and configures:
+    <strong>Cursor</strong>, <strong>Claude Code</strong>, <strong>Windsurf</strong>,
+    <strong>VS Code / Copilot</strong>, <strong>Codex CLI</strong>, <strong>Gemini CLI</strong>,
+    <strong>Zed</strong>, <strong>Antigravity</strong>, <strong>OpenCode</strong>, and <strong>Pi</strong>.
+    Run <code>lean-ctx doctor</code> to verify everything works.
+  </p>
+
+  <details class="mb-8">
+    <summary class="cursor-pointer font-semibold text-accent hover:text-accent/80 transition-colors py-2">
+      Detailed installation instructions per platform
+    </summary>
+
+  <h2 id="install">Step 1: Install the Binary</h2>
+
+  <h3 id="universal">Universal Installer (any platform)</h3>
+  <p>The fastest way to install lean-ctx without any prerequisites:</p>
+  <pre><code>curl -fsSL https://leanctx.com/install.sh | sh</code></pre>
+  <p>This auto-detects your OS and architecture, downloads the correct pre-built binary from GitHub Releases, verifies the SHA256 checksum, and installs to <code>/usr/local/bin/</code>. No Rust toolchain required.</p>
+  <p>For manual control, download the script first:</p>
+  <pre><code>curl -fsSL https://leanctx.com/install.sh -o install.sh
+chmod +x install.sh
+./install.sh --download    # pre-built binary (no Rust)
+./install.sh               # build from source (requires Rust)</code></pre>
+
+  <h3 id="npm">npm (Node.js)</h3>
+  <p>Install the pre-built binary via npm — no Rust toolchain required:</p>
+  <pre><code>npm install -g lean-ctx-bin</code></pre>
+  <p>This downloads the correct binary for your platform during <code>postinstall</code> with SHA256 verification. Works on macOS (Intel + Apple Silicon), Linux (x86_64), and Windows (x86_64).</p>
+
+  <h3 id="macos">macOS</h3>
+  <p><strong>Option A: Homebrew</strong> (recommended)</p>
+  <pre><code>brew tap yvgude/lean-ctx
+brew install lean-ctx</code></pre>
+  <p>This installs the <code>lean-ctx</code> binary to <code>/opt/homebrew/bin/</code> (Apple Silicon) or <code>/usr/local/bin/</code> (Intel). Both are already in your PATH.</p>
+
+  <p><strong>Option B: Cargo</strong> (requires <a href="https://rustup.rs">Rust</a>)</p>
+  <pre><code>cargo install lean-ctx</code></pre>
+  <p>Installs to <code>~/.cargo/bin/lean-ctx</code>. Make sure <code>~/.cargo/bin</code> is in your PATH:</p>
+  <pre><code>echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc</code></pre>
+
+  <p><strong>Option C: Pre-built binary</strong></p>
+  <ol>
+    <li>Download from <a href="https://github.com/yvgude/lean-ctx/releases/latest">GitHub Releases</a>:
+      <ul>
+        <li>Apple Silicon (M1/M2/M3/M4): <code>lean-ctx-aarch64-apple-darwin.tar.gz</code></li>
+        <li>Intel Mac: <code>lean-ctx-x86_64-apple-darwin.tar.gz</code></li>
+      </ul>
+    </li>
+    <li>Extract and move to PATH:
+      <pre><code>tar xzf lean-ctx-aarch64-apple-darwin.tar.gz
+chmod +x lean-ctx
+sudo mv lean-ctx /usr/local/bin/</code></pre>
+    </li>
+  </ol>
+  <p><strong>macOS Gatekeeper note:</strong> If you see "cannot be opened because the developer cannot be verified", run:</p>
+  <pre><code>xattr -d com.apple.quarantine /usr/local/bin/lean-ctx</code></pre>
+
+  <h3 id="linux">Linux</h3>
+  <p><strong>Option A: Homebrew</strong></p>
+  <pre><code>brew tap yvgude/lean-ctx && brew install lean-ctx</code></pre>
+
+  <p><strong>Option B: Arch Linux (AUR)</strong></p>
+  <pre><code># Source build from crates.io
+yay -S lean-ctx
+
+# Or pre-built binary from GitHub
+yay -S lean-ctx-bin</code></pre>
+  <p>Works with any AUR helper: <code>yay</code>, <code>paru</code>, <code>pikaur</code>, <code>trizen</code>.</p>
+
+  <p><strong>Option C: Cargo</strong></p>
+  <pre><code>cargo install lean-ctx</code></pre>
+  <p>Requires the Rust toolchain. Install it with <code>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh</code>.</p>
+
+  <p><strong>Option D: Pre-built binary</strong></p>
+  <ol>
+    <li>Download <code>lean-ctx-x86_64-unknown-linux-gnu.tar.gz</code> from <a href="https://github.com/yvgude/lean-ctx/releases/latest">GitHub Releases</a></li>
+    <li>Extract and install:
+      <pre><code>tar xzf lean-ctx-x86_64-unknown-linux-gnu.tar.gz
+chmod +x lean-ctx
+sudo mv lean-ctx /usr/local/bin/</code></pre>
+    </li>
+  </ol>
+
+  <h3 id="windows">Windows</h3>
+
+  <p><strong>Option A: Pre-built binary</strong> (recommended — no Rust needed)</p>
+  <ol>
+    <li>Go to <a href="https://github.com/yvgude/lean-ctx/releases/latest">github.com/yvgude/lean-ctx/releases/latest</a></li>
+    <li>Download <code>lean-ctx-x86_64-pc-windows-msvc.zip</code></li>
+    <li>Extract the ZIP — you'll get <code>lean-ctx.exe</code></li>
+    <li>Move <code>lean-ctx.exe</code> to a folder in your PATH, for example:
+      <pre><code>mkdir %USERPROFILE%\bin
+move lean-ctx.exe %USERPROFILE%\bin\</code></pre>
+    </li>
+    <li>Add that folder to your PATH:
+      <ul>
+        <li>Open <strong>Settings → System → About → Advanced system settings → Environment Variables</strong></li>
+        <li>Under "User variables", select <strong>Path</strong>, click <strong>Edit</strong>, then <strong>New</strong></li>
+        <li>Add <code>%USERPROFILE%\bin</code></li>
+        <li>Click OK on all dialogs</li>
+      </ul>
+    </li>
+    <li>Open a <strong>new</strong> PowerShell/CMD window and verify:
+      <pre><code>lean-ctx --version</code></pre>
+    </li>
+  </ol>
+
+  <p><strong>Option B: Cargo</strong></p>
+  <ol>
+    <li>Install the <a href="https://rustup.rs">Rust toolchain</a> (download and run <code>rustup-init.exe</code>)</li>
+    <li>Open a new PowerShell window and run:
+      <pre><code>cargo install lean-ctx</code></pre>
+    </li>
+    <li>The binary is installed to <code>%USERPROFILE%\.cargo\bin\lean-ctx.exe</code> which <code>rustup</code> adds to your PATH automatically.</li>
+  </ol>
+
+  <p><strong>Option C: Build from source</strong></p>
+  <pre><code>git clone https://github.com/yvgude/lean-ctx.git
+cd lean-ctx\rust
+cargo build --release
+copy target\release\lean-ctx.exe %USERPROFILE%\bin\</code></pre>
+
+  <p><strong>Windows + WSL:</strong> If you use Windows Subsystem for Linux, follow the <a href="#linux">Linux instructions</a> inside your WSL distribution. The shell hook and MCP server work identically in WSL.</p>
+
+  <h3 id="build-source">Build from Source (any platform)</h3>
+  <pre><code>git clone https://github.com/yvgude/lean-ctx.git
+cd lean-ctx/rust
+cargo build --release</code></pre>
+  <p>The binary is at <code>target/release/lean-ctx</code> (or <code>lean-ctx.exe</code> on Windows). Copy it to a directory in your PATH.</p>
+
+  </details>
+
+  <h2 id="shell-hook">Step 2: Setup</h2>
+  <p>After installing the binary, run <code>lean-ctx setup</code> to configure everything automatically:</p>
+  <pre><code>lean-ctx setup</code></pre>
+  <p>This single command:</p>
+  <ul>
+    <li>Installs 23 shell aliases (git, npm, cargo, docker, kubectl, curl, and more)</li>
+    <li>Auto-detects installed editors (Cursor, Claude Code, Windsurf, VS Code/Copilot, Codex CLI, Gemini CLI, Zed, Antigravity, OpenCode)</li>
+    <li>Creates MCP config files for each detected editor</li>
+    <li>Installs agent instruction files</li>
+    <li>Runs <code>lean-ctx doctor</code> to verify everything</li>
+  </ul>
+  <p>After setup, restart your shell:</p>
+  <table>
+    <thead>
+      <tr><th>Shell</th><th>Restart command</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Zsh (macOS default)</td><td><code>source ~/.zshrc</code></td></tr>
+      <tr><td>Bash</td><td><code>source ~/.bashrc</code></td></tr>
+      <tr><td>Fish</td><td><code>source ~/.config/fish/config.fish</code></td></tr>
+      <tr><td>PowerShell</td><td>Restart PowerShell</td></tr>
+    </tbody>
+  </table>
+  <p>Then restart your editor completely.</p>
+
+  <h3 id="manual-init">Manual alternative</h3>
+  <p>If you prefer to install only shell aliases without editor auto-detection:</p>
+  <pre><code>lean-ctx init --global</code></pre>
+  <p>Then configure your editor manually using the instructions in Step 3 below.</p>
+
+  <h2 id="editor-setup">Step 3: Verify</h2>
+  <ol>
+    <li>Check the binary:
+      <pre><code>lean-ctx --version   # → lean-ctx 2.7.0
+lean-ctx doctor      # checks PATH, config, aliases, MCP</code></pre>
+    </li>
+    <li>Test the shell hook:
+      <pre><code>git status           # output is now compressed
+lean-ctx gain        # shows token savings so far</code></pre>
+    </li>
+    <li>In your editor, verify that 24 MCP tools appear (e.g. <code>ctx_read</code>, <code>ctx_shell</code>, <code>ctx_metrics</code>).</li>
+  </ol>
+
+  <details class="mb-8">
+    <summary class="cursor-pointer font-semibold text-accent hover:text-accent/80 transition-colors py-2">
+      Manual editor configuration (only if <code>lean-ctx setup</code> didn't work)
+    </summary>
+  <p>
+    <strong>If you used <code>lean-ctx setup</code></strong>, your editor is likely already configured.
+    Run <code>lean-ctx doctor</code> to check. If it shows a green check for your editor, skip this section.
+  </p>
+  <p>
+    Otherwise, connect lean-ctx as an MCP server manually. Each editor has its own config format.
+  </p>
+
+  <div class="border border-white/10 rounded-lg p-4 mb-6 bg-white/[0.02]">
+    <p class="mt-0"><strong>Before you start:</strong> Find your lean-ctx binary path. You'll need it if the short name <code>"lean-ctx"</code> doesn't work.</p>
+    <pre><code># macOS / Linux:
+which lean-ctx
+# Example output: /opt/homebrew/bin/lean-ctx  or  /Users/you/.cargo/bin/lean-ctx
+
+# Windows (PowerShell):
+where.exe lean-ctx
+# Example output: C:\Users\you\.cargo\bin\lean-ctx.exe</code></pre>
+    <p class="mb-0">Keep this path handy — some editors need the <strong>full path</strong> instead of just <code>"lean-ctx"</code>.</p>
+  </div>
+
+  <h3 id="editor-cursor">Cursor</h3>
+  <ol>
+    <li>Open or create <code>~/.cursor/mcp.json</code>:
+      <pre><code># macOS / Linux:
+mkdir -p ~/.cursor
+nano ~/.cursor/mcp.json
+
+# Windows (PowerShell):
+mkdir -Force "$env:USERPROFILE\.cursor"
+notepad "$env:USERPROFILE\.cursor\mcp.json"</code></pre>
+    </li>
+    <li>Paste this exact content (the entire file):
+      <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+    </li>
+    <li><strong>Restart Cursor completely</strong> (Cmd+Q / Ctrl+Q, then reopen)</li>
+    <li>Verify: Open the MCP panel — you should see <strong>24 tools</strong> listed under "lean-ctx"</li>
+  </ol>
+  <p>Optionally, install the Cursor rule for maximum savings:</p>
+  <pre><code>lean-ctx init --agent cursor</code></pre>
+
+  <h3 id="editor-claude">Claude Code</h3>
+  <p>Claude Code has a built-in CLI command for adding MCP servers — no manual file editing needed:</p>
+  <pre><code># Add lean-ctx as MCP server:
+claude mcp add lean-ctx lean-ctx
+
+# Install the CLAUDE.md instructions (makes Claude use lean-ctx tools):
+lean-ctx init --agent claude</code></pre>
+  <p>That's it. Restart Claude Code and the 24 tools will be available.</p>
+
+  <h3 id="editor-copilot">GitHub Copilot (VS Code)</h3>
+  <ol>
+    <li>In your project root, create <code>.github/copilot/mcp.json</code>:
+      <pre><code>mkdir -p .github/copilot</code></pre>
+    </li>
+    <li>Create the file with this content:
+      <pre><code>{`{
+  "servers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+    </li>
+    <li>Restart VS Code</li>
+  </ol>
+  <p>
+    <strong>VS Code native MCP:</strong> Running <code>lean-ctx init --agent copilot</code> creates <code>.vscode/mcp.json</code> in your project so VS Code&apos;s built-in MCP integration can use lean-ctx alongside (or instead of) the Copilot-specific file above.
+  </p>
+  <p><strong>Note:</strong> This is per-project. To use lean-ctx across all projects, repeat for each project or add it to your global VS Code settings.</p>
+
+  <h3 id="editor-windsurf">Windsurf</h3>
+  <ol>
+    <li>Open or create the config file:
+      <pre><code># macOS:
+mkdir -p ~/.codeium/windsurf
+nano ~/.codeium/windsurf/mcp_config.json
+
+# Linux:
+mkdir -p ~/.codeium/windsurf
+nano ~/.codeium/windsurf/mcp_config.json
+
+# Windows:
+mkdir -Force "$env:USERPROFILE\.codeium\windsurf"
+notepad "$env:USERPROFILE\.codeium\windsurf\mcp_config.json"</code></pre>
+    </li>
+    <li>Paste this exact content:
+      <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "/FULL/PATH/TO/lean-ctx"
+    }
+  }
+}`}</code></pre>
+      <p>
+        <strong>Important — use the FULL PATH!</strong> Replace <code>/FULL/PATH/TO/lean-ctx</code> with the output
+        of <code>which lean-ctx</code>. Windsurf spawns MCP servers with a minimal PATH that often doesn't include
+        <code>~/.cargo/bin</code> or <code>/opt/homebrew/bin</code>. Example:
+      </p>
+      <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "/opt/homebrew/bin/lean-ctx"
+    }
+  }
+}`}</code></pre>
+    </li>
+    <li><strong>Restart Windsurf completely</strong></li>
+    <li>Open the MCP panel and verify 24 tools appear</li>
+  </ol>
+
+  <h3 id="editor-zed">Zed</h3>
+  <ol>
+    <li>Open Zed settings (<code>Cmd+,</code> on macOS, or <code>Cmd+Shift+P</code> → "zed: open settings"):
+      <pre><code># macOS / Linux:
+~/.config/zed/settings.json
+
+# Windows:
+%APPDATA%\Zed\settings.json</code></pre>
+    </li>
+    <li>Add the <code>context_servers</code> section (merge with any existing settings):
+      <pre><code>{`{
+  "context_servers": {
+    "lean-ctx": {
+      "source": "custom",
+      "command": "lean-ctx",
+      "args": [],
+      "env": {}
+    }
+  }
+}`}</code></pre>
+      <p>
+        <strong>Important:</strong> The <code>"source": "custom"</code> field is required — without it, Zed silently ignores the server.
+        If <code>"lean-ctx"</code> doesn't work, use the full path (output of <code>which lean-ctx</code>).
+      </p>
+    </li>
+    <li>Zed auto-restarts the MCP server after saving settings (no editor restart needed)</li>
+    <li>Verify: Open the <strong>Agent Panel</strong> (<code>Cmd+Shift+A</code>) → click the settings icon (top-right gear) → look for a green dot next to "lean-ctx"</li>
+  </ol>
+  <p>
+    <strong>Tip:</strong> To auto-approve lean-ctx tool calls, add <code>{`"agent": {"always_allow_tool_actions": true}`}</code> to your settings.
+    For per-tool control, use <code>{`"tool_permissions": {"mcp:lean-ctx:ctx_read": "allow"}`}</code>.
+  </p>
+
+  <h3 id="editor-codex">OpenAI Codex CLI</h3>
+  <ol>
+    <li>Open or create <code>~/.codex/config.toml</code>:
+      <pre><code># macOS / Linux:
+mkdir -p ~/.codex
+nano ~/.codex/config.toml
+
+# Windows:
+mkdir -Force "$env:USERPROFILE\.codex"
+notepad "$env:USERPROFILE\.codex\config.toml"</code></pre>
+    </li>
+    <li>Add this section (keep any existing content):
+      <pre><code>[mcp_servers.lean-ctx]
+command = "lean-ctx"
+args = []</code></pre>
+    </li>
+    <li>Restart Codex CLI</li>
+  </ol>
+  <p>Alternative — use the Codex CLI command instead of editing the file:</p>
+  <pre><code>codex mcp add lean-ctx</code></pre>
+  <p>Then install the agent instructions:</p>
+  <pre><code>lean-ctx init --agent codex</code></pre>
+
+  <h3 id="editor-gemini">Google Gemini CLI / Antigravity</h3>
+  <ol>
+    <li>Create the config directory and file:
+      <pre><code># macOS / Linux:
+mkdir -p ~/.gemini/settings
+nano ~/.gemini/settings/mcp.json
+
+# Windows (PowerShell):
+mkdir -Force "$env:USERPROFILE\.gemini\settings"
+notepad "$env:USERPROFILE\.gemini\settings\mcp.json"</code></pre>
+    </li>
+    <li>Paste this exact content (the entire file):
+      <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+      <p>If <code>"lean-ctx"</code> doesn't work, use the full path (output of <code>which lean-ctx</code>):</p>
+      <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "/opt/homebrew/bin/lean-ctx"
+    }
+  }
+}`}</code></pre>
+    </li>
+    <li><strong>Restart the Gemini CLI session</strong></li>
+    <li>Verify by asking Gemini to list available tools — you should see 24 lean-ctx tools</li>
+  </ol>
+  <p><strong>Common issue:</strong> If the file path is wrong, Gemini CLI silently ignores it. Make sure the directory exists and the JSON is valid (no trailing commas).</p>
+
+  <h3 id="editor-antigravity">Google Antigravity IDE</h3>
+  <p>Antigravity is Google's AI-first IDE with deep Gemini integration. It uses the standard <code>mcpServers</code> format.</p>
+  <ol>
+    <li>Open or create the config file:
+      <pre><code># macOS / Linux:
+mkdir -p ~/.gemini/antigravity
+nano ~/.gemini/antigravity/mcp_config.json
+
+# Windows (PowerShell):
+mkdir -Force "$env:USERPROFILE\.gemini\antigravity"
+notepad "$env:USERPROFILE\.gemini\antigravity\mcp_config.json"</code></pre>
+    </li>
+    <li>Paste this exact content:
+      <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+      <p>If <code>"lean-ctx"</code> doesn't work, use the full path (output of <code>which lean-ctx</code>).</p>
+    </li>
+    <li><strong>Restart Antigravity</strong></li>
+    <li>Verify: The 24 lean-ctx MCP tools should appear in the tool panel</li>
+  </ol>
+  <p>You can also manage MCP servers through Antigravity's built-in MCP Store ("..." dropdown → "Manage MCP Servers" → "View raw config").</p>
+
+  <h3 id="editor-opencode">OpenCode</h3>
+  <ol>
+    <li>Open or create <code>~/.config/opencode/opencode.json</code> (global) or <code>opencode.json</code> in your project root:
+      <pre><code># macOS / Linux:
+mkdir -p ~/.config/opencode
+nano ~/.config/opencode/opencode.json</code></pre>
+    </li>
+    <li>Add the MCP section:
+      <pre><code>{`{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "lean-ctx": {
+      "type": "local",
+      "command": ["lean-ctx"],
+      "enabled": true
+    }
+  }
+}`}</code></pre>
+    </li>
+    <li>Restart OpenCode</li>
+  </ol>
+
+  <h3 id="editor-openclaw">OpenClaw</h3>
+  <p>OpenClaw uses skills instead of MCP. The shell hook gives you automatic compression:</p>
+  <ol>
+    <li><code>lean-ctx init --global</code> — installs shell aliases</li>
+    <li>Restart your shell</li>
+    <li>Every <code>exec</code> call in OpenClaw is now automatically compressed</li>
+  </ol>
+  <p>For deeper integration, install the <a href="https://github.com/yvgude/lean-ctx/tree/main/skills/lean-ctx">LeanCTX skill</a> into <code>~/.openclaw/skills/lean-ctx/</code>.</p>
+
+  <h3 id="editor-pi">Pi Coding Agent</h3>
+  <p>Pi uses an extension-based system. The <code>pi-lean-ctx</code> package overrides Pi's built-in <code>bash</code>, <code>read</code>, <code>grep</code>, <code>find</code>, and <code>ls</code> tools to route them through lean-ctx.</p>
+  <ol>
+    <li>Install lean-ctx (if not already installed):
+      <pre><code>cargo install lean-ctx</code></pre>
+    </li>
+    <li>Install the Pi extension:
+      <pre><code>pi install pi-lean-ctx</code></pre>
+      <p>Or use the lean-ctx installer:</p>
+      <pre><code>lean-ctx init --agent pi</code></pre>
+    </li>
+    <li>All tools are now automatically routed through lean-ctx — no manual prefixing needed</li>
+    <li>Verify with the <code>/lean-ctx</code> slash command inside Pi</li>
+  </ol>
+  <p>
+    <strong>Smart reads:</strong> The extension automatically selects the optimal read mode based on file type and size
+    (full for small files, map for medium code files, signatures for large code files).
+  </p>
+
+  <h3 id="editor-other">Other Editors with MCP Support</h3>
+  <p>Any editor that supports the <a href="https://modelcontextprotocol.io">Model Context Protocol</a> can use lean-ctx. The general pattern:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+  <p>Key points:</p>
+  <ul>
+    <li>The <code>command</code> must point to the lean-ctx binary (use full path if the short name doesn't work)</li>
+    <li>No <code>args</code> needed — lean-ctx auto-detects MCP mode when invoked without arguments</li>
+    <li>No <code>env</code> or <code>port</code> config needed — lean-ctx uses stdio transport</li>
+    <li>Always restart the editor after changing MCP config</li>
+  </ul>
+
+  </details>
+
+  <h2 id="monitor">Monitor Savings</h2>
+  <pre><code># Terminal dashboard (colors, bars, sparklines)
+lean-ctx gain
+
+# Web dashboard with charts
+lean-ctx dashboard
+
+# Find uncompressed commands in shell history
+lean-ctx discover
+
+# Run a real benchmark on your project
+lean-ctx benchmark run</code></pre>
+
+  <h2 id="lctx">Multi-Agent Launcher (lctx)</h2>
+  <p>
+    The <code>lctx</code> command auto-detects your AI agent, builds the project graph, and launches with lean-ctx pre-configured:
+  </p>
+  <pre><code># Auto-detect and launch
+lctx
+
+# Launch a specific agent
+lctx cursor
+lctx claude
+lctx codex
+lctx gemini
+
+# List supported agents
+lctx --list</code></pre>
+  <p>Supported agents: Cursor, Claude Code, OpenAI Codex, Google Gemini, Windsurf, Cline. The launcher:</p>
+  <ul>
+    <li>Finds your project root (nearest <code>.git</code> directory)</li>
+    <li>Builds or updates the persistent project graph (<code>ctx_graph build</code>)</li>
+    <li>Launches the agent with lean-ctx MCP server configured</li>
+  </ul>
+  <p>Install the launcher script:</p>
+  <pre><code># Copy to your PATH
+sudo cp bin/lctx /usr/local/bin/
+# Or symlink
+sudo ln -sf $(pwd)/bin/lctx /usr/local/bin/lctx</code></pre>
+
+  <h2 id="update">Updating</h2>
+  <p>The fastest way to update is the built-in self-update:</p>
+  <pre><code>lean-ctx update</code></pre>
+  <p>This downloads the latest release from GitHub, verifies the binary, and replaces the current installation. Works on all platforms.</p>
+  <p>Alternatively, use the same method you used to install:</p>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Command</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Homebrew</td><td><code>brew update && brew upgrade lean-ctx</code></td></tr>
+      <tr><td>Cargo</td><td><code>cargo install lean-ctx</code></td></tr>
+      <tr><td>npm</td><td><code>npm update -g lean-ctx-bin</code></td></tr>
+      <tr><td>AUR</td><td><code>yay -Syu lean-ctx</code></td></tr>
+      <tr><td>install.sh</td><td>Re-run <code>curl -fsSL https://leanctx.com/install.sh | sh</code></td></tr>
+      <tr><td>Binary</td><td>Download latest from <a href="https://github.com/yvgude/lean-ctx/releases/latest">GitHub Releases</a></td></tr>
+    </tbody>
+  </table>
+  <p><strong>After updating, always re-run:</strong></p>
+  <pre><code>lean-ctx setup           # re-configures shell + editors
+source ~/.zshrc          # restart shell</code></pre>
+
+  <h2 id="uninstall">Uninstalling</h2>
+
+  <p>
+    Starting with v2.8.0, lean-ctx includes a built-in uninstall command that removes all configuration:
+  </p>
+
+  <pre><code>lean-ctx uninstall</code></pre>
+
+  <p>This command removes:</p>
+  <ul>
+    <li><strong>Shell hook</strong> — removes the lean-ctx block from <code>~/.zshrc</code>, <code>~/.bashrc</code>, <code>~/.config/fish/config.fish</code>, or your PowerShell profile</li>
+    <li><strong>MCP configurations</strong> — removes the <code>lean-ctx</code> entry from Cursor, Claude Code, Windsurf, Gemini CLI, Antigravity, Codex CLI, VS Code, and OpenCode</li>
+    <li><strong>Data directory</strong> — removes <code>~/.lean-ctx/</code> (stats, sessions, cache, config)</li>
+  </ul>
+
+  <p>After running the command, remove the binary itself:</p>
+
+  <table>
+    <thead><tr><th>Installed via</th><th>Remove command</th></tr></thead>
+    <tbody>
+      <tr><td>Cargo</td><td><code>cargo uninstall lean-ctx</code></td></tr>
+      <tr><td>Homebrew</td><td><code>brew uninstall lean-ctx</code></td></tr>
+      <tr><td>AUR</td><td><code>yay -R lean-ctx</code></td></tr>
+      <tr><td>Manual binary</td><td><code>rm $(which lean-ctx)</code></td></tr>
+    </tbody>
+  </table>
+
+  <p>Then restart your terminal. All lean-ctx compression aliases and MCP tools will be gone.</p>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>lean-ctx: command not found</h3>
+  <p>The binary isn't in your PATH. Check where it was installed:</p>
+  <pre><code># Cargo installs here:
+ls ~/.cargo/bin/lean-ctx
+
+# Homebrew installs here (macOS):
+ls /opt/homebrew/bin/lean-ctx
+
+# Manual installs — wherever you placed it:
+ls /usr/local/bin/lean-ctx</code></pre>
+  <p>Add the correct directory to your PATH in your shell profile.</p>
+
+  <h3>MCP tools don't appear in editor</h3>
+  <ul>
+    <li>Make sure you restarted the editor completely after adding the MCP config</li>
+    <li>Check that <code>lean-ctx --version</code> works from the terminal the editor uses</li>
+    <li>Try using the <strong>full path</strong> to the binary in the MCP config (e.g. <code>/Users/you/.cargo/bin/lean-ctx</code>)</li>
+    <li>Run <code>lean-ctx doctor</code> to diagnose PATH and configuration issues</li>
+  </ul>
+
+  <h3>Shell commands hang or recurse</h3>
+  <p>If <code>cargo test</code> or other commands hang after installing lean-ctx aliases, prefix with <code>LEAN_CTX_ACTIVE=1</code> to bypass the alias:</p>
+  <pre><code>LEAN_CTX_ACTIVE=1 cargo test</code></pre>
+  <p>This is only needed when lean-ctx itself runs the same command internally (e.g. during builds or tests).</p>
+
+  <h3>macOS: "cannot be opened because the developer cannot be verified"</h3>
+  <pre><code>xattr -d com.apple.quarantine $(which lean-ctx)</code></pre>
+
+  <h3>Windows: lean-ctx.exe not recognized</h3>
+  <p>Make sure the folder containing <code>lean-ctx.exe</code> is in your PATH. Open a <strong>new</strong> terminal after changing PATH — existing terminals don't pick up changes.</p>
+
+  <h2>Next Steps</h2>
+  <ul>
+    <li><a href="/docs/tools#ctx_graph">Project Graph</a> — persistent dependency scanning with symbol lookup and impact analysis</li>
+    <li><a href="/docs/cep">Cognitive Efficiency Protocol (CEP)</a> — how lean-ctx optimizes LLM reasoning</li>
+    <li><a href="/docs/ccp">Context Continuity Protocol (CCP)</a> — cross-session memory</li>
+    <li><a href="/docs/tdd">Token Dense Dialect (TDD)</a> — symbol shorthand for 8-25% more savings</li>
+    <li><a href="/docs/tools">All 24 MCP Tools</a></li>
+    <li><a href="/docs/cli">CLI & Configuration</a></li>
+  </ul>
+</DocsLayout>

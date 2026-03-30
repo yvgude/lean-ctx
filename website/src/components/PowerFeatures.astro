@@ -1,0 +1,153 @@
+---
+const features = [
+  {
+    eyebrow: 'Persistent Project Graph',
+    title: 'Your codebase, mapped.',
+    description: 'Incremental scanning builds a persistent dependency graph of your entire project. Find related files, trace symbol usage, and measure impact — without re-scanning every session.',
+    badge: 'New in v2.7.0',
+    actions: [
+      { cmd: 'build', desc: 'Scan & persist project structure' },
+      { cmd: 'related', desc: 'BFS traversal for connected files' },
+      { cmd: 'symbol', desc: 'Jump to any exported symbol' },
+      { cmd: 'impact', desc: 'Reverse dependency analysis' },
+      { cmd: 'status', desc: 'Index metadata & freshness' },
+    ],
+    terminal: {
+      title: '$ ctx_graph action=build',
+      lines: [
+        { text: 'GRAPH BUILD — /Users/you/project', style: 'bright' },
+        { text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', style: 'dim' },
+        { text: 'Scanned: 142 files (38 new, 104 cached)', style: 'muted' },
+        { text: 'Symbols: 847 exports across 12 languages', style: 'muted' },
+        { text: 'Edges:   1,203 import relationships', style: 'muted' },
+        { text: '', style: 'muted' },
+        { text: 'Index: ~/.lean-ctx/graphs/a3f8c1/index.json', style: 'accent' },
+        { text: 'Build time: 340ms (incremental)', style: 'accent' },
+      ],
+    },
+    link: '/docs/tools#ctx_graph',
+  },
+  {
+    eyebrow: 'Multi-Agent Launcher',
+    title: 'One command. Any AI agent.',
+    description: 'Auto-detects your AI tool (Cursor, Claude, Gemini, Codex, Windsurf, Cline), builds the project graph, and launches with lean-ctx pre-configured. Zero manual setup.',
+    badge: 'New in v2.7.0',
+    actions: [
+      { cmd: 'lctx', desc: 'Auto-detect agent & launch' },
+      { cmd: 'lctx cursor', desc: 'Launch specific agent' },
+      { cmd: 'lctx --list', desc: 'Show supported agents' },
+    ],
+    terminal: {
+      title: '$ lctx',
+      lines: [
+        { text: '◆ lean-ctx launcher', style: 'bright' },
+        { text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', style: 'dim' },
+        { text: 'Detected: cursor (running)', style: 'accent' },
+        { text: 'Project:  ~/projects/my-app', style: 'muted' },
+        { text: 'Graph:    142 files, 847 symbols ✓', style: 'muted' },
+        { text: '', style: 'muted' },
+        { text: 'Launching Cursor with lean-ctx...', style: 'accent' },
+        { text: 'Context server: connected (24 tools)', style: 'accent' },
+      ],
+    },
+    link: '/docs/getting-started',
+  },
+  {
+    eyebrow: 'Universal Installation',
+    title: 'Five ways to install. Zero friction.',
+    description: 'From a one-line curl command to npm, Homebrew, Cargo, or AUR — install lean-ctx however you prefer. No Rust toolchain required for binary installs.',
+    badge: 'New in v2.7.0',
+    actions: [
+      { cmd: 'curl | sh', desc: 'Universal one-liner with SHA256 verification' },
+      { cmd: 'npm i -g lean-ctx-bin', desc: 'Node.js binary distribution' },
+      { cmd: 'brew install', desc: 'Homebrew (macOS/Linux)' },
+      { cmd: 'cargo install', desc: 'From source via crates.io' },
+      { cmd: 'yay -S', desc: 'Arch Linux (AUR)' },
+    ],
+    terminal: {
+      title: '$ curl -fsSL https://leanctx.com/install.sh | sh',
+      lines: [
+        { text: '◆ lean-ctx installer', style: 'bright' },
+        { text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', style: 'dim' },
+        { text: 'OS:       darwin-aarch64', style: 'muted' },
+        { text: 'Source:   github.com/yvgude/lean-ctx/releases', style: 'muted' },
+        { text: 'SHA256:   verified ✓', style: 'accent' },
+        { text: '', style: 'muted' },
+        { text: 'Installed: /usr/local/bin/lean-ctx', style: 'accent' },
+        { text: 'Version:   2.7.0 — ready.', style: 'accent' },
+      ],
+    },
+    link: '/docs/getting-started',
+  },
+];
+---
+
+<section class="relative py-20 sm:py-32">
+  <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-radial-[at_50%_50%] from-accent/[0.03] to-transparent"></div>
+  </div>
+
+  <div class="relative max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="text-center mb-12 sm:mb-16">
+      <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-3">Beyond Compression</p>
+      <h2 class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.1] text-text-bright mb-4">
+        Not just smaller. <span class="gradient-text-green">Smarter.</span>
+      </h2>
+      <p class="text-sm text-muted leading-relaxed max-w-2xl mx-auto">
+        lean-ctx v2.7.0 goes beyond token compression. It understands your project structure,
+        launches any AI agent with one command, and installs without friction.
+      </p>
+    </div>
+
+    <div class="space-y-8 sm:space-y-12">
+      {features.map((f, i) => (
+        <div class:list={[
+          'power-feature animate-entrance grid lg:grid-cols-2 gap-6 lg:gap-10 items-start p-6 sm:p-8 rounded-2xl border border-white/[0.06] bg-surface/50 hover:border-accent/15 transition-colors duration-300',
+          i % 2 === 1 ? 'lg:[direction:rtl] lg:*:[direction:ltr]' : ''
+        ]}>
+          <div>
+            <div class="flex items-center gap-3 mb-3">
+              <p class="text-[11px] font-medium uppercase tracking-[0.15em] text-accent">{f.eyebrow}</p>
+              <span class="px-2 py-0.5 text-[10px] font-semibold rounded-full border border-accent/20 text-accent bg-accent/10">{f.badge}</span>
+            </div>
+            <h3 class="font-display text-lg sm:text-xl font-bold text-text-bright mb-3">{f.title}</h3>
+            <p class="text-sm text-muted leading-relaxed mb-5">{f.description}</p>
+
+            <div class="space-y-1.5 mb-5">
+              {f.actions.map(a => (
+                <div class="flex items-baseline gap-3 text-[13px]">
+                  <code class="text-[11px] font-mono text-accent font-semibold shrink-0">{a.cmd}</code>
+                  <span class="text-muted">{a.desc}</span>
+                </div>
+              ))}
+            </div>
+
+            <a href={f.link} class="inline-flex items-center text-xs text-accent hover:text-accent/80 transition-colors font-medium">
+              Learn more
+              <svg class="ml-1 w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
+          </div>
+
+          <div class="terminal-chrome">
+            <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
+              <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
+              <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
+              <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
+              <span class="text-muted text-[11px] ml-2">{f.terminal.title}</span>
+            </div>
+            <div class="terminal-body px-4 py-3 font-mono text-[12px] sm:text-[13px] leading-relaxed">
+              {f.terminal.lines.map(line => (
+                <p class:list={[
+                  line.style === 'bright' ? 'text-text-bright font-bold' :
+                  line.style === 'accent' ? 'text-accent' :
+                  line.style === 'dim' ? 'text-border-light/30' :
+                  'text-muted'
+                ]}>{line.text || '\u00A0'}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

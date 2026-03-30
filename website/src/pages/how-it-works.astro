@@ -1,0 +1,570 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const faqSchema = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: 'What is lean-ctx?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'lean-ctx is an open-source compression system for AI coding tools. It sits between your AI tool (Cursor, Claude Code, GitHub Copilot, etc.) and the LLM, compressing context through AST-aware file compression, shell output pattern matching, and communication protocols. It reduces token usage by up to 99% per operation.'
+      }
+    },
+    {
+      '@type': 'Question',
+      name: 'Does compression hurt code quality?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'No. lean-ctx uses tree-sitter AST parsing to understand code structure, then strips only what the LLM doesn\'t need: redundant whitespace, boilerplate imports, and decorative comments. On average, 98% of AST structure, 97% of identifiers, and 96% of meaningful code lines are preserved. You can verify this with lean-ctx benchmark run.'
+      }
+    },
+    {
+      '@type': 'Question',
+      name: 'How do I install lean-ctx?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Install via cargo install lean-ctx or curl -fsSL https://leanctx.com/install.sh | sh. Then run lean-ctx init for the shell hook and lean-ctx setup to connect with your AI tools. Zero configuration required.'
+      }
+    },
+    {
+      '@type': 'Question',
+      name: 'Which AI tools does lean-ctx support?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'lean-ctx works with every major AI coding tool: Cursor, GitHub Copilot, Claude Code, Windsurf, Cline, OpenAI Codex, Gemini CLI, Antigravity, Pi, Zed, Continue, and OpenCode. All tools benefit from both the context server and shell hook compression.'
+      }
+    }
+  ]
+});
+---
+
+<BaseLayout title="How It Works — LeanCTX" description="lean-ctx is a compression system that sits between your AI tool and the LLM — compressing context automatically. Learn the data flow, and how three compression layers can significantly reduce token usage."
+  breadcrumbs={[{ name: 'Home', url: '/' }, { name: 'How It Works', url: '/how-it-works/' }]}
+  extraJsonLd={faqSchema}>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        How It Works
+      </p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      The Intelligence Layer<br/>
+      <span class="gradient-text">for AI Engineering.</span>
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      lean-ctx is a compression system with three independent layers. A <strong class="text-text-bright">context server</strong> replaces
+      your AI's file reads with AST-aware compressed versions. A <strong class="text-text-bright">shell hook</strong> intercepts
+      90+ CLI command patterns. And three <strong class="text-text-bright">communication protocols</strong> teach the AI
+      to respond more efficiently. You install it once — everything else is automatic.
+    </p>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ DATA FLOW ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      The data flow
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Where does lean-ctx <span class="gradient-text">sit?</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      lean-ctx intercepts at two levels: the context layer (file reads, code search, shell commands)
+      and the shell layer (raw CLI output). Both compress data before it reaches the LLM.
+      The AI sees the same information in a fraction of the tokens.
+    </p>
+
+    <div class="animate-entrance">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-muted text-[11px] ml-2 font-mono">data flow — before vs. after</span>
+        </div>
+        <div class="px-4 sm:px-6 py-4 sm:py-5">
+          <pre class="text-[11px] sm:text-[13px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">Without lean-ctx:</span>
+
+<span class="text-text-bright">You</span>  →  <span class="text-text-bright">AI Tool</span>  →  reads file  <span class="text-muted">(full content)</span>  →  <span class="text-red-400">LLM processes everything</span>
+
+<span class="text-muted/60">With lean-ctx:</span>
+
+<span class="text-text-bright">You</span>  →  <span class="text-text-bright">AI Tool</span>  →  <span class="text-accent font-bold">lean-ctx</span> compresses  →  <span class="text-accent">signal only</span>  →  <span class="text-accent font-bold">LLM: up to 90% less noise</span>
+                           <span class="text-muted/40">├─ AST-aware compression</span>
+                           <span class="text-muted/40">├─ Session cache (re-read ≈ 13 tok)</span>
+                           <span class="text-muted/40">└─ 6 read modes per file type</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flow diagram -->
+    <div class="grid sm:grid-cols-4 animate-entrance" style="margin-top: clamp(2.5rem, 2rem + 2vw, 4rem); gap: clamp(1px, 0.1vw, 1px);">
+      <div class="layer-card">
+        <div class="layer-icon" style="color: var(--color-muted);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.25rem;">You</h3>
+        <p class="fluid-sm text-muted leading-relaxed">Code normally. Change nothing about your workflow.</p>
+      </div>
+      <div class="layer-card">
+        <div class="layer-icon" style="color: var(--color-accent-2);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.25rem;">AI Tool</h3>
+        <p class="fluid-sm text-muted leading-relaxed">Cursor, Claude Code, Copilot, Windsurf, …</p>
+      </div>
+      <div class="layer-card" style="border-color: color-mix(in srgb, var(--color-accent) 22%, transparent);">
+        <div class="layer-icon" style="color: var(--color-accent);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-accent" style="margin: 0.75rem 0 0.25rem;">lean-ctx</h3>
+        <p class="fluid-sm text-muted leading-relaxed">Compresses everything via Context Server &amp; Shell Hook.</p>
+      </div>
+      <div class="layer-card">
+        <div class="layer-icon" style="color: var(--color-accent-3);">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.25rem;">LLM</h3>
+        <p class="fluid-sm text-muted leading-relaxed">Sees only signal. Up to 90% fewer tokens, same information.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ YOUR PART ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Two commands. That's it.
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      What do <span class="gradient-text">YOU</span> actually do?
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      Almost nothing. lean-ctx works invisibly after a one-time setup.
+      You keep coding exactly like before.
+    </p>
+
+    <!-- Steps -->
+    <div class="grid md:grid-cols-3 mb-14" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="hiw-step-card card animate-entrance">
+        <div class="hiw-step-num">01</div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Install</h3>
+        <p class="fluid-sm text-muted mb-4">Single Rust binary. No dependencies, no cloud, no account.</p>
+        <code class="hiw-step-code">curl -fsSL leanctx.com/install.sh | sh</code>
+      </div>
+      <div class="hiw-step-card card animate-entrance">
+        <div class="hiw-step-num">02</div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Setup</h3>
+        <p class="fluid-sm text-muted mb-4">Auto-detects your shell and AI tools. Configures everything in seconds.</p>
+        <code class="hiw-step-code">lean-ctx setup</code>
+      </div>
+      <div class="hiw-step-card card animate-entrance">
+        <div class="hiw-step-num">03</div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">There is no step 3</h3>
+        <p class="fluid-sm text-muted mb-4">Code normally. Your AI uses compressed tools automatically.</p>
+        <span class="hiw-step-code" style="border-color:var(--color-border);color:var(--color-muted);">Tokens saved: <span class="text-accent font-bold">automatically</span></span>
+      </div>
+    </div>
+
+    <!-- You vs. The Machine table -->
+    <div class="animate-entrance">
+        <p class="fluid-label text-muted font-display mb-4">You vs. The Machine</p>
+      <div class="rounded-lg border border-border overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-surface-2">
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">What YOU do (once)</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">What happens AUTOMATICALLY</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/30">
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-mono text-xs">lean-ctx setup</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">AI uses <code class="text-accent-2 bg-surface-3 px-1 py-0.5 rounded text-[11px]">ctx_read</code> instead of Read — <strong class="text-accent">up to 99% fewer tokens</strong></td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3"></td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">AI uses <code class="text-accent-2 bg-surface-3 px-1 py-0.5 rounded text-[11px]">ctx_shell</code> instead of Shell — <strong class="text-accent">60–90% fewer tokens</strong></td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3"></td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">AI uses <code class="text-accent-2 bg-surface-3 px-1 py-0.5 rounded text-[11px]">ctx_search</code> instead of Grep — <strong class="text-accent">50–80% fewer tokens</strong></td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3"></td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">Shell hook compresses CLI output transparently</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3"></td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">Session cache remembers files across reads (~13 tokens for re-reads)</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-muted font-mono text-xs">lean-ctx gain <span class="text-muted/40 font-sans text-[11px]">(optional)</span></td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">See your lifetime savings dashboard</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fluid-sm text-muted/60 mt-4">
+        Full setup guide → <a href="/docs/getting-started" class="text-accent hover:underline">Getting Started</a> &nbsp;·&nbsp;
+        All CLI commands → <a href="/cli" class="text-accent hover:underline">CLI Reference</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ THREE LAYERS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Three compression layers
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      How it <span class="gradient-text">actually works</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      Three independent layers, each compressing data differently.
+      All automatic. All transparent.
+    </p>
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+
+      <!-- Layer 1: MCP Server -->
+      <a href="/mcp-server" class="hiw-layer-link card animate-entrance">
+        <div class="hiw-layer-badge">Layer 1</div>
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-2">Context Server</h3>
+        <p class="fluid-sm text-muted mb-4">
+          24 intelligent tools that replace your AI's built-in file reads, shell commands, and code searches
+          with AST-aware compressed versions. Six read modes adapt to every use case.
+        </p>
+        <div class="flex flex-wrap gap-1.5 mb-4">
+          <span class="hiw-tool-tag">ctx_read</span>
+          <span class="hiw-tool-tag">ctx_shell</span>
+          <span class="hiw-tool-tag">ctx_search</span>
+          <span class="hiw-tool-tag text-muted/50">+21</span>
+        </div>
+        <span class="hiw-layer-cta">
+          Explore all tools
+          <svg class="w-3.5 h-3.5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </span>
+      </a>
+
+      <!-- Layer 2: Shell Hook -->
+      <a href="/shell-hook" class="hiw-layer-link card animate-entrance">
+        <div class="hiw-layer-badge">Layer 2</div>
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-2">Shell Hook</h3>
+        <p class="fluid-sm text-muted mb-4">
+          Intercepts shell output via aliases and recognizes 90+ command patterns — git, npm, cargo,
+          docker, kubectl — compressing output at the terminal level.
+        </p>
+        <div class="flex flex-wrap gap-1.5 mb-4">
+          <span class="hiw-tool-tag">git</span>
+          <span class="hiw-tool-tag">npm</span>
+          <span class="hiw-tool-tag">cargo</span>
+          <span class="hiw-tool-tag text-muted/50">+85</span>
+        </div>
+        <span class="hiw-layer-cta">
+          See all patterns
+          <svg class="w-3.5 h-3.5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </span>
+      </a>
+
+      <!-- Layer 3: Protocols -->
+      <a href="/protocols" class="hiw-layer-link card animate-entrance">
+        <div class="hiw-layer-badge">Layer 3</div>
+        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-2">Protocols</h3>
+        <p class="fluid-sm text-muted mb-4">
+          Instruction sets applied via system prompt that teach the AI to communicate more efficiently —
+          act first, report concisely, use symbols instead of prose.
+        </p>
+        <div class="flex flex-wrap gap-1.5 mb-4">
+          <span class="hiw-tool-tag">CEP</span>
+          <span class="hiw-tool-tag">CCP</span>
+          <span class="hiw-tool-tag">TDD</span>
+        </div>
+        <span class="hiw-layer-cta">
+          Learn the protocols
+          <svg class="w-3.5 h-3.5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </span>
+      </a>
+
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ COMPRESSION QUALITY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Noise, not signal
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Does compression <span class="gradient-text">hurt quality?</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      No. lean-ctx uses AST parsing to understand code structure, then strips only what the LLM doesn't need:
+      redundant whitespace, boilerplate imports, decorative comments. The signal stays intact.
+    </p>
+
+    <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent">98%</span>
+        <span class="stat-desc">AST structure preserved on average — functions, classes, types, and their relationships stay intact</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-2">97%</span>
+        <span class="stat-desc">identifiers preserved on average — function names, variable names, type annotations, import paths</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-3">96%</span>
+        <span class="stat-desc">meaningful code lines retained on average — only boilerplate, comments, and low-entropy patterns removed</span>
+      </div>
+    </div>
+
+    <div class="animate-entrance">
+      <div class="compare-card">
+        <div class="compare-header compare-header--good">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          Verify it yourself
+        </div>
+        <div class="compare-body" style="padding: 1.25rem;">
+          <p class="fluid-sm text-muted" style="margin-bottom: 0.75rem;">
+            Run <code class="text-accent-2 font-mono text-[11px]">lean-ctx benchmark run</code>
+            in any project. It measures exact token savings and accuracy across every file in your codebase.
+          </p>
+          <a href="/benchmark" class="inline-flex items-center fluid-sm text-accent hover:underline font-medium" style="gap: 0.375rem;">
+            See benchmark details
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CTA ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Get started
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Ready to start <span class="gradient-text">saving?</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      One binary. Zero cloud dependencies. MIT licensed.<br />
+      Install in 60 seconds and start saving tokens immediately.
+    </p>
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/compatibility" class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Check Compatibility
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  /* ── Step Cards ─────────────────────────── */
+  .hiw-step-card {
+    padding: 1.5rem;
+  }
+  .hiw-step-num {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-accent);
+    opacity: 0.3;
+    line-height: 1;
+    margin-bottom: 0.75rem;
+  }
+  .hiw-step-code {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent);
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+
+  /* ── Layer Cards (clickable) ────────────── */
+  .hiw-layer-link {
+    display: flex;
+    flex-direction: column;
+    padding: 1.75rem 1.5rem 1.5rem;
+    position: relative;
+    text-decoration: none;
+  }
+  .hiw-layer-link:hover .hiw-layer-cta {
+    color: var(--color-accent);
+  }
+  .hiw-layer-badge {
+    position: absolute;
+    top: -10px;
+    left: 20px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-accent);
+    background: var(--color-bg);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
+    border-radius: 6px;
+    padding: 2px 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .hiw-layer-cta {
+    display: inline-flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-muted);
+    margin-top: auto;
+    transition: color 0.2s ease;
+  }
+
+  .hiw-tool-tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 4px 10px;
+  }
+
+  /* ── Stats Grid (matches landing page) ─── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.25rem, 1rem + 1vw, 2rem);
+    background: var(--color-bg);
+  }
+  .stat-number {
+    font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin-bottom: 0.625rem;
+  }
+  .stat-desc {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    color: var(--color-muted);
+    line-height: 1.5;
+  }
+  @media (max-width: 640px) {
+    .stats-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Compare Card (matches landing page) ── */
+  .compare-card {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .compare-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .compare-header--good {
+    background: rgba(52, 211, 153, 0.04);
+    color: var(--color-accent);
+  }
+  .compare-body {
+    padding: 1.25rem;
+    background: var(--color-surface);
+  }
+
+  /* ── Layer Card (flow diagram, matches landing page) ── */
+  .layer-card {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    transition: background 0.2s ease;
+  }
+  .layer-card:first-child {
+    border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0;
+  }
+  .layer-card:last-child {
+    border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px);
+  }
+  .layer-card + .layer-card {
+    border-top: none;
+  }
+  @media (min-width: 640px) {
+    .layer-card:first-child {
+      border-radius: clamp(10px, 0.8vw, 14px) 0 0 clamp(10px, 0.8vw, 14px);
+    }
+    .layer-card:last-child {
+      border-radius: 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0;
+    }
+    .layer-card + .layer-card {
+      border-top: 1px solid var(--color-border);
+      border-left: none;
+    }
+  }
+  .layer-card:hover {
+    background: var(--color-surface);
+  }
+  .layer-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+</style>
+
+</BaseLayout>

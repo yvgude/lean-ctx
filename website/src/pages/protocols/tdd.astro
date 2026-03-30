@@ -1,0 +1,683 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Token Dense Dialect (TDD) — LeanCTX"
+  description="TDD replaces verbose prose with symbolic notation. Maximize meaning per token — no articles, no filler, no pleasantries. 8-25% fewer tokens with minimal information loss."
+  breadcrumbs={[
+    { name: 'Home', url: '/' },
+    { name: 'Protocols', url: '/protocols' },
+    { name: 'TDD', url: '/protocols/tdd' },
+  ]}
+>
+
+<!-- ═══════════════════════════════════════════════════════
+     HERO
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        Protocols / TDD
+      </p>
+    </div>
+
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Token Dense Dialect.
+    </h1>
+
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      TDD replaces verbose prose with symbolic notation. Maximize meaning per token — no articles, no filler, no pleasantries. The AI communicates in a compact dialect that preserves all information with 8&#8211;25% fewer tokens.
+    </p>
+
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/protocols" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        All Protocols
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     WHY TDD EXISTS
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      The Problem
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Why TDD exists.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      Information entropy per token is the key metric. Most AI responses are filled with tokens that carry nearly zero unique information.
+    </p>
+
+    <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="tdd-insight-card card">
+        <div class="tdd-insight-header tdd-insight-header--low">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+          Low Entropy
+        </div>
+        <div class="tdd-insight-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+          <div class="tdd-insight-line">
+            <span class="text-text-bright">"function"</span> <span class="text-muted">uses 1 token</span>
+          </div>
+          <div class="tdd-insight-line">
+            <span class="text-danger">Conveys nearly zero unique information</span>
+          </div>
+          <div class="tdd-insight-line">
+            <span class="text-muted">The AI already knows it's a function from context</span>
+          </div>
+          <div class="tdd-insight-line">
+            <span class="text-danger">Wastes budget on what's already implied</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tdd-insight-card card">
+        <div class="tdd-insight-header tdd-insight-header--high">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          High Entropy
+        </div>
+        <div class="tdd-insight-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+          <div class="tdd-insight-line">
+            <span class="text-accent-3">λ</span> <span class="text-muted">uses 1 token</span>
+          </div>
+          <div class="tdd-insight-line">
+            <span class="text-accent">Conveys the same meaning in less space</span>
+          </div>
+          <div class="tdd-insight-line">
+            <span class="text-muted">Frees token budget for actual logic and context</span>
+          </div>
+          <div class="tdd-insight-line">
+            <span class="text-accent">Every token carries maximum signal</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-muted fluid-sm animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 44rem;">
+      lean-ctx is a lossless minifier for human thought. TDD applies this principle to AI communication — stripping syntactic sugar while preserving every bit of semantic content.
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SYMBOL TABLE
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Reference
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Symbol table.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      Each symbol replaces 1 token of prose with 1 token of dense notation. The AI learns these symbols from the system prompt and uses them consistently throughout the session.
+    </p>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1px, 0.1vw, 1px);">
+      <div class="tdd-table-card card">
+        <h3 class="tdd-table-heading">Structural</h3>
+        <table class="tdd-symbol-table">
+          <tbody>
+            <tr>
+              <td class="tdd-symbol text-accent-3">λ</td>
+              <td class="tdd-meaning">function</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">§</td>
+              <td class="tdd-meaning">module / struct</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">∂</td>
+              <td class="tdd-meaning">interface / trait</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">τ</td>
+              <td class="tdd-meaning">type</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">ε</td>
+              <td class="tdd-meaning">enum</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tdd-table-card card">
+        <h3 class="tdd-table-heading">Actions</h3>
+        <table class="tdd-symbol-table">
+          <tbody>
+            <tr>
+              <td class="tdd-symbol text-accent-3">⊕</td>
+              <td class="tdd-meaning">add</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">⊖</td>
+              <td class="tdd-meaning">remove</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">∆</td>
+              <td class="tdd-meaning">modify</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">→</td>
+              <td class="tdd-meaning">returns</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-3">⇒</td>
+              <td class="tdd-meaning">implies</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tdd-table-card card">
+        <h3 class="tdd-table-heading">Status</h3>
+        <table class="tdd-symbol-table">
+          <tbody>
+            <tr>
+              <td class="tdd-symbol text-accent">✓</td>
+              <td class="tdd-meaning">ok</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-danger">✗</td>
+              <td class="tdd-meaning">fail</td>
+            </tr>
+            <tr>
+              <td class="tdd-symbol text-accent-2">⚠</td>
+              <td class="tdd-meaning">warning</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CHANGE NOTATION
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Notation
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Change notation.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      TDD defines a compact notation for describing code changes. Instead of verbose descriptions, the AI reports modifications as structured one-liners.
+    </p>
+
+    <div class="grid lg:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-muted font-mono">Change Notation</span>
+        </div>
+        <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.8;">
+          <div>
+            <span class="text-accent">⊕</span><span class="text-text-bright">F1:42</span> <span class="text-muted">param(timeout:Duration)</span>
+          </div>
+          <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">added parameter</div>
+
+          <div class="term-divider"></div>
+
+          <div>
+            <span class="text-danger">⊖</span><span class="text-text-bright">F1:10-15</span>
+          </div>
+          <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">removed lines</div>
+
+          <div class="term-divider"></div>
+
+          <div>
+            <span class="text-accent-2">∆</span><span class="text-text-bright">F1:42</span> <span class="text-muted">validate_token → verify_jwt</span>
+          </div>
+          <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">renamed / refactored</div>
+        </div>
+      </div>
+
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-muted font-mono">Status Notation</span>
+        </div>
+        <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.8;">
+          <div>
+            <span class="text-accent-3">ctx_read</span><span class="text-muted">(F1)</span>
+            <span class="text-muted"> → </span>
+            <span class="text-text-bright">808L</span>
+            <span class="text-muted"> cached </span>
+            <span class="text-accent">✓</span>
+          </div>
+          <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">file read — cached, 808 lines</div>
+
+          <div class="term-divider"></div>
+
+          <div>
+            <span class="text-accent-3">cargo test</span>
+            <span class="text-muted"> → </span>
+            <span class="text-accent">82 passed</span>
+            <span class="text-muted"> </span>
+            <span class="text-accent">✓</span>
+            <span class="text-muted"> 0 failed</span>
+          </div>
+          <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">test run — all green</div>
+
+          <div class="term-divider"></div>
+
+          <div>
+            <span class="text-danger">ERR</span>
+            <span class="text-text-bright"> F3:91</span>
+            <span class="text-muted"> — missing return type</span>
+          </div>
+          <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">error report — file, line, summary</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     RESPONSE RULES
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Rules
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Response rules.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      TDD enforces six rules that the AI follows in every response. These rules compound — each one reduces token count while preserving the information the developer actually needs.
+    </p>
+
+    <div class="tdd-rules-list animate-entrance stagger-3">
+      <div class="tdd-rule-item card">
+        <span class="tdd-rule-number font-display text-accent-3">1</span>
+        <div>
+          <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">Drop all filler</p>
+          <p class="text-muted fluid-sm">Remove articles (a, the, an), filler words, and pleasantries. No "I've successfully..." or "Let me help you with..."</p>
+        </div>
+      </div>
+
+      <div class="tdd-rule-item card">
+        <span class="tdd-rule-number font-display text-accent-3">2</span>
+        <div>
+          <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">File references by ID only</p>
+          <p class="text-muted fluid-sm">Reference files by Fn refs (F1, F2, F3), never full paths. Short IDs persist across the session.</p>
+        </div>
+      </div>
+
+      <div class="tdd-rule-item card">
+        <span class="tdd-rule-number font-display text-accent-3">3</span>
+        <div>
+          <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">Diff lines only</p>
+          <p class="text-muted fluid-sm">For code changes, show only the changed lines — not the full file. Use change notation with symbols.</p>
+        </div>
+      </div>
+
+      <div class="tdd-rule-item card">
+        <span class="tdd-rule-number font-display text-accent-3">4</span>
+        <div>
+          <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">Show the solution</p>
+          <p class="text-muted fluid-sm">No explanations unless asked. Execute first, report concisely. The code is the explanation.</p>
+        </div>
+      </div>
+
+      <div class="tdd-rule-item card">
+        <span class="tdd-rule-number font-display text-accent-3">5</span>
+        <div>
+          <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">Tabular format</p>
+          <p class="text-muted fluid-sm">Use tables for structured data. Denser than prose, faster to scan, fewer tokens to express relationships.</p>
+        </div>
+      </div>
+
+      <div class="tdd-rule-item card">
+        <span class="tdd-rule-number font-display text-accent-3">6</span>
+        <div>
+          <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">Standard abbreviations</p>
+          <p class="text-muted fluid-sm font-mono" style="letter-spacing: 0.02em;">fn, cfg, impl, deps, req, res, ctx, err, ok, ret, arg, val, ty, mod</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     BEFORE AND AFTER
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Comparison
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Before and after.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      The same information, expressed in standard prose versus TDD. The dense version conveys identical meaning in 71% fewer tokens.
+    </p>
+
+    <div class="grid lg:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-muted font-mono">Without TDD &mdash; 42 tokens</span>
+        </div>
+        <div class="terminal-body px-5 py-5 font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.8;">
+          <p class="text-muted" style="word-break: break-word;">"I've successfully read the auth.ts file and found that the validateToken function on line 42 has a bug where it compares UTC timestamps against local timestamps."</p>
+        </div>
+      </div>
+
+      <div class="terminal-chrome tdd-highlight-terminal">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-accent-3 font-mono">With TDD &mdash; 12 tokens</span>
+        </div>
+        <div class="terminal-body px-5 py-5 font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.8;">
+          <div><span class="text-accent-3">ctx_read(F1)</span> <span class="text-muted">→</span> <span class="text-text-bright">342L</span> <span class="text-muted">cached</span> <span class="text-accent">✓</span></div>
+          <div><span class="text-danger">ERR</span> <span class="text-text-bright">F1:42</span> <span class="text-muted">— UTC vs local timestamp</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="terminal-chrome animate-entrance stagger-4" style="max-width: 28rem;">
+      <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+        <span class="terminal-dot bg-[#ff5f57]"></span>
+        <span class="terminal-dot bg-[#febc2e]"></span>
+        <span class="terminal-dot bg-[#28c840]"></span>
+        <span class="ml-3 text-xs text-muted font-mono">&#167;MAP output</span>
+      </div>
+      <div class="terminal-body px-5 py-5 font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.8;">
+        <div>
+          <span class="text-text-bright">A1</span><span class="text-muted">=AuthService</span>&nbsp;&nbsp;
+          <span class="text-text-bright">V1</span><span class="text-muted">=validateToken</span>
+        </div>
+        <div>
+          <span class="text-text-bright">S1</span><span class="text-muted">=SessionStore</span>&nbsp;
+          <span class="text-text-bright">R1</span><span class="text-muted">=refreshToken</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FILE REFERENCE SYSTEM
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      File References
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Short IDs, persistent context.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      Every file the AI reads gets a short identifier that persists across the entire session. Combined with session caching, re-reads cost a fraction of the original read.
+    </p>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-3" style="gap: clamp(1px, 0.1vw, 1px);">
+      <div class="tdd-ref-card card">
+        <div class="tdd-ref-id font-display text-accent-3">F1, F2, F3</div>
+        <p class="text-muted fluid-sm">Files get short IDs on first read. No more repeating full paths.</p>
+      </div>
+      <div class="tdd-ref-card card">
+        <div class="tdd-ref-id font-display text-accent-3">Session</div>
+        <p class="text-muted fluid-sm">IDs persist across the entire session. F1 always refers to the same file.</p>
+      </div>
+      <div class="tdd-ref-card card">
+        <div class="tdd-ref-id font-display text-accent">~13 tok</div>
+        <p class="text-muted fluid-sm">Re-reads cost approximately 13 tokens thanks to session caching.</p>
+      </div>
+      <div class="tdd-ref-card card">
+        <div class="tdd-ref-id font-display text-accent-2">&#167;MAP</div>
+        <p class="text-muted fluid-sm">Maps long identifiers to short IDs. AuthService becomes A1.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CTA
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Every token should carry meaning.
+    </h2>
+    <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); max-width: 44rem;">
+      TDD activates automatically with lean-ctx. No configuration, no flags. Install once and your AI communicates at maximum density from the first message.
+    </p>
+    <div class="flex flex-wrap items-center animate-entrance stagger-2" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/protocols" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        All Protocols
+      </a>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  /* ── Insight Cards (Why TDD) ──────────────────────────── */
+  .tdd-insight-card {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .tdd-insight-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .tdd-insight-header--low {
+    background: rgba(248, 113, 113, 0.04);
+    color: var(--color-danger);
+  }
+  .tdd-insight-header--high {
+    background: rgba(192, 132, 252, 0.04);
+    color: var(--color-accent-3);
+  }
+  .tdd-insight-body {
+    padding: 1.25rem;
+    background: var(--color-surface);
+  }
+  .tdd-insight-line {
+    padding: 0.3rem 0;
+  }
+
+  /* ── Symbol Table Cards ──────────────────────────────── */
+  .tdd-table-card {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+  .tdd-table-card:first-child {
+    border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0;
+  }
+  .tdd-table-card:last-child {
+    border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px);
+  }
+  .tdd-table-card + .tdd-table-card {
+    border-top: none;
+  }
+  @media (min-width: 768px) {
+    .tdd-table-card:first-child {
+      border-radius: clamp(10px, 0.8vw, 14px) 0 0 clamp(10px, 0.8vw, 14px);
+    }
+    .tdd-table-card:last-child {
+      border-radius: 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0;
+    }
+    .tdd-table-card + .tdd-table-card {
+      border-top: 1px solid var(--color-border);
+      border-left: none;
+    }
+  }
+
+  .tdd-table-heading {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+    margin-bottom: 1rem;
+  }
+
+  .tdd-symbol-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .tdd-symbol-table tr + tr {
+    border-top: 1px solid var(--color-border);
+  }
+  .tdd-symbol {
+    font-family: var(--font-mono);
+    font-size: clamp(1rem, 0.9rem + 0.25vw, 1.25rem);
+    font-weight: 600;
+    padding: 0.5rem 0.75rem 0.5rem 0;
+    width: 2.5rem;
+    vertical-align: middle;
+  }
+  .tdd-meaning {
+    font-family: var(--font-mono);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);
+    color: var(--color-text);
+    padding: 0.5rem 0;
+    vertical-align: middle;
+  }
+
+  /* ── Terminal helpers ──────────────────────────────────── */
+  .term-divider {
+    height: 1px;
+    background: var(--color-border);
+  }
+
+  .tdd-highlight-terminal {
+    border-color: rgba(192, 132, 252, 0.15);
+  }
+
+  /* ── Rules List ──────────────────────────────────────── */
+  .tdd-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(0.5rem, 0.35rem + 0.35vw, 0.75rem);
+  }
+  .tdd-rule-item {
+    display: flex;
+    align-items: flex-start;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    padding: clamp(1rem, 0.85rem + 0.5vw, 1.5rem) clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+    transition: background 0.15s ease;
+  }
+  .tdd-rule-item:hover {
+    background: var(--color-surface);
+  }
+  .tdd-rule-number {
+    font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.75rem);
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    min-width: 1.5rem;
+    padding-top: 0.15rem;
+  }
+
+  /* ── File Reference Cards ────────────────────────────── */
+  .tdd-ref-card {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+  .tdd-ref-card:first-child {
+    border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0;
+  }
+  .tdd-ref-card:last-child {
+    border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px);
+  }
+  .tdd-ref-card + .tdd-ref-card {
+    border-top: none;
+  }
+  @media (min-width: 768px) {
+    .tdd-ref-card:nth-child(1) {
+      border-radius: clamp(10px, 0.8vw, 14px) 0 0 0;
+    }
+    .tdd-ref-card:nth-child(2) {
+      border-radius: 0;
+    }
+    .tdd-ref-card:nth-child(3) {
+      border-radius: 0;
+    }
+    .tdd-ref-card:nth-child(4) {
+      border-radius: 0 clamp(10px, 0.8vw, 14px) 0 0;
+    }
+    .tdd-ref-card + .tdd-ref-card {
+      border-top: 1px solid var(--color-border);
+      border-left: none;
+    }
+  }
+  @media (min-width: 1024px) {
+    .tdd-ref-card:nth-child(1) {
+      border-radius: clamp(10px, 0.8vw, 14px) 0 0 clamp(10px, 0.8vw, 14px);
+    }
+    .tdd-ref-card:nth-child(4) {
+      border-radius: 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0;
+    }
+  }
+
+  .tdd-ref-id {
+    font-size: clamp(1.125rem, 1rem + 0.5vw, 1.5rem);
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+  }
+</style>

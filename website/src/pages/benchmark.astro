@@ -1,0 +1,273 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const readModes = [
+  { mode: 'full', useCase: 'Files you will edit', savings: '0%', preserves: 'Everything — full content cached for re-reads at ~13 tokens' },
+  { mode: 'map', useCase: 'Context-only files', savings: '70–88%', preserves: 'Dependency graph, exports, key signatures' },
+  { mode: 'signatures', useCase: 'API surface exploration', savings: '85–93%', preserves: 'Function/class/type signatures only' },
+  { mode: 'diff', useCase: 'After edits', savings: '80–95%', preserves: 'Changed lines with minimal surrounding context' },
+  { mode: 'aggressive', useCase: 'Large boilerplate files', savings: '75–90%', preserves: 'Structure and logic, syntax stripped' },
+  { mode: 'entropy', useCase: 'Noisy files (JSDoc, comments)', savings: '70–83%', preserves: 'High-entropy lines only (Shannon + Jaccard filtering)' },
+];
+---
+
+<BaseLayout title="Benchmark — LeanCTX" description="Verify lean-ctx savings in your own codebase. Real token counts with tiktoken (o200k_base). Exact accuracy metrics for every compression mode." breadcrumbs={[{ name: 'Home', url: '/' }, { name: 'Benchmark', url: '/benchmark/' }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">Benchmark</p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Don't Trust. <span class="gradient-text">Verify.</span>
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      Run <code class="text-accent fluid-sm">lean-ctx benchmark run</code> in any project. Real token counts. Real accuracy metrics. Measured with tiktoken (o200k_base).
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ HOW IT WORKS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Three steps to verified savings</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      How It <span class="gradient-text">Works</span>
+    </h2>
+
+    <div class="grid md:grid-cols-3 gap-0">
+      <div class="relative py-8 md:py-10 md:px-8 animate-entrance">
+        <div class="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mb-5">
+          <span class="text-xl font-bold text-accent font-display">1</span>
+        </div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Point at any file or directory</h3>
+        <p class="fluid-sm text-muted">
+          Pass a single file, a directory, or a glob pattern. The benchmark engine processes everything it finds.
+        </p>
+        <code class="block text-[11px] font-mono text-accent/70 mt-3">lean-ctx benchmark run src/</code>
+      </div>
+      <div class="relative py-8 md:py-10 md:px-8 border-t md:border-t-0 md:border-l border-border animate-entrance">
+        <div class="w-12 h-12 rounded-lg bg-accent-2/10 flex items-center justify-center mb-5">
+          <span class="text-xl font-bold text-accent-2 font-display">2</span>
+        </div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Exact token measurement</h3>
+        <p class="fluid-sm text-muted">
+          Uses tiktoken with the o200k_base encoding (same as GPT-4o, Claude, and modern LLMs). No estimates — real token counts.
+        </p>
+        <code class="block text-[11px] font-mono text-accent-2/70 mt-3">tiktoken o200k_base</code>
+      </div>
+      <div class="relative py-8 md:py-10 md:px-8 border-t md:border-t-0 md:border-l border-border animate-entrance">
+        <div class="w-12 h-12 rounded-lg bg-accent-3/10 flex items-center justify-center mb-5">
+          <span class="text-xl font-bold text-accent-3 font-display">3</span>
+        </div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Savings per mode</h3>
+        <p class="fluid-sm text-muted">
+          Get accuracy scores and savings percentages for every compression mode. Pick the right mode for each use case.
+        </p>
+        <code class="block text-[11px] font-mono text-accent-3/70 mt-3">full / map / signatures / diff / aggressive / entropy</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ TERMINAL DEMO ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-[1fr_1.4fr] items-center" style="gap: clamp(1.75rem, 1.25rem + 1.5vw, 3.5rem);">
+      <div>
+        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">Real output</p>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+          Benchmark <span class="gradient-text">in Action</span>
+        </h2>
+        <p class="fluid-body text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.75vw, 1.75rem);">
+          Run the benchmark on any file in your project. The output shows exact token counts for each compression mode, savings percentage, and quality preservation scores.
+        </p>
+        <div class="space-y-2">
+          <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">Per-file breakdown</span> — tokens before and after each mode</p>
+          <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">Quality scores</span> — AST, identifiers, and code lines preserved</p>
+          <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">Aggregated totals</span> — directory-wide savings with best mode recommendation</p>
+        </div>
+      </div>
+
+      <div class="terminal-chrome animate-entrance">
+        <div class="terminal-header px-4 py-3 flex items-center gap-2">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-xs text-muted font-mono ml-2">lean-ctx benchmark run</span>
+        </div>
+        <div class="terminal-body px-4 py-4 font-mono text-[11px] sm:text-[12px] leading-[1.8]">
+          <p class="text-muted">$ lean-ctx benchmark run src/auth.ts</p>
+          <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Benchmark</span></p>
+          <p class="text-border-light/40">────────────────────────────────────────</p>
+          <p class="text-text-bright mt-1">src/auth.ts <span class="text-muted">(123 lines, 3,517 tokens)</span></p>
+          <p class="text-border-light/40">────────────────────────────────────────</p>
+          <p class="mt-1"><span class="text-muted">Mode         Tokens   Saved   Rate</span></p>
+          <p><span class="text-text-bright">full         </span><span class="text-muted">3,517   </span><span class="text-muted">    0   </span><span class="text-muted"> 0%</span></p>
+          <p><span class="text-accent">map          </span><span class="text-accent">  412   </span><span class="text-accent">3,105   </span><span class="text-accent font-bold">88%</span></p>
+          <p><span class="text-accent">signatures   </span><span class="text-accent">  252   </span><span class="text-accent">3,265   </span><span class="text-accent font-bold">93%</span></p>
+          <p><span class="text-accent-2">diff         </span><span class="text-accent-2">  187   </span><span class="text-accent-2">3,330   </span><span class="text-accent-2 font-bold">95%</span></p>
+          <p><span class="text-accent">aggressive   </span><span class="text-accent">  298   </span><span class="text-accent">3,219   </span><span class="text-accent font-bold">92%</span></p>
+          <p><span class="text-accent">entropy      </span><span class="text-accent">  312   </span><span class="text-accent">3,205   </span><span class="text-accent font-bold">91%</span></p>
+          <p class="text-border-light/40 mt-2">────────────────────────────────────────</p>
+          <p class="text-muted">Quality: <span class="text-accent">AST 98%</span> | <span class="text-accent">Idents 97%</span> | <span class="text-accent">Lines 96%</span></p>
+          <p class="text-muted text-[10px]">Encoding: tiktoken o200k_base | Time: 12ms</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ COMPRESSION QUALITY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Verified preservation</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      Compression <span class="gradient-text">Quality</span>
+    </h2>
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card p-8 animate-entrance">
+        <p class="stat-value fluid-display text-accent mb-2">98%</p>
+        <p class="fluid-label text-muted mb-4">AST Structure Preserved</p>
+        <p class="fluid-sm text-muted">Tree-sitter parses every file. The AST skeleton stays intact — functions, classes, types, and their relationships are never lost.</p>
+      </div>
+      <div class="card p-8 animate-entrance">
+        <p class="stat-value fluid-display text-accent-2 mb-2">97%</p>
+        <p class="fluid-label text-muted mb-4">Identifiers Preserved</p>
+        <p class="fluid-sm text-muted">Function names, variable names, type annotations, and import paths are preserved. The LLM can still reference any symbol by name.</p>
+      </div>
+      <div class="card p-8 animate-entrance">
+        <p class="stat-value fluid-display text-accent-3 mb-2">96%</p>
+        <p class="fluid-label text-muted mb-4">Code Lines Preserved</p>
+        <p class="fluid-sm text-muted">Meaningful code lines are retained. Only boilerplate, redundant comments, and low-entropy patterns are compressed away.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ WHY FEWER TOKENS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-2 items-start" style="gap: clamp(2rem, 1.5rem + 2vw, 3rem);">
+      <div>
+        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">Information density principle</p>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+          Why Fewer Tokens = <span class="gradient-text">Better Answers</span>
+        </h2>
+        <p class="fluid-body text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          LLMs have a fixed attention budget. Every token in the context window competes for attention weights. Filling the window with boilerplate means less attention on the code that matters.
+        </p>
+        <p class="fluid-body text-muted">
+          By removing noise before it reaches the model, lean-ctx increases the information density of every request. The result: more focused reasoning, fewer hallucinations, and better code output.
+        </p>
+      </div>
+
+      <div class="space-y-5">
+        <div class="card p-6 animate-entrance">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">Higher signal-to-noise ratio</span>
+          </div>
+          <p class="fluid-sm text-muted">10K tokens of focused context outperform 200K of boilerplate. The model spends its attention on logic, not on JSDoc comments and import boilerplate.</p>
+        </div>
+
+        <div class="card p-6 animate-entrance">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent-2/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">Fewer hallucinations</span>
+          </div>
+          <p class="fluid-sm text-muted">Noise in the context window is a known source of LLM hallucination. Less noise means the model stays grounded in the actual code structure.</p>
+        </div>
+
+        <div class="card p-6 animate-entrance">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent-3/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">Lower cost per answer</span>
+          </div>
+          <p class="fluid-sm text-muted">Fewer input tokens means lower API costs and more messages within your rate limit. The same quota goes further — for every AI tool you use.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ READ MODES COMPARISON ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Pick the right mode for each task</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      Read Modes <span class="gradient-text">Compared</span>
+    </h2>
+
+    <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr>
+            <th class="fluid-label text-muted font-display pb-3 border-b border-border pr-4">Mode</th>
+            <th class="fluid-label text-muted font-display pb-3 border-b border-border pr-4">Use Case</th>
+            <th class="fluid-label text-muted font-display pb-3 border-b border-border pr-4">Savings</th>
+            <th class="fluid-label text-muted font-display pb-3 border-b border-border">Preserves</th>
+          </tr>
+        </thead>
+        <tbody>
+          {readModes.map((m) => (
+            <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+              <td class="py-3 pr-4 whitespace-nowrap"><code class="text-[12px] font-mono font-semibold text-accent">{m.mode}</code></td>
+              <td class="py-3 pr-4 fluid-sm text-muted whitespace-nowrap">{m.useCase}</td>
+              <td class="py-3 pr-4 whitespace-nowrap"><span class="text-[12px] font-mono text-accent-2">{m.savings}</span></td>
+              <td class="py-3 fluid-sm text-muted">{m.preserves}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="fluid-sm text-muted mt-6">
+      lean-ctx's <code class="text-[11px] text-accent-2">ctx_smart_read</code> automatically picks the optimal mode using Bayesian prediction based on file type, size, and context.
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ CTA ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Measure your <span class="gradient-text">actual savings.</span>
+    </h2>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      Install lean-ctx and run <code class="text-[12px] text-accent">benchmark run</code> on your codebase. Real numbers, your files, your savings.
+    </p>
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        <svg class="mr-2 w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>

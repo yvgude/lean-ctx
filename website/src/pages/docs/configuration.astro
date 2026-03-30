@@ -1,0 +1,166 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Configuration',
+    items: [
+      { label: 'Overview', href: '/docs/configuration' },
+      { label: 'Config File', href: '/docs/configuration#config-file' },
+      { label: 'Config Options', href: '/docs/configuration#config-options' },
+      { label: 'Environment Variables', href: '/docs/configuration#environment-variables' },
+      { label: 'Cursor Rule', href: '/docs/configuration#cursor-rule' },
+      { label: 'Exit Codes', href: '/docs/configuration#exit-codes' },
+      { label: 'Token Counting', href: '/docs/configuration#token-counting' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: '/docs/getting-started' },
+      { label: 'Quick Reference', href: '/docs/quick-reference' },
+      { label: 'CLI Reference', href: '/docs/cli-reference' },
+      { label: 'Analytics & Dashboards', href: '/docs/analytics' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Configuration" description="Configuration options, environment variables, and editor setup." sidebar={sidebar}>
+
+  <p>
+    LeanCTX works out of the box with zero configuration. All settings below are optional —
+    defaults are tuned for typical AI-assisted development workflows.
+  </p>
+
+  <hr />
+
+  <h2 id="config-file">Config File</h2>
+
+  <p>
+    LeanCTX supports an optional TOML configuration file at <code>~/.lean-ctx/config.toml</code>.
+  </p>
+
+  <h3>Create the default config</h3>
+  <pre><code>lean-ctx config init</code></pre>
+
+  <h3>View current configuration</h3>
+  <pre><code>lean-ctx config</code></pre>
+
+  <h3>Set individual values</h3>
+  <pre><code>lean-ctx config set ultra_compact true
+lean-ctx config set checkpoint_interval 15
+lean-ctx config set tee_on_error false</code></pre>
+
+  <hr />
+
+  <h2 id="config-options">Config Options</h2>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>ultra_compact</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Enable ultra-compact output mode</td>
+      </tr>
+      <tr>
+        <td><code>tee_on_error</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Save full output to <code>~/.lean-ctx/tee/</code> when commands fail</td>
+      </tr>
+      <tr>
+        <td><code>checkpoint_interval</code></td>
+        <td>u32</td>
+        <td><code>15</code></td>
+        <td>Auto-checkpoint every N tool calls (0&nbsp;=&nbsp;disabled). Overridden by <code>LEAN_CTX_CHECKPOINT_INTERVAL</code> env var.</td>
+      </tr>
+      <tr>
+        <td><code>excluded_commands</code></td>
+        <td>list</td>
+        <td><code>[]</code></td>
+        <td>Commands to skip compression for</td>
+      </tr>
+      <tr>
+        <td><code>custom_aliases</code></td>
+        <td>list</td>
+        <td><code>[]</code></td>
+        <td>Custom command-to-alias mappings</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="environment-variables">Environment Variables</h2>
+
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_CRP_MODE</code></td>
+        <td>tdd (default), compact, off</td>
+        <td>Controls Token Dense Dialect compression level</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
+        <td>number (default: 10)</td>
+        <td>Auto-checkpoint every N tool calls (0&nbsp;=&nbsp;disabled)</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CACHE_TTL</code></td>
+        <td>number (default: 300)</td>
+        <td>Seconds of inactivity before session cache auto-clears (0&nbsp;=&nbsp;disabled)</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ACTIVE</code></td>
+        <td>set / unset</td>
+        <td>Recursion guard. When set, lean-ctx passes commands through without compression. Set automatically by the shell hook.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="cursor-rule">Cursor Rule</h2>
+
+  <p>
+    For maximum token savings, add a <code>.cursor/rules/lean-ctx.mdc</code> to your project.
+    This instructs the LLM to prefer LeanCTX tools and use compact output patterns.
+    An example is included in <code>examples/lean-ctx.mdc</code> in the repository.
+  </p>
+  <p>
+    The Cursor rule includes <strong>CRP v2</strong> (Compact Response Protocol) which can reduce
+    both output tokens (50–80%) and thinking tokens (30–60%) through structured
+    task parsing and one-hypothesis reasoning. These ranges are per-response estimates
+    and depend on the model and task complexity.
+  </p>
+
+  <hr />
+
+  <h2 id="exit-codes">Exit Codes</h2>
+
+  <p>
+    In shell hook mode (<code>-c</code>), LeanCTX forwards the exit code of the wrapped command.
+    This ensures scripts and CI pipelines work correctly. If the command fails (non-zero exit),
+    the full original output is saved to <code>~/.lean-ctx/tee/</code> for debugging
+    (when <code>tee_on_error</code> is enabled).
+  </p>
+
+  <hr />
+
+  <h2 id="token-counting">Token Counting</h2>
+
+  <p>
+    lean-ctx uses <code>tiktoken-rs</code> with the <code>o200k_base</code> encoding (same as GPT-4o,
+    Claude, and other modern models) for exact token counting. No estimation, no heuristics —
+    every savings number you see in <code>lean-ctx gain</code> or the dashboard reflects real token counts.
+  </p>
+
+</DocsLayout>

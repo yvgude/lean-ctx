@@ -1,0 +1,153 @@
+---
+const editorConfigs = [
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    file: '~/.cursor/mcp.json',
+    code: `{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`,
+  },
+  {
+    id: 'copilot',
+    label: 'GitHub Copilot',
+    file: '.github/copilot/mcp.json',
+    code: `{
+  "servers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`,
+  },
+  {
+    id: 'claude',
+    label: 'Claude Code',
+    file: 'Terminal',
+    code: `claude mcp add lean-ctx lean-ctx`,
+  },
+  {
+    id: 'windsurf',
+    label: 'Windsurf',
+    file: '~/.codeium/windsurf/mcp_config.json',
+    code: `{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`,
+  },
+];
+---
+
+<section class="relative py-20 sm:py-32">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-start">
+
+      <div>
+        <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-3">Get started</p>
+        <h2 class="font-display text-2xl sm:text-[2.25rem] font-bold tracking-tight leading-[1.15] text-text-bright mb-4">
+          Running in <span class="gradient-text-green">60 seconds.</span>
+        </h2>
+        <p class="text-sm text-muted leading-relaxed mb-8">No cloud account. No API keys. No subscription.</p>
+
+        <div class="space-y-5">
+          <div class="flex gap-4 items-start">
+            <span class="stat-value text-sm text-muted mt-0.5 shrink-0 w-5">01</span>
+            <div>
+              <h3 class="text-sm font-semibold text-text-bright mb-1">Install</h3>
+              <p class="text-[13px] text-muted">
+                <code class="text-[11px]">curl -fsSL https://leanctx.com/install.sh | sh</code>
+              </p>
+              <p class="text-[11px] text-muted/60 mt-1">
+                or <code class="text-[10px]">brew install yvgude/lean-ctx/lean-ctx</code> · <code class="text-[10px]">cargo install lean-ctx</code> · <code class="text-[10px]">npm i -g lean-ctx-bin</code>
+              </p>
+            </div>
+          </div>
+          <div class="flex gap-4 items-start">
+            <span class="stat-value text-sm text-muted mt-0.5 shrink-0 w-5">02</span>
+            <div>
+              <h3 class="text-sm font-semibold text-text-bright mb-1">Setup</h3>
+              <p class="text-[13px] text-muted"><code class="text-[11px]">lean-ctx setup</code> — auto-detects shell + editors, configures everything</p>
+            </div>
+          </div>
+          <div class="flex gap-4 items-start">
+            <span class="stat-value text-sm text-muted mt-0.5 shrink-0 w-5">03</span>
+            <div>
+              <h3 class="text-sm font-semibold text-text-bright mb-1">Restart shell</h3>
+              <p class="text-[13px] text-muted"><code class="text-[11px]">source ~/.zshrc</code> — or restart your terminal</p>
+            </div>
+          </div>
+          <div class="flex gap-4 items-start">
+            <span class="stat-value text-sm text-muted mt-0.5 shrink-0 w-5">04</span>
+            <div>
+              <h3 class="text-sm font-semibold text-text-bright mb-1">Watch your savings</h3>
+              <p class="text-[13px] text-muted">Every read now goes through the intelligence layer. Run <code class="text-[11px]">ctx_metrics</code> to see stats.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex gap-1 mb-0 overflow-x-auto scrollbar-hide" id="editor-tabs">
+          {editorConfigs.map((e, i) => (
+            <button
+              data-editor={e.id}
+              class:list={[
+                'shrink-0 px-3.5 py-2 text-xs font-medium transition-all editor-tab cursor-pointer whitespace-nowrap rounded-t-lg',
+                i === 0 ? 'text-accent bg-white/[0.04]' : 'text-muted hover:text-text'
+              ]}
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+        {editorConfigs.map((e, i) => (
+          <div data-editor-panel={e.id} class:list={['editor-panel', i !== 0 && 'hidden']}>
+            <pre class="rounded-b-xl rounded-tr-xl overflow-hidden terminal-body p-4 sm:p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto"><code>{e.code}</code></pre>
+          </div>
+        ))}
+
+        <div class="terminal-chrome mt-4">
+          <div class="terminal-body p-4 font-mono text-xs">
+            <p class="text-muted">$ ctx_metrics</p>
+            <p class="mt-1"><span class="text-text-bright font-bold">LeanCTX session metrics</span></p>
+            <p class="text-muted">Files tracked: <span class="text-text-bright">12</span> | Reads: <span class="text-text-bright">34</span> | Cache hits: <span class="text-accent">22 (65%)</span></p>
+            <p class="text-muted">Input tokens: <span class="text-text-bright">28.5K</span> → <span class="text-accent">4.1K sent</span> | <span class="text-accent font-bold">24.3K saved (85%)</span></p>
+            <p class="text-muted">Cost estimate: $0.071 → <span class="text-accent">$0.010</span> | <span class="text-[#eab308] font-bold">$0.061 saved</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('.editor-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-editor');
+      const container = tab.closest('section');
+      if (!container || !target) return;
+
+      container.querySelectorAll('.editor-tab').forEach(t => {
+        t.classList.remove('text-accent', 'bg-white/[0.04]');
+        t.classList.add('text-muted');
+      });
+      tab.classList.add('text-accent', 'bg-white/[0.04]');
+      tab.classList.remove('text-muted');
+
+      container.querySelectorAll('.editor-panel').forEach(p => {
+        if (p.getAttribute('data-editor-panel') === target) {
+          p.classList.remove('hidden');
+        } else {
+          p.classList.add('hidden');
+        }
+      });
+    });
+  });
+</script>

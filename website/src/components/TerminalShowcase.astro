@@ -1,0 +1,125 @@
+<section class="relative py-14 sm:py-24">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="grid lg:grid-cols-[0.8fr_1.2fr] gap-10 lg:gap-14 items-center">
+
+      <div>
+        <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent-2 mb-3">Terminal Dashboard — Real Session Data</p>
+        <h2 class="font-display text-2xl sm:text-[2.25rem] font-bold tracking-tight leading-[1.15] text-text-bright mb-4">
+          See your savings<br /><span class="gradient-text">at a glance.</span>
+        </h2>
+        <p class="text-sm text-muted leading-relaxed mb-6">
+          ANSI colors, Unicode bars, sparklines, and USD cost estimates. Track every token across all sessions.
+        </p>
+
+        <div class="space-y-2.5 mb-6">
+          <p class="text-[13px] text-muted"><span class="text-text-bright font-medium">Lifetime statistics</span> — persisted in <code class="text-[11px]">~/.lean-ctx/stats.json</code></p>
+          <p class="text-[13px] text-muted"><span class="text-text-bright font-medium">Three views</span> — <code class="text-[11px]">gain</code>, <code class="text-[11px]">--graph</code>, <code class="text-[11px]">--daily</code></p>
+          <p class="text-[13px] text-muted"><span class="text-text-bright font-medium">USD cost tracking</span> — real savings per session</p>
+        </div>
+
+        <p class="text-[11px] text-muted font-mono">$ lean-ctx gain</p>
+      </div>
+
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center">
+          <div class="flex items-center gap-2 px-5 py-3">
+            <div class="terminal-dot" style="background:#ef4444"></div>
+            <div class="terminal-dot" style="background:#eab308"></div>
+            <div class="terminal-dot" style="background:#34d399"></div>
+          </div>
+          <div class="flex ml-2 overflow-x-auto scrollbar-hide">
+            <button class="term-tab active px-3.5 py-2.5 text-xs font-mono transition-all" data-tab="gain">gain</button>
+            <button class="term-tab px-3.5 py-2.5 text-xs font-mono transition-all" data-tab="graph">--graph</button>
+            <button class="term-tab px-3.5 py-2.5 text-xs font-mono transition-all" data-tab="daily">--daily</button>
+          </div>
+        </div>
+
+        <div class="term-panel active terminal-body p-4 sm:p-5 font-mono text-[11px] sm:text-[12px] leading-[1.6] overflow-x-auto" data-panel="gain">
+          <p class="text-muted">$ lean-ctx gain</p>
+          <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Token Savings Dashboard</span></p>
+          <p class="text-border-light/30">────────────────────────────────────────────</p>
+          <p class="mt-2">
+            <span class="text-[#34d399] font-bold"> 1.7M</span><span class="text-muted ml-2 text-[11px]">saved</span>
+            <span class="ml-3 text-[#06b6d4] font-bold">76.8%</span><span class="text-muted ml-1 text-[11px]">rate</span>
+            <span class="ml-3 text-[#eab308] font-bold">520</span><span class="text-muted ml-1 text-[11px]">cmds</span>
+            <span class="ml-3 text-[#a855f7] font-bold">$4.25</span><span class="text-muted ml-1 text-[11px]">USD</span>
+          </p>
+          <p class="mt-1 text-muted text-[11px]">Since 2026-03-23 (2 days) <span class="text-[#34d399]">▁█</span></p>
+          <p class="mt-3 text-text-bright font-semibold">Top Commands</p>
+          <p class="text-border-light/30">────────────────────────────────────────────</p>
+          <p><span class="text-muted">curl         </span> 48x <span class="text-[#34d399]">████████████████████</span> <span class="text-[#34d399] font-bold">728.1K</span> <span class="text-muted">97%</span></p>
+          <p><span class="text-muted">git commit   </span> 34x <span class="text-[#eab308]">██████████▎</span>          <span class="text-[#eab308] font-bold">375.2K</span> <span class="text-muted">50%</span></p>
+          <p><span class="text-muted">git rm       </span>  7x <span class="text-[#34d399]">████████▌</span>            <span class="text-[#34d399] font-bold">313.4K</span> <span class="text-muted">100%</span></p>
+          <p><span class="text-muted">ctx_read     </span>103x <span class="text-[#a855f7]">█▌</span>                   <span class="text-[#a855f7] font-bold"> 59.1K</span> <span class="text-muted">38%</span></p>
+          <p class="text-muted text-[11px] mt-1">  ... +33 more commands</p>
+        </div>
+
+        <div class="term-panel terminal-body p-4 sm:p-5 font-mono text-[11px] sm:text-[12px] leading-[1.6] overflow-x-auto" data-panel="graph" style="display:none">
+          <p class="text-muted">$ lean-ctx gain --graph</p>
+          <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Token Savings Graph (last 30 days)</span></p>
+          <p class="text-border-light/30">────────────────────────────────────────────</p>
+          <p class="text-muted text-[11px] mt-1">peak: 1.7M</p>
+          <p><span class="text-muted">03-17</span> │ <span class="text-[#34d399]">▏</span>             <span class="text-muted text-[11px]">2.1K 41%</span></p>
+          <p><span class="text-muted">03-18</span> │ <span class="text-[#06b6d4]">███▎</span>          <span class="text-muted text-[11px]">89.4K 72%</span></p>
+          <p><span class="text-muted">03-19</span> │ <span class="text-[#34d399]">████████████▌</span> <span class="text-muted text-[11px]">341.2K 91%</span></p>
+          <p><span class="text-muted">03-20</span> │ <span class="text-[#34d399]">██████████████████████████████████████</span> <span class="text-muted text-[11px]">1.0M 94%</span></p>
+          <p><span class="text-muted">03-21</span> │ <span class="text-[#06b6d4]">█████████████████████████▋</span> <span class="text-muted text-[11px]">689.7K 88%</span></p>
+          <p><span class="text-muted">03-22</span> │ <span class="text-[#34d399]">██████████████████████████████████████</span> <span class="text-muted text-[11px]">1.1M 96%</span></p>
+          <p><span class="text-muted">03-23</span> │ <span class="text-[#a855f7]">▏</span>             <span class="text-muted text-[11px]">9.4K 46%</span></p>
+          <p><span class="text-muted">03-24</span> │ <span class="text-[#06b6d4]">██████████████████████████████████████</span> <span class="text-muted text-[11px]">1.7M 77%</span></p>
+          <p class="text-border-light/30">────────────────────────────────────────────</p>
+          <p class="text-muted text-[11px]"><span class="text-[#34d399]">▁▃█▇██▁█</span> 4.9M saved across 3,241 commands</p>
+        </div>
+
+        <div class="term-panel terminal-body p-4 sm:p-5 font-mono text-[11px] sm:text-[12px] leading-[1.6] overflow-x-auto" data-panel="daily" style="display:none">
+          <p class="text-muted">$ lean-ctx gain --daily</p>
+          <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Daily Breakdown</span></p>
+          <p class="text-border-light/30">┌─────────────────────────────────────────────────┐</p>
+          <p class="text-border-light/30">│ <span class="text-muted">Date       Cmds   Input   Saved    Rate   USD</span>  │</p>
+          <p class="text-border-light/30">├─────────────────────────────────────────────────┤</p>
+          <p class="text-border-light/30">│ <span class="text-muted">03-19</span>       187  412.8K  <span class="text-[#34d399]">341.2K</span>  <span class="text-[#34d399]">82.7%</span>  <span class="text-[#eab308]">$0.85</span> │</p>
+          <p class="text-border-light/30">│ <span class="text-muted">03-20</span>       423    1.1M  <span class="text-[#34d399]">  1.0M</span>  <span class="text-[#34d399]">93.8%</span>  <span class="text-[#eab308]">$2.54</span> │</p>
+          <p class="text-border-light/30">│ <span class="text-muted">03-21</span>       312  801.5K  <span class="text-[#06b6d4]">689.7K</span>  <span class="text-[#06b6d4]">86.1%</span>  <span class="text-[#eab308]">$1.72</span> │</p>
+          <p class="text-border-light/30">│ <span class="text-muted">03-22</span>       508    1.2M  <span class="text-[#34d399]">  1.1M</span>  <span class="text-[#34d399]">95.7%</span>  <span class="text-[#eab308]">$2.81</span> │</p>
+          <p class="text-border-light/30">│ <span class="text-muted">03-23</span>       101   20.5K  <span class="text-[#a855f7]">  9.4K</span>  <span class="text-[#a855f7]">46.0%</span>  <span class="text-[#eab308]">$0.02</span> │</p>
+          <p class="text-border-light/30">│ <span class="text-muted">03-24</span>       419    2.2M  <span class="text-[#06b6d4]">  1.7M</span>  <span class="text-[#06b6d4]">77.0%</span>  <span class="text-[#eab308]">$4.22</span> │</p>
+          <p class="text-border-light/30">├─────────────────────────────────────────────────┤</p>
+          <p class="text-border-light/30">│ <span class="text-text-bright font-bold">TOTAL</span>     1,950    5.7M  <span class="text-[#34d399] font-bold">  4.9M</span>  <span class="text-[#34d399] font-bold">85.4%</span> <span class="text-[#eab308] font-bold">$12.16</span> │</p>
+          <p class="text-border-light/30">└─────────────────────────────────────────────────┘</p>
+          <p class="text-muted text-[11px] mt-1">Trend: <span class="text-[#34d399]">▅█▆█▁█</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .term-tab {
+    color: var(--color-muted);
+    border-bottom: 2px solid transparent;
+  }
+  .term-tab:hover { color: var(--color-text); }
+  .term-tab.active {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+  }
+</style>
+
+<script>
+  document.querySelectorAll('.term-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-tab');
+      const container = tab.closest('section');
+      if (!container || !target) return;
+
+      container.querySelectorAll('.term-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      container.querySelectorAll('.term-panel').forEach(p => {
+        const el = p as HTMLElement;
+        el.style.display = el.getAttribute('data-panel') === target ? 'block' : 'none';
+        el.classList.toggle('active', el.getAttribute('data-panel') === target);
+      });
+    });
+  });
+</script>

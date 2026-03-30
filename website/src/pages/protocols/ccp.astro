@@ -1,0 +1,677 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Context Continuity Protocol (CCP) — LeanCTX"
+  description="CCP gives your AI memory that persists across chat sessions. Restore previous session state in ~400 tokens instead of re-reading 50,000 tokens of context."
+  breadcrumbs={[
+    { name: 'Home', url: '/' },
+    { name: 'Protocols', url: '/protocols' },
+    { name: 'CCP', url: '/protocols/ccp' },
+  ]}
+>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     HERO
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        Protocols / CCP
+      </p>
+    </div>
+
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Context Continuity Protocol.
+    </h1>
+
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      CCP gives your AI memory that persists across chat sessions and context compactions.
+      Instead of re-reading 50,000 tokens of context on every new conversation,
+      CCP restores the previous session state in approximately 400 tokens.
+    </p>
+
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/protocols" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        All Protocols
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     THE COLD START PROBLEM
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      The Problem
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      The Cold Start Problem.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      Every new chat session starts with zero context. The AI knows nothing about your project,
+      your architecture, your recent changes, or what you were working on five minutes ago.
+    </p>
+
+    <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="ccp-problem-card">
+        <div class="ccp-problem-header ccp-problem-header--bad">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+          Traditional approach
+        </div>
+        <div class="ccp-problem-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+          <div class="ccp-problem-line"><span class="text-muted">New chat session starts</span></div>
+          <div class="ccp-problem-line"><span class="text-danger">AI has zero project context</span></div>
+          <div class="ccp-problem-line"><span class="text-muted">Re-read all files, re-discover architecture</span></div>
+          <div class="ccp-problem-line"><span class="text-danger">~50,000 tokens wasted every time</span></div>
+          <div class="ccp-problem-line"><span class="text-muted">Slow start, repeated questions, lost decisions</span></div>
+        </div>
+      </div>
+
+      <div class="ccp-problem-card">
+        <div class="ccp-problem-header ccp-problem-header--good">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          With CCP
+        </div>
+        <div class="ccp-problem-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+          <div class="ccp-problem-line"><span class="text-muted">New chat session starts</span></div>
+          <div class="ccp-problem-line"><span class="text-accent">ctx_session load restores previous state</span></div>
+          <div class="ccp-problem-line"><span class="text-muted">Task, findings, decisions, file refs — all intact</span></div>
+          <div class="ccp-problem-line"><span class="text-accent">~400 tokens — picks up exactly where it left off</span></div>
+          <div class="ccp-problem-line"><span class="text-muted">Immediate productivity, no warm-up needed</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     SESSION COMMANDS
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Commands
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Session Commands.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      CCP exposes a set of session management commands through the MCP server.
+      The AI calls these automatically based on context — you can also invoke them manually.
+    </p>
+
+    <div class="ccp-table-wrapper animate-entrance stagger-3">
+      <table class="ccp-table">
+        <thead>
+          <tr>
+            <th class="text-text-bright">Command</th>
+            <th class="text-text-bright">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="ccp-code">ctx_session status</code></td>
+            <td class="text-muted">Show current session state — version, call count, active task, cached files</td>
+          </tr>
+          <tr>
+            <td><code class="ccp-code">ctx_session load</code></td>
+            <td class="text-muted">Restore previous session from disk — cross-chat memory in ~400 tokens</td>
+          </tr>
+          <tr>
+            <td><code class="ccp-code">ctx_session task "description"</code></td>
+            <td class="text-muted">Set the current task — persisted across sessions for continuity</td>
+          </tr>
+          <tr>
+            <td><code class="ccp-code">ctx_session finding "file:line — summary"</code></td>
+            <td class="text-muted">Record a key finding — bugs, patterns, important code locations</td>
+          </tr>
+          <tr>
+            <td><code class="ccp-code">ctx_session decision "summary"</code></td>
+            <td class="text-muted">Record an architectural decision — prevents re-debating resolved choices</td>
+          </tr>
+          <tr>
+            <td><code class="ccp-code">ctx_session save</code></td>
+            <td class="text-muted">Force persist session state to disk — normally auto-saved</td>
+          </tr>
+          <tr>
+            <td><code class="ccp-code">ctx_wrapped [period]</code></td>
+            <td class="text-muted">Generate a savings report card — token savings, cache hit rates, compression stats</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     LITM-AWARE POSITIONING
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Research-Backed
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      LITM-Aware Positioning.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      LLMs do not attend equally to all tokens. Research by Liu et al. (2023) showed that
+      models pay significantly more attention to tokens at the beginning and end of the context window,
+      while middle tokens get "lost" with lower attention weights. CCP exploits this directly.
+    </p>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(3rem, 2rem + 3vw, 5rem);">
+      <div class="card ccp-position-card">
+        <div class="ccp-position-label" style="color: var(--color-accent);">Begin Position</div>
+        <div class="ccp-position-alpha font-display font-bold" style="color: var(--color-accent);">alpha = 0.9</div>
+        <p class="fluid-sm text-muted" style="margin-top: 0.75rem;">
+          Highest attention weight. CCP places task description, architectural decisions,
+          project topology, and file reference map here.
+        </p>
+      </div>
+
+      <div class="card ccp-position-card">
+        <div class="ccp-position-label" style="color: var(--color-accent-3);">Middle Position</div>
+        <div class="ccp-position-alpha font-display font-bold" style="color: var(--color-accent-3);">beta = 0.55</div>
+        <p class="fluid-sm text-muted" style="margin-top: 0.75rem;">
+          Lowest attention weight — the "lost in the middle" zone. Historical context
+          and lower-priority information goes here.
+        </p>
+      </div>
+
+      <div class="card ccp-position-card">
+        <div class="ccp-position-label" style="color: var(--color-accent-2);">End Position</div>
+        <div class="ccp-position-alpha font-display font-bold" style="color: var(--color-accent-2);">gamma = 0.85</div>
+        <p class="fluid-sm text-muted" style="margin-top: 0.75rem;">
+          Second-highest attention. CCP places recent findings, test results,
+          and next steps here for immediate relevance.
+        </p>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-4">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+        Model-Specific Profiles
+      </p>
+      <div class="ccp-table-wrapper">
+        <table class="ccp-table">
+          <thead>
+            <tr>
+              <th class="text-text-bright">Model</th>
+              <th class="text-text-bright">Alpha (begin)</th>
+              <th class="text-text-bright">Beta (middle)</th>
+              <th class="text-text-bright">Gamma (end)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-text-bright font-medium">Claude</td>
+              <td><span class="text-accent font-mono">0.92</span></td>
+              <td><span class="text-accent-3 font-mono">0.50</span></td>
+              <td><span class="text-accent-2 font-mono">0.88</span></td>
+            </tr>
+            <tr>
+              <td class="text-text-bright font-medium">GPT</td>
+              <td><span class="text-accent font-mono">0.90</span></td>
+              <td><span class="text-accent-3 font-mono">0.55</span></td>
+              <td><span class="text-accent-2 font-mono">0.85</span></td>
+            </tr>
+            <tr>
+              <td class="text-text-bright font-medium">Gemini</td>
+              <td><span class="text-accent font-mono">0.88</span></td>
+              <td><span class="text-accent-3 font-mono">0.60</span></td>
+              <td><span class="text-accent-2 font-mono">0.82</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     AUTO-CHECKPOINT SYSTEM
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Automatic
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Auto-Checkpoint System.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      Long sessions accumulate context. Without intervention, the context window fills up
+      and the AI loses track of earlier work. CCP prevents this automatically.
+    </p>
+
+    <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          Every 15 tool calls
+        </h3>
+        <p class="fluid-sm text-muted">
+          lean-ctx automatically creates a compressed checkpoint combined with the current session state.
+          The checkpoint captures task, findings, decisions, and file references in a compact format.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          Configurable interval
+        </h3>
+        <p class="fluid-sm text-muted">
+          Set <code class="ccp-code">LEAN_CTX_CHECKPOINT_INTERVAL</code> to adjust the checkpoint frequency.
+          Lower values create more frequent checkpoints for very long sessions.
+          Higher values reduce overhead for shorter workflows.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          Keeps context compact
+        </h3>
+        <p class="fluid-sm text-muted">
+          Each checkpoint compresses the accumulated context, preventing the window from bloating.
+          The AI retains all critical information while discarding redundant intermediate states.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          Zero user intervention
+        </h3>
+        <p class="fluid-sm text-muted">
+          Checkpoints happen transparently. The AI doesn't pause, doesn't ask permission,
+          and doesn't interrupt your workflow. The compressed state is appended to the response automatically.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     IDLE CACHE TTL
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Cache Management
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Idle Cache TTL.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      Stale cached data from a previous session can pollute a new conversation.
+      CCP automatically clears the cache after inactivity, ensuring every new session starts clean.
+    </p>
+
+    <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          5-minute TTL
+        </h3>
+        <p class="fluid-sm text-muted">
+          After 5 minutes of inactivity — triggered by a new chat or context compaction —
+          the file cache auto-clears. This prevents outdated file contents from leaking into new sessions.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          Session state preserved
+        </h3>
+        <p class="fluid-sm text-muted">
+          Before clearing the cache, CCP auto-saves the session state to disk.
+          The task, findings, decisions, and file reference map survive the cache clear
+          and can be restored with <code class="ccp-code">ctx_session load</code>.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          Configurable
+        </h3>
+        <p class="fluid-sm text-muted">
+          Set <code class="ccp-code">LEAN_CTX_CACHE_TTL</code> in seconds to adjust the idle timeout.
+          Set to <code class="ccp-code">0</code> to disable automatic cache clearing entirely.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <h3 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">
+          Clean session boundary
+        </h3>
+        <p class="fluid-sm text-muted">
+          When you start a new chat, the AI gets fresh file reads instead of stale cached versions.
+          Combined with session restore, this gives the best of both worlds — continuity without staleness.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     SUBAGENT ISOLATION
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Isolation
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Subagent Isolation.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 44rem;">
+      Modern AI tools spawn subagents — independent workers that run in parallel.
+      Each subagent needs its own fresh context, not the parent agent's cached state.
+      CCP provides mechanisms to prevent cache leakage.
+    </p>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card ccp-feature-card">
+        <div class="ccp-code-badge font-mono" style="margin-bottom: 0.75rem;">fresh=true</div>
+        <p class="fluid-sm text-muted">
+          Pass <code class="ccp-code">fresh=true</code> to any <code class="ccp-code">ctx_read</code> call
+          to bypass the cache entirely. The file is read from disk and the result is not cached.
+          Use when spawned as a subagent or after context compaction.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <div class="ccp-code-badge font-mono" style="margin-bottom: 0.75rem;">ctx_cache clear</div>
+        <p class="fluid-sm text-muted">
+          Resets the entire file cache. Use when switching between unrelated tasks
+          or when the cached state has diverged from disk.
+          Session state is preserved — only file content cache is cleared.
+        </p>
+      </div>
+
+      <div class="card ccp-feature-card">
+        <div class="ccp-code-badge font-mono" style="margin-bottom: 0.75rem;">ctx_cache invalidate</div>
+        <p class="fluid-sm text-muted">
+          Invalidate a single file's cache entry by path.
+          Use after external edits (e.g., another tool modified the file)
+          to ensure the next read reflects the current disk state.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     TERMINAL DEMO
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      In Action
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Session restore in your terminal.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 5rem); max-width: 44rem;">
+      This is what happens when you start a new chat. The AI calls <code class="ccp-code">ctx_session load</code>
+      and instantly has full project context — task, findings, decisions, and file references.
+    </p>
+
+    <div class="terminal-chrome animate-entrance stagger-3" style="max-width: 48rem;">
+      <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+        <span class="terminal-dot bg-[#ff5f57]"></span>
+        <span class="terminal-dot bg-[#febc2e]"></span>
+        <span class="terminal-dot bg-[#28c840]"></span>
+        <span class="ml-3 text-xs text-muted font-mono">ctx_session load</span>
+      </div>
+      <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.7;">
+        <div>
+          <span class="text-accent-2 font-bold">SESSION RESTORED</span> <span class="text-muted">v191 | 761 calls | 282,179 tok saved</span>
+        </div>
+        <div class="ccp-term-divider"></div>
+        <div>
+          <span class="text-muted">Task:</span> <span class="text-text-bright">Auth refactor — JWT to session tokens</span>
+        </div>
+        <div class="ccp-term-divider"></div>
+        <div>
+          <span class="text-muted">Decisions:</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-text">Use Redis for session storage</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-text">Keep JWT for API-only routes</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-text">Migrate incrementally, not big-bang</span>
+        </div>
+        <div class="ccp-term-divider"></div>
+        <div>
+          <span class="text-muted">Findings:</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-text-bright">auth.ts:42</span> <span class="text-muted">— expiry check uses wrong clock source</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-text-bright">session.ts:18</span> <span class="text-muted">— missing refresh token rotation</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-text-bright">middleware.ts:7</span> <span class="text-muted">— no rate limiting on token endpoint</span>
+        </div>
+        <div class="ccp-term-divider"></div>
+        <div>
+          <span class="text-muted">Files (8):</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-accent">[F1 auth.ts full]</span>
+          <span class="text-accent">[F2 session.ts full]</span>
+          <span class="text-accent">[F3 middleware.ts full]</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-accent-2">[F4 config.ts map]</span>
+          <span class="text-accent-2">[F5 routes.ts map]</span>
+          <span class="text-accent-2">[F6 types.ts map]</span>
+        </div>
+        <div class="pl-4">
+          <span class="text-accent-3">[F7 test/auth.test.ts map]</span>
+          <span class="text-accent-3">[F8 prisma/schema.prisma map]</span>
+        </div>
+        <div class="ccp-term-divider"></div>
+        <div>
+          <span class="text-accent">~49,600 tokens saved vs cold start</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     CTA
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Give your AI a memory.
+    </h2>
+    <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); max-width: 44rem;">
+      CCP is enabled by default with zero configuration. Install lean-ctx, run init,
+      and your AI remembers context across every session.
+    </p>
+
+    <div class="flex flex-wrap items-center animate-entrance stagger-2" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/protocols" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        All Protocols
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  /* ── Cold Start Problem Cards ────────────────────────── */
+  .ccp-problem-card {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .ccp-problem-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .ccp-problem-header--bad {
+    background: rgba(248, 113, 113, 0.04);
+    color: var(--color-danger);
+  }
+  .ccp-problem-header--good {
+    background: rgba(52, 211, 153, 0.04);
+    color: var(--color-accent);
+  }
+  .ccp-problem-body {
+    padding: 1.25rem;
+    background: var(--color-surface);
+  }
+  .ccp-problem-line {
+    padding: 0.3rem 0;
+  }
+
+  /* ── Commands Table ──────────────────────────────────── */
+  .ccp-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+  }
+  .ccp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+  }
+  .ccp-table thead {
+    border-bottom: 1px solid var(--color-border);
+  }
+  .ccp-table th {
+    text-align: left;
+    padding: 0.875rem 1.25rem;
+    font-weight: 600;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--color-surface);
+  }
+  .ccp-table td {
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--color-border);
+    vertical-align: top;
+  }
+  .ccp-table tbody tr:first-child td {
+    border-top: none;
+  }
+  .ccp-table tbody tr {
+    transition: background 0.15s ease;
+  }
+  .ccp-table tbody tr:hover {
+    background: var(--color-surface);
+  }
+
+  /* ── Inline Code ─────────────────────────────────────── */
+  .ccp-code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    padding: 0.15em 0.45em;
+    border-radius: 4px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-accent-2);
+    white-space: nowrap;
+  }
+
+  /* ── Code Badge ──────────────────────────────────────── */
+  .ccp-code-badge {
+    display: inline-block;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    background: rgba(129, 140, 248, 0.08);
+    border: 1px solid rgba(129, 140, 248, 0.15);
+    color: var(--color-accent-2);
+  }
+
+  /* ── Position Cards ──────────────────────────────────── */
+  .ccp-position-card {
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+  }
+  .ccp-position-label {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.25rem;
+  }
+  .ccp-position-alpha {
+    font-size: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+  }
+
+  /* ── Feature Cards ───────────────────────────────────── */
+  .ccp-feature-card {
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+  }
+
+  /* ── Terminal Divider ────────────────────────────────── */
+  .ccp-term-divider {
+    height: 1px;
+    background: var(--color-border);
+  }
+</style>
+
+</BaseLayout>

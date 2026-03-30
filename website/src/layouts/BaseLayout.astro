@@ -1,0 +1,173 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import ParticleBackground from '../components/ParticleBackground.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  ogImage?: string;
+  noindex?: boolean;
+  keywords?: string;
+  breadcrumbs?: Array<{ name: string; url: string }>;
+  extraJsonLd?: string;
+}
+
+const {
+  title,
+  description = 'LeanCTX — The Intelligence Layer for AI Coding. Reduces AI costs by up to 99% per operation. Single Rust binary with 24 intelligent tools, shell hook, and 90+ CLI compression patterns.',
+  ogImage = '/og-image.png',
+  noindex = false,
+  keywords = 'lean-ctx, AI coding costs, context compression, intelligence layer, AI coding tools, tree-sitter, Rust, Cursor, Claude Code, GitHub Copilot',
+  breadcrumbs,
+  extraJsonLd,
+} = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const isHome = Astro.url.pathname === '/';
+
+const softwareJsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'LeanCTX',
+  alternateName: 'lean-ctx',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Linux, Windows',
+  url: 'https://leanctx.com',
+  downloadUrl: 'https://crates.io/crates/lean-ctx',
+  softwareVersion: '2.7.1',
+  license: 'https://opensource.org/licenses/MIT',
+  description: 'The Intelligence Layer for AI Coding — reduces AI costs by up to 99% per operation. Single Rust binary with context server, shell hook, and CLI.',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  author: { '@type': 'Person', name: 'Yves Gugger', url: 'https://github.com/yvgude' },
+  codeRepository: 'https://github.com/yvgude/lean-ctx',
+  programmingLanguage: 'Rust',
+  dateModified: '2026-03-29',
+  aggregateRating: undefined,
+});
+
+const webPageJsonLd = !isHome ? JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: title,
+  description: description,
+  url: canonicalURL.toString(),
+  isPartOf: { '@type': 'WebSite', name: 'LeanCTX', url: 'https://leanctx.com' },
+  author: { '@type': 'Person', name: 'Yves Gugger' },
+  dateModified: '2026-03-29',
+}) : null;
+
+const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: breadcrumbs.map((item, i) => ({
+    '@type': 'ListItem',
+    position: i + 1,
+    name: item.name,
+    item: new URL(item.url, 'https://leanctx.com').toString(),
+  })),
+}) : null;
+---
+
+<!DOCTYPE html>
+<html lang="en" class="antialiased scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content={description} />
+  <meta name="keywords" content={keywords} />
+  <meta name="author" content="Yves Gugger" />
+  <meta name="generator" content={Astro.generator} />
+  <meta name="theme-color" content="#050507" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="application-name" content="LeanCTX" />
+  {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
+  {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:type" content={isHome ? 'website' : 'article'} />
+  <meta property="og:url" content={canonicalURL} />
+  <meta property="og:site_name" content="LeanCTX" />
+  <meta property="og:locale" content="en_US" />
+  {ogImage && <meta property="og:image" content={new URL(ogImage, Astro.site)} />}
+  {ogImage && <meta property="og:image:width" content="1200" />}
+  {ogImage && <meta property="og:image:height" content="630" />}
+  {ogImage && <meta property="og:image:alt" content={title} />}
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={title} />
+  <meta name="twitter:description" content={description} />
+  {ogImage && <meta name="twitter:image" content={new URL(ogImage, Astro.site)} />}
+  {ogImage && <meta name="twitter:image:alt" content={title} />}
+
+  <link rel="canonical" href={canonicalURL} />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="icon" type="image/x-icon" sizes="48x48" href="/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <link rel="sitemap" href="/sitemap.xml" />
+
+  <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <title>{title}</title>
+
+  {isHome && <script type="application/ld+json" set:html={softwareJsonLd} />}
+  {webPageJsonLd && <script type="application/ld+json" set:html={webPageJsonLd} />}
+  {breadcrumbJsonLd && <script type="application/ld+json" set:html={breadcrumbJsonLd} />}
+  {extraJsonLd && <script type="application/ld+json" set:html={extraJsonLd} />}
+
+  <script is:inline>
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init('phc_J0Ac94FAcsmbFj0CWOAqo9tGGSE4i9F4LXXfnN796gN', {
+        api_host: 'https://eu.i.posthog.com',
+        defaults: '2026-01-30'
+    })
+  </script>
+</head>
+<body class="min-h-screen flex flex-col">
+  <ParticleBackground />
+  <Header />
+  <main id="main-content" class="flex-1" role="main">
+    <slot />
+  </main>
+  <Footer />
+
+  <div class="scroll-indicator" id="scroll-indicator" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+  </div>
+
+  <script is:inline>
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      var io = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+          if (e.isIntersecting) {
+            e.target.classList.add('is-visible');
+            io.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
+      document.querySelectorAll('.animate-entrance').forEach(function(el) {
+        io.observe(el);
+      });
+    }
+    (function() {
+      var si = document.getElementById('scroll-indicator');
+      if (!si) return;
+      var hidden = false;
+      window.addEventListener('scroll', function() {
+        if (!hidden && window.scrollY > 80) {
+          si.classList.add('is-hidden');
+          hidden = true;
+        }
+      }, { passive: true });
+    })();
+  </script>
+</body>
+</html>

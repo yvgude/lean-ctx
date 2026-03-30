@@ -1,0 +1,13 @@
+{
+  "name": "LeanCTX",
+  "short_name": "LeanCTX",
+  "description": "Context Intelligence Engine — 24 MCP tools, 90+ shell patterns",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06060b",
+  "theme_color": "#06060b",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

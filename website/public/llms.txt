@@ -1,0 +1,38 @@
+# LeanCTX
+
+> The Cognitive Filter for AI Engineering. A single Rust binary that reduces LLM token consumption by up to 99% per operation through AST-aware compression, shell output compression, and communication protocols.
+
+## What is LeanCTX?
+
+LeanCTX (lean-ctx) is an open-source compression system for AI coding tools. It sits between your AI tool (Cursor, Claude Code, GitHub Copilot, etc.) and the LLM, compressing context before it reaches the model. This saves tokens, reduces costs, and extends API rate limits.
+
+## Three Compression Layers
+
+1. **MCP Server**: 24 tools replace built-in file reads, shell commands, and code search. Uses tree-sitter AST parsing across 14 programming languages. Six read modes: full, map, signatures, diff, aggressive, entropy.
+2. **Shell Hook**: Intercepts 90+ CLI command patterns (git, npm, cargo, docker, kubectl, pip, go, tsc) and compresses output by 60-90%.
+3. **Communication Protocols**: CEP (Cognitive Efficiency Protocol), CCP (Context Continuity Protocol), and TDD (Token Dense Dialect) teach the AI to respond more efficiently, saving 8-25% additional tokens.
+
+## Key Facts
+
+- License: MIT
+- Language: Rust
+- Install: `cargo install lean-ctx` or `curl -fsSL https://leanctx.com/install.sh | sh`
+- Setup: `lean-ctx init` (shell hook) + `lean-ctx setup` (MCP for AI tools)
+- Supported tools: Cursor, GitHub Copilot, Claude Code, Windsurf, Cline, OpenAI Codex, Gemini CLI, Antigravity, Pi, Zed, Continue, OpenCode, Aider, OpenClaw
+- Repository: https://github.com/yvgude/lean-ctx
+- Crate: https://crates.io/crates/lean-ctx
+- Website: https://leanctx.com
+
+## Pages
+
+- [How It Works](https://leanctx.com/how-it-works/): Data flow, compression pipeline, quality preservation
+- [MCP Server](https://leanctx.com/mcp-server/): 24 compression tools documentation
+- [Shell Hook](https://leanctx.com/shell-hook/): 90+ command patterns with before/after examples
+- [Compatibility](https://leanctx.com/compatibility/): All supported AI tools with setup commands
+- [Benchmark](https://leanctx.com/benchmark/): Token savings measurement and verification
+- [CLI Reference](https://leanctx.com/cli/): Terminal commands for humans
+- [Protocols](https://leanctx.com/protocols/): CEP, CCP, and TDD communication protocols
+- [Getting Started](https://leanctx.com/docs/getting-started/): Installation and setup guide
+- [Configuration](https://leanctx.com/docs/configuration/): config.toml and environment variables
+- [Tool API Reference](https://leanctx.com/docs/tools/): All 24 MCP tools documented
+- [Quick Reference](https://leanctx.com/docs/quick-reference/): Daily workflow cheat sheet

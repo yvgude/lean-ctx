@@ -1,0 +1,367 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Protocols — LeanCTX" description="CEP, CCP, and TDD — three protocols that optimize how AI communicates, remembers context, and minimizes token waste. Zero configuration, enabled by default." breadcrumbs={[{ name: 'Home', url: '/' }, { name: 'Protocols', url: '/protocols/' }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">Protocols</p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Three Protocols.<br/><span class="gradient-text">Smarter Communication.</span>
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      lean-ctx doesn't just compress data — it optimizes how your AI thinks, remembers, and responds.
+      Three protocols work together to eliminate wasted tokens at every layer of communication.
+      All three are enabled by default with zero configuration.
+    </p>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CEP ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <a href="/protocols/cep" class="proto-card card animate-entrance" style="--proto-color: var(--color-accent); --proto-color-rgb: 52, 211, 153;">
+      <div class="proto-badge" style="border-color: rgba(52,211,153,0.25); color: var(--color-accent);">CEP</div>
+
+      <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
+        <div>
+          <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+            Cognitive Efficiency Protocol
+          </h2>
+          <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+            CEP scores every AI response on a 0–100 scale across four dimensions:
+            cache hit rate, read mode diversity, compression ratio, and action-first communication.
+            It teaches the AI to adapt its verbosity to the complexity of the task — from mechanical fixes
+            to architectural decisions.
+          </p>
+
+          <div class="grid grid-cols-2" style="gap: clamp(0.5rem, 0.25rem + 0.5vw, 0.75rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+            <div class="proto-dim-card">
+              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">Cache</span>
+              <span class="fluid-sm text-muted">Hit rate optimization</span>
+            </div>
+            <div class="proto-dim-card">
+              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">Modes</span>
+              <span class="fluid-sm text-muted">Read mode diversity</span>
+            </div>
+            <div class="proto-dim-card">
+              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">Compress</span>
+              <span class="fluid-sm text-muted">Context compression ratio</span>
+            </div>
+            <div class="proto-dim-card">
+              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">Action</span>
+              <span class="fluid-sm text-muted">Act-first communication</span>
+            </div>
+          </div>
+
+          <span class="proto-link text-accent">
+            Full CEP documentation
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </span>
+        </div>
+
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="ml-3 text-xs text-muted font-mono">CEP Score</span>
+          </div>
+          <div class="px-4 sm:px-6 py-4 sm:py-5">
+            <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-accent font-bold">CEP Score: 87/100</span>
+
+<span class="text-muted/60">Dimensions:</span>
+  Cache hits      <span class="text-accent">████████░░</span> 82%
+  Mode diversity  <span class="text-accent">█████████░</span> 91%
+  Compression     <span class="text-accent">████████░░</span> 85%
+  Action-first    <span class="text-accent">█████████░</span> 90%
+
+<span class="text-muted/60">Task complexity:</span> <span class="text-accent-2">Standard</span>
+<span class="text-muted/50">Instruction: BRIEF DELTA NOREPEAT STRUCT</span></pre>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CCP ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <a href="/protocols/ccp" class="proto-card card animate-entrance" style="--proto-color: var(--color-accent-2); --proto-color-rgb: 129, 140, 248;">
+      <div class="proto-badge" style="border-color: rgba(129,140,248,0.25); color: var(--color-accent-2);">CCP</div>
+
+      <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
+        <div>
+          <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+            Context Continuity Protocol
+          </h2>
+          <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+            CCP gives your AI memory that persists across chat sessions.
+            Instead of re-reading 50,000 tokens of context on every new conversation,
+            CCP restores the previous session state in ~400 tokens. The AI picks up
+            exactly where it left off.
+          </p>
+
+          <div class="grid grid-cols-2" style="gap: clamp(0.5rem, 0.25rem + 0.5vw, 0.75rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+            <div class="proto-dim-card">
+              <span class="text-accent-2 font-bold font-display" style="font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);">~400</span>
+              <span class="fluid-sm text-muted">Tokens to restore session</span>
+            </div>
+            <div class="proto-dim-card">
+              <span class="text-accent-2 font-bold font-display" style="font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);">~50K</span>
+              <span class="fluid-sm text-muted">Tokens saved vs cold start</span>
+            </div>
+          </div>
+
+          <span class="proto-link text-accent-2">
+            Full CCP documentation
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </span>
+        </div>
+
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="ml-3 text-xs text-muted font-mono">ctx_session load</span>
+          </div>
+          <div class="px-4 sm:px-6 py-4 sm:py-5">
+            <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-accent-2 font-bold">SESSION RESTORED</span> v147 | 892 calls
+
+<span class="text-muted/60">Task:</span> Auth refactor — JWT → session tokens
+<span class="text-muted/60">Findings:</span>
+  <span class="text-text-bright">auth.ts:42</span> — expiry uses wrong clock
+  <span class="text-text-bright">session.ts:18</span> — missing refresh logic
+
+<span class="text-muted/60">Decisions:</span>
+  Use Redis for session storage
+  Keep JWT for API-only routes
+
+<span class="text-muted/50">[~49,600 tokens saved vs cold start]</span></pre>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ TDD ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <a href="/protocols/tdd" class="proto-card card animate-entrance" style="--proto-color: var(--color-accent-3); --proto-color-rgb: 192, 132, 252;">
+      <div class="proto-badge" style="border-color: rgba(192,132,252,0.25); color: var(--color-accent-3);">TDD</div>
+
+      <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
+        <div>
+          <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+            Token Dense Dialect
+          </h2>
+          <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+            TDD replaces verbose prose with symbolic notation. Every token carries meaning —
+            no articles, no filler, no pleasantries. The AI communicates in a compact dialect
+            that preserves all information with 8–25% fewer tokens.
+          </p>
+
+          <div class="flex flex-wrap" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+            <span class="proto-symbol"><span class="text-accent-3">λ</span> <span class="text-muted">=function</span></span>
+            <span class="proto-symbol"><span class="text-accent-3">§</span> <span class="text-muted">=module</span></span>
+            <span class="proto-symbol"><span class="text-accent-3">⊕</span> <span class="text-muted">=add</span></span>
+            <span class="proto-symbol"><span class="text-accent-3">⊖</span> <span class="text-muted">=remove</span></span>
+            <span class="proto-symbol"><span class="text-accent-3">∆</span> <span class="text-muted">=modify</span></span>
+            <span class="proto-symbol"><span class="text-accent-3">✓</span> <span class="text-muted">=ok</span></span>
+            <span class="proto-symbol"><span class="text-accent-3">✗</span> <span class="text-muted">=fail</span></span>
+          </div>
+
+          <span class="proto-link text-accent-3">
+            Full TDD documentation
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </span>
+        </div>
+
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="ml-3 text-xs text-muted font-mono">TDD — Before &amp; After</span>
+          </div>
+          <div class="px-4 sm:px-6 py-4 sm:py-5">
+            <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">Without TDD (42 tokens):</span>
+<span class="text-muted">"I've successfully read the auth.ts file</span>
+<span class="text-muted"> and found that the validateToken function</span>
+<span class="text-muted"> on line 42 has a bug where it compares</span>
+<span class="text-muted"> UTC timestamps against local timestamps."</span>
+
+<span class="text-muted/60">With TDD (12 tokens):</span>
+<span class="text-accent-3">ctx_read(F1) → 342L cached ✓</span>
+<span class="text-accent-3">ERR F1:42 — UTC vs local timestamp</span>
+
+<span class="text-muted/50">[~30 tokens saved per interaction]</span></pre>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ ALL AUTOMATIC ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="max-width: 48rem;">
+      <div class="card" style="padding: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+        <div class="flex items-start gap-4">
+          <div class="proto-callout-icon flex-shrink-0">
+            <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <div>
+            <h3 class="fluid-h3 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.5rem, 0.25rem + 0.25vw, 0.75rem);">All Automatic</h3>
+            <p class="fluid-body text-muted" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+              All three protocols are enabled by default with zero configuration.
+              lean-ctx injects them via system prompt instructions — the AI follows them automatically.
+              No flags, no env vars, no config files.
+            </p>
+            <div class="flex flex-wrap gap-3 fluid-sm">
+              <span class="flex items-center gap-1.5">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent"></span>
+                <span class="text-text-bright">CEP</span> <span class="text-muted">— active</span>
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent-2"></span>
+                <span class="text-text-bright">CCP</span> <span class="text-muted">— active</span>
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent-3"></span>
+                <span class="text-text-bright">TDD</span> <span class="text-muted">— active</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CTA ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Smarter AI starts <span class="gradient-text">here.</span>
+    </h2>
+    <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      All three protocols activate automatically after setup.
+      Your AI communicates better from the very first message.
+    </p>
+    <div class="flex flex-wrap items-center gap-3 animate-entrance stagger-2">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/mcp-server" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Explore Context Tools
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  .proto-card {
+    display: block;
+    padding: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
+    position: relative;
+    text-decoration: none;
+    transition: border-color 0.25s ease;
+  }
+  .proto-card:hover {
+    border-color: rgba(var(--proto-color-rgb), 0.2);
+  }
+  .proto-card:hover .proto-link {
+    gap: 0.625rem;
+  }
+
+  .proto-badge {
+    position: absolute;
+    top: -12px;
+    left: 28px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--color-bg);
+    border: 1px solid;
+    border-radius: 6px;
+    padding: 3px 14px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .proto-dim-card {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(0.625rem, 0.5rem + 0.25vw, 0.875rem);
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  .proto-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+    font-weight: 500;
+    transition: gap 0.2s ease;
+  }
+
+  .proto-symbol {
+    font-family: var(--font-mono);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+  }
+
+  .proto-callout-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(52, 211, 153, 0.08);
+    border: 1px solid rgba(52, 211, 153, 0.12);
+    margin-top: 2px;
+  }
+
+  @media (max-width: 640px) {
+    .proto-card { padding: clamp(1.25rem, 1rem + 0.5vw, 1.5rem); }
+  }
+
+  @media (min-width: 1024px) {
+    .proto-card { padding: clamp(2rem, 1.5rem + 1vw, 2.5rem); }
+  }
+</style>
+
+</BaseLayout>

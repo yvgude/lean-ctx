@@ -1,0 +1,409 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'CLI Reference',
+    items: [
+      { label: 'Overview', href: '/docs/cli-reference' },
+      { label: 'Shell Compression', href: '/docs/cli-reference#shell-compression' },
+      { label: 'File Operations', href: '/docs/cli-reference#file-operations' },
+      { label: 'Read Modes', href: '/docs/cli-reference#read-modes' },
+      { label: 'Setup & Config', href: '/docs/cli-reference#setup-config' },
+      { label: 'Analytics', href: '/docs/cli-reference#analytics' },
+      { label: 'Sessions', href: '/docs/cli-reference#sessions' },
+      { label: 'Benchmarking', href: '/docs/cli-reference#benchmarking' },
+      { label: 'Utilities', href: '/docs/cli-reference#utilities' },
+      { label: 'Shell Aliases', href: '/docs/cli-reference#shell-aliases' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Analytics Guide', href: '/docs/analytics' },
+      { label: 'Quick Reference', href: '/docs/quick-reference' },
+      { label: 'Configuration', href: '/docs/configuration' },
+      { label: 'Getting Started', href: '/docs/getting-started' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="CLI Reference" description="Complete reference for every lean-ctx command, flag, and read mode." sidebar={sidebar}>
+
+  <p>
+    This is the exhaustive reference for every <code>lean-ctx</code> command. For a quick cheat sheet,
+    see <a href="/docs/quick-reference">Quick Reference</a>. For analytics and dashboard details,
+    see <a href="/docs/analytics">Analytics Guide</a>.
+  </p>
+
+  <hr />
+
+  <h2 id="shell-compression">Shell Compression</h2>
+
+  <p>
+    These commands run shell commands through lean-ctx's 90+ compression patterns. Output is
+    automatically stripped of noise, boilerplate, and redundancy before reaching the LLM.
+  </p>
+
+  <h3 id="exec"><code>lean-ctx -c "&lt;command&gt;"</code></h3>
+  <p>Execute any shell command and compress its output. Alias: <code>lean-ctx exec</code>.</p>
+  <pre><code>lean-ctx -c "git status"
+lean-ctx -c "kubectl get pods -A"
+lean-ctx -c "cargo build 2>&amp;1"
+lean-ctx exec "docker ps"</code></pre>
+  <p>
+    The shell hook (installed via <code>lean-ctx init</code>) makes this automatic for common
+    commands — you don't need to prefix them with <code>-c</code>. Use <code>-c</code> explicitly
+    for commands not covered by the shell hook.
+  </p>
+
+  <h3 id="shell"><code>lean-ctx shell</code></h3>
+  <p>
+    Start an interactive shell session where <strong>all</strong> command output is compressed.
+    Wraps your default shell (zsh, bash, or fish).
+  </p>
+  <pre><code>lean-ctx shell
+# Now every command output is compressed automatically
+git log --oneline -20
+docker compose logs
+# Exit with Ctrl+D or 'exit'</code></pre>
+
+  <hr />
+
+  <h2 id="file-operations">File Operations</h2>
+
+  <p>
+    Direct CLI access to lean-ctx's file reading, searching, and navigation tools.
+    These are the same operations the MCP server provides to AI tools.
+  </p>
+
+  <h3 id="read"><code>lean-ctx read &lt;file&gt; [-m &lt;mode&gt;]</code></h3>
+  <p>Read a file with optional compression mode. Default mode is <code>full</code>.</p>
+  <pre><code>lean-ctx read src/main.rs                    # full content (cached)
+lean-ctx read src/main.rs -m map             # dependency graph + exports
+lean-ctx read src/main.rs -m signatures      # tree-sitter AST extraction
+lean-ctx read src/main.rs -m aggressive      # syntax-stripped
+lean-ctx read src/main.rs -m entropy         # Shannon entropy filtered
+lean-ctx read src/main.rs -m diff            # changed lines only
+lean-ctx read src/main.rs -m lines:10-50     # specific line range
+lean-ctx read src/main.rs -m lines:10-50,80  # multiple ranges</code></pre>
+
+  <h3 id="diff"><code>lean-ctx diff &lt;file1&gt; &lt;file2&gt;</code></h3>
+  <p>Compressed diff between two files with structured change summaries.</p>
+  <pre><code>lean-ctx diff old.rs new.rs</code></pre>
+
+  <h3 id="grep"><code>lean-ctx grep &lt;pattern&gt; [path]</code></h3>
+  <p>Search file contents with compressed, grouped results. Uses ripgrep internally.</p>
+  <pre><code>lean-ctx grep "pub fn" src/
+lean-ctx grep "TODO" .
+lean-ctx grep "async fn.*Result" rust/src/</code></pre>
+
+  <h3 id="find"><code>lean-ctx find &lt;pattern&gt; [path]</code></h3>
+  <p>Find files by name pattern. Respects <code>.gitignore</code> and outputs a compact file tree.</p>
+  <pre><code>lean-ctx find "*.rs" src/
+lean-ctx find "test_*" .</code></pre>
+
+  <h3 id="ls"><code>lean-ctx ls [path]</code></h3>
+  <p>Compact directory listing as a tree map with file counts.</p>
+  <pre><code>lean-ctx ls
+lean-ctx ls src/components/</code></pre>
+
+  <h3 id="deps"><code>lean-ctx deps [path]</code></h3>
+  <p>Show project dependency graph. Detects package manager and extracts dependencies.</p>
+  <pre><code>lean-ctx deps .
+lean-ctx deps frontend/</code></pre>
+
+  <hr />
+
+  <h2 id="read-modes">Read Modes</h2>
+
+  <p>
+    Read modes control how <code>lean-ctx read</code> and the MCP tool <code>ctx_read</code> compress
+    file content. Choose the right mode for your use case:
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Mode</th>
+        <th>Output</th>
+        <th>Use case</th>
+        <th>Savings</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>full</code></td>
+        <td>Complete file content</td>
+        <td>Files you will edit. Re-reads cost ~13 tokens (cached).</td>
+        <td>0% (first read), ~99% (cached)</td>
+      </tr>
+      <tr>
+        <td><code>map</code></td>
+        <td>Dependency graph + exports + key signatures</td>
+        <td>Context-only files — understand structure without reading everything.</td>
+        <td>70-90%</td>
+      </tr>
+      <tr>
+        <td><code>signatures</code></td>
+        <td>tree-sitter AST extraction (14 languages)</td>
+        <td>API surface only — function/method/class signatures.</td>
+        <td>85-95%</td>
+      </tr>
+      <tr>
+        <td><code>aggressive</code></td>
+        <td>Syntax-stripped content</td>
+        <td>Maximum compression while preserving logic.</td>
+        <td>60-80%</td>
+      </tr>
+      <tr>
+        <td><code>entropy</code></td>
+        <td>Shannon entropy + Jaccard filtering</td>
+        <td>Keep only information-dense lines.</td>
+        <td>70-90%</td>
+      </tr>
+      <tr>
+        <td><code>diff</code></td>
+        <td>Changed lines only (vs. last read)</td>
+        <td>After editing — see only what changed.</td>
+        <td>90-99%</td>
+      </tr>
+      <tr>
+        <td><code>lines:N-M</code></td>
+        <td>Specific line ranges</td>
+        <td>Read only the section you need. Supports multiple ranges: <code>lines:10-50,80-100</code></td>
+        <td>Variable</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Supported languages for <code>signatures</code> mode:</strong> TypeScript, JavaScript, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP (14 total via tree-sitter).</p>
+
+  <hr />
+
+  <h2 id="setup-config">Setup & Configuration</h2>
+
+  <h3 id="setup"><code>lean-ctx setup</code></h3>
+  <p>
+    One-command setup. Auto-detects your shell (zsh/bash/fish/PowerShell), finds installed AI tools,
+    and configures MCP server + shell hooks. Run once after installing lean-ctx.
+  </p>
+  <pre><code>lean-ctx setup</code></pre>
+  <p>This runs three steps internally:</p>
+  <ol>
+    <li>Installs shell aliases (<code>init --global</code>)</li>
+    <li>Configures MCP for each detected AI tool</li>
+    <li>Verifies everything works (<code>doctor</code>)</li>
+  </ol>
+
+  <h3 id="init"><code>lean-ctx init [--global]</code></h3>
+  <p>Install shell compression aliases into your shell profile.</p>
+  <pre><code>lean-ctx init           # install for current shell
+lean-ctx init --global  # same, explicit flag</code></pre>
+  <p>This writes a block to <code>~/.zshrc</code>, <code>~/.bashrc</code>, <code>~/.config/fish/config.fish</code>, or your PowerShell profile. The block includes aliases for git, docker, npm, cargo, and 90+ other commands.</p>
+
+  <h3 id="init-agent"><code>lean-ctx init --agent &lt;name&gt;</code></h3>
+  <p>Configure MCP for a specific AI tool without running full setup.</p>
+  <pre><code>lean-ctx init --agent cursor
+lean-ctx init --agent claude
+lean-ctx init --agent codex
+lean-ctx init --agent gemini
+lean-ctx init --agent windsurf
+lean-ctx init --agent copilot
+lean-ctx init --agent cline
+lean-ctx init --agent roo
+lean-ctx init --agent pi        # installs pi-lean-ctx npm package</code></pre>
+
+  <h3 id="config"><code>lean-ctx config [set &lt;key&gt; &lt;value&gt;]</code></h3>
+  <p>Show or edit configuration stored at <code>~/.lean-ctx/config.toml</code>.</p>
+  <pre><code>lean-ctx config                        # show current config
+lean-ctx config set ultra_compact true # enable ultra-compact mode
+lean-ctx config set tee_on_error true  # log errors to ~/.lean-ctx/tee/
+lean-ctx config set checkpoint_interval 20</code></pre>
+
+  <h3 id="doctor"><code>lean-ctx doctor</code></h3>
+  <p>Run 8 installation and environment diagnostics:</p>
+  <ul>
+    <li>Binary installed and in PATH</li>
+    <li>Shell hook active</li>
+    <li>MCP config for detected editors</li>
+    <li>Stats file persistence</li>
+    <li>Cache directory</li>
+    <li>Supported shell detected</li>
+    <li>AI tool detection</li>
+    <li>Version check</li>
+  </ul>
+  <pre><code>lean-ctx doctor</code></pre>
+
+  <h3 id="update"><code>lean-ctx update [--check]</code></h3>
+  <p>Self-update the lean-ctx binary from GitHub Releases.</p>
+  <pre><code>lean-ctx update         # download and install latest version
+lean-ctx update --check # check if a newer version is available (no install)</code></pre>
+
+  <h3 id="uninstall"><code>lean-ctx uninstall</code></h3>
+  <p>
+    Remove all lean-ctx configuration: shell hooks, MCP configs from all editors, and the
+    <code>~/.lean-ctx/</code> data directory. Prints instructions for removing the binary.
+  </p>
+  <pre><code>lean-ctx uninstall</code></pre>
+
+  <hr />
+
+  <h2 id="analytics">Analytics & Dashboards</h2>
+
+  <p>For a detailed guide with screenshots and interpretations, see <a href="/docs/analytics">Analytics Guide</a>.</p>
+
+  <h3 id="gain"><code>lean-ctx gain [flags]</code></h3>
+  <p>Visual terminal dashboard showing lifetime token savings.</p>
+
+  <table>
+    <thead><tr><th>Flag</th><th>Output</th></tr></thead>
+    <tbody>
+      <tr><td><code>(none)</code></td><td>Full dashboard: total saved, rate, USD, top commands, sparklines</td></tr>
+      <tr><td><code>--live</code></td><td>Auto-refreshing mode (updates every 2s). Press <kbd>q</kbd> to quit.</td></tr>
+      <tr><td><code>--graph</code></td><td>30-day savings chart with daily bars</td></tr>
+      <tr><td><code>--daily</code></td><td>Bordered day-by-day table with token counts and USD</td></tr>
+      <tr><td><code>--json</code></td><td>Raw JSON export of all stats (for scripting/automation)</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx gain
+lean-ctx gain --live
+lean-ctx gain --graph
+lean-ctx gain --daily
+lean-ctx gain --json &gt; stats.json</code></pre>
+
+  <h3 id="cep"><code>lean-ctx cep</code></h3>
+  <p>CEP (Cognitive Efficiency Protocol) impact report showing score trends, cache hit rates, and mode distribution.</p>
+  <pre><code>lean-ctx cep</code></pre>
+
+  <h3 id="dashboard"><code>lean-ctx dashboard [--port=N]</code></h3>
+  <p>Open the interactive web dashboard at <code>http://localhost:3333</code>. Features interactive charts, session history, active agents, and project knowledge panels.</p>
+  <pre><code>lean-ctx dashboard              # opens at localhost:3333
+lean-ctx dashboard --port=8080  # custom port</code></pre>
+
+  <h3 id="wrapped"><code>lean-ctx wrapped [--week|--month|--all]</code></h3>
+  <p>Generate a shareable "Wrapped" report card of your token savings.</p>
+
+  <table>
+    <thead><tr><th>Flag</th><th>Period</th></tr></thead>
+    <tbody>
+      <tr><td><code>(none)</code></td><td>Current week</td></tr>
+      <tr><td><code>--week</code></td><td>Current week (explicit)</td></tr>
+      <tr><td><code>--month</code></td><td>Current month</td></tr>
+      <tr><td><code>--all</code></td><td>Lifetime stats</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx wrapped
+lean-ctx wrapped --month
+lean-ctx wrapped --all</code></pre>
+
+  <hr />
+
+  <h2 id="sessions">Session Management</h2>
+
+  <h3 id="sessions-cmd"><code>lean-ctx sessions [list|show|cleanup]</code></h3>
+  <p>Manage CCP (Context Continuity Protocol) sessions stored at <code>~/.lean-ctx/sessions/</code>.</p>
+
+  <table>
+    <thead><tr><th>Subcommand</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><code>list</code></td><td>List all saved sessions</td></tr>
+      <tr><td><code>show</code></td><td>Show the latest session state</td></tr>
+      <tr><td><code>cleanup</code></td><td>Remove old/stale sessions</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx sessions list
+lean-ctx sessions show
+lean-ctx sessions cleanup</code></pre>
+
+  <h3 id="session"><code>lean-ctx session</code></h3>
+  <p>Show adoption statistics — how much of your workflow uses lean-ctx compression.</p>
+  <pre><code>lean-ctx session</code></pre>
+
+  <hr />
+
+  <h2 id="benchmarking">Benchmarking</h2>
+
+  <h3 id="benchmark-run"><code>lean-ctx benchmark run [path] [--json]</code></h3>
+  <p>
+    Run real token benchmarks on your project files using tiktoken (o200k_base).
+    Measures exact savings for each read mode across every file.
+  </p>
+  <pre><code>lean-ctx benchmark run                # benchmark current directory
+lean-ctx benchmark run src/           # benchmark specific path
+lean-ctx benchmark run . --json       # output as JSON</code></pre>
+
+  <h3 id="benchmark-report"><code>lean-ctx benchmark report [path]</code></h3>
+  <p>Generate a shareable Markdown report from benchmark results.</p>
+  <pre><code>lean-ctx benchmark report             # generate report for current directory
+lean-ctx benchmark report src/ &gt; BENCHMARK.md</code></pre>
+
+  <hr />
+
+  <h2 id="utilities">Utilities</h2>
+
+  <h3 id="discover"><code>lean-ctx discover</code></h3>
+  <p>
+    Scan your shell history for commands that could benefit from compression but aren't being
+    intercepted. Shows estimated savings for each uncompressed command.
+  </p>
+  <pre><code>lean-ctx discover</code></pre>
+
+  <h3 id="cheatsheet"><code>lean-ctx cheatsheet</code></h3>
+  <p>Print a compact cheat sheet of all commands and workflows directly in your terminal.</p>
+  <pre><code>lean-ctx cheatsheet</code></pre>
+
+  <h3 id="tee"><code>lean-ctx tee [list|clear|show &lt;file&gt;]</code></h3>
+  <p>Manage error log files stored at <code>~/.lean-ctx/tee/</code>. When <code>tee_on_error</code> is enabled in config, failed commands log their full output here.</p>
+
+  <table>
+    <thead><tr><th>Subcommand</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><code>list</code></td><td>List all error log files</td></tr>
+      <tr><td><code>clear</code></td><td>Delete all error logs</td></tr>
+      <tr><td><code>show &lt;file&gt;</code></td><td>Display a specific error log</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx tee list
+lean-ctx tee show 2026-03-29_10-30.log
+lean-ctx tee clear</code></pre>
+
+  <h3 id="slow-log"><code>lean-ctx slow-log [list|clear]</code></h3>
+  <p>Show or clear the slow command log at <code>~/.lean-ctx/slow-commands.log</code>. Commands that take longer than expected are logged here for debugging.</p>
+  <pre><code>lean-ctx slow-log list
+lean-ctx slow-log clear</code></pre>
+
+  <hr />
+
+  <h2 id="shell-aliases">Shell Aliases</h2>
+
+  <p>
+    After running <code>lean-ctx init --global</code>, these aliases are available in your shell.
+    They let you toggle compression on and off without restarting:
+  </p>
+
+  <table>
+    <thead><tr><th>Alias</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><code>lean-ctx-on</code></td><td>Enable all compression aliases</td></tr>
+      <tr><td><code>lean-ctx-off</code></td><td>Disable compression (human-readable output)</td></tr>
+      <tr><td><code>lean-ctx-status</code></td><td>Show whether compression is currently active</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx-status    # check current state
+lean-ctx-off       # temporarily disable for human reading
+git log            # now shows full, uncompressed output
+lean-ctx-on        # re-enable for AI sessions</code></pre>
+
+  <p>
+    <strong>When to disable:</strong> Turn off compression when you want to read command output
+    yourself (debugging, reviewing logs). Turn it back on before starting an AI coding session.
+  </p>
+
+</DocsLayout>

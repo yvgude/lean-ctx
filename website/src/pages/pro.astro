@@ -1,0 +1,518 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Pro — LeanCTX" description="LeanCTX Pro: Your AI tools get smarter over time. Adaptive compression learns from 2,300+ developers. $9/month, cancel anytime."
+  breadcrumbs={[{ name: 'Home', url: '/' }, { name: 'Pro', url: '/pro/' }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-accent" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        LeanCTX Pro
+      </p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Your AI Gets<br/>
+      <span class="gradient-text">Smarter Over Time.</span>
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: 2rem; max-width: 40rem;">
+      Free lean-ctx saves you money. Pro lean-ctx saves you <strong class="text-text-bright">even more</strong> —
+      because it learns from thousands of developers what works best for every file type.
+      Nothing to configure. It just gets better.
+    </p>
+    <div class="pro-price-hero animate-entrance stagger-3">
+      <span class="pro-price-amount">$9</span>
+      <span class="pro-price-period">/month</span>
+      <span class="pro-price-note">Cancel anytime. Your local engine keeps working.</span>
+    </div>
+    <div class="pro-hero-actions animate-entrance stagger-3">
+      <a href="/checkout" class="pro-cta-primary">Start Pro</a>
+      <span class="pro-or">or run <code>lean-ctx upgrade</code> in your terminal</span>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ HOW IT WORKS ═══════ -->
+<section class="section-y">
+  <div class="content-grid" style="max-width: 48rem;">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+      How Pro Works
+    </h2>
+    <div class="pro-steps animate-entrance stagger-1">
+      <div class="pro-step">
+        <div class="pro-step-num">1</div>
+        <div>
+          <h3 class="pro-step-title">You use lean-ctx as usual</h3>
+          <p class="pro-step-desc">Open your editor. Code. lean-ctx compresses context in the background — nothing changes for you.</p>
+        </div>
+      </div>
+      <div class="pro-step">
+        <div class="pro-step-num">2</div>
+        <div>
+          <h3 class="pro-step-title">We learn what works best</h3>
+          <p class="pro-step-desc">Anonymized data — only file types and how well compression worked. Never code, never file names, never personal data.</p>
+        </div>
+      </div>
+      <div class="pro-step">
+        <div class="pro-step-num">3</div>
+        <div>
+          <h3 class="pro-step-title">Your engine improves automatically</h3>
+          <p class="pro-step-desc">Updated compression parameters are downloaded in the background. Your AI tools become more efficient every week.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ COMPARISON ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); text-align: center;">
+      Free vs Pro
+    </h2>
+    <div class="comparison-grid animate-entrance stagger-1">
+
+      <!-- FREE -->
+      <div class="comparison-card">
+        <div class="comparison-header">
+          <h3 class="comparison-tier">Free</h3>
+          <div class="comparison-price">
+            <span class="comp-amount">$0</span>
+            <span class="comp-period">forever</span>
+          </div>
+        </div>
+        <ul class="comparison-features">
+          <li>Full compression engine</li>
+          <li>24 intelligent tools</li>
+          <li>90+ CLI patterns</li>
+          <li>tree-sitter AST (14 languages)</li>
+          <li>Session continuity</li>
+          <li>Project knowledge store</li>
+          <li>Local terminal dashboard</li>
+          <li>Semantic code search</li>
+          <li>Self-update from GitHub</li>
+          <li class="feature-absent">Static compression rules</li>
+          <li class="feature-absent">No cloud dashboard</li>
+          <li class="feature-absent">No adaptive optimization</li>
+        </ul>
+        <a href="https://github.com/yvgude/lean-ctx" class="comparison-cta comparison-cta-secondary">
+          Install Free
+        </a>
+      </div>
+
+      <!-- PRO -->
+      <div class="comparison-card comparison-card-featured">
+        <div class="comparison-badge">Recommended</div>
+        <div class="comparison-header">
+          <h3 class="comparison-tier">Pro</h3>
+          <div class="comparison-price">
+            <span class="comp-amount">$9</span>
+            <span class="comp-period">/month</span>
+          </div>
+        </div>
+        <ul class="comparison-features">
+          <li><strong>Everything in Free</strong></li>
+          <li class="feature-highlight">Adaptive compression (learns daily)</li>
+          <li class="feature-highlight">~25% better savings than Free</li>
+          <li class="feature-highlight">Automatic optimization</li>
+          <li>Cloud analytics dashboard</li>
+          <li>Savings trends over time</li>
+          <li>Cost reduction reports</li>
+          <li>Cloud sync across machines</li>
+          <li>Nothing to configure — ever</li>
+          <li>Cancel anytime</li>
+        </ul>
+        <a href="/checkout" class="comparison-cta comparison-cta-primary">
+          Start Pro — $9/mo
+        </a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ OPEN SOURCE PROMISE ═══════ -->
+<section class="section-y">
+  <div class="content-grid" style="max-width: 48rem;">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+      Open Source Promise
+    </h2>
+    <div class="space-y-6 animate-entrance stagger-1">
+      <p class="fluid-body text-muted">
+        The lean-ctx engine stays <strong class="text-text-bright">MIT open source forever</strong>.
+        All 24 tools, all 90+ patterns, all compression modes — free, no limits, no catches.
+      </p>
+      <p class="fluid-body text-muted">
+        Pro adds <strong class="text-text-bright">genuinely new value</strong> that requires cloud infrastructure:
+        adaptive models trained on thousands of projects, savings analytics over time, and cross-machine sync.
+        These are new capabilities — not locked-away features.
+      </p>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ FAQ ═══════ -->
+<section class="section-y">
+  <div class="content-grid" style="max-width: 48rem;">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);">
+      Questions
+    </h2>
+    <div class="faq-list animate-entrance stagger-1">
+      <details class="faq-item">
+        <summary class="faq-question">What happens if I cancel?</summary>
+        <p class="faq-answer">Your local lean-ctx keeps working exactly as before — same tools, same compression.
+          You just stop receiving adaptive updates and lose access to the cloud dashboard.
+          No lock-in, no data held hostage.</p>
+      </details>
+      <details class="faq-item">
+        <summary class="faq-question">What data do you collect?</summary>
+        <p class="faq-answer">Only file types (like ".rs" or ".tsx") and how well compression worked (a percentage).
+          We never see your code, file names, file contents, or any personal data. Ever.</p>
+      </details>
+      <details class="faq-item">
+        <summary class="faq-question">How much better is Pro, really?</summary>
+        <p class="faq-answer">On average, Pro users see ~25% better compression than Free.
+          The improvement varies by language and project type. Run <code>lean-ctx gain</code> to see your current savings — the Pro estimate is shown right there.</p>
+      </details>
+      <details class="faq-item">
+        <summary class="faq-question">Do I need to configure anything?</summary>
+        <p class="faq-answer">No. Run <code>lean-ctx upgrade</code>, enter your email, pay — done.
+          Everything happens automatically after that. No API keys, no config files, no manual steps.</p>
+      </details>
+      <details class="faq-item">
+        <summary class="faq-question">Will Free features ever become paid?</summary>
+        <p class="faq-answer">Never. Every feature that exists today stays free and MIT licensed.
+          We only charge for new cloud services that require server infrastructure.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ FINAL CTA ═══════ -->
+<section class="section-y" style="text-align: center;">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: 1rem;">
+      Ready to save more?
+    </h2>
+    <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-bottom: 2rem;">
+      One command. That's it.
+    </p>
+    <div class="pro-final-code animate-entrance stagger-2">
+      <code>lean-ctx upgrade</code>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  .pro-price-hero {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .pro-price-amount {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 2rem + 3vw, 5rem);
+    font-weight: 700;
+    color: var(--color-accent);
+    line-height: 1;
+  }
+  .pro-price-period {
+    font-size: 1.25rem;
+    color: var(--color-muted);
+    margin-right: 1rem;
+  }
+  .pro-price-note {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+
+  .pro-hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .pro-cta-primary {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.2s ease;
+  }
+  .pro-cta-primary:hover { opacity: 0.88; }
+  .pro-or {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+  }
+  .pro-or code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--color-surface-2);
+    padding: 0.15em 0.4em;
+    border-radius: 0.25rem;
+    color: var(--color-accent);
+  }
+
+  .pro-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+  .pro-step {
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+  }
+  .pro-step-num {
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--color-surface);
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1rem;
+  }
+  .pro-step-title {
+    font-family: var(--font-display);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--color-text-bright);
+    margin-bottom: 0.375rem;
+  }
+  .pro-step-desc {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+    line-height: 1.6;
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: clamp(1rem, 0.5rem + 1.5vw, 2rem);
+    max-width: 52rem;
+    margin: 0 auto;
+  }
+  @media (max-width: 640px) {
+    .comparison-grid {
+      grid-template-columns: 1fr;
+      max-width: 24rem;
+    }
+  }
+
+  .comparison-card {
+    position: relative;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    padding: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.3s ease;
+  }
+  .comparison-card:hover { border-color: var(--color-border-light); }
+  .comparison-card-featured {
+    border-color: var(--color-accent);
+    background: linear-gradient(180deg, rgba(52, 211, 153, 0.04) 0%, var(--color-surface) 40%);
+  }
+  .comparison-card-featured:hover { border-color: var(--color-accent-bright); }
+
+  .comparison-badge {
+    position: absolute;
+    top: -0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-accent);
+    color: var(--color-bg);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 1rem;
+    border-radius: 2rem;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .comparison-header { margin-bottom: 1.5rem; }
+  .comparison-tier {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-text-bright);
+    margin-bottom: 0.75rem;
+  }
+  .comparison-price {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+  }
+  .comp-amount {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+    line-height: 1;
+  }
+  .comp-period {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+  }
+
+  .comparison-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    padding-bottom: 2rem;
+  }
+  .comparison-features li {
+    font-size: 0.875rem;
+    color: var(--color-text);
+    padding-left: 1.5rem;
+    position: relative;
+    line-height: 1.5;
+  }
+  .comparison-features li::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: var(--color-accent);
+    font-size: 0.8rem;
+  }
+  .comparison-features li strong {
+    color: var(--color-text-bright);
+    font-weight: 500;
+  }
+  .comparison-features li.feature-absent::before {
+    content: '—';
+    color: var(--color-muted);
+  }
+  .comparison-features li.feature-absent {
+    color: var(--color-muted);
+  }
+  .comparison-features li.feature-highlight {
+    color: var(--color-accent);
+    font-weight: 500;
+  }
+  .comparison-features li.feature-highlight::before {
+    content: '★';
+  }
+
+  .comparison-cta {
+    display: block;
+    text-align: center;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    margin-top: auto;
+  }
+  .comparison-cta-primary {
+    background: var(--color-accent);
+    color: var(--color-bg);
+  }
+  .comparison-cta-primary:hover { background: var(--color-accent-bright); }
+  .comparison-cta-secondary {
+    border: 1px solid var(--color-border-light);
+    color: var(--color-text-bright);
+  }
+  .comparison-cta-secondary:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  .faq-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .faq-item {
+    border-bottom: 1px solid var(--color-border);
+    padding: 1.25rem 0;
+  }
+  .faq-item:first-child {
+    border-top: 1px solid var(--color-border);
+  }
+  .faq-question {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--color-text-bright);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .faq-question::-webkit-details-marker { display: none; }
+  .faq-question::after {
+    content: '+';
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+    font-size: 1.25rem;
+    transition: transform 0.2s ease;
+  }
+  .faq-item[open] .faq-question::after {
+    transform: rotate(45deg);
+  }
+  .faq-answer {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-muted);
+    line-height: 1.7;
+    max-width: 40rem;
+  }
+  .faq-answer code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--color-surface-2);
+    padding: 0.15em 0.4em;
+    border-radius: 0.25rem;
+    color: var(--color-accent);
+  }
+
+  .pro-final-code {
+    display: inline-block;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1rem 2.5rem;
+  }
+  .pro-final-code code {
+    font-family: var(--font-mono);
+    font-size: 1.125rem;
+    color: var(--color-accent);
+  }
+</style>

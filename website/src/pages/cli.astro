@@ -1,0 +1,355 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="CLI Commands — LeanCTX" description="Human-friendly CLI commands for monitoring, diagnostics, and power usage. lean-ctx works automatically — these commands give you control when you want it." breadcrumbs={[{ name: 'Home', url: '/' }, { name: 'CLI Reference', url: '/cli/' }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">CLI Reference</p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Commands for Humans.<br />
+      <span class="gradient-text">Results for AI.</span>
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      lean-ctx works automatically after setup. But when you want control, these commands are waiting.
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ ESSENTIAL COMMANDS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">The essentials</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      Essential <span class="gradient-text">Commands</span>
+    </h2>
+
+    <div class="grid sm:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card p-8 animate-entrance">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+            <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <code class="text-base font-mono font-semibold text-text-bright">lean-ctx setup</code>
+        </div>
+        <p class="fluid-sm text-muted mb-4">One-time setup. Auto-detects your shell (zsh/bash/fish), finds installed AI tools, configures MCP and shell hooks. Run once, never think about it again.</p>
+        <span class="text-[11px] font-mono text-accent/60">Run once after install</span>
+      </div>
+
+      <div class="card p-8 animate-entrance">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-10 h-10 rounded-lg bg-accent-2/10 flex items-center justify-center">
+            <svg class="w-5 h-5 text-accent-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <code class="text-base font-mono font-semibold text-text-bright">lean-ctx init</code>
+        </div>
+        <p class="fluid-sm text-muted mb-4">Quick setup for a specific AI tool. Use <code class="text-[11px] text-accent">--agent cursor</code>, <code class="text-[11px] text-accent">--agent claude</code>, <code class="text-[11px] text-accent">--agent codex</code>, or <code class="text-[11px] text-accent">--agent gemini</code> to configure MCP for that tool directly.</p>
+        <span class="text-[11px] font-mono text-accent-2/60">Per-agent alternative to setup</span>
+      </div>
+
+      <div class="card p-8 animate-entrance">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+            <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          </div>
+          <code class="text-base font-mono font-semibold text-text-bright">lean-ctx gain</code>
+        </div>
+        <p class="fluid-sm text-muted mb-4">See your savings dashboard. Lifetime token savings, compression rates, top commands, and USD cost estimates. Persistent across all sessions.</p>
+        <span class="text-[11px] font-mono text-accent/60">Check anytime</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ MONITORING & INSIGHTS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Know exactly what you save</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      Monitoring & <span class="gradient-text">Insights</span>
+    </h2>
+
+    <div class="grid md:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+
+      <!-- gain -->
+      <div class="card overflow-hidden animate-entrance">
+        <div class="p-6 pb-4">
+          <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx gain</code>
+          <p class="fluid-sm text-muted mt-2">Lifetime savings dashboard with token counts, compression rate, top commands, and USD cost tracking.</p>
+        </div>
+        <div class="terminal-chrome mx-4 mb-4" style="border-radius:8px">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+          </div>
+          <div class="terminal-body px-3 py-3 font-mono text-[11px] leading-relaxed">
+            <p class="text-muted">$ lean-ctx gain</p>
+            <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Token Savings Dashboard</span></p>
+            <p class="text-border-light/40">────────────────────────────────</p>
+            <p><span class="text-accent font-bold"> 1.7M</span> <span class="text-muted">saved</span> <span class="ml-2 text-accent-2 font-bold">76.8%</span> <span class="text-muted">rate</span> <span class="ml-2 text-accent-3 font-bold">$4.25</span> <span class="text-muted">USD</span></p>
+            <p class="mt-1 text-text-bright font-semibold text-[10px]">Top Commands</p>
+            <p><span class="text-muted">curl    </span> 48x <span class="text-accent">████████████</span> <span class="text-accent font-bold">728K</span></p>
+            <p><span class="text-muted">git     </span> 34x <span class="text-accent-2">██████</span>      <span class="text-accent-2 font-bold">375K</span></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- gain --live -->
+      <div class="card overflow-hidden animate-entrance">
+        <div class="p-6 pb-4">
+          <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx gain --live</code>
+          <p class="fluid-sm text-muted mt-2">Auto-refreshing live dashboard. Updates every 2 seconds as your AI tools save tokens in real time.</p>
+        </div>
+        <div class="terminal-chrome mx-4 mb-4" style="border-radius:8px">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="ml-auto text-[9px] font-mono text-accent animate-pulse">● LIVE</span>
+          </div>
+          <div class="terminal-body px-3 py-3 font-mono text-[11px] leading-relaxed">
+            <p class="text-muted">$ lean-ctx gain --live</p>
+            <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-accent text-[10px]">LIVE</span> <span class="text-muted text-[10px]">refreshing every 2s</span></p>
+            <p class="text-border-light/40">────────────────────────────────</p>
+            <p><span class="text-accent font-bold"> 1.7M</span> <span class="text-muted">saved</span> <span class="text-accent">▁▃█▇██▁█</span></p>
+            <p class="text-muted text-[10px]">Session: 42 cmds | 89.2K saved | 94.1% rate</p>
+            <p class="text-muted text-[10px] mt-1">Press q to quit</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- gain --graph -->
+      <div class="card overflow-hidden animate-entrance">
+        <div class="p-6 pb-4">
+          <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx gain --graph</code>
+          <p class="fluid-sm text-muted mt-2">30-day savings chart with daily bars, sparklines, and trend visualization. See your savings trajectory.</p>
+        </div>
+        <div class="terminal-chrome mx-4 mb-4" style="border-radius:8px">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+          </div>
+          <div class="terminal-body px-3 py-3 font-mono text-[11px] leading-relaxed">
+            <p class="text-muted">$ lean-ctx gain --graph</p>
+            <p class="text-text-bright font-bold">Token Savings (30 days)</p>
+            <p><span class="text-muted">03-20</span> │ <span class="text-accent">██████████████████████</span> <span class="text-muted">1.0M</span></p>
+            <p><span class="text-muted">03-21</span> │ <span class="text-accent-2">███████████████</span>       <span class="text-muted">690K</span></p>
+            <p><span class="text-muted">03-22</span> │ <span class="text-accent">████████████████████████</span> <span class="text-muted">1.1M</span></p>
+            <p><span class="text-muted">03-23</span> │ <span class="text-accent-3">█</span>                       <span class="text-muted">9.4K</span></p>
+            <p><span class="text-muted">03-24</span> │ <span class="text-accent-2">██████████████████████</span> <span class="text-muted">1.7M</span></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- dashboard -->
+      <div class="card overflow-hidden animate-entrance">
+        <div class="p-6 pb-4">
+          <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx dashboard</code>
+          <p class="fluid-sm text-muted mt-2">Web dashboard at <code class="text-[10px]">localhost:3333</code>. Interactive charts, session history, and real-time monitoring in your browser.</p>
+        </div>
+        <div class="terminal-chrome mx-4 mb-4" style="border-radius:8px">
+          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+          </div>
+          <div class="terminal-body px-3 py-3 font-mono text-[11px] leading-relaxed">
+            <p class="text-muted">$ lean-ctx dashboard</p>
+            <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Dashboard</span></p>
+            <p class="text-accent">→ http://localhost:3333</p>
+            <p class="text-muted text-[10px]">Interactive charts, session history, command breakdown</p>
+            <p class="text-muted text-[10px]">Press Ctrl+C to stop</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- wrapped (full width) -->
+      <div class="md:col-span-2 card overflow-hidden animate-entrance">
+        <div class="grid md:grid-cols-2 gap-0">
+          <div class="p-6">
+            <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx wrapped</code>
+            <p class="fluid-sm text-muted mt-2 mb-4">"Spotify Wrapped" for your token savings. Beautiful, shareable reports with your lifetime stats, top commands, and personal compression achievements.</p>
+            <div class="flex flex-wrap gap-2">
+              <span class="text-[10px] font-mono px-2 py-1 rounded-md bg-accent/5 text-accent border border-accent/10">weekly</span>
+              <span class="text-[10px] font-mono px-2 py-1 rounded-md bg-accent-2/5 text-accent-2 border border-accent-2/10">monthly</span>
+              <span class="text-[10px] font-mono px-2 py-1 rounded-md bg-accent-3/5 text-accent-3 border border-accent-3/10">lifetime</span>
+            </div>
+          </div>
+          <div class="terminal-chrome m-4" style="border-radius:8px">
+            <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+              <span class="terminal-dot bg-[#ff5f57]"></span>
+              <span class="terminal-dot bg-[#febc2e]"></span>
+              <span class="terminal-dot bg-[#28c840]"></span>
+            </div>
+            <div class="terminal-body px-3 py-3 font-mono text-[11px] leading-relaxed">
+              <p class="text-muted">$ lean-ctx wrapped monthly</p>
+              <p class="text-text-bright font-bold">◆ Your March 2026 Wrapped</p>
+              <p class="text-border-light/40">────────────────────────────────</p>
+              <p><span class="text-accent font-bold">4.9M</span> <span class="text-muted">tokens saved</span></p>
+              <p><span class="text-accent-2 font-bold">3,241</span> <span class="text-muted">commands compressed</span></p>
+              <p><span class="text-accent-3 font-bold">$12.16</span> <span class="text-muted">USD saved</span></p>
+              <p class="mt-1 text-muted text-[10px]">Top pattern: <span class="text-text-bright">curl</span> (97% compression)</p>
+              <p class="text-muted text-[10px]">You're in the top <span class="text-accent">5%</span> of lean-ctx users</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ DIAGNOSTICS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Verify & optimize</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      Diagnostics
+    </h2>
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card p-6 animate-entrance">
+        <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx doctor</code>
+        <p class="fluid-sm text-muted mt-2 mb-4">Runs 8 installation checks — binary, shell hook, MCP config, stats file, cache directory, supported shell, AI tool detection, and version check.</p>
+        <div class="space-y-1.5 font-mono text-[11px]">
+          <p><span class="text-accent">✓</span> <span class="text-muted">Binary installed</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">Shell hook active (zsh)</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">MCP config (Cursor)</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">Stats persistence</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">Cache directory</span></p>
+          <p class="text-accent text-[10px] mt-2">All 8 checks passed</p>
+        </div>
+      </div>
+
+      <div class="card p-6 animate-entrance">
+        <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx discover</code>
+        <p class="fluid-sm text-muted mt-2 mb-4">Scans your shell history for commands that could benefit from compression but aren't being intercepted yet.</p>
+        <div class="space-y-1.5 font-mono text-[11px]">
+          <p class="text-text-bright">Found 12 uncompressed commands:</p>
+          <p><span class="text-accent-2">kubectl</span> <span class="text-muted">— 34 calls, ~89% savings possible</span></p>
+          <p><span class="text-accent-2">helm</span> <span class="text-muted">— 12 calls, ~76% savings possible</span></p>
+          <p><span class="text-accent-2">terraform</span> <span class="text-muted">— 8 calls, ~82% savings possible</span></p>
+          <p class="text-accent text-[10px] mt-2">Run setup to enable these</p>
+        </div>
+      </div>
+
+      <div class="card p-6 animate-entrance">
+        <code class="text-sm font-mono font-semibold text-text-bright">lean-ctx benchmark run</code>
+        <p class="fluid-sm text-muted mt-2 mb-4">Measures real token savings in your codebase using tiktoken (o200k_base). Exact numbers, no estimates.</p>
+        <div class="space-y-1.5 font-mono text-[11px]">
+          <p class="text-text-bright">src/auth.ts (123 lines)</p>
+          <p><span class="text-muted">full:</span> <span class="text-accent">3,517 → 3,517</span> <span class="text-muted">(0%)</span></p>
+          <p><span class="text-muted">map:</span> <span class="text-accent">3,517 → 412</span> <span class="text-muted">(88%)</span></p>
+          <p><span class="text-muted">signatures:</span> <span class="text-accent">3,517 → 252</span> <span class="text-muted">(93%)</span></p>
+          <p><span class="text-muted">entropy:</span> <span class="text-accent">3,517 → 312</span> <span class="text-muted">(91%)</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ POWER USER ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">Full control</p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
+      Power User <span class="gradient-text">Commands</span>
+    </h2>
+
+    <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr>
+            <th class="fluid-label text-muted font-display pb-3 border-b border-border pr-4">Command</th>
+            <th class="fluid-label text-muted font-display pb-3 border-b border-border">Description</th>
+          </tr>
+        </thead>
+        <tbody class="font-mono text-[12px]">
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx init --agent &lt;name&gt;</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Quick MCP setup for a specific AI tool (cursor, claude, codex, gemini, windsurf, copilot, cline, roo, pi, qwen, trae, amazonq, jetbrains)</td>
+          </tr>
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx read &lt;file&gt; -m &lt;mode&gt;</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Read any file with a compression mode (full, map, signatures, diff, aggressive, entropy)</td>
+          </tr>
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx diff</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Compressed git diff — structured output with change summaries</td>
+          </tr>
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx grep &lt;pattern&gt;</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Token-efficient pattern search with compact context</td>
+          </tr>
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx find &lt;pattern&gt;</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Find files by name — compact results with file counts</td>
+          </tr>
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx ls</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Directory listing as a compact tree map</td>
+          </tr>
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx -c "&lt;cmd&gt;"</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Compress any arbitrary shell command output through lean-ctx</td>
+          </tr>
+          <tr class="border-b border-border/30 hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent">lean-ctx config set &lt;key&gt; &lt;value&gt;</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Configure lean-ctx settings — checkpoint intervals, cache TTL, CRP mode</td>
+          </tr>
+          <tr class="hover:bg-surface/50 transition-colors">
+            <td class="py-3 pr-4 whitespace-nowrap"><code class="text-accent-2">lctx</code></td>
+            <td class="py-3 text-muted fluid-sm font-sans">Multi-agent launcher — auto-detects and launches your AI tool with lean-ctx configured</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-8">
+      <a href="/docs/configuration" class="inline-flex items-center gap-2 text-sm text-accent hover:text-accent/80 transition-colors font-medium group">
+        Full configuration reference
+        <svg class="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ CTA ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Ready to see your <span class="gradient-text">savings?</span>
+    </h2>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      Install lean-ctx, run <code class="text-[12px] text-accent">setup</code>, and start saving tokens immediately. Check your dashboard with <code class="text-[12px] text-accent">gain</code> whenever you want.
+    </p>
+    <div class="flex flex-wrap items-center gap-3 animate-entrance stagger-3">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>

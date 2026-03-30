@@ -1,0 +1,122 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Tool Categories',
+    items: [
+      { label: 'All Tools', href: '/docs/tools' },
+      { label: 'Core — File & Code', href: '/docs/tools#core-tools' },
+      { label: 'Intelligence Engine', href: '/docs/tools#intelligence-engine' },
+      { label: 'Session & Monitoring', href: '/docs/tools#session-monitoring' },
+      { label: 'Memory & Multi-Agent', href: '/docs/tools#persistent-memory-multi-agent' },
+    ],
+  },
+  {
+    title: 'Deep Dives',
+    compact: true,
+    items: [
+      { label: 'Core Tools', href: '/docs/tools/core' },
+      { label: 'Intelligence Tools', href: '/docs/tools/intelligence' },
+      { label: 'Session Tools', href: '/docs/tools/session' },
+      { label: 'Memory Tools', href: '/docs/tools/memory' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Tree-sitter Engine', href: '/docs/tree-sitter' },
+      { label: 'Token Cost Guide', href: '/docs/token-guide' },
+      { label: 'Quick Reference', href: '/docs/quick-reference' },
+      { label: 'CLI Reference', href: '/docs/cli-reference' },
+      { label: 'Analytics & Dashboards', href: '/docs/analytics' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Tool Reference" description="Complete reference for all 24 LeanCTX MCP tools, organized by category." sidebar={sidebar}>
+  <p>LeanCTX provides 24 MCP tools organized into four categories. Each tool is used by the AI automatically — you don't need to learn or type any of these commands.</p>
+
+  <h2 id="core-tools">Core Tools — File & Code</h2>
+  <p>
+    The foundation. These handle file reading, directory exploration, command execution, and code search — the operations that make up 90% of AI coding interactions.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>What it does</th><th>Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="/docs/tools/core#ctx_read"><code>ctx_read</code></a></td><td>Smart file read with 6 compression modes + session caching</td><td>up to 99%</td></tr>
+      <tr><td><a href="/docs/tools/core#ctx_multi_read"><code>ctx_multi_read</code></a></td><td>Batch file reads in one call</td><td>fewer round-trips</td></tr>
+      <tr><td><a href="/docs/tools/core#ctx_tree"><code>ctx_tree</code></a></td><td>Compact project structure maps</td><td>34-60%</td></tr>
+      <tr><td><a href="/docs/tools/core#ctx_shell"><code>ctx_shell</code></a></td><td>Shell commands with 90+ pattern compression</td><td>60-95%</td></tr>
+      <tr><td><a href="/docs/tools/core#ctx_search"><code>ctx_search</code></a></td><td>Regex code search with compact results</td><td>50-80%</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/docs/tools/core">View full Core Tools documentation →</a></p>
+
+  <hr />
+
+  <h2 id="intelligence-engine">Intelligence Engine</h2>
+  <p>
+    Tools that go beyond compression — they understand your workflow, detect intent, deduplicate context, and intelligently manage token budgets.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="/docs/tools/intelligence#ctx_smart_read"><code>ctx_smart_read</code></a></td><td>Auto-selects optimal compression mode based on file context</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_delta"><code>ctx_delta</code></a></td><td>Incremental file update — only sends changed hunks</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_fill"><code>ctx_fill</code></a></td><td>Priority-based context filling with a token budget</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_intent"><code>ctx_intent</code></a></td><td>Semantic intent detection + auto file loading</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_context"><code>ctx_context</code></a></td><td>Multi-turn context state overview</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_graph"><code>ctx_graph</code></a></td><td>Persistent project dependency graph (build, related, symbol, impact)</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_dedup"><code>ctx_dedup</code></a></td><td>Cross-file deduplication analysis</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_response"><code>ctx_response</code></a></td><td>Bi-directional response compression</td></tr>
+      <tr><td><a href="/docs/tools/intelligence#ctx_discover"><code>ctx_discover</code></a></td><td>Shell history analysis for missed compression opportunities</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/docs/tools/intelligence">View full Intelligence Engine documentation →</a></p>
+
+  <hr />
+
+  <h2 id="session-monitoring">Session & Monitoring</h2>
+  <p>
+    Session persistence, performance monitoring, compression analysis, and benchmarking — everything you need to measure and optimize your token savings.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="/docs/tools/session#ctx_session"><code>ctx_session</code></a></td><td>Cross-chat session memory (task, findings, decisions)</td></tr>
+      <tr><td><a href="/docs/tools/session#ctx_compress"><code>ctx_compress</code></a></td><td>Compact context checkpoint for chat continuation</td></tr>
+      <tr><td><a href="/docs/tools/session#ctx_analyze"><code>ctx_analyze</code></a></td><td>Information-theoretic file analysis + mode recommendation</td></tr>
+      <tr><td><a href="/docs/tools/session#ctx_benchmark"><code>ctx_benchmark</code></a></td><td>Real token counts per mode — single file or project-wide</td></tr>
+      <tr><td><a href="/docs/tools/session#ctx_metrics"><code>ctx_metrics</code></a></td><td>Session statistics with USD cost estimates</td></tr>
+      <tr><td><a href="/docs/tools/session#ctx_wrapped"><code>ctx_wrapped</code></a></td><td>Savings report card (weekly / monthly / all-time)</td></tr>
+      <tr><td><a href="/docs/tools/session#ctx_cache"><code>ctx_cache</code></a></td><td>Explicit cache management (status, clear, invalidate)</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/docs/tools/session">View full Session & Monitoring documentation →</a></p>
+
+  <hr />
+
+  <h2 id="persistent-memory-multi-agent">Memory & Multi-Agent</h2>
+  <p>
+    Cross-session memory, multi-agent coordination, and task-aware project orientation. New in v2.7.0.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="/docs/tools/memory#ctx_knowledge"><code>ctx_knowledge</code></a></td><td>Persistent project knowledge store — remember facts across sessions</td></tr>
+      <tr><td><a href="/docs/tools/memory#ctx_agent"><code>ctx_agent</code></a></td><td>Multi-agent context sharing — register, post, coordinate</td></tr>
+      <tr><td><a href="/docs/tools/memory#ctx_overview"><code>ctx_overview</code></a></td><td>Task-aware project map with relevance tiers</td></tr>
+    </tbody>
+  </table>
+  <p><a href="/docs/tools/memory">View full Memory & Multi-Agent documentation →</a></p>
+</DocsLayout>

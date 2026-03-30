@@ -1,0 +1,539 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="CEP &mdash; Cognitive Efficiency Protocol &mdash; LeanCTX"
+  description="CEP scores every AI response on a 0-100 scale across four dimensions. It teaches the AI to act first, report concisely, and adapt verbosity to task complexity."
+  breadcrumbs={[
+    { name: 'Home', url: '/' },
+    { name: 'Protocols', url: '/protocols' },
+    { name: 'CEP', url: '/protocols/cep' },
+  ]}
+>
+
+<!-- ═══════ HERO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        Protocols / CEP
+      </p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      Cognitive Efficiency Protocol.
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      CEP scores every AI response on a 0&ndash;100 scale across four dimensions. It teaches the AI to act first, report concisely, and adapt its verbosity to the complexity of the task at hand.
+    </p>
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="/protocols" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        All Protocols
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ WHAT CEP DOES ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      What It Does
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      An instruction protocol that optimizes AI output.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      CEP is injected via the system prompt. It does not touch the data flowing into the AI &mdash; that is the MCP server&rsquo;s job. Instead, CEP optimizes the AI&rsquo;s output tokens: how it communicates back. Four scoring dimensions are evaluated independently and combined into a single 0&ndash;100 score.
+    </p>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      <div class="cep-how-card">
+        <span class="cep-how-number font-display text-accent">01</span>
+        <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">System Prompt Injection</p>
+        <p class="fluid-sm text-muted">CEP instructions are injected automatically via lean-ctx&rsquo;s MCP server. No manual setup required.</p>
+      </div>
+      <div class="cep-how-card">
+        <span class="cep-how-number font-display text-accent">02</span>
+        <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">Output Optimization</p>
+        <p class="fluid-sm text-muted">Targets the AI&rsquo;s response tokens &mdash; not input. The AI learns to communicate more efficiently.</p>
+      </div>
+      <div class="cep-how-card">
+        <span class="cep-how-number font-display text-accent">03</span>
+        <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">Four Dimensions</p>
+        <p class="fluid-sm text-muted">Cache hit rate, read mode diversity, compression ratio, and action-first communication are scored independently.</p>
+      </div>
+      <div class="cep-how-card">
+        <span class="cep-how-number font-display text-accent">04</span>
+        <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">Composite Score</p>
+        <p class="fluid-sm text-muted">Dimensions combine into a 0&ndash;100 score. Higher means the AI is wasting fewer tokens communicating.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ THE FOUR DIMENSIONS ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Scoring
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      The four dimensions.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      Each dimension measures a distinct aspect of communication efficiency. They are scored independently, then combined into the final CEP score.
+    </p>
+
+    <div class="grid sm:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      <div class="cep-dim-card">
+        <div class="cep-dim-header">
+          <span class="cep-dim-icon text-accent">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
+          </span>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright">Cache</h3>
+        </div>
+        <p class="fluid-sm text-muted" style="margin-top: 0.5rem;">
+          How often the AI reuses cached file reads instead of re-reading the same file. Higher cache hit rates mean fewer redundant tokens flowing through the context window.
+        </p>
+        <p class="cep-dim-metric font-mono text-accent">Higher = better</p>
+      </div>
+
+      <div class="cep-dim-card">
+        <div class="cep-dim-header">
+          <span class="cep-dim-icon text-accent-2">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+          </span>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright">Modes</h3>
+        </div>
+        <p class="fluid-sm text-muted" style="margin-top: 0.5rem;">
+          How well the AI picks the right read mode for each task. Using <code class="text-text">map</code> for context-only files and <code class="text-text">full</code> for editable files shows efficient mode selection.
+        </p>
+        <p class="cep-dim-metric font-mono text-accent-2">Diverse = better</p>
+      </div>
+
+      <div class="cep-dim-card">
+        <div class="cep-dim-header">
+          <span class="cep-dim-icon text-accent-3">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4.5h14.25M3 9h9.75M3 13.5h9.75m4.5-4.5v12m0 0l-3.75-3.75M17.25 21l3.75-3.75"/></svg>
+          </span>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright">Compress</h3>
+        </div>
+        <p class="fluid-sm text-muted" style="margin-top: 0.5rem;">
+          The ratio of compressed vs raw tokens in the context. Measures how effectively the AI leverages lean-ctx&rsquo;s compression modes rather than requesting uncompressed data.
+        </p>
+        <p class="cep-dim-metric font-mono text-accent-3">Higher ratio = better</p>
+      </div>
+
+      <div class="cep-dim-card">
+        <div class="cep-dim-header">
+          <span class="cep-dim-icon" style="color: var(--color-text-bright);">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+          </span>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright">Action</h3>
+        </div>
+        <p class="fluid-sm text-muted" style="margin-top: 0.5rem;">
+          Whether the AI acts first and reports concisely, or narrates its plan before acting. Action-first communication eliminates wasted preamble tokens.
+        </p>
+        <p class="cep-dim-metric font-mono text-text-bright">Act first = better</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ COMPLEXITY LEVELS ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Adaptive Complexity
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Three levels. One protocol.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      CEP adapts its instruction set based on task complexity. Simple tasks get minimal instructions for maximum speed. Complex tasks get full analysis with quality anchoring.
+    </p>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      <div class="cep-level-card">
+        <span class="cep-level-dot" style="background: var(--color-accent);"></span>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.375rem;">Mechanical</h3>
+        <p class="fluid-sm text-muted" style="margin-bottom: 1rem;">Simple fixes, direct execution. No reasoning overhead needed &mdash; just do it.</p>
+        <div class="cep-level-instruction font-mono">
+          <span class="text-accent">ACT1</span> <span class="text-muted">&middot;</span> <span class="text-accent">DELTA</span> <span class="text-muted">&middot;</span> <span class="text-accent">1LINE</span>
+        </div>
+      </div>
+
+      <div class="cep-level-card">
+        <span class="cep-level-dot" style="background: var(--color-accent-2);"></span>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.375rem;">Standard</h3>
+        <p class="fluid-sm text-muted" style="margin-bottom: 1rem;">Multi-file changes, reasoning needed. Brief explanation before acting.</p>
+        <div class="cep-level-instruction font-mono">
+          <span class="text-accent-2">BRIEF</span> <span class="text-muted">&middot;</span> <span class="text-accent-2">DELTA</span> <span class="text-muted">&middot;</span> <span class="text-accent-2">NOREPEAT</span> <span class="text-muted">&middot;</span> <span class="text-accent-2">STRUCT</span>
+        </div>
+      </div>
+
+      <div class="cep-level-card">
+        <span class="cep-level-dot" style="background: var(--color-accent-3);"></span>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.375rem;">Architectural</h3>
+        <p class="fluid-sm text-muted" style="margin-bottom: 1rem;">Design decisions, full analysis. Edge cases and trade-offs must be considered.</p>
+        <div class="cep-level-instruction font-mono">
+          <span class="text-accent-3">FULL</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">QUALITY</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">NOREPEAT</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">STRUCT</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">FREF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ INSTRUCTION CODES ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Reference
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      15 instruction codes.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      Each code is a single keyword that tells the AI how to behave. CEP combines them based on task complexity. They can also be used manually in your prompts.
+    </p>
+
+    <div class="cep-table-wrap animate-entrance stagger-3">
+      <table class="cep-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code class="cep-code text-accent">ACT1</code></td>
+            <td>Act immediately, report result in one line</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">BRIEF</code></td>
+            <td>Summarize approach in 1&ndash;2 lines, then act</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">FULL</code></td>
+            <td>Outline approach, consider edge cases, then act</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">DELTA</code></td>
+            <td>Only show changed lines, not full files</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">NOREPEAT</code></td>
+            <td>Never repeat known context. Reference cached files by Fn ID</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">STRUCT</code></td>
+            <td>Use notation, not sentences. Changes: +line / -line / ~line</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">1LINE</code></td>
+            <td>One line per action. Summarize, don&rsquo;t explain</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">NODOC</code></td>
+            <td>Don&rsquo;t add comments that narrate what code does</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">ACTFIRST</code></td>
+            <td>Execute tool calls immediately. Never narrate before acting</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">QUALITY</code></td>
+            <td>Never skip edge case analysis or error handling to save tokens</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">NOMOCK</code></td>
+            <td>Never use mock data, fake values, or placeholder code</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">FREF</code></td>
+            <td>Reference files by Fn refs only, never full paths</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">DIFF</code></td>
+            <td>For code changes: show only diff lines, not full files</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">ABBREV</code></td>
+            <td>Use abbreviations: fn, cfg, impl, deps, req, res, ctx, err</td>
+          </tr>
+          <tr>
+            <td><code class="cep-code text-accent">SYMBOLS</code></td>
+            <td>Use TDD symbols: &#x2295;=add &#x2296;=remove &#x2206;=modify &#x2192;=returns &#x2713;=ok &#x2717;=fail</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ COMMUNICATION RULES ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Core Rules
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      Five communication rules.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      These rules govern how the AI structures every response. They are non-negotiable &mdash; CEP enforces them regardless of complexity level.
+    </p>
+
+    <div class="cep-rules-list animate-entrance stagger-3">
+      <div class="cep-rule-item">
+        <span class="cep-rule-num font-display text-accent">1</span>
+        <div>
+          <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">ACT FIRST</p>
+          <p class="fluid-sm text-muted">Execute tool calls immediately. Never narrate before acting. The AI should show results, not announce intentions.</p>
+        </div>
+      </div>
+      <div class="cep-rule-item">
+        <span class="cep-rule-num font-display text-accent">2</span>
+        <div>
+          <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">DELTA ONLY</p>
+          <p class="fluid-sm text-muted">Never repeat known context. Reference cached files by Fn ID. If the AI already read a file, it should reference <code class="text-text">F3:42</code>, not quote the content again.</p>
+        </div>
+      </div>
+      <div class="cep-rule-item">
+        <span class="cep-rule-num font-display text-accent">3</span>
+        <div>
+          <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">STRUCTURED OVER PROSE</p>
+          <p class="fluid-sm text-muted">Use notation, not sentences. Changes: <code class="text-text">+line</code> / <code class="text-text">-line</code> / <code class="text-text">~line</code> (modified). Status: <code class="text-text">tool(args) &rarr; result</code>.</p>
+        </div>
+      </div>
+      <div class="cep-rule-item">
+        <span class="cep-rule-num font-display text-accent">4</span>
+        <div>
+          <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">ONE LINE PER ACTION</p>
+          <p class="fluid-sm text-muted">Summarize, don&rsquo;t explain. Every action gets one line of output. No multi-paragraph descriptions of what was done.</p>
+        </div>
+      </div>
+      <div class="cep-rule-item">
+        <span class="cep-rule-num font-display text-accent">5</span>
+        <div>
+          <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">QUALITY ANCHOR</p>
+          <p class="fluid-sm text-muted">Never skip edge case analysis or error handling to save tokens. Complex tasks require full reasoning. Only reduce prose, never reduce thinking.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ TERMINAL DEMO ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Live Output
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+      What a CEP score looks like.
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 5rem); max-width: 48rem;">
+      CEP scores are appended to tool responses automatically. The AI sees its own efficiency metrics and adjusts behavior accordingly.
+    </p>
+
+    <div class="animate-entrance stagger-3" style="max-width: 36rem;">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-muted font-mono">CEP Score</span>
+        </div>
+        <div class="terminal-body px-5 py-5">
+          <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-accent font-bold">CEP Score: 87/100</span>
+
+<span class="text-muted">Dimensions:</span>
+  Cache hits      <span class="text-accent">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2591;&#x2591;</span> 82%
+  Mode diversity  <span class="text-accent">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2591;</span> 91%
+  Compression     <span class="text-accent">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2591;&#x2591;</span> 85%
+  Action-first    <span class="text-accent">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2591;</span> 90%
+
+<span class="text-muted">Task complexity:</span> <span class="text-accent-2">Standard</span>
+<span class="text-muted">Quality score:</span>  <span class="text-accent">&gt;95% preservation</span>
+
+<span class="text-muted">Instruction: BRIEF &mdash; Summarize approach</span>
+<span class="text-muted">in 1&ndash;2 lines, then act.</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ CTA ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+        CEP activates automatically.
+      </h2>
+      <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); max-width: 44rem;">
+        Install lean-ctx, run init, and CEP starts scoring from the first interaction. No configuration, no flags, no env vars. It just works.
+      </p>
+
+      <div class="flex flex-wrap items-center" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+        <a href="/docs/getting-started" class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+          Get Started
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <a href="/protocols" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.75rem, 0.55rem + 0.4vw, 1rem) clamp(1.5rem, 1rem + 0.75vw, 2.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+          All Protocols
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ── How Cards ──────────────────────────────────────── */
+  .cep-how-card {
+    padding: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+  }
+  .cep-how-number {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Dimension Cards ────────────────────────────────── */
+  .cep-dim-card {
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+  }
+  .cep-dim-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  .cep-dim-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .cep-dim-metric {
+    margin-top: 1rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Level Cards ────────────────────────────────────── */
+  .cep-level-card {
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+  }
+  .cep-level-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .cep-level-instruction {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+  }
+
+  /* ── Instruction Table ──────────────────────────────── */
+  .cep-table-wrap {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .cep-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+  }
+  .cep-table thead {
+    background: var(--color-surface);
+  }
+  .cep-table th {
+    padding: 0.75rem 1.25rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-text-bright);
+    border-bottom: 1px solid var(--color-border);
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .cep-table td {
+    padding: 0.625rem 1.25rem;
+    color: var(--color-muted);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .cep-table tr:last-child td {
+    border-bottom: none;
+  }
+  .cep-table tr:hover td {
+    background: var(--color-surface);
+  }
+  .cep-code {
+    font-family: var(--font-mono);
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  /* ── Communication Rules ────────────────────────────── */
+  .cep-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    max-width: 48rem;
+  }
+  .cep-rule-item {
+    display: flex;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    align-items: flex-start;
+  }
+  .cep-rule-num {
+    font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 2rem;
+    padding-top: 0.125rem;
+  }
+</style>
+
+</BaseLayout>
