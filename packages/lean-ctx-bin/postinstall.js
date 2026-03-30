@@ -13,14 +13,36 @@ const IS_WIN = process.platform === "win32";
 const BINARY_NAME = IS_WIN ? "lean-ctx.exe" : "lean-ctx";
 const BINARY_PATH = path.join(BIN_DIR, BINARY_NAME);
 
+function getGlibcVersion() {
+  try {
+    const out = execSync("ldd --version 2>&1 || true", { encoding: "utf8" });
+    const match = out.match(/(\d+)\.(\d+)\s*$/m);
+    if (match) return { major: parseInt(match[1]), minor: parseInt(match[2]) };
+  } catch {}
+  return null;
+}
+
 function getTarget() {
   const platform = process.platform;
   const arch = process.arch;
 
+  if (platform === "linux") {
+    let libc = "musl";
+    const glibc = getGlibcVersion();
+    if (glibc && (glibc.major > 2 || (glibc.major === 2 && glibc.minor >= 35))) {
+      libc = "gnu";
+    }
+    const archMap = { x64: "x86_64", arm64: "aarch64" };
+    const rustArch = archMap[arch];
+    if (!rustArch) {
+      console.error(`Unsupported architecture: ${arch}`);
+      process.exit(1);
+    }
+    return `${rustArch}-unknown-linux-${libc}`;
+  }
+
   const key = `${platform}-${arch}`;
   const targets = {
-    "linux-x64": "x86_64-unknown-linux-gnu",
-    "linux-arm64": "aarch64-unknown-linux-gnu",
     "darwin-x64": "x86_64-apple-darwin",
     "darwin-arm64": "aarch64-apple-darwin",
     "win32-x64": "x86_64-pc-windows-msvc",

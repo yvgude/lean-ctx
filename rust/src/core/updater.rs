@@ -263,16 +263,41 @@ fn extract_from_zip(data: &[u8]) -> Result<Vec<u8>, String> {
     Err("lean-ctx binary not found inside zip archive".to_string())
 }
 
+fn detect_linux_libc() -> &'static str {
+    let output = std::process::Command::new("ldd").arg("--version").output();
+    if let Ok(out) = output {
+        let text = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let combined = format!("{text}{stderr}");
+        for line in combined.lines() {
+            if let Some(ver) = line.split_whitespace().last() {
+                let parts: Vec<&str> = ver.split('.').collect();
+                if parts.len() == 2 {
+                    if let (Ok(major), Ok(minor)) =
+                        (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+                    {
+                        if major > 2 || (major == 2 && minor >= 35) {
+                            return "gnu";
+                        }
+                        return "musl";
+                    }
+                }
+            }
+        }
+    }
+    "musl"
+}
+
 fn platform_asset_name() -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
 
     let target = match (os, arch) {
-        ("macos", "aarch64") => "aarch64-apple-darwin",
-        ("macos", "x86_64") => "x86_64-apple-darwin",
-        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
-        ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
-        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+        ("macos", "aarch64") => "aarch64-apple-darwin".to_string(),
+        ("macos", "x86_64") => "x86_64-apple-darwin".to_string(),
+        ("linux", "x86_64") => format!("x86_64-unknown-linux-{}", detect_linux_libc()),
+        ("linux", "aarch64") => format!("aarch64-unknown-linux-{}", detect_linux_libc()),
+        ("windows", "x86_64") => "x86_64-pc-windows-msvc".to_string(),
         _ => {
             eprintln!(
                 "Unsupported platform: {os}/{arch}. Download manually from \

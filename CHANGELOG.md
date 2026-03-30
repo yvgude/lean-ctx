@@ -2,6 +2,17 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.9.8] — 2026-03-30
+
+### Fixed
+
+- **GLIBC compatibility for older Linux** (Issue #34) — The pre-built `x86_64-unknown-linux-gnu` binary was compiled on Ubuntu 24.04 (GLIBC 2.39), making it incompatible with Ubuntu 20.04/22.04 and other older distributions. Now compiled on Ubuntu 22.04 (GLIBC 2.35). Additionally, `x86_64-unknown-linux-musl` is now built **with all features** (including tree-sitter AST parsing) as a fully static binary that runs on any Linux distribution regardless of GLIBC version.
+- **Auto-detect GLIBC for binary selection** — `lean-ctx update`, `install.sh`, and `npm postinstall` now detect the system's GLIBC version and automatically select the musl (static) binary for systems with GLIBC < 2.35, and the gnu (dynamic) binary otherwise. Previously, all Linux systems received the gnu binary which could fail on older distributions.
+
+### Added
+
+- **`aarch64-unknown-linux-musl` binary** — New statically-linked ARM64 Linux binary for Raspberry Pi, AWS Graviton, and other ARM64 Linux systems without modern GLIBC.
+
 ## [2.9.7] — 2026-03-30
 
 ### Fixed

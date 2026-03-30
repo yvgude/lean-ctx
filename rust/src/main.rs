@@ -154,7 +154,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 2.9.7");
+                println!("lean-ctx 2.9.8");
                 return;
             }
             "--help" | "-h" => {
@@ -239,7 +239,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.9.7 — The Intelligence Layer for AI Coding
+        "lean-ctx 2.9.8 — The Intelligence Layer for AI Coding
 
 90+ compression patterns | 24 MCP tools | Context Continuity Protocol
 

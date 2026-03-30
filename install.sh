@@ -40,7 +40,7 @@ finish() {
 }
 
 detect_target() {
-  local os arch
+  local os arch libc
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   arch="$(uname -m)"
 
@@ -54,7 +54,22 @@ detect_target() {
   esac
 
   case "$os" in
-    linux)  echo "${arch}-unknown-linux-gnu" ;;
+    linux)
+      libc="musl"
+      if command -v ldd &>/dev/null; then
+        local glibc_ver
+        glibc_ver="$(ldd --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+$' || true)"
+        if [[ -n "$glibc_ver" ]]; then
+          local major minor
+          major="${glibc_ver%%.*}"
+          minor="${glibc_ver##*.}"
+          if [[ "$major" -gt 2 ]] || { [[ "$major" -eq 2 ]] && [[ "$minor" -ge 35 ]]; }; then
+            libc="gnu"
+          fi
+        fi
+      fi
+      echo "${arch}-unknown-linux-${libc}"
+      ;;
     darwin) echo "${arch}-apple-darwin" ;;
     *)
       echo "Error: unsupported OS '$os'"
