@@ -2,6 +2,21 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.9.12] — 2026-03-31
+
+### Added
+
+- **Automatic agent rules injection** — `lean-ctx setup` now injects tool-preference rules into every detected AI tool's global configuration, ensuring agents actually use lean-ctx MCP tools instead of falling back to native equivalents. Supported:
+  - Claude Code (`~/.claude/CLAUDE.md`)
+  - Codex CLI (`~/.codex/instructions.md`)
+  - Cursor (`~/.cursor/rules/lean-ctx.mdc`)
+  - Windsurf (`~/.codeium/windsurf/rules/lean-ctx.md`)
+  - Gemini CLI (`~/.gemini/GEMINI.md`)
+  - VS Code / Copilot (`github-copilot-instructions.md`)
+  - Zed, Cline, Roo Code, OpenCode (dedicated rules files)
+- Rules are **append-only** — existing user rules are never modified or deleted
+- Idempotent: marker-based detection prevents duplicate injection
+
 ## [2.9.11] — 2026-03-30
 
 ### Fixed

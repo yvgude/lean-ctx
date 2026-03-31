@@ -100,18 +100,29 @@ pub fn run_setup() {
         );
     }
 
-    // Step 3: Agent hooks
-    terminal_ui::print_step_header(3, 5, "Agent Instructions");
-    let mut agents_installed = 0;
+    // Step 3: Agent rules injection
+    terminal_ui::print_step_header(3, 5, "Agent Rules");
+    let (rules_injected, rules_already, rules_errors) =
+        crate::rules_inject::inject_all_rules(&home);
+    for name in &rules_injected {
+        terminal_ui::print_status_new(&format!("{name:<20} \x1b[2mrules injected\x1b[0m"));
+    }
+    for name in &rules_already {
+        terminal_ui::print_status_ok(&format!("{name:<20} \x1b[2mrules present\x1b[0m"));
+    }
+    for err in &rules_errors {
+        terminal_ui::print_status_warn(err);
+    }
+    if rules_injected.is_empty() && rules_already.is_empty() && rules_errors.is_empty() {
+        terminal_ui::print_status_skip("No agent rules needed");
+    }
+
+    // Legacy agent hooks
     for target in &targets {
         if !target.detect_path.exists() || target.agent_key.is_empty() {
             continue;
         }
         crate::hooks::install_agent_hook(target.agent_key, true);
-        agents_installed += 1;
-    }
-    if agents_installed == 0 {
-        terminal_ui::print_status_skip("No agent instructions needed");
     }
 
     // Step 4: Data directory + diagnostics

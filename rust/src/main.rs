@@ -155,7 +155,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 2.9.11");
+                println!("lean-ctx 2.9.12");
                 return;
             }
             "--help" | "-h" => {
@@ -240,7 +240,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.9.11 — The Intelligence Layer for AI Coding
+        "lean-ctx 2.9.12 — The Intelligence Layer for AI Coding
 
 90+ compression patterns | 24 MCP tools | Context Continuity Protocol
 
@@ -663,7 +663,7 @@ fn print_gain_with_logo() {
     print!("{output}");
     let dim = "\x1b[2m";
     let rst = "\x1b[0m";
-    println!("  {dim}lean-ctx v2.9.11  |  leanctx.com  |  lean-ctx dashboard{rst}");
+    println!("  {dim}lean-ctx v2.9.12  |  leanctx.com  |  lean-ctx dashboard{rst}");
     if !cloud_client::check_pro() {
         println!("  {dim}Save ~25% more with Pro \u{2192} lean-ctx upgrade{rst}");
     }

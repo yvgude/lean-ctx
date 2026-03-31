@@ -4,6 +4,7 @@ pub mod core;
 pub mod dashboard;
 pub mod doctor;
 pub mod hooks;
+pub mod rules_inject;
 pub mod server;
 pub mod setup;
 pub mod shell;
