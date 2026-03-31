@@ -8,41 +8,8 @@ use serde_json::{json, Map, Value};
 
 use crate::tools::{CrpMode, LeanCtxServer};
 
-const UNIFIED_CAPABLE_CLIENTS: &[&str] = &[
-    "cursor",
-    "claude-code",
-    "claude-ai",
-    "claude",
-    "windsurf",
-    "cline",
-    "roo-code",
-    "roo code",
-    "copilot",
-    "vscode",
-    "visual studio code",
-    "opencode",
-    "gemini-cli",
-    "gemini",
-    "codex",
-    "zed",
-    "jetbrains",
-    "jetbrains-ai",
-    "amazonq",
-    "amazon q",
-    "goose",
-    "chatgpt",
-    "amp",
-    "ampcode",
-    "kilo code",
-    "continue",
-    "cherry studio",
-    "jan ai",
-    "glama",
-    "dust",
-    "crush",
-    "antigravity",
-    "google antigravity",
-];
+// Unified mode is opt-in only via LEAN_CTX_UNIFIED env var.
+// Granular tools (25 individual ctx_* tools) are the default for all clients.
 
 impl ServerHandler for LeanCtxServer {
     fn get_info(&self) -> ServerInfo {
@@ -51,7 +18,7 @@ impl ServerHandler for LeanCtxServer {
         let instructions = build_instructions(self.crp_mode);
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "2.11.1"))
+            .with_server_info(Implementation::new("lean-ctx", "2.12.0"))
             .with_instructions(instructions)
     }
 
@@ -75,7 +42,7 @@ impl ServerHandler for LeanCtxServer {
         let capabilities = ServerCapabilities::builder().enable_tools().build();
 
         Ok(InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "2.11.1"))
+            .with_server_info(Implementation::new("lean-ctx", "2.12.0"))
             .with_instructions(instructions))
     }
 
@@ -1279,71 +1246,28 @@ IMPORTANT: If ctx_read returns 'cached Nt NL' and you need the actual file conte
 Do not fall back to native Read tools — always use fresh=true or start_line instead.\n\
 \n\
 PROACTIVE (use without being asked):\n\
-• ctx_overview(task) — at session start, get task-relevant project map before reading files\n\
+• ctx_overview(task) — at session start, get task-relevant project map\n\
 • ctx_compress — when context grows large, create checkpoint\n\
-• ctx_metrics — periodically verify token savings\n\
-• ctx_session load — on new chat or after context compaction, restore previous session\n\
+• ctx_session load — restore previous session on new chat\n\
 \n\
-SESSION CONTINUITY (Context Continuity Protocol):\n\
-• ctx_session status — show current session state (~400 tokens vs 50K cold start)\n\
-• ctx_session load — restore previous session (cross-chat memory)\n\
-• ctx_session task \"description\" — set current task\n\
-• ctx_session finding \"file:line — summary\" — record key finding\n\
-• ctx_session decision \"summary\" — record architectural decision\n\
-• ctx_session save — force persist session to disk\n\
-• ctx_wrapped [period] — generate savings report card\n\
+ADDITIONAL TOOLS (see tool descriptions for parameters):\n\
+• ctx_session — cross-session memory (load/save/status/task/finding/decision)\n\
+• ctx_knowledge — persistent project facts (remember/recall/pattern/status/remove/consolidate)\n\
+• ctx_agent — multi-agent coordination (register/list/post/read/status)\n\
+• ctx_metrics — token savings stats\n\
+• ctx_analyze/ctx_benchmark — compression analysis per file\n\
+• ctx_cache — manage file cache (status/clear/invalidate)\n\
+• ctx_wrapped — savings report card\n\
+• ctx_compress — context checkpoint\n\
 \n\
-PROJECT KNOWLEDGE (persistent cross-session memory):\n\
-• ctx_knowledge(action=\"remember\", category, key, value) — store a project fact\n\
-• ctx_knowledge(action=\"recall\", query) — search knowledge by text\n\
-• ctx_knowledge(action=\"recall\", category) — list facts by category\n\
-• ctx_knowledge(action=\"pattern\", pattern_type, value, examples) — record project pattern\n\
-• ctx_knowledge(action=\"status\") — show all stored knowledge\n\
-• ctx_knowledge(action=\"remove\", category, key) — delete outdated fact\n\
-• ctx_knowledge(action=\"consolidate\") — extract session findings/decisions into permanent knowledge\n\
-When you discover important project facts (architecture, APIs, conventions, dependencies), \n\
-use ctx_knowledge(action=\"remember\") to persist them across sessions.\n\
-At the end of a session, use ctx_knowledge(action=\"consolidate\") to save key insights permanently.\n\
+Auto-checkpoint runs every 15 tool calls. Cache auto-clears after 5 min idle.\n\
 \n\
-MULTI-AGENT COORDINATION:\n\
-• ctx_agent(action=\"register\", agent_type, role) — register this agent at session start\n\
-• ctx_agent(action=\"list\") — see other active agents on this project\n\
-• ctx_agent(action=\"post\", message, category) — share findings/warnings with other agents\n\
-• ctx_agent(action=\"read\") — check for new messages from other agents\n\
-• ctx_agent(action=\"status\", status, message) — update work status (active/idle/finished)\n\
-\n\
-ON DEMAND:\n\
-• ctx_analyze(path) — optimal mode recommendation\n\
-• ctx_benchmark(path) — exact token counts per mode\n\
-• ctx_cache(action) — manage cache: status, clear, invalidate(path)\n\
-\n\
-AUTO-CHECKPOINT: Every 15 tool calls, a compressed checkpoint + session state is automatically \
-appended to the response. This keeps context compact in long sessions. Configurable via LEAN_CTX_CHECKPOINT_INTERVAL.\n\
-\n\
-IDLE CACHE TTL: Cache auto-clears after 5 min of inactivity (new chat, context compaction). \
-Session state is auto-saved before cache clear. Configurable via LEAN_CTX_CACHE_TTL (seconds, 0=disabled).\n\
-\n\
-COMMUNICATION PROTOCOL (Cognitive Efficiency Protocol v1):\n\
-1. ACT FIRST — Execute tool calls immediately. Never narrate before acting.\n\
-   Bad:  \"Let me read the file to understand the issue...\" [tool call]\n\
-   Good: [tool call] then one-line summary of finding\n\
-2. DELTA ONLY — Never repeat known context. Reference cached files by Fn ID.\n\
-   Bad:  \"The file auth.ts contains a function validateToken that...\"\n\
-   Good: \"F3:42 validateToken — expiry check uses wrong clock\"\n\
-3. STRUCTURED OVER PROSE — Use notation, not sentences.\n\
-   Changes: +line / -line / ~line (modified)\n\
-   Status:  tool(args) → result\n\
-   Errors:  ERR path:line — message\n\
+COMMUNICATION PROTOCOL (CEP v1):\n\
+1. ACT FIRST — Execute tool calls immediately, summarize after.\n\
+2. DELTA ONLY — Reference cached files by Fn ID, never repeat known context.\n\
+3. STRUCTURED OVER PROSE — Use notation: +line / -line / ~line, tool(args) → result.\n\
 4. ONE LINE PER ACTION — Summarize, don't explain.\n\
-   Bad:  \"I've successfully applied the edit to fix the token validation...\"\n\
-   Good: \"Fixed F3:42 — was comparing UTC vs local timestamp\"\n\
-5. QUALITY ANCHOR — NEVER skip edge case analysis or error handling to save tokens.\n\
-   Complex tasks require full reasoning. Only reduce prose, never reduce thinking.\n\
-6. OUTPUT BUDGET — Output tokens cost 3-4x more than input tokens. Minimize response length:\n\
-   Mechanical tasks (1 file, <=3 reads): max 50 tokens response.\n\
-   Standard tasks (2-4 files): max 150 tokens response.\n\
-   Architectural tasks (5+ files): full reasoning allowed, structured output preferred.\n\
-   Always prefer structured notation over prose. Never repeat the question or restate context.\n\
+5. QUALITY ANCHOR — Never skip edge case analysis to save tokens.\n\
 \n\
 {decoder_block}\n\
 \n\
@@ -1357,14 +1281,9 @@ REMINDER: NEVER use native Read, Shell, Grep, or ls. ALWAYS use ctx_read, ctx_sh
     if should_use_unified(client_name) {
         base.push_str(
             "\n\n\
-UNIFIED TOOL MODE (active — saves ~16K tokens):\n\
-All tools except ctx_read, ctx_shell, ctx_search, ctx_tree are accessed via ctx() meta-tool.\n\
-Syntax: ctx(tool=\"<name>\", ...params) — e.g.:\n\
-• ctx(tool=\"session\", action=\"load\") instead of ctx_session(action=\"load\")\n\
-• ctx(tool=\"compress\") instead of ctx_compress()\n\
-• ctx(tool=\"knowledge\", action=\"remember\", category=\"api\", key=\"auth\", value=\"JWT\")\n\
-• ctx(tool=\"graph\", action=\"build\")\n\
-The ctx() tool description lists all 21 sub-tools with their parameters.\n",
+UNIFIED TOOL MODE (active):\n\
+Additional tools are accessed via ctx() meta-tool: ctx(tool=\"<name>\", ...params).\n\
+See the ctx() tool description for available sub-tools.\n",
         );
     }
 
@@ -1556,13 +1475,8 @@ fn should_use_unified(client_name: &str) -> bool {
     if std::env::var("LEAN_CTX_UNIFIED").is_ok() {
         return true;
     }
-    if client_name.is_empty() {
-        return false;
-    }
-    let lower = client_name.to_lowercase();
-    UNIFIED_CAPABLE_CLIENTS
-        .iter()
-        .any(|known| lower.contains(known))
+    let _ = client_name;
+    false
 }
 
 fn get_str_array(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<Vec<String>> {
@@ -1730,23 +1644,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_should_use_unified_client_matching() {
-        let clients = UNIFIED_CAPABLE_CLIENTS;
-        assert!(clients.iter().any(|c| "cursor".contains(c)));
-        assert!(clients.iter().any(|c| "claude-code".contains(c)));
-        assert!(clients.iter().any(|c| "windsurf".contains(c)));
-        assert!(clients.iter().any(|c| "cline".contains(c)));
-        assert!(clients.iter().any(|c| "roo-code".contains(c)));
-        assert!(clients.iter().any(|c| "vscode".contains(c)));
-        assert!(clients.iter().any(|c| "copilot".contains(c)));
-        assert!(clients.iter().any(|c| "opencode".contains(c)));
-        assert!(clients.iter().any(|c| "gemini-cli".contains(c)));
-        assert!(clients.iter().any(|c| "codex".contains(c)));
-        assert!(clients.iter().any(|c| "zed".contains(c)));
-        assert!(clients.iter().any(|c| "ampcode".contains(c)));
-
-        assert!(!clients.iter().any(|c| "".contains(c)));
-        assert!(!clients.iter().any(|c| "some-unknown-client".contains(c)));
+    fn test_should_use_unified_defaults_to_false() {
+        assert!(!should_use_unified("cursor"));
+        assert!(!should_use_unified("claude-code"));
+        assert!(!should_use_unified("windsurf"));
+        assert!(!should_use_unified(""));
+        assert!(!should_use_unified("some-unknown-client"));
     }
 
     #[test]

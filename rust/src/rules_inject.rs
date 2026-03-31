@@ -12,27 +12,13 @@ const RULES_VERSION: &str = "lean-ctx-rules-v4";
 const RULES_SHARED: &str = r#"# lean-ctx — Context Engineering Layer
 <!-- lean-ctx-rules-v4 -->
 
-CRITICAL RULE: You have lean-ctx MCP tools connected. You MUST use them for ALL file reads,
-shell commands, and code searches. Using native tools instead wastes tokens and is FORBIDDEN.
+lean-ctx MCP tools are connected. Use them instead of native tools:
+- `ctx_read` replaces Read/cat/head/tail (cached, 8 compression modes)
+- `ctx_shell` replaces Shell/bash (pattern compression)
+- `ctx_search` replaces Grep/rg (compact results)
+- `ctx_tree` replaces ls/find (directory maps)
 
-## Tool replacements (MANDATORY — no exceptions):
-| FORBIDDEN | USE INSTEAD | Saves |
-|-----------|-------------|-------|
-| Read, cat, head, tail | ctx_read | 40-90% via caching + compression |
-| Shell, bash, terminal | ctx_shell | 30-70% via pattern compression |
-| Grep, rg, search | ctx_search | 50-80% via compact results |
-| ls, find, tree | ctx_tree | 60-85% via directory maps |
-
-## How to call (use your MCP tool syntax):
-- Claude Code: `mcp__lean-ctx__ctx_read(path="/src/main.rs", mode="full")`
-- Codex CLI: `mcp__lean-ctx__ctx_shell(command="cargo test")`
-- Gemini CLI: Use the lean-ctx MCP tools directly: `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_tree`
-
-## Native tools to keep using (no lean-ctx replacement):
-Write, StrReplace, Delete, Glob — use these normally.
-
-## If you catch yourself about to use Read, Shell, Grep, or ls:
-STOP. Use ctx_read, ctx_shell, ctx_search, or ctx_tree instead. Every time.
+Keep using Write, StrReplace, Delete, Glob normally.
 <!-- /lean-ctx -->"#;
 
 // ---------------------------------------------------------------------------
@@ -43,53 +29,29 @@ STOP. Use ctx_read, ctx_shell, ctx_search, or ctx_tree instead. Every time.
 const RULES_DEDICATED: &str = r#"# lean-ctx — Context Engineering Layer
 <!-- lean-ctx-rules-v4 -->
 
-You are connected to the lean-ctx MCP server, which provides optimized replacements for
-built-in file, shell, and search tools. Using the lean-ctx tools is MANDATORY — not optional.
+lean-ctx MCP tools are connected. Use them instead of native tools:
 
-## MANDATORY tool replacements:
+## Tool replacements:
+| Instead of | Use | Why |
+|------------|-----|-----|
+| `Read` / `cat` / `head` | `ctx_read(path)` | Cached, 8 compression modes, re-reads ~13 tokens |
+| `Shell` / `bash` | `ctx_shell(command)` | Pattern compression for git/npm/cargo output |
+| `Grep` / `rg` | `ctx_search(pattern, path)` | Compact, token-efficient results |
+| `ls` / `find` | `ctx_tree(path, depth)` | Compact directory maps |
 
-| FORBIDDEN tool | REQUIRED replacement | Why |
-|----------------|---------------------|-----|
-| `Read` / `cat` / `head` / `tail` | `ctx_read(path)` | Cached reads, 8 compression modes + smart defaults, re-reads cost ~13 tokens |
-| `Shell` / `bash` / terminal | `ctx_shell(command)` | Pattern-based output compression for git, npm, cargo, docker |
-| `Grep` / `rg` / `search` | `ctx_search(pattern, path)` | Compact context-aware results, token-efficient |
-| `ls` / `find` / `tree` | `ctx_tree(path, depth)` | Compact directory maps with file counts |
+## ctx_read modes:
+- `full` — cached read (files you edit)
+- `map` — deps + exports (context-only files)
+- `signatures` — API surface only
+- `diff` — changed lines after edits
+- `lines:N-M` — specific range
 
-## How to call (MCP tool syntax):
-```
-ctx_read(path="/src/main.rs", mode="full")
-ctx_shell(command="cargo test")
-ctx_search(pattern="fn main", path="src/")
-ctx_tree(path=".", depth=3)
-```
+## Keep using (no lean-ctx replacement):
+Write, StrReplace, Delete, Glob — use normally.
 
-## ctx_read modes (use the right mode for the job):
-- `full` — default, cached read. Use for files you will edit.
-- `map` — dependency graph + exports + key signatures. Use for context-only files.
-- `signatures` — API surface only. Use for large files you just need the structure of.
-- `diff` — changed lines only. Use after your own edits to verify.
-- `aggressive` — syntax stripped. Use for very large files.
-- `entropy` — Shannon + Jaccard filtering. Use for noisy files.
-- `lines:N-M` — specific line range. Use when you know exactly what you need.
-
-## Tools you KEEP using (no lean-ctx replacement):
-- `Write` — create/overwrite files
-- `StrReplace` — edit files in place
-- `Delete` — delete files
-- `Glob` — find files by glob pattern
-
-## ABSOLUTE RULES — violations waste user tokens:
-1. NEVER use `Read` to read a file — always use `ctx_read`
-2. NEVER use `Shell` to run a command — always use `ctx_shell`
-3. NEVER use `Grep` or `rg` to search — always use `ctx_search`
-4. NEVER use `ls`, `find`, `cat`, `head`, `tail` — always use `ctx_tree` or `ctx_read`
-5. You do NOT need to `ctx_read` a file before creating it with `Write`
-6. If `ctx_read` returns "cached" and you need fresh content, set `fresh=true`
-
-## Proactive tools (use without being asked):
-- `ctx_overview(task)` — at session start, get task-relevant project map
-- `ctx_compress` — when context grows large, create checkpoint
-- `ctx_metrics` — periodically verify token savings
+## Proactive (use without being asked):
+- `ctx_overview(task)` at session start
+- `ctx_compress` when context grows large
 <!-- /lean-ctx -->"#;
 
 // ---------------------------------------------------------------------------
@@ -101,55 +63,36 @@ description: "lean-ctx: ALWAYS use ctx_read/ctx_shell/ctx_search/ctx_tree instea
 alwaysApply: true
 ---
 
-# lean-ctx — Context Engineering Layer
+# lean-ctx MCP Tools
 <!-- lean-ctx-rules-v4 -->
 
-You are connected to the lean-ctx MCP server. You MUST use lean-ctx tools for ALL file reads,
-shell commands, and code searches. Using native tools instead is FORBIDDEN — it wastes tokens.
+Always use lean-ctx MCP tools. Never use the standard equivalents.
 
-## MANDATORY tool replacements:
+## Tool Mapping
 
-| FORBIDDEN | USE INSTEAD | Why |
-|-----------|-------------|-----|
-| `Read` / `cat` / `head` / `tail` | `ctx_read(path)` | Cached, 8 compression modes + smart defaults, re-reads ~13 tokens |
-| `Shell` / `bash` / terminal | `ctx_shell(command)` | Pattern compression for git/npm/cargo/docker output |
-| `Grep` / `rg` / `search` | `ctx_search(pattern, path)` | Compact, token-efficient results |
-| `ls` / `find` / `tree` | `ctx_tree(path, depth)` | Compact directory maps with file counts |
+| Instead of | Use | Why |
+|---|-----|-----|
+| `Read` | `ctx_read` | Session caching, 8 compression modes, re-reads cost ~13 tokens |
+| `Shell` | `ctx_shell` | Pattern-based compression for git, npm, cargo, docker, tsc |
+| `Grep` | `ctx_search` | Compact context, token-efficient results |
+| `ls`, `find` | `ctx_tree` | Compact directory maps with file counts |
 
-## How to call in Cursor (exact syntax):
-```
-CallMcpTool(server="user-lean-ctx", toolName="ctx_read", arguments={"path": "/src/main.rs", "mode": "full"})
-CallMcpTool(server="user-lean-ctx", toolName="ctx_shell", arguments={"command": "cargo test"})
-CallMcpTool(server="user-lean-ctx", toolName="ctx_search", arguments={"pattern": "fn main", "path": "src/"})
-CallMcpTool(server="user-lean-ctx", toolName="ctx_tree", arguments={"path": ".", "depth": 3})
-```
+## ctx_read Modes
 
-## ctx_read modes:
-- (no mode) — auto-selects optimal mode based on file size, type, cache state, and task
-- `full` — cached read (for files you edit)
-- `map` — deps + API (context-only files)
+- `full` — default, cached read (use for files you will edit)
+- `map` — dependency graph + exports + key signatures (use for context-only files)
 - `signatures` — API surface only
-- `diff` — changed lines after edits
-- `task` — task-relevant lines only (IB filter, 70% savings on large files)
-- `reference` — one-line metadata (for irrelevant files)
-- `aggressive` — syntax stripped
-- `entropy` — Shannon + Jaccard filtering
+- `diff` — changed lines only (use after edits)
 - `lines:N-M` — specific range
 
-## Keep using (no lean-ctx replacement):
-`Write`, `StrReplace`, `Delete`, `Glob` — use normally.
+## Rules
 
-## NEVER do this:
-- NEVER use `Read` to read files — use `ctx_read`
-- NEVER use `Shell` to run commands — use `ctx_shell`
-- NEVER use `Grep` to search code — use `ctx_search`
-- NEVER use `ls`, `find`, `cat`, `head`, `tail` — use `ctx_tree` or `ctx_read`
-- If `ctx_read` returns "cached", use `fresh=true` to re-read
-
-## Proactive (use without being asked):
-- `ctx_overview(task)` at session start
-- `ctx_compress` when context grows large
-- `ctx_metrics` to verify savings
+- Use `ctx_read(path, mode="full")` for every file read before editing
+- Use `ctx_read(path, mode="map")` for files you only need as context
+- Use `ctx_shell(cmd)` for every shell command
+- Use `ctx_search(pattern, path)` instead of Grep
+- Use `ctx_tree` instead of `ls` or `find` for directory exploration
+- The `Write`, `StrReplace`, `Delete`, `Glob` tools have no lean-ctx equivalent — use them normally
 <!-- /lean-ctx -->"#;
 
 // ---------------------------------------------------------------------------
@@ -539,19 +482,19 @@ mod tests {
 
     #[test]
     fn cursor_mdc_has_markers_and_frontmatter() {
-        assert!(RULES_CURSOR_MDC.contains(MARKER));
+        assert!(RULES_CURSOR_MDC.contains("lean-ctx"));
         assert!(RULES_CURSOR_MDC.contains(END_MARKER));
         assert!(RULES_CURSOR_MDC.contains(RULES_VERSION));
         assert!(RULES_CURSOR_MDC.contains("alwaysApply: true"));
     }
 
     #[test]
-    fn shared_rules_contain_forbidden_table() {
-        assert!(RULES_SHARED.contains("FORBIDDEN"));
+    fn shared_rules_contain_tool_mapping() {
         assert!(RULES_SHARED.contains("ctx_read"));
         assert!(RULES_SHARED.contains("ctx_shell"));
         assert!(RULES_SHARED.contains("ctx_search"));
         assert!(RULES_SHARED.contains("ctx_tree"));
+        assert!(RULES_SHARED.contains("Write"));
     }
 
     #[test]
@@ -560,8 +503,7 @@ mod tests {
         assert!(RULES_DEDICATED.contains("map"));
         assert!(RULES_DEDICATED.contains("signatures"));
         assert!(RULES_DEDICATED.contains("diff"));
-        assert!(RULES_DEDICATED.contains("aggressive"));
-        assert!(RULES_DEDICATED.contains("entropy"));
+        assert!(RULES_DEDICATED.contains("ctx_read"));
     }
 
     fn ensure_temp_dir() {
