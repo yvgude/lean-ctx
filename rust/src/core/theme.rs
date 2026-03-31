@@ -276,6 +276,15 @@ impl Theme {
         format!("{}◆{RST}", self.accent.fg())
     }
 
+    pub fn brand_title(&self) -> String {
+        if no_color() {
+            return "lean-ctx".to_string();
+        }
+        let p = self.primary.fg();
+        let s = self.secondary.fg();
+        format!("{p}{BOLD}lean{RST}{s}{BOLD}-ctx{RST}")
+    }
+
     pub fn section_title(&self, title: &str) -> String {
         if no_color() {
             return title.to_string();

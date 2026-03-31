@@ -1245,7 +1245,7 @@ pub fn cmd_theme(args: &[String]) {
             println!(
                 "  {icon} {title}  {d}Theme Preview: {name}{r}",
                 icon = t.header_icon(),
-                title = t.section_title("lean-ctx"),
+                title = t.brand_title(),
             );
             println!("  {ln}", ln = t.border_line(50));
             println!();

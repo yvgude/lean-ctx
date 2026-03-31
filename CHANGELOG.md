@@ -2,6 +2,11 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.11.1] — 2026-03-31
+
+### Changed
+- Brand title "lean-ctx" now renders in theme primary/secondary colors across all dashboards (gain, graph, daily, CEP, theme preview)
+
 ## [2.11.0] — 2026-03-31
 
 ### Added

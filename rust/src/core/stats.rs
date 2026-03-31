@@ -413,9 +413,10 @@ fn format_cep_live(lv: &serde_json::Value, t: &Theme) -> String {
 
     o.push(String::new());
     o.push(format!(
-        "  {icon} {title}  {d}Live Session (no historical data yet){r}",
+        "  {icon} {brand} {cep}  {d}Live Session (no historical data yet){r}",
         icon = t.header_icon(),
-        title = t.section_title("lean-ctx CEP"),
+        brand = t.brand_title(),
+        cep = t.section_title("CEP"),
     ));
     o.push(format!("  {ln}", ln = t.border_line(56)));
     o.push(String::new());
@@ -534,9 +535,10 @@ pub fn format_cep_report() -> String {
 
     o.push(String::new());
     o.push(format!(
-        "  {icon} {title}  {d}Cognitive Efficiency Protocol Report{r}",
+        "  {icon} {brand} {cep}  {d}Cognitive Efficiency Protocol Report{r}",
         icon = t.header_icon(),
-        title = t.section_title("lean-ctx CEP"),
+        brand = t.brand_title(),
+        cep = t.section_title("CEP"),
     ));
     o.push(format!("  {ln}", ln = t.border_line(56)));
     o.push(String::new());
@@ -730,7 +732,7 @@ pub fn format_gain_themed(t: &Theme) -> String {
     let header = format!(
         "  {icon} {b}{title}{r}  {d}Token Savings Dashboard{r}",
         icon = t.header_icon(),
-        title = t.section_title("lean-ctx"),
+        title = t.brand_title(),
     );
     o.push(box_line(&header));
     o.push(format!("  {}", t.box_mid(w)));
@@ -1003,7 +1005,7 @@ pub fn format_gain_graph() -> String {
     o.push(format!(
         "  {icon} {title}  {d}Token Savings Graph (last 30 days){r}",
         icon = t.header_icon(),
-        title = t.section_title("lean-ctx"),
+        title = t.brand_title(),
     ));
     o.push(format!("  {ln}", ln = t.border_line(58)));
     o.push(format!(
@@ -1074,7 +1076,7 @@ pub fn format_gain_daily() -> String {
     o.push(format!(
         "  {icon} {title}  {d}Daily Breakdown{r}",
         icon = t.header_icon(),
-        title = t.section_title("lean-ctx"),
+        title = t.brand_title(),
     ));
     o.push(format!("  {}", t.box_top(w)));
     let hdr = format!(
