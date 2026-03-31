@@ -2,6 +2,14 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.12.0] — 2026-03-31
+
+### Changed
+- **Granular tools as default**: All clients now get 25 individual `ctx_*` tools instead of the unified `ctx()` meta-tool. Unified mode is still available via `LEAN_CTX_UNIFIED=1` env var. This improves model reliability in calling MCP tools.
+- **Slimmer MCP instructions**: Reduced instruction text by ~40%. Removed verbose CEP examples, Output Budget rules, and redundant enforcement prose that caused instruction overload.
+- **Slimmer rules injection**: Reduced injected rules (CLAUDE.md, .cursor/rules, etc.) by ~60%. Eliminated duplication with MCP instructions. Rules now focus on the tool mapping table only.
+- **Unified mode opt-in only**: `LEAN_CTX_UNIFIED=1` explicitly enables unified mode. `LEAN_CTX_FULL_TOOLS=1` still forces granular mode.
+
 ## [2.11.1] — 2026-03-31
 
 ### Changed
