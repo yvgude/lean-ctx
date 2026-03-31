@@ -26,6 +26,7 @@ pub mod slow_log;
 pub mod stats;
 pub mod symbol_map;
 pub mod task_relevance;
+pub mod theme;
 pub mod tokens;
 pub mod updater;
 pub mod vector_index;

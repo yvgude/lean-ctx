@@ -106,6 +106,10 @@ fn main() {
                 cli::cmd_config(&rest);
                 return;
             }
+            "theme" => {
+                cli::cmd_theme(&rest);
+                return;
+            }
             "tee" => {
                 cli::cmd_tee(&rest);
                 return;
@@ -155,7 +159,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                println!("lean-ctx 2.10.0");
+                println!("lean-ctx 2.11.0");
                 return;
             }
             "--help" | "-h" => {
@@ -240,7 +244,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.10.0 — The Intelligence Layer for AI Coding
+        "lean-ctx 2.11.0 — The Intelligence Layer for AI Coding
 
 90+ compression patterns | 24 MCP tools | Context Continuity Protocol
 
@@ -275,6 +279,7 @@ COMMANDS:
     discover                       Find uncompressed commands in shell history
     session                        Show adoption statistics
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
+    theme [list|set|export|import] Customize terminal colors and themes
     tee [list|clear|show <file>]   Manage error log files (~/.lean-ctx/tee/)
     slow-log [list|clear]          Show/clear slow command log (~/.lean-ctx/slow-commands.log)
     update [--check]               Self-update lean-ctx binary from GitHub Releases
@@ -658,24 +663,69 @@ fn cmd_cloud(args: &[String]) {
 }
 
 fn print_gain_with_logo() {
-    terminal_ui::print_logo_animated();
+    let t = core::theme::load_theme(&core::config::Config::load().theme);
+    terminal_ui::print_logo_animated_themed(&t);
 
     if let Some(banner) = core::version_check::get_update_banner() {
         println!("{banner}");
         println!();
     }
 
+    animate_kpi_countup(&t);
+
     let output = core::stats::format_gain();
     print!("{output}");
-    let dim = "\x1b[2m";
-    let rst = "\x1b[0m";
-    println!("  {dim}lean-ctx v2.10.0  |  leanctx.com  |  lean-ctx dashboard{rst}");
+    let d = core::theme::dim();
+    let r = core::theme::rst();
+    println!("  {d}lean-ctx v2.11.0  |  leanctx.com  |  lean-ctx dashboard{r}");
     if !cloud_client::check_pro() {
-        println!("  {dim}Save ~25% more with Pro \u{2192} lean-ctx upgrade{rst}");
+        println!("  {d}Save ~25% more with Pro \u{2192} lean-ctx upgrade{r}");
     }
     println!();
 
     core::version_check::check_background();
+}
+
+fn animate_kpi_countup(t: &core::theme::Theme) {
+    use std::io::{IsTerminal, Write};
+
+    if !std::io::stdout().is_terminal() || core::theme::no_color() {
+        return;
+    }
+
+    let store = core::stats::load();
+    if store.total_commands == 0 {
+        return;
+    }
+
+    let input_saved = store
+        .total_input_tokens
+        .saturating_sub(store.total_output_tokens);
+    let cost_model = core::stats::CostModel::default();
+    let cost = cost_model.calculate(&store);
+    let total_saved = input_saved + cost.output_tokens_saved;
+
+    let frames = core::theme::animate_countup(total_saved, 10);
+    let r = core::theme::rst();
+    let b = core::theme::bold();
+    let mut stdout = std::io::stdout();
+
+    for (i, frame) in frames.iter().enumerate() {
+        if i > 0 {
+            print!("\x1b[1A\x1b[K");
+        }
+        let _ = writeln!(
+            stdout,
+            "  {c}{b}{frame}{r} tokens saved",
+            c = t.success.fg(),
+        );
+        let _ = stdout.flush();
+        if i < frames.len() - 1 {
+            std::thread::sleep(std::time::Duration::from_millis(45));
+        }
+    }
+    print!("\x1b[1A\x1b[K");
+    let _ = stdout.flush();
 }
 
 fn cmd_upgrade() {

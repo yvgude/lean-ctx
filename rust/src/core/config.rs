@@ -12,8 +12,14 @@ pub struct Config {
     /// Commands taking longer than this threshold (ms) are recorded in the slow log.
     /// Set to 0 to disable slow logging.
     pub slow_command_threshold_ms: u64,
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default)]
     pub cloud: CloudConfig,
+}
+
+fn default_theme() -> String {
+    "default".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -40,6 +46,7 @@ impl Default for Config {
             excluded_commands: Vec::new(),
             custom_aliases: Vec::new(),
             slow_command_threshold_ms: 5000,
+            theme: default_theme(),
             cloud: CloudConfig::default(),
         }
     }

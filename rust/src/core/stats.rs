@@ -279,61 +279,11 @@ pub fn record_cep_session(
     save(&store);
 }
 
-const RST: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-const GREEN: &str = "\x1b[32m";
-const CYAN: &str = "\x1b[36m";
-const YELLOW: &str = "\x1b[33m";
-const MAGENTA: &str = "\x1b[35m";
-const WHITE: &str = "\x1b[97m";
-const GRAY: &str = "\x1b[90m";
-fn line(ch: char, n: usize) -> String {
-    std::iter::repeat_n(ch, n).collect()
-}
+use super::theme::{self, Theme};
 
-fn pct_color(pct: f64) -> &'static str {
-    if pct >= 90.0 {
-        "\x1b[32m"
-    } else if pct >= 70.0 {
-        "\x1b[36m"
-    } else if pct >= 50.0 {
-        "\x1b[33m"
-    } else if pct >= 30.0 {
-        "\x1b[35m"
-    } else {
-        "\x1b[37m"
-    }
-}
-
-fn bar_block(ratio: f64, width: usize) -> String {
-    let blocks = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
-    let full = (ratio * width as f64).max(0.0);
-    let whole = full as usize;
-    let frac = ((full - whole as f64) * 8.0) as usize;
-    let mut s = "█".repeat(whole);
-    if whole < width && frac > 0 {
-        s.push_str(blocks[frac]);
-    }
-    if s.is_empty() && ratio > 0.0 {
-        s.push('▏');
-    }
-    s
-}
-
-fn sparkline(values: &[u64]) -> String {
-    let ticks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-    let max = *values.iter().max().unwrap_or(&1) as f64;
-    if max == 0.0 {
-        return " ".repeat(values.len());
-    }
-    values
-        .iter()
-        .map(|v| {
-            let idx = ((*v as f64 / max) * 7.0).round() as usize;
-            ticks[idx.min(7)]
-        })
-        .collect()
+fn active_theme() -> Theme {
+    let cfg = super::config::Config::load();
+    theme::load_theme(&cfg.theme)
 }
 
 /// Average LLM pricing per 1M tokens (blended across Claude, GPT, Gemini).
@@ -444,9 +394,11 @@ fn truncate_cmd(cmd: &str, max: usize) -> String {
     }
 }
 
-fn format_cep_live(lv: &serde_json::Value) -> String {
+fn format_cep_live(lv: &serde_json::Value, t: &Theme) -> String {
     let mut o = Vec::new();
-    let ln56 = line('─', 56);
+    let r = theme::rst();
+    let b = theme::bold();
+    let d = theme::dim();
 
     let score = lv["cep_score"].as_u64().unwrap_or(0) as u32;
     let cache_util = lv["cache_utilization"].as_u64().unwrap_or(0);
@@ -461,47 +413,51 @@ fn format_cep_live(lv: &serde_json::Value) -> String {
 
     o.push(String::new());
     o.push(format!(
-        "  {BOLD}{WHITE}◆ lean-ctx CEP{RST}  {DIM}Live Session (no historical data yet){RST}"
+        "  {icon} {title}  {d}Live Session (no historical data yet){r}",
+        icon = t.header_icon(),
+        title = t.section_title("lean-ctx CEP"),
     ));
-    o.push(format!("  {DIM}{ln56}{RST}"));
+    o.push(format!("  {ln}", ln = t.border_line(56)));
     o.push(String::new());
 
+    let txt = t.text.fg();
+    let sc = t.success.fg();
+    let sec = t.secondary.fg();
+
     o.push(format!(
-        "  {BOLD}{WHITE}CEP Score{RST}         {BOLD}{}{score:>3}/100{RST}",
-        pct_color(score as f64),
+        "  {b}{txt}CEP Score{r}         {b}{pc}{score:>3}/100{r}",
+        pc = t.pct_color(score as f64),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Cache Hit Rate{RST}    {BOLD}{}{cache_util}%{RST}  {DIM}({cache_hits} hits / {total_reads} reads){RST}",
-        pct_color(cache_util as f64),
+        "  {b}{txt}Cache Hit Rate{r}    {b}{pc}{cache_util}%{r}  {d}({cache_hits} hits / {total_reads} reads){r}",
+        pc = t.pct_color(cache_util as f64),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Mode Diversity{RST}    {BOLD}{}{mode_div}%{RST}",
-        pct_color(mode_div as f64),
+        "  {b}{txt}Mode Diversity{r}    {b}{pc}{mode_div}%{r}",
+        pc = t.pct_color(mode_div as f64),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Compression{RST}       {BOLD}{}{comp_rate}%{RST}  {DIM}({} → {}){RST}",
-        pct_color(comp_rate as f64),
+        "  {b}{txt}Compression{r}       {b}{pc}{comp_rate}%{r}  {d}({} → {}){r}",
         format_big(tok_orig),
         format_big(tok_orig.saturating_sub(tok_saved)),
+        pc = t.pct_color(comp_rate as f64),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Tokens Saved{RST}      {BOLD}{GREEN}{}{RST}  {DIM}(≈ {}){RST}",
+        "  {b}{txt}Tokens Saved{r}      {b}{sc}{}{r}  {d}(≈ {}){r}",
         format_big(tok_saved),
         usd_estimate(tok_saved),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Tool Calls{RST}        {BOLD}{CYAN}{tool_calls}{RST}"
+        "  {b}{txt}Tool Calls{r}        {b}{sec}{tool_calls}{r}"
     ));
-    o.push(format!(
-        "  {BOLD}{WHITE}Complexity{RST}        {DIM}{complexity}{RST}"
-    ));
+    o.push(format!("  {b}{txt}Complexity{r}        {d}{complexity}{r}"));
     o.push(String::new());
-    o.push(format!("  {DIM}{ln56}{RST}"));
+    o.push(format!("  {ln}", ln = t.border_line(56)));
     o.push(format!(
-        "  {DIM}This is live data from the current MCP session.{RST}"
+        "  {d}This is live data from the current MCP session.{r}"
     ));
     o.push(format!(
-        "  {DIM}Historical CEP trends appear after more sessions.{RST}"
+        "  {d}Historical CEP trends appear after more sessions.{r}"
     ));
     o.push(String::new());
 
@@ -515,15 +471,18 @@ fn load_mcp_live() -> Option<serde_json::Value> {
 }
 
 pub fn format_cep_report() -> String {
+    let t = active_theme();
     let store = load();
     let cep = &store.cep;
     let live = load_mcp_live();
     let mut o = Vec::new();
-    let ln56 = line('─', 56);
+    let r = theme::rst();
+    let b = theme::bold();
+    let d = theme::dim();
 
     if cep.sessions == 0 && live.is_none() {
         return format!(
-            "{DIM}No CEP sessions recorded yet.{RST}\n\
+            "{d}No CEP sessions recorded yet.{r}\n\
              Use lean-ctx as an MCP server in your editor to start tracking.\n\
              CEP metrics are recorded automatically during MCP sessions."
         );
@@ -531,7 +490,7 @@ pub fn format_cep_report() -> String {
 
     if cep.sessions == 0 {
         if let Some(ref lv) = live {
-            return format_cep_live(lv);
+            return format_cep_live(lv, &t);
         }
     }
 
@@ -568,45 +527,52 @@ pub fn format_cep_report() -> String {
         0.0
     };
 
+    let txt = t.text.fg();
+    let sc = t.success.fg();
+    let sec = t.secondary.fg();
+    let wrn = t.warning.fg();
+
     o.push(String::new());
     o.push(format!(
-        "  {BOLD}{WHITE}◆ lean-ctx CEP{RST}  {DIM}Cognitive Efficiency Protocol Report{RST}"
+        "  {icon} {title}  {d}Cognitive Efficiency Protocol Report{r}",
+        icon = t.header_icon(),
+        title = t.section_title("lean-ctx CEP"),
     ));
-    o.push(format!("  {DIM}{ln56}{RST}"));
+    o.push(format!("  {ln}", ln = t.border_line(56)));
     o.push(String::new());
 
     o.push(format!(
-        "  {BOLD}{WHITE}CEP Score{RST}         {BOLD}{}{:>3}/100{RST}  {DIM}(avg: {avg_score:.0}, latest: {latest_score}){RST}",
-        pct_color(latest_score as f64),
+        "  {b}{txt}CEP Score{r}         {b}{pc}{:>3}/100{r}  {d}(avg: {avg_score:.0}, latest: {latest_score}){r}",
         latest_score,
+        pc = t.pct_color(latest_score as f64),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Sessions{RST}          {BOLD}{CYAN}{}{RST}",
+        "  {b}{txt}Sessions{r}          {b}{sec}{}{r}",
         cep.sessions
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Cache Hit Rate{RST}    {BOLD}{}{:.1}%{RST}  {DIM}({} hits / {} reads){RST}",
-        pct_color(cache_hit_rate),
+        "  {b}{txt}Cache Hit Rate{r}    {b}{pc}{:.1}%{r}  {d}({} hits / {} reads){r}",
         cache_hit_rate,
         cep.total_cache_hits,
         cep.total_cache_reads,
+        pc = t.pct_color(cache_hit_rate),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}MCP Compression{RST}   {BOLD}{}{:.1}%{RST}  {DIM}({} → {}){RST}",
-        pct_color(overall_compression),
+        "  {b}{txt}MCP Compression{r}   {b}{pc}{:.1}%{r}  {d}({} → {}){r}",
         overall_compression,
         format_big(cep.total_tokens_original),
         format_big(cep.total_tokens_compressed),
+        pc = t.pct_color(overall_compression),
     ));
     o.push(format!(
-        "  {BOLD}{WHITE}Tokens Saved{RST}      {BOLD}{GREEN}{}{RST}  {DIM}(≈ {}){RST}",
+        "  {b}{txt}Tokens Saved{r}      {b}{sc}{}{r}  {d}(≈ {}){r}",
         format_big(total_saved),
         usd_estimate(total_saved),
     ));
     o.push(String::new());
 
-    o.push(format!("  {BOLD}{WHITE}Savings Breakdown{RST}"));
-    o.push(format!("  {DIM}{ln56}{RST}"));
+    o.push(format!("  {}", t.section_title("Savings Breakdown")));
+    o.push(format!("  {ln}", ln = t.border_line(56)));
 
     let bar_w = 30;
     let shell_ratio = if total_all_saved > 0 {
@@ -619,51 +585,47 @@ pub fn format_cep_report() -> String {
     } else {
         0.0
     };
+    let m = t.muted.fg();
     o.push(format!(
-        "  {GRAY}Shell Hook{RST}   {YELLOW}{:<width$}{RST} {BOLD}{:>6}{RST} {DIM}({:.0}%){RST}",
-        bar_block(shell_ratio, bar_w),
+        "  {m}Shell Hook{r}   {bar} {b}{:>6}{r} {d}({:.0}%){r}",
         format_big(shell_saved),
         (1.0 - cep_share) * 100.0 / 100.0 * 100.0,
-        width = bar_w,
+        bar = t.gradient_bar(shell_ratio, bar_w),
     ));
     o.push(format!(
-        "  {GRAY}MCP/CEP{RST}      {GREEN}{:<width$}{RST} {BOLD}{:>6}{RST} {DIM}({cep_share:.0}%){RST}",
-        bar_block(cep_ratio, bar_w),
+        "  {m}MCP/CEP{r}      {bar} {b}{:>6}{r} {d}({cep_share:.0}%){r}",
         format_big(total_saved),
-        width = bar_w,
+        bar = t.gradient_bar(cep_ratio, bar_w),
     ));
     o.push(String::new());
 
     if total_saved == 0 && cep.modes.is_empty() {
         o.push(format!(
-            "  {YELLOW}⚠  MCP server not configured.{RST} Shell hook compresses output, but"
+            "  {wrn}⚠  MCP server not configured.{r} Shell hook compresses output, but"
         ));
         o.push(
             "     full token savings require MCP tools (ctx_read, ctx_shell, ctx_search)."
                 .to_string(),
         );
         o.push(format!(
-            "     Run {CYAN}lean-ctx setup{RST} to auto-configure your editors."
+            "     Run {sec}lean-ctx setup{r} to auto-configure your editors."
         ));
         o.push(String::new());
     }
 
     if !cep.modes.is_empty() {
-        o.push(format!("  {BOLD}{WHITE}Read Modes Used{RST}"));
-        o.push(format!("  {DIM}{ln56}{RST}"));
+        o.push(format!("  {}", t.section_title("Read Modes Used")));
+        o.push(format!("  {ln}", ln = t.border_line(56)));
 
         let mut sorted_modes: Vec<_> = cep.modes.iter().collect();
-        sorted_modes.sort_by(|a, b| b.1.cmp(a.1));
+        sorted_modes.sort_by(|a, b2| b2.1.cmp(a.1));
         let max_mode = *sorted_modes.first().map(|(_, c)| *c).unwrap_or(&1);
         let max_mode = max_mode.max(1);
 
         for (mode, count) in &sorted_modes {
             let ratio = **count as f64 / max_mode as f64;
-            let bar = bar_block(ratio, 20);
-            o.push(format!(
-                "  {CYAN}{:<14}{RST} {:>4}x  {GREEN}{bar:<20}{RST}",
-                mode, count,
-            ));
+            let bar = t.gradient_bar(ratio, 20);
+            o.push(format!("  {sec}{:<14}{r} {:>4}x  {bar}", mode, count,));
         }
 
         let total_mode_calls: u64 = sorted_modes.iter().map(|(_, c)| **c).sum();
@@ -675,47 +637,47 @@ pub fn format_cep_report() -> String {
             0.0
         };
         o.push(format!(
-            "  {DIM}{optimized}/{total_mode_calls} reads used optimized modes ({opt_pct:.0}% non-full){RST}"
+            "  {d}{optimized}/{total_mode_calls} reads used optimized modes ({opt_pct:.0}% non-full){r}"
         ));
     }
 
     if cep.scores.len() >= 2 {
         o.push(String::new());
-        o.push(format!("  {BOLD}{WHITE}CEP Score Trend{RST}"));
-        o.push(format!("  {DIM}{ln56}{RST}"));
+        o.push(format!("  {}", t.section_title("CEP Score Trend")));
+        o.push(format!("  {ln}", ln = t.border_line(56)));
 
         let score_values: Vec<u64> = cep.scores.iter().map(|s| s.score as u64).collect();
-        let spark = sparkline(&score_values);
-        o.push(format!("  {GREEN}{spark}{RST}"));
+        let spark = t.gradient_sparkline(&score_values);
+        o.push(format!("  {spark}"));
 
         let recent: Vec<_> = cep.scores.iter().rev().take(5).collect();
         for snap in recent.iter().rev() {
             let ts = snap.timestamp.get(..16).unwrap_or(&snap.timestamp);
-            let pc = pct_color(snap.score as f64);
+            let pc = t.pct_color(snap.score as f64);
             o.push(format!(
-                "  {GRAY}{ts}{RST}  {pc}{BOLD}{:>3}{RST}/100  cache:{:>3}%  modes:{:>3}%  {DIM}{}{RST}",
+                "  {m}{ts}{r}  {pc}{b}{:>3}{r}/100  cache:{:>3}%  modes:{:>3}%  {d}{}{r}",
                 snap.score, snap.cache_hit_rate, snap.mode_diversity, snap.complexity,
             ));
         }
     }
 
     o.push(String::new());
-    o.push(format!("  {DIM}{ln56}{RST}"));
-    o.push(format!("  {DIM}Improve your CEP score:{RST}"));
+    o.push(format!("  {ln}", ln = t.border_line(56)));
+    o.push(format!("  {d}Improve your CEP score:{r}"));
     if cache_hit_rate < 50.0 {
         o.push(format!(
-            "    {YELLOW}↑{RST} Re-read files with ctx_read to leverage caching"
+            "    {wrn}↑{r} Re-read files with ctx_read to leverage caching"
         ));
     }
     let modes_count = cep.modes.len();
     if modes_count < 3 {
         o.push(format!(
-            "    {YELLOW}↑{RST} Use map/signatures modes for context-only files"
+            "    {wrn}↑{r} Use map/signatures modes for context-only files"
         ));
     }
     if avg_score >= 70.0 {
         o.push(format!(
-            "    {GREEN}✓{RST} Great score! You're using lean-ctx effectively"
+            "    {sc}✓{r} Great score! You're using lean-ctx effectively"
         ));
     }
     o.push(String::new());
@@ -724,11 +686,21 @@ pub fn format_cep_report() -> String {
 }
 
 pub fn format_gain() -> String {
+    format_gain_themed(&active_theme())
+}
+
+pub fn format_gain_themed(t: &Theme) -> String {
     let store = load();
     let mut o = Vec::new();
+    let r = theme::rst();
+    let b = theme::bold();
+    let d = theme::dim();
 
     if store.total_commands == 0 {
-        return format!("{DIM}No commands recorded yet.{RST} Use {CYAN}lean-ctx -c \"command\"{RST} to start tracking.");
+        return format!(
+            "{d}No commands recorded yet.{r} Use {cmd}lean-ctx -c \"command\"{r} to start tracking.",
+            cmd = t.secondary.fg(),
+        );
     }
 
     let input_saved = store
@@ -744,51 +716,79 @@ pub fn format_gain() -> String {
     let total_saved = input_saved + cost.output_tokens_saved;
     let days_active = store.daily.len();
 
+    let w = 56;
     o.push(String::new());
-    let ln56 = line('─', 56);
+    o.push(format!("  {box_top}", box_top = t.box_top(w)));
     o.push(format!(
-        "  {BOLD}{WHITE}◆ lean-ctx{RST}  {DIM}Token Savings Dashboard{RST}"
+        "  {side}  {icon} {b}{title}{r}  {d}Token Savings Dashboard{r}  {side_r}",
+        side = t.box_side(),
+        icon = t.header_icon(),
+        title = t.section_title("lean-ctx"),
+        side_r = t.box_side(),
     ));
-    o.push(format!("  {DIM}{ln56}{RST}"));
-    o.push(String::new());
+    o.push(format!("  {mid}", mid = t.box_mid(w)));
+    o.push(format!(
+        "  {side}                                                        {side_r}",
+        side = t.box_side(),
+        side_r = t.box_side(),
+    ));
+
+    let tok_val = format_big(total_saved);
+    let pct_val = format!("{pct:.1}%");
+    let cmd_val = format_num(store.total_commands);
+    let usd_val = format_usd(cost.total_saved);
 
     o.push(format!(
-        "  {BOLD}{GREEN} {:<12}{RST}  {BOLD}{CYAN} {:<12}{RST}  {BOLD}{YELLOW} {:<10}{RST}  {BOLD}{MAGENTA} {:<10}{RST}",
-        format_big(total_saved),
-        format!("{pct:.1}%"),
-        format_num(store.total_commands),
-        format_usd(cost.total_saved),
+        "  {side}   {c1}{b} {tok_val:<10} {r}  {c2}{b} {pct_val:<10} {r}  {c3}{b} {cmd_val:<8} {r}  {c4}{b} {usd_val:<8} {r} {side_r}",
+        side = t.box_side(),
+        c1 = t.success.fg(),
+        c2 = t.secondary.fg(),
+        c3 = t.warning.fg(),
+        c4 = t.accent.fg(),
+        side_r = t.box_side(),
     ));
     o.push(format!(
-        "  {DIM} tokens saved   compression    commands       USD saved{RST}"
+        "  {side}   {d} tokens saved   compression    commands     USD saved  {r} {side_r}",
+        side = t.box_side(),
+        side_r = t.box_side(),
     ));
+    o.push(format!(
+        "  {side}                                                        {side_r}",
+        side = t.box_side(),
+        side_r = t.box_side(),
+    ));
+    o.push(format!("  {bot}", bot = t.box_bottom(w)));
     o.push(String::new());
 
+    let cost_title = t.section_title("Cost Breakdown");
     o.push(format!(
-        "  {BOLD}{WHITE}Cost Breakdown{RST}  {DIM}(@ ${}/M input, ${}/M output){RST}",
-        DEFAULT_INPUT_PRICE_PER_M, DEFAULT_OUTPUT_PRICE_PER_M
+        "  {cost_title}  {d}(@ ${}/M input, ${}/M output){r}",
+        DEFAULT_INPUT_PRICE_PER_M, DEFAULT_OUTPUT_PRICE_PER_M,
     ));
-    o.push(format!("  {DIM}{ln56}{RST}"));
+    o.push(format!("  {ln}", ln = t.border_line(w)));
     o.push(format!(
-        "  {GRAY}Without lean-ctx{RST}  {:>8}  {DIM}({} input + {} output){RST}",
+        "  {m}Without lean-ctx{r}  {:>8}  {d}({} input + {} output){r}",
         format_usd(cost.total_cost_without),
         format_usd(cost.input_cost_without),
         format_usd(cost.output_cost_without),
+        m = t.muted.fg(),
     ));
     o.push(format!(
-        "  {GRAY}With lean-ctx{RST}     {:>8}  {DIM}({} input + {} output){RST}",
+        "  {m}With lean-ctx{r}     {:>8}  {d}({} input + {} output){r}",
         format_usd(cost.total_cost_with),
         format_usd(cost.input_cost_with),
         format_usd(cost.output_cost_with),
+        m = t.muted.fg(),
     ));
     o.push(format!(
-        "  {GREEN}{BOLD}Total Saved{RST}       {GREEN}{BOLD}{:>8}{RST}  {DIM}(input: {} + output: {}){RST}",
+        "  {c}{b}Total Saved{r}       {c}{b}{:>8}{r}  {d}(input: {} + output: {}){r}",
         format_usd(cost.total_saved),
         format_usd(cost.input_cost_without - cost.input_cost_with),
         format_usd(cost.output_cost_without - cost.output_cost_with),
+        c = t.success.fg(),
     ));
     o.push(format!(
-        "  {DIM}Output savings: ~{} tokens saved via CEP/TDD ({} → {} per call){RST}",
+        "  {d}Output savings: ~{} tokens saved via CEP/TDD ({} → {} per call){r}",
         format_big(cost.output_tokens_saved),
         CostModel::default().avg_verbose_output_per_call,
         CostModel::default().avg_concise_output_per_call,
@@ -796,7 +796,7 @@ pub fn format_gain() -> String {
     o.push(String::new());
 
     o.push(format!(
-        "  {DIM}{} input tokens compressed · ~{} output tokens reduced via CEP/TDD{RST}",
+        "  {d}{} input tokens compressed · ~{} output tokens reduced via CEP/TDD{r}",
         format_num(input_saved),
         format_big(cost.output_tokens_saved),
     ));
@@ -806,24 +806,24 @@ pub fn format_gain() -> String {
         let daily_savings: Vec<u64> = store
             .daily
             .iter()
-            .map(|d| day_total_saved(d, &cost_model))
+            .map(|d2| day_total_saved(d2, &cost_model))
             .collect();
-        let spark = sparkline(&daily_savings);
+        let spark = t.gradient_sparkline(&daily_savings);
         o.push(format!(
-            "  {DIM}Since {first_short} ({days_active} day{plural}){RST}  {GREEN}{spark}{RST}",
+            "  {d}Since {first_short} ({days_active} day{plural}){r}  {spark}",
             plural = if days_active != 1 { "s" } else { "" }
         ));
         o.push(String::new());
     }
 
     if !store.commands.is_empty() {
-        o.push(format!("  {BOLD}{WHITE}Top Commands{RST}"));
-        o.push(format!("  {DIM}{ln56}{RST}"));
+        o.push(format!("  {}", t.section_title("Top Commands")));
+        o.push(format!("  {ln}", ln = t.border_line(w)));
 
         let mut sorted: Vec<_> = store.commands.iter().collect();
-        sorted.sort_by(|a, b| {
+        sorted.sort_by(|a, b2| {
             let sa = cmd_total_saved(a.1, &cost_model);
-            let sb = cmd_total_saved(b.1, &cost_model);
+            let sb = cmd_total_saved(b2.1, &cost_model);
             sb.cmp(&sa)
         });
 
@@ -842,19 +842,20 @@ pub fn format_gain() -> String {
                 0.0
             };
             let ratio = cmd_saved as f64 / max_cmd_saved as f64;
-            let bar = bar_block(ratio, 20);
-            let pc = pct_color(cmd_pct);
+            let bar = t.gradient_bar(ratio, 20);
+            let pc = t.pct_color(cmd_pct);
             o.push(format!(
-                "  {GRAY}{:<16}{RST} {:>5}x  {pc}{bar:<20}{RST} {BOLD}{pc}{:>6}{RST}  {DIM}{cmd_pct:.0}%{RST}",
+                "  {m}{:<16}{r} {:>5}x  {bar:<20} {b}{pc}{:>6}{r}  {d}{cmd_pct:.0}%{r}",
                 truncate_cmd(cmd, 16),
                 stats.count,
                 format_big(cmd_saved),
+                m = t.muted.fg(),
             ));
         }
 
         if sorted.len() > 12 {
             o.push(format!(
-                "  {DIM}  ... +{} more commands{RST}",
+                "  {d}  ... +{} more commands{r}",
                 sorted.len() - 12
             ));
         }
@@ -862,30 +863,31 @@ pub fn format_gain() -> String {
 
     if store.daily.len() >= 2 {
         o.push(String::new());
-        o.push(format!("  {BOLD}{WHITE}Recent Days{RST}"));
-        o.push(format!("  {DIM}{ln56}{RST}"));
+        o.push(format!("  {}", t.section_title("Recent Days")));
+        o.push(format!("  {ln}", ln = t.border_line(w)));
 
         let recent: Vec<_> = store.daily.iter().rev().take(7).collect();
         for day in recent.iter().rev() {
             let day_saved = day_total_saved(day, &cost_model);
-            let input_saved = day.input_tokens.saturating_sub(day.output_tokens);
+            let day_input_saved = day.input_tokens.saturating_sub(day.output_tokens);
             let day_pct = if day.input_tokens > 0 {
-                input_saved as f64 / day.input_tokens as f64 * 100.0
+                day_input_saved as f64 / day.input_tokens as f64 * 100.0
             } else {
                 0.0
             };
-            let pc = pct_color(day_pct);
+            let pc = t.pct_color(day_pct);
             let date_short = day.date.get(5..).unwrap_or(&day.date);
             o.push(format!(
-                "  {GRAY}{date_short}{RST}  {:>5} cmds  {pc}{BOLD}{:>8}{RST} saved  {pc}{day_pct:>5.1}%{RST}",
+                "  {m}{date_short}{r}  {:>5} cmds  {pc}{b}{:>8}{r} saved  {pc}{day_pct:>5.1}%{r}",
                 day.commands,
                 format_big(day_saved),
+                m = t.muted.fg(),
             ));
         }
     }
 
     if let Some(tip) = contextual_tip(&store) {
-        o.push(format!("  {YELLOW}💡 {tip}{RST}"));
+        o.push(format!("  {w}💡 {tip}{r}", w = t.warning.fg()));
         o.push(String::new());
     } else {
         o.push(String::new());
@@ -949,8 +951,10 @@ pub fn gain_live() {
 
     let interval = std::time::Duration::from_secs(2);
     let mut line_count = 0usize;
+    let d = theme::dim();
+    let r = theme::rst();
 
-    eprintln!("  {DIM}▸ Live mode (2s refresh) · Ctrl+C to exit{RST}");
+    eprintln!("  {d}▸ Live mode (2s refresh) · Ctrl+C to exit{r}");
 
     loop {
         if line_count > 0 {
@@ -958,7 +962,7 @@ pub fn gain_live() {
         }
 
         let output = format_gain();
-        let footer = format!("\n  {DIM}▸ Live · updates every 2s · Ctrl+C to exit{RST}\n");
+        let footer = format!("\n  {d}▸ Live · updates every 2s · Ctrl+C to exit{r}\n");
         let full = format!("{output}{footer}");
         line_count = full.lines().count();
 
@@ -970,11 +974,14 @@ pub fn gain_live() {
 }
 
 pub fn format_gain_graph() -> String {
+    let t = active_theme();
     let store = load();
+    let r = theme::rst();
+    let b = theme::bold();
+    let d = theme::dim();
+
     if store.daily.is_empty() {
-        return format!(
-            "{DIM}No daily data yet.{RST} Use lean-ctx for a few days to see the graph."
-        );
+        return format!("{d}No daily data yet.{r} Use lean-ctx for a few days to see the graph.");
     }
 
     let cm = CostModel::default();
@@ -988,7 +995,7 @@ pub fn format_gain_graph() -> String {
         .rev()
         .collect();
 
-    let savings: Vec<u64> = days.iter().map(|d| day_total_saved(d, &cm)).collect();
+    let savings: Vec<u64> = days.iter().map(|day| day_total_saved(day, &cm)).collect();
 
     let max_saved = *savings.iter().max().unwrap_or(&1);
     let max_saved = max_saved.max(1);
@@ -997,13 +1004,14 @@ pub fn format_gain_graph() -> String {
     let mut o = Vec::new();
 
     o.push(String::new());
-    let ln58 = line('─', 58);
     o.push(format!(
-        "  {BOLD}{WHITE}◆ lean-ctx{RST}  {DIM}Token Savings Graph (last 30 days){RST}"
+        "  {icon} {title}  {d}Token Savings Graph (last 30 days){r}",
+        icon = t.header_icon(),
+        title = t.section_title("lean-ctx"),
     ));
-    o.push(format!("  {DIM}{ln58}{RST}"));
+    o.push(format!("  {ln}", ln = t.border_line(58)));
     o.push(format!(
-        "  {DIM}{:>58}{RST}",
+        "  {d}{:>58}{r}",
         format!("peak: {}", format_big(max_saved))
     ));
     o.push(String::new());
@@ -1011,7 +1019,7 @@ pub fn format_gain_graph() -> String {
     for (i, day) in days.iter().enumerate() {
         let saved = savings[i];
         let ratio = saved as f64 / max_saved as f64;
-        let bar = bar_block(ratio, bar_width);
+        let bar = t.gradient_bar(ratio, bar_width);
 
         let input_saved = day.input_tokens.saturating_sub(day.output_tokens);
         let pct = if day.input_tokens > 0 {
@@ -1019,26 +1027,28 @@ pub fn format_gain_graph() -> String {
         } else {
             0.0
         };
-        let pc = pct_color(pct);
         let date_short = day.date.get(5..).unwrap_or(&day.date);
 
         o.push(format!(
-            "  {GRAY}{date_short}{RST} {DIM}│{RST} {pc}{bar:<width$}{RST} {BOLD}{:>6}{RST} {DIM}{pct:.0}%{RST}",
+            "  {m}{date_short}{r} {brd}│{r} {bar:<width$} {b}{:>6}{r} {d}{pct:.0}%{r}",
             format_big(saved),
+            m = t.muted.fg(),
+            brd = t.border.fg(),
             width = bar_width,
         ));
     }
 
     let total_saved: u64 = savings.iter().sum();
-    let total_cmds: u64 = days.iter().map(|d| d.commands).sum();
-    let spark = sparkline(&savings);
+    let total_cmds: u64 = days.iter().map(|day| day.commands).sum();
+    let spark = t.gradient_sparkline(&savings);
 
     o.push(String::new());
-    o.push(format!("  {DIM}{ln58}{RST}"));
+    o.push(format!("  {ln}", ln = t.border_line(58)));
     o.push(format!(
-        "  {GREEN}{spark}{RST}  {BOLD}{WHITE}{}{RST} saved across {BOLD}{}{RST} commands",
+        "  {spark}  {b}{txt}{}{r} saved across {b}{}{r} commands",
         format_big(total_saved),
         format_num(total_cmds),
+        txt = t.text.fg(),
     ));
     o.push(String::new());
 
@@ -1046,25 +1056,39 @@ pub fn format_gain_graph() -> String {
 }
 
 pub fn format_gain_daily() -> String {
+    let t = active_theme();
     let store = load();
+    let r = theme::rst();
+    let b = theme::bold();
+    let d = theme::dim();
+
     if store.daily.is_empty() {
-        return format!("{DIM}No daily data yet.{RST}");
+        return format!("{d}No daily data yet.{r}");
     }
 
     let mut o = Vec::new();
     let w = 64;
 
     o.push(String::new());
-    let lnw = line('─', w);
     o.push(format!(
-        "  {BOLD}{WHITE}◆ lean-ctx{RST}  {DIM}Daily Breakdown{RST}"
+        "  {icon} {title}  {d}Daily Breakdown{r}",
+        icon = t.header_icon(),
+        title = t.section_title("lean-ctx"),
     ));
-    o.push(format!("  {DIM}┌{lnw}┐{RST}"));
+    o.push(format!("  {top}", top = t.box_top(w)));
     o.push(format!(
-        "  {DIM}│{RST} {BOLD}{WHITE}{:<12} {:>6}  {:>10}  {:>10}  {:>7}  {:>6}{RST} {DIM}│{RST}",
-        "Date", "Cmds", "Input", "Saved", "Rate", "USD"
+        "  {side} {b}{txt}{:<12} {:>6}  {:>10}  {:>10}  {:>7}  {:>6}{r} {side_r}",
+        "Date",
+        "Cmds",
+        "Input",
+        "Saved",
+        "Rate",
+        "USD",
+        side = t.box_side(),
+        side_r = t.box_side(),
+        txt = t.text.fg(),
     ));
-    o.push(format!("  {DIM}├{lnw}┤{RST}"));
+    o.push(format!("  {mid}", mid = t.box_mid(w)));
 
     let days: Vec<_> = store
         .daily
@@ -1086,48 +1110,59 @@ pub fn format_gain_daily() -> String {
         } else {
             0.0
         };
-        let pc = pct_color(pct);
+        let pc = t.pct_color(pct);
         let usd = usd_estimate(saved);
         o.push(format!(
-            "  {DIM}│{RST} {GRAY}{:<12}{RST} {:>6}  {:>10}  {pc}{BOLD}{:>10}{RST}  {pc}{:>6.1}%{RST}  {DIM}{:>6}{RST} {DIM}│{RST}",
+            "  {side} {m}{:<12}{r} {:>6}  {:>10}  {pc}{b}{:>10}{r}  {pc}{:>6.1}%{r}  {d}{:>6}{r} {side_r}",
             &day.date,
             day.commands,
             format_big(day.input_tokens),
             format_big(saved),
             pct,
             usd,
+            side = t.box_side(),
+            side_r = t.box_side(),
+            m = t.muted.fg(),
         ));
     }
 
-    let total_input: u64 = store.daily.iter().map(|d| d.input_tokens).sum();
-    let total_saved: u64 = store.daily.iter().map(|d| day_total_saved(d, &cm)).sum();
+    let total_input: u64 = store.daily.iter().map(|day| day.input_tokens).sum();
+    let total_saved: u64 = store
+        .daily
+        .iter()
+        .map(|day| day_total_saved(day, &cm))
+        .sum();
     let total_pct = if total_input > 0 {
         let input_saved: u64 = store
             .daily
             .iter()
-            .map(|d| d.input_tokens.saturating_sub(d.output_tokens))
+            .map(|day| day.input_tokens.saturating_sub(day.output_tokens))
             .sum();
         input_saved as f64 / total_input as f64 * 100.0
     } else {
         0.0
     };
     let total_usd = usd_estimate(total_saved);
+    let sc = t.success.fg();
 
-    o.push(format!("  {DIM}├{lnw}┤{RST}"));
+    o.push(format!("  {mid}", mid = t.box_mid(w)));
     o.push(format!(
-        "  {DIM}│{RST} {BOLD}{WHITE}{:<12}{RST} {:>6}  {:>10}  {GREEN}{BOLD}{:>10}{RST}  {GREEN}{BOLD}{:>6.1}%{RST}  {BOLD}{:>6}{RST} {DIM}│{RST}",
+        "  {side} {b}{txt}{:<12}{r} {:>6}  {:>10}  {sc}{b}{:>10}{r}  {sc}{b}{:>6.1}%{r}  {b}{:>6}{r} {side_r}",
         "TOTAL",
         format_num(store.total_commands),
         format_big(total_input),
         format_big(total_saved),
         total_pct,
         total_usd,
+        side = t.box_side(),
+        side_r = t.box_side(),
+        txt = t.text.fg(),
     ));
-    o.push(format!("  {DIM}└{lnw}┘{RST}"));
+    o.push(format!("  {bot}", bot = t.box_bottom(w)));
 
-    let daily_savings: Vec<u64> = days.iter().map(|d| day_total_saved(d, &cm)).collect();
-    let spark = sparkline(&daily_savings);
-    o.push(format!("  {DIM}Trend:{RST} {GREEN}{spark}{RST}"));
+    let daily_savings: Vec<u64> = days.iter().map(|day| day_total_saved(day, &cm)).collect();
+    let spark = t.gradient_sparkline(&daily_savings);
+    o.push(format!("  {d}Trend:{r} {spark}"));
     o.push(String::new());
 
     o.join("\n")

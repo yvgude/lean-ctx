@@ -36,8 +36,18 @@ fn rgb_fg(r: u8, g: u8, b: u8) -> String {
 }
 
 pub fn print_logo_animated() {
+    let cfg = crate::core::config::Config::load();
+    let t = crate::core::theme::load_theme(&cfg.theme);
+    print_logo_animated_themed(&t);
+}
+
+pub fn print_logo_animated_themed(t: &crate::core::theme::Theme) {
+    if crate::core::theme::no_color() {
+        print_logo_plain();
+        return;
+    }
     if !io::stdout().is_terminal() {
-        print_logo_static();
+        print_logo_themed_static(t);
         return;
     }
 
@@ -84,14 +94,20 @@ pub fn print_logo_animated() {
     }
 
     print!("\x1b[{}A", LOGO.len() + 2);
-    print_logo_final_gradient();
+    print_logo_themed_static(t);
 }
 
 pub fn print_logo_static() {
-    print_logo_final_gradient();
+    let cfg = crate::core::config::Config::load();
+    let t = crate::core::theme::load_theme(&cfg.theme);
+    print_logo_themed_static(&t);
 }
 
-fn print_logo_final_gradient() {
+fn print_logo_themed_static(t: &crate::core::theme::Theme) {
+    if crate::core::theme::no_color() {
+        print_logo_plain();
+        return;
+    }
     let mut stdout = io::stdout();
 
     for (i, line) in LOGO.iter().enumerate() {
@@ -103,29 +119,32 @@ fn print_logo_final_gradient() {
                 buf.push(' ');
                 continue;
             }
-            let t = if chars.len() > 1 {
+            let progress = if chars.len() > 1 {
                 j as f64 / (chars.len() - 1) as f64
             } else {
                 0.5
             };
-            let row_shift = i as f64 * 8.0;
-            let hue = 160.0 + t * 80.0 + row_shift;
-            let (r, g, b) = hsl_to_rgb(hue % 360.0, 0.75, 0.6);
-            buf.push_str(&rgb_fg(r, g, b));
+            let row_t = i as f64 / (LOGO.len() - 1).max(1) as f64;
+            let blend = (progress + row_t * 0.3).min(1.0);
+            let c = t.primary.lerp(&t.secondary, blend);
+            buf.push_str(&c.fg());
             buf.push(*ch);
         }
         buf.push_str("\x1b[0m");
         let _ = writeln!(stdout, "{buf}");
     }
 
-    let (tr, tg, tb) = hsl_to_rgb(200.0, 0.4, 0.55);
-    let _ = writeln!(
-        stdout,
-        "{}             {TAGLINE}\x1b[0m",
-        rgb_fg(tr, tg, tb)
-    );
+    let _ = writeln!(stdout, "{}             {TAGLINE}\x1b[0m", t.muted.fg());
     let _ = writeln!(stdout);
     let _ = stdout.flush();
+}
+
+fn print_logo_plain() {
+    for line in &LOGO {
+        println!("{line}");
+    }
+    println!("             {TAGLINE}");
+    println!();
 }
 
 pub fn print_command_box() {

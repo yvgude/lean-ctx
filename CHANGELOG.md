@@ -2,6 +2,25 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.11.0] — 2026-03-31
+
+### Added
+- **Theme System**: 6 built-in color themes (default, neon, ocean, sunset, monochrome, cyberpunk)
+- **`lean-ctx theme` subcommand**: `list`, `set`, `export`, `import`, `preview`
+- **Gradient bars**: All progress bars use 24-bit RGB color gradients (bar_start → bar_end)
+- **Gradient sparklines**: Sparkline charts use theme-aware color transitions
+- **Animated countup**: Token savings animate from 0 on `lean-ctx gain` (TTY only)
+- **Box-frame layout**: Dashboard sections use Unicode box-drawing characters (╭─╮│╰─╯)
+- **Custom themes via TOML**: Create `~/.lean-ctx/theme.toml` with 11 configurable color slots
+- **Theme export/import**: Share themes as `.toml` files
+- **`config set theme`**: Quick theme switching via config command
+- **NO_COLOR support**: Respects `NO_COLOR` env var and non-TTY environments
+
+### Changed
+- `format_gain()`, `format_gain_graph()`, `format_gain_daily()`, `format_cep_report()` all use Theme system
+- Logo gradient adapts to active theme colors (primary → secondary)
+- Removed hardcoded ANSI color constants from stats.rs
+
 ## [2.10.0] — 2026-03-29
 
 ### Added
