@@ -750,13 +750,18 @@ pub fn format_gain_themed(t: &Theme) -> String {
     let c3 = t.warning.fg();
     let c4 = t.accent.fg();
 
-    let kpi_line = format!(
-        "    {c1}{b}{tok_val:<14}{r}  {c2}{b}{pct_val:<14}{r}  {c3}{b}{cmd_val:<12}{r}  {c4}{b}{usd_val:<8}{r}",
-    );
-    o.push(box_line(&kpi_line));
-    let label_line =
-        format!("    {d}tokens saved      compression       commands        USD saved{r}",);
-    o.push(box_line(&label_line));
+    let kw = 14;
+    let v1 = theme::pad_right(&format!("{c1}{b}{tok_val}{r}"), kw);
+    let v2 = theme::pad_right(&format!("{c2}{b}{pct_val}{r}"), kw);
+    let v3 = theme::pad_right(&format!("{c3}{b}{cmd_val}{r}"), kw);
+    let v4 = theme::pad_right(&format!("{c4}{b}{usd_val}{r}"), kw);
+    o.push(box_line(&format!("    {v1}{v2}{v3}{v4}")));
+
+    let l1 = theme::pad_right(&format!("{d}tokens saved{r}"), kw);
+    let l2 = theme::pad_right(&format!("{d}compression{r}"), kw);
+    let l3 = theme::pad_right(&format!("{d}commands{r}"), kw);
+    let l4 = theme::pad_right(&format!("{d}USD saved{r}"), kw);
+    o.push(box_line(&format!("    {l1}{l2}{l3}{l4}")));
     o.push(box_line(""));
     o.push(format!("  {}", t.box_bottom(w)));
 
@@ -770,23 +775,26 @@ pub fn format_gain_themed(t: &Theme) -> String {
     ));
     o.push(format!("  {ln}", ln = t.border_line(w)));
     o.push(String::new());
+    let lbl_w = 20;
+    let lbl_without = theme::pad_right(&format!("{m}Without lean-ctx{r}", m = t.muted.fg()), lbl_w);
+    let lbl_with = theme::pad_right(&format!("{m}With lean-ctx{r}", m = t.muted.fg()), lbl_w);
+    let lbl_saved = theme::pad_right(&format!("{c}{b}You saved{r}", c = t.success.fg()), lbl_w);
+
     o.push(format!(
-        "    {m}Without lean-ctx{r}    {:>8}   {d}{} input + {} output{r}",
+        "    {lbl_without} {:>8}   {d}{} input + {} output{r}",
         format_usd(cost.total_cost_without),
         format_usd(cost.input_cost_without),
         format_usd(cost.output_cost_without),
-        m = t.muted.fg(),
     ));
     o.push(format!(
-        "    {m}With lean-ctx{r}       {:>8}   {d}{} input + {} output{r}",
+        "    {lbl_with} {:>8}   {d}{} input + {} output{r}",
         format_usd(cost.total_cost_with),
         format_usd(cost.input_cost_with),
         format_usd(cost.output_cost_with),
-        m = t.muted.fg(),
     ));
     o.push(String::new());
     o.push(format!(
-        "    {c}{b}You saved{r}          {c}{b}{:>8}{r}   {d}input {} + output {}{r}",
+        "    {lbl_saved} {c}{b}{:>8}{r}   {d}input {} + output {}{r}",
         format_usd(cost.total_saved),
         format_usd(cost.input_cost_without - cost.input_cost_with),
         format_usd(cost.output_cost_without - cost.output_cost_with),
@@ -841,12 +849,14 @@ pub fn format_gain_themed(t: &Theme) -> String {
             let ratio = cmd_saved as f64 / max_cmd_saved as f64;
             let bar = theme::pad_right(&t.gradient_bar(ratio, 22), 22);
             let pc = t.pct_color(cmd_pct);
+            let cmd_col = theme::pad_right(
+                &format!("{m}{}{r}", truncate_cmd(cmd, 16), m = t.muted.fg()),
+                18,
+            );
+            let saved_col = theme::pad_right(&format!("{b}{pc}{}{r}", format_big(cmd_saved)), 8);
             o.push(format!(
-                "    {m}{:<18}{r}  {:>5}x   {bar}  {b}{pc}{:>7}{r}  {d}{cmd_pct:>3.0}%{r}",
-                truncate_cmd(cmd, 18),
+                "    {cmd_col} {:>5}x   {bar}  {saved_col} {d}{cmd_pct:>3.0}%{r}",
                 stats.count,
-                format_big(cmd_saved),
-                m = t.muted.fg(),
             ));
         }
 
@@ -876,21 +886,24 @@ pub fn format_gain_themed(t: &Theme) -> String {
             };
             let pc = t.pct_color(day_pct);
             let date_short = day.date.get(5..).unwrap_or(&day.date);
+            let date_col = theme::pad_right(&format!("{m}{date_short}{r}", m = t.muted.fg()), 7);
+            let saved_col = theme::pad_right(&format!("{pc}{b}{}{r}", format_big(day_saved)), 9);
             o.push(format!(
-                "    {m}{date_short}{r}   {:>5} cmds   {pc}{b}{:>8}{r} saved   {pc}{day_pct:>5.1}%{r}",
+                "    {date_col}  {:>5} cmds   {saved_col} saved   {pc}{day_pct:>5.1}%{r}",
                 day.commands,
-                format_big(day_saved),
-                m = t.muted.fg(),
             ));
         }
     }
 
     o.push(String::new());
+    o.push(String::new());
 
     if let Some(tip) = contextual_tip(&store) {
         o.push(format!("    {w}💡 {tip}{r}", w = t.warning.fg()));
+        o.push(String::new());
     }
 
+    o.push(String::new());
     o.push(String::new());
 
     o.join("\n")
@@ -942,6 +955,25 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
 
     tips.push("Run ctx_overview(task) at session start for a task-aware project map.".into());
     tips.push("Run lean-ctx dashboard for a live web UI with all your stats.".into());
+
+    let cfg = crate::core::config::Config::load();
+    if cfg.theme == "default" {
+        tips.push(
+            "Customize your dashboard! Try: lean-ctx theme set cyberpunk (or neon, ocean, sunset, monochrome)".into(),
+        );
+        tips.push(
+            "Want a unique look? Run lean-ctx theme list to see all available themes.".into(),
+        );
+    } else {
+        tips.push(format!(
+            "Current theme: {}. Run lean-ctx theme list to explore others.",
+            cfg.theme
+        ));
+    }
+
+    tips.push(
+        "Create your own theme with lean-ctx theme create <name> and set custom colors!".into(),
+    );
 
     tips
 }

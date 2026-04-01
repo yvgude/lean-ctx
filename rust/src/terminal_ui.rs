@@ -30,10 +30,17 @@ pub fn print_logo_animated_themed(t: &crate::core::theme::Theme) {
     let mut stdout = io::stdout();
     let frames = 28;
     let frame_ms = 45;
+    let top_padding = 2;
+
+    let _ = writeln!(stdout);
+    let _ = writeln!(stdout);
 
     for frame in 0..frames {
         if frame > 0 {
-            print!("\x1b[{}A", LOGO.len() + 2);
+            print!("\x1b[{}A", LOGO.len() + 2 + top_padding);
+            for _ in 0..top_padding {
+                let _ = writeln!(stdout);
+            }
         }
 
         let wave_offset = frame as f64 / frames as f64;
@@ -71,7 +78,7 @@ pub fn print_logo_animated_themed(t: &crate::core::theme::Theme) {
         std::thread::sleep(std::time::Duration::from_millis(frame_ms));
     }
 
-    print!("\x1b[{}A", LOGO.len() + 2);
+    print!("\x1b[{}A", LOGO.len() + 2 + top_padding);
     print_logo_themed_static(t);
 }
 
@@ -87,6 +94,9 @@ fn print_logo_themed_static(t: &crate::core::theme::Theme) {
         return;
     }
     let mut stdout = io::stdout();
+
+    let _ = writeln!(stdout);
+    let _ = writeln!(stdout);
 
     for (i, line) in LOGO.iter().enumerate() {
         let chars: Vec<char> = line.chars().collect();
@@ -118,6 +128,8 @@ fn print_logo_themed_static(t: &crate::core::theme::Theme) {
 }
 
 fn print_logo_plain() {
+    println!();
+    println!();
     for line in &LOGO {
         println!("{line}");
     }

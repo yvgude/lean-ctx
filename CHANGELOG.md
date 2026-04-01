@@ -2,6 +2,17 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.12.3] — 2026-04-01
+
+### Fixed
+- **PowerShell npm bug** (fixes #37): Shell hook now uses `.cmd` extensions for Node.js tools (`npm.cmd`, `pnpm.cmd`, `yarn.cmd`, `tsc.cmd`, `eslint.cmd`, `prettier.cmd`) to avoid `cmd.exe` resolution failures on Windows
+- **PowerShell shell detection**: `lean-ctx -c` now detects PowerShell context via `PSModulePath` env var and uses `pwsh.exe`/`powershell.exe` instead of falling back to `cmd.exe`
+- **Gain dashboard alignment**: All KPI values, labels, cost breakdown, top commands, and recent days now use ANSI-aware `pad_right()` for pixel-perfect terminal alignment regardless of color codes
+- **Gain dashboard spacing**: More vertical whitespace above logo and below tips for a cleaner look
+
+### Added
+- Theme-aware contextual tips in `lean-ctx gain`: suggests theme commands for users on default theme, shows current theme for users who already customized
+
 ## [2.12.2] — 2026-04-01
 
 ### Added

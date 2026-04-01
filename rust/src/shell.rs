@@ -214,7 +214,7 @@ fn is_excluded_command(command: &str, excluded: &[String]) -> bool {
 pub fn interactive() {
     let real_shell = detect_shell();
 
-    eprintln!("lean-ctx shell v2.12.2 (wrapping {real_shell})");
+    eprintln!("lean-ctx shell v2.12.3 (wrapping {real_shell})");
     eprintln!("All command output is automatically compressed.");
     eprintln!("Type 'exit' to quit.\n");
 
@@ -415,10 +415,39 @@ fn find_real_shell() -> String {
 
 #[cfg(windows)]
 fn find_real_shell() -> String {
+    if is_running_in_powershell() {
+        if let Ok(pwsh) = which_powershell() {
+            return pwsh;
+        }
+    }
     if let Ok(comspec) = std::env::var("COMSPEC") {
         return comspec;
     }
     "cmd.exe".to_string()
+}
+
+#[cfg(windows)]
+fn is_running_in_powershell() -> bool {
+    std::env::var("PSModulePath").is_ok()
+}
+
+#[cfg(windows)]
+fn which_powershell() -> Result<String, ()> {
+    for candidate in &["pwsh.exe", "powershell.exe"] {
+        if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
+            if output.status.success() {
+                if let Ok(path) = String::from_utf8(output.stdout) {
+                    if let Some(first_line) = path.lines().next() {
+                        let trimmed = first_line.trim();
+                        if !trimmed.is_empty() {
+                            return Ok(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Err(())
 }
 
 fn save_tee(command: &str, output: &str) -> Option<String> {

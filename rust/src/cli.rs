@@ -777,9 +777,9 @@ fn init_powershell(binary: &str) {
 if (-not $env:LEAN_CTX_ACTIVE) {{
   $LeanCtxBin = "{binary_escaped}"
   function git {{ & $LeanCtxBin -c "git $($args -join ' ')" }}
-  function npm {{ & $LeanCtxBin -c "npm $($args -join ' ')" }}
-  function pnpm {{ & $LeanCtxBin -c "pnpm $($args -join ' ')" }}
-  function yarn {{ & $LeanCtxBin -c "yarn $($args -join ' ')" }}
+  function npm {{ & $LeanCtxBin -c "npm.cmd $($args -join ' ')" }}
+  function pnpm {{ & $LeanCtxBin -c "pnpm.cmd $($args -join ' ')" }}
+  function yarn {{ & $LeanCtxBin -c "yarn.cmd $($args -join ' ')" }}
   function cargo {{ & $LeanCtxBin -c "cargo $($args -join ' ')" }}
   function docker {{ & $LeanCtxBin -c "docker $($args -join ' ')" }}
   function kubectl {{ & $LeanCtxBin -c "kubectl $($args -join ' ')" }}
@@ -788,9 +788,9 @@ if (-not $env:LEAN_CTX_ACTIVE) {{
   function pip3 {{ & $LeanCtxBin -c "pip3 $($args -join ' ')" }}
   function ruff {{ & $LeanCtxBin -c "ruff $($args -join ' ')" }}
   function go {{ & $LeanCtxBin -c "go $($args -join ' ')" }}
-  function eslint {{ & $LeanCtxBin -c "eslint $($args -join ' ')" }}
-  function prettier {{ & $LeanCtxBin -c "prettier $($args -join ' ')" }}
-  function tsc {{ & $LeanCtxBin -c "tsc $($args -join ' ')" }}
+  function eslint {{ & $LeanCtxBin -c "eslint.cmd $($args -join ' ')" }}
+  function prettier {{ & $LeanCtxBin -c "prettier.cmd $($args -join ' ')" }}
+  function tsc {{ & $LeanCtxBin -c "tsc.cmd $($args -join ' ')" }}
   function curl {{ & $LeanCtxBin -c "curl $($args -join ' ')" }}
   function wget {{ & $LeanCtxBin -c "wget $($args -join ' ')" }}
 }}
