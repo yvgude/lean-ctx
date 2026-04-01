@@ -244,6 +244,14 @@ pub fn reset_cep() {
     });
 }
 
+pub fn reset_all() {
+    with_buffer(|store, last_flush| {
+        *store = StatsStore::default();
+        save_to_disk(store);
+        *last_flush = Instant::now();
+    });
+}
+
 pub struct GainSummary {
     pub total_saved: u64,
     pub total_calls: u64,
@@ -377,7 +385,7 @@ impl Default for CostModel {
         Self {
             input_price_per_m: DEFAULT_INPUT_PRICE_PER_M,
             output_price_per_m: DEFAULT_OUTPUT_PRICE_PER_M,
-            avg_verbose_output_per_call: 450,
+            avg_verbose_output_per_call: 180,
             avg_concise_output_per_call: 120,
         }
     }

@@ -11,7 +11,7 @@ pub fn handle(path: &str, depth: usize, show_hidden: bool) -> (String, usize) {
         return (format!("ERROR: {path} is not a directory"), 0);
     }
 
-    let raw_output = generate_raw_tree(root);
+    let raw_output = generate_raw_tree(root, depth, show_hidden);
     let compact_output = generate_compact_tree(root, depth, show_hidden);
 
     let raw_tokens = count_tokens(&raw_output);
@@ -65,14 +65,15 @@ fn generate_compact_tree(root: &Path, max_depth: usize, show_hidden: bool) -> St
     lines.join("\n")
 }
 
-fn generate_raw_tree(root: &Path) -> String {
+fn generate_raw_tree(root: &Path, depth: usize, show_hidden: bool) -> String {
     let mut lines = Vec::new();
 
     let walker = WalkBuilder::new(root)
-        .hidden(true)
+        .hidden(!show_hidden)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
+        .max_depth(Some(depth))
         .sort_by_file_name(|a, b| a.cmp(b))
         .build();
 
@@ -80,14 +81,12 @@ fn generate_raw_tree(root: &Path) -> String {
         if entry.depth() == 0 {
             continue;
         }
-        lines.push(
-            entry
-                .path()
-                .strip_prefix(root)
-                .unwrap_or(entry.path())
-                .to_string_lossy()
-                .to_string(),
-        );
+        let rel = entry
+            .path()
+            .strip_prefix(root)
+            .unwrap_or(entry.path())
+            .to_string_lossy();
+        lines.push(rel.to_string());
     }
 
     lines.join("\n")
@@ -95,10 +94,46 @@ fn generate_raw_tree(root: &Path) -> String {
 
 fn count_files_in_dir(dir: &Path) -> usize {
     WalkBuilder::new(dir)
-        .hidden(true)
+        .hidden(false)
         .git_ignore(true)
+        .max_depth(Some(5))
         .build()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
         .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tree_savings_are_reasonable() {
+        let dir = env!("CARGO_MANIFEST_DIR");
+        let (output, original) = handle(dir, 3, false);
+        let compact_tokens = count_tokens(&output);
+
+        eprintln!("=== ctx_tree savings test ===");
+        eprintln!("  original (raw) tokens: {original}");
+        eprintln!("  compact tokens:        {compact_tokens}");
+        eprintln!(
+            "  savings:               {}",
+            original.saturating_sub(compact_tokens)
+        );
+
+        assert!(
+            original < 5000,
+            "raw tree at depth 3 should be < 5000 tokens, got {original}"
+        );
+        assert!(original > 0, "raw tree should have some tokens");
+        if original > compact_tokens {
+            let ratio = (original - compact_tokens) as f64 / original as f64;
+            eprintln!("  savings ratio:         {:.1}%", ratio * 100.0);
+            assert!(
+                ratio < 0.90,
+                "savings ratio should be < 90% for same-depth comparison, got {:.1}%",
+                ratio * 100.0
+            );
+        }
+    }
 }

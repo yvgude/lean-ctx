@@ -2,6 +2,18 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.12.9] — 2026-04-01
+
+### Fixed
+- **ctx_tree inflated savings**: Raw tree comparison now uses the same depth and hidden-file settings as the compact output. Previously, the raw tree walked the *entire* directory (no depth limit), inflating savings by 10–100x. A project with 50K files would report ~500K "saved tokens" per `ctx_tree` call
+- **Cache hit tracking**: `session.record_cache_hit()` is now only called for actual `ctx_read` cache re-reads, not for every tool call with any savings
+- **Output savings model**: Reduced the per-call output token bonus from 330 to 60 tokens (180 vs 120 estimated verbose/concise output), preventing inflated USD savings estimates
+- **`count_files_in_dir`**: Now respects `show_hidden` setting and has a depth limit of 5, preventing unbounded recursive walks into deep directory trees
+
+### Added
+- **`lean-ctx gain --reset`**: New command to clear all stats data. Recommended for users upgrading from versions with inflated savings
+- **`ctx_tree` regression test**: Asserts that raw tree tokens stay under 5000 and savings ratio under 90% for same-depth comparison
+
 ## [2.12.8] — 2026-04-01
 
 ### Added
