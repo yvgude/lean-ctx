@@ -32,7 +32,9 @@ fn main() {
                 } else {
                     shell_join(cmd_args)
                 };
-                if std::env::var("LEAN_CTX_ACTIVE").is_ok() {
+                if std::env::var("LEAN_CTX_ACTIVE").is_ok()
+                    || std::env::var("LEAN_CTX_DISABLED").is_ok()
+                {
                     passthrough(&command);
                 }
                 if raw {
@@ -360,7 +362,8 @@ READ MODES:
     lines:N-M                      Specific line ranges (e.g. lines:10-50,80)
 
 ENVIRONMENT:
-    LEAN_CTX_DISABLED=1            Bypass ALL compression (kill-switch)
+    LEAN_CTX_DISABLED=1            Bypass ALL compression + prevent shell hook from loading
+    LEAN_CTX_ENABLED=0             Prevent shell hook auto-start (lean-ctx-on still works)
     LEAN_CTX_RAW=1                 Same as --raw for current command
     LEAN_CTX_AUTONOMY=false        Disable autonomous features
     LEAN_CTX_COMPRESS=1            Force compression (even for excluded commands)

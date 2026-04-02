@@ -885,9 +885,10 @@ fn init_powershell(binary: &str) {
     let functions = format!(
         r#"
 # lean-ctx shell hook — transparent CLI compression (90+ patterns)
-if (-not $env:LEAN_CTX_ACTIVE) {{
+if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED) {{
   $LeanCtxBin = "{binary_escaped}"
   function _lc {{
+    if ($env:LEAN_CTX_DISABLED) {{ & $args[0] $args[1..($args.Length)]; return }}
     & $LeanCtxBin -c @args
     if ($LASTEXITCODE -eq 127 -or $LASTEXITCODE -eq 126) {{
       $cmd = $args[0]; $rest = $args[1..($args.Length)]
@@ -991,6 +992,10 @@ fn init_fish(binary: &str) {
         set -g _lean_ctx_cmds git npm pnpm yarn cargo docker docker-compose kubectl gh pip pip3 ruff go golangci-lint eslint prettier tsc ls find grep curl wget\n\
         \n\
         function _lc\n\
+        \tif set -q LEAN_CTX_DISABLED\n\
+        \t\tcommand $argv\n\
+        \t\treturn\n\
+        \tend\n\
         \t'{binary}' -c $argv\n\
         \tset -l _lc_rc $status\n\
         \tif test $_lc_rc -eq 127 -o $_lc_rc -eq 126\n\
@@ -1024,14 +1029,16 @@ fn init_fish(binary: &str) {
         end\n\
         \n\
         function lean-ctx-status\n\
-        \tif set -q LEAN_CTX_ENABLED\n\
+        \tif set -q LEAN_CTX_DISABLED\n\
+        \t\techo 'lean-ctx: DISABLED (LEAN_CTX_DISABLED is set)'\n\
+        \telse if set -q LEAN_CTX_ENABLED\n\
         \t\techo 'lean-ctx: ON'\n\
         \telse\n\
         \t\techo 'lean-ctx: OFF'\n\
         \tend\n\
         end\n\
         \n\
-        if not set -q LEAN_CTX_ACTIVE; and test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) != '0'\n\
+        if not set -q LEAN_CTX_ACTIVE; and not set -q LEAN_CTX_DISABLED; and test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) != '0'\n\
         \tif command -q lean-ctx\n\
         \t\tlean-ctx-on\n\
         \tend\n\
@@ -1090,6 +1097,10 @@ fn init_posix(is_zsh: bool, binary: &str) {
 _lean_ctx_cmds=(git npm pnpm yarn cargo docker docker-compose kubectl gh pip pip3 ruff go golangci-lint eslint prettier tsc ls find grep curl wget php composer)
 
 _lc() {{
+    if [ -n "${{LEAN_CTX_DISABLED:-}}" ]; then
+        command "$@"
+        return
+    fi
     '{binary}' -c "$@"
     local _lc_rc=$?
     if [ "$_lc_rc" -eq 127 ] || [ "$_lc_rc" -eq 126 ]; then
@@ -1123,14 +1134,16 @@ lean-ctx-raw() {{
 }}
 
 lean-ctx-status() {{
-    if [ -n "${{LEAN_CTX_ENABLED:-}}" ]; then
+    if [ -n "${{LEAN_CTX_DISABLED:-}}" ]; then
+        echo "lean-ctx: DISABLED (LEAN_CTX_DISABLED is set)"
+    elif [ -n "${{LEAN_CTX_ENABLED:-}}" ]; then
         echo "lean-ctx: ON"
     else
         echo "lean-ctx: OFF"
     fi
 }}
 
-if [ -z "${{LEAN_CTX_ACTIVE:-}}" ] && [ "${{LEAN_CTX_ENABLED:-1}}" != "0" ]; then
+if [ -z "${{LEAN_CTX_ACTIVE:-}}" ] && [ -z "${{LEAN_CTX_DISABLED:-}}" ] && [ "${{LEAN_CTX_ENABLED:-1}}" != "0" ]; then
     command -v lean-ctx >/dev/null 2>&1 && lean-ctx-on
 fi
 # lean-ctx shell hook — end
