@@ -28,7 +28,7 @@ pub fn handle(cache: &mut SessionCache, path: &str) -> String {
 
     let new_hash = compute_hash(&content);
     if old_hash == new_hash {
-        return format!("{short} cached ∅ no changes");
+        return format!("{short} cached (no changes)");
     }
 
     let diff = TextDiff::from_lines(&old_content, &content);

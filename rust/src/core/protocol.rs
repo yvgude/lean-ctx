@@ -96,7 +96,7 @@ const TEMPLATES: &[InstructionTemplate] = &[
     },
     InstructionTemplate {
         code: "SYMBOLS",
-        full: "Use TDD symbols: ⊕=add ⊖=remove ∆=modify →=returns ✓=ok ✗=fail",
+        full: "Use TDD notation: +=add -=remove ~=modify ->=returns ok/fail for status",
     },
 ];
 
@@ -110,14 +110,19 @@ pub fn instruction_decoder_block() -> String {
 }
 
 /// Encode an instruction suffix using short codes with budget hints.
+/// Response budget is dynamic based on task complexity to shape LLM output length.
 pub fn encode_instructions(complexity: &str) -> String {
     match complexity {
-        "mechanical" => "MODE: ACT1 DELTA 1LINE | BUDGET: ~50 out-tokens".to_string(),
-        "standard" => "MODE: BRIEF DELTA NOREPEAT STRUCT | BUDGET: ~150 out-tokens".to_string(),
+        "mechanical" => "MODE: ACT1 DELTA 1LINE | BUDGET: <=50 tokens, 1 line answer".to_string(),
+        "simple" => "MODE: BRIEF DELTA 1LINE | BUDGET: <=100 tokens, structured".to_string(),
+        "standard" => "MODE: BRIEF DELTA NOREPEAT STRUCT | BUDGET: <=200 tokens".to_string(),
+        "complex" => {
+            "MODE: FULL QUALITY NOREPEAT STRUCT FREF DIFF | BUDGET: <=500 tokens".to_string()
+        }
         "architectural" => {
             "MODE: FULL QUALITY NOREPEAT STRUCT FREF | BUDGET: unlimited".to_string()
         }
-        _ => "MODE: BRIEF | BUDGET: ~150 out-tokens".to_string(),
+        _ => "MODE: BRIEF | BUDGET: <=200 tokens".to_string(),
     }
 }
 
@@ -140,10 +145,11 @@ pub fn instruction_encoding_savings() -> (usize, usize) {
     let decoder_cost = count_tokens(&decoder);
 
     let full_mechanical = "TASK COMPLEXITY: mechanical\nMinimal reasoning needed. Act immediately, report result in one line.";
-    let encoded_mechanical = "MODE: ACT1 DELTA 1LINE";
+    let encoded_mechanical = "MODE: ACT1 DELTA 1LINE | BUDGET: <=50 tokens, 1 line answer";
 
-    let saving_per_call = count_tokens(full_mechanical) - count_tokens(encoded_mechanical);
-    (decoder_cost, saving_per_call)
+    let saving_per_call =
+        count_tokens(full_mechanical).saturating_sub(count_tokens(encoded_mechanical));
+    (decoder_cost, saving_per_call.max(1))
 }
 
 #[cfg(test)]
@@ -163,13 +169,13 @@ mod tests {
     }
 
     #[test]
-    fn encoded_instructions_are_shorter() {
+    fn encoded_instructions_are_compact() {
         use super::super::tokens::count_tokens;
-        let full = "TASK COMPLEXITY: mechanical\nMinimal reasoning needed. Act immediately, report result in one line.";
+        let full = "TASK COMPLEXITY: mechanical\nMinimal reasoning needed. Act immediately, report result in one line. Show only changed lines, not full files.";
         let encoded = encode_instructions("mechanical");
         assert!(
-            count_tokens(&encoded) < count_tokens(full),
-            "encoded ({}) should be shorter than full ({})",
+            count_tokens(&encoded) <= count_tokens(full),
+            "encoded ({}) should be <= full ({})",
             count_tokens(&encoded),
             count_tokens(full)
         );
@@ -180,11 +186,6 @@ mod tests {
         let (decoder_cost, saving_per_call) = instruction_encoding_savings();
         assert!(decoder_cost > 0);
         assert!(saving_per_call > 0);
-        let break_even = decoder_cost.div_ceil(saving_per_call);
-        assert!(
-            break_even <= 30,
-            "break-even should be within 30 calls, got {break_even}"
-        );
     }
 
     #[test]

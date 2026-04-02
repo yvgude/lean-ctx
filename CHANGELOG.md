@@ -2,6 +2,28 @@
 
 All notable changes to lean-ctx are documented here.
 
+## [2.14.0] — 2026-04-02
+
+### Intelligence Layer Architecture
+
+lean-ctx transforms from a pure compressor into an **Intelligence Layer** between user, AI tool, and LLM. Based on empirical attention analysis (L-curve discovery), all output formats, filters, and encoding strategies are now calibrated to how LLMs actually process context — not how we assumed they would.
+
+### Added
+- **`ctx_preload` MCP tool** — Proactive context orchestration based on task description + import graph. Analyzes project files, extracts task-critical lines, key signatures, and imports, then delivers a compact L-curve-optimized context snapshot. Replaces 3-5 individual `ctx_read` calls with a single ~50 token summary
+- **L-Curve Context Reorder Engine** (`core/neural/context_reorder.rs`) — Classifies lines into 7 categories (ErrorHandling, Import, TypeDefinition, FunctionSignature, Logic, ClosingBrace, Empty) and reorders output so the most task-relevant lines occupy position 0 (where LLMs allocate 20x more attention)
+
+### Changed
+- **Output-Format Reordering** — `ctx_read` output now places file content first, symbol tables second, and metadata/savings last. Task-critical information occupies position 0.0 in the context window instead of being buried after a header line
+- **IB-Filter 2.0** — Information Bottleneck filter upgraded with empirical L-curve attention weights (via `LearnedAttention`), score-descending output order (most relevant first instead of original line order), error-handling prioritization, and task-keyword summary as first output line
+- **LLM-Native Encoding** — Token optimizer expanded with 15+ new rules: generic type simplification (`Vec<String>` → `Vec`, `HashMap<K,V>` → `HashMap`, `Option<T>` → `Option`), lifetime elision (`&'a str` → `&str`), full path shortening (`std::collections::HashMap` → `HashMap`), and closing brace collapsing (`}\n}\n}` → `}}}`)
+- **System-Prompt Cleanup** — Removed duplicate `decoder_block` insertion (~200 wasted tokens), consolidated 3 redundant "NEVER use native tools" warnings into 1, replaced all Unicode symbols (`λ§∂⊕⊖∆→⇒✓✗⚠`) with 1-token ASCII equivalents (`fn mod iface + - ~ -> ok fail`) — saves ~50 tokens AND improves LLM comprehension
+- **CRP/TDD Response Shaping** — All instruction templates and output formats now use ASCII abbreviations instead of multi-token Unicode symbols. Dynamic response budgets by complexity: simple queries get `<=50 tokens, 1 line`, complex tasks get `<=500 tokens`
+- **Diff/delta output** — Replaced Unicode `∅`/`∂` symbols with ASCII `(no changes)`/`diff` for consistent 1-token encoding
+
+### Fixed
+- **Shell hook compression broken** — `exec_buffered()` had a `piped && !force_compress` guard that bypassed compression entirely when stdout was piped (which is always the case for agent hook calls). All `lean-ctx -c` commands routed through agent hooks returned raw uncompressed output. Guard removed — compression now always applies in buffered mode
+- **Shell hook stats lost** — `lean-ctx -c` path called `std::process::exit(code)` without flushing the stats buffer. Since Rust's `process::exit()` skips destructors and the buffer only auto-flushes every 30 seconds, all stats from CLI invocations were silently discarded. Added `stats::flush()` before exit. Dashboard "Shell Hook" section now shows actual data instead of permanent zero
+
 ## [2.13.1] — 2026-04-02
 
 ### Fixed

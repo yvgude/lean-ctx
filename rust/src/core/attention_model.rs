@@ -38,14 +38,20 @@ pub fn positional_attention(position: f64, alpha: f64, beta: f64, gamma: f64) ->
 }
 
 /// Estimate the structural importance of a line.
-/// Returns a multiplier [0.5, 2.0] based on syntactic patterns.
+/// Returns a multiplier [0.1, 2.0] based on syntactic patterns.
+///
+/// Weights updated 2026-04-02 based on empirical attention analysis
+/// (Lab Experiment B: TinyLlama 1.1B on 106 Rust files):
+///   import  → 0.0285 mean attn (was rated 0.6, now 1.6)
+///   comment → 0.0123 mean attn (was rated 0.4, now 1.2)
+///   definition → 0.0038 (was 1.8, adjusted to 1.5)
+///   test/assert → 0.0004 (was 1.5, lowered to 0.8)
 pub fn structural_importance(line: &str) -> f64 {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return 0.1;
     }
 
-    // Error/warning lines always attract attention
     if trimmed.starts_with("error")
         || trimmed.starts_with("Error")
         || trimmed.contains("ERROR")
@@ -55,58 +61,55 @@ pub fn structural_importance(line: &str) -> f64 {
         return 2.0;
     }
 
-    // Function/type definitions
-    if is_definition(trimmed) {
-        return 1.8;
-    }
-
-    // Assertions and test expectations
-    if trimmed.starts_with("assert")
-        || trimmed.starts_with("expect(")
-        || trimmed.starts_with("#[test]")
-        || trimmed.starts_with("@Test")
-    {
-        return 1.5;
-    }
-
-    // Return statements, assignments with computation
-    if trimmed.starts_with("return ") || trimmed.starts_with("yield ") {
-        return 1.3;
-    }
-
-    // Control flow
-    if trimmed.starts_with("if ")
-        || trimmed.starts_with("match ")
-        || trimmed.starts_with("for ")
-        || trimmed.starts_with("while ")
-    {
-        return 1.1;
-    }
-
-    // Import/use statements — less important
+    // Lab finding: imports get 3x more attention than definitions.
+    // They establish namespace context the model needs for all subsequent code.
     if trimmed.starts_with("use ")
         || trimmed.starts_with("import ")
         || trimmed.starts_with("from ")
         || trimmed.starts_with("#include")
     {
-        return 0.6;
+        return 1.6;
     }
 
-    // Comments — usually low attention
+    if is_definition(trimmed) {
+        return 1.5;
+    }
+
+    // Lab finding: comments are semantic anchors — 3x more attention than logic.
     if trimmed.starts_with("//")
         || trimmed.starts_with("#")
         || trimmed.starts_with("/*")
         || trimmed.starts_with("*")
     {
-        return 0.4;
+        return 1.2;
     }
 
-    // Closing braces — minimal attention
+    if trimmed.starts_with("return ") || trimmed.starts_with("yield ") {
+        return 1.0;
+    }
+
+    if trimmed.starts_with("if ")
+        || trimmed.starts_with("match ")
+        || trimmed.starts_with("for ")
+        || trimmed.starts_with("while ")
+    {
+        return 0.9;
+    }
+
+    // Lab finding: test assertions get minimal attention (0.0004) —
+    // lowest of all line types unless the task is about testing.
+    if trimmed.starts_with("assert")
+        || trimmed.starts_with("expect(")
+        || trimmed.starts_with("#[test]")
+        || trimmed.starts_with("@Test")
+    {
+        return 0.8;
+    }
+
     if trimmed == "}" || trimmed == "};" || trimmed == "})" {
         return 0.3;
     }
 
-    // Default: moderate attention
     0.8
 }
 
@@ -251,13 +254,18 @@ mod tests {
     #[test]
     fn structural_errors_highest() {
         let error = structural_importance("error[E0433]: failed to resolve");
+        let import = structural_importance("use std::collections::HashMap;");
         let def = structural_importance("fn main() {");
         let comment = structural_importance("// just a comment");
         let brace = structural_importance("}");
 
-        assert!(error > def);
-        assert!(def > comment);
-        assert!(comment > brace);
+        assert!(error > import, "errors should be highest");
+        assert!(
+            import > def,
+            "imports should outrank definitions (lab finding)"
+        );
+        assert!(def > comment, "definitions should outrank comments");
+        assert!(comment > brace, "comments should outrank closing braces");
     }
 
     #[test]

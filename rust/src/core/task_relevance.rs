@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::graph_index::ProjectIndex;
 
-use super::attention_model::positional_attention;
+use super::neural::attention_learned::LearnedAttention;
 
 #[derive(Debug, Clone)]
 pub struct RelevanceScore {
@@ -154,15 +154,16 @@ const STOP_WORDS: &[&str] = &[
     "mit",
 ];
 
-/// Information Bottleneck filter based on Tishby et al. (2000) and QUITO-X (EMNLP 2025).
+/// Information Bottleneck filter v2 — L-Curve aware, score-sorted output.
 ///
 /// IB principle: maximize I(T;Y) (task relevance) while minimizing I(T;X) (input redundancy).
 /// Each line is scored by: relevance_to_task * information_density * attention_weight.
 ///
-/// - I(T;Y) is approximated via keyword matching + structural importance
-/// - I(T;X) is approximated via token IDF (inverse document frequency within the file)
-///   and token diversity ratio — lines with rare tokens carry more mutual information
-/// - Attention weighting uses the LITM U-curve (Liu et al. 2023, ICLR 2026 Memory Demands)
+/// v2 changes (based on Lab Experiments A-C):
+///   - Uses empirical L-curve attention from attention_learned.rs instead of heuristic U-curve
+///   - Output is sorted by score DESC (most important first), not by line number
+///   - Error-handling lines get a priority boost (fragile under compression)
+///   - Emits a one-line task summary as the first line when keywords are present
 pub fn information_bottleneck_filter(
     content: &str,
     task_keywords: &[String],
@@ -175,6 +176,7 @@ pub fn information_bottleneck_filter(
 
     let n = lines.len();
     let kw_lower: Vec<String> = task_keywords.iter().map(|k| k.to_lowercase()).collect();
+    let attention = LearnedAttention::with_defaults();
 
     let mut global_token_freq: HashMap<&str, usize> = HashMap::new();
     for line in &lines {
@@ -193,13 +195,15 @@ pub fn information_bottleneck_filter(
                 return (i, *line, 0.05);
             }
 
-            // I(T;Y): Task relevance — keyword hits + structural importance
             let line_lower = trimmed.to_lowercase();
             let keyword_hits: f64 = kw_lower
                 .iter()
                 .filter(|kw| line_lower.contains(kw.as_str()))
                 .count() as f64;
-            let structural = if is_definition_line(trimmed) {
+
+            let structural = if is_error_handling(trimmed) {
+                1.5
+            } else if is_definition_line(trimmed) {
                 1.0
             } else if is_control_flow(trimmed) {
                 0.5
@@ -210,7 +214,6 @@ pub fn information_bottleneck_filter(
             };
             let relevance = keyword_hits * 0.5 + structural;
 
-            // I(T;X): Information density via token uniqueness and IDF
             let line_tokens: Vec<&str> = trimmed.split_whitespace().collect();
             let unique_in_line = line_tokens.iter().collect::<HashSet<_>>().len() as f64;
             let line_token_count = line_tokens.len().max(1) as f64;
@@ -230,15 +233,12 @@ pub fn information_bottleneck_filter(
             };
             let information = (token_diversity * 0.4 + (avg_idf.min(3.0) / 3.0) * 0.6).min(1.0);
 
-            // LITM U-curve attention weighting (begin α=0.9, middle β=0.3, end γ=0.85)
             let pos = i as f64 / n.max(1) as f64;
-            let attention = positional_attention(pos, 0.9, 0.3, 0.85);
+            let attn_weight = attention.weight(pos);
 
-            // IB composite: maximize relevance × information_density × attention_weight
-            // Weights: relevance dominates (×0.6), information density secondary (×0.25),
-            // attention tertiary (×0.15). Floor of 0.05 prevents zero-multiplication.
-            let score =
-                (relevance * 0.6 + 0.05) * (information * 0.25 + 0.05) * (attention * 0.15 + 0.05);
+            let score = (relevance * 0.6 + 0.05)
+                * (information * 0.25 + 0.05)
+                * (attn_weight * 0.15 + 0.05);
 
             (i, *line, score)
         })
@@ -246,22 +246,50 @@ pub fn information_bottleneck_filter(
 
     let budget = ((n as f64) * budget_ratio).ceil() as usize;
 
-    let mut by_score = scored_lines.clone();
-    by_score.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    scored_lines.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
-    let cutoff_score = if budget < by_score.len() {
-        by_score[budget].2
-    } else {
-        0.0
-    };
+    scored_lines.truncate(budget);
 
-    scored_lines.retain(|(_, _, score)| *score >= cutoff_score);
+    let mut output_lines: Vec<&str> = Vec::with_capacity(budget + 1);
 
-    scored_lines
-        .iter()
-        .map(|(_, line, _)| *line)
-        .collect::<Vec<&str>>()
-        .join("\n")
+    if !kw_lower.is_empty() {
+        output_lines.push(""); // placeholder for summary
+    }
+
+    for (_, line, _) in &scored_lines {
+        output_lines.push(line);
+    }
+
+    if !kw_lower.is_empty() {
+        let summary = format!("[task: {}]", task_keywords.join(", "));
+        let mut result = summary;
+        result.push('\n');
+        result.push_str(
+            &output_lines[1..].to_vec().join("\n"),
+        );
+        return result;
+    }
+
+    output_lines.join("\n")
+}
+
+fn is_error_handling(line: &str) -> bool {
+    line.starts_with("return Err(")
+        || line.starts_with("Err(")
+        || line.starts_with("bail!(")
+        || line.starts_with("anyhow::bail!")
+        || line.contains(".map_err(")
+        || line.contains("unwrap()")
+        || line.contains("expect(\"")
+        || line.starts_with("raise ")
+        || line.starts_with("throw ")
+        || line.starts_with("catch ")
+        || line.starts_with("except ")
+        || line.starts_with("try ")
+        || (line.contains("?;") && !line.starts_with("//"))
+        || line.starts_with("panic!(")
+        || line.contains("Error::")
+        || line.contains("error!")
 }
 
 /// Compute an adaptive IB budget ratio based on content characteristics.
@@ -372,7 +400,33 @@ mod tests {
     fn info_bottleneck_preserves_definitions() {
         let content = "fn main() {\n    let x = 42;\n    // boring comment\n    println!(x);\n}\n";
         let result = information_bottleneck_filter(content, &["main".to_string()], 0.6);
-        assert!(result.contains("fn main"));
+        assert!(result.contains("fn main"), "definitions must be preserved");
+        assert!(result.contains("[task: main]"), "should have task summary");
+    }
+
+    #[test]
+    fn info_bottleneck_error_handling_priority() {
+        let content = "fn validate() {\n    let data = parse()?;\n    return Err(\"invalid\");\n    let x = 1;\n    let y = 2;\n}\n";
+        let result = information_bottleneck_filter(content, &["validate".to_string()], 0.5);
+        assert!(
+            result.contains("return Err"),
+            "error handling should survive filtering"
+        );
+    }
+
+    #[test]
+    fn info_bottleneck_score_sorted() {
+        let content = "fn important() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n}\n}\n";
+        let result = information_bottleneck_filter(content, &[], 0.6);
+        let lines: Vec<&str> = result.lines().collect();
+        let def_pos = lines.iter().position(|l| l.contains("fn important"));
+        let brace_pos = lines.iter().position(|l| l.trim() == "}");
+        if let (Some(d), Some(b)) = (def_pos, brace_pos) {
+            assert!(
+                d < b,
+                "definitions should appear before closing braces in score-sorted output"
+            );
+        }
     }
 
     #[test]

@@ -14,6 +14,7 @@ pub mod graph_index;
 pub mod knowledge;
 pub mod litm;
 pub mod mode_predictor;
+pub mod neural;
 pub mod patterns;
 pub mod preservation;
 pub mod protocol;

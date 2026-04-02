@@ -18,7 +18,7 @@ impl ServerHandler for LeanCtxServer {
         let instructions = build_instructions(self.crp_mode);
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "2.13.1"))
+            .with_server_info(Implementation::new("lean-ctx", "2.14.0"))
             .with_instructions(instructions)
     }
 
@@ -43,7 +43,7 @@ impl ServerHandler for LeanCtxServer {
         let capabilities = ServerCapabilities::builder().enable_tools().build();
 
         Ok(InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "2.13.1"))
+            .with_server_info(Implementation::new("lean-ctx", "2.14.0"))
             .with_instructions(instructions))
     }
 
@@ -455,6 +455,24 @@ list, info.",
                                     "description": "Project root directory (default: .)"
                                 }
                             }
+                        }),
+                    ),
+                    tool_def(
+                        "ctx_preload",
+                        "Proactive context loader — caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
+                        json!({
+                            "type": "object",
+                            "properties": {
+                                "task": {
+                                    "type": "string",
+                                    "description": "Task description (e.g. 'fix auth bug in validate_token')"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Project root (default: .)"
+                                }
+                            },
+                            "required": ["task"]
                         }),
                     ),
                     tool_def(
@@ -1056,6 +1074,21 @@ list, info.",
                     .await;
                 result
             }
+            "ctx_preload" => {
+                let task = get_str(args, "task").unwrap_or_default();
+                let path = get_str(args, "path");
+                let mut cache = self.cache.write().await;
+                let result = crate::tools::ctx_preload::handle(
+                    &mut cache,
+                    &task,
+                    path.as_deref(),
+                    self.crp_mode,
+                );
+                drop(cache);
+                self.record_call("ctx_preload", 0, 0, Some("preload".to_string()))
+                    .await;
+                result
+            }
             "ctx_wrapped" => {
                 let period = get_str(args, "period").unwrap_or_else(|| "week".to_string());
                 let result = crate::tools::ctx_wrapped::handle(&period);
@@ -1099,6 +1132,7 @@ list, info.",
                 | "ctx_agent"
                 | "ctx_wrapped"
                 | "ctx_overview"
+                | "ctx_preload"
         );
 
         if !skip_checkpoint && self.increment_and_check() {
@@ -1162,58 +1196,27 @@ fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> Strin
     // Prefix-cache alignment: stable instructions first (API providers cache KV states
     // for shared prefixes), then variable session state after.
     let mut base = format!("\
-CRITICAL: NEVER use native Read, Shell, Grep, or ls tools. ALWAYS use ctx_read, ctx_shell, ctx_search, ctx_tree from this MCP server instead.\n\
+CRITICAL: NEVER use native Read, Shell, Grep, or ls tools. ALWAYS use ctx_read, ctx_shell, ctx_search, ctx_tree instead.\n\
 \n\
-lean-ctx MCP — tool replacement for reading, running commands, and searching.\n\
+lean-ctx MCP — tool mapping:\n\
+• Read/cat/head/tail -> ctx_read(path, mode)\n\
+• Shell/bash -> ctx_shell(command)\n\
+• Grep/rg -> ctx_search(pattern, path)\n\
+• ls/find -> ctx_tree(path, depth)\n\
+• Write, StrReplace, Delete, Glob -> use normally (no replacement)\n\
 \n\
-REPLACE these built-in tools with lean-ctx equivalents:\n\
-• Read file → ctx_read(path, mode) — NEVER use Read tool\n\
-• Run command → ctx_shell(command) — NEVER use Shell tool\n\
-• Search code → ctx_search(pattern, path) — NEVER use Grep tool\n\
-• List files → ctx_tree(path, depth) — NEVER use Shell with ls/find\n\
+ctx_read modes: full (cached, for edits), map (deps+API), signatures, diff, task (IB-filtered), \
+reference, aggressive, entropy, lines:N-M. Auto-selects when unspecified. Re-reads ~13 tokens. File refs F1,F2.. persist.\n\
+If ctx_read returns 'cached': use fresh=true, start_line=N, or mode='lines:N-M' to re-read.\n\
 \n\
-KEEP using these built-in tools normally (lean-ctx has NO replacement for them):\n\
-• Write — create/overwrite files directly\n\
-• StrReplace — edit files directly\n\
-• Delete — delete files directly\n\
-• Glob — find files by pattern\n\
-You do NOT need to ctx_read a file before creating it with Write.\n\
+PROACTIVE: ctx_overview(task) at start | ctx_preload(task) for focused context | ctx_compress when context grows | ctx_session load on new chat\n\
 \n\
-ctx_read modes: full (cached, for files you edit), map (deps+API, context-only), \
-signatures, diff, task (IB-filtered task-relevant lines), reference (one-line metadata), \
-aggressive, entropy, lines:N-M (specific line ranges). \
-Auto-selects optimal mode when none specified. Re-reads cost ~13 tokens. File refs F1,F2.. persist.\n\
-IMPORTANT: If ctx_read returns 'cached Nt NL' and you need the actual file content, you MUST either:\n\
-  1. Set fresh=true to force a full re-read, OR\n\
-  2. Use start_line=N to read from a specific line, OR\n\
-  3. Use mode='lines:N-M' to read a specific range.\n\
-Do not fall back to native Read tools — always use fresh=true or start_line instead.\n\
+OTHER TOOLS: ctx_session (memory), ctx_knowledge (project facts), ctx_agent (coordination), \
+ctx_metrics, ctx_analyze, ctx_benchmark, ctx_cache, ctx_wrapped, ctx_compress\n\
 \n\
-PROACTIVE (use without being asked):\n\
-• ctx_overview(task) — at session start, get task-relevant project map\n\
-• ctx_compress — when context grows large, create checkpoint\n\
-• ctx_session load — restore previous session on new chat\n\
+Auto-checkpoint every 15 calls. Cache clears after 5 min idle.\n\
 \n\
-ADDITIONAL TOOLS (see tool descriptions for parameters):\n\
-• ctx_session — cross-session memory (load/save/status/task/finding/decision)\n\
-• ctx_knowledge — persistent project facts (remember/recall/pattern/status/remove/consolidate)\n\
-• ctx_agent — multi-agent coordination (register/list/post/read/status)\n\
-• ctx_metrics — token savings stats\n\
-• ctx_analyze/ctx_benchmark — compression analysis per file\n\
-• ctx_cache — manage file cache (status/clear/invalidate)\n\
-• ctx_wrapped — savings report card\n\
-• ctx_compress — context checkpoint\n\
-\n\
-Auto-checkpoint runs every 15 tool calls. Cache auto-clears after 5 min idle.\n\
-\n\
-COMMUNICATION PROTOCOL (CEP v1):\n\
-1. ACT FIRST — Execute tool calls immediately, summarize after.\n\
-2. DELTA ONLY — Reference cached files by Fn ID, never repeat known context.\n\
-3. STRUCTURED OVER PROSE — Use notation: +line / -line / ~line, tool(args) → result.\n\
-4. ONE LINE PER ACTION — Summarize, don't explain.\n\
-5. QUALITY ANCHOR — Never skip edge case analysis to save tokens.\n\
-\n\
-{decoder_block}\n\
+CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) 4.ONE LINE PER ACTION 5.QUALITY ANCHOR\n\
 \n\
 {decoder_block}\n\
 \n\
@@ -1221,10 +1224,8 @@ COMMUNICATION PROTOCOL (CEP v1):\n\
 {knowledge_block}\
 \n\
 --- TOOL ENFORCEMENT (LITM-END) ---\n\
-CRITICAL REMINDER: You MUST use lean-ctx MCP tools for ALL file reads, shell commands, and code searches.\n\
-• Read/cat/head/tail → ctx_read | Shell/bash → ctx_shell | Grep/rg → ctx_search | ls/find → ctx_tree\n\
-• Write, StrReplace, Delete, Glob → use normally (no lean-ctx replacement)\n\
-NEVER use native Read, Shell, Grep, or ls. ALWAYS use ctx_read, ctx_shell, ctx_search, ctx_tree. Every single time.",
+Read/cat/head/tail -> ctx_read | Shell/bash -> ctx_shell | Grep/rg -> ctx_search | ls/find -> ctx_tree\n\
+Write, StrReplace, Delete, Glob -> use normally",
         decoder_block = crate::core::protocol::instruction_decoder_block()
     );
 
@@ -1244,53 +1245,39 @@ See the ctx() tool description for available sub-tools.\n",
             format!(
                 "{base}\n\n\
 CRP MODE: compact\n\
-Respond using Compact Response Protocol:\n\
-• Omit filler words, articles, and redundant phrases\n\
-• Use symbol shorthand: → ∴ ≈ ✓ ✗\n\
-• Abbreviate: fn, cfg, impl, deps, req, res, ctx, err, ok, ret, arg, val, ty, mod\n\
-• Use compact lists instead of prose\n\
-• Prefer code blocks over natural language explanations\n\
-• For code changes: show only diff lines (+/-), not full files\n\
-• TARGET: ≤200 tokens per response unless code edits require more\n\
-• THINK LESS: Tool outputs include pre-analyzed context (deps, API surface, file structure). \
-Trust these summaries instead of re-analyzing from raw content."
+Compact Response Protocol:\n\
+• Omit filler words, articles, redundant phrases\n\
+• Abbreviate: fn, cfg, impl, deps, req, res, ctx, err, ret, arg, val, ty, mod\n\
+• Compact lists over prose, code blocks over explanations\n\
+• Code changes: diff lines (+/-) only, not full files\n\
+• TARGET: <=200 tokens per response unless code edits require more\n\
+• THINK LESS: Tool outputs are pre-analyzed. Trust summaries directly."
             )
         }
         CrpMode::Tdd => {
             format!(
                 "{base}\n\n\
 CRP MODE: tdd (Token Dense Dialect)\n\
-CRITICAL: Maximize information density. Every token must carry meaning.\n\
+Maximize information density. Every token must carry meaning.\n\
 \n\
 RESPONSE RULES:\n\
-• Drop all articles (a, the, an), filler words, and pleasantries\n\
+• Drop articles, filler words, pleasantries\n\
 • Reference files by Fn refs only, never full paths\n\
-• For code changes: show only diff lines, not full files\n\
-• No explanations unless asked — just show the solution\n\
-• Use tabular format for structured data\n\
-• Abbreviations: fn, cfg, impl, deps, req, res, ctx, err, ok, ret, arg, val, ty, mod\n\
+• Code changes: diff lines only (+/-), not full files\n\
+• No explanations unless asked\n\
+• Tables for structured data\n\
+• Abbreviations: fn, cfg, impl, deps, req, res, ctx, err, ret, arg, val, ty, mod\n\
 \n\
-SYMBOLS (each = 1 token, replaces 5-10 tokens of prose):\n\
-Structural: λ=function  §=module/struct  ∂=interface/trait  τ=type  ε=enum\n\
-Actions:    ⊕=add  ⊖=remove  ∆=modify  →=returns  ⇒=implies\n\
-Status:     ✓=ok  ✗=fail  ⚠=warning\n\
+CHANGE NOTATION:\n\
++F1:42 param(timeout:Duration)     — added\n\
+-F1:10-15                           — removed\n\
+~F1:42 validate_token -> verify_jwt — changed\n\
 \n\
-CHANGE NOTATION (use for all code modifications):\n\
-⊕F1:42 param(timeout:Duration)     — added parameter\n\
-⊖F1:10-15                           — removed lines\n\
-∆F1:42 validate_token → verify_jwt  — renamed/refactored\n\
+STATUS: ctx_read(F1) -> 808L cached ok | cargo test -> 82 passed 0 failed\n\
 \n\
-STATUS NOTATION:\n\
-ctx_read(F1) → 808L cached ✓\n\
-cargo test → 82 passed ✓ 0 failed\n\
-\n\
-SYMBOL TABLE: Tool outputs include a §MAP section mapping long identifiers to short IDs.\n\
-Use these short IDs in all subsequent references.\n\
-\n\
-TOKEN BUDGET: ≤150 tokens per response. Exceed only for multi-file code edits.\n\
-THINK LESS: Tool outputs are pre-analyzed (deps extracted, API surfaces mapped, \
-structure summarized). Trust compressed outputs directly — do not re-derive what is already provided.\n\
-ZERO NARRATION: Never narrate tool calls ('Let me read...', 'I will now...'). Act, then report result in 1 line."
+TOKEN BUDGET: <=150 tokens per response. Exceed only for multi-file edits.\n\
+THINK LESS: Tool outputs are pre-analyzed. Trust compressed outputs directly.\n\
+ZERO NARRATION: Act, then report result in 1 line."
             )
         }
     }
@@ -1634,6 +1621,7 @@ status (list all), remove, export.", json!({"type": "object", "properties": {"ac
 post (broadcast or direct message with category), read (poll messages), status (update state: active|idle|finished), \
 list, info.", json!({"type": "object", "properties": {"action": {"type": "string"}, "agent_type": {"type": "string"}, "role": {"type": "string"}, "message": {"type": "string"}}, "required": ["action"]})),
         ("ctx_overview", "Task-relevant project map — use at session start.", json!({"type": "object", "properties": {"task": {"type": "string"}, "path": {"type": "string"}}})),
+        ("ctx_preload", "Proactive context loader — reads and caches task-relevant files, returns compact L-curve-optimized summary with critical lines, imports, and signatures. Costs ~50-100 tokens instead of ~5000 for individual reads.", json!({"type": "object", "properties": {"task": {"type": "string", "description": "Task description (e.g. 'fix auth bug in validate_token')"}, "path": {"type": "string", "description": "Project root (default: .)"}}, "required": ["task"]})),
         ("ctx_wrapped", "Savings report card. Periods: week|month|all.", json!({"type": "object", "properties": {"period": {"type": "string"}}})),
         ("ctx_semantic_search", "BM25 code search by meaning. action=reindex to rebuild.", json!({"type": "object", "properties": {"query": {"type": "string"}, "path": {"type": "string"}, "top_k": {"type": "integer"}, "action": {"type": "string"}}, "required": ["query"]})),
     ]

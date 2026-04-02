@@ -22,6 +22,12 @@ server.md
 DEPLOY_CHECKLIST.md
 DISCORD_POST.md
 
+# ── Lab / Neural (private, not for OSS) ──
+lab/
+rust/models/
+*.onnx
+*.pt
+
 # ── Private ──
 cloud/
 docker-compose.yml

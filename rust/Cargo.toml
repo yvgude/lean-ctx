@@ -1,6 +1,6 @@
 [package]
 name = "lean-ctx"
-version = "2.13.1"
+version = "2.14.0"
 edition = "2021"
 description = "Context Intelligence Engine with CCP. 24 MCP tools, 90+ compression patterns, cross-session memory (CCP), persistent AI knowledge, multi-agent sharing, LITM-aware positioning. Supports 18+ AI tools. Reduces LLM token consumption by up to 99%."
 license = "MIT"
@@ -21,6 +21,7 @@ path = "src/main.rs"
 
 [features]
 default = ["tree-sitter"]
+neural = ["dep:rten"]
 tree-sitter = [
   "dep:tree-sitter",
   "dep:tree-sitter-rust",
@@ -84,6 +85,7 @@ tree-sitter-scala = { version = "0.25", optional = true }
 tree-sitter-elixir = { version = "0.3", optional = true }
 tree-sitter-zig = { version = "1.1", optional = true }
 tree-sitter-dart = { version = "0.1", optional = true }
+rten = { version = "0.24", optional = true }
 
 [profile.release]
 opt-level = "z"

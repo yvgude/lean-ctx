@@ -173,7 +173,7 @@ fn format_full_output(
     _crp_mode: CrpMode,
 ) -> String {
     let tokens = entry.original_tokens;
-    let header = build_header(file_ref, short, ext, content, entry.line_count, true);
+    let metadata = build_header(file_ref, short, ext, content, entry.line_count, true);
 
     let mut sym = SymbolMap::new();
     let idents = symbol_map::extract_identifiers(content, ext);
@@ -195,13 +195,13 @@ fn format_full_output(
     if sym_beneficial {
         let compressed_content = sym.apply(content);
         let sym_table = sym.format_table();
-        let output = format!("{header}\n{compressed_content}{sym_table}");
+        let output = format!("{compressed_content}{sym_table}\n{metadata}");
         let sent = count_tokens(&output);
         let savings = protocol::format_savings(tokens, sent);
         return format!("{output}\n{savings}");
     }
 
-    let output = format!("{header}\n{content}");
+    let output = format!("{content}\n{metadata}");
     let sent = count_tokens(&output);
     let savings = protocol::format_savings(tokens, sent);
     format!("{output}\n{savings}")

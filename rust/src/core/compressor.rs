@@ -1,7 +1,7 @@
 use similar::{ChangeTag, TextDiff};
 
 pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
-    let mut result = Vec::new();
+    let mut result: Vec<String> = Vec::new();
     let is_python = matches!(ext, Some("py"));
     let is_html = matches!(ext, Some("html" | "htm" | "xml" | "svg"));
     let is_sql = matches!(ext, Some("sql"));
@@ -50,6 +50,15 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
         }
 
         if trimmed == "}" || trimmed == "};" || trimmed == ");" || trimmed == "});" {
+            if let Some(last) = result.last() {
+                let last_trimmed = last.trim();
+                if matches!(last_trimmed, "}" | "};" | ");" | "});") {
+                    if let Some(last_mut) = result.last_mut() {
+                        last_mut.push_str(trimmed);
+                    }
+                    continue;
+                }
+            }
             result.push(trimmed.to_string());
             continue;
         }
@@ -124,7 +133,7 @@ fn normalize_indentation(line: &str) -> String {
 
 pub fn diff_content(old_content: &str, new_content: &str) -> String {
     if old_content == new_content {
-        return "∅ no changes".to_string();
+        return "(no changes)".to_string();
     }
 
     let diff = TextDiff::from_lines(old_content, new_content);
@@ -153,10 +162,10 @@ pub fn diff_content(old_content: &str, new_content: &str) -> String {
     }
 
     if changes.is_empty() {
-        return "∅ no changes".to_string();
+        return "(no changes)".to_string();
     }
 
-    changes.push(format!("\n∂ +{additions}/-{deletions} lines"));
+    changes.push(format!("\ndiff +{additions}/-{deletions} lines"));
     changes.join("\n")
 }
 
@@ -185,7 +194,7 @@ mod tests {
     #[test]
     fn test_diff_no_changes() {
         let content = "same\ncontent";
-        assert_eq!(diff_content(content, content), "∅ no changes");
+        assert_eq!(diff_content(content, content), "(no changes)");
     }
 
     #[test]

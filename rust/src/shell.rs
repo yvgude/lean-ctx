@@ -172,20 +172,6 @@ fn exec_buffered(command: &str, shell: &str, shell_flag: &str, cfg: &config::Con
     let full_output = combine_output(&stdout, &stderr);
     let input_tokens = count_tokens(&full_output);
 
-    let force_compress = std::env::var("LEAN_CTX_COMPRESS").is_ok();
-    let piped = !io::stdout().is_terminal();
-
-    if piped && !force_compress {
-        if !full_output.is_empty() {
-            let _ = io::stdout().write_all(full_output.as_bytes());
-            if !full_output.ends_with('\n') {
-                let _ = io::stdout().write_all(b"\n");
-            }
-        }
-        stats::record(command, input_tokens, input_tokens);
-        return exit_code;
-    }
-
     let (compressed, output_tokens) = compress_and_measure(command, &stdout, &stderr);
 
     stats::record(command, input_tokens, output_tokens);
@@ -334,7 +320,7 @@ fn is_excluded_command(command: &str, excluded: &[String]) -> bool {
 pub fn interactive() {
     let real_shell = detect_shell();
 
-    eprintln!("lean-ctx shell v2.13.1 (wrapping {real_shell})");
+    eprintln!("lean-ctx shell v2.14.0 (wrapping {real_shell})");
     eprintln!("All command output is automatically compressed.");
     eprintln!("Type 'exit' to quit.\n");
 
