@@ -249,6 +249,7 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
 }
 
 #[test]
+#[ignore] // Requires manual setup: git log -p -10 > /tmp/git_log_raw.txt
 fn e2e_real_git_log_compression() {
     let raw_path = "/tmp/git_log_raw.txt";
     if !std::path::Path::new(raw_path).exists() {
@@ -286,7 +287,7 @@ fn e2e_real_git_log_compression() {
 fn e2e_real_git_log_stat_compression() {
     let raw = std::process::Command::new("git")
         .args(["log", "--stat", "-20"])
-        .current_dir("/Users/yvesgugger/Documents/Privat/Projects/lean-ctx")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())

@@ -167,6 +167,9 @@ pub fn print_command_box() {
         "  {dim}│{rst}  {cyan}{bold}lean-ctx off{rst} / {cyan}{bold}on{rst}    {dim}Toggle compression{rst}              {dim}│{rst}"
     );
     println!(
+        "  {dim}│{rst}  {cyan}{bold}lean-ctx report-issue{rst} {dim}Report a bug (auto-diagnostics){rst} {dim}│{rst}"
+    );
+    println!(
         "  {dim}│{rst}  {cyan}{bold}lean-ctx uninstall{rst}   {dim}Clean removal{rst}                   {dim}│{rst}"
     );
     println!("  {dim}└─────────────────────────────────────────────────────────┘{rst}");

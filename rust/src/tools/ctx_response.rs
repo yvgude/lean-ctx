@@ -2,6 +2,14 @@ use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
 pub fn handle(response: &str, crp_mode: CrpMode) -> String {
+    handle_with_context(response, crp_mode, None)
+}
+
+pub fn handle_with_context(
+    response: &str,
+    crp_mode: CrpMode,
+    input_context: Option<&str>,
+) -> String {
     let original_tokens = count_tokens(response);
 
     if original_tokens <= 100 {
@@ -9,9 +17,9 @@ pub fn handle(response: &str, crp_mode: CrpMode) -> String {
     }
 
     let compressed = if crp_mode.is_tdd() {
-        compress_tdd(response)
+        compress_tdd(response, input_context)
     } else {
-        compress_standard(response)
+        compress_standard(response, input_context)
     };
 
     let compressed_tokens = count_tokens(&compressed);
@@ -31,7 +39,9 @@ pub fn handle(response: &str, crp_mode: CrpMode) -> String {
     )
 }
 
-fn compress_standard(text: &str) -> String {
+fn compress_standard(text: &str, input_context: Option<&str>) -> String {
+    let echo_lines = input_context.map(build_echo_set);
+
     let mut result = Vec::new();
     let mut prev_empty = false;
 
@@ -50,6 +60,14 @@ fn compress_standard(text: &str) -> String {
         if is_filler_line(trimmed) {
             continue;
         }
+        if is_boilerplate_code(trimmed) {
+            continue;
+        }
+        if let Some(ref echoes) = echo_lines {
+            if is_context_echo(trimmed, echoes) {
+                continue;
+            }
+        }
 
         result.push(line.to_string());
     }
@@ -57,7 +75,9 @@ fn compress_standard(text: &str) -> String {
     result.join("\n")
 }
 
-fn compress_tdd(text: &str) -> String {
+fn compress_tdd(text: &str, input_context: Option<&str>) -> String {
+    let echo_lines = input_context.map(build_echo_set);
+
     let mut result = Vec::new();
     let mut prev_empty = false;
 
@@ -75,12 +95,136 @@ fn compress_tdd(text: &str) -> String {
         if is_filler_line(trimmed) {
             continue;
         }
+        if is_boilerplate_code(trimmed) {
+            continue;
+        }
+        if let Some(ref echoes) = echo_lines {
+            if is_context_echo(trimmed, echoes) {
+                continue;
+            }
+        }
 
         let compressed = apply_tdd_shortcuts(trimmed);
         result.push(compressed);
     }
 
     result.join("\n")
+}
+
+fn build_echo_set(context: &str) -> std::collections::HashSet<String> {
+    context
+        .lines()
+        .map(normalize_for_echo)
+        .filter(|l| l.len() > 10)
+        .collect()
+}
+
+fn normalize_for_echo(line: &str) -> String {
+    line.trim().to_lowercase().replace(char::is_whitespace, " ")
+}
+
+fn is_context_echo(line: &str, echo_set: &std::collections::HashSet<String>) -> bool {
+    let normalized = normalize_for_echo(line);
+    if normalized.len() <= 10 {
+        return false;
+    }
+    echo_set.contains(&normalized)
+}
+
+fn is_boilerplate_code(line: &str) -> bool {
+    let trimmed = line.trim();
+
+    if trimmed.starts_with("//")
+        && !trimmed.starts_with("// TODO")
+        && !trimmed.starts_with("// FIXME")
+        && !trimmed.starts_with("// SAFETY")
+        && !trimmed.starts_with("// NOTE")
+    {
+        let comment_body = trimmed.trim_start_matches("//").trim();
+        if is_narration_comment(comment_body) {
+            return true;
+        }
+    }
+
+    if trimmed.starts_with('#') && !trimmed.starts_with("#[") && !trimmed.starts_with("#!") {
+        let comment_body = trimmed.trim_start_matches('#').trim();
+        if is_narration_comment(comment_body) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn is_narration_comment(body: &str) -> bool {
+    let b = body.to_lowercase();
+
+    let what_prefixes = [
+        "import ",
+        "define ",
+        "create ",
+        "set up ",
+        "initialize ",
+        "declare ",
+        "add ",
+        "get ",
+        "return ",
+        "check ",
+        "handle ",
+        "call ",
+        "update ",
+        "increment ",
+        "decrement ",
+        "loop ",
+        "iterate ",
+        "print ",
+        "log ",
+        "convert ",
+        "parse ",
+        "read ",
+        "write ",
+        "send ",
+        "receive ",
+        "validate ",
+        "set ",
+        "start ",
+        "stop ",
+        "open ",
+        "close ",
+        "fetch ",
+        "load ",
+        "save ",
+        "store ",
+        "delete ",
+        "remove ",
+        "calculate ",
+        "compute ",
+        "render ",
+        "display ",
+        "show ",
+        "this function ",
+        "this method ",
+        "this class ",
+        "the following ",
+        "here we ",
+        "now we ",
+    ];
+    if what_prefixes.iter().any(|p| b.starts_with(p)) {
+        return true;
+    }
+
+    let what_patterns = [" the ", " a ", " an "];
+    if b.len() < 60 && what_patterns.iter().all(|p| !b.contains(p)) {
+        return false;
+    }
+    if b.len() < 40
+        && b.split_whitespace().count() <= 5
+        && b.chars().filter(|c| c.is_uppercase()).count() == 0
+    {
+        return false;
+    }
+
+    false
 }
 
 fn is_filler_line(line: &str) -> bool {
@@ -317,11 +461,32 @@ mod tests {
             The function returns an error when the token is expired.\n\
             Note: always check the expiry first.";
 
-        let compressed = compress_standard(response);
+        let compressed = compress_standard(response, None);
         assert!(!compressed.contains("Let me explain"));
         assert!(!compressed.contains("I think"));
         assert!(!compressed.contains("Hope this helps"));
         assert!(compressed.contains("error when the token"));
         assert!(compressed.contains("Note:"));
+    }
+
+    #[test]
+    fn test_echo_detection() {
+        let context = "fn shannon_entropy(text: &str) -> f64 {\n    let freq = HashMap::new();\n}";
+        let response = "Here's the code:\nfn shannon_entropy(text: &str) -> f64 {\n    let freq = HashMap::new();\n}\nI added the new function below.";
+
+        let compressed = compress_standard(response, Some(context));
+        assert!(!compressed.contains("fn shannon_entropy"));
+        assert!(compressed.contains("added the new function"));
+    }
+
+    #[test]
+    fn test_boilerplate_comment_removal() {
+        let response = "// Import the module\nuse std::io;\n// Define the function\nfn main() {}\n// NOTE: important edge case\nlet x = 1;";
+        let compressed = compress_standard(response, None);
+        assert!(!compressed.contains("Import the module"));
+        assert!(!compressed.contains("Define the function"));
+        assert!(compressed.contains("NOTE: important edge case"));
+        assert!(compressed.contains("use std::io"));
+        assert!(compressed.contains("fn main()"));
     }
 }

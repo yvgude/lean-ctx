@@ -51,7 +51,19 @@ pub fn handle(
 
     let allocations = boltzmann_allocate(&candidates, TOTAL_TOKEN_BUDGET, temperature);
 
+    let file_context: Vec<(String, usize)> = candidates
+        .iter()
+        .filter_map(|c| {
+            std::fs::read_to_string(&c.path)
+                .ok()
+                .map(|content| (c.path.clone(), content.lines().count()))
+        })
+        .collect();
+    let briefing = crate::core::task_briefing::build_briefing(task, &file_context);
+    let briefing_block = crate::core::task_briefing::format_briefing(&briefing);
+
     let mut output = Vec::new();
+    output.push(briefing_block);
     output.push(format!("[task: {task}]"));
 
     let mut total_estimated_saved = 0usize;

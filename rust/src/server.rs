@@ -18,7 +18,7 @@ impl ServerHandler for LeanCtxServer {
         let instructions = build_instructions(self.crp_mode);
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "2.15.0"))
+            .with_server_info(Implementation::new("lean-ctx", "2.16.1"))
             .with_instructions(instructions)
     }
 
@@ -43,7 +43,7 @@ impl ServerHandler for LeanCtxServer {
         let capabilities = ServerCapabilities::builder().enable_tools().build();
 
         Ok(InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", "2.15.0"))
+            .with_server_info(Implementation::new("lean-ctx", "2.16.1"))
             .with_instructions(instructions))
     }
 
@@ -561,6 +561,7 @@ list, info.",
             )
         };
 
+        let tool_start = std::time::Instant::now();
         let result_text = match name {
             "ctx_read" => {
                 let path = get_str(args, "path")
@@ -782,14 +783,39 @@ list, info.",
                 let ext = get_str(args, "ext");
                 let max = get_int(args, "max_results").unwrap_or(20) as usize;
                 let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
-                let (result, original) = crate::tools::ctx_search::handle(
-                    &pattern,
-                    &path,
-                    ext.as_deref(),
-                    max,
-                    self.crp_mode,
-                    !no_gitignore,
-                );
+                let crp = self.crp_mode;
+                let respect = !no_gitignore;
+                let search_result = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    tokio::task::spawn_blocking(move || {
+                        crate::tools::ctx_search::handle(
+                            &pattern,
+                            &path,
+                            ext.as_deref(),
+                            max,
+                            crp,
+                            respect,
+                        )
+                    }),
+                )
+                .await;
+                let (result, original) = match search_result {
+                    Ok(Ok(r)) => r,
+                    Ok(Err(e)) => {
+                        return Err(ErrorData::internal_error(
+                            format!("search task failed: {e}"),
+                            None,
+                        ))
+                    }
+                    Err(_) => {
+                        let msg = "ctx_search timed out after 30s. Try narrowing the search:\n\
+                                   • Use a more specific pattern\n\
+                                   • Specify ext= to limit file types\n\
+                                   • Specify a subdirectory in path=";
+                        self.record_call("ctx_search", 0, 0, None).await;
+                        return Ok(CallToolResult::success(vec![Content::text(msg)]));
+                    }
+                };
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
                 self.record_call("ctx_search", original, saved, None).await;
@@ -1246,6 +1272,18 @@ list, info.",
             }
         }
 
+        let tool_duration_ms = tool_start.elapsed().as_millis() as u64;
+        if tool_duration_ms > 100 {
+            LeanCtxServer::append_tool_call_log(
+                name,
+                tool_duration_ms,
+                0,
+                0,
+                None,
+                &chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            );
+        }
+
         let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);
         if current_count > 0 && current_count.is_multiple_of(100) {
             std::thread::spawn(cloud_background_tasks);
@@ -1338,9 +1376,11 @@ See the ctx() tool description for available sub-tools.\n",
         );
     }
 
+    let intelligence_block = build_intelligence_block();
+
     let base = base;
     match crp_mode {
-        CrpMode::Off => base,
+        CrpMode::Off => format!("{base}\n\n{intelligence_block}"),
         CrpMode::Compact => {
             format!(
                 "{base}\n\n\
@@ -1351,7 +1391,8 @@ Compact Response Protocol:\n\
 • Compact lists over prose, code blocks over explanations\n\
 • Code changes: diff lines (+/-) only, not full files\n\
 • TARGET: <=200 tokens per response unless code edits require more\n\
-• THINK LESS: Tool outputs are pre-analyzed. Trust summaries directly."
+• Tool outputs are pre-analyzed and compressed. Trust them directly.\n\n\
+{intelligence_block}"
             )
         }
         CrpMode::Tdd => {
@@ -1376,11 +1417,23 @@ CHANGE NOTATION:\n\
 STATUS: ctx_read(F1) -> 808L cached ok | cargo test -> 82 passed 0 failed\n\
 \n\
 TOKEN BUDGET: <=150 tokens per response. Exceed only for multi-file edits.\n\
-THINK LESS: Tool outputs are pre-analyzed. Trust compressed outputs directly.\n\
-ZERO NARRATION: Act, then report result in 1 line."
+Tool outputs are pre-analyzed and compressed. Trust them directly.\n\
+ZERO NARRATION: Act, then report result in 1 line.\n\n\
+{intelligence_block}"
             )
         }
     }
+}
+
+fn build_intelligence_block() -> String {
+    "\
+OUTPUT EFFICIENCY:\n\
+• NEVER echo back code that was provided in tool outputs — it wastes tokens.\n\
+• NEVER add narration comments (// Import, // Define, // Return) — code is self-documenting.\n\
+• For code changes: show only the new/changed code, not unchanged context.\n\
+• Tool outputs include [TASK:type] and SCOPE hints for context.\n\
+• Respect the user's intent: architecture tasks need thorough analysis, simple generates need code."
+        .to_string()
 }
 
 fn tool_def(name: &'static str, description: &'static str, schema_value: Value) -> Tool {

@@ -319,6 +319,8 @@ mod tests {
             original_tokens: 1000,
             saved_tokens: 300,
             mode: Some("full".to_string()),
+            duration_ms: 0,
+            timestamp: String::new(),
         }];
         let output = handle(&cache, &calls, CrpMode::Tdd);
         assert!(
