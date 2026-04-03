@@ -1,0 +1,37 @@
+stages:
+  - deploy
+
+variables:
+  GIT_DEPTH: 1
+
+deploy-website:
+  stage: deploy
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - echo "[ci] Building lean-ctx-web Docker image..."
+    - docker build --no-cache -f Dockerfile.web -t lean-ctx-web .
+    - echo "[ci] Stopping old containers..."
+    - docker stop lean-ctx-web 2>/dev/null || true
+    - docker rm lean-ctx-web 2>/dev/null || true
+    - docker stop leanctx-web 2>/dev/null || true
+    - docker rm leanctx-web 2>/dev/null || true
+    - echo "[ci] Starting new container..."
+    - >
+      docker run -d
+      --name lean-ctx-web
+      --network coolify
+      --restart unless-stopped
+      -l "traefik.enable=true"
+      -l "traefik.docker.network=coolify"
+      -l "traefik.http.routers.lean-ctx.rule=Host(\`leanctx.com\`) || Host(\`www.leanctx.com\`) || Host(\`lean-ctx.pounce.ch\`) || Host(\`leanctx.tech\`) || Host(\`www.leanctx.tech\`)"
+      -l "traefik.http.routers.lean-ctx.entrypoints=https"
+      -l "traefik.http.routers.lean-ctx.tls=true"
+      -l "traefik.http.routers.lean-ctx.tls.certresolver=letsencrypt"
+      -l "traefik.http.services.lean-ctx.loadbalancer.server.port=80"
+      lean-ctx-web
+    - echo "[ci] lean-ctx-web deployed successfully"
+    - docker ps --filter name=lean-ctx-web --format "{{.Names}} {{.Status}}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "deploy"'

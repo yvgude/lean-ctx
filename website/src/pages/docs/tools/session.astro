@@ -1,0 +1,379 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Session Tools',
+    compact: true,
+    items: [
+      { label: 'ctx_session', href: '/docs/tools/session#ctx_session' },
+      { label: 'ctx_compress', href: '/docs/tools/session#ctx_compress' },
+      { label: 'ctx_analyze', href: '/docs/tools/session#ctx_analyze' },
+      { label: 'ctx_benchmark', href: '/docs/tools/session#ctx_benchmark' },
+      { label: 'ctx_metrics', href: '/docs/tools/session#ctx_metrics' },
+      { label: 'ctx_wrapped', href: '/docs/tools/session#ctx_wrapped' },
+      { label: 'ctx_cache', href: '/docs/tools/session#ctx_cache' },
+    ],
+  },
+  {
+    title: 'Other Categories',
+    items: [
+      { label: 'All Tools', href: '/docs/tools' },
+      { label: 'Core Tools', href: '/docs/tools/core' },
+      { label: 'Intelligence Tools', href: '/docs/tools/intelligence' },
+      { label: 'Memory Tools', href: '/docs/tools/memory' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Session & Monitoring" description="ctx_session, ctx_metrics, ctx_cache, ctx_compress, ctx_analyze, ctx_benchmark, ctx_wrapped — session management, monitoring, and compression analysis tools." sidebar={sidebar}>
+  <p>
+    These tools handle session persistence, performance monitoring, compression analysis,
+    and benchmarking — everything you need to measure and optimize your token savings.
+  </p>
+
+  <h2 id="ctx_session">ctx_session</h2>
+  <p>
+    Session state manager for cross-chat continuity. Persists task context, findings, decisions,
+    and file state across chat sessions and context compactions.
+  </p>
+
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>action</code> (required) — one of: <code>status</code>, <code>load</code>, <code>save</code>, <code>task</code>, <code>finding</code>, <code>decision</code>, <code>list</code></li>
+    <li><code>value</code> (optional) — value for <code>task</code>, <code>finding</code>, or <code>decision</code> actions</li>
+    <li><code>session_id</code> (optional) — specific session ID to load</li>
+  </ul>
+
+  <h3>Actions</h3>
+  <table>
+    <thead>
+      <tr><th>Action</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>status</code></td><td>Show current session state</td></tr>
+      <tr><td><code>load</code></td><td>Restore most recent or specified session</td></tr>
+      <tr><td><code>save</code></td><td>Force persist session to disk</td></tr>
+      <tr><td><code>task</code></td><td>Set current task description</td></tr>
+      <tr><td><code>finding</code></td><td>Record a key finding (e.g. <code>"auth.ts:45 — JWT expiry not checked"</code>)</td></tr>
+      <tr><td><code>decision</code></td><td>Record an architectural decision</td></tr>
+      <tr><td><code>list</code></td><td>List all saved sessions</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example: Recording Context</h3>
+  <pre><code>ctx_session task "Implement OAuth2 login flow"
+ctx_session finding "auth.ts:45 — missing token refresh logic"
+ctx_session decision "Use refresh tokens with 7-day expiry"
+ctx_session save</code></pre>
+
+  <h3>Example: Restoring Context</h3>
+  <pre><code>ctx_session load
+→ Restored session (2026-03-25 14:30)
+  Task: Implement OAuth2 login flow
+  Findings: 3 recorded
+  Decisions: 1 recorded
+  Files touched: auth.ts, login.ts, middleware.ts
+  (~400 tokens vs ~50K cold start)</code></pre>
+
+  <h3>LITM-Aware Positioning</h3>
+  <p>
+    Session state is positioned using attention-aware placement based on
+    <a href="https://arxiv.org/abs/2307.03172">Liu et al., 2023</a>:
+    task and findings go to the beginning of the context window (high primacy attention),
+    while the lossy middle zone carries only compressed metadata.
+  </p>
+
+  <h3>Storage</h3>
+  <p>
+    Sessions are stored as JSON in <code>~/.lean-ctx/sessions/</code>. Each session captures:
+    task description, findings, decisions, files touched with their cache state,
+    and a timestamp for ordering.
+  </p>
+
+  <h2 id="ctx_compress">ctx_compress</h2>
+  <p>
+    <code>ctx_compress</code> creates a compact snapshot of all files currently in the session cache.
+    Use it as a memory checkpoint during long coding sessions — paste the output into a fresh chat
+    to carry over project understanding at minimal token cost.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>include_signatures</code></td><td>boolean</td><td>No</td><td>Include top-5 function signatures per file (default: true)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>{`$ ctx_compress
+
+CTX CHECKPOINT (12 files)
+
+F1 auth.ts [123L]: λ+createUser(email:s,pwd:s)→User, λ+authenticate(email:s,pwd:s)→Session
+F2 db.ts [89L]: §+Database, λ+query(sql:s)→R, λ+migrate()→∅
+F3 routes.ts [234L]: λ+setupRoutes(app:Express), λ+authMiddleware(req,res,next)
+F4 config.ts [45L]: ν+DB_URL:s, ν+JWT_SECRET:s
+...
+
+STATS: 34 reads, 22 hits (65%)
+COMPRESSION: 28450 → 890 tok
+[27560 tok saved (97%)]`}</code></pre>
+
+  <h3>Token Savings</h3>
+  <p>
+    Typical savings are <strong>90-99%</strong>. A 12-file project context that normally takes
+    ~28,000 tokens can be represented in under 900 tokens.
+  </p>
+
+  <h3>Auto-Checkpoint</h3>
+  <p>
+    LeanCTX can automatically generate checkpoints after every N tool calls.
+    Configure with the <code>LEAN_CTX_CHECKPOINT_INTERVAL</code> environment variable:
+  </p>
+  <pre><code>{`# Auto-checkpoint every 15 tool calls (default: 15)
+LEAN_CTX_CHECKPOINT_INTERVAL=15
+
+# Disable auto-checkpoints
+LEAN_CTX_CHECKPOINT_INTERVAL=0`}</code></pre>
+
+  <h2 id="ctx_analyze">ctx_analyze</h2>
+  <p>
+    <code>ctx_analyze</code> performs deep information-theoretic analysis on a file using Shannon entropy
+    and Jaccard similarity. It tells you exactly how much real information the file contains
+    and recommends the best compression strategy.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Path to the file to analyze</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>{`$ ctx_analyze middleware.ts
+
+ANALYSIS: middleware.ts (78L, 1856 tok)
+
+Entropy Distribution:
+  H̄ = 3.2 bits/char
+  Low-entropy (H<2.0): 14 lines (18%)
+  High-entropy (H>4.0): 22 lines (28%)
+
+Strategy Comparison:
+  raw                      1856 tok  —
+  aggressive               1420 tok  -23%
+  signatures (tdd)          312 tok  -83%
+  entropy                   298 tok  -84%
+  aggressive + §MAP        1380 tok  -26%
+  cache hit                  13 tok  -99%
+
+Recommendation: signatures (best first-read savings)`}</code></pre>
+
+  <h2 id="ctx_benchmark">ctx_benchmark</h2>
+  <p>
+    <code>ctx_benchmark</code> measures real token counts using tiktoken (o200k_base — the same tokenizer
+    used by GPT-4 and Claude). It supports two modes: <strong>single-file</strong> benchmarks and
+    <strong>project-wide</strong> scans.
+  </p>
+
+  <h3>Project Benchmark (v2.7.0)</h3>
+  <p>
+    Scans your project directory, selects up to 50 representative files across all languages,
+    and measures every compression mode with real data.
+  </p>
+
+  <h4>CLI Usage</h4>
+  <pre><code># Terminal output (ANSI)
+lean-ctx benchmark run [path]
+
+# Machine-readable JSON
+lean-ctx benchmark run [path] --json
+
+# Shareable Markdown report
+lean-ctx benchmark report [path]</code></pre>
+
+  <h4>Tool Usage</h4>
+  <pre><code>ctx_benchmark path="." action="project" format="terminal"
+ctx_benchmark path="." action="project" format="markdown"
+ctx_benchmark path="." action="project" format="json"</code></pre>
+
+  <h4>Example Output</h4>
+  <pre><code>══════════════════════════════════════════════════════════════
+  lean-ctx Benchmark — .
+══════════════════════════════════════════════════════════════
+  Scanned: 50 files (10 ts, 10 rs, 8 py, 6 go, ...)
+  Total raw tokens: 145.2K
+
+  Mode Performance:
+  Mode               Tokens    Savings    Latency    Quality
+  ──────────────────────────────────────────────────────────
+  map                  7.5K      98.5%      2.3ms      93.4%
+  signatures           9.3K      98.2%      2.1ms      96.3%
+  aggressive         130.1K      10.4%       81μs     100.0%
+  entropy            108.3K      25.4%     26.0ms     100.0%
+  cache_hit             650      99.6%        0μs        N/A
+
+  Session Simulation (30-min coding):
+  Approach                     Tokens       Cost    Savings
+  ──────────────────────────────────────────────────────────
+  Raw (no compression)         290.4K     $0.726          —
+  lean-ctx (no CCP)             38.2K     $0.096      86.8%
+  lean-ctx + CCP                12.4K     $0.031      95.7%
+══════════════════════════════════════════════════════════════</code></pre>
+
+  <h3>Single-File Benchmark</h3>
+  <p>
+    Benchmarks a single file against all compression strategies with exact token counts.
+  </p>
+
+  <h4>Parameters</h4>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>File path (single file) or directory (project mode)</td></tr>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>file</code> (default) or <code>project</code></td></tr>
+      <tr><td><code>format</code></td><td>string</td><td>No</td><td><code>terminal</code> (default), <code>markdown</code>, or <code>json</code> (project mode only)</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Example (Single File)</h4>
+  <pre><code>ctx_benchmark auth.ts
+
+Benchmark: auth.ts (123L)
+
+Strategy                     Tokens   Savings
+──────────────────────────────────────────────
+raw                             915  —
+aggressive                      412  -503 (55%)
+signatures (compact)            121  -794 (87%)
+signatures (tdd)                 98  -817 (89%)
+entropy                         348  -567 (62%)
+cache hit                        13  -902 (99%)
+──────────────────────────────────────────────
+Best: "cache hit" saves 902 tokens (99%)</code></pre>
+
+  <h2 id="ctx_metrics">ctx_metrics</h2>
+  <p>
+    <code>ctx_metrics</code> displays comprehensive session statistics including token savings,
+    USD cost estimates, per-tool and per-mode breakdowns, and file reference mappings.
+  </p>
+
+  <h3>Parameters</h3>
+  <p>No parameters. Returns current session statistics.</p>
+
+  <h3>Example Output</h3>
+  <pre><code>ctx_metrics
+
+LeanCTX session metrics
+══════════════════════════════════════════════════
+Files tracked: 12 | Reads: 34 | Cache hits: 22 (65%)
+Input tokens:  28.5K original → 4.1K sent | 24.3K saved (85.5%)
+Cost estimate: $0.0713 without → $0.0103 with lean-ctx | $0.0610 saved
+
+By Tool:
+Tool           Calls  Original     Saved   Avg%
+──────────────────────────────────────────────────
+ctx_read          18     22.4K    19.2K    91%
+ctx_shell          8      4.8K     3.1K    74%
+ctx_tree           4      1.8K     1.2K    40%
+
+By Mode:
+Mode           Calls     Saved
+──────────────────────────────
+map                6    12.1K
+signatures         4     5.2K
+full               8     1.9K
+
+File Refs:
+  F1=auth.ts [123L 915t reads:5]
+  F2=db.ts [89L 412t reads:3]
+
+Projected session savings (incl. thinking): $0.085</code></pre>
+
+  <h2 id="ctx_wrapped">ctx_wrapped</h2>
+  <p>
+    Generates a savings report card showing tokens saved, cost avoided,
+    top commands, and cache efficiency over a time period.
+  </p>
+
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>period</code> (optional) — <code>week</code> (default), <code>month</code>, or <code>all</code></li>
+  </ul>
+
+  <h3>Example</h3>
+  <pre><code>ctx_wrapped period=week
+
+╔══════════════════════════════════════════╗
+║         lean-ctx WRAPPED 2026           ║
+╠══════════════════════════════════════════╣
+║  24.3K tokens saved      $0.06 avoided  ║
+║  12 sessions              47 commands   ║
+║                                         ║
+║  Top Commands:                          ║
+║    ctx_read ▓▓▓▓▓▓▓▓▓▓▓ 18             ║
+║    git      ▓▓▓▓▓▓▓ 12                 ║
+║    ctx_shell ▓▓▓▓▓ 8                   ║
+║                                         ║
+║  Cache Hit Rate: 65%                    ║
+╚══════════════════════════════════════════╝</code></pre>
+
+  <h2 id="ctx_cache">ctx_cache</h2>
+  <p>
+    <code>ctx_cache</code> gives you explicit control over LeanCTX's in-memory session cache.
+    Use it when the LLM's context no longer matches what the server has cached — for example
+    after context compaction, session resets, or when running as a subagent.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>Yes</td><td><code>status</code>, <code>clear</code>, or <code>invalidate</code></td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>Only for <code>invalidate</code></td><td>File path to remove from cache</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Actions</h3>
+
+  <h4>status</h4>
+  <p>Lists all files currently in the session cache with line counts, token counts, and read counts.</p>
+  <pre><code>ctx_cache action=status
+
+Cache: 3 file(s)
+  F1=auth.ts [123L, 915t, read 4x]
+  F2=db.ts [89L, 678t, read 2x]
+  F3=routes.ts [234L, 1856t, read 1x]</code></pre>
+
+  <h4>clear</h4>
+  <p>Removes all entries from the session cache. The next <code>ctx_read</code> call for any file will return full content.</p>
+  <pre><code>ctx_cache action=clear
+
+Cache cleared — 3 file(s) removed. Next ctx_read will return full content.</code></pre>
+
+  <h4>invalidate</h4>
+  <p>Removes a single file from the cache. Useful when you know a specific file has changed externally.</p>
+  <pre><code>ctx_cache action=invalidate path=/src/auth.ts
+
+Invalidated cache for auth.ts. Next ctx_read will return full content.</code></pre>
+
+  <h3>Automatic Cache Expiry (Idle TTL)</h3>
+  <p>
+    Since v1.5.4, the cache auto-clears after 5 minutes of inactivity. This is a server-side safety net
+    that handles new chats, context compaction, and session resets without relying on the LLM.
+    Configure via the <code>LEAN_CTX_CACHE_TTL</code> environment variable (seconds, 0 to disable).
+  </p>
+</DocsLayout>

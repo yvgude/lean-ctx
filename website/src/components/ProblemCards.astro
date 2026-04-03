@@ -1,0 +1,43 @@
+---
+const problems = [
+  {
+    number: '~65%',
+    label: 'of file reads are re-reads',
+    title: 'Wasted re-reads',
+    description: 'In multi-step coding sessions, the same files are read over and over. Every redundant read burns tokens from your quota — tokens that could go toward actual reasoning.',
+  },
+  {
+    number: '$20–200',
+    label: 'per month on AI tools',
+    title: 'Hard limits, real money',
+    description: '500 requests/day. 45 messages per 5 hours. 1,500 premium requests/month. Every provider caps your usage — and most of your tokens go to boilerplate.',
+  },
+  {
+    number: '200K',
+    label: 'token context windows',
+    title: 'Bigger windows, same waste',
+    description: "Larger context windows don't help when they're filled with noise. 10K focused tokens outperform 200K of boilerplate — and cost a fraction.",
+  },
+];
+---
+
+<section class="relative py-16 sm:py-28">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="text-center mb-12 sm:mb-16">
+      <h2 class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.15] text-text-bright">
+        You're paying for tokens your LLM <span class="gradient-text-green">doesn't need.</span>
+      </h2>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-0">
+      {problems.map((p, i) => (
+        <div class:list={['py-8 md:py-10 md:px-8 text-center animate-entrance', i > 0 && 'border-t md:border-t-0 md:border-l border-white/[0.06]']}>
+          <p class="stat-value text-3xl sm:text-4xl text-accent mb-1">{p.number}</p>
+          <p class="text-[11px] text-muted uppercase tracking-wider mb-5">{p.label}</p>
+          <h3 class="text-sm font-semibold font-display text-text-bright mb-2">{p.title}</h3>
+          <p class="text-[13px] text-muted leading-relaxed max-w-xs mx-auto">{p.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

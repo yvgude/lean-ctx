@@ -1,0 +1,79 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'LeanCTX Cloud',
+    items: [
+      { label: 'Overview', href: '/docs/cloud' },
+      { label: 'Login', href: '/docs/cloud#login' },
+      { label: 'Stats sync', href: '/docs/cloud#sync' },
+      { label: 'Your data', href: '/docs/cloud#your-data' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="LeanCTX Cloud" sidebar={sidebar}>
+
+<h1>LeanCTX Cloud</h1>
+
+<p class="lead">
+  Optional cloud features for lean-ctx — sync stats across devices and track your savings over time.
+</p>
+
+<h2 id="login">Login</h2>
+
+<pre><code>lean-ctx login your@email.com</code></pre>
+
+<p>
+  This registers your account and links your local installation to LeanCTX Cloud.
+</p>
+
+<h2 id="sync">Stats sync</h2>
+
+<pre><code>lean-ctx sync</code></pre>
+
+<p>
+  Uploads your local compression statistics to the cloud so you can track savings across machines.
+</p>
+
+<h2 id="your-data">Your data</h2>
+
+<p>
+  We take privacy seriously. Here's exactly what we collect and what we don't:
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>We collect</th>
+      <th>We never collect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>File extension (e.g. ".rs", ".tsx")</td>
+      <td>File names or paths</td>
+    </tr>
+    <tr>
+      <td>File size range (e.g. "2k-10k")</td>
+      <td>File contents or code</td>
+    </tr>
+    <tr>
+      <td>Which compression mode worked best</td>
+      <td>Personal information</td>
+    </tr>
+    <tr>
+      <td>Compression ratio (a percentage)</td>
+      <td>Project structure</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  Data contribution is opt-in. You choose during <code>lean-ctx setup</code> whether to share
+  anonymized compression data.
+</p>
+
+</DocsLayout>
