@@ -1,6 +1,5 @@
 use lean_ctx::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
 use lean_ctx::core::entropy::entropy_compress;
-use lean_ctx::core::patterns;
 use lean_ctx::core::protocol::instruction_decoder_block;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
@@ -581,16 +580,16 @@ fn bench_thinking_reduction_cues_present() {
     let tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
 
     assert!(
-        compact.contains("THINK LESS") || compact.contains("Trust these summaries"),
-        "Compact mode must contain thinking-reduction cue"
+        compact.contains("OUTPUT EFFICIENCY") || compact.contains("Trust them directly"),
+        "Compact mode must contain output efficiency cue"
     );
     assert!(
         compact.contains("<=200 tokens") || compact.contains("≤200 tokens"),
         "Compact mode must contain token budget"
     );
     assert!(
-        tdd.contains("THINK LESS") || tdd.contains("Trust compressed outputs"),
-        "TDD mode must contain thinking-reduction cue"
+        tdd.contains("OUTPUT EFFICIENCY") || tdd.contains("Trust them directly"),
+        "TDD mode must contain output efficiency cue"
     );
     assert!(
         tdd.contains("<=150 tokens") || tdd.contains("≤150 tokens"),
@@ -601,7 +600,7 @@ fn bench_thinking_reduction_cues_present() {
         "TDD mode must contain zero-narration rule"
     );
 
-    eprintln!("\n  [thinking reduction] All cues present in CRP Compact and TDD modes ✓");
+    eprintln!("\n  [output efficiency] All cues present in CRP Compact and TDD modes ✓");
 }
 
 #[test]
@@ -664,153 +663,8 @@ fn bench_tdd_symbols_token_efficiency() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 6: PERFORMANCE BENCHMARKS — Latency and Throughput
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn bench_tokenizer_throughput() {
-    let content = generate_rust_file(1000);
-
-    let start = std::time::Instant::now();
-    let iterations = 100;
-    for _ in 0..iterations {
-        let _ = count_tokens(&content);
-    }
-    let elapsed = start.elapsed();
-
-    let per_call = elapsed / iterations;
-    let tokens = count_tokens(&content);
-
-    eprintln!(
-        "\n  [tokenizer] {} tokens counted in {:?}/call ({} calls)",
-        tokens, per_call, iterations
-    );
-    assert!(
-        per_call.as_millis() < 50,
-        "Tokenizer should be <50ms/call, got {:?}",
-        per_call
-    );
-}
-
-#[test]
-fn bench_tokenizer_cache_hit() {
-    let content = "fn main() { println!(\"Hello, world!\"); }";
-
-    let _ = count_tokens(content);
-
-    let start = std::time::Instant::now();
-    let iterations = 10_000;
-    for _ in 0..iterations {
-        let _ = count_tokens(content);
-    }
-    let elapsed = start.elapsed();
-
-    let per_call_ns = elapsed.as_nanos() / iterations as u128;
-    eprintln!(
-        "\n  [tokenizer cache] Cache hit: {}ns/call ({} calls)",
-        per_call_ns, iterations
-    );
-    assert!(
-        per_call_ns < 5_000,
-        "Cache hit should be <5μs, got {}ns",
-        per_call_ns
-    );
-}
-
-#[test]
-fn bench_pattern_compression_throughput() {
-    let output = generate_git_log_patch(20);
-
-    let start = std::time::Instant::now();
-    let iterations = 50;
-    for _ in 0..iterations {
-        let _ = patterns::compress_output("git log -p", &output);
-    }
-    let elapsed = start.elapsed();
-
-    let per_call = elapsed / iterations;
-    eprintln!(
-        "\n  [git pattern] {} bytes compressed in {:?}/call ({} calls)",
-        output.len(),
-        per_call,
-        iterations
-    );
-    assert!(
-        per_call.as_millis() < 20,
-        "Git pattern compression should be <20ms/call, got {:?}",
-        per_call
-    );
-}
-
-#[test]
-fn bench_aggressive_compression_throughput() {
-    let content = generate_rust_file(500);
-
-    let start = std::time::Instant::now();
-    let iterations = 100;
-    for _ in 0..iterations {
-        let _ = aggressive_compress(&content, Some("rs"));
-    }
-    let elapsed = start.elapsed();
-
-    let per_call = elapsed / iterations;
-    eprintln!(
-        "\n  [aggressive] 500-line Rust file in {:?}/call ({} calls)",
-        per_call, iterations
-    );
-    assert!(
-        per_call.as_millis() < 10,
-        "Aggressive compression should be <10ms/call, got {:?}",
-        per_call
-    );
-}
-
-#[test]
-fn bench_entropy_compression_throughput() {
-    let content = generate_rust_file(200);
-
-    let start = std::time::Instant::now();
-    let iterations = 20;
-    for _ in 0..iterations {
-        let _ = entropy_compress(&content);
-    }
-    let elapsed = start.elapsed();
-
-    let per_call = elapsed / iterations;
-    eprintln!(
-        "\n  [entropy] 200-line Rust file in {:?}/call ({} calls)",
-        per_call, iterations
-    );
-    assert!(
-        per_call.as_millis() < 100,
-        "Entropy compression should be <100ms/call, got {:?}",
-        per_call
-    );
-}
-
-#[test]
-fn bench_signatures_extraction_throughput() {
-    let content = generate_rust_file(500);
-
-    let start = std::time::Instant::now();
-    let iterations = 50;
-    for _ in 0..iterations {
-        let _ = extract_signatures(&content, "rs");
-    }
-    let elapsed = start.elapsed();
-
-    let per_call = elapsed / iterations;
-    eprintln!(
-        "\n  [signatures] 500-line Rust extraction in {:?}/call ({} calls)",
-        per_call, iterations
-    );
-    assert!(
-        per_call.as_millis() < 30,
-        "Signature extraction should be <30ms/call, got {:?}",
-        per_call
-    );
-}
+// SECTION 6: PERFORMANCE BENCHMARKS removed — machine-dependent timing
+// thresholds are unsuitable for OSS CI. Use `lean-ctx benchmark` CLI instead.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SECTION 7: REGRESSION GUARDS — Ensure no performance degradation
@@ -919,137 +773,7 @@ fn guard_essential_instructions_present() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AUTONOMY TOKEN IMPACT
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn bench_autonomy_token_impact() {
-    eprintln!("\n══════════════════════════════════════════════════════════════════");
-    eprintln!("  AUTONOMY LAYER — TOKEN IMPACT ANALYSIS");
-    eprintln!("══════════════════════════════════════════════════════════════════");
-
-    let old_proactive = "PROACTIVE: ctx_overview(task) at start | ctx_preload(task) for focused context | ctx_compress when context grows | ctx_session load on new chat\n\nOTHER TOOLS: ctx_session (memory), ctx_knowledge (project facts), ctx_agent (coordination), ctx_metrics, ctx_analyze, ctx_benchmark, ctx_cache, ctx_wrapped, ctx_compress";
-    let new_autonomy = "AUTONOMY: lean-ctx auto-runs ctx_overview, ctx_preload, ctx_dedup, ctx_compress behind the scenes.\nFocus on: ctx_read, ctx_shell, ctx_search, ctx_tree. Use ctx_session for memory, ctx_knowledge for project facts.";
-
-    let old_tokens = count_tokens(old_proactive);
-    let new_tokens = count_tokens(new_autonomy);
-    let prompt_delta = new_tokens as i64 - old_tokens as i64;
-
-    eprintln!("\n─── 1. System Prompt Block Change ───");
-    eprintln!("  OLD (PROACTIVE + OTHER TOOLS): {} tokens", old_tokens);
-    eprintln!("  NEW (AUTONOMY):                {} tokens", new_tokens);
-    eprintln!("  Delta:                         {:+} tokens", prompt_delta);
-
-    let full_off = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
-    let full_tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-    let full_off_tok = count_tokens(&full_off);
-    let full_tdd_tok = count_tokens(&full_tdd);
-    eprintln!("  Full prompt (CRP Off):  {} tokens", full_off_tok);
-    eprintln!("  Full prompt (CRP TDD):  {} tokens", full_tdd_tok);
-
-    eprintln!("\n─── 2. AUTO CONTEXT Pre-Hook (1x per session) ───");
-    let wrapper = "--- AUTO CONTEXT ---\n--- END AUTO CONTEXT ---\n\n";
-    let overview_result =
-        "§overview project\nsrc/ (5 files, ~120L)\n  main.rs lib.rs utils.rs auth.rs config.rs";
-    let preload_result = "§preload [task: fix auth]\nLoaded 3 files: auth.rs (full, 45L), utils.rs (map, 8 exports)\nRelevant: middleware.rs (0.8)";
-
-    let wrapper_tok = count_tokens(wrapper);
-    let overview_tok = count_tokens(overview_result);
-    let preload_tok = count_tokens(preload_result);
-    eprintln!("  Wrapper overhead:       {} tokens", wrapper_tok);
-    eprintln!("  ctx_overview result:    {} tokens", overview_tok);
-    eprintln!("  ctx_preload result:     {} tokens", preload_tok);
-    eprintln!(
-        "  Total (with task):      {} tokens",
-        preload_tok + wrapper_tok
-    );
-    eprintln!(
-        "  Total (without task):   {} tokens",
-        overview_tok + wrapper_tok
-    );
-
-    eprintln!("\n─── 3. Related Hints (per ctx_read) ───");
-    let h3 = "[related: auth.rs, middleware.rs, config.rs]";
-    let h2 = "[related: utils.rs, types.rs]";
-    let h1 = "[related: helper.rs]";
-    eprintln!("  3 related: {} tokens", count_tokens(h3));
-    eprintln!("  2 related: {} tokens", count_tokens(h2));
-    eprintln!("  1 related: {} tokens", count_tokens(h1));
-
-    eprintln!("\n─── 4. Shell Hints ───");
-    let sh1 = "[hint: ctx_search is more token-efficient for code search]";
-    let sh2 = "[hint: ctx_read provides cached, compressed file access]";
-    eprintln!("  Search hint: {} tokens", count_tokens(sh1));
-    eprintln!("  Read hint:   {} tokens", count_tokens(sh2));
-
-    eprintln!("\n─── 5. Net Impact (typical 8-read session) ───");
-    let hint_per_read: i64 = count_tokens(h2) as i64;
-    let reads: i64 = 8;
-    let cost_hints = hint_per_read * reads;
-    let cost_prehook: i64 = (preload_tok + wrapper_tok) as i64;
-    let total_cost = prompt_delta + cost_prehook + cost_hints;
-
-    let cold_read = 500i64;
-    let cache_hit = 13i64;
-    let preload_saves = (cold_read - cache_hit) * 2;
-    let dedup_saves: i64 = 750;
-    let manual_saves: i64 = 130;
-    let total_savings = preload_saves + dedup_saves + manual_saves;
-    let net = total_savings - total_cost;
-
-    eprintln!(
-        "  COSTS:   prompt {:+}, pre-hook +{}, hints +{} = +{} total",
-        prompt_delta, cost_prehook, cost_hints, total_cost
-    );
-    eprintln!(
-        "  SAVINGS: preload -{}, dedup -{}, manual -{} = -{} total",
-        preload_saves, dedup_saves, manual_saves, total_savings
-    );
-    eprintln!("  ═══════════════════════════════════");
-    eprintln!("  NET: {} tokens saved per session", net);
-    eprintln!("  ═══════════════════════════════════");
-
-    let cost_usd = net as f64 / 1_000_000.0 * 3.0;
-    eprintln!(
-        "  @$3/1M: ${:.4}/session, ${:.2}/day (100 sessions)",
-        cost_usd.abs(),
-        cost_usd.abs() * 100.0
-    );
-
-    assert!(
-        prompt_delta <= 0,
-        "Prompt should not grow — was {} vs {}",
-        old_tokens,
-        new_tokens
-    );
-    assert!(net > 0, "Net savings must be positive, got {}", net);
-    assert!(
-        wrapper_tok < 20,
-        "Wrapper overhead must be < 20 tokens, got {}",
-        wrapper_tok
-    );
-    assert!(count_tokens(h3) < 20, "Hint must be < 20 tokens");
-
-    if let Some(dir) = dirs::home_dir() {
-        let results = format!(
-            "\
-old_proactive={old_tokens}\nnew_autonomy={new_tokens}\nprompt_delta={prompt_delta}\n\
-full_off={full_off_tok}\nfull_tdd={full_tdd_tok}\n\
-wrapper={wrapper_tok}\noverview={overview_tok}\npreload={preload_tok}\n\
-hint_3={}\nhint_2={hint_per_read}\nhint_1={}\n\
-shell_search={}\nshell_read={}\n\
-cost_total={total_cost}\nsavings_total={total_savings}\nnet_savings={net}\n",
-            count_tokens(h3),
-            count_tokens(h1),
-            count_tokens(sh1),
-            count_tokens(sh2)
-        );
-        let _ = std::fs::write(dir.join(".lean-ctx").join("token_impact.txt"), &results);
-    }
-
-    eprintln!("\n  [bench] All token impact assertions passed ✓\n");
-}
+// AUTONOMY TOKEN IMPACT removed — writes to ~/.lean-ctx/ (not hermetic for CI)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA GENERATORS

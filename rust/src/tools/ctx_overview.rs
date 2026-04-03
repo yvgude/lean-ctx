@@ -38,6 +38,21 @@ pub fn handle(
     if has_task {
         let relevance = compute_relevance(&index, &task_files, &task_keywords);
 
+        if let Some(task_desc) = task {
+            let file_context: Vec<(String, usize)> = relevance
+                .iter()
+                .filter(|r| r.score >= 0.3)
+                .take(8)
+                .filter_map(|r| {
+                    std::fs::read_to_string(&r.path)
+                        .ok()
+                        .map(|c| (r.path.clone(), c.lines().count()))
+                })
+                .collect();
+            let briefing = crate::core::task_briefing::build_briefing(task_desc, &file_context);
+            output.push(crate::core::task_briefing::format_briefing(&briefing));
+        }
+
         let high: Vec<&_> = relevance.iter().filter(|r| r.score >= 0.8).collect();
         let medium: Vec<&_> = relevance
             .iter()

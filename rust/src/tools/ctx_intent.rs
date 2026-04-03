@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::core::cache::SessionCache;
+use crate::core::intent_engine;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -22,11 +23,27 @@ pub fn handle(
     project_root: &str,
     crp_mode: CrpMode,
 ) -> String {
+    let classification = intent_engine::classify(query);
+    let briefing_header = intent_engine::format_briefing_header(&classification);
+
     let intent = classify_intent(query);
     let strategy = build_strategy(&intent, project_root);
 
+    let file_context: Vec<(String, usize)> = strategy
+        .iter()
+        .filter(|(p, _)| Path::new(p).exists())
+        .filter_map(|(p, _)| {
+            std::fs::read_to_string(p)
+                .ok()
+                .map(|c| (p.clone(), c.lines().count()))
+        })
+        .collect();
+    let briefing = crate::core::task_briefing::build_briefing(query, &file_context);
+    let briefing_block = crate::core::task_briefing::format_briefing(&briefing);
+
     let mut result = Vec::new();
-    result.push(format!("Intent: {:?}", intent));
+    result.push(briefing_block);
+    result.push(briefing_header);
     result.push(format!(
         "Strategy: {} files, modes: {}",
         strategy.len(),

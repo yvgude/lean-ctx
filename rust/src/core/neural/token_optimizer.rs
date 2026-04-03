@@ -49,30 +49,24 @@ const DEFAULT_OPTIMIZATIONS: &[(&str, &str)] = &[
 ];
 
 /// BPE-aligned formatting rules — empirically measured to save tokens on o200k_base.
-/// Each rule reduces token count by exploiting the tokenizer's preferred byte sequences.
+/// Only SAFE rules that never break semantics or compilability.
+/// Dangerous rules removed after BPE Guard audit (2026-04-03):
+///   REMOVED: `.to_string()->.into()` (not always equivalent, trait-dependent)
+///   REMOVED: `.to_owned()->.into()` (same issue)
+///   REMOVED: `self, ->""` (breaks Python method signatures)
+///   REMOVED: `pass\n->""` (removes required Python stubs)
+///   REMOVED: `}: ->}` (breaks struct initialization `Foo { field: val };`)
+///   REMOVED: `: void->""` (breaks TypeScript explicit return types)
+///   REMOVED: `: undefined->""` (breaks TypeScript type annotations)
+///   REMOVED: `func (->fn (` (breaks Go method receivers)
+///   REMOVED: `interface{}->any` (only valid in Go 1.18+)
 const BPE_ALIGNED_RULES: &[(&str, &str)] = &[
-    // Whitespace around operators: `-> ` tokenizes as 2 tokens, `->` as 1
     (" -> ", "->"),
     (" => ", "=>"),
-    // Trailing semicolons after blocks waste 1 token
-    ("};", "}"),
-    // Double newlines cost 1 extra token each
     ("\n\n\n", "\n\n"),
-    // Common verbose patterns
-    (".to_string()", ".into()"),
-    (".to_owned()", ".into()"),
     ("pub(crate) ", "pub "),
     ("pub(super) ", "pub "),
-    // Python
-    ("self, ", ""),
-    ("    pass\n", ""),
-    // TypeScript/JS
     ("export default ", "export "),
-    (": void", ""),
-    (": undefined", ""),
-    // Go
-    ("func (", "fn ("),
-    ("interface{}", "any"),
 ];
 
 impl TokenOptimizer {

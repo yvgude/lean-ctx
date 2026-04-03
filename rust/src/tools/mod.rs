@@ -98,6 +98,8 @@ pub struct ToolCallRecord {
     pub original_tokens: usize,
     pub saved_tokens: usize,
     pub mode: Option<String>,
+    pub duration_ms: u64,
+    pub timestamp: String,
 }
 
 impl Default for LeanCtxServer {
@@ -168,13 +170,32 @@ impl LeanCtxServer {
         saved: usize,
         mode: Option<String>,
     ) {
+        self.record_call_with_timing(tool, original, saved, mode, 0)
+            .await;
+    }
+
+    pub async fn record_call_with_timing(
+        &self,
+        tool: &str,
+        original: usize,
+        saved: usize,
+        mode: Option<String>,
+        duration_ms: u64,
+    ) {
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let mut calls = self.tool_calls.write().await;
         calls.push(ToolCallRecord {
             tool: tool.to_string(),
             original_tokens: original,
             saved_tokens: saved,
-            mode,
+            mode: mode.clone(),
+            duration_ms,
+            timestamp: ts.clone(),
         });
+
+        if duration_ms > 0 {
+            Self::append_tool_call_log(tool, duration_ms, original, saved, mode.as_deref(), &ts);
+        }
 
         let output_tokens = original.saturating_sub(saved);
         crate::core::stats::record(tool, original, output_tokens);
@@ -247,6 +268,38 @@ impl LeanCtxServer {
             "{checkpoint}\n\n--- SESSION STATE ---\n{session_summary}\n\n{}",
             complexity.instruction_suffix()
         ))
+    }
+
+    pub fn append_tool_call_log(
+        tool: &str,
+        duration_ms: u64,
+        original: usize,
+        saved: usize,
+        mode: Option<&str>,
+        timestamp: &str,
+    ) {
+        const MAX_LOG_LINES: usize = 50;
+        if let Some(dir) = dirs::home_dir().map(|h| h.join(".lean-ctx")) {
+            let log_path = dir.join("tool-calls.log");
+            let mode_str = mode.unwrap_or("-");
+            let slow = if duration_ms > 5000 { " **SLOW**" } else { "" };
+            let line = format!(
+                "{timestamp}\t{tool}\t{duration_ms}ms\torig={original}\tsaved={saved}\tmode={mode_str}{slow}\n"
+            );
+
+            let mut lines: Vec<String> = std::fs::read_to_string(&log_path)
+                .unwrap_or_default()
+                .lines()
+                .map(|l| l.to_string())
+                .collect();
+
+            lines.push(line.trim_end().to_string());
+            if lines.len() > MAX_LOG_LINES {
+                lines.drain(0..lines.len() - MAX_LOG_LINES);
+            }
+
+            let _ = std::fs::write(&log_path, lines.join("\n") + "\n");
+        }
     }
 
     fn compute_cep_stats(

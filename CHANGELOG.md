@@ -3,6 +3,48 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.16.1] — 2026-04-03
+
+### Patch Release
+
+- **fix(report)**: `lean-ctx report-issue` now reliably finds the `gh` CLI binary by searching common install locations (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`) and falling back to `which gh`, instead of relying solely on PATH resolution via `std::process::Command`
+- **fix(report)**: Graceful fallback when GitHub labels (`auto-report`) don't exist yet on the repository
+- **fix(report)**: Better error messages when `gh` CLI submission fails
+- **fix(ci)**: Removed unused `use lean_ctx::core::patterns` import in `intensive_benchmarks.rs` that caused CI failure with `RUSTFLAGS=-Dwarnings`
+- **feat(gain)**: Added `report-issue` hint to the rotating tips in `lean-ctx gain` output
+
+## [2.16.0] — 2026-04-03
+
+### Intelligence Layer & Bug Fixes
+
+ctx_search hang fix, built-in issue reporting, graph impact analysis, and the intelligence layer that optimizes output tokens without affecting thinking quality.
+
+### Added
+- **`lean-ctx report-issue`** — One-command bug reporting with full diagnostics. Collects 9 sections (environment, config, MCP status, recent tool calls, session state, performance metrics, slow commands, tee logs, project context), anonymizes all paths and secrets, and creates a GitHub issue directly. Supports `--dry-run`, `--include-tee`, `--title`, and `--description` flags. Report is also saved locally to `~/.lean-ctx/last-report.md`.
+- **Per-Tool Latency Tracking** — Every MCP tool call over 100ms is now logged to `~/.lean-ctx/tool-calls.log` with timestamp, duration, token counts, and mode. Calls exceeding 5 seconds are marked `**SLOW**`. Log is ring-buffered at 50 entries and included in `report-issue` output.
+- **Intelligence Block (Output Efficiency)** — MCP server instructions now include output optimization hints: no-echo (don't repeat tool output), no-narration comments, delta-only code changes. These reduce output tokens by 15–40% without affecting thinking quality. Architecture tasks are explicitly protected: "architecture tasks need thorough analysis".
+- **Task Briefing Pipeline** — Automatic task classification (9 types: Generate, FixBug, Refactor, Explore, Test, Debug, Config, Deploy, Review) with confidence scoring. Each classification carries an `OUTPUT-HINT` directive (CodeOnly, DiffOnly, ExplainConcise, Trace, StepList) that guides the LLM's response format. Injected automatically via the autonomy pipeline on session start.
+- **Report Issue hint in CLI** — `lean-ctx` command box now shows `lean-ctx report-issue` alongside other commands.
+- **Report Issue link in Dashboard** — Header now includes a "Report Issue" link that copies the CLI command to clipboard.
+
+### Fixed
+- **ctx_search hanging for minutes** — Root cause: synchronous regex search blocked the Tokio runtime, no file size limits, no max directory depth, incomplete binary file filter. Fix: `spawn_blocking` wrapper with 30-second timeout, 512KB file size limit (`MAX_FILE_SIZE`), max directory depth of 20 (`MAX_WALK_DEPTH`), extended binary extension list (43 types including `.map`, `.snap`, `.db`, `.sqlite`, `.parquet`), and generated file detection (`.min.js`, `.bundle.js`, `.d.ts`, `.js.map`, `.css.map`). Searches that previously hung now complete in <100ms.
+- **`ctx_graph impact` always returning "No files depend on X"** — The graph stored import edges with Rust module paths (`lean_ctx::core::cache::SessionCache`) but `impact` compared against file paths (`src/core/cache.rs`). Added `file_path_to_module_prefixes()` converter and `edge_matches_file()` matcher that resolves `crate::`, `super::`, and crate-name prefixes. `ctx_graph impact cache.rs` now correctly reports 17 dependents.
+
+### Changed
+- **Security audit** — Removed all lab-specific references from tracked source code (Ollama `/no_think` directive, lab-only tool comments). Thinking budget instructions are now platform-neutral hints that work across all LLMs.
+- **Test suite cleanup** — Removed 7 machine-dependent throughput benchmarks unsuitable for open-source CI. Fixed hardcoded developer paths in `savings_verification.rs` (now uses `env!("CARGO_MANIFEST_DIR")`). Marked environment-dependent test as `#[ignore]`.
+
+### Performance
+- **462/462** tests pass (362 unit + 100 integration/benchmark)
+- **59%** average token savings in Cursor sessions
+- **91%** compression on `git log --stat` output
+- **98%** compression on `cargo test --no-run` output
+- **<100ms** ctx_search response time (previously minutes/hang)
+- **$0.05** estimated session savings (including thinking token reduction)
+
+---
+
 ## [2.15.0] — 2026-04-03
 
 ### Scientific Compression Evolution

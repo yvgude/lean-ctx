@@ -8,6 +8,9 @@ use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
+const MAX_FILE_SIZE: u64 = 512_000;
+const MAX_WALK_DEPTH: usize = 20;
+
 pub fn handle(
     pattern: &str,
     dir: &str,
@@ -28,6 +31,7 @@ pub fn handle(
 
     let walker = WalkBuilder::new(root)
         .hidden(true)
+        .max_depth(Some(MAX_WALK_DEPTH))
         .git_ignore(respect_gitignore)
         .git_global(respect_gitignore)
         .git_exclude(respect_gitignore)
@@ -36,6 +40,7 @@ pub fn handle(
     let mut matches = Vec::new();
     let mut raw_result_lines = Vec::new();
     let mut files_searched = 0u32;
+    let mut files_skipped_size = 0u32;
 
     for entry in walker.filter_map(|e| e.ok()) {
         if entry.file_type().is_none_or(|ft| ft.is_dir()) {
@@ -44,13 +49,20 @@ pub fn handle(
 
         let path = entry.path();
 
-        if is_binary_ext(path) {
+        if is_binary_ext(path) || is_generated_file(path) {
             continue;
         }
 
         if let Some(ext) = ext_filter {
             let file_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if file_ext != ext {
+                continue;
+            }
+        }
+
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.len() > MAX_FILE_SIZE {
+                files_skipped_size += 1;
                 continue;
             }
         }
@@ -80,10 +92,11 @@ pub fn handle(
     }
 
     if matches.is_empty() {
-        return (
-            format!("0 matches for '{pattern}' in {files_searched} files"),
-            0,
-        );
+        let mut msg = format!("0 matches for '{pattern}' in {files_searched} files");
+        if files_skipped_size > 0 {
+            msg.push_str(&format!(" ({files_skipped_size} large files skipped)"));
+        }
+        return (msg, 0);
     }
 
     let mut result = format!(
@@ -92,6 +105,10 @@ pub fn handle(
         files_searched,
         matches.join("\n")
     );
+
+    if files_skipped_size > 0 {
+        result.push_str(&format!("\n({files_skipped_size} files >512KB skipped)"));
+    }
 
     {
         let file_ext = ext_filter.unwrap_or("rs");
@@ -140,6 +157,9 @@ fn is_binary_ext(path: &Path) -> bool {
             | "tar"
             | "gz"
             | "br"
+            | "zst"
+            | "bz2"
+            | "xz"
             | "mp3"
             | "mp4"
             | "webm"
@@ -150,5 +170,29 @@ fn is_binary_ext(path: &Path) -> bool {
             | "dll"
             | "exe"
             | "lock"
+            | "map"
+            | "snap"
+            | "patch"
+            | "db"
+            | "sqlite"
+            | "parquet"
+            | "arrow"
+            | "bin"
+            | "o"
+            | "a"
+            | "class"
+            | "pyc"
+            | "pyo"
     )
+}
+
+fn is_generated_file(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    name.ends_with(".min.js")
+        || name.ends_with(".min.css")
+        || name.ends_with(".bundle.js")
+        || name.ends_with(".chunk.js")
+        || name.ends_with(".d.ts")
+        || name.ends_with(".js.map")
+        || name.ends_with(".css.map")
 }

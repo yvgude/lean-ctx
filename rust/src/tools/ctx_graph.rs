@@ -209,6 +209,59 @@ fn handle_symbol(
     format!("{result}[ctx_graph symbol: {tokens} tok (full file: {full_tokens} tok, -{pct}%)]")
 }
 
+fn file_path_to_module_prefixes(rel_path: &str, project_root: &str) -> Vec<String> {
+    let without_ext = rel_path
+        .strip_suffix(".rs")
+        .or_else(|| rel_path.strip_suffix(".ts"))
+        .or_else(|| rel_path.strip_suffix(".tsx"))
+        .or_else(|| rel_path.strip_suffix(".js"))
+        .or_else(|| rel_path.strip_suffix(".py"))
+        .unwrap_or(rel_path);
+
+    let module_path = without_ext
+        .strip_prefix("src/")
+        .unwrap_or(without_ext)
+        .replace('/', "::");
+
+    let module_path = if module_path.ends_with("::mod") {
+        module_path
+            .strip_suffix("::mod")
+            .unwrap_or(&module_path)
+            .to_string()
+    } else {
+        module_path
+    };
+
+    let crate_name = std::fs::read_to_string(Path::new(project_root).join("Cargo.toml"))
+        .or_else(|_| std::fs::read_to_string(Path::new(project_root).join("package.json")))
+        .ok()
+        .and_then(|c| {
+            c.lines()
+                .find(|l| l.contains("\"name\"") || l.starts_with("name"))
+                .and_then(|l| l.split('"').nth(1))
+                .map(|n| n.replace('-', "_"))
+        })
+        .unwrap_or_default();
+
+    let mut prefixes = vec![
+        format!("crate::{module_path}"),
+        format!("super::{module_path}"),
+        module_path.clone(),
+    ];
+    if !crate_name.is_empty() {
+        prefixes.insert(0, format!("{crate_name}::{module_path}"));
+    }
+    prefixes
+}
+
+fn edge_matches_file(edge_to: &str, module_prefixes: &[String]) -> bool {
+    module_prefixes.iter().any(|prefix| {
+        edge_to == *prefix
+            || edge_to.starts_with(&format!("{prefix}::"))
+            || edge_to.starts_with(&format!("{prefix},"))
+    })
+}
+
 fn handle_impact(path: Option<&str>, root: &str) -> String {
     let target = match path {
         Some(p) => p,
@@ -227,25 +280,35 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
         .unwrap_or(target)
         .trim_start_matches('/');
 
-    let dependents = index.get_reverse_deps(rel_target, 2);
-    if dependents.is_empty() {
+    let module_prefixes = file_path_to_module_prefixes(rel_target, root);
+
+    let direct: Vec<&str> = index
+        .edges
+        .iter()
+        .filter(|e| e.kind == "import" && edge_matches_file(&e.to, &module_prefixes))
+        .map(|e| e.from.as_str())
+        .collect();
+
+    let mut all_dependents: Vec<String> = direct.iter().map(|s| s.to_string()).collect();
+    for d in &direct {
+        for dep in index.get_reverse_deps(d, 1) {
+            if !all_dependents.contains(&dep) && dep != rel_target {
+                all_dependents.push(dep);
+            }
+        }
+    }
+
+    if all_dependents.is_empty() {
         return format!(
             "No files depend on {}",
             crate::core::protocol::shorten_path(target)
         );
     }
 
-    let direct: Vec<&str> = index
-        .edges
-        .iter()
-        .filter(|e| e.to == rel_target && e.kind == "import")
-        .map(|e| e.from.as_str())
-        .collect();
-
     let mut result = format!(
         "Impact of {} ({} dependents):\n",
         crate::core::protocol::shorten_path(target),
-        dependents.len()
+        all_dependents.len()
     );
 
     if !direct.is_empty() {
@@ -255,7 +318,7 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
         }
     }
 
-    let indirect: Vec<&String> = dependents
+    let indirect: Vec<&String> = all_dependents
         .iter()
         .filter(|d| !direct.contains(&d.as_str()))
         .collect();
@@ -303,4 +366,47 @@ fn handle_status(root: &str) -> String {
             .map(|d| d.to_string_lossy().to_string())
             .unwrap_or_default()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_edge_matches_file_crate_prefix() {
+        let prefixes = vec![
+            "lean_ctx::core::cache".to_string(),
+            "crate::core::cache".to_string(),
+            "super::core::cache".to_string(),
+            "core::cache".to_string(),
+        ];
+        assert!(edge_matches_file(
+            "lean_ctx::core::cache::SessionCache",
+            &prefixes
+        ));
+        assert!(edge_matches_file(
+            "crate::core::cache::SessionCache",
+            &prefixes
+        ));
+        assert!(edge_matches_file("crate::core::cache", &prefixes));
+        assert!(!edge_matches_file(
+            "lean_ctx::core::config::Config",
+            &prefixes
+        ));
+        assert!(!edge_matches_file("crate::core::cached_reader", &prefixes));
+    }
+
+    #[test]
+    fn test_file_path_to_module_prefixes_rust() {
+        let prefixes = file_path_to_module_prefixes("src/core/cache.rs", "/nonexistent");
+        assert!(prefixes.contains(&"crate::core::cache".to_string()));
+        assert!(prefixes.contains(&"core::cache".to_string()));
+    }
+
+    #[test]
+    fn test_file_path_to_module_prefixes_mod_rs() {
+        let prefixes = file_path_to_module_prefixes("src/core/mod.rs", "/nonexistent");
+        assert!(prefixes.contains(&"crate::core".to_string()));
+        assert!(!prefixes.iter().any(|p| p.contains("mod")));
+    }
 }

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use lean_ctx::{
-    cli, cloud_client, core, dashboard, doctor, setup, shell, terminal_ui, tools, uninstall,
+    cli, cloud_client, core, dashboard, doctor, report, setup, shell, terminal_ui, tools, uninstall,
 };
 
 fn main() {
@@ -169,6 +169,10 @@ fn main() {
                 doctor::run();
                 return;
             }
+            "report-issue" | "report" => {
+                report::run(&rest);
+                return;
+            }
             "uninstall" => {
                 uninstall::run();
                 return;
@@ -291,7 +295,7 @@ fn shell_quote(s: &str) -> String {
 
 fn print_help() {
     println!(
-        "lean-ctx 2.15.0 — The Intelligence Layer for AI Coding
+        "lean-ctx 2.16.1 — The Intelligence Layer for AI Coding
 
 90+ compression patterns | 25 MCP tools | Context Continuity Protocol
 
@@ -731,7 +735,7 @@ fn print_gain_with_logo() {
     print!("{output}");
     let d = core::theme::dim();
     let r = core::theme::rst();
-    println!("  {d}lean-ctx v2.15.0  |  leanctx.com  |  lean-ctx dashboard{r}");
+    println!("  {d}lean-ctx v2.16.1  |  leanctx.com  |  lean-ctx dashboard{r}");
     println!();
 
     core::version_check::check_background();
