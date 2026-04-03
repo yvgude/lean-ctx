@@ -1,0 +1,192 @@
+---
+interface DropdownItem {
+  label: string;
+  href: string;
+  description: string;
+  icon: string;
+}
+
+interface DropdownColumn {
+  title: string;
+  items: DropdownItem[];
+}
+
+interface Props {
+  id: string;
+  label: string;
+  columns: DropdownColumn[];
+}
+
+const { id, label, columns } = Astro.props;
+---
+
+<div class="mega-dd-wrapper" data-dropdown={id}>
+  <button
+    class="mega-dd-trigger"
+    aria-expanded="false"
+    aria-haspopup="true"
+    aria-controls={`mega-panel-${id}`}
+  >
+    {label}
+    <svg class="mega-dd-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none">
+      <path d="M2.5 3.75L5 6.25L7.5 3.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+
+  <div id={`mega-panel-${id}`} class="mega-dd-panel" role="menu" aria-hidden="true" style={`--dd-cols: ${columns.length}`}>
+    <div class="mega-dd-inner">
+      {columns.map(col => (
+        <div class="mega-dd-col">
+          <span class="mega-dd-col-title">{col.title}</span>
+          <ul class="mega-dd-list">
+            {col.items.map(item => (
+              <li>
+                <a href={item.href} class="mega-dd-item" role="menuitem">
+                  <span class="mega-dd-icon" set:html={item.icon} />
+                  <div>
+                    <span class="mega-dd-item-label">{item.label}</span>
+                    <span class="mega-dd-item-desc">{item.description}</span>
+                  </div>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
+
+<style>
+  .mega-dd-wrapper {
+    position: relative;
+  }
+
+  .mega-dd-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .mega-dd-chevron {
+    transition: transform 0.2s ease;
+    opacity: 0.4;
+  }
+  .mega-dd-wrapper.is-open .mega-dd-chevron {
+    transform: rotate(180deg);
+    opacity: 0.7;
+  }
+
+  .mega-dd-panel {
+    position: absolute;
+    top: calc(100% + 14px);
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+    z-index: 100;
+    width: max-content;
+    max-width: min(92vw, 1060px);
+  }
+  .mega-dd-wrapper.is-open .mega-dd-panel {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .mega-dd-inner {
+    display: grid;
+    grid-template-columns: repeat(var(--dd-cols, 2), minmax(240px, auto));
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    padding: 8px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+  }
+
+  .mega-dd-col {
+    padding: 14px 16px;
+    min-width: 220px;
+  }
+  .mega-dd-col + .mega-dd-col {
+    border-left: 1px solid var(--color-border);
+  }
+
+  .mega-dd-col-title {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--color-muted);
+    margin-bottom: 8px;
+    padding-left: 10px;
+    opacity: 0.6;
+  }
+
+  .mega-dd-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .mega-dd-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.15s ease;
+  }
+  .mega-dd-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .mega-dd-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--color-border);
+    color: var(--color-accent);
+    flex-shrink: 0;
+    margin-top: 1px;
+    transition: border-color 0.15s ease;
+  }
+  .mega-dd-item:hover .mega-dd-icon {
+    border-color: var(--color-border-light);
+  }
+
+  .mega-dd-item-label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text-bright);
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .mega-dd-item-desc {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    line-height: 1.45;
+    margin-top: 2px;
+    white-space: nowrap;
+  }
+</style>

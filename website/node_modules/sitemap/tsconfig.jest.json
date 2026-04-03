@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "resolveJsonModule": true,
+    "lib": ["es2018", "dom"],
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  }
+}

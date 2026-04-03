@@ -1,0 +1,334 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Intelligence Layer',
+    items: [
+      { label: 'Overview', href: '/docs/intelligence-layer' },
+      { label: 'Predictive Surprise', href: '/docs/intelligence-layer#surprise' },
+      { label: 'Spectral Relevance', href: '/docs/intelligence-layer#spectral' },
+      { label: 'Boltzmann Allocation', href: '/docs/intelligence-layer#boltzmann' },
+      { label: 'Semantic Chunking', href: '/docs/intelligence-layer#chunking' },
+      { label: 'MMR Deduplication', href: '/docs/intelligence-layer#mmr' },
+      { label: 'BPE Optimization', href: '/docs/intelligence-layer#bpe' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Autonomous Tools', href: '/docs/tools/intelligence' },
+      { label: 'Tree-sitter Engine', href: '/docs/tree-sitter' },
+      { label: 'Configuration', href: '/docs/configuration' },
+      { label: 'Benchmark', href: '/benchmark' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Scientific Intelligence Layer" description="Six compression algorithms grounded in information theory, graph theory, and statistical mechanics — all running automatically inside lean-ctx." sidebar={sidebar}>
+
+  <p>
+    lean-ctx goes beyond pattern matching. Six algorithms from information theory, graph theory,
+    and statistical mechanics work together to decide <em>what to keep, what to cut, and where to
+    put it</em> — all automatically, all locally, zero configuration.
+  </p>
+  <p>
+    These algorithms power the autonomous intelligence layer. They activate during every
+    <code>ctx_read</code>, <code>ctx_preload</code>, and <code>ctx_overview</code> call —
+    you never invoke them directly.
+  </p>
+
+  <h2>How the layers interact</h2>
+  <table>
+    <thead>
+      <tr><th>Algorithm</th><th>Decides</th><th>Based on</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="#spectral">Spectral Relevance</a></td><td>Which files matter</td><td>Dependency graph + PageRank</td></tr>
+      <tr><td><a href="#boltzmann">Boltzmann Allocation</a></td><td>How many tokens per file</td><td>Task specificity + relevance score</td></tr>
+      <tr><td><a href="#surprise">Predictive Surprise</a></td><td>Which lines to keep</td><td>Cross-entropy of BPE tokens</td></tr>
+      <tr><td><a href="#mmr">MMR Deduplication</a></td><td>Which lines are redundant</td><td>Bigram Jaccard similarity</td></tr>
+      <tr><td><a href="#chunking">Semantic Chunking</a></td><td>How to order the output</td><td>AST boundaries + attention flow</td></tr>
+      <tr><td><a href="#bpe">BPE Optimization</a></td><td>How to encode the final text</td><td>Token-level compression rules</td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="surprise">Predictive Surprise Scoring</h2>
+  <p>
+    Traditional compression filters use Shannon entropy on raw characters, which treats
+    <code>aaaa</code> and <code>import</code> as equally predictable. Predictive Surprise
+    instead measures <strong>cross-entropy against BPE token frequency</strong> — how
+    surprising each line is to the LLM's tokenizer.
+  </p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>Each line is tokenized using <code>o200k_base</code> (GPT-4o / Claude tokenizer).</li>
+    <li>For each token, a Zipfian prior estimates expected frequency based on rank.</li>
+    <li>The <strong>cross-entropy</strong> is computed: lines with common tokens (boilerplate) score low; lines with rare tokens (complex logic) score high.</li>
+    <li>Lines below the surprise threshold are candidates for removal during aggressive compression.</li>
+  </ol>
+
+  <h3>Example</h3>
+  <pre><code>{`// Low surprise (boilerplate) — candidate for removal:
+return Ok(());                    // surprise: 0.12
+use std::collections::HashMap;   // surprise: 0.18
+
+// High surprise (unique logic) — always preserved:
+let decay = (-alpha * dist as f64).exp();   // surprise: 0.89
+scores[j] += heat[i] * decay / degree;      // surprise: 0.94`}</code></pre>
+
+  <h3>Why it matters</h3>
+  <p>
+    Predictive Surprise removes 15–30% more boilerplate than character-level entropy
+    while preserving complex logic. It directly models what the LLM considers "informative"
+    because it uses the same BPE vocabulary.
+  </p>
+
+  <hr />
+
+  <h2 id="spectral">Spectral Relevance Propagation</h2>
+  <p>
+    When you ask lean-ctx to preload context for a task, it needs to decide which files matter.
+    Simple keyword matching only finds files that mention your search terms. Spectral Relevance
+    finds files that are <em>structurally connected</em> to the relevant ones — even if they
+    share no keywords.
+  </p>
+
+  <h3>How it works</h3>
+  <p>Two graph algorithms run on the project's dependency graph:</p>
+
+  <ol>
+    <li>
+      <strong>Heat Diffusion</strong> — Seed files matching the task description receive
+      initial "heat". Heat spreads along import edges with exponential decay
+      (<code>e<sup>-&alpha;&middot;d</sup></code>), simulating information flow through the
+      codebase.
+    </li>
+    <li>
+      <strong>PageRank Centrality</strong> — Files imported by many other files receive
+      higher centrality scores. This identifies structural hubs (e.g., a <code>db.ts</code>
+      imported by 20 modules).
+    </li>
+  </ol>
+  <p>
+    The final relevance score combines both: <code>0.7 &times; heat + 0.3 &times; pagerank</code>.
+    Files below a threshold are excluded from preloading.
+  </p>
+
+  <h3>Example</h3>
+  <pre><code>{`Task: "fix authentication bug"
+
+Direct matches:       auth.ts, login.ts
+Heat diffusion adds:  middleware.ts (imports auth.ts)
+                      session.ts (imported by auth.ts)
+PageRank promotes:    db.ts (imported by 18 files — structural hub)
+
+Result: 5 files preloaded instead of 2, covering the full blast radius.`}</code></pre>
+
+  <h3>Zero configuration</h3>
+  <p>
+    The dependency graph builds automatically on first use via <code>load_or_build()</code>.
+    No <code>ctx_graph build</code> needed — it just works.
+  </p>
+
+  <hr />
+
+  <h2 id="boltzmann">Boltzmann Context Allocation</h2>
+  <p>
+    Once Spectral Relevance selects the relevant files, each file needs a token budget.
+    Naive approaches give equal budgets or sort by relevance. Boltzmann Allocation uses
+    <strong>statistical mechanics</strong> to distribute tokens optimally.
+  </p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>Each file has a relevance score <em>E<sub>i</sub></em> from Spectral Relevance.</li>
+    <li>
+      A <strong>temperature parameter &beta;</strong> is derived from the task: specific
+      tasks ("fix auth bug in login.ts") produce low temperature (sharp allocation to top files);
+      broad tasks ("refactor the codebase") produce high temperature (even distribution).
+    </li>
+    <li>
+      Token budgets follow the <strong>Boltzmann distribution</strong>:
+      <code>budget<sub>i</sub> = total &times; (e<sup>&beta;&middot;E<sub>i</sub></sup> / &Sigma; e<sup>&beta;&middot;E<sub>j</sub></sup>)</code>
+    </li>
+    <li>
+      Minimum and maximum budgets are enforced (128–4096 tokens per file), and the
+      compression mode (<code>full</code>, <code>map</code>, <code>signatures</code>) is
+      chosen based on the allocated budget.
+    </li>
+  </ol>
+
+  <h3>Example</h3>
+  <pre><code>{`Task: "fix the JWT validation in auth middleware"
+Task specificity: 0.85 (specific) → β = 4.2
+
+File            | Relevance | Budget | Mode
+auth.ts         |      0.92 |  3,200 | full
+middleware.ts   |      0.78 |  1,800 | full
+session.ts      |      0.45 |    420 | map
+db.ts           |      0.31 |    180 | signatures
+routes.ts       |      0.22 |    128 | signatures
+                                ─────
+Total:                         5,728 tokens (within 8,000 budget)`}</code></pre>
+
+  <hr />
+
+  <h2 id="chunking">Semantic Chunking with Attention Bridges</h2>
+  <p>
+    LLMs suffer from the <strong>"Lost in the Middle"</strong> problem: information at the
+    beginning and end of context receives more attention than content in the middle. Semantic
+    Chunking restructures output to minimize information loss.
+  </p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>
+      <strong>Chunk Detection</strong> — Source lines are grouped into semantic chunks
+      (functions, types, imports, loose logic) based on AST boundary heuristics.
+    </li>
+    <li>
+      <strong>Relevance Ordering</strong> — Chunks matching the current task are promoted
+      to the top (high-attention position). Remaining chunks are ordered by type priority.
+    </li>
+    <li>
+      <strong>Attention Bridges</strong> — Between chunks, lean-ctx inserts minimal
+      bridge markers (<code>---</code>) so the LLM recognizes structural boundaries.
+    </li>
+    <li>
+      <strong>Tail Anchors</strong> — The last 2–3 lines of the highest-priority chunk
+      are repeated at the very end of the output, exploiting the recency bias for
+      critical information.
+    </li>
+  </ol>
+
+  <h3>Example</h3>
+  <pre><code>{`// Without chunking (flat output):
+import { db } from './db';
+import { hash } from './crypto';
+const MAX_RETRIES = 3;
+export function createUser(...) { ... }
+export function validateToken(...) { ... }    ← lost in the middle
+export function deleteUser(...) { ... }
+
+// With semantic chunking (task: "fix token validation"):
+export function validateToken(...) { ... }    ← promoted to top
+---
+export function createUser(...) { ... }
+export function deleteUser(...) { ... }
+---
+import { db } from './db';
+const MAX_RETRIES = 3;
+---
+// anchor: validateToken signature                ← tail anchor`}</code></pre>
+
+  <hr />
+
+  <h2 id="mmr">MMR Deduplication</h2>
+  <p>
+    When multiple files are loaded into context, they often contain duplicate imports,
+    shared boilerplate, or very similar code patterns. Maximum Marginal Relevance (MMR)
+    removes this redundancy while preserving unique information.
+  </p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>
+      For each line, compute <strong>bigram Jaccard similarity</strong> against all
+      previously selected lines (the "coverage set").
+    </li>
+    <li>
+      The MMR score balances relevance against redundancy:
+      <code>MMR(l) = &lambda; &times; relevance(l) - (1 - &lambda;) &times; max_similarity(l, selected)</code>
+    </li>
+    <li>
+      Lines with <code>MMR &lt; 0</code> are suppressed — they add more redundancy than
+      information. The &lambda; parameter defaults to 0.7 (favoring relevance over diversity).
+    </li>
+  </ol>
+
+  <h3>Impact</h3>
+  <p>
+    In a typical multi-file preload, MMR removes 10–25% of redundant content — primarily
+    shared imports and repeated utility patterns.
+  </p>
+
+  <hr />
+
+  <h2 id="bpe">BPE-Aligned Token Optimization</h2>
+  <p>
+    After all content is selected and ordered, a final pass optimizes the raw text for
+    the LLM's <strong>BPE tokenizer</strong>. Small formatting changes can significantly
+    reduce token count without changing semantics.
+  </p>
+
+  <h3>Optimization rules</h3>
+  <table>
+    <thead>
+      <tr><th>Before</th><th>After</th><th>Token savings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>function </code></td><td><code>fn </code></td><td>1 token per occurrence</td></tr>
+      <tr><td><code> -> </code></td><td><code>-></code></td><td>2 → 1 token</td></tr>
+      <tr><td><code> => </code></td><td><code>=></code></td><td>2 → 1 token</td></tr>
+      <tr><td><code>{ }</code></td><td><code>{}</code></td><td>2 → 1 token</td></tr>
+      <tr><td><code>    </code> (4 spaces)</td><td><code>  </code> (2 spaces)</td><td>~50% indentation savings</td></tr>
+      <tr><td><code>'static </code> lifetime</td><td>elided where safe</td><td>2 tokens per occurrence</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How it works</h3>
+  <p>
+    Each rule is a simple string replacement applied line-by-line after all other
+    compression stages. Rules are derived from BPE token boundary analysis — they target
+    patterns where the tokenizer produces unnecessarily many tokens for semantically
+    equivalent text.
+  </p>
+
+  <h3>Impact</h3>
+  <p>
+    BPE optimization typically saves 3–8% additional tokens on already-compressed output.
+    The savings compound across files and are most significant for verbose languages
+    (TypeScript, Java, C#).
+  </p>
+
+  <hr />
+
+  <h2>Verifying the impact</h2>
+  <p>
+    Run <code>lean-ctx benchmark run</code> in your project to measure the combined effect
+    of all six algorithms. The benchmark report shows per-file token savings, preservation
+    scores (AST, identifiers, lines), and overall compression ratios.
+  </p>
+  <pre><code>{`$ lean-ctx benchmark run
+──────────────────────────────────────────
+BENCHMARK — /Users/you/project
+──────────────────────────────────────────
+Files:       143
+Total:       285,401 → 42,810 tokens (85% reduction)
+Avg/file:    1,997 → 300 tokens
+
+Preservation:
+  AST:         98.2%
+  Identifiers: 97.4%
+  Lines:       96.1%
+
+Mode breakdown:
+  full:        68% of files
+  map:         22% of files
+  signatures:   8% of files
+  aggressive:   2% of files`}</code></pre>
+
+  <h2>See also</h2>
+  <ul>
+    <li><a href="/docs/tools/intelligence">Autonomous Intelligence Tools</a> — the tools that use these algorithms</li>
+    <li><a href="/docs/tree-sitter">Tree-sitter Engine</a> — AST parsing for 18 languages</li>
+    <li><a href="/docs/configuration">Configuration</a> — tuning thresholds and autonomy settings</li>
+    <li><a href="/benchmark">Benchmark</a> — measuring your savings</li>
+  </ul>
+
+</DocsLayout>

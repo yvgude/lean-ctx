@@ -1,0 +1,231 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Configuration',
+    items: [
+      { label: 'Overview', href: '/docs/configuration' },
+      { label: 'Config File', href: '/docs/configuration#config-file' },
+      { label: 'Config Options', href: '/docs/configuration#config-options' },
+      { label: 'Autonomy Config', href: '/docs/configuration#autonomy-configuration' },
+      { label: 'User TOML Filters', href: '/docs/configuration#user-toml-filters' },
+      { label: 'Environment Variables', href: '/docs/configuration#environment-variables' },
+      { label: 'Cursor Rule', href: '/docs/configuration#cursor-rule' },
+      { label: 'Exit Codes', href: '/docs/configuration#exit-codes' },
+      { label: 'Token Counting', href: '/docs/configuration#token-counting' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Analytics & Dashboards', href: '/docs/analytics' },
+      { label: 'CLI Reference', href: '/docs/cli-reference' },
+      { label: 'Getting Started', href: '/docs/getting-started' },
+      { label: 'Quick Reference', href: '/docs/quick-reference' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Configuration" description="Configuration options, environment variables, and editor setup." sidebar={sidebar}>
+
+  <p>
+    LeanCTX works out of the box with zero configuration. All settings below are optional —
+    defaults are tuned for typical AI-assisted development workflows.
+  </p>
+
+  <hr />
+
+  <h2 id="config-file">Config File</h2>
+
+  <p>
+    LeanCTX supports an optional TOML configuration file at <code>~/.lean-ctx/config.toml</code>.
+  </p>
+
+  <h3>Create the default config</h3>
+  <pre><code>lean-ctx config init</code></pre>
+
+  <h3>View current configuration</h3>
+  <pre><code>lean-ctx config</code></pre>
+
+  <h3>Set individual values</h3>
+  <pre><code>lean-ctx config set ultra_compact true
+lean-ctx config set checkpoint_interval 15
+lean-ctx config set tee_mode always
+lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
+
+  <hr />
+
+  <h2 id="config-options">Config Options</h2>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>ultra_compact</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Enable ultra-compact output mode</td>
+      </tr>
+      <tr>
+        <td><code>tee_mode</code></td>
+        <td>string</td>
+        <td><code>"failures"</code></td>
+        <td>When to save full output to <code>~/.lean-ctx/tee/</code>. Values: <code>always</code>, <code>failures</code>, <code>never</code>. Backward-compatible: <code>tee_on_error: true</code> maps to <code>failures</code>.</td>
+      </tr>
+      <tr>
+        <td><code>passthrough_urls</code></td>
+        <td>list</td>
+        <td><code>[]</code></td>
+        <td>URL fragments for curl passthrough. Curl commands targeting these URLs skip JSON compression and return full responses.</td>
+      </tr>
+      <tr>
+        <td><code>checkpoint_interval</code></td>
+        <td>u32</td>
+        <td><code>15</code></td>
+        <td>Auto-checkpoint every N tool calls (0&nbsp;=&nbsp;disabled). Overridden by <code>LEAN_CTX_CHECKPOINT_INTERVAL</code> env var.</td>
+      </tr>
+      <tr>
+        <td><code>excluded_commands</code></td>
+        <td>list</td>
+        <td><code>[]</code></td>
+        <td>Commands to skip compression for</td>
+      </tr>
+      <tr>
+        <td><code>custom_aliases</code></td>
+        <td>list</td>
+        <td><code>[]</code></td>
+        <td>Custom command-to-alias mappings</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="environment-variables">Environment Variables</h2>
+
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_CRP_MODE</code></td>
+        <td>tdd (default), compact, off</td>
+        <td>Controls Token Dense Dialect compression level</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
+        <td>number (default: 10)</td>
+        <td>Auto-checkpoint every N tool calls (0&nbsp;=&nbsp;disabled)</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CACHE_TTL</code></td>
+        <td>number (default: 300)</td>
+        <td>Seconds of inactivity before session cache auto-clears (0&nbsp;=&nbsp;disabled)</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ACTIVE</code></td>
+        <td>set / unset</td>
+        <td>Recursion guard. When set, lean-ctx passes commands through without compression. Set automatically by the shell hook.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_DISABLED</code></td>
+        <td>set / unset</td>
+        <td>Master kill-switch. Bypasses ALL compression in both shell hook and MCP server. Everything passes through unmodified.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_RAW</code></td>
+        <td>set / unset</td>
+        <td>Skip compression for the current command. Same effect as <code>--raw</code> flag or <code>raw=true</code> MCP parameter.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_AUTONOMY</code></td>
+        <td><code>true</code> / <code>false</code></td>
+        <td>Enable/disable autonomous intelligence features (auto-preload, auto-dedup, related hints). Default: <code>true</code>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="cursor-rule">Cursor Rule</h2>
+
+  <p>
+    For maximum token savings, add a <code>.cursor/rules/lean-ctx.mdc</code> to your project.
+    This instructs the LLM to prefer LeanCTX tools and use compact output patterns.
+    An example is included in <code>examples/lean-ctx.mdc</code> in the repository.
+  </p>
+  <p>
+    The Cursor rule includes <strong>CRP v2</strong> (Compact Response Protocol) which can reduce
+    both output tokens (50–80%) and thinking tokens (30–60%) through structured
+    task parsing and one-hypothesis reasoning. These ranges are per-response estimates
+    and depend on the model and task complexity.
+  </p>
+
+  <hr />
+
+  <h2 id="autonomy-configuration">Autonomy Configuration</h2>
+
+  <p>
+    The autonomous intelligence layer runs optimization pipelines automatically.
+    Configure in <code>~/.lean-ctx/config.toml</code>:
+  </p>
+  <pre><code>[autonomy]
+enabled = true          # Master switch for all autonomy features
+auto_preload = true     # Pre-cache imported files after ctx_read
+auto_dedup = true       # Auto-deduplicate at 8+ cached files
+auto_related = true     # Suggest related files via import graph
+silent_preload = true   # Cache files without output
+dedup_threshold = 8     # Files before auto-dedup triggers</code></pre>
+  <p>Override with environment: <code>LEAN_CTX_AUTONOMY=false</code> disables all.</p>
+
+  <hr />
+
+  <h2 id="user-toml-filters">User TOML Filters</h2>
+
+  <p>
+    Define custom compression rules in <code>~/.lean-ctx/filters/*.toml</code>.
+    User filters are applied <strong>before</strong> builtin patterns.
+  </p>
+  <pre><code># ~/.lean-ctx/filters/my-api.toml
+name = "My API filter"
+commands = ["curl"]
+
+[[rules]]
+pattern = "X-Request-Id: [a-f0-9-]+"
+replacement = ""
+
+[[rules]]
+pattern = "^\\s+$"
+replacement = ""</code></pre>
+  <p>
+    Manage via CLI: <code>lean-ctx filter list</code>, <code>lean-ctx filter validate</code>,
+    <code>lean-ctx filter init</code> (creates example).
+  </p>
+
+  <hr />
+
+  <h2 id="exit-codes">Exit Codes</h2>
+
+  <p>
+    In shell hook mode (<code>-c</code>), LeanCTX forwards the exit code of the wrapped command.
+    This ensures scripts and CI pipelines work correctly. If the command fails (non-zero exit),
+    the full original output is saved to <code>~/.lean-ctx/tee/</code> for debugging
+    (when <code>tee_mode</code> is set to <code>failures</code> or <code>always</code>).
+  </p>
+
+  <hr />
+
+  <h2 id="token-counting">Token Counting</h2>
+
+  <p>
+    lean-ctx uses <code>tiktoken-rs</code> with the <code>o200k_base</code> encoding (same as GPT-4o,
+    Claude, and other modern models) for exact token counting. No estimation, no heuristics —
+    every savings number you see in <code>lean-ctx gain</code> or the dashboard reflects real token counts.
+  </p>
+
+</DocsLayout>
