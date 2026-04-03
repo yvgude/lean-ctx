@@ -359,26 +359,79 @@ fn mask_secrets(text: &str) -> String {
 
 // ── GitHub Submission ─────────────────────────────────────────────────────
 
+fn find_gh_binary() -> Option<std::path::PathBuf> {
+    let candidates = [
+        "/opt/homebrew/bin/gh",
+        "/usr/local/bin/gh",
+        "/usr/bin/gh",
+        "/home/linuxbrew/.linuxbrew/bin/gh",
+    ];
+    for c in &candidates {
+        let p = std::path::Path::new(c);
+        if p.exists() {
+            return Some(p.to_path_buf());
+        }
+    }
+    if let Ok(output) = std::process::Command::new("which")
+        .arg("gh")
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(std::path::PathBuf::from(path));
+            }
+        }
+    }
+    None
+}
+
 fn try_gh_cli(title: &str, body: &str) -> bool {
+    let gh = match find_gh_binary() {
+        Some(p) => p,
+        None => return false,
+    };
+
     let tmp = std::env::temp_dir().join("lean-ctx-report.md");
     if std::fs::write(&tmp, body).is_err() {
         return false;
     }
 
-    let result = std::process::Command::new("gh")
+    let result = std::process::Command::new(&gh)
         .args([
-            "issue",
-            "create",
-            "--repo",
-            REPO,
-            "--title",
-            title,
-            "--body-file",
-            &tmp.to_string_lossy(),
-            "--label",
-            "bug,auto-report",
+            "issue", "create",
+            "--repo", REPO,
+            "--title", title,
+            "--body-file", &tmp.to_string_lossy(),
+            "--label", "bug,auto-report",
         ])
         .output();
+
+    if let Ok(ref output) = result {
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("not found") && stderr.contains("label") {
+                let _ = std::fs::remove_file(&tmp);
+                let fallback = std::process::Command::new(&gh)
+                    .args([
+                        "issue", "create",
+                        "--repo", REPO,
+                        "--title", title,
+                        "--body-file", &tmp.to_string_lossy(),
+                    ])
+                    .output();
+                let _ = std::fs::remove_file(&tmp);
+                if let Ok(fb_out) = fallback {
+                    if fb_out.status.success() {
+                        let url = String::from_utf8_lossy(&fb_out.stdout);
+                        println!("\n{GREEN}Issue created:{RST} {}", url.trim());
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+    }
 
     let _ = std::fs::remove_file(&tmp);
 
@@ -392,10 +445,15 @@ fn try_gh_cli(title: &str, body: &str) -> bool {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("not logged") || stderr.contains("auth login") {
                 eprintln!("{YELLOW}gh CLI found but not authenticated. Run: gh auth login{RST}");
+            } else {
+                eprintln!("{YELLOW}gh issue create failed: {}{RST}", stderr.trim());
             }
             false
         }
-        Err(_) => false,
+        Err(e) => {
+            eprintln!("{YELLOW}Failed to run gh: {e}{RST}");
+            false
+        }
     }
 }
 
