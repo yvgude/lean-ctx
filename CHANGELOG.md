@@ -3,6 +3,15 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.16.2] — 2026-04-03
+
+### Codex MCP Compatibility
+
+- **feat(mcp)**: Hybrid stdio transport that auto-detects `Content-Length` framing (Codex/LSP-style) vs JSONL (Cursor/Claude/etc.) and responds in the same protocol — contributed by [@JulienJBO](https://github.com/JulienJBO) ([#48](https://github.com/yvgude/lean-ctx/pull/48))
+- **fix(hooks)**: Suppress Codex hook setup stdout noise during MCP server mode to keep the transport clean
+- 3 new unit tests for JSONL decoding, Content-Length decoding, and framed response encoding
+- New dependencies: `futures`, `tokio-util` (codec), `thiserror`
+
 ## [2.16.1] — 2026-04-03
 
 ### Patch Release
