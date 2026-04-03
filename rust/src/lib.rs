@@ -4,6 +4,7 @@ pub mod core;
 pub mod dashboard;
 pub mod doctor;
 pub mod hooks;
+pub mod mcp_stdio;
 pub mod report;
 pub mod rules_inject;
 pub mod server;

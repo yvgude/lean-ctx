@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+fn mcp_server_quiet_mode() -> bool {
+    std::env::var_os("LEAN_CTX_MCP_SERVER").is_some()
+}
+
 /// Silently refresh all hook scripts for agents that are already configured.
 /// Called after updates and on MCP server start to ensure hooks match the current binary version.
 pub fn refresh_installed_hooks() {
@@ -677,10 +681,12 @@ fn install_codex_hook_scripts(home: &std::path::Path) {
     let rewrite_script = generate_compact_rewrite_script(&binary);
     write_file(&rewrite_path, &rewrite_script);
     make_executable(&rewrite_path);
-    println!(
-        "  \x1b[32m✓\x1b[0m Installed Codex hook scripts at {}",
-        hooks_dir.display()
-    );
+    if !mcp_server_quiet_mode() {
+        println!(
+            "  \x1b[32m✓\x1b[0m Installed Codex hook scripts at {}",
+            hooks_dir.display()
+        );
+    }
 }
 
 fn install_windsurf_rules(global: bool) {

@@ -57,6 +57,9 @@ walkdir = "2"
 ignore = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["codec"] }
 dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8"

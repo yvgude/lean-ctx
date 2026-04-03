@@ -1,6 +1,7 @@
 use anyhow::Result;
 use lean_ctx::{
-    cli, cloud_client, core, dashboard, doctor, report, setup, shell, terminal_ui, tools, uninstall,
+    cli, cloud_client, core, dashboard, doctor, mcp_stdio, report, setup, shell, terminal_ui,
+    tools, uninstall,
 };
 
 fn main() {
@@ -252,6 +253,8 @@ fn run_mcp_server() -> Result<()> {
     use rmcp::ServiceExt;
     use tracing_subscriber::EnvFilter;
 
+    std::env::set_var("LEAN_CTX_MCP_SERVER", "1");
+
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         tracing_subscriber::fmt()
@@ -262,7 +265,8 @@ fn run_mcp_server() -> Result<()> {
         tracing::info!("lean-ctx v2.9.3 MCP server starting");
 
         let server = tools::create_server();
-        let transport = rmcp::transport::io::stdio();
+        let transport =
+            mcp_stdio::HybridStdioTransport::new_server(tokio::io::stdin(), tokio::io::stdout());
         let service = server.serve(transport).await?;
         service.waiting().await?;
 
