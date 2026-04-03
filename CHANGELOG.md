@@ -3,6 +3,16 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.16.1] — 2026-04-03
+
+### Patch Release
+
+- **fix(report)**: `lean-ctx report-issue` now reliably finds the `gh` CLI binary by searching common install locations (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`) and falling back to `which gh`
+- **fix(report)**: Graceful fallback when GitHub labels don't exist yet on the repository
+- **fix(ci)**: Removed unused import causing CI failure with `RUSTFLAGS=-Dwarnings`
+- **feat(gain)**: Added `report-issue` hint to rotating tips in `lean-ctx gain`
+- **docs**: Added deploy branch security warnings to DEPLOY_CHECKLIST
+
 ## [2.16.0] — 2026-04-03
 
 ### Intelligence Layer & Bug Fixes
