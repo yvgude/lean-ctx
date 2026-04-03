@@ -1,0 +1,306 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Analytics Guide',
+    items: [
+      { label: 'Overview', href: '/docs/analytics' },
+      { label: 'Terminal Dashboard', href: '/docs/analytics#terminal-dashboard' },
+      { label: 'Live Mode', href: '/docs/analytics#live-mode' },
+      { label: 'Charts & Tables', href: '/docs/analytics#charts' },
+      { label: 'Web Dashboard', href: '/docs/analytics#web-dashboard' },
+      { label: 'Wrapped Reports', href: '/docs/analytics#wrapped' },
+      { label: 'CEP Report', href: '/docs/analytics#cep-report' },
+      { label: 'Benchmarking', href: '/docs/analytics#benchmarking' },
+      { label: 'JSON Export', href: '/docs/analytics#json-export' },
+      { label: 'USD Calculation', href: '/docs/analytics#usd-calculation' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'CLI Reference', href: '/docs/cli-reference' },
+      { label: 'Quick Reference', href: '/docs/quick-reference' },
+      { label: 'Configuration', href: '/docs/configuration' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Analytics & Dashboards" description="How to monitor token savings, interpret dashboards, run benchmarks, and share reports." sidebar={sidebar}>
+
+  <p>
+    lean-ctx tracks every token it saves across all sessions. This guide explains how to access,
+    interpret, and share your savings data through terminal dashboards, web UI, wrapped reports,
+    and benchmarks.
+  </p>
+
+  <p>All data is stored locally at <code>~/.lean-ctx/stats.json</code> and persists across sessions and restarts.</p>
+
+  <hr />
+
+  <h2 id="terminal-dashboard">Terminal Dashboard — <code>lean-ctx gain</code></h2>
+
+  <p>
+    The primary way to check your savings. Run <code>lean-ctx gain</code> in any terminal to see
+    a visual dashboard with colors, bars, sparklines, and USD estimates.
+  </p>
+
+  <pre><code>$ lean-ctx gain
+
+  ◆ lean-ctx  Token Savings Dashboard
+  ────────────────────────────────────────────────────────
+
+   7.8M          67.8%          3,994        $43.14
+   tokens saved  compression    commands     USD saved
+
+  Top Commands
+  ──────────────
+  curl     328x  ████████████████████  3.2M saved
+  git      412x  ██████████████        1.8M saved
+  cargo    156x  ██████████            1.1M saved
+  npm       89x  ████                  420K saved
+
+  30-day sparkline: ▁▃▅▇██▇▅█▇▃▁▅▇██▇▅█▇▃▁▅▇██▇▅█</code></pre>
+
+  <h3>What the numbers mean</h3>
+
+  <table>
+    <thead><tr><th>Metric</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Tokens saved</strong></td><td>Total tokens stripped from LLM context across all sessions. Counted by tiktoken (o200k_base).</td></tr>
+      <tr><td><strong>Compression rate</strong></td><td>Average percentage of tokens removed. Higher = more efficient.</td></tr>
+      <tr><td><strong>Commands</strong></td><td>Total shell commands compressed by the shell hook.</td></tr>
+      <tr><td><strong>USD saved</strong></td><td>Estimated cost savings based on average token pricing ($2.50/1M input tokens).</td></tr>
+      <tr><td><strong>Top Commands</strong></td><td>Which CLI tools saved the most tokens, ranked by total savings.</td></tr>
+      <tr><td><strong>Sparkline</strong></td><td>30-day visual trend of daily savings activity.</td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="live-mode">Live Mode — <code>lean-ctx gain --live</code></h2>
+
+  <p>
+    Auto-refreshing dashboard that updates every 2 seconds. Watch savings grow in real time
+    as your AI tools use lean-ctx.
+  </p>
+
+  <pre><code>$ lean-ctx gain --live
+
+  ◆ lean-ctx  LIVE  refreshing every 2s
+  ────────────────────────────────────────────────────────
+
+   7.8M          67.8%          3,994        $43.14
+   tokens saved  compression    commands     USD saved
+
+  Session: 42 cmds | 89.2K saved | 94.1% rate ▁▃█▇██▁█
+
+  Press q to quit</code></pre>
+
+  <p><strong>When to use:</strong> Run in a side terminal during coding sessions to monitor savings as they happen. Useful for demos, presentations, and verifying that compression is active.</p>
+
+  <hr />
+
+  <h2 id="charts">Charts & Tables</h2>
+
+  <h3><code>lean-ctx gain --graph</code></h3>
+
+  <p>30-day savings chart with daily bars. Quickly see which days had the most activity.</p>
+
+  <pre><code>$ lean-ctx gain --graph
+
+  Token Savings (30 days)
+  ──────────────────────────────
+
+  03-20 │ ██████████████████████ 1.0M
+  03-21 │ ███████████████       690K
+  03-22 │ ████████████████████████ 1.1M
+  03-23 │ █                       9.4K
+  03-24 │ ██████████████████████ 1.7M</code></pre>
+
+  <h3><code>lean-ctx gain --daily</code></h3>
+
+  <p>Bordered day-by-day table with columns for tokens saved, compression rate, command count, and USD.</p>
+
+  <pre><code>$ lean-ctx gain --daily
+
+  ┌────────────┬──────────┬───────┬──────┬────────┐
+  │ Date       │ Saved    │ Rate  │ Cmds │ USD    │
+  ├────────────┼──────────┼───────┼──────┼────────┤
+  │ 2026-03-28 │ 1.7M     │ 72.4% │ 412  │ $4.25  │
+  │ 2026-03-27 │ 1.1M     │ 68.9% │ 289  │ $2.75  │
+  │ 2026-03-26 │ 690K     │ 71.2% │ 187  │ $1.73  │
+  └────────────┴──────────┴───────┴──────┴────────┘</code></pre>
+
+  <hr />
+
+  <h2 id="web-dashboard">Web Dashboard — <code>lean-ctx dashboard</code></h2>
+
+  <p>
+    Interactive browser-based dashboard at <code>http://localhost:3333</code>. Automatically opens
+    your default browser.
+  </p>
+
+  <pre><code>lean-ctx dashboard              # default port 3333
+lean-ctx dashboard --port=8080  # custom port</code></pre>
+
+  <h3>Dashboard panels</h3>
+
+  <table>
+    <thead><tr><th>Panel</th><th>Content</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Stats Overview</strong></td><td>Total tokens saved, compression rate, USD, command count — same data as <code>gain</code></td></tr>
+      <tr><td><strong>MCP Activity</strong></td><td>Recent MCP tool calls, which tools are used most, response times</td></tr>
+      <tr><td><strong>Active Agents</strong></td><td>AI agents currently registered via <code>ctx_agent</code>. Shows agent name, role, status, and heartbeat.</td></tr>
+      <tr><td><strong>Project Knowledge</strong></td><td>Facts stored via <code>ctx_knowledge</code>, grouped by category with confidence scores.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>API endpoints</h3>
+
+  <p>The dashboard serves a JSON API that you can query directly:</p>
+
+  <table>
+    <thead><tr><th>Endpoint</th><th>Data</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/stats</code></td><td>Token savings stats (same as <code>gain --json</code>)</td></tr>
+      <tr><td><code>GET /api/mcp</code></td><td>MCP tool usage data</td></tr>
+      <tr><td><code>GET /api/agents</code></td><td>Active agent registry</td></tr>
+      <tr><td><code>GET /api/knowledge</code></td><td>Project knowledge store</td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="wrapped">Wrapped Reports — <code>lean-ctx wrapped</code></h2>
+
+  <p>
+    "Spotify Wrapped" for your token savings. Generates a shareable report card with your
+    personal stats, top commands, and compression achievements.
+  </p>
+
+  <pre><code>lean-ctx wrapped           # current week
+lean-ctx wrapped --week    # current week (explicit)
+lean-ctx wrapped --month   # current month
+lean-ctx wrapped --all     # lifetime stats</code></pre>
+
+  <h3>Example output</h3>
+
+  <pre><code>$ lean-ctx wrapped --month
+
+  ◆ Your March 2026 Wrapped
+  ────────────────────────────────
+
+  4.9M tokens saved
+  3,241 commands compressed
+  $12.16 USD saved
+
+  Top pattern: curl (97% compression)
+  You're in the top 5% of lean-ctx users
+
+  Best day: March 24 — 1.7M tokens saved
+  Most used mode: map (42% of reads)</code></pre>
+
+  <hr />
+
+  <h2 id="cep-report">CEP Report — <code>lean-ctx cep</code></h2>
+
+  <p>
+    The Cognitive Efficiency Protocol report shows how lean-ctx optimizes LLM reasoning.
+    Tracks score trends, cache hit rates, and mode distribution.
+  </p>
+
+  <pre><code>$ lean-ctx cep
+
+  CEP Impact Report
+  ────────────────────────────────
+
+  Score trend:  ▁▃▅▇██▇█  (improving)
+  Cache hits:   94.2% (re-reads served from cache)
+  Mode distribution:
+    full:        42%  ████████████████
+    map:         31%  ████████████
+    signatures:  18%  ███████
+    diff:         9%  ███</code></pre>
+
+  <hr />
+
+  <h2 id="benchmarking">Benchmarking</h2>
+
+  <p>
+    Measure exact token savings on real project files using tiktoken. No estimates — actual
+    token counts per file and per read mode.
+  </p>
+
+  <h3><code>lean-ctx benchmark run [path] [--json]</code></h3>
+
+  <pre><code>$ lean-ctx benchmark run src/
+
+  Benchmarking 42 files...
+
+  src/auth.ts (123 lines)
+    full:       3,517 tokens
+    map:          412 tokens (88% saved)
+    signatures:   252 tokens (93% saved)
+    entropy:      312 tokens (91% saved)
+
+  src/server.ts (456 lines)
+    full:       8,234 tokens
+    map:          891 tokens (89% saved)
+    signatures:   534 tokens (94% saved)
+
+  ── Summary ──────────────────────
+  42 files | 89,412 total tokens
+  Average savings: map 87% | signatures 92% | entropy 85%</code></pre>
+
+  <h3><code>lean-ctx benchmark report [path]</code></h3>
+
+  <p>Generate a Markdown report you can share or commit to your repository.</p>
+
+  <pre><code>lean-ctx benchmark report src/ &gt; BENCHMARK.md</code></pre>
+
+  <p>The report includes per-file breakdowns, mode comparisons, and aggregate statistics.</p>
+
+  <hr />
+
+  <h2 id="json-export">JSON Export — <code>lean-ctx gain --json</code></h2>
+
+  <p>
+    Export all statistics as JSON for scripting, CI/CD integration, or custom dashboards.
+  </p>
+
+  <pre><code>lean-ctx gain --json &gt; stats.json</code></pre>
+
+  <p>The JSON includes:</p>
+  <ul>
+    <li>Total tokens saved and compression rate</li>
+    <li>Per-command breakdown (command name, count, tokens saved)</li>
+    <li>Daily history (date, saved, rate, commands)</li>
+    <li>USD estimates</li>
+  </ul>
+
+  <p>Example: extract total savings in a CI script:</p>
+  <pre><code>SAVED=$(lean-ctx gain --json | jq '.total_saved')
+echo "lean-ctx saved $SAVED tokens this session"</code></pre>
+
+  <hr />
+
+  <h2 id="usd-calculation">USD Calculation</h2>
+
+  <p>
+    lean-ctx estimates USD savings based on average LLM input token pricing.
+    The default rate is <strong>$2.50 per 1M input tokens</strong>, which represents a weighted
+    average across common models (GPT-4o, Claude Sonnet, Gemini Pro).
+  </p>
+
+  <p>The formula is:</p>
+  <pre><code>USD saved = (tokens saved / 1,000,000) × $2.50</code></pre>
+
+  <p>
+    This is a conservative estimate — actual savings may be higher if you use more expensive
+    models (GPT-4, Claude Opus) or lower if you use cheaper models.
+  </p>
+
+</DocsLayout>

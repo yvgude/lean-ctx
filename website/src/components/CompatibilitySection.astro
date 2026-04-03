@@ -1,0 +1,148 @@
+---
+const tools = [
+  {
+    name: 'Cursor',
+    price: '$20 — $200/mo',
+    limits: '500 fast, then on-demand',
+    context: 'Up to 200K tokens',
+    benefit: 'Median 77% compression per session',
+  },
+  {
+    name: 'GitHub Copilot',
+    price: 'Free — $39/mo',
+    limits: '50-1,500 premium req/mo',
+    context: 'Up to 200K tokens',
+    benefit: 'Higher signal density per request',
+  },
+  {
+    name: 'Claude Code',
+    price: '$20 — $200/mo',
+    limits: '~45 msgs/5h (Pro)',
+    context: '200K tokens',
+    benefit: 'More messages per session limit',
+  },
+  {
+    name: 'Windsurf',
+    price: '$15 — $60/mo',
+    limits: '500 credits/mo (Pro)',
+    context: '200K tokens',
+    benefit: 'Credits last longer with compression',
+  },
+  {
+    name: 'Zed AI',
+    price: '$10 — $50/mo',
+    limits: 'Credit-based',
+    context: 'Up to 128K tokens',
+    benefit: 'More completions per credit',
+  },
+  {
+    name: 'Cline',
+    price: 'Bring your API key',
+    limits: 'Pay per token (API)',
+    context: '200K tokens',
+    benefit: 'Direct API cost reduction',
+  },
+  {
+    name: 'Continue',
+    price: 'Free + API costs',
+    limits: 'Pay per token (API)',
+    context: '200K tokens',
+    benefit: 'Fewer tokens per autocomplete',
+  },
+  {
+    name: 'Aider',
+    price: 'Free + API costs',
+    limits: 'Pay per token (API)',
+    context: '128K tokens',
+    benefit: 'Lower per-session API bills',
+  },
+  {
+    name: 'OpenAI Codex',
+    price: 'Bring your API key',
+    limits: 'Pay per token (API)',
+    context: '200K tokens',
+    benefit: 'Smaller context, higher signal density',
+  },
+  {
+    name: 'Gemini CLI',
+    price: 'Bring your API key',
+    limits: 'Pay per token (API)',
+    context: '1M tokens',
+    benefit: 'Higher signal-to-noise ratio',
+  },
+  {
+    name: 'OpenCode',
+    price: 'Free + API costs',
+    limits: 'Pay per token (API)',
+    context: '200K tokens',
+    benefit: 'Less noise per completion',
+  },
+  {
+    name: 'OpenClaw',
+    price: 'Free + API costs',
+    limits: 'Pay per token (API)',
+    context: '200K tokens',
+    benefit: 'Shell hook works out of the box',
+  },
+];
+---
+
+<section class="relative py-20 sm:py-32">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+
+    <div class="text-center max-w-3xl mx-auto mb-10 sm:mb-14">
+      <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent-2 mb-3">Universal compatibility</p>
+      <h2 class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.15] text-text-bright mb-4">
+        One layer. <span class="gradient-text">Every AI tool.</span>
+      </h2>
+      <p class="text-sm text-muted leading-relaxed max-w-lg mx-auto">
+        lean-ctx is the context engineering layer between you and any AI coding tool. Wherever tokens flow, lean-ctx maximizes their impact.
+      </p>
+    </div>
+
+    <div class="grid sm:grid-cols-3 gap-0 mb-3 rounded-xl overflow-hidden border border-white/[0.06]">
+      <div class="text-center py-6 px-4 bg-white/[0.02]">
+        <p class="stat-value text-3xl sm:text-4xl text-muted mb-1">~40</p>
+        <p class="text-[11px] text-muted uppercase tracking-wider">file reads per session</p>
+      </div>
+      <div class="text-center py-6 px-4 bg-white/[0.02] border-t sm:border-t-0 sm:border-l border-white/[0.06]">
+        <p class="stat-value text-3xl sm:text-4xl text-danger mb-1">~85K</p>
+        <p class="text-[11px] text-muted uppercase tracking-wider">tokens of context noise</p>
+      </div>
+      <div class="text-center py-6 px-4 bg-white/[0.02] border-t sm:border-t-0 sm:border-l border-white/[0.06]">
+        <p class="stat-value text-3xl sm:text-4xl text-accent mb-1">~9K</p>
+        <p class="text-[11px] text-muted uppercase tracking-wider">with LeanCTX (89% less)</p>
+      </div>
+    </div>
+    <p class="text-[10px] text-muted/50 text-center mb-10 sm:mb-14">Based on a typical multi-step coding session with ~40 file reads across a medium-sized project. Savings measured per tool operation using tiktoken (o200k_base).</p>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-0">
+      {tools.map((t, i) => (
+        <div class:list={[
+          'py-6 px-5 animate-entrance',
+          i >= 4 && 'border-t border-white/[0.06]',
+          i % 4 !== 0 && 'sm:border-l sm:border-l-white/[0.06]',
+          i % 2 !== 0 && i < 4 && 'max-sm:border-l max-sm:border-l-white/[0.06]',
+          i >= 2 && i < 4 && 'max-lg:border-t max-lg:border-t-white/[0.06]',
+        ]}>
+          <h3 class="text-sm font-semibold text-text-bright mb-3">{t.name}</h3>
+          <div class="space-y-2 mb-4">
+            <div class="flex justify-between text-[13px]">
+              <span class="text-muted">Price</span>
+              <span class="text-text font-mono text-xs">{t.price}</span>
+            </div>
+            <div class="flex justify-between text-[13px]">
+              <span class="text-muted">Limits</span>
+              <span class="text-text font-mono text-xs">{t.limits}</span>
+            </div>
+            <div class="flex justify-between text-[13px]">
+              <span class="text-muted">Context</span>
+              <span class="text-text font-mono text-xs">{t.context}</span>
+            </div>
+          </div>
+          <p class="text-[13px] text-accent font-medium">{t.benefit}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

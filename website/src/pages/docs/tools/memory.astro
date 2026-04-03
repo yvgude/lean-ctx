@@ -1,0 +1,144 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+const sidebar = [
+  {
+    title: 'Memory Tools',
+    compact: true,
+    items: [
+      { label: 'ctx_knowledge', href: '/docs/tools/memory#ctx_knowledge' },
+      { label: 'ctx_agent', href: '/docs/tools/memory#ctx_agent' },
+      { label: 'ctx_overview', href: '/docs/tools/memory#ctx_overview' },
+    ],
+  },
+  {
+    title: 'Other Categories',
+    items: [
+      { label: 'All Tools', href: '/docs/tools' },
+      { label: 'Core Tools', href: '/docs/tools/core' },
+      { label: 'Intelligence Tools', href: '/docs/tools/intelligence' },
+      { label: 'Session Tools', href: '/docs/tools/session' },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Memory & Multi-Agent" description="ctx_knowledge, ctx_agent, ctx_overview — persistent project knowledge, multi-agent coordination, and task-aware project orientation." sidebar={sidebar}>
+  <p>
+    Three tools for cross-session memory, multi-agent coordination, and task-aware project orientation.
+    These enable cumulative project understanding and parallel AI workflows.
+  </p>
+
+  <h2 id="ctx_knowledge">ctx_knowledge — Persistent Project Knowledge</h2>
+  <p>
+    A persistent key-value knowledge store scoped to each project. Facts, patterns, and conventions
+    survive across sessions, enabling the LLM to build cumulative project understanding.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Action</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>remember</code></td><td><code>category</code>, <code>key</code>, <code>value</code>, <code>confidence</code></td><td>Store a project fact with optional confidence score</td></tr>
+      <tr><td><code>recall</code></td><td><code>query</code> OR <code>category</code></td><td>Search facts by text or list by category</td></tr>
+      <tr><td><code>pattern</code></td><td><code>pattern_type</code>, <code>value</code>, <code>examples</code></td><td>Record a project convention or pattern</td></tr>
+      <tr><td><code>consolidate</code></td><td>—</td><td>Extract session findings/decisions into permanent knowledge</td></tr>
+      <tr><td><code>status</code></td><td>—</td><td>Show all stored knowledge summary</td></tr>
+      <tr><td><code>remove</code></td><td><code>category</code>, <code>key</code></td><td>Delete an outdated fact</td></tr>
+      <tr><td><code>export</code></td><td>—</td><td>Export all knowledge as structured data</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>ctx_knowledge action=remember category=architecture key=auth value="JWT with refresh tokens, 7-day expiry" confidence=0.95
+→ Stored: architecture/auth (confidence: 0.95)
+
+ctx_knowledge action=recall query="authentication"
+→ 1 result:
+  architecture/auth — JWT with refresh tokens, 7-day expiry (0.95)
+
+ctx_knowledge action=consolidate
+→ Consolidated 3 findings + 1 decision into permanent knowledge</code></pre>
+
+  <h3>Storage</h3>
+  <p>
+    Knowledge is stored per-project at <code>~/.lean-ctx/knowledge/&lt;project-hash&gt;/knowledge.json</code>.
+  </p>
+
+  <h2 id="ctx_agent">ctx_agent — Multi-Agent Context Sharing</h2>
+  <p>
+    Coordinates multiple concurrent AI agents working on the same project.
+    Agents register themselves, share findings via a scratchpad, and track each other's status.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Action</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>register</code></td><td><code>agent_type</code>, <code>role</code></td><td>Register this agent at session start</td></tr>
+      <tr><td><code>list</code></td><td>—</td><td>Show other active agents on this project</td></tr>
+      <tr><td><code>post</code></td><td><code>message</code>, <code>category</code>, <code>tags</code></td><td>Share findings/warnings with other agents</td></tr>
+      <tr><td><code>read</code></td><td>—</td><td>Check for new messages from other agents</td></tr>
+      <tr><td><code>status</code></td><td><code>status</code> (<code>active</code>/<code>idle</code>/<code>finished</code>), <code>message</code></td><td>Update work status</td></tr>
+      <tr><td><code>info</code></td><td>—</td><td>Show registry summary</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>ctx_agent action=register agent_type=cursor role="implementing auth module"
+→ Registered: cursor-a3f8 (role: implementing auth module)
+
+ctx_agent action=post message="auth.ts refactored — new export: verifyJWT" category=change tags=["auth","breaking"]
+→ Posted to scratchpad (1 other agent online)
+
+ctx_agent action=read
+→ 1 new message:
+  [cursor-b7c2] warning: db.ts schema changed, re-read before querying</code></pre>
+
+  <h3>Storage</h3>
+  <p>
+    Agent registry and scratchpad are stored at <code>~/.lean-ctx/agents/registry.json</code>.
+  </p>
+
+  <h2 id="ctx_overview">ctx_overview — Task-Aware Project Map</h2>
+  <p>
+    Provides a multi-resolution project map at session start. Uses the dependency graph and keyword
+    matching to group files by task relevance into tiers (critical / important / reference / skip).
+    Recommends the optimal <code>ctx_read</code> mode per file, so the LLM can load context efficiently
+    from the first tool call.
+  </p>
+
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>task</code></td><td>string</td><td>No</td><td>Description of current task (improves relevance ranking)</td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>No</td><td>Project root path (defaults to cwd)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>ctx_overview task="fix JWT token refresh bug"
+→ PROJECT OVERVIEW — /Users/you/project (142 files)
+
+  CRITICAL (read full):
+    src/auth.ts — JWT logic, token generation
+    src/middleware.ts — token validation
+
+  IMPORTANT (read map):
+    src/routes.ts — auth route handlers
+    src/lib/session.ts — session management
+
+  REFERENCE (read signatures):
+    src/lib/db.ts — database layer
+    src/config.ts — JWT config values
+
+  SKIP (67 files):
+    tests/, docs/, scripts/, ...</code></pre>
+</DocsLayout>

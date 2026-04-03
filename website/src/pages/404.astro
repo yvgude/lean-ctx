@@ -1,0 +1,27 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Signal Lost — LeanCTX" noindex={true}>
+  <div class="relative max-w-xl mx-auto px-6 py-32 sm:py-40 text-center">
+    <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-radial-[at_50%_50%] from-accent/[0.04] to-transparent rounded-full"></div>
+    </div>
+    <div class="relative">
+      <p class="stat-value text-[8rem] sm:text-[10rem] gradient-text leading-none mb-4" style="filter:drop-shadow(0 0 40px rgba(52,211,153,0.1))">404</p>
+      <h1 class="font-display text-2xl sm:text-3xl font-bold mb-4 text-text-bright">Signal lost.</h1>
+      <p class="text-sm text-muted mb-10 max-w-sm mx-auto leading-relaxed">This page doesn't exist — or it's been compressed beyond recognition.</p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+        <a href="/" class="btn-glossy inline-flex items-center px-8 py-3.5 text-sm font-bold rounded-xl text-bg">
+          Back to Home
+          <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+          </svg>
+        </a>
+        <a href="/docs/getting-started" class="btn-outline-glossy inline-flex items-center px-8 py-3.5 text-sm font-medium rounded-xl text-text">
+          Read the Docs
+        </a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

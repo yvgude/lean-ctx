@@ -1,0 +1,376 @@
+<section class="relative overflow-hidden">
+  <div class="relative max-w-7xl mx-auto px-4 sm:px-6 pt-20 sm:pt-28 pb-12 sm:pb-20">
+    <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+
+      <div class="hero-content">
+        <p class="hero-fade text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-5">Stop burning tokens on noise</p>
+
+        <h1 class="hero-fade font-display text-[2rem] leading-[1.1] sm:text-[2.75rem] lg:text-[3.5rem] font-bold tracking-tight sm:leading-[1.08] mb-5 sm:mb-6">
+          Every token counts.
+          <span class="gradient-text-green"> Make yours go further.</span>
+        </h1>
+
+        <p class="hero-fade text-sm sm:text-base text-muted leading-relaxed mb-5 max-w-lg">
+          API limits are tighter than ever. lean-ctx compresses file reads, CLI output, and context windows — so you get more done before hitting your quota. Single Rust binary. Zero cloud.
+        </p>
+
+        <div class="hero-fade hero-stats">
+          <div class="hero-stat" data-info="Cached re-reads save up to 99%. First reads: 60–95% depending on mode. Shell output: 60–90%.">
+            <span class="hero-stat-value">up to 99%</span>
+            <span class="hero-stat-label">Token Reduction</span>
+          </div>
+          <div class="hero-stat-divider"></div>
+          <div class="hero-stat" data-info="Transparent compression for git, cargo, npm, docker, kubectl, pip, go, eslint, prettier, tsc, curl, and more.">
+            <span class="hero-stat-value">90+</span>
+            <span class="hero-stat-label">CLI Patterns</span>
+          </div>
+          <div class="hero-stat-divider"></div>
+          <div class="hero-stat" data-info="ctx_read, ctx_search, ctx_graph, ctx_intent, ctx_shell, ctx_compress, ctx_session, and 14 more.">
+            <span class="hero-stat-value">24</span>
+            <span class="hero-stat-label">Intelligent Tools</span>
+          </div>
+          <div class="hero-stat-divider"></div>
+          <div class="hero-stat" data-info="Persistent codebase index with symbol lookup, impact analysis, and related file discovery across your project.">
+            <span class="hero-stat-value">Graph</span>
+            <span class="hero-stat-label">Project Index</span>
+          </div>
+        </div>
+
+        <div class="hero-fade flex items-center gap-2.5 mb-8 sm:mb-10">
+          <a href="/docs/ccp" class="protocol-badge group" data-tooltip="Cross-session memory — persist task, findings & decisions across chats">
+            <span class="protocol-badge-dot bg-accent"></span>
+            CCP
+          </a>
+          <a href="/docs/cep" class="protocol-badge group" data-tooltip="Adaptive LLM communication with compliance scoring & auto-validation">
+            <span class="protocol-badge-dot bg-accent-2"></span>
+            CEP
+          </a>
+          <a href="/docs/tdd" class="protocol-badge group" data-tooltip="Symbol shorthand & identifier mapping for 8–25% extra savings">
+            <span class="protocol-badge-dot bg-accent-3"></span>
+            TDD
+          </a>
+          <span class="text-[10px] text-muted/40 font-mono ml-1 hidden sm:inline">Built-in cost optimization protocols</span>
+        </div>
+
+        <div class="hero-fade flex flex-col sm:flex-row gap-3 sm:gap-4">
+          <a href="/docs/getting-started" class="btn-glossy inline-flex items-center justify-center px-8 py-3.5 text-sm font-bold rounded-xl text-bg">
+            Get Started
+            <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+            </svg>
+          </a>
+          <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline-glossy inline-flex items-center justify-center px-8 py-3.5 text-sm font-medium rounded-xl text-text">
+            <svg class="mr-2 w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+            </svg>
+            Star on GitHub
+          </a>
+        </div>
+      </div>
+
+      <!-- Desktop Terminal -->
+      <div class="hidden lg:block">
+        <div class="terminal-chrome">
+          <div class="terminal-header flex items-center gap-2 px-5 py-3">
+            <div class="terminal-dot" style="background:#ef4444"></div>
+            <div class="terminal-dot" style="background:#eab308"></div>
+            <div class="terminal-dot" style="background:#34d399"></div>
+            <span class="ml-3 text-xs text-muted font-mono">lean-ctx gain</span>
+            <span class="text-[9px] text-muted/40 ml-auto mr-2 font-mono">real session data</span>
+          </div>
+          <div id="hero-terminal" class="term-anim terminal-body p-5 font-mono text-[13px] leading-[1.6]">
+            <p class="term-cmd text-muted">$ lean-ctx gain</p>
+            <p><span class="text-text-bright font-bold">◆ lean-ctx</span>  <span class="text-muted">Token Savings Dashboard</span></p>
+            <p class="text-border-light/30">────────────────────────────────────────────</p>
+            <p class="mt-2">
+              <span class="text-[#34d399] font-bold"> 1.7M</span><span class="text-muted ml-2 text-[11px]">saved</span>
+              <span class="ml-3 text-[#06b6d4] font-bold">76.8%</span><span class="text-muted ml-1 text-[11px]">rate</span>
+              <span class="ml-3 text-[#eab308] font-bold">520</span><span class="text-muted ml-1 text-[11px]">cmds</span>
+              <span class="ml-3 text-[#a855f7] font-bold">$4.25</span><span class="text-muted ml-1 text-[11px]">USD</span>
+            </p>
+            <p class="mt-1 text-muted text-[11px]">Since 2026-03-23 (2 days) <span class="text-[#34d399]">▁█</span></p>
+            <p class="mt-3 text-text-bright font-semibold">Top Commands</p>
+            <p class="text-border-light/30">────────────────────────────────────────────</p>
+            <p><span class="text-muted">curl         </span> 48x <span class="term-bar text-[#34d399]">████████████████████</span> <span class="text-[#34d399] font-bold">728.1K</span> <span class="text-muted">97%</span></p>
+            <p><span class="text-muted">git commit   </span> 34x <span class="term-bar text-[#eab308]">██████████▎</span>          <span class="text-[#eab308] font-bold">375.2K</span> <span class="text-muted">50%</span></p>
+            <p><span class="text-muted">git rm       </span>  7x <span class="term-bar text-[#34d399]">████████▌</span>            <span class="text-[#34d399] font-bold">313.4K</span> <span class="text-muted">100%</span></p>
+            <p><span class="text-muted">ctx_read     </span>103x <span class="term-bar text-[#a855f7]">█▌</span>                   <span class="text-[#a855f7] font-bold"> 59.1K</span> <span class="text-muted">38%</span></p>
+            <p class="text-muted text-[11px] mt-1">  ... +33 more commands</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Mobile Terminal (compact, below hero text) -->
+    <div class="lg:hidden mt-8">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-1.5 px-3 py-2">
+          <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
+          <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
+          <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
+          <span class="ml-2 text-[10px] text-muted font-mono">lean-ctx gain</span>
+        </div>
+        <div id="hero-terminal-mobile" class="term-anim terminal-body px-3 py-2.5 font-mono text-[10px] leading-[1.5]">
+          <p class="term-cmd text-muted">$ lean-ctx gain</p>
+          <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted text-[9px]">Token Savings</span></p>
+          <p class="mt-1.5">
+            <span class="text-[#34d399] font-bold">1.7M</span><span class="text-muted text-[9px]"> saved</span>
+            <span class="ml-2 text-[#06b6d4] font-bold">76.8%</span>
+            <span class="ml-2 text-[#eab308] font-bold">520</span><span class="text-muted text-[9px]"> cmds</span>
+            <span class="ml-2 text-[#a855f7] font-bold">$4.25</span>
+          </p>
+          <p class="mt-1.5 text-text-bright font-semibold text-[9px]">Top Commands</p>
+          <p><span class="text-muted">curl    </span>48x <span class="term-bar text-[#34d399]">████████████</span> <span class="text-[#34d399] font-bold">728K</span></p>
+          <p><span class="text-muted">git     </span>34x <span class="term-bar text-[#eab308]">██████</span>      <span class="text-[#eab308] font-bold">375K</span></p>
+          <p><span class="text-muted">ctx_read</span> 103x <span class="term-bar text-[#a855f7]">█</span>        <span class="text-[#a855f7] font-bold"> 59K</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero-glow {
+    position: absolute;
+    top: -20%;
+    right: -10%;
+    width: 700px;
+    height: 700px;
+    background: radial-gradient(circle, rgba(52, 211, 153, 0.06), transparent 60%);
+    filter: blur(80px);
+    pointer-events: none;
+  }
+
+  .hero-fade {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: heroFadeIn 0.7s ease-out forwards;
+  }
+  .hero-fade:nth-child(1) { animation-delay: 0.1s; }
+  .hero-fade:nth-child(2) { animation-delay: 0.2s; }
+  .hero-fade:nth-child(3) { animation-delay: 0.35s; }
+  .hero-fade:nth-child(4) { animation-delay: 0.5s; }
+  .hero-fade:nth-child(5) { animation-delay: 0.6s; }
+  .hero-fade:nth-child(6) { animation-delay: 0.7s; }
+
+  @keyframes heroFadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .term-anim > p {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  .term-anim.is-visible > p {
+    animation: termFadeIn 0.35s ease-out forwards;
+  }
+  .term-anim.is-visible > .term-cmd::after {
+    content: '▋';
+    animation: cursorBlink 0.8s step-end 3;
+    color: var(--color-accent);
+    margin-left: 2px;
+  }
+  .term-anim .term-bar {
+    display: inline-block;
+    clip-path: inset(0 100% 0 0);
+  }
+  .term-anim.is-visible .term-bar {
+    animation: barGrow 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes termFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes barGrow {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+  }
+  @keyframes cursorBlink {
+    50% { opacity: 0; }
+  }
+
+  .protocol-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    text-decoration: none;
+    transition: all 0.25s ease;
+    position: relative;
+  }
+  .protocol-badge:hover {
+    border-color: var(--color-accent);
+    background: rgba(52, 211, 153, 0.06);
+    color: var(--color-text-bright);
+  }
+  .protocol-badge::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.4;
+    color: var(--color-text);
+    background: var(--color-surface-3);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 10;
+  }
+  .protocol-badge:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .protocol-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .hero-stats {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 1.25rem;
+    padding: 10px 16px;
+    background: var(--color-surface);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    width: fit-content;
+  }
+
+  .hero-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 14px;
+    position: relative;
+    cursor: default;
+  }
+
+  .hero-stat-value {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-accent);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .hero-stat-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+  }
+
+  .hero-stat[data-info]::after {
+    content: attr(data-info);
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    padding: 8px 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--color-text);
+    background: var(--color-surface-3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    white-space: normal;
+    width: max-content;
+    max-width: 240px;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 20;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .hero-stat[data-info]:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .hero-stat-divider {
+    width: 1px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 640px) {
+    .hero-stats {
+      padding: 8px 10px;
+      gap: 0;
+      width: 100%;
+      justify-content: space-between;
+    }
+    .hero-stat {
+      padding: 0 8px;
+    }
+    .hero-stat-value {
+      font-size: 14px;
+    }
+    .hero-stat-label {
+      font-size: 7px;
+    }
+    .hero-stat[data-info]::after {
+      display: none;
+    }
+    .hero-stat-divider {
+      height: 24px;
+    }
+    .protocol-badge::after {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-fade { opacity: 1; transform: none; animation: none; }
+    .term-anim > p { opacity: 1; transform: none; }
+    .term-anim .term-bar { clip-path: none; }
+  }
+</style>
+
+<script>
+  function animateTerminal(el: HTMLElement | null) {
+    if (!el || el.classList.contains('is-visible')) return;
+    const lines = el.querySelectorAll(':scope > p');
+    lines.forEach((line, i) => {
+      (line as HTMLElement).style.animationDelay = `${i * 80}ms`;
+      const bar = line.querySelector('.term-bar');
+      if (bar) (bar as HTMLElement).style.animationDelay = `${i * 80 + 200}ms`;
+    });
+    el.classList.add('is-visible');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => animateTerminal(document.getElementById('hero-terminal')), 600);
+    setTimeout(() => animateTerminal(document.getElementById('hero-terminal-mobile')), 600);
+  });
+</script>

@@ -1,0 +1,199 @@
+<canvas id="neural-canvas" aria-hidden="true"></canvas>
+
+<style>
+  #neural-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    pointer-events: none;
+  }
+</style>
+
+<script is:inline>
+(function() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  var c = document.getElementById('neural-canvas');
+  if (!c) return;
+  var ctx = c.getContext('2d');
+  if (!ctx) return;
+
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var w, h;
+  var particles = [];
+  var CONNECT_DIST = 160;
+  var PARTICLE_COUNT = 0;
+  var mouse = { x: -9999, y: -9999 };
+  var time = 0;
+
+  function resize() {
+    w = window.innerWidth;
+    h = window.innerHeight;
+    c.width = w * dpr;
+    c.height = h * dpr;
+    c.style.width = w + 'px';
+    c.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var area = w * h;
+    PARTICLE_COUNT = Math.min(Math.max(Math.floor(area / 9000), 50), 220);
+    CONNECT_DIST = Math.min(w, h) * 0.14;
+    if (CONNECT_DIST < 110) CONNECT_DIST = 110;
+    if (CONNECT_DIST > 220) CONNECT_DIST = 220;
+
+    while (particles.length < PARTICLE_COUNT) {
+      particles.push(createParticle());
+    }
+    particles.length = PARTICLE_COUNT;
+  }
+
+  function createParticle() {
+    var depth = 0.2 + Math.random() * 0.8;
+    return {
+      x: Math.random() * (w || 1440),
+      y: Math.random() * (h || 900),
+      vx: (Math.random() - 0.5) * 0.3 * depth,
+      vy: (Math.random() - 0.5) * 0.3 * depth,
+      r: (0.8 + Math.random() * 2) * depth,
+      depth: depth,
+      pulse: Math.random() * Math.PI * 2,
+      pulseSpeed: 0.006 + Math.random() * 0.018,
+      hue: Math.random() > 0.7 ? 1 : 0
+    };
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    time += 0.003;
+
+    var cx1 = w * (0.15 + Math.sin(time * 0.7) * 0.1);
+    var cy1 = h * (0.25 + Math.cos(time * 0.5) * 0.1);
+    var grad = ctx.createRadialGradient(cx1, cy1, 0, cx1, cy1, w * 0.65);
+    grad.addColorStop(0, 'rgba(52, 211, 153, 0.045)');
+    grad.addColorStop(0.4, 'rgba(52, 211, 153, 0.015)');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    var cx2 = w * (0.85 + Math.sin(time * 0.4) * 0.08);
+    var cy2 = h * (0.65 + Math.cos(time * 0.6) * 0.1);
+    var grad2 = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, w * 0.5);
+    grad2.addColorStop(0, 'rgba(129, 140, 248, 0.035)');
+    grad2.addColorStop(0.4, 'rgba(129, 140, 248, 0.01)');
+    grad2.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad2;
+    ctx.fillRect(0, 0, w, h);
+
+    var cx3 = w * (0.5 + Math.cos(time * 0.3) * 0.15);
+    var cy3 = h * (0.4 + Math.sin(time * 0.8) * 0.12);
+    var grad3 = ctx.createRadialGradient(cx3, cy3, 0, cx3, cy3, w * 0.35);
+    grad3.addColorStop(0, 'rgba(52, 211, 153, 0.025)');
+    grad3.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad3;
+    ctx.fillRect(0, 0, w, h);
+
+    for (var i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.pulse += p.pulseSpeed;
+
+      if (p.x < -60) p.x = w + 60;
+      if (p.x > w + 60) p.x = -60;
+      if (p.y < -60) p.y = h + 60;
+      if (p.y > h + 60) p.y = -60;
+    }
+
+    for (var i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      for (var j = i + 1; j < particles.length; j++) {
+        var q = particles[j];
+        var dx = p.x - q.x;
+        var dy = p.y - q.y;
+        var distSq = dx * dx + dy * dy;
+        var maxDist = CONNECT_DIST * ((p.depth + q.depth) * 0.5);
+        var maxDistSq = maxDist * maxDist;
+
+        if (distSq < maxDistSq) {
+          var dist = Math.sqrt(distSq);
+          var alpha = (1 - dist / maxDist) * 0.15 * ((p.depth + q.depth) * 0.5);
+          var r, g, b;
+          if (p.hue || q.hue) {
+            r = 129; g = 140; b = 248;
+          } else {
+            r = 52; g = 211; b = 153;
+          }
+          ctx.strokeStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+          ctx.lineWidth = 0.5 * ((p.depth + q.depth) * 0.5);
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(q.x, q.y);
+          ctx.stroke();
+        }
+      }
+
+      var mdx = p.x - mouse.x;
+      var mdy = p.y - mouse.y;
+      var mDistSq = mdx * mdx + mdy * mdy;
+      if (mDistSq < 50000) {
+        var mDist = Math.sqrt(mDistSq);
+        var mAlpha = (1 - mDist / 224) * 0.25 * p.depth;
+        ctx.strokeStyle = 'rgba(52, 211, 153, ' + mAlpha + ')';
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(mouse.x, mouse.y);
+        ctx.stroke();
+      }
+    }
+
+    for (var k = 0; k < particles.length; k++) {
+      var pt = particles[k];
+      var glow = 0.35 + Math.sin(pt.pulse) * 0.2;
+      var baseAlpha = glow * pt.depth;
+      var r, g, b;
+      if (pt.hue) {
+        r = 129; g = 140; b = 248;
+      } else {
+        r = 52; g = 211; b = 153;
+      }
+
+      if (pt.r > 1.0) {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.r * 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (baseAlpha * 0.06) + ')';
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + baseAlpha + ')';
+      ctx.fill();
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  var resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 150);
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+  });
+
+  document.addEventListener('mouseleave', function() {
+    mouse.x = -9999;
+    mouse.y = -9999;
+  });
+
+  resize();
+  draw();
+})();
+</script>

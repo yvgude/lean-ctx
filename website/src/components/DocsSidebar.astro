@@ -1,0 +1,191 @@
+---
+interface SidebarItem {
+  label: string;
+  href: string;
+}
+
+interface SidebarSection {
+  title: string;
+  compact?: boolean;
+  items: SidebarItem[];
+}
+
+interface Props {
+  sections?: SidebarSection[];
+}
+
+const defaultSections: SidebarSection[] = [
+  {
+    title: 'Getting Started',
+    items: [
+      { label: 'Overview', href: '/docs/getting-started' },
+      { label: 'Quick Reference', href: '/docs/quick-reference' },
+      { label: 'Configuration', href: '/docs/configuration' },
+    ],
+  },
+  {
+    title: 'Reference',
+    items: [
+      { label: 'Tool API Reference', href: '/docs/tools' },
+      { label: 'Tree-sitter Engine', href: '/docs/tree-sitter' },
+      { label: 'Token Cost Guide', href: '/docs/token-guide' },
+    ],
+  },
+];
+
+const sections = Astro.props.sections ?? defaultSections;
+const currentPath = Astro.url.pathname.replace(/\/$/, '');
+---
+
+<!-- Mobile: inline collapsible nav -->
+<nav class="lg:hidden mb-8">
+  <details class="docs-mobile-nav group">
+    <summary class="flex items-center justify-between px-4 py-3 cursor-pointer select-none" style="font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem);">
+      <span class="font-medium text-muted">On this page</span>
+      <svg class="w-4 h-4 text-muted/60 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+      </svg>
+    </summary>
+    <div class="px-2 pb-3 pt-1 grid grid-cols-2 gap-x-2">
+      {sections.map(section => (
+        <div class="col-span-2 mb-3 last:mb-0">
+          <h4 class="fluid-label text-muted/50 mb-1 px-2">{section.title}</h4>
+          <div class={section.compact ? 'grid grid-cols-2 gap-x-1' : ''}>
+            {section.items.map(item => {
+              const itemPage = item.href.split('#')[0].replace(/\/$/, '');
+              const isPageActive = currentPath === itemPage && !item.href.includes('#');
+              return (
+                <a
+                  href={item.href}
+                  class:list={[
+                    'docs-nav-link block py-1.5 px-2 rounded-md transition-colors duration-150',
+                    isPageActive
+                      ? 'text-accent font-medium'
+                      : 'text-muted hover:text-text-bright'
+                  ]}
+                  style="font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);"
+                  data-anchor={item.href.includes('#') ? item.href.split('#')[1] : undefined}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  </details>
+</nav>
+
+<!-- Desktop: sticky sidebar -->
+<aside class="hidden lg:block">
+  <nav class="sticky top-24 space-y-6 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2 sidebar-scroll">
+    {sections.map(section => (
+      <div>
+        <h4 class="fluid-label text-muted mb-3 font-display">{section.title}</h4>
+        <ul class:list={['relative', section.compact ? 'space-y-0' : 'space-y-0.5']}>
+          {section.items.map(item => {
+            const itemPage = item.href.split('#')[0].replace(/\/$/, '');
+            const isPageActive = currentPath === itemPage && !item.href.includes('#');
+            return (
+              <li>
+                <a
+                  href={item.href}
+                  data-anchor={item.href.includes('#') ? item.href.split('#')[1] : undefined}
+                  class:list={[
+                    'docs-nav-link block rounded-lg transition-all duration-200 relative',
+                    section.compact ? 'py-1 px-3' : 'py-1.5 px-3',
+                    isPageActive
+                      ? 'text-accent bg-accent/8 font-medium sidebar-active'
+                      : 'text-muted hover:text-text-bright hover:bg-surface-2'
+                  ]}
+                  style={`font-size: ${section.compact ? 'clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem)' : 'clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem)'};`}
+                >
+                  {item.label}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    ))}
+  </nav>
+</aside>
+
+<style>
+  .sidebar-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--color-accent), var(--color-accent-2));
+    border-radius: 1px;
+  }
+
+  .docs-nav-link.is-scrolled-to {
+    color: var(--color-accent) !important;
+    background: rgba(52, 211, 153, 0.06);
+  }
+
+  .docs-mobile-nav {
+    background: var(--color-surface);
+    border: 1px solid rgba(26, 26, 48, 0.5);
+    border-radius: 12px;
+  }
+  .docs-mobile-nav summary {
+    list-style: none;
+  }
+  .docs-mobile-nav summary::-webkit-details-marker {
+    display: none;
+  }
+  .docs-mobile-nav[open] {
+    border-color: rgba(52, 211, 153, 0.15);
+  }
+
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+</style>
+
+<script>
+  const navLinks = document.querySelectorAll<HTMLAnchorElement>('.docs-nav-link[data-anchor]');
+  if (navLinks.length > 0) {
+    const anchors: { id: string; el: Element }[] = [];
+    navLinks.forEach(link => {
+      const id = link.dataset.anchor;
+      if (id) {
+        const target = document.getElementById(id);
+        if (target) anchors.push({ id, el: target });
+      }
+    });
+
+    if (anchors.length > 0) {
+      function updateActive() {
+        let currentId = '';
+        const scrollY = window.scrollY + 120;
+        for (const a of anchors) {
+          if ((a.el as HTMLElement).offsetTop <= scrollY) {
+            currentId = a.id;
+          }
+        }
+        navLinks.forEach(link => {
+          link.classList.toggle('is-scrolled-to', link.dataset.anchor === currentId);
+        });
+      }
+      window.addEventListener('scroll', updateActive, { passive: true });
+      updateActive();
+    }
+  }
+</script>
