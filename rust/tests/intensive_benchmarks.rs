@@ -1,6 +1,5 @@
 use lean_ctx::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
 use lean_ctx::core::entropy::entropy_compress;
-use lean_ctx::core::patterns;
 use lean_ctx::core::protocol::instruction_decoder_block;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
