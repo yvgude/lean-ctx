@@ -262,7 +262,7 @@ fn run_mcp_server() -> Result<()> {
             .with_writer(std::io::stderr)
             .init();
 
-        tracing::info!("lean-ctx v2.9.3 MCP server starting");
+        tracing::info!("lean-ctx v2.16.1 MCP server starting");
 
         let server = tools::create_server();
         let transport =
