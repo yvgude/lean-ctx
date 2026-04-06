@@ -3,6 +3,15 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.17.5] — 2026-04-06
+
+### Fix: ctx_shell File-Write Guard (#50)
+
+#### Added
+- **ctx_shell input validation** — Blocks file-write commands (`cat >`, `echo >`, heredocs, `tee`) with clear error redirecting to the native Write tool. Prevents MCP stream corruption from oversized shell payloads
+- **Command size limit** — Rejects commands over 8KB, preventing heredocs with 200+ lines of code from corrupting the MCP protocol
+- **4 unit tests** covering safe commands, file-write detection, oversized commands, and quote-aware redirect parsing
+
 ## [2.17.4] — 2026-04-06
 
 ### Feature: Hook Redirect Path Exclusion + Automated Publishing

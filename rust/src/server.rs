@@ -294,6 +294,12 @@ impl ServerHandler for LeanCtxServer {
             "ctx_shell" => {
                 let command = get_str(args, "command")
                     .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
+
+                if let Some(rejection) = crate::tools::ctx_shell::validate_command(&command) {
+                    self.record_call("ctx_shell", 0, 0, None).await;
+                    return Ok(CallToolResult::success(vec![Content::text(rejection)]));
+                }
+
                 let raw = get_bool(args, "raw").unwrap_or(false)
                     || std::env::var("LEAN_CTX_DISABLED").is_ok();
                 let cmd_clone = command.clone();

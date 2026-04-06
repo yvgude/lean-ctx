@@ -4,6 +4,104 @@ use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
+const MAX_COMMAND_BYTES: usize = 8192;
+
+const HEREDOC_PATTERNS: &[&str] = &[
+    "<< 'EOF'", "<<'EOF'", "<< 'ENDOFFILE'", "<<'ENDOFFILE'",
+    "<< 'END'", "<<'END'", "<< EOF", "<<EOF", "cat <<",
+];
+
+/// Validates a shell command before execution. Returns Some(error_message) if
+/// the command should be rejected, None if it's safe to run.
+pub fn validate_command(command: &str) -> Option<String> {
+    if command.len() > MAX_COMMAND_BYTES {
+        return Some(format!(
+            "ERROR: Command too large ({} bytes, limit {}). \
+             If you're writing file content, use the native Write/Edit tool instead. \
+             ctx_shell is for reading command output only (git, cargo, npm, etc.).",
+            command.len(),
+            MAX_COMMAND_BYTES
+        ));
+    }
+
+    if has_file_write_redirect(command) {
+        return Some(
+            "ERROR: ctx_shell detected a file-write command (shell redirect > or >>). \
+             Use the native Write tool to create/modify files. \
+             ctx_shell is ONLY for reading command output (git status, cargo test, npm run, etc.). \
+             File writes via shell cause MCP protocol corruption on large payloads."
+                .to_string(),
+        );
+    }
+
+    let cmd_lower = command.to_lowercase();
+
+    if cmd_lower.starts_with("tee ") || cmd_lower.contains("| tee ") {
+        return Some(
+            "ERROR: ctx_shell detected a file-write command (tee). \
+             Use the native Write tool to create/modify files. \
+             ctx_shell is ONLY for reading command output."
+                .to_string(),
+        );
+    }
+
+    for pattern in HEREDOC_PATTERNS {
+        if cmd_lower.contains(&pattern.to_lowercase()) {
+            return Some(
+                "ERROR: ctx_shell detected a heredoc file-write command. \
+                 Use the native Write tool to create/modify files. \
+                 ctx_shell is ONLY for reading command output."
+                    .to_string(),
+            );
+        }
+    }
+
+    None
+}
+
+/// Detects shell redirect operators (`>` or `>>`) that write to files.
+/// Ignores `>` inside quotes, `2>` (stderr), `/dev/null`, and comparison operators.
+fn has_file_write_redirect(command: &str) -> bool {
+    let bytes = command.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+
+    while i < len {
+        let c = bytes[i];
+        if c == b'\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+        } else if c == b'"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+        } else if c == b'>' && !in_single_quote && !in_double_quote {
+            if i > 0 && bytes[i - 1] == b'2' {
+                i += 1;
+                continue;
+            }
+            let target_start = if i + 1 < len && bytes[i + 1] == b'>' {
+                i + 2
+            } else {
+                i + 1
+            };
+            let target: String = command[target_start..]
+                .trim_start()
+                .chars()
+                .take_while(|c| !c.is_whitespace())
+                .collect();
+            if target == "/dev/null" {
+                i += 1;
+                continue;
+            }
+            if !target.is_empty() {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 pub fn handle(command: &str, output: &str, crp_mode: CrpMode) -> String {
     let original_tokens = count_tokens(output);
 
@@ -109,5 +207,40 @@ fn detect_ext_from_command(command: &str) -> &str {
         "go"
     } else {
         "rs"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_allows_safe_commands() {
+        assert!(validate_command("git status").is_none());
+        assert!(validate_command("cargo test").is_none());
+        assert!(validate_command("npm run build").is_none());
+        assert!(validate_command("ls -la").is_none());
+    }
+
+    #[test]
+    fn validate_blocks_file_writes() {
+        assert!(validate_command("cat > file.py << 'EOF'\nprint('hi')\nEOF").is_some());
+        assert!(validate_command("echo 'data' > output.txt").is_some());
+        assert!(validate_command("tee /tmp/file.txt").is_some());
+        assert!(validate_command("printf 'hello' > test.txt").is_some());
+        assert!(validate_command("cat << EOF\ncontent\nEOF").is_some());
+    }
+
+    #[test]
+    fn validate_blocks_oversized_commands() {
+        let huge = "x".repeat(MAX_COMMAND_BYTES + 1);
+        let result = validate_command(&huge);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("too large"));
+    }
+
+    #[test]
+    fn validate_allows_cat_without_redirect() {
+        assert!(validate_command("cat file.txt").is_none());
     }
 }
