@@ -537,7 +537,9 @@ fn install_claude_hook_config(home: &std::path::Path) {
             );
         }
     }
-    println!("Installed Claude Code hooks at {}", hooks_dir.display());
+    if !mcp_server_quiet_mode() {
+        println!("Installed Claude Code hooks at {}", hooks_dir.display());
+    }
 }
 
 fn install_cursor_hook(global: bool) {
@@ -640,7 +642,9 @@ fn install_cursor_hook_config(home: &std::path::Path) {
         &hooks_json,
         &serde_json::to_string_pretty(&hook_config).unwrap(),
     );
-    println!("Installed Cursor hooks at {}", hooks_json.display());
+    if !mcp_server_quiet_mode() {
+        println!("Installed Cursor hooks at {}", hooks_json.display());
+    }
 }
 
 fn install_gemini_hook() {
@@ -720,10 +724,12 @@ fn install_gemini_hook_config(home: &std::path::Path) {
             );
         }
     }
-    println!(
-        "Installed Gemini CLI hooks at {}",
-        settings_path.parent().unwrap_or(&settings_path).display()
-    );
+    if !mcp_server_quiet_mode() {
+        println!(
+            "Installed Gemini CLI hooks at {}",
+            settings_path.parent().unwrap_or(&settings_path).display()
+        );
+    }
 }
 
 fn install_codex_hook() {
