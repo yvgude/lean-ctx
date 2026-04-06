@@ -33,6 +33,8 @@ pub struct Config {
     pub autonomy: AutonomyConfig,
     #[serde(default = "default_buddy_enabled")]
     pub buddy_enabled: bool,
+    #[serde(default)]
+    pub redirect_exclude: Vec<String>,
 }
 
 fn default_buddy_enabled() -> bool {
@@ -172,6 +174,7 @@ impl Default for Config {
             cloud: CloudConfig::default(),
             autonomy: AutonomyConfig::default(),
             buddy_enabled: default_buddy_enabled(),
+            redirect_exclude: Vec::new(),
         }
     }
 }

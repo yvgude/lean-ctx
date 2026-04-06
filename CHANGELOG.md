@@ -3,6 +3,19 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.17.4] — 2026-04-06
+
+### Feature: Hook Redirect Path Exclusion + Automated Publishing
+
+#### Added
+- **Path exclusion for hook redirect** — Exclude specific paths from PreToolUse redirect hook. Paths matching patterns bypass the redirect and allow native Read/Grep/ListFiles (#60)
+  - Config: `redirect_exclude = [".wolf/**", ".claude/**", "*.json"]` in `~/.lean-ctx/config.toml`
+  - Env var: `LEAN_CTX_HOOK_EXCLUDE=".wolf/**,.claude/**"` (takes precedence)
+  - Glob patterns support `*`, `?`, and `**` (recursive directory match)
+  - 5 unit tests covering glob matching and path extraction
+- **Automated crates.io publishing** — `cargo publish` runs automatically after GitHub Release
+- **Automated npm publishing** — `lean-ctx-bin` and `pi-lean-ctx` published automatically after release
+
 ## [2.17.3] — 2026-04-06
 
 ### Fix: MCP Stdout Pollution + Website UX
