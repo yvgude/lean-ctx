@@ -146,7 +146,10 @@ function triggerSend(input, config) {
 
 async function handleSubmit(input, config) {
   const text = getInputText(input).trim();
-  if (text.length < MIN_LENGTH) return false;
+  if (text.length < MIN_LENGTH) {
+    triggerSend(input, config);
+    return false;
+  }
 
   isCompressing = true;
   showCompressing();
@@ -157,16 +160,13 @@ async function handleSubmit(input, config) {
     setInputText(input, response.compressed);
     showSavings(response.inputTokens || 0, response.outputTokens || 0, response.savings || 0);
     updateStats(response);
-
     await new Promise((r) => setTimeout(r, 60));
-    triggerSend(input, config);
-    isCompressing = false;
-    return true;
   }
 
-  isCompressing = false;
   hideCompressing();
-  return false;
+  isCompressing = false;
+  triggerSend(input, config);
+  return true;
 }
 
 function hookInput(input, config) {
