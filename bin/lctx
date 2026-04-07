@@ -114,9 +114,8 @@ echo "Using:   $LEAN_CTX"
 
 echo ""
 echo "Building project graph..."
-"$LEAN_CTX" -c "$LEAN_CTX graph build" 2>/dev/null \
-  || LEAN_CTX_ACTIVE=1 "$LEAN_CTX" graph build 2>/dev/null \
-  || echo "(graph build skipped — run in MCP mode for full graph)"
+"$LEAN_CTX" graph build "$PROJECT_DIR" 2>/dev/null \
+  || echo "(graph build skipped — will be built automatically in MCP mode)"
 
 if $SCAN_ONLY; then
   echo "Done (scan only)."

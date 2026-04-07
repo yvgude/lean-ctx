@@ -156,17 +156,41 @@ pub fn cmd_grep(args: &[String]) {
     let pattern = &args[0];
     let path = args.get(1).map(|s| s.as_str()).unwrap_or(".");
 
-    let command = if cfg!(windows) {
-        format!(
-            "findstr /S /N /R \"{}\" {}\\*",
-            pattern,
-            path.replace('/', "\\")
-        )
-    } else {
-        format!("grep -rn '{}' {}", pattern.replace('\'', "'\\''"), path)
+    let re = match regex::Regex::new(pattern) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Invalid regex pattern: {e}");
+            std::process::exit(1);
+        }
     };
-    let code = crate::shell::exec(&command);
-    std::process::exit(code);
+
+    let mut found = false;
+    for entry in ignore::WalkBuilder::new(path)
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .max_depth(Some(10))
+        .build()
+        .flatten()
+    {
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+            continue;
+        }
+        let file_path = entry.path();
+        if let Ok(content) = std::fs::read_to_string(file_path) {
+            for (i, line) in content.lines().enumerate() {
+                if re.is_match(line) {
+                    println!("{}:{}:{}", file_path.display(), i + 1, line);
+                    found = true;
+                }
+            }
+        }
+    }
+
+    if !found {
+        std::process::exit(1);
+    }
 }
 
 pub fn cmd_find(args: &[String]) {
@@ -175,15 +199,29 @@ pub fn cmd_find(args: &[String]) {
         std::process::exit(1);
     }
 
-    let pattern = &args[0];
+    let pattern = args[0].to_lowercase();
     let path = args.get(1).map(|s| s.as_str()).unwrap_or(".");
-    let command = if cfg!(windows) {
-        format!("dir /S /B {}\\{}", path.replace('/', "\\"), pattern)
-    } else {
-        format!("find {path} -name \"{pattern}\" -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/target/*'")
-    };
-    let code = crate::shell::exec(&command);
-    std::process::exit(code);
+
+    let mut found = false;
+    for entry in ignore::WalkBuilder::new(path)
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .max_depth(Some(10))
+        .build()
+        .flatten()
+    {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if name.contains(&pattern) {
+            println!("{}", entry.path().display());
+            found = true;
+        }
+    }
+
+    if !found {
+        std::process::exit(1);
+    }
 }
 
 pub fn cmd_ls(args: &[String]) {

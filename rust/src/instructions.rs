@@ -74,6 +74,8 @@ reference, aggressive, entropy, lines:N-M. Auto-selects when unspecified. Re-rea
 If ctx_read returns 'cached': use fresh=true, start_line=N, or mode='lines:N-M' to re-read.\n\
 \n\
 AUTONOMY: lean-ctx auto-runs ctx_overview, ctx_preload, ctx_dedup, ctx_compress behind the scenes.\n\
+Multi-agent: ctx_share auto-pushes context at checkpoints. Use ctx_agent(action=handoff) to transfer tasks, ctx_agent(action=sync) for status.\n\
+Semantic: ctx_semantic_search finds similar code by meaning — use when exact search (ctx_search) misses.\n\
 Focus on: ctx_read, ctx_shell, ctx_search, ctx_tree. Use ctx_session for memory, ctx_knowledge for project facts.\n\
 ctx_shell raw=true: skip compression for small/critical outputs. Full output tee files at ~/.lean-ctx/tee/.\n\
 \n\

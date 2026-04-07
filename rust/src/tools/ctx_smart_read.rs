@@ -19,8 +19,7 @@ pub fn select_mode_with_task(cache: &SessionCache, path: &str, _task: Option<&st
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    if cache.get(path).is_some() {
-        let cached = cache.get(path).unwrap();
+    if let Some(cached) = cache.get(path) {
         if cached.hash == compute_hash(&content) {
             return "full".to_string();
         }

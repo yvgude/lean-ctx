@@ -75,11 +75,10 @@ fn handle_with_options(
         return handle_diff(cache, path, &file_ref);
     }
 
-    if cache.get(path).is_some() {
+    if let Some(existing) = cache.get(path) {
         if mode == "full" {
             return handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, crp_mode);
         }
-        let existing = cache.get(path).unwrap();
         let content = existing.content.clone();
         let original_tokens = existing.original_tokens;
         return process_mode(
@@ -168,16 +167,7 @@ fn update_semantic_index(path: &str, content: &str) {
 }
 
 fn detect_project_root(path: &str) -> String {
-    let mut dir = Path::new(path);
-    while let Some(parent) = dir.parent() {
-        if parent.join(".git").exists() {
-            return parent.to_string_lossy().to_string();
-        }
-        dir = parent;
-    }
-    std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| ".".to_string())
+    crate::core::protocol::detect_project_root_or_cwd(path)
 }
 
 const AUTO_DELTA_THRESHOLD: f64 = 0.6;

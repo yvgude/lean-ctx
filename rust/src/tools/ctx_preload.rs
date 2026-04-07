@@ -1,6 +1,7 @@
 use crate::core::cache::SessionCache;
+use crate::core::graph_index::ProjectIndex;
 use crate::core::protocol;
-use crate::core::task_relevance::{compute_relevance, parse_task_hints};
+use crate::core::task_relevance::{compute_relevance, parse_task_hints, RelevanceScore};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -28,11 +29,15 @@ pub fn handle(
     let (task_files, task_keywords) = parse_task_hints(task);
     let relevance = compute_relevance(&index, &task_files, &task_keywords);
 
-    let candidates: Vec<_> = relevance
+    let mut scored: Vec<_> = relevance
         .iter()
         .filter(|r| r.score >= 0.1)
         .take(MAX_PRELOAD_FILES + 10)
         .collect();
+
+    apply_heat_ranking(&mut scored, &index, &project_root);
+
+    let candidates = scored;
 
     if candidates.is_empty() {
         return format!(
@@ -62,9 +67,31 @@ pub fn handle(
     let briefing = crate::core::task_briefing::build_briefing(task, &file_context);
     let briefing_block = crate::core::task_briefing::format_briefing(&briefing);
 
+    let multi_intents = crate::core::intent_engine::detect_multi_intent(task);
+    let primary = &multi_intents[0];
+    let complexity = crate::core::intent_engine::classify_complexity(task, primary);
+
     let mut output = Vec::new();
     output.push(briefing_block);
-    output.push(format!("[task: {task}]"));
+
+    let complexity_label = complexity.instruction_suffix().lines().next().unwrap_or("");
+    if multi_intents.len() > 1 {
+        output.push(format!(
+            "[task: {task}] | {} | {} sub-intents",
+            complexity_label,
+            multi_intents.len()
+        ));
+        for (i, sub) in multi_intents.iter().enumerate() {
+            output.push(format!(
+                "  {}. {} ({:.0}%)",
+                i + 1,
+                sub.task_type.as_str(),
+                sub.confidence * 100.0
+            ));
+        }
+    } else {
+        output.push(format!("[task: {task}] | {complexity_label}"));
+    }
 
     let mut total_estimated_saved = 0usize;
     let mut critical_count = 0usize;
@@ -309,6 +336,74 @@ fn extract_imports(content: &str) -> Vec<String> {
             }
         })
         .collect()
+}
+
+fn apply_heat_ranking(candidates: &mut [&RelevanceScore], index: &ProjectIndex, root: &str) {
+    if index.files.is_empty() {
+        return;
+    }
+
+    let mut connection_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for edge in &index.edges {
+        *connection_counts.entry(edge.from.clone()).or_default() += 1;
+        *connection_counts.entry(edge.to.clone()).or_default() += 1;
+    }
+
+    let max_tokens = index
+        .files
+        .values()
+        .map(|f| f.token_count)
+        .max()
+        .unwrap_or(1) as f64;
+    let max_conn = connection_counts.values().max().copied().unwrap_or(1) as f64;
+
+    candidates.sort_by(|a, b| {
+        let heat_a = compute_heat(
+            &a.path,
+            root,
+            index,
+            &connection_counts,
+            max_tokens,
+            max_conn,
+        );
+        let heat_b = compute_heat(
+            &b.path,
+            root,
+            index,
+            &connection_counts,
+            max_tokens,
+            max_conn,
+        );
+        let combined_a = a.score * 0.6 + heat_a * 0.4;
+        let combined_b = b.score * 0.6 + heat_b * 0.4;
+        combined_b
+            .partial_cmp(&combined_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+fn compute_heat(
+    path: &str,
+    root: &str,
+    index: &ProjectIndex,
+    connections: &std::collections::HashMap<String, usize>,
+    max_tokens: f64,
+    max_conn: f64,
+) -> f64 {
+    let rel = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .trim_start_matches('/');
+
+    if let Some(entry) = index.files.get(rel) {
+        let conn = connections.get(rel).copied().unwrap_or(0);
+        let token_norm = entry.token_count as f64 / max_tokens;
+        let conn_norm = conn as f64 / max_conn;
+        token_norm * 0.4 + conn_norm * 0.6
+    } else {
+        0.0
+    }
 }
 
 #[cfg(test)]

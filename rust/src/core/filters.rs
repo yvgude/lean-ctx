@@ -1,7 +1,6 @@
 use regex::Regex;
 use serde::Deserialize;
 use std::path::Path;
-use std::sync::Mutex;
 
 #[derive(Debug, Deserialize)]
 struct FilterFile {
@@ -29,8 +28,6 @@ struct CompiledRule {
 pub struct FilterEngine {
     rules: Vec<CompiledRule>,
 }
-
-static CACHED_ENGINE: Mutex<Option<FilterEngine>> = Mutex::new(None);
 
 impl FilterEngine {
     pub fn load() -> Option<Self> {
@@ -67,18 +64,6 @@ impl FilterEngine {
         } else {
             Some(FilterEngine { rules })
         }
-    }
-
-    pub fn get_or_load() -> Option<Self> {
-        if let Ok(mut guard) = CACHED_ENGINE.lock() {
-            if guard.is_some() {
-                return None;
-            }
-            let engine = Self::load()?;
-            *guard = Some(FilterEngine { rules: Vec::new() });
-            return Some(engine);
-        }
-        Self::load()
     }
 
     pub fn apply(&self, command: &str, output: &str) -> Option<String> {

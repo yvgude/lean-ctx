@@ -1,5 +1,23 @@
 use std::path::Path;
 
+pub fn detect_project_root(file_path: &str) -> Option<String> {
+    let mut dir = Path::new(file_path).parent()?;
+    loop {
+        if dir.join(".git").exists() {
+            return Some(dir.to_string_lossy().to_string());
+        }
+        dir = dir.parent()?;
+    }
+}
+
+pub fn detect_project_root_or_cwd(file_path: &str) -> String {
+    detect_project_root(file_path).unwrap_or_else(|| {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string())
+    })
+}
+
 pub fn shorten_path(path: &str) -> String {
     let p = Path::new(path);
     if let Some(name) = p.file_name() {

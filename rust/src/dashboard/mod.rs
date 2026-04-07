@@ -321,16 +321,8 @@ fn build_agents_json() -> String {
 }
 
 fn detect_project_root_for_dashboard() -> String {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let mut dir = cwd.as_path();
-    loop {
-        if dir.join(".git").exists() {
-            return dir.to_string_lossy().to_string();
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => break,
-        }
-    }
-    cwd.to_string_lossy().to_string()
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+    crate::core::protocol::detect_project_root_or_cwd(&cwd)
 }

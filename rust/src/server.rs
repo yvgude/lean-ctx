@@ -178,14 +178,15 @@ impl ServerHandler for LeanCtxServer {
                         session.record_cache_hit();
                     }
                     if session.project_root.is_none() {
-                        if let Some(root) = detect_project_root(&path) {
+                        if let Some(root) = crate::core::protocol::detect_project_root(&path) {
                             session.project_root = Some(root.clone());
                             let mut current = self.agent_id.write().await;
                             if current.is_none() {
                                 let mut registry =
                                     crate::core::agents::AgentRegistry::load_or_create();
                                 registry.cleanup_stale(24);
-                                let id = registry.register("mcp", None, &root);
+                                let role = std::env::var("LEAN_CTX_AGENT_ROLE").ok();
+                                let id = registry.register("mcp", role.as_deref(), &root);
                                 let _ = registry.save();
                                 *current = Some(id);
                             }
@@ -776,11 +777,22 @@ impl ServerHandler for LeanCtxServer {
                     }
 
                     let mut store = crate::core::gotcha_tracker::GotchaStore::load(&project_root);
-                    let gotcha =
-                        store.report_gotcha(&trigger, &resolution, cat, &severity, &session_id);
-                    let conf = (gotcha.confidence * 100.0) as u32;
-                    let label = gotcha.category.short_label();
-                    let msg = format!("Gotcha recorded: [{label}] {trigger} (confidence: {conf}%)");
+                    let msg = match store.report_gotcha(
+                        &trigger,
+                        &resolution,
+                        cat,
+                        &severity,
+                        &session_id,
+                    ) {
+                        Some(gotcha) => {
+                            let conf = (gotcha.confidence * 100.0) as u32;
+                            let label = gotcha.category.short_label();
+                            format!("Gotcha recorded: [{label}] {trigger} (confidence: {conf}%)")
+                        }
+                        None => format!(
+                            "Gotcha noted: {trigger} (evicted by higher-confidence entries)"
+                        ),
+                    };
                     let _ = store.save(&project_root);
                     self.record_call("ctx_knowledge", 0, 0, Some(action)).await;
                     return Ok(CallToolResult::success(vec![Content::text(msg)]));
@@ -1068,16 +1080,6 @@ fn execute_command(command: &str) -> (String, i32) {
             (text, code)
         }
         Err(e) => (format!("ERROR: {e}"), 1),
-    }
-}
-
-fn detect_project_root(file_path: &str) -> Option<String> {
-    let mut dir = std::path::Path::new(file_path).parent()?;
-    loop {
-        if dir.join(".git").exists() {
-            return Some(dir.to_string_lossy().to_string());
-        }
-        dir = dir.parent()?;
     }
 }
 

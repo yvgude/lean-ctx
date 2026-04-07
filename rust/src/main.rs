@@ -130,6 +130,39 @@ fn main() {
                 heatmap::cmd_heatmap(&rest);
                 return;
             }
+            "graph" => {
+                let mut action = "build";
+                let mut path_arg: Option<&str> = None;
+                for arg in &rest {
+                    if arg == "build" {
+                        action = "build";
+                    } else {
+                        path_arg = Some(arg.as_str());
+                    }
+                }
+                let root = path_arg
+                    .map(String::from)
+                    .or_else(|| {
+                        std::env::current_dir()
+                            .ok()
+                            .map(|p| p.to_string_lossy().to_string())
+                    })
+                    .unwrap_or_else(|| ".".to_string());
+                match action {
+                    "build" => {
+                        let index = core::graph_index::load_or_build(&root);
+                        println!(
+                            "Graph built: {} files, {} edges",
+                            index.files.len(),
+                            index.edges.len()
+                        );
+                    }
+                    _ => {
+                        eprintln!("Usage: lean-ctx graph [build] [path]");
+                    }
+                }
+                return;
+            }
             "session" => {
                 cli::cmd_session();
                 return;

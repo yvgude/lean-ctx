@@ -22,20 +22,18 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           FOUND=0
 
-          # Check for network operations (lean-ctx should be local-only)
+          # Check for unauthorized network libraries
+          # Allowed: ureq (used for opt-in cloud sync, updates, error reports)
+          # Allowed: std::net::TcpListener (used for local dashboard server)
+          # Blocked: reqwest, hyper (heavy HTTP clients not needed)
           if grep -rn 'reqwest::' rust/src/ 2>/dev/null; then
-            echo "::warning::Found reqwest usage — lean-ctx should not make network requests"
-            echo "- ⚠️ Found reqwest usage" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::Found reqwest usage — use ureq instead"
+            echo "- ⚠️ Found reqwest usage (use ureq)" >> $GITHUB_STEP_SUMMARY
             FOUND=1
           fi
           if grep -rn 'hyper::' rust/src/ 2>/dev/null; then
-            echo "::warning::Found hyper usage — lean-ctx should not make network requests"
-            echo "- ⚠️ Found hyper usage" >> $GITHUB_STEP_SUMMARY
-            FOUND=1
-          fi
-          if grep -rn 'std::net::Tcp' rust/src/ 2>/dev/null; then
-            echo "::warning::Found TCP networking — lean-ctx should be local-only"
-            echo "- ⚠️ Found TCP networking" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::Found hyper usage — use ureq instead"
+            echo "- ⚠️ Found hyper usage (use ureq)" >> $GITHUB_STEP_SUMMARY
             FOUND=1
           fi
 

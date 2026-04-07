@@ -218,7 +218,7 @@ fn extract_area(query: &str) -> String {
     keywords.last().unwrap_or(&"").to_string()
 }
 
-fn rank_by_heat(files: &mut [(String, String)], root: &str) {
+pub fn rank_by_heat(files: &mut [(String, String)], root: &str) {
     let index = crate::core::graph_index::load_or_build(root);
     if index.files.is_empty() {
         return;

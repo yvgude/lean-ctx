@@ -410,7 +410,7 @@ impl GotchaStore {
         category: &str,
         severity: &str,
         session_id: &str,
-    ) -> &Gotcha {
+    ) -> Option<&Gotcha> {
         let cat = GotchaCategory::from_str_loose(category);
         let sev = match severity.to_lowercase().as_str() {
             "critical" => GotchaSeverity::Critical,
@@ -430,7 +430,7 @@ impl GotchaStore {
         );
         self.add_or_merge(gotcha);
         self.updated_at = Utc::now();
-        self.gotchas.iter().find(|g| g.id == id).unwrap()
+        self.gotchas.iter().find(|g| g.id == id)
     }
 
     // -- Add / Merge --------------------------------------------------------
@@ -487,7 +487,7 @@ impl GotchaStore {
         self.error_log
             .iter_mut()
             .find(|l| l.session_id == session_id)
-            .unwrap()
+            .expect("session log must exist after push")
     }
 
     pub fn cross_session_boost(&mut self) {
@@ -1196,13 +1196,15 @@ mod tests {
     #[test]
     fn agent_report_gotcha() {
         let mut store = GotchaStore::new("testhash");
-        let g = store.report_gotcha(
-            "Use thiserror not anyhow",
-            "Derive thiserror::Error in library code",
-            "convention",
-            "warning",
-            "s1",
-        );
+        let g = store
+            .report_gotcha(
+                "Use thiserror not anyhow",
+                "Derive thiserror::Error in library code",
+                "convention",
+                "warning",
+                "s1",
+            )
+            .expect("gotcha should be retained in empty store");
         assert_eq!(g.confidence, 0.9);
         assert_eq!(g.category, GotchaCategory::Convention);
     }
