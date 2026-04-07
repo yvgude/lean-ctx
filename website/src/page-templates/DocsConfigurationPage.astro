@@ -18,6 +18,7 @@ const sidebar = [
       { label: t('docsConfiguration.sidebarEnvVars'), href: lp('/docs/configuration') + '#environment-variables' },
       { label: t('docsConfiguration.sidebarHookRedirect'), href: lp('/docs/configuration') + '#hook-redirect' },
       { label: t('docsConfiguration.sidebarCursorRule'), href: lp('/docs/configuration') + '#cursor-rule' },
+      { label: 'Loop Detection', href: lp('/docs/configuration') + '#loop-detection' },
       { label: t('docsConfiguration.sidebarExitCodes'), href: lp('/docs/configuration') + '#exit-codes' },
       { label: t('docsConfiguration.sidebarTokenCounting'), href: lp('/docs/configuration') + '#token-counting' },
     ],
@@ -211,6 +212,32 @@ replacement = ""
 pattern = "^\\s+$"
 replacement = ""</code></pre>
   <p set:html={t('docsConfiguration.userTomlFiltersManage')} />
+
+  <hr />
+
+  <h2 id="loop-detection">Progressive Throttling / Loop Detection</h2>
+  <p>
+    Since v2.20.0, lean-ctx automatically detects when an AI agent calls the same tool with
+    identical arguments repeatedly — a common failure mode that wastes tokens and stalls progress.
+  </p>
+  <p>
+    The system tracks tool calls using a fingerprint-based sliding window (5 minutes). When
+    repeated calls are detected, throttling escalates progressively:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Level</th><th>Trigger</th><th>Behavior</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Normal</strong></td><td>&lt; 5 identical calls</td><td>No intervention</td></tr>
+      <tr><td><strong>Reduced</strong></td><td>5–11 identical calls</td><td>Warning appended to tool response</td></tr>
+      <tr><td><strong>Blocked</strong></td><td>12+ identical calls</td><td>Tool call blocked with guidance message</td></tr>
+    </tbody>
+  </table>
+  <p>
+    This is fully automatic — no configuration needed. Different arguments are tracked separately,
+    so only truly redundant calls are throttled.
+  </p>
 
   <hr />
 

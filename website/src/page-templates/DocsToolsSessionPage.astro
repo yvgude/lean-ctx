@@ -43,7 +43,7 @@ const sidebar = [
 
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (required) — one of: <code>status</code>, <code>load</code>, <code>save</code>, <code>task</code>, <code>finding</code>, <code>decision</code>, <code>list</code></li>
+    <li><code>action</code> (required) — one of: <code>status</code>, <code>load</code>, <code>save</code>, <code>task</code>, <code>finding</code>, <code>decision</code>, <code>list</code>, <code>snapshot</code>, <code>restore</code></li>
     <li><code>value</code> (optional) — value for <code>task</code>, <code>finding</code>, or <code>decision</code> actions</li>
     <li><code>session_id</code> (optional) — specific session ID to load</li>
   </ul>
@@ -61,6 +61,8 @@ const sidebar = [
       <tr><td><code>finding</code></td><td>Record a key finding (e.g. <code>"auth.ts:45 — JWT expiry not checked"</code>)</td></tr>
       <tr><td><code>decision</code></td><td>Record an architectural decision</td></tr>
       <tr><td><code>list</code></td><td>List all saved sessions</td></tr>
+      <tr><td><code>snapshot</code></td><td>Build a priority-tiered 2KB XML snapshot for context window recovery</td></tr>
+      <tr><td><code>restore</code></td><td>Load the most recent compaction snapshot</td></tr>
     </tbody>
   </table>
 
@@ -86,6 +88,35 @@ ctx_session save</code></pre>
     task and findings go to the beginning of the context window (high primacy attention),
     while the lossy middle zone carries only compressed metadata.
   </p>
+
+  <h3>Compaction Recovery (v2.20.0)</h3>
+  <p>
+    When the context window is compacted (common with long conversations), critical session state
+    can be lost. <code>snapshot</code> builds a compact XML summary (~2KB) with priority tiers:
+  </p>
+  <ul>
+    <li><strong>P1 (always included):</strong> Current task, touched files with cache state</li>
+    <li><strong>P2:</strong> Decisions, findings, progress entries</li>
+    <li><strong>P3:</strong> Test results, next steps</li>
+    <li><strong>P4:</strong> Session statistics</li>
+  </ul>
+  <p>
+    The snapshot is automatically saved to <code>~/.lean-ctx/sessions/&lt;id&gt;_snapshot.txt</code>.
+    After compaction, use <code>restore</code> to reload the most recent snapshot and resume seamlessly.
+  </p>
+  <pre><code>{`ctx_session action=snapshot
+→ Snapshot saved (1847 bytes) — ~/.lean-ctx/sessions/abc123_snapshot.txt
+
+ctx_session action=restore
+→ <session task="Implement OAuth2 login">
+    <files>
+      <f id="F1" path="auth.ts" lines="123" cached="true"/>
+      <f id="F2" path="db.ts" lines="89" cached="true"/>
+    </files>
+    <decisions>
+      <d>Use refresh tokens with 7-day expiry</d>
+    </decisions>
+  </session>`}</code></pre>
 
   <h3>Storage</h3>
   <p>

@@ -16,6 +16,7 @@ const sidebar = [
       { label: 'ctx_tree', href: lp('/docs/tools/core') + '#ctx_tree' },
       { label: 'ctx_shell', href: lp('/docs/tools/core') + '#ctx_shell' },
       { label: 'ctx_search', href: lp('/docs/tools/core') + '#ctx_search' },
+      { label: 'ctx_execute', href: lp('/docs/tools/core') + '#ctx_execute' },
     ],
   },
   {
@@ -446,5 +447,73 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     <li>Automatic binary file exclusion (images, compiled files, lock files)</li>
     <li>Compact path shortening (home directory → <code>~</code>)</li>
     <li>Token savings summary appended to results</li>
+  </ul>
+
+  <h2 id="ctx_execute">ctx_execute</h2>
+  <p>
+    <code>ctx_execute</code> runs code in isolated subprocesses across 11 languages. Only stdout enters
+    the context window — stderr is captured separately with exit codes. Use it to validate logic,
+    transform data, or run quick computations without leaving the AI conversation.
+  </p>
+
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <table>
+    <thead>
+      <tr><th>{t('docsToolsCore.thParameter')}</th><th>{t('docsToolsCore.thType')}</th><th>{t('docsToolsCore.thRequired')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>language</code></td><td>string</td><td>Yes</td><td>Runtime language (see supported list below)</td></tr>
+      <tr><td><code>code</code></td><td>string</td><td>Yes</td><td>Code to execute</td></tr>
+      <tr><td><code>intent</code></td><td>string</td><td>No</td><td>Short description of what the code does (included in output header)</td></tr>
+      <tr><td><code>timeout</code></td><td>number</td><td>No</td><td>Maximum execution time in seconds (default: 30)</td></tr>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>batch</code> to run multiple scripts, <code>file</code> to process a file</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Supported Languages</h3>
+  <table>
+    <thead>
+      <tr><th>Language</th><th>Runtime</th><th>Aliases</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>JavaScript</td><td>Node.js / Bun</td><td><code>javascript</code>, <code>js</code>, <code>node</code></td></tr>
+      <tr><td>TypeScript</td><td>Bun / ts-node</td><td><code>typescript</code>, <code>ts</code></td></tr>
+      <tr><td>Python</td><td>python3 / python</td><td><code>python</code>, <code>py</code></td></tr>
+      <tr><td>Shell</td><td>bash / sh (cmd on Windows)</td><td><code>shell</code>, <code>bash</code>, <code>sh</code></td></tr>
+      <tr><td>Ruby</td><td>ruby</td><td><code>ruby</code>, <code>rb</code></td></tr>
+      <tr><td>Go</td><td>go run</td><td><code>go</code>, <code>golang</code></td></tr>
+      <tr><td>Rust</td><td>rustc + run</td><td><code>rust</code>, <code>rs</code></td></tr>
+      <tr><td>PHP</td><td>php</td><td><code>php</code></td></tr>
+      <tr><td>Perl</td><td>perl</td><td><code>perl</code>, <code>pl</code></td></tr>
+      <tr><td>R</td><td>Rscript</td><td><code>r</code>, <code>R</code></td></tr>
+      <tr><td>Elixir</td><td>elixir</td><td><code>elixir</code>, <code>ex</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example: Single Script</h3>
+  <pre><code>{`ctx_execute language="python" code="print(sum(range(100)))"
+→ 4950
+  [python | 12 ms]`}</code></pre>
+
+  <h3>Example: Batch Execution</h3>
+  <pre><code>{`ctx_execute action="batch" items='[
+  {"language":"python","code":"print(2**10)"},
+  {"language":"shell","code":"echo hello"}
+]'
+→ [1/2] 1024
+  [2/2] hello
+  2 tasks, 28 ms total`}</code></pre>
+
+  <h3>Example: File Processing</h3>
+  <pre><code>{`ctx_execute action="file" path="/data/users.csv" intent="count unique emails"
+→ 1423 lines, 45230 bytes, 8921 words
+  Intent: count unique emails`}</code></pre>
+
+  <h3>Safety</h3>
+  <ul>
+    <li>Each script runs in an isolated subprocess with <code>LEAN_CTX_SANDBOX=1</code> environment variable</li>
+    <li>Default timeout: 30 seconds (configurable per call)</li>
+    <li>Large outputs are smart-truncated (60% head / 40% tail) to stay within token limits</li>
+    <li>Only stdout enters the AI context — stderr is shown separately for debugging</li>
   </ul>
 </DocsLayout>
