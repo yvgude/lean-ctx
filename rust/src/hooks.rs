@@ -368,9 +368,10 @@ pub fn install_agent_hook(agent: &str, global: bool) {
             "~/.amp/mcp.json",
             &dirs::home_dir().unwrap_or_default().join(".amp/mcp.json"),
         ),
+        "crush" => install_crush_hook(),
         _ => {
             eprintln!("Unknown agent: {agent}");
-            eprintln!("  Supported: claude, cursor, gemini, codex, windsurf, cline, roo, copilot, pi, qwen, trae, amazonq, jetbrains, kiro, verdent, opencode, aider, amp");
+            eprintln!("  Supported: claude, cursor, gemini, codex, windsurf, cline, roo, copilot, pi, qwen, trae, amazonq, jetbrains, kiro, verdent, opencode, aider, amp, crush");
             std::process::exit(1);
         }
     }
@@ -1012,6 +1013,58 @@ fn make_executable(path: &PathBuf) {
 
 #[cfg(not(unix))]
 fn make_executable(_path: &PathBuf) {}
+
+fn install_crush_hook() {
+    let binary = resolve_binary_path();
+    let home = dirs::home_dir().unwrap_or_default();
+    let config_path = home.join(".config/crush/crush.json");
+    let display_path = "~/.config/crush/crush.json";
+
+    if let Some(parent) = config_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+        if content.contains("lean-ctx") {
+            println!("Crush MCP already configured at {display_path}");
+            return;
+        }
+
+        if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(obj) = json.as_object_mut() {
+                let servers = obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
+                if let Some(servers_obj) = servers.as_object_mut() {
+                    servers_obj.insert(
+                        "lean-ctx".to_string(),
+                        serde_json::json!({ "type": "stdio", "command": binary }),
+                    );
+                }
+                if let Ok(formatted) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&config_path, formatted);
+                    println!("  \x1b[32m✓\x1b[0m Crush MCP configured at {display_path}");
+                    return;
+                }
+            }
+        }
+    }
+
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "mcp": {
+            "lean-ctx": {
+                "type": "stdio",
+                "command": binary
+            }
+        }
+    }));
+
+    if let Ok(json_str) = content {
+        let _ = std::fs::write(&config_path, json_str);
+        println!("  \x1b[32m✓\x1b[0m Crush MCP configured at {display_path}");
+    } else {
+        eprintln!("  \x1b[31m✗\x1b[0m Failed to configure Crush");
+    }
+}
 
 fn install_mcp_json_agent(name: &str, display_path: &str, config_path: &std::path::Path) {
     let binary = resolve_binary_path();
