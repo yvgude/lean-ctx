@@ -4,7 +4,7 @@ description: Context Intelligence Engine with CEP + CCP — 28 MCP tools, 90+ sh
 metadata: {"openclaw": {"requires": {"bins": ["lean-ctx"]}, "install": [{"id": "brew", "kind": "brew", "formula": "lean-ctx", "bins": ["lean-ctx"], "label": "Install LeanCTX (brew tap yvgude/lean-ctx)"}]}}
 ---
 
-# LeanCTX v2.18.1 — The Intelligence Layer for AI Coding + CEP + CCP + Multi-Agent Sharing
+# LeanCTX v2.19.0 — The Intelligence Layer for AI Coding + CEP + CCP + Multi-Agent Sharing
 
 LeanCTX is a Rust binary that optimizes LLM context through 28 MCP tools, 90+ shell compression patterns, and tree-sitter AST parsing for 18 languages (TS/JS, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala, Elixir, Zig). It provides adaptive file reading with per-language entropy thresholds, incremental deltas, intent detection, cross-file deduplication with TF-IDF cosine similarity, task-conditioned relevance scoring, a heuristic attention prediction model, a project intelligence graph, the **Cognitive Efficiency Protocol (CEP)** with output token budgets, the **Context Continuity Protocol (CCP)** for cross-session memory with LITM-aware positioning, and a feedback loop for learning optimal compression parameters.
 
@@ -80,7 +80,7 @@ MCP tools:
 - `ctx_share(action="list")` — list all shared contexts
 - `ctx_share(action="clear")` — remove contexts shared by this agent
 
-## Additional Intelligence Tools (v2.18.1)
+## Additional Intelligence Tools (v2.19.0)
 
 - `ctx_edit(path, old_string, new_string)` — search-and-replace file editing without native Read/Edit
 - `ctx_overview(task)` — task-relevant project map at session start

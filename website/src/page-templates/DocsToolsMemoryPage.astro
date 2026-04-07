@@ -34,8 +34,10 @@ const sidebar = [
 
   <h2 id="ctx_knowledge">ctx_knowledge — Persistent Project Knowledge</h2>
   <p>
-    A persistent key-value knowledge store scoped to each project. Facts, patterns, and conventions
-    survive across sessions, enabling the LLM to build cumulative project understanding.
+    A persistent knowledge store scoped to each project with temporal fact tracking, contradiction detection,
+    and cross-session search. Facts, patterns, and conventions survive across sessions, enabling the LLM to
+    build cumulative project understanding. Facts are automatically versioned — when a high-confidence fact
+    changes, the old value is archived (not deleted) with full temporal history.
   </p>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -44,36 +46,77 @@ const sidebar = [
       <tr><th>Action</th><th>{t('docsToolsCore.parameters')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>remember</code></td><td><code>category</code>, <code>key</code>, <code>value</code>, <code>confidence</code></td><td>Store a project fact with optional confidence score</td></tr>
-      <tr><td><code>recall</code></td><td><code>query</code> OR <code>category</code></td><td>Search facts by text or list by category</td></tr>
+      <tr><td><code>remember</code></td><td><code>category</code>, <code>key</code>, <code>value</code>, <code>confidence</code></td><td>Store a fact. Auto-detects contradictions with existing facts and tracks temporal validity.</td></tr>
+      <tr><td><code>recall</code></td><td><code>query</code> OR <code>category</code></td><td>Search facts by text or list by category (only current/valid facts)</td></tr>
       <tr><td><code>pattern</code></td><td><code>pattern_type</code>, <code>value</code>, <code>examples</code></td><td>Record a project convention or pattern</td></tr>
       <tr><td><code>consolidate</code></td><td>—</td><td>Extract session findings/decisions into permanent knowledge</td></tr>
-      <tr><td><code>status</code></td><td>—</td><td>Show all stored knowledge summary</td></tr>
-      <tr><td><code>remove</code></td><td><code>category</code>, <code>key</code></td><td>Delete an outdated fact</td></tr>
-      <tr><td><code>export</code></td><td>—</td><td>Export all knowledge as structured data</td></tr>
+      <tr><td><code>timeline</code></td><td><code>category</code></td><td>View full version history of facts in a category, including archived values</td></tr>
+      <tr><td><code>rooms</code></td><td>—</td><td>List all knowledge categories (rooms) with fact counts</td></tr>
+      <tr><td><code>search</code></td><td><code>query</code></td><td>Cross-session/cross-project search across ALL stored knowledge and sessions</td></tr>
+      <tr><td><code>wakeup</code></td><td>—</td><td>Compact AAAK-formatted briefing of the most important project facts</td></tr>
+      <tr><td><code>status</code></td><td>—</td><td>Show stored knowledge summary with active/archived counts and rooms</td></tr>
+      <tr><td><code>remove</code></td><td><code>category</code>, <code>key</code></td><td>Delete a fact</td></tr>
+      <tr><td><code>export</code></td><td>—</td><td>Export all knowledge as structured JSON</td></tr>
+      <tr><td><code>gotcha</code></td><td><code>trigger</code>, <code>resolution</code>, <code>severity</code></td><td>Record a bug/mistake to never repeat</td></tr>
     </tbody>
   </table>
 
+  <h3>Temporal Facts & Contradiction Detection</h3>
+  <p>
+    Every fact has <code>valid_from</code>/<code>valid_until</code> timestamps and a <code>confirmation_count</code>.
+    When a fact is re-asserted with the same value, its confirmation count increases. When a high-confidence,
+    multiply-confirmed fact changes, the old value is archived and a <strong>contradiction warning</strong> is
+    returned with severity (low/medium/high) and resolution details.
+  </p>
+
+  <h3>AAAK Compact Format</h3>
+  <p>
+    Knowledge is automatically injected into LLM instructions using a compact AAAK format:
+    <code>CATEGORY:key=value★★★|key2=value2★★</code>. This saves ~60% tokens compared to verbose prose
+    and is always up-to-date. No configuration needed.
+  </p>
+
   <h3>Example</h3>
-  <pre><code>ctx_knowledge action=remember category=architecture key=auth value="JWT with refresh tokens, 7-day expiry" confidence=0.95
-→ Stored: architecture/auth (confidence: 0.95)
+  <pre><code>ctx_knowledge action=remember category=architecture key=auth value="JWT RS256" confidence=0.95
+→ Remembered [architecture] auth: JWT RS256 (confidence: 95%)
 
-ctx_knowledge action=recall query="authentication"
-→ 1 result:
-  architecture/auth — JWT with refresh tokens, 7-day expiry (0.95)
+ctx_knowledge action=remember category=architecture key=auth value="OAuth2 + PKCE" confidence=0.9
+→ Remembered [architecture] auth: OAuth2 + PKCE (confidence: 90%)
+  ⚠ CONTRADICTION DETECTED: High-confidence fact [architecture/auth] changed:
+  'JWT RS256' → 'OAuth2 + PKCE' (was confirmed 2x). Previous value archived.
 
-ctx_knowledge action=consolidate
-→ Consolidated 3 findings + 1 decision into permanent knowledge</code></pre>
+ctx_knowledge action=timeline category=architecture
+→ Timeline [architecture] (2 entries):
+  auth = JWT RS256 [archived] (2026-01-15 → 2026-03-20) conf=95% x2
+  auth = OAuth2 + PKCE [CURRENT] (2026-03-20 → now) conf=90% x1
+
+ctx_knowledge action=rooms
+→ Knowledge Rooms (3 rooms):
+  [architecture] 5 fact(s)
+  [deployment] 2 fact(s)
+  [testing] 1 fact(s)
+
+ctx_knowledge action=search query="authentication"
+→ Cross-session search (3 results):
+  [architecture/auth] OAuth2 + PKCE (project: my-app, conf: 90%)
+  [session-decision/20260320] Migrated from JWT to OAuth2 (project: my-app, conf: 70%)
+
+ctx_knowledge action=wakeup
+→ WAKE-UP BRIEFING:
+  ARCHITECTURE:auth=OAuth2 + PKCE★★★★|db=PostgreSQL 16★★★★★
+  DEPLOYMENT:host=AWS ECS★★★|region=eu-central-1★★★</code></pre>
 
   <h3>Storage</h3>
   <p>
     Knowledge is stored per-project at <code>~/.lean-ctx/knowledge/&lt;project-hash&gt;/knowledge.json</code>.
+    Archived facts remain in the same file with <code>valid_until</code> timestamps.
   </p>
 
-  <h2 id="ctx_agent">ctx_agent — Multi-Agent Context Sharing</h2>
+  <h2 id="ctx_agent">ctx_agent — Multi-Agent Coordination & Diaries</h2>
   <p>
     Coordinates multiple concurrent AI agents working on the same project.
-    Agents register themselves, share findings via a scratchpad, and track each other's status.
+    Agents register themselves, share findings via a scratchpad, track each other's status,
+    and maintain persistent diaries that survive across sessions.
   </p>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -84,32 +127,55 @@ ctx_knowledge action=consolidate
     <tbody>
       <tr><td><code>register</code></td><td><code>agent_type</code>, <code>role</code></td><td>Register this agent at session start</td></tr>
       <tr><td><code>list</code></td><td>—</td><td>Show other active agents on this project</td></tr>
-      <tr><td><code>post</code></td><td><code>message</code>, <code>category</code>, <code>tags</code></td><td>Share findings/warnings with other agents</td></tr>
+      <tr><td><code>post</code></td><td><code>message</code>, <code>category</code>, <code>to_agent</code></td><td>Share findings/warnings with other agents</td></tr>
       <tr><td><code>read</code></td><td>—</td><td>Check for new messages from other agents</td></tr>
       <tr><td><code>status</code></td><td><code>status</code> (<code>active</code>/<code>idle</code>/<code>finished</code>), <code>message</code></td><td>Update work status</td></tr>
       <tr><td><code>info</code></td><td>—</td><td>Show registry summary</td></tr>
       <tr><td><code>handoff</code></td><td><code>to_agent</code>, <code>message</code></td><td>Transfer task to another agent with summary</td></tr>
       <tr><td><code>sync</code></td><td>—</td><td>Multi-agent sync status: active agents, pending messages, shared contexts</td></tr>
+      <tr><td><code>diary</code></td><td><code>message</code>, <code>category</code></td><td>Log a structured diary entry (discovery/decision/blocker/progress/insight). Persisted across sessions.</td></tr>
+      <tr><td><code>recall_diary</code></td><td>—</td><td>Read the 10 most recent diary entries with timestamps</td></tr>
+      <tr><td><code>diaries</code></td><td>—</td><td>List all agent diaries across the system</td></tr>
     </tbody>
   </table>
+
+  <h3>Agent Diaries</h3>
+  <p>
+    Each agent can maintain a persistent diary that records discoveries, decisions, blockers, progress,
+    and insights. Diaries survive across sessions and can be recalled by any agent, enabling knowledge
+    transfer even when the original agent is no longer active.
+  </p>
+  <p>
+    Diary entry types: <code>discovery</code> (found something), <code>decision</code> (chose an approach),
+    <code>blocker</code> (encountered an obstacle), <code>progress</code> (completed a step),
+    <code>insight</code> (learned something non-obvious).
+  </p>
 
   <h3>Example</h3>
   <pre><code>ctx_agent action=register agent_type=cursor role="implementing auth module"
 → Registered: cursor-a3f8 (role: implementing auth module)
 
-ctx_agent action=post message="auth.ts refactored — new export: verifyJWT" category=change tags=["auth","breaking"]
-→ Posted to scratchpad (1 other agent online)
+ctx_agent action=diary message="Found N+1 query in user loading" category=discovery
+→ Diary entry [discovery] added: Found N+1 query in user loading
 
-ctx_agent action=handoff to_agent=claude message="auth module complete, needs review"
-→ Handoff: cursor-a3f8 → claude | Status: finished
+ctx_agent action=diary message="Switched to batch loading with DataLoader" category=decision
+→ Diary entry [decision] added: Switched to batch loading with DataLoader
 
-ctx_agent action=sync
-→ Multi-Agent Sync Status:
-  Active agents: 2 | Pending messages: 1 | Shared contexts: 3</code></pre>
+ctx_agent action=recall_diary
+→ Diary [cursor-a3f8] (2 entries):
+  [DECIDED] Switched to batch loading with DataLoader (5m ago)
+  [FOUND] Found N+1 query in user loading [auth] (7m ago)
+
+ctx_agent action=diaries
+→ Agent Diaries (3):
+  cursor-a3f8: 12 entries (5m ago)
+  claude-b7e2: 8 entries (2h ago)
+  gemini-c4d1: 3 entries (1d ago)</code></pre>
 
   <h3>Storage</h3>
   <p>
-    Agent registry and scratchpad are stored at <code>~/.lean-ctx/agents/registry.json</code>.
+    Agent registry and scratchpad: <code>~/.lean-ctx/agents/registry.json</code>.<br/>
+    Agent diaries: <code>~/.lean-ctx/agents/diaries/&lt;agent-id&gt;.json</code>.
   </p>
 
   <h2 id="ctx_share">ctx_share — Multi-Agent Context Sharing</h2>
@@ -145,12 +211,17 @@ ctx_share action=pull
     Shared contexts are stored at <code>~/.lean-ctx/agents/shared/</code> as JSON files.
   </p>
 
-  <h2 id="ctx_overview">ctx_overview — Task-Aware Project Map</h2>
+  <h2 id="ctx_overview">ctx_overview — Task-Aware Project Map with Wake-Up Briefing</h2>
   <p>
     Provides a multi-resolution project map at session start. Uses the dependency graph and keyword
     matching to group files by task relevance into tiers (critical / important / reference / skip).
     Recommends the optimal <code>ctx_read</code> mode per file, so the LLM can load context efficiently
     from the first tool call.
+  </p>
+  <p>
+    <strong>Automatic wake-up briefing:</strong> When called at session start, ctx_overview now automatically
+    includes a compact briefing with top project facts (AAAK format), last task, recent decisions, and active
+    agents. No configuration needed — it's always included when knowledge is available.
   </p>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -181,5 +252,11 @@ ctx_share action=pull
     src/config.ts — JWT config values
 
   SKIP (67 files):
-    tests/, docs/, scripts/, ...</code></pre>
+    tests/, docs/, scripts/, ...
+
+  WAKE-UP BRIEFING:
+  FACTS:architecture/auth=JWT RS256|architecture/db=PostgreSQL
+  LAST_TASK:Fix authentication middleware timeout
+  RECENT_DECISIONS:Use refresh tokens|Add rate limiting
+  AGENTS:cursor-a3f8(dev),claude-b7e2(review)</code></pre>
 </DocsLayout>
