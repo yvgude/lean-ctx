@@ -661,4 +661,87 @@ mod tests {
         assert!(summary.contains("auth: JWT RS256"));
         assert!(summary.contains("PROJECT PATTERNS:"));
     }
+
+    #[test]
+    fn temporal_recall_at_time() {
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        k.remember("arch", "db", "PostgreSQL", "s1", 0.95);
+        k.facts[0].confirmation_count = 3;
+
+        let before_change = Utc::now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        k.remember("arch", "db", "MySQL", "s2", 0.9);
+
+        let results = k.recall_at_time("db", before_change);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].value, "PostgreSQL");
+
+        let results_now = k.recall_at_time("db", Utc::now());
+        assert_eq!(results_now.len(), 1);
+        assert_eq!(results_now[0].value, "MySQL");
+    }
+
+    #[test]
+    fn timeline_shows_history() {
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        k.remember("arch", "db", "PostgreSQL", "s1", 0.95);
+        k.facts[0].confirmation_count = 3;
+        k.remember("arch", "db", "MySQL", "s2", 0.9);
+
+        let timeline = k.timeline("arch");
+        assert_eq!(timeline.len(), 2);
+        assert!(!timeline[0].is_current());
+        assert!(timeline[1].is_current());
+    }
+
+    #[test]
+    fn wakeup_format() {
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        k.remember("arch", "auth", "JWT", "s1", 0.95);
+        k.remember("arch", "db", "PG", "s1", 0.8);
+
+        let wakeup = k.format_wakeup();
+        assert!(wakeup.contains("FACTS:"));
+        assert!(wakeup.contains("arch/auth=JWT"));
+        assert!(wakeup.contains("arch/db=PG"));
+    }
+
+    #[test]
+    fn low_confidence_contradiction() {
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        k.remember("arch", "db", "PostgreSQL", "s1", 0.4);
+
+        let c = k.check_contradiction("arch", "db", "MySQL");
+        assert!(c.is_some());
+        assert_eq!(c.unwrap().severity, ContradictionSeverity::Low);
+    }
+
+    #[test]
+    fn no_contradiction_for_same_value() {
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        k.remember("arch", "db", "PostgreSQL", "s1", 0.95);
+
+        let c = k.check_contradiction("arch", "db", "PostgreSQL");
+        assert!(c.is_none());
+    }
+
+    #[test]
+    fn no_contradiction_for_similar_values() {
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        k.remember(
+            "arch",
+            "db",
+            "PostgreSQL 16 production database server",
+            "s1",
+            0.95,
+        );
+
+        let c = k.check_contradiction(
+            "arch",
+            "db",
+            "PostgreSQL 16 production database server config",
+        );
+        assert!(c.is_none());
+    }
 }

@@ -568,4 +568,71 @@ mod tests {
         let msgs_a = reg.read_unread("agent-a");
         assert!(msgs_a.is_empty());
     }
+
+    #[test]
+    fn diary_add_and_format() {
+        let mut diary = AgentDiary::new("test-agent-001", "cursor", "/tmp/project");
+        diary.add_entry(
+            DiaryEntryType::Discovery,
+            "Found auth module at src/auth.rs",
+            Some("auth"),
+        );
+        diary.add_entry(
+            DiaryEntryType::Decision,
+            "Use JWT RS256 for token signing",
+            None,
+        );
+        diary.add_entry(
+            DiaryEntryType::Progress,
+            "Implemented login endpoint",
+            Some("auth"),
+        );
+
+        assert_eq!(diary.entries.len(), 3);
+
+        let summary = diary.format_summary();
+        assert!(summary.contains("test-agent-001"));
+        assert!(summary.contains("FOUND"));
+        assert!(summary.contains("DECIDED"));
+        assert!(summary.contains("DONE"));
+    }
+
+    #[test]
+    fn diary_compact_format() {
+        let mut diary = AgentDiary::new("test-agent-002", "claude", "/tmp/project");
+        diary.add_entry(DiaryEntryType::Insight, "DB queries are N+1", None);
+        diary.add_entry(
+            DiaryEntryType::Blocker,
+            "Missing API credentials",
+            Some("deploy"),
+        );
+
+        let compact = diary.format_compact();
+        assert!(compact.contains("diary:test-agent-002"));
+        assert!(compact.contains("B:Missing API credentials"));
+        assert!(compact.contains("I:DB queries are N+1"));
+    }
+
+    #[test]
+    fn diary_entry_types() {
+        let types = vec![
+            DiaryEntryType::Discovery,
+            DiaryEntryType::Decision,
+            DiaryEntryType::Blocker,
+            DiaryEntryType::Progress,
+            DiaryEntryType::Insight,
+        ];
+        for t in types {
+            assert!(!format!("{}", t).is_empty());
+        }
+    }
+
+    #[test]
+    fn diary_truncation() {
+        let mut diary = AgentDiary::new("test-agent", "cursor", "/tmp");
+        for i in 0..150 {
+            diary.add_entry(DiaryEntryType::Progress, &format!("Step {i}"), None);
+        }
+        assert!(diary.entries.len() <= 100);
+    }
 }
