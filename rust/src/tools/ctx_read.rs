@@ -100,13 +100,22 @@ fn handle_with_options(
         Err(e) => return format!("ERROR: {e}"),
     };
 
+    let similar_hint = find_semantic_similar(path, &content);
+
     let (entry, _is_hit) = cache.store(path, content.clone());
 
+    update_semantic_index(path, &content);
+
     if mode == "full" {
-        return format_full_output(cache, &file_ref, &short, ext, &content, &entry, crp_mode);
+        let mut output =
+            format_full_output(cache, &file_ref, &short, ext, &content, &entry, crp_mode);
+        if let Some(hint) = similar_hint {
+            output.push_str(&format!("\n{hint}"));
+        }
+        return output;
     }
 
-    process_mode(
+    let mut output = process_mode(
         &content,
         mode,
         &file_ref,
@@ -116,7 +125,59 @@ fn handle_with_options(
         crp_mode,
         path,
         task,
-    )
+    );
+    if let Some(hint) = similar_hint {
+        output.push_str(&format!("\n{hint}"));
+    }
+    output
+}
+
+fn find_semantic_similar(path: &str, content: &str) -> Option<String> {
+    let project_root = detect_project_root(path);
+    let index = crate::core::semantic_cache::SemanticCacheIndex::load(&project_root)?;
+
+    let similar = index.find_similar(content, 0.7);
+    let relevant: Vec<_> = similar
+        .into_iter()
+        .filter(|(p, _)| p != path)
+        .take(3)
+        .collect();
+
+    if relevant.is_empty() {
+        return None;
+    }
+
+    let hints: Vec<String> = relevant
+        .iter()
+        .map(|(p, score)| format!("  {p} ({:.0}% similar)", score * 100.0))
+        .collect();
+
+    Some(format!(
+        "[semantic: {} similar file(s) in cache]\n{}",
+        relevant.len(),
+        hints.join("\n")
+    ))
+}
+
+fn update_semantic_index(path: &str, content: &str) {
+    let project_root = detect_project_root(path);
+    let session_id = format!("{}", std::process::id());
+    let mut index = crate::core::semantic_cache::SemanticCacheIndex::load_or_create(&project_root);
+    index.add_file(path, content, &session_id);
+    let _ = index.save(&project_root);
+}
+
+fn detect_project_root(path: &str) -> String {
+    let mut dir = Path::new(path);
+    while let Some(parent) = dir.parent() {
+        if parent.join(".git").exists() {
+            return parent.to_string_lossy().to_string();
+        }
+        dir = parent;
+    }
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string())
 }
 
 const AUTO_DELTA_THRESHOLD: f64 = 0.6;

@@ -24,6 +24,7 @@ pub mod patterns;
 pub mod preservation;
 pub mod protocol;
 pub mod quality;
+pub mod semantic_cache;
 pub mod semantic_chunks;
 pub mod session;
 pub mod signatures;
