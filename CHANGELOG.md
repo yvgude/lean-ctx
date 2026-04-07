@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [2.18.0] — 2026-04-07
 
-### Feature: Multi-Agent Context Sharing, Semantic Caching & Editor Integrations
+### Multi-Agent Context Sharing, Semantic Caching, Dashboard & Editor Integrations
 
 #### Added — Multi-Agent
 - **`ctx_share` tool** (28th MCP tool) — Share cached file contexts between agents. Actions: `push`, `pull`, `list`, `clear`
@@ -20,9 +20,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Heat-ranked file strategy** — `ctx_intent` file discovery ranks results by heat score (token density + graph connectivity)
 - **Semantic cache** — TF-IDF + cosine similarity index for finding semantically similar files across reads. Persistent at `~/.lean-ctx/semantic_cache/`. Cache warming suggestions based on access patterns. Hints shown on `ctx_read` cache misses
 
+#### Added — Dashboard & CLI
+- **`lean-ctx heatmap`** — New CLI command for context heat map visualization with color-coded token counts and graph connections
+- **Dashboard authentication** — Bearer token auth for `/api/*` endpoints, token generated on first launch at `~/.lean-ctx/dashboard_token`
+- **Heatmap API** — `GET /api/heatmap` returns project-wide file heat scores as JSON
+
 #### Added — Editor Integrations
-- **VS Code Extension** (`packages/vscode-lean-ctx`) — Status bar token savings, one-click setup, MCP auto-config for GitHub Copilot, command palette integration
-- **Chrome Extension** (`packages/chrome-lean-ctx`) — Auto-compress pastes in ChatGPT, Claude, Gemini. Native messaging bridge for full compression, fallback for comment/whitespace removal
+- **VS Code Extension** (`packages/vscode-lean-ctx`) — Status bar token savings, one-click setup, MCP auto-config for GitHub Copilot, command palette (setup, doctor, gain, dashboard, heatmap)
+- **Chrome Extension** (`packages/chrome-lean-ctx`) — Manifest V3, auto-compress pastes in ChatGPT, Claude, Gemini. Native messaging bridge for full compression, fallback for comment/whitespace removal
+
+#### Changed
+- MCP tool count: 25 → 28 across all documentation, READMEs, SKILL.md, and 11 website locales
+
 
 ## [2.17.6] — 2026-04-07
 
