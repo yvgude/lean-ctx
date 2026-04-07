@@ -395,9 +395,7 @@ mod tests {
         let raw_path = "/index.html?token=lctx_abc123&other=val";
         let idx = raw_path.find('?').unwrap();
         let qs = &raw_path[idx + 1..];
-        let tok = qs
-            .split('&')
-            .find_map(|pair| pair.strip_prefix("token="));
+        let tok = qs.split('&').find_map(|pair| pair.strip_prefix("token="));
         assert_eq!(tok, Some("lctx_abc123"));
     }
 
