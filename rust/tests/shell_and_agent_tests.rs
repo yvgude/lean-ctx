@@ -357,14 +357,13 @@ fn piped_output_is_not_compressed() {
     }
     let bin = lean_ctx_bin();
     let script = format!(r#"echo "line one"; echo "line two"; echo "line three""#);
-    let mut child = Command::new(&bin)
+    let output = Command::new(&bin)
         .args(["-c", &script])
         .env("LEAN_CTX_DISABLED", "0")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn");
-    let output = child.wait_with_output().expect("wait");
+        .output()
+        .expect("run");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("line one"),
@@ -412,14 +411,13 @@ fn lean_ctx_c_preserves_output_when_piped() {
     }
     let bin = lean_ctx_bin();
 
-    let mut child = Command::new(&bin)
+    let output = Command::new(&bin)
         .args(["-c", "echo MARKER_STRING_12345"])
         .env_remove("LEAN_CTX_DISABLED")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn lean-ctx -c echo");
-    let output = child.wait_with_output().expect("wait");
+        .output()
+        .expect("run lean-ctx -c echo");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("MARKER_STRING_12345"),
@@ -434,14 +432,13 @@ fn lean_ctx_c_multiline_preserves_all_lines_when_piped() {
     }
     let bin = lean_ctx_bin();
     let cmd = "echo LINE_A && echo LINE_B && echo LINE_C";
-    let mut child = Command::new(&bin)
+    let output = Command::new(&bin)
         .args(["-c", cmd])
         .env_remove("LEAN_CTX_DISABLED")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn");
-    let output = child.wait_with_output().expect("wait");
+        .output()
+        .expect("run");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("LINE_A"), "LINE_A: {stdout}");
     assert!(stdout.contains("LINE_B"), "LINE_B: {stdout}");
