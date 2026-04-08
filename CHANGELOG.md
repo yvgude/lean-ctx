@@ -3,6 +3,19 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.21.5] — 2026-04-08
+
+### Windows Updater Infinite Loop Fix (#69)
+
+#### Fixed — Updater enters infinite loop with 100% CPU on Windows
+- **Replaced `timeout /t` with `ping` delay** — The deferred update `.bat` script used `timeout /t 1 /nobreak` for delays. On Windows systems with GNU coreutils in PATH (Git Bash, Cygwin, MSYS2), the GNU `timeout` binary takes precedence over the Windows built-in, fails instantly with "invalid time interval '/t'", and causes a tight retry loop at 100% CPU. Now uses `ping 127.0.0.1 -n 2 >nul` which works on every Windows system regardless of PATH.
+- **Added retry limit (60 attempts)** — The script now exits with an error message after 60 failed attempts (~60 seconds) instead of looping indefinitely. Cleans up the pending binary on timeout.
+- **Extracted `generate_update_script()` as public function** for testability.
+
+#### Testing
+- 10 new unit tests covering: no `timeout` command usage, `ping` delay, retry limit, counter increment, timeout exit, pending file cleanup, path substitution (incl. spaces), batch syntax validity, rollback on failure.
+- All 669 tests passing, zero clippy warnings.
+
 ## [2.21.4] — 2026-04-08
 
 ### Windows Shell Fix + Antigravity Support

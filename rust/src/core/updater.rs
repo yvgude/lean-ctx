@@ -215,6 +215,44 @@ fn replace_binary(
     }
 }
 
+/// Generate the deferred update .bat script content.
+/// Extracted for testability — the script must:
+/// 1. NOT use `timeout /t` (conflicts with GNU timeout from Git Bash/Cygwin)
+/// 2. Use `ping 127.0.0.1 -n 2` for delay (works everywhere on Windows)
+/// 3. Have a retry limit to prevent infinite loops
+pub fn generate_update_script(target: &str, pending: &str, old: &str) -> String {
+    format!(
+        r#"@echo off
+echo Waiting for lean-ctx to be released...
+set RETRIES=0
+:retry
+if %RETRIES% GEQ 60 (
+    echo Update timed out after 60 attempts. Please close all editors and run: lean-ctx update
+    del /f "{pending}" >nul 2>&1
+    pause
+    exit /b 1
+)
+set /a RETRIES+=1
+ping 127.0.0.1 -n 2 >nul
+move /Y "{target}" "{old}" >nul 2>&1
+if errorlevel 1 goto retry
+move /Y "{pending}" "{target}" >nul 2>&1
+if errorlevel 1 (
+    move /Y "{old}" "{target}" >nul 2>&1
+    echo Update failed. Please close all editors and run: lean-ctx update
+    pause
+    exit /b 1
+)
+del /f "{old}" >nul 2>&1
+echo Updated successfully!
+del "%~f0" >nul 2>&1
+"#,
+        target = target,
+        pending = pending,
+        old = old,
+    )
+}
+
 /// On Windows, when the binary is locked by an MCP server, we can't rename it.
 /// Instead, stage the new binary and spawn a background cmd process that waits
 /// for the lock to be released, then performs the swap.
@@ -233,28 +271,7 @@ fn deferred_windows_update(
     let pending_str = pending_path.display().to_string();
     let old_str = target_exe.with_extension("old.exe").display().to_string();
 
-    let script = format!(
-        r#"@echo off
-echo Waiting for lean-ctx to be released...
-:retry
-timeout /t 1 /nobreak >nul
-move /Y "{target}" "{old}" >nul 2>&1
-if errorlevel 1 goto retry
-move /Y "{pending}" "{target}" >nul 2>&1
-if errorlevel 1 (
-    move /Y "{old}" "{target}" >nul 2>&1
-    echo Update failed. Please close all editors and run: lean-ctx update
-    pause
-    exit /b 1
-)
-del /f "{old}" >nul 2>&1
-echo Updated successfully!
-del "%~f0" >nul 2>&1
-"#,
-        target = target_str,
-        pending = pending_str,
-        old = old_str,
-    );
+    let script = generate_update_script(&target_str, &pending_str, &old_str);
 
     let script_path = target_exe.with_file_name("lean-ctx-update.bat");
     std::fs::write(&script_path, &script)
@@ -360,5 +377,125 @@ fn platform_asset_name() -> String {
         format!("lean-ctx-{target}.zip")
     } else {
         format!("lean-ctx-{target}.tar.gz")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_script_does_not_use_timeout_command() {
+        let script = generate_update_script(
+            r"C:\bin\lean-ctx.exe",
+            r"C:\bin\lean-ctx-pending.exe",
+            r"C:\bin\lean-ctx.old.exe",
+        );
+        assert!(
+            !script.contains("timeout"),
+            "script must not use `timeout` (conflicts with GNU timeout): {script}"
+        );
+    }
+
+    #[test]
+    fn update_script_uses_ping_for_delay() {
+        let script = generate_update_script("target.exe", "pending.exe", "old.exe");
+        assert!(
+            script.contains("ping 127.0.0.1 -n 2"),
+            "script must use ping for delay: {script}"
+        );
+    }
+
+    #[test]
+    fn update_script_has_retry_limit() {
+        let script = generate_update_script("target.exe", "pending.exe", "old.exe");
+        assert!(
+            script.contains("RETRIES") && script.contains("GEQ 60"),
+            "script must have a retry counter with limit: {script}"
+        );
+    }
+
+    #[test]
+    fn update_script_increments_retry_counter() {
+        let script = generate_update_script("target.exe", "pending.exe", "old.exe");
+        assert!(
+            script.contains("set /a RETRIES+=1"),
+            "script must increment retry counter: {script}"
+        );
+    }
+
+    #[test]
+    fn update_script_has_timeout_exit() {
+        let script = generate_update_script("target.exe", "pending.exe", "old.exe");
+        assert!(
+            script.contains("timed out") && script.contains("exit /b 1"),
+            "script must exit with error after timeout: {script}"
+        );
+    }
+
+    #[test]
+    fn update_script_cleans_pending_on_timeout() {
+        let script = generate_update_script("t.exe", "pending.exe", "old.exe");
+        let timeout_section = script
+            .find("GEQ 60")
+            .map(|i| &script[i..i + 200])
+            .unwrap_or("");
+        assert!(
+            timeout_section.contains("del") && timeout_section.contains("pending.exe"),
+            "script must clean up pending file on timeout: {timeout_section}"
+        );
+    }
+
+    #[test]
+    fn update_script_substitutes_paths_correctly() {
+        let script = generate_update_script(
+            r"C:\Users\Jaina\bin\lean-ctx.exe",
+            r"C:\Users\Jaina\bin\lean-ctx-pending.exe",
+            r"C:\Users\Jaina\bin\lean-ctx.old.exe",
+        );
+        assert!(
+            script.contains(r"C:\Users\Jaina\bin\lean-ctx.exe"),
+            "target path: {script}"
+        );
+        assert!(
+            script.contains(r"C:\Users\Jaina\bin\lean-ctx-pending.exe"),
+            "pending path: {script}"
+        );
+        assert!(
+            script.contains(r"C:\Users\Jaina\bin\lean-ctx.old.exe"),
+            "old path: {script}"
+        );
+    }
+
+    #[test]
+    fn update_script_paths_with_spaces() {
+        let script = generate_update_script(
+            r"C:\Program Files\lean-ctx\lean-ctx.exe",
+            r"C:\Program Files\lean-ctx\lean-ctx-pending.exe",
+            r"C:\Program Files\lean-ctx\lean-ctx.old.exe",
+        );
+        assert!(
+            script.contains(r"C:\Program Files\lean-ctx\lean-ctx.exe"),
+            "paths with spaces must be preserved: {script}"
+        );
+    }
+
+    #[test]
+    fn update_script_is_valid_batch() {
+        let script = generate_update_script("t.exe", "p.exe", "o.exe");
+        assert!(script.starts_with("@echo off"), "must start with @echo off");
+        assert!(script.contains(":retry"), "must have :retry label");
+        assert!(script.contains("goto retry"), "must have goto retry");
+        assert!(
+            script.contains(r#"del "%~f0""#),
+            "must self-delete at the end"
+        );
+    }
+
+    #[test]
+    fn update_script_rollback_on_failure() {
+        let script = generate_update_script("target.exe", "pending.exe", "old.exe");
+        let move_back = script.contains(r#"move /Y "old.exe" "target.exe""#);
+        assert!(move_back, "must roll back on failure: {script}");
     }
 }
