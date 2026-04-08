@@ -3,6 +3,27 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.21.2] — 2026-04-08
+
+### Critical Hook Fixes — Production Quality (Discussion #62)
+
+#### Fixed — Pipe Commands Broken in Shell Hook
+- **Pipe quoting fix** — Hook rewrite now properly quotes commands containing pipes. Previously `curl ... | python3 -m json.tool` was rewritten as `lean-ctx -c curl ... | python3 ...` (pipe interpreted by shell). Now correctly produces `lean-ctx -c "curl ... | python3 ..."`. This also fixes the `command not found: _lc` errors reported by users.
+
+#### Fixed — Read/Grep/ListFiles Blocked by Hook (#62)
+- **Removed tool blocking** — The redirect hook no longer denies native Read, Grep, or ListFiles tools. This was causing Claude Code's Edit tool to fail ("File has not been read yet") because Edit requires a prior native Read. Native tools now pass through freely. The MCP system instructions still guide the AI to prefer `ctx_read`/`ctx_search`/`ctx_tree`, but blocking is removed.
+
+#### Fixed — `find` Command Glob Pattern Support
+- **Glob patterns** — `lean-ctx find "*.toml"` now correctly uses glob matching instead of literal substring search. Added `glob` crate dependency.
+
+#### Changed — README
+- **RTK** — Corrected "RTK" references to full name "Rust Token Killer" throughout README and FAQ section.
+
+#### Housekeeping
+- Removed ~180 lines of dead code from `hook_handlers.rs` (unused glob matching, binary detection, path exclusion functions that were orphaned by the redirect removal).
+- Added 3 new unit tests for hook rewrite quoting behavior.
+- All 504 tests passing, zero clippy warnings.
+
 ## [2.21.1] — 2026-04-08
 
 ### CLI File Caching

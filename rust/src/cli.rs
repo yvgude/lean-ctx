@@ -226,8 +226,16 @@ pub fn cmd_find(args: &[String]) {
         std::process::exit(1);
     }
 
-    let pattern = args[0].to_lowercase();
+    let raw_pattern = &args[0];
     let path = args.get(1).map(|s| s.as_str()).unwrap_or(".");
+
+    let is_glob = raw_pattern.contains('*') || raw_pattern.contains('?');
+    let glob_matcher = if is_glob {
+        glob::Pattern::new(&raw_pattern.to_lowercase()).ok()
+    } else {
+        None
+    };
+    let substring = raw_pattern.to_lowercase();
 
     let mut found = false;
     for entry in ignore::WalkBuilder::new(path)
@@ -240,7 +248,12 @@ pub fn cmd_find(args: &[String]) {
         .flatten()
     {
         let name = entry.file_name().to_string_lossy().to_lowercase();
-        if name.contains(&pattern) {
+        let matches = if let Some(ref g) = glob_matcher {
+            g.matches(&name)
+        } else {
+            name.contains(&substring)
+        };
+        if matches {
             println!("{}", entry.path().display());
             found = true;
         }

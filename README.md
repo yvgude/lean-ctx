@@ -666,9 +666,9 @@ Pi's `bash`, `read`, `grep`, `find`, and `ls` tools are automatically routed thr
 
 <br>
 
-## 🏆 lean-ctx vs Alternatives (RTK, context-mode)
+## 🏆 lean-ctx vs Alternatives (Rust Token Killer, context-mode)
 
-| Feature | RTK | lean-ctx |
+| Feature | Rust Token Killer | lean-ctx |
 |:---|:---:|:---:|
 | Architecture | Shell hook only | **Shell hook + MCP server** |
 | Process model | Spawns per command | **Persistent server** (no EAGAIN) |
@@ -755,9 +755,9 @@ lean-ctx has **zero telemetry** — no data collection, no analytics, no network
 </details>
 
 <details>
-<summary><strong>What's the difference between lean-ctx and RTK (Rust Token Killer)?</strong></summary>
+<summary><strong>What's the difference between lean-ctx and Rust Token Killer (RTK)?</strong></summary>
 
-lean-ctx is a hybrid architecture (shell hook + MCP server) while RTK is shell-hook only. lean-ctx offers 28 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and — critically — zero telemetry (RTK has default-on telemetry with PII).
+lean-ctx is a hybrid architecture (shell hook + MCP server) while Rust Token Killer is shell-hook only. lean-ctx offers 28 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and — critically — zero telemetry (RTK has default-on telemetry with PII).
 
 </details>
 

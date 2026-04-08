@@ -135,26 +135,8 @@ fi
 
 REWRITE=""
 case "$CMD" in
-  git\ *)       REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  gh\ *)        REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  cargo\ *)     REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  npm\ *)       REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  pnpm\ *)      REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  yarn\ *)      REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  docker\ *)    REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  kubectl\ *)   REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  pip\ *|pip3\ *)  REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  ruff\ *)      REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  go\ *)        REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  curl\ *)      REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  grep\ *|rg\ *)  REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  find\ *)      REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  cat\ *|head\ *|tail\ *)  REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  ls\ *|ls)     REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  eslint*|prettier*|tsc*)  REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  pytest*|ruff\ *|mypy*)   REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  aws\ *)       REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
-  helm\ *)      REWRITE="$LEAN_CTX_BIN -c $CMD" ;;
+  git\ *|gh\ *|cargo\ *|npm\ *|pnpm\ *|yarn\ *|docker\ *|kubectl\ *|pip\ *|pip3\ *|ruff\ *|go\ *|curl\ *|grep\ *|rg\ *|find\ *|cat\ *|head\ *|tail\ *|ls\ *|ls|eslint*|prettier*|tsc*|pytest*|mypy*|aws\ *|helm\ *)
+    REWRITE="$LEAN_CTX_BIN -c \\\"$CMD\\\"" ;;
   *)            exit 0 ;;
 esac
 
@@ -176,7 +158,7 @@ CMD=$(echo "$INPUT" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4 2>/d
 if [ -z "$CMD" ] || echo "$CMD" | grep -qE "^(lean-ctx |$LEAN_CTX_BIN )"; then exit 0; fi
 case "$CMD" in
   git\ *|gh\ *|cargo\ *|npm\ *|pnpm\ *|docker\ *|kubectl\ *|pip\ *|ruff\ *|go\ *|curl\ *|grep\ *|rg\ *|find\ *|ls\ *|ls|cat\ *|aws\ *|helm\ *)
-    echo "{{\"hookSpecificOutput\":{{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{{\"command\":\"$LEAN_CTX_BIN -c $CMD\"}}}}}}" ;;
+    echo "{{\"hookSpecificOutput\":{{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{{\"command\":\"$LEAN_CTX_BIN -c \\\"$CMD\\\"\"}}}}}}" ;;
   *) exit 0 ;;
 esac
 "#
@@ -203,22 +185,13 @@ FILE_PATH=$(echo "$INPUT" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' 
 
 case "$TOOL" in
   Read|read|ReadFile|read_file|View|view)
-    if [ -n "$FILE_PATH" ] && is_binary "$FILE_PATH"; then
-      exit 0
-    fi
-    if pgrep -f "lean-ctx" >/dev/null 2>&1; then
-      echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"STOP. Use ctx_read(path) from the lean-ctx MCP server instead. It saves 60-80% input tokens via caching and compression. Available modes: full, map, signatures, diff, lines:N-M. Never use native Read — always use ctx_read."}}'
-    fi
+    exit 0
     ;;
   Grep|grep|Search|search|RipGrep|ripgrep)
-    if pgrep -f "lean-ctx" >/dev/null 2>&1; then
-      echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"STOP. Use ctx_search(pattern, path) from the lean-ctx MCP server instead. It provides compact, token-efficient results with .gitignore awareness. Never use native Grep — always use ctx_search."}}'
-    fi
+    exit 0
     ;;
   ListFiles|list_files|ListDirectory|list_directory)
-    if pgrep -f "lean-ctx" >/dev/null 2>&1; then
-      echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"STOP. Use ctx_tree(path, depth) from the lean-ctx MCP server instead. It provides compact directory maps with file counts. Never use native ListFiles — always use ctx_tree."}}'
-    fi
+    exit 0
     ;;
 esac
 "#;
@@ -243,22 +216,13 @@ FILE_PATH=$(echo "$INPUT" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' 
 
 case "$TOOL" in
   Read|read|ReadFile|read_file)
-    if [ -n "$FILE_PATH" ] && is_binary "$FILE_PATH"; then
-      exit 0
-    fi
-    if pgrep -f "lean-ctx" >/dev/null 2>&1; then
-      echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"STOP. Use ctx_read(path) from lean-ctx MCP instead. Saves 60-80% tokens."}}'
-    fi
+    exit 0
     ;;
   Grep|grep|Search|search)
-    if pgrep -f "lean-ctx" >/dev/null 2>&1; then
-      echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"STOP. Use ctx_search(pattern, path) from lean-ctx MCP instead."}}'
-    fi
+    exit 0
     ;;
   ListFiles|list_files|ListDirectory|list_directory)
-    if pgrep -f "lean-ctx" >/dev/null 2>&1; then
-      echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"STOP. Use ctx_tree(path, depth) from lean-ctx MCP instead."}}'
-    fi
+    exit 0
     ;;
 esac
 "#;
