@@ -19,15 +19,22 @@ Use this checklist for every release. Copy the section below and check off each 
 ## Documentation Check
 
 > **For every issue fixed or feature added, check if website docs need updating.**
+> **This is MANDATORY for every release — never skip!**
 
 - [ ] Review closed issues since last release: `gh issue list --state closed --since <last-release-date>`
-- [ ] For each issue/feature, check if it needs documentation:
-  - [ ] New config options → update `DocsConfigurationPage.astro` + `en.json`
-  - [ ] New env variables → update Environment Variables table
-  - [ ] New/changed tool behavior → update `DocsToolsCorePage.astro` or relevant tool page
+- [ ] Review merged PRs since last release: `gh pr list --state merged --search "merged:>YYYY-MM-DD"`
+- [ ] For each issue/feature/PR, check ALL applicable doc pages:
+  - [ ] New config options → update `DocsConfigurationPage.astro` config options table
+  - [ ] New env variables → update `DocsConfigurationPage.astro` environment variables table
+  - [ ] New MCP tools → update `DocsToolsCorePage.astro` (core tools), `DocsToolsSessionPage.astro` (session), `DocsToolsIntelligencePage.astro` (intelligence), or `DocsToolsMemoryPage.astro` (memory)
   - [ ] New CLI commands → update `DocsCliReferencePage.astro`
   - [ ] New hook behavior → update Configuration page "Hook Redirect" section
-- [ ] If docs were updated, translate keys in all locale JSON files
+  - [ ] Changed tool parameters/actions → update the relevant tool's parameter table
+  - [ ] New safety/behavior features → update Configuration page (e.g. Loop Detection section)
+- [ ] If docs were updated, translate relevant keys in ALL 11 locale JSON files:
+  `en.json`, `de.json`, `es.json`, `fr.json`, `ja.json`, `pt.json`, `ru.json`, `zh.json`, `ar.json`, `bn.json`, `hi.json`
+- [ ] Build website locally to verify: `cd website && npm run build`
+- [ ] Check that page-template files exist on `deploy` branch (they don't exist on `main`!)
 
 ## Git + GitHub Release (Automated)
 
