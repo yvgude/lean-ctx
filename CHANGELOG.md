@@ -3,6 +3,27 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.21.7] — 2026-04-09
+
+### Cleanup + Website Redesign
+
+#### Changed — Remove Hook E2E Test Suite
+- **Removed `hook_e2e_tests.rs`** — The hook E2E test file and its corresponding CI workflow (`hook-integration`) have been removed. The pipe guard behavior is already covered by the integration tests in `integration_tests.rs` and the unit tests in `cli.rs`. This eliminates a redundant CI job that depended on `generate_rewrite_script`, simplifying the test matrix.
+
+#### Changed — Website: LeanCTL Section Redesigned
+- **Consistent page design** — The LeanCTL ecosystem section on the homepage now uses the same visual patterns (compare-cards, layer-cards, stats-grid) as the rest of the page, replacing the custom TUI terminal mockup with ~150 lines of dedicated CSS.
+- **Real product facts** — Compare cards show concrete token savings from leanctl.com (4,200 → 48 tokens for file reads, 847 → 42 for test output, 4,200 → ~13 for re-reads).
+- **Three feature cards** — "23 Built-in Tools", "Thinking Steering", "Bring Your Own Key" in the standard layer-card layout.
+- **Stats grid** — "up to 90% savings", "23 tools", "8 compression modes", "0 data sent to us".
+
+#### Changed — Navigation: Dedicated Ecosystem Dropdown
+- **New top-level nav item** — "Ecosystem" mega dropdown with two columns: "AI Agents" (LeanCTL) and "Community" (GitHub, Discord, Blog).
+- **Product dropdown cleaned** — Removed the ecosystem column from the Product mega dropdown (now 3 columns instead of 4).
+- **Mobile menu updated** — Ecosystem section with LeanCTL, GitHub, Discord links.
+
+#### i18n
+- All 11 locale files updated with new ecosystem keys (en/de with translations, others with English fallbacks).
+
 ## [2.21.6] — 2026-04-08
 
 ### Shell Hook Pipe Guard — Fix `curl | sh` Broken by lean-ctx

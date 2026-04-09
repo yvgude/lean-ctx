@@ -54,20 +54,4 @@ jobs:
         working-directory: rust
         run: cargo fmt --check
 
-  hook-integration:
-    name: Hook E2E
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust -> target
-      - name: Build release binary
-        working-directory: rust
-        run: cargo build --release
-      - name: Run hook E2E tests
-        working-directory: rust
-        run: cargo test --release --test hook_e2e_tests
-
   # Security audit runs in security-check.yml workflow
