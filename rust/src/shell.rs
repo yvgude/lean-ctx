@@ -703,6 +703,7 @@ mod shell_detection_tests {
     use super::*;
 
     #[test]
+    #[cfg(not(windows))]
     fn lean_ctx_shell_env_takes_priority() {
         std::env::set_var("LEAN_CTX_SHELL", "/custom/shell");
         let shell = detect_shell();
