@@ -478,7 +478,11 @@ const sb = n => isM(n) ? '<span class="tag tp">MCP</span>' : '<span class="tag t
 
 function gc(inp, out, n) {
   const iW = inp/1e6*CM.i, iC = out/1e6*CM.i;
-  const eW = n*CM.v, eC = n*CM.c, oW = eW/1e6*CM.o, oC = eC/1e6*CM.o;
+  const saved = inp - out;
+  const rate = inp > 0 ? saved / inp : 0;
+  const eW = n*CM.v;
+  const eC = rate > 0.01 ? n*CM.c : eW;
+  const oW = eW/1e6*CM.o, oC = eC/1e6*CM.o;
   return { iW, iC, oW, oC, tW: iW+oW, tC: iC+oC, sv: iW+oW-iC-oC, os: eW-eC };
 }
 function ss(cmds) {

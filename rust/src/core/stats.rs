@@ -403,8 +403,20 @@ impl CostModel {
         let input_cost_with =
             store.total_output_tokens as f64 / 1_000_000.0 * self.input_price_per_m;
 
+        let input_saved = store
+            .total_input_tokens
+            .saturating_sub(store.total_output_tokens);
+        let compression_rate = if store.total_input_tokens > 0 {
+            input_saved as f64 / store.total_input_tokens as f64
+        } else {
+            0.0
+        };
         let est_output_without = store.total_commands * self.avg_verbose_output_per_call;
-        let est_output_with = store.total_commands * self.avg_concise_output_per_call;
+        let est_output_with = if compression_rate > 0.01 {
+            store.total_commands * self.avg_concise_output_per_call
+        } else {
+            est_output_without
+        };
         let output_saved = est_output_without.saturating_sub(est_output_with);
 
         let output_cost_without = est_output_without as f64 / 1_000_000.0 * self.output_price_per_m;
