@@ -339,95 +339,67 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       {t('index.ecoDesc')}
     </p>
 
-    <div class="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/5 px-4 py-2 animate-entrance stagger-2" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
-      <svg class="w-4 h-4 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
-      <span class="fluid-sm text-accent font-medium">{t('index.ecoBadge')}</span>
-    </div>
-
-    <div class="grid lg:grid-cols-[1.3fr_1fr] animate-entrance stagger-3" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem); align-items: start;">
-      <div class="terminal-chrome">
-        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
-          <span class="terminal-dot bg-[#ff5f57]"></span>
-          <span class="terminal-dot bg-[#febc2e]"></span>
-          <span class="terminal-dot bg-[#28c840]"></span>
-          <span class="ml-3 text-xs text-muted font-mono">leanctl · ~/my-project</span>
+    <div class="terminal-chrome animate-entrance stagger-3">
+      <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+        <span class="terminal-dot bg-[#ff5f57]"></span>
+        <span class="terminal-dot bg-[#febc2e]"></span>
+        <span class="terminal-dot bg-[#28c840]"></span>
+        <span class="ml-3 text-xs text-muted font-mono">leanctl · ~/my-project</span>
+      </div>
+      <div class="leanctl-status">
+        <span class="text-text-bright font-bold">LeanCTL</span>
+        <span class="text-muted" style="margin-left: 2px;">v0.1</span>
+        <span class="leanctl-sep">╱</span>
+        <span class="text-accent">● ready</span>
+        <span class="leanctl-sep">╱</span>
+        <span class="text-accent-2 font-bold">BUILD</span>
+        <span class="leanctl-sep">╱</span>
+        <span class="text-accent-2">sonnet-4.6</span>
+        <span class="leanctl-sep">╱</span>
+        <span class="text-muted">⎇ main</span>
+        <span class="leanctl-sep">╱</span>
+        <span class="text-accent font-semibold">⚡−42%</span>
+      </div>
+      <div class="terminal-body px-5 py-4 font-mono space-y-2" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.7;">
+        <div class="flex items-start gap-2">
+          <span class="leanctl-bar"></span>
+          <span class="text-text-bright font-semibold">add rate limiting to all API endpoints</span>
         </div>
-        <div class="leanctl-status">
-          <span class="text-text-bright font-bold">LeanCTL</span>
-          <span class="text-muted" style="margin-left: 2px;">v0.1</span>
-          <span class="leanctl-sep">╱</span>
-          <span class="text-accent">● ready</span>
-          <span class="leanctl-sep">╱</span>
-          <span class="text-accent-2 font-bold">BUILD</span>
-          <span class="leanctl-sep">╱</span>
-          <span class="text-accent-2">sonnet-4.6</span>
-          <span class="leanctl-sep">╱</span>
-          <span class="text-muted">⎇ main</span>
-          <span class="leanctl-sep">╱</span>
-          <span class="text-accent font-semibold">⚡−42%</span>
+        <div>
+          <span class="text-accent-2">◆ ◇ ◆</span>
+          <span class="text-accent-2 italic"> thinking…</span>
+          <span class="text-muted"> (2.1s)</span>
         </div>
-        <div class="terminal-body px-5 py-4 font-mono space-y-2" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.7;">
-          <div class="flex items-start gap-2">
-            <span class="leanctl-bar"></span>
-            <span class="text-text-bright font-semibold">add rate limiting to all API endpoints</span>
-          </div>
-          <div>
-            <span class="text-accent-2">◆ ◇ ◆</span>
-            <span class="text-accent-2 italic"> thinking…</span>
-            <span class="text-muted"> (2.1s)</span>
-          </div>
-          <div class="leanctl-tools">
-            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">batch_read</span><span class="text-text">3 files</span><span class="text-accent ml-auto">52 tok</span></div>
-            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">write_file</span><span class="text-text">src/middleware/rateLimit.ts</span></div>
-            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">multi_edit</span><span class="text-text">3 files, 5 edits</span></div>
-            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">run_command</span><span class="text-text">npm test</span><span class="text-accent ml-auto">22/22</span></div>
-            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">git_commit</span><span class="text-muted ml-auto">a1b2c3d</span></div>
-          </div>
-          <div class="term-divider"></div>
-          <div class="flex justify-between">
-            <span class="text-muted">⏱ 3.8s</span>
-            <span class="text-accent-3 font-semibold">$0.019</span>
-            <span class="text-accent font-semibold">−68% tokens saved</span>
-          </div>
+        <div class="leanctl-tools">
+          <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">batch_read</span><span class="text-text">3 files</span><span class="text-accent ml-auto">52 tok</span></div>
+          <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">write_file</span><span class="text-text">src/middleware/rateLimit.ts</span></div>
+          <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">multi_edit</span><span class="text-text">3 files, 5 edits</span></div>
+          <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">run_command</span><span class="text-text">npm test</span><span class="text-accent ml-auto">22/22</span></div>
+          <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">git_commit</span><span class="text-muted ml-auto">a1b2c3d</span></div>
         </div>
-        <div class="leanctl-input">
-          <span class="text-accent font-bold">❯</span>
-          <span class="text-muted italic">Ask anything…</span>
+        <div class="term-divider"></div>
+        <div class="flex justify-between">
+          <span class="text-muted">⏱ 3.8s</span>
+          <span class="text-accent-3 font-semibold">$0.019</span>
+          <span class="text-accent font-semibold">−68% tokens saved</span>
         </div>
       </div>
-
-      <div class="space-y-3">
-        <div class="card p-6 group hover:border-accent/20 transition-all">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
-              <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
-            </div>
-            <h3 class="font-display fluid-h3 font-semibold text-text-bright">{t('index.ecoCard1Title')}</h3>
-          </div>
-          <p class="fluid-sm text-muted leading-relaxed">{t('index.ecoCard1Desc')}</p>
-        </div>
-        <div class="card p-6 group hover:border-accent-2/20 transition-all">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="w-8 h-8 rounded-lg bg-accent-2/10 flex items-center justify-center">
-              <svg class="w-4 h-4 text-accent-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-            </div>
-            <h3 class="font-display fluid-h3 font-semibold text-text-bright">{t('index.ecoCard2Title')}</h3>
-          </div>
-          <p class="fluid-sm text-muted leading-relaxed">{t('index.ecoCard2Desc')}</p>
-        </div>
-        <div class="card p-6 group hover:border-accent-3/20 transition-all">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="w-8 h-8 rounded-lg bg-accent-3/10 flex items-center justify-center">
-              <svg class="w-4 h-4 text-accent-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
-            </div>
-            <h3 class="font-display fluid-h3 font-semibold text-text-bright">{t('index.ecoCard3Title')}</h3>
-          </div>
-          <p class="fluid-sm text-muted leading-relaxed">{t('index.ecoCard3Desc')}</p>
-        </div>
+      <div class="leanctl-input">
+        <span class="text-accent font-bold">❯</span>
+        <span class="text-muted italic">Ask anything…</span>
       </div>
     </div>
 
-    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-4" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem); margin-top: clamp(1.5rem, 1rem + 1vw, 2rem);">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-4" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem); margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="card p-5 group hover:border-accent/20 transition-all">
+        <div class="flex items-center gap-3 mb-2">
+          <div class="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+            <svg class="w-3.5 h-3.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
+          </div>
+          <h3 class="font-display text-sm font-semibold text-text-bright">{t('index.ecoCard3Title')}</h3>
+        </div>
+        <p class="text-xs text-muted leading-relaxed">{t('index.ecoCard3Desc')}</p>
+      </div>
       <div class="card p-5 group hover:border-accent/20 transition-all">
         <div class="flex items-center gap-3 mb-2">
           <div class="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
@@ -475,12 +447,18 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center animate-entrance stagger-5" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
-      <a href="https://leanctl.com" target="_blank" rel="noopener" class="btn-primary inline-flex items-center gap-2 rounded-lg font-bold text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('index.ecoCta')}
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-      </a>
-      <span class="fluid-sm text-muted">Free tier with local models. $9/mo for cloud API keys.</span>
+    <div class="flex flex-wrap items-center justify-between animate-entrance stagger-5" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <div class="flex flex-wrap items-center" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+        <a href="https://leanctl.com" target="_blank" rel="noopener" class="btn-primary inline-flex items-center gap-2 rounded-lg font-bold text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+          {t('index.ecoCta')}
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <span class="fluid-sm text-muted">Free with local models. $9/mo for cloud keys.</span>
+      </div>
+      <span class="fluid-sm text-muted/60 hidden sm:inline-flex items-center gap-1.5" style="margin-top: 0.5rem;">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+        {t('index.ecoBadge')}
+      </span>
     </div>
   </div>
 </section>
