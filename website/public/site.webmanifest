@@ -1,7 +1,7 @@
 {
   "name": "LeanCTX",
   "short_name": "LeanCTX",
-  "description": "Context Intelligence Engine — 25 MCP tools, 90+ shell patterns",
+  "description": "Context Intelligence Engine — 34 MCP tools, 90+ shell patterns",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#06060b",

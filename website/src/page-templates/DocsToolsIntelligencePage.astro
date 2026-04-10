@@ -23,6 +23,8 @@ const sidebar = [
       { label: 'ctx_edit', href: lp('/docs/tools/intelligence') + '#ctx_edit' },
       { label: 'ctx_preload', href: lp('/docs/tools/intelligence') + '#ctx_preload' },
       { label: 'ctx_semantic_search', href: lp('/docs/tools/intelligence') + '#ctx_semantic_search' },
+      { label: 'ctx_impact', href: lp('/docs/tools/intelligence') + '#ctx_impact' },
+      { label: 'ctx_architecture', href: lp('/docs/tools/intelligence') + '#ctx_architecture' },
     ],
   },
   {
@@ -307,4 +309,86 @@ const sidebar = [
   1. src/auth.ts:18-42 — verifyJWT function (score: 0.89)
   2. src/middleware.ts:5-20 — auth middleware (score: 0.76)
   3. src/lib/jwt.ts:1-35 — JWT utilities (score: 0.71)</code></pre>
+
+  <h2 id="ctx_impact">ctx_impact — Reverse Dependency Analysis</h2>
+  <p>
+    Analyzes the impact of changing a file by tracing reverse dependencies through the project graph.
+    Shows which files import or depend on the target, helping assess the blast radius of changes.
+  </p>
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <ul>
+    <li><code>path</code> (required) — file to analyze impact for</li>
+    <li><code>depth</code> (optional) — max dependency depth (default: 3)</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_impact path=src/auth.ts
+→ IMPACT ANALYSIS: src/auth.ts
+  Direct dependents (3):
+    src/routes.ts — imports: authenticate, createUser
+    src/middleware.ts — imports: verifyToken
+    src/api/users.ts — imports: AuthToken type
+
+  Transitive (depth 2): 7 more files
+  Blast radius: 10 files (7% of project)</code></pre>
+
+  <h2 id="ctx_architecture">ctx_architecture — Project Architecture Map</h2>
+  <p>
+    Generates a high-level architecture overview of the project using the dependency graph.
+    Groups files into logical layers and shows inter-layer dependencies.
+  </p>
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <ul>
+    <li><code>path</code> (optional) — project root (defaults to cwd)</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_architecture
+→ ARCHITECTURE — /Users/you/project (142 files)
+
+  Layers:
+    API (12 files): routes.ts, controllers/*.ts
+    Service (8 files): services/*.ts
+    Data (5 files): models/*.ts, db.ts
+    Config (3 files): config.ts, env.ts
+
+  Dependencies:
+    API → Service → Data → Config
+    API → Config (direct)</code></pre>
+
+  <h2>Adaptive Compression (Wave 5)</h2>
+  <p>
+    Starting with v2.21, lean-ctx includes adaptive compression that learns from usage patterns
+    and automatically optimizes compression strategies per project and language.
+  </p>
+
+  <h3>ACON Feedback Loop</h3>
+  <p>
+    The Adaptive Constraint Optimization Network (ACON) monitors compression outcomes for negative
+    signals: retries, mode upgrades (e.g. map→full), errors after reads, and rapid re-reads.
+    When a pattern of harmful compressions is detected (harm rate exceeds threshold), ACON
+    automatically raises minimum quality constraints — e.g. increasing the entropy threshold or
+    reducing maximum compression percentage.
+  </p>
+
+  <h3>Thompson Sampling Bandits</h3>
+  <p>
+    For each (file extension, file size) pair, a multi-armed bandit with Thompson Sampling
+    learns the optimal compression parameters: BPE entropy threshold, Jaccard similarity threshold,
+    and budget ratio. Arms with successful outcomes receive positive reinforcement; unsuccessful
+    compressions penalize the selected arm. Over time, per-project and per-language optimal
+    thresholds converge automatically.
+  </p>
+
+  <h3>Task-Aware KG Compression</h3>
+  <p>
+    The <code>task</code> read mode leverages the project Knowledge Graph (built by <code>ctx_graph</code>)
+    to prioritize task-relevant code. It uses the Information Bottleneck (IB) filter to retain only
+    lines relevant to the specified task, while appending dependency context from the graph.
+    This results in 65-85% token savings while preserving task-critical information.
+  </p>
+
+  <h3>Storage</h3>
+  <p>
+    Bandit parameters: <code>~/.lean-ctx/projects/&lt;hash&gt;/bandits.json</code>.<br/>
+    ACON constraints: Stored within the feedback store at <code>~/.lean-ctx/feedback.json</code>.
+  </p>
 </DocsLayout>

@@ -15,6 +15,8 @@ const sidebar = [
       { label: 'ctx_agent', href: lp('/docs/tools/memory') + '#ctx_agent' },
       { label: 'ctx_share', href: lp('/docs/tools/memory') + '#ctx_share' },
       { label: 'ctx_overview', href: lp('/docs/tools/memory') + '#ctx_overview' },
+      { label: 'ctx_task', href: lp('/docs/tools/memory') + '#ctx_task' },
+      { label: 'ctx_cost', href: lp('/docs/tools/memory') + '#ctx_cost' },
     ],
   },
   {
@@ -259,4 +261,88 @@ ctx_share action=pull
   LAST_TASK:Fix authentication middleware timeout
   RECENT_DECISIONS:Use refresh tokens|Add rate limiting
   AGENTS:cursor-a3f8(dev),claude-b7e2(review)</code></pre>
+
+  <h2 id="ctx_task">ctx_task — A2A Task Delegation</h2>
+  <p>
+    Agent-to-Agent (A2A) task management following the Google A2A protocol. Agents can create,
+    assign, update, and track tasks across a multi-agent workflow. Tasks persist across sessions
+    and support full lifecycle management.
+  </p>
+
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <table>
+    <thead>
+      <tr><th>Action</th><th>{t('docsToolsCore.parameters')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>create</code></td><td><code>title</code>, <code>description</code>, <code>assignee</code></td><td>Create a new task with optional assignee</td></tr>
+      <tr><td><code>update</code></td><td><code>task_id</code>, <code>state</code></td><td>Update task state (Working, InputRequired, Completed, Failed, Canceled)</td></tr>
+      <tr><td><code>list</code></td><td>—</td><td>List all tasks with their current state</td></tr>
+      <tr><td><code>get</code></td><td><code>task_id</code></td><td>Get detailed info about a specific task</td></tr>
+      <tr><td><code>cancel</code></td><td><code>task_id</code></td><td>Cancel a task</td></tr>
+      <tr><td><code>message</code></td><td><code>task_id</code>, <code>message</code></td><td>Add a message to a task thread</td></tr>
+      <tr><td><code>info</code></td><td>—</td><td>Show A2A task system status and agent card</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Task Lifecycle</h3>
+  <p>
+    Tasks follow the A2A standard lifecycle: <code>Created → Working → Completed/Failed/Canceled</code>.
+    Agents can request input via <code>InputRequired</code> state. All state transitions are timestamped.
+  </p>
+
+  <h3>Example</h3>
+  <pre><code>ctx_task action=create title="Fix auth middleware" description="Token refresh not working" assignee=claude
+→ Task created: t-a3f8c1 "Fix auth middleware" (state: Created, assignee: claude)
+
+ctx_task action=update task_id=t-a3f8c1 state=Working
+→ Task t-a3f8c1 updated: Created → Working
+
+ctx_task action=message task_id=t-a3f8c1 message="Found the bug in token.rs:45"
+→ Message added to task t-a3f8c1
+
+ctx_task action=list
+→ Tasks (2):
+  t-a3f8c1 "Fix auth middleware" [Working] (assignee: claude, 1 message)
+  t-b7e204 "Add rate limiting" [Completed] (assignee: cursor)</code></pre>
+
+  <h3>Storage</h3>
+  <p>Tasks are stored at <code>~/.lean-ctx/agents/tasks.json</code>.</p>
+
+  <h2 id="ctx_cost">ctx_cost — Token Cost Attribution</h2>
+  <p>
+    Tracks and reports token costs per agent and per tool. Provides detailed breakdowns of which
+    agents and tools are consuming the most tokens, enabling optimization and accountability in
+    multi-agent workflows.
+  </p>
+
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <table>
+    <thead>
+      <tr><th>Action</th><th>{t('docsToolsCore.parameters')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>report</code></td><td><code>limit</code></td><td>Show cost attribution report (top N agents/tools)</td></tr>
+      <tr><td><code>reset</code></td><td>—</td><td>Reset all cost tracking data</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example</h3>
+  <pre><code>ctx_cost action=report
+→ COST ATTRIBUTION REPORT
+  Total tokens: 145,230
+
+  By Agent:
+    cursor-a3f8    89,420 tok (61.6%)
+    claude-b7e2    42,810 tok (29.5%)
+    gemini-c4d1    13,000 tok (8.9%)
+
+  By Tool:
+    ctx_read       78,200 tok (53.8%)
+    ctx_shell      31,400 tok (21.6%)
+    ctx_search     18,630 tok (12.8%)
+    ctx_tree       17,000 tok (11.7%)</code></pre>
+
+  <h3>Storage</h3>
+  <p>Cost data is stored at <code>~/.lean-ctx/costs.json</code> and resets per session.</p>
 </DocsLayout>

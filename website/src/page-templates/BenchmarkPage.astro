@@ -9,10 +9,11 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 const readModes = [
   { mode: 'full', useCase: t('benchmark.modeFullUseCase'), savings: '0%', preserves: t('benchmark.modeFullPreserves') },
   { mode: 'map', useCase: t('benchmark.modeMapUseCase'), savings: '70–88%', preserves: t('benchmark.modeMapPreserves') },
-  { mode: 'signatures', useCase: t('benchmark.modeSignaturesUseCase'), savings: '85–93%', preserves: t('benchmark.modeSignaturesPreserves') },
+  { mode: 'signatures', useCase: t('benchmark.modeSignaturesUseCase'), savings: '55–93%', preserves: t('benchmark.modeSignaturesPreserves') },
   { mode: 'diff', useCase: t('benchmark.modeDiffUseCase'), savings: '80–95%', preserves: t('benchmark.modeDiffPreserves') },
   { mode: 'aggressive', useCase: t('benchmark.modeAggressiveUseCase'), savings: '75–90%', preserves: t('benchmark.modeAggressivePreserves') },
   { mode: 'entropy', useCase: t('benchmark.modeEntropyUseCase'), savings: '70–83%', preserves: t('benchmark.modeEntropyPreserves') },
+  { mode: 'task', useCase: t('benchmark.modeTaskUseCase'), savings: '65–85%', preserves: t('benchmark.modeTaskPreserves') },
 ];
 ---
 
@@ -64,7 +65,7 @@ const readModes = [
         </div>
         <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('benchmark.step3Title')}</h3>
         <p class="fluid-sm text-muted">{t('benchmark.step3Desc')}</p>
-        <code class="block text-[11px] font-mono text-accent-3/70 mt-3">full / map / signatures / diff / aggressive / entropy</code>
+        <code class="block text-[11px] font-mono text-accent-3/70 mt-3">full / map / signatures / diff / aggressive / entropy / task</code>
       </div>
     </div>
   </div>

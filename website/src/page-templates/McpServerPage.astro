@@ -21,7 +21,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       {t('mcpServer.heroDesc')}
     </p>
     <div class="animate-entrance stagger-3 flex flex-wrap items-center gap-3">
-      <span class="mcp-hero-stat"><span class="text-accent font-bold">25</span> {t('mcpServer.heroStatTools')}</span>
+      <span class="mcp-hero-stat"><span class="text-accent font-bold">34</span> {t('mcpServer.heroStatTools')}</span>
       <span class="mcp-hero-stat"><span class="text-accent font-bold">7</span> {t('mcpServer.heroStatModes')}</span>
       <span class="mcp-hero-stat"><span class="text-accent font-bold">99%</span> {t('mcpServer.heroStatMax')}</span>
     </div>
@@ -132,6 +132,8 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           <span class="mcp-tool-tag">ctx_dedup</span>
           <span class="mcp-tool-tag">ctx_response</span>
           <span class="mcp-tool-tag">ctx_discover</span>
+          <span class="mcp-tool-tag">ctx_impact</span>
+          <span class="mcp-tool-tag">ctx_architecture</span>
         </div>
       </div>
 
@@ -157,6 +159,8 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           <span class="mcp-tool-tag">ctx_metrics</span>
           <span class="mcp-tool-tag">ctx_wrapped</span>
           <span class="mcp-tool-tag">ctx_cache</span>
+          <span class="mcp-tool-tag">ctx_heatmap</span>
+          <span class="mcp-tool-tag">ctx_cost</span>
         </div>
       </div>
 
@@ -179,6 +183,8 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           <span class="mcp-tool-tag">ctx_agent</span>
           <span class="mcp-tool-tag">ctx_overview</span>
           <span class="mcp-tool-tag">ctx_preload</span>
+          <span class="mcp-tool-tag">ctx_task</span>
+          <span class="mcp-tool-tag">ctx_share</span>
         </div>
       </div>
 
@@ -241,6 +247,11 @@ const lp = (path: string) => getLocalizedPath(path, locale);
               <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">entropy</code></td>
               <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.entropyReturn')}</td>
               <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.entropyWhen')}</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">task</code></td>
+              <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.taskReturn')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.taskWhen')}</td>
             </tr>
             <tr class="border-t border-border/30">
               <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">lines:N-M</code></td>

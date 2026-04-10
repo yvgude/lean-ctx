@@ -18,6 +18,7 @@ const sidebar = [
       { label: 'ctx_metrics', href: lp('/docs/tools/session') + '#ctx_metrics' },
       { label: 'ctx_wrapped', href: lp('/docs/tools/session') + '#ctx_wrapped' },
       { label: 'ctx_cache', href: lp('/docs/tools/session') + '#ctx_cache' },
+      { label: 'ctx_heatmap', href: lp('/docs/tools/session') + '#ctx_heatmap' },
     ],
   },
   {
@@ -409,4 +410,32 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
     that handles new chats, context compaction, and session resets without relying on the LLM.
     Configure via the <code>LEAN_CTX_CACHE_TTL</code> environment variable (seconds, 0 to disable).
   </p>
+
+  <h2 id="ctx_heatmap">ctx_heatmap — File Access Heatmap</h2>
+  <p>
+    Tracks and displays file access patterns across sessions. Shows which files are accessed most frequently,
+    their average compression ratios, and access patterns over time. Helps identify hot files that could
+    benefit from pre-loading or different compression strategies.
+  </p>
+
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <p>No parameters. Returns the current heatmap data for the project.</p>
+
+  <h3>Example</h3>
+  <pre><code>ctx_heatmap
+→ FILE ACCESS HEATMAP
+
+  HOT FILES (top 10):
+    src/auth.ts          ████████████ 24 reads  avg 87% compression
+    src/routes.ts        ██████████   18 reads  avg 91% compression
+    src/middleware.ts     ████████     14 reads  avg 82% compression
+    src/db.ts            ██████       10 reads  avg 94% compression
+
+  COLD FILES (accessed once):
+    src/config.ts, src/types.ts, src/utils.ts
+
+  Total: 142 accesses across 23 files</code></pre>
+
+  <h3>Storage</h3>
+  <p>Heatmap data is stored at <code>~/.lean-ctx/heatmap.json</code> and persists across sessions.</p>
 </DocsLayout>

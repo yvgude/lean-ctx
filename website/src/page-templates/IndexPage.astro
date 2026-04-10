@@ -42,7 +42,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       </div>
       <div class="hero-proof-divider"></div>
       <div class="hero-proof-item">
-        <span class="hero-proof-number font-display">23</span>
+        <span class="hero-proof-number font-display">34</span>
         <span class="hero-proof-label">{t('index.heroProofTools')}</span>
       </div>
     </div>
@@ -244,7 +244,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         <span class="stat-desc">{t('index.statsReduction')}</span>
       </div>
       <div class="stat-item">
-        <span class="stat-number font-display text-accent-2">25</span>
+        <span class="stat-number font-display text-accent-2">34</span>
         <span class="stat-desc">{t('index.statsTools')}</span>
       </div>
       <div class="stat-item">
@@ -338,89 +338,95 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 48rem;">
       {t('index.ecoDesc')}
     </p>
-  </div>
 
-  <div class="content-grid-wide">
-    <div class="eco-layout animate-entrance stagger-3">
-      <div class="eco-tui-glow">
-        <div class="eco-tui" role="img" aria-label="LeanCTL terminal interface">
-          <div class="eco-tui-chrome">
-            <div class="eco-dot eco-dot-r"></div><div class="eco-dot eco-dot-y"></div><div class="eco-dot eco-dot-g"></div>
-            <span class="eco-tui-title">leanctl · ~/my-project</span>
+    <div class="grid lg:grid-cols-[1.3fr_1fr] animate-entrance stagger-3" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem); align-items: start;">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="ml-3 text-xs text-muted font-mono">leanctl · ~/my-project</span>
+        </div>
+        <div class="leanctl-status">
+          <span class="text-text-bright font-bold">LeanCTL</span>
+          <span class="text-muted" style="margin-left: 2px;">v0.1</span>
+          <span class="leanctl-sep">╱</span>
+          <span class="text-accent">● ready</span>
+          <span class="leanctl-sep">╱</span>
+          <span class="text-accent-2 font-bold">BUILD</span>
+          <span class="leanctl-sep">╱</span>
+          <span class="text-accent-2">sonnet-4.6</span>
+          <span class="leanctl-sep">╱</span>
+          <span class="text-muted">⎇ main</span>
+          <span class="leanctl-sep">╱</span>
+          <span class="text-accent font-semibold">⚡−42%</span>
+        </div>
+        <div class="terminal-body px-5 py-4 font-mono space-y-2" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.7;">
+          <div class="flex items-start gap-2">
+            <span class="leanctl-bar"></span>
+            <span class="text-text-bright font-semibold">add rate limiting to all API endpoints</span>
           </div>
-          <div class="eco-tui-status">
-            <span style="color:#EEEDF2;font-weight:700;">LeanCTL</span>
-            <span style="color:#858392;margin-left:3px;">v0.1</span>
-            <span class="eco-sep">╱</span>
-            <span style="color:#00FFB2;">● ready</span>
-            <span class="eco-sep">╱</span>
-            <span style="color:#38BDF8;font-weight:700;">BUILD</span>
-            <span class="eco-sep">╱</span>
-            <span style="color:#38BDF8;">sonnet-4.6</span>
-            <span class="eco-sep">╱</span>
-            <span style="color:#858392;">⎇ main</span>
-            <span class="eco-sep">╱</span>
-            <span style="color:#00FFB2;font-weight:600;">⚡−42%</span>
+          <div>
+            <span class="text-accent-2">◆ ◇ ◆</span>
+            <span class="text-accent-2 italic"> thinking…</span>
+            <span class="text-muted"> (2.1s)</span>
           </div>
-          <div class="eco-tui-body">
-            <div class="eco-msg-user"><div class="eco-msg-bar"></div><span class="eco-msg-text">add rate limiting to all API endpoints</span></div>
-            <div style="margin-top:3px;">
-              <span style="color:#38BDF8;">◆ ◇ ◆</span>
-              <span style="color:#38BDF8;font-style:italic;"> thinking…</span>
-              <span style="color:#858392;"> (2.1s)</span>
-            </div>
-            <div class="eco-tool-box" style="margin-top:3px;">
-              <div class="eco-tool-line"><span class="eco-tool-ok">✓</span><span class="eco-tool-name">batch_read</span><span class="eco-tool-detail">3 files</span><span class="eco-tool-ok" style="margin-left:auto;">52 tok</span></div>
-              <div class="eco-tool-line"><span class="eco-tool-ok">✓</span><span class="eco-tool-name">write_file</span><span class="eco-tool-detail">src/middleware/rateLimit.ts</span></div>
-              <div class="eco-tool-line"><span class="eco-tool-ok">✓</span><span class="eco-tool-name">multi_edit</span><span class="eco-tool-detail">3 files, 5 edits</span></div>
-              <div class="eco-tool-line"><span class="eco-tool-ok">✓</span><span class="eco-tool-name">run_command</span><span class="eco-tool-detail">npm test</span><span class="eco-tool-ok" style="margin-left:auto;">22/22</span></div>
-              <div class="eco-tool-line"><span class="eco-tool-ok">✓</span><span class="eco-tool-name">git_commit</span><span class="eco-tool-meta" style="margin-left:auto;">a1b2c3d</span></div>
-            </div>
-            <div style="font-size:11px;margin-top:4px;">
-              <span style="color:#605F6B;">⏱ 3.8s │</span>
-              <span style="color:#E8FE96;">$0.019</span>
-              <span style="color:#605F6B;">│</span>
-              <span style="color:#00FFB2;font-weight:600;"> −68% tokens saved</span>
-            </div>
+          <div class="leanctl-tools">
+            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">batch_read</span><span class="text-text">3 files</span><span class="text-accent ml-auto">52 tok</span></div>
+            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">write_file</span><span class="text-text">src/middleware/rateLimit.ts</span></div>
+            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">multi_edit</span><span class="text-text">3 files, 5 edits</span></div>
+            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">run_command</span><span class="text-text">npm test</span><span class="text-accent ml-auto">22/22</span></div>
+            <div class="leanctl-tool-row"><span class="text-accent">✓</span><span class="text-accent-2">git_commit</span><span class="text-muted ml-auto">a1b2c3d</span></div>
           </div>
-          <div class="eco-tui-input">
-            <span class="eco-prompt">❯</span>
-            <span class="eco-placeholder">Ask anything…</span>
-            <span class="eco-input-meta">Ctrl+P commands │ Ctrl+S sessions</span>
+          <div class="term-divider"></div>
+          <div class="flex justify-between">
+            <span class="text-muted">⏱ 3.8s</span>
+            <span class="text-accent-3 font-semibold">$0.019</span>
+            <span class="text-accent font-semibold">−68% tokens saved</span>
           </div>
+        </div>
+        <div class="leanctl-input">
+          <span class="text-accent font-bold">❯</span>
+          <span class="text-muted italic">Ask anything…</span>
         </div>
       </div>
 
-      <div class="eco-cards">
-        <div class="eco-card">
-          <div class="eco-icon" style="color: #00FFB2;">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+      <div class="space-y-3">
+        <div class="card p-6 group hover:border-accent/20 transition-all">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright">{t('index.ecoCard1Title')}</h3>
           </div>
-          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.625rem 0 0.375rem;">{t('index.ecoCard1Title')}</h3>
           <p class="fluid-sm text-muted leading-relaxed">{t('index.ecoCard1Desc')}</p>
         </div>
-        <div class="eco-card">
-          <div class="eco-icon" style="color: #38BDF8;">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        <div class="card p-6 group hover:border-accent-2/20 transition-all">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="w-8 h-8 rounded-lg bg-accent-2/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright">{t('index.ecoCard2Title')}</h3>
           </div>
-          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.625rem 0 0.375rem;">{t('index.ecoCard2Title')}</h3>
           <p class="fluid-sm text-muted leading-relaxed">{t('index.ecoCard2Desc')}</p>
         </div>
-        <div class="eco-card">
-          <div class="eco-icon" style="color: #E8FE96;">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>
+        <div class="card p-6 group hover:border-accent-3/20 transition-all">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="w-8 h-8 rounded-lg bg-accent-3/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright">{t('index.ecoCard3Title')}</h3>
           </div>
-          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.625rem 0 0.375rem;">{t('index.ecoCard3Title')}</h3>
           <p class="fluid-sm text-muted leading-relaxed">{t('index.ecoCard3Desc')}</p>
         </div>
-      </div>
-    </div>
 
-    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem); text-align: center;">
-      <a href="https://leanctl.com" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('index.ecoCta')}
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-      </a>
+        <div style="padding-top: clamp(0.5rem, 0.25rem + 0.5vw, 1rem);">
+          <a href="https://leanctl.com" target="_blank" rel="noopener" class="btn-primary inline-flex items-center gap-2 rounded-lg font-bold text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+            {t('index.ecoCta')}
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -759,162 +765,57 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     align-items: center;
   }
 
-  /* ── Ecosystem: Layout ──────────────────────────── */
-  .eco-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: clamp(1.5rem, 1rem + 1vw, 2rem);
-    align-items: start;
-  }
-  @media (min-width: 960px) {
-    .eco-layout {
-      grid-template-columns: 1.3fr 1fr;
-      gap: clamp(2rem, 1.5rem + 1.5vw, 3rem);
-    }
-  }
-  .eco-cards {
-    display: flex;
-    flex-direction: column;
-    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);
-  }
-  .eco-card {
-    padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
-    border: 1px solid rgba(58,57,67,.5);
-    border-radius: clamp(10px, 0.8vw, 14px);
-    background: #201F26;
-    transition: border-color 0.25s ease, box-shadow 0.25s ease;
-  }
-  .eco-card:hover {
-    border-color: rgba(34,197,94,.2);
-    box-shadow: 0 0 40px -16px rgba(34,197,94,.08);
-  }
-  .eco-icon {
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  /* ── Ecosystem: TUI (matches leanctl.com design) ── */
-  .eco-tui {
-    position: relative;
-    border-radius: 10px;
-    overflow: hidden;
-    border: 1px solid rgba(58,57,67,.6);
-    background: #201F26;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10px;
-    line-height: 1.5;
-    box-shadow:
-      0 0 0 1px rgba(34,197,94,.04),
-      0 12px 40px rgba(0,0,0,.7),
-      0 0 80px -20px rgba(34,197,94,.12);
-    transition: box-shadow 0.3s ease, transform 0.3s ease;
-  }
-  @media (min-width: 480px) {
-    .eco-tui { font-size: 12.5px; line-height: 1.6; border-radius: 16px; }
-  }
-  .eco-tui:hover {
-    box-shadow:
-      0 0 0 1px rgba(34,197,94,.08),
-      0 16px 48px rgba(0,0,0,.8),
-      0 0 100px -20px rgba(34,197,94,.18);
-    transform: translateY(-4px);
-  }
-  .eco-tui-chrome {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    background: #2D2C35;
-    border-bottom: 1px solid rgba(58,57,67,.5);
-  }
-  @media (min-width: 480px) { .eco-tui-chrome { padding: 12px 16px; gap: 7px; } }
-  .eco-dot { width: 10px; height: 10px; border-radius: 50%; }
-  @media (min-width: 480px) { .eco-dot { width: 12px; height: 12px; } }
-  .eco-dot-r { background: #FF577D; }
-  .eco-dot-y { background: #E8FE96; }
-  .eco-dot-g { background: #00FFB2; }
-  .eco-tui-title { margin-left: 8px; color: #858392; font-size: 10px; }
-  @media (min-width: 480px) { .eco-tui-title { margin-left: 12px; font-size: 11px; } }
-  .eco-tui-status {
+  /* ── LeanCTL Terminal ───────────────────────────────── */
+  .leanctl-status {
     display: flex;
     align-items: center;
     gap: 0;
-    padding: 3px 8px;
-    background: #2D2C35;
-    border-bottom: 1px solid rgba(58,57,67,.3);
-    font-size: 10px;
+    padding: 6px 20px;
+    background: var(--color-surface-2, #2D2C35);
+    border-bottom: 1px solid var(--color-border);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
     overflow-x: auto;
     scrollbar-width: none;
   }
-  @media (min-width: 480px) { .eco-tui-status { padding: 4px 12px; font-size: 11.5px; } }
-  .eco-tui-status::-webkit-scrollbar { display: none; }
-  .eco-sep { color: #605F6B; margin: 0 6px; }
-  .eco-tui-body {
-    padding: 8px;
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    overflow: hidden;
+  .leanctl-status::-webkit-scrollbar { display: none; }
+  .leanctl-sep {
+    color: var(--color-border);
+    margin: 0 6px;
   }
-  @media (min-width: 480px) { .eco-tui-body { padding: 14px 16px; min-height: 200px; gap: 6px; } }
-  .eco-msg-user { display: flex; align-items: flex-start; gap: 8px; }
-  .eco-msg-bar { width: 3px; min-height: 100%; background: #22C55E; border-radius: 2px; flex-shrink: 0; }
-  .eco-msg-text { color: #DFDBDD; font-weight: 600; }
-  .eco-tool-box {
-    border: 1px solid #3A3943;
+  .leanctl-bar {
+    width: 3px;
+    min-height: 100%;
+    background: var(--color-accent);
+    border-radius: 2px;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
+  .leanctl-tools {
+    border: 1px solid var(--color-border);
     border-radius: 6px;
-    padding: 4px 6px;
-    background: rgba(45,44,53,.4);
-    overflow: hidden;
+    padding: 4px 8px;
+    background: rgba(45,44,53,.3);
   }
-  @media (min-width: 480px) { .eco-tool-box { padding: 6px 10px; } }
-  .eco-tool-line {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 1px 0;
-    font-size: 10px;
-    overflow: hidden;
-  }
-  @media (min-width: 480px) { .eco-tool-line { gap: 6px; font-size: 11.5px; } }
-  .eco-tool-name { color: #00A4FF; white-space: nowrap; }
-  .eco-tool-detail { color: #DFDBDD; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .eco-tool-meta { color: #858392; white-space: nowrap; }
-  .eco-tool-ok { color: #00FFB2; white-space: nowrap; flex-shrink: 0; }
-  .eco-tui-input {
+  .leanctl-tool-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 10px;
-    background: #2D2C35;
-    border-top: 1px solid rgba(58,57,67,.3);
-    font-size: 10px;
+    padding: 1px 0;
+    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
+    overflow: hidden;
+    white-space: nowrap;
   }
-  @media (min-width: 480px) { .eco-tui-input { gap: 8px; padding: 10px 16px; font-size: 12px; } }
-  .eco-prompt { color: #22C55E; font-weight: 700; }
-  .eco-placeholder { color: #858392; font-style: italic; }
-  .eco-input-meta { margin-left: auto; color: #605F6B; font-size: 10px; display: none; }
-  @media (min-width: 480px) { .eco-input-meta { display: block; } }
-
-  /* ── Ecosystem: TUI Glow ──────────────────────────── */
-  .eco-tui-glow { position: relative; overflow: hidden; }
-  .eco-tui-glow::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    background: conic-gradient(from 180deg, rgba(34,197,94,.15), rgba(56,189,248,.1), rgba(129,140,248,.08), rgba(34,197,94,.15));
-    border-radius: 13px;
-    filter: blur(16px);
-    z-index: -1;
-    animation: ecoGlowRotate 8s linear infinite;
+  .leanctl-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px;
+    background: var(--color-surface-2, #2D2C35);
+    border-top: 1px solid var(--color-border);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
   }
-  @media (min-width: 480px) { .eco-tui-glow::before { inset: -3px; border-radius: 19px; filter: blur(24px); } }
-  @keyframes ecoGlowRotate { 0% { filter: blur(24px) hue-rotate(0deg); } 100% { filter: blur(24px) hue-rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .eco-tui-glow::before { animation: none; } }
 
   /* ── Compatibility ──────────────────────────────────── */
   .compat-grid {

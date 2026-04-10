@@ -1,6 +1,6 @@
 # LeanCTX — Reduce AI Coding Token Costs by 99%
 
-> Open-source MCP server + shell hook that reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary with 28 intelligent tools, 90+ CLI compression patterns, and zero telemetry. Works with 24 AI coding tools.
+> Open-source MCP server + shell hook that reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary with 34 intelligent tools, 90+ CLI compression patterns, and zero telemetry. Works with 24 AI coding tools.
 
 ## What is LeanCTX?
 
@@ -10,7 +10,7 @@ Install in 60 seconds: `npm install -g lean-ctx-bin && lean-ctx setup`
 
 ## How It Reduces Token Costs
 
-1. **MCP Server**: 28 compression tools replace built-in file reads, shell commands, and code search. Uses tree-sitter AST parsing across 18 programming languages. Seven read modes: full, map, signatures, diff, aggressive, entropy, lines:N-M. Cached re-reads cost ~13 tokens.
+1. **MCP Server**: 34 compression tools replace built-in file reads, shell commands, and code search. Uses tree-sitter AST parsing across 18 programming languages. Eight read modes: full, map, signatures, diff, aggressive, entropy, task, lines:N-M. Cached re-reads cost ~13 tokens.
 2. **Shell Hook**: Intercepts 90+ CLI command patterns (git, npm, cargo, docker, kubectl, pip, go, tsc, curl) and compresses output by 60-95%.
 3. **AI Tool Hooks**: One-command integration for 24 editors via `lean-ctx setup`. No workflow changes needed.
 4. **Communication Protocols**: CEP (Cognitive Efficiency Protocol), CCP (Context Continuity Protocol), and TDD (Token Dense Dialect) teach the AI to respond more efficiently, saving 8-25% additional tokens.
@@ -63,7 +63,7 @@ All configured automatically with `lean-ctx setup`.
 
 - [Home](https://leanctx.com/): Overview and quick start
 - [How It Works](https://leanctx.com/how-it-works/): Data flow, compression pipeline, quality preservation
-- [MCP Server](https://leanctx.com/mcp-server/): 28 compression tools documentation
+- [MCP Server](https://leanctx.com/mcp-server/): 34 compression tools documentation
 - [Shell Hook](https://leanctx.com/shell-hook/): 90+ command patterns with before/after examples
 - [Compatibility](https://leanctx.com/compatibility/): All 24 supported AI tools with setup commands
 - [Benchmark](https://leanctx.com/benchmark/): Token savings measurement and verification
@@ -71,7 +71,7 @@ All configured automatically with `lean-ctx setup`.
 - [Protocols](https://leanctx.com/protocols/): CEP, CCP, and TDD communication protocols
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation and setup guide
 - [Configuration](https://leanctx.com/docs/configuration/): config.toml, CLI cache, environment variables
-- [Tool API Reference](https://leanctx.com/docs/tools/): All 28 MCP tools documented
+- [Tool API Reference](https://leanctx.com/docs/tools/): All 34 MCP tools documented
 - [Intelligence Layer](https://leanctx.com/docs/intelligence-layer/): 6 scientific compression algorithms explained
 - [Tree-sitter Engine](https://leanctx.com/docs/tree-sitter/): AST parsing for 18 languages
 - [Quick Reference](https://leanctx.com/docs/quick-reference/): Daily workflow cheat sheet
@@ -91,4 +91,4 @@ No. lean-ctx adds <1ms overhead per operation. Most users report their AI tools 
 Zero telemetry — no data collection, no analytics, no network requests, ever. Everything runs 100% locally. MIT-licensed and fully auditable.
 
 **What's the difference between lean-ctx and RTK?**
-lean-ctx is a hybrid architecture (shell hook + MCP server) while RTK is shell-hook only. lean-ctx offers 28 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, and zero telemetry (RTK has default-on telemetry).
+lean-ctx is a hybrid architecture (shell hook + MCP server) while RTK is shell-hook only. lean-ctx offers 34 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, and zero telemetry (RTK has default-on telemetry).
