@@ -115,8 +115,7 @@ fn pipe_guard_no_compression_when_stdout_is_piped() {
         .args(["-c", "echo hello world"])
         .output()
         .expect("failed to run lean-ctx -c with piped stdout");
-    let stdout = String::from_utf8_lossy(&output.stdout)
-        .replace("\r\n", "\n");
+    let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
     let stdout = stdout.trim();
     assert!(
         stdout.contains("hello") && stdout.contains("world"),
