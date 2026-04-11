@@ -689,16 +689,32 @@ pub fn format_cep_report() -> String {
     o.push(String::new());
 
     if total_saved == 0 && cep.modes.is_empty() {
-        o.push(format!(
-            "  {wrn}⚠  MCP server not configured.{r} Shell hook compresses output, but"
-        ));
-        o.push(
-            "     full token savings require MCP tools (ctx_read, ctx_shell, ctx_search)."
-                .to_string(),
-        );
-        o.push(format!(
-            "     Run {sec}lean-ctx setup{r} to auto-configure your editors."
-        ));
+        if store.total_commands > 20 {
+            o.push(format!(
+                "  {wrn}⚠  MCP tools configured but not being used by your AI client.{r}"
+            ));
+            o.push(
+                "     Your AI client may be using native Read/Shell instead of ctx_read/ctx_shell."
+                    .to_string(),
+            );
+            o.push(format!(
+                "     Run {sec}lean-ctx init{r} to update rules, then restart your AI session."
+            ));
+            o.push(format!(
+                "     Run {sec}lean-ctx doctor{r} for detailed adoption diagnostics."
+            ));
+        } else {
+            o.push(format!(
+                "  {wrn}⚠  MCP server not configured.{r} Shell hook compresses output, but"
+            ));
+            o.push(
+                "     full token savings require MCP tools (ctx_read, ctx_shell, ctx_search)."
+                    .to_string(),
+            );
+            o.push(format!(
+                "     Run {sec}lean-ctx setup{r} to auto-configure your editors."
+            ));
+        }
         o.push(String::new());
     }
 

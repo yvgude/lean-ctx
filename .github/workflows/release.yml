@@ -210,7 +210,7 @@ jobs:
 
           sed -i "s|url \".*\"|url \"https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/lean-ctx-${VERSION}-source.tar.gz\"|" Formula/lean-ctx.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/lean-ctx.rb
-          sed -i "s|assert_match \"lean-ctx .*\"|assert_match \"lean-ctx ${VERSION}\"|" Formula/lean-ctx.rb
+          sed -i "s|assert_match \"lean-ctx [^\"]*\"|assert_match \"lean-ctx ${VERSION}\"|" Formula/lean-ctx.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

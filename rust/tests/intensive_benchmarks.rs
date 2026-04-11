@@ -748,7 +748,7 @@ fn guard_essential_instructions_present() {
     let instr = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
 
     let required = vec![
-        "PREFER lean-ctx tools",
+        "ALWAYS use lean-ctx MCP tools",
         "ctx_read",
         "ctx_shell",
         "ctx_search",

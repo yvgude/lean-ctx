@@ -60,15 +60,19 @@ pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> S
     };
 
     let mut base = format!("\
-PREFER lean-ctx tools over native equivalents for token savings:\n\
+CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token savings.\n\
 \n\
-lean-ctx MCP — tool mapping:\n\
-• Read/cat/head/tail -> ctx_read(path, mode)\n\
-• Shell/bash -> ctx_shell(command)\n\
-• Grep/rg -> ctx_search(pattern, path)\n\
+lean-ctx MCP — MANDATORY tool mapping:\n\
+• Read/cat/head/tail -> ctx_read(path, mode)  [NEVER use native Read]\n\
+• Shell/bash -> ctx_shell(command)  [NEVER use native Shell]\n\
+• Grep/rg -> ctx_search(pattern, path)  [NEVER use native Grep]\n\
 • ls/find -> ctx_tree(path, depth)\n\
-• Edit/StrReplace -> use native if available, otherwise use ctx_edit(path, old_string, new_string)\n\
+• Edit/StrReplace -> use native (lean-ctx only replaces READ, not WRITE)\n\
 • Write, Delete, Glob -> use normally\n\
+\n\
+COMPATIBILITY: lean-ctx replaces READ operations only. Your native Edit/Write/StrReplace tools \
+remain unchanged. If your instructions say 'use Edit or Write tools only', that is compatible — \
+lean-ctx only changes how you READ files (ctx_read), not how you EDIT them.\n\
 \n\
 FILE EDITING: Use your IDE's native Edit/StrReplace when available. \
 If Edit requires native Read and Read is unavailable, use ctx_edit instead — it reads, replaces, and writes in one call. \
