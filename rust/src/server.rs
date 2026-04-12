@@ -212,7 +212,12 @@ impl ServerHandler for LeanCtxServer {
                     if is_cache_hit {
                         session.record_cache_hit();
                     }
-                    if session.project_root.is_none() {
+                    let root_missing = session
+                        .project_root
+                        .as_deref()
+                        .map(|r| r.trim().is_empty())
+                        .unwrap_or(true);
+                    if root_missing {
                         if let Some(root) = crate::core::protocol::detect_project_root(&path) {
                             session.project_root = Some(root.clone());
                             let mut current = self.agent_id.write().await;

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -186,6 +187,8 @@ async fn handle_request(mut stream: tokio::net::TcpStream, token: Option<Arc<Str
         }
         "/api/knowledge" => {
             let project_root = detect_project_root_for_dashboard();
+            let _ =
+                crate::core::knowledge::ProjectKnowledge::migrate_legacy_empty_root(&project_root);
             let knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(&project_root);
             let json = serde_json::to_string(&knowledge).unwrap_or_else(|_| "{}".to_string());
             ("200 OK", "application/json", json)
@@ -559,6 +562,29 @@ fn build_agents_json() -> String {
 }
 
 fn detect_project_root_for_dashboard() -> String {
+    // Prefer last known project context from the persisted session. This makes the dashboard
+    // show the same project data even if it is launched from an arbitrary working directory.
+    if let Some(session) = crate::core::session::SessionState::load_latest() {
+        if let Some(root) = session.project_root.as_deref() {
+            if !root.trim().is_empty() {
+                return root.to_string();
+            }
+        }
+        if let Some(cwd) = session.shell_cwd.as_deref() {
+            if !cwd.trim().is_empty() {
+                return crate::core::protocol::detect_project_root_or_cwd(cwd);
+            }
+        }
+        if let Some(last) = session.files_touched.last() {
+            if !last.path.trim().is_empty() {
+                if let Some(parent) = Path::new(&last.path).parent() {
+                    let p = parent.to_string_lossy().to_string();
+                    return crate::core::protocol::detect_project_root_or_cwd(&p);
+                }
+            }
+        }
+    }
+
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| ".".to_string());

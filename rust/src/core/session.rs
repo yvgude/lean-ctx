@@ -556,7 +556,15 @@ impl SessionState {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{id}.json"));
         let json = std::fs::read_to_string(&path).ok()?;
-        serde_json::from_str(&json).ok()
+        let mut session: Self = serde_json::from_str(&json).ok()?;
+        // Legacy/malformed sessions may serialize empty strings instead of null.
+        if matches!(session.project_root.as_deref(), Some(r) if r.trim().is_empty()) {
+            session.project_root = None;
+        }
+        if matches!(session.shell_cwd.as_deref(), Some(c) if c.trim().is_empty()) {
+            session.shell_cwd = None;
+        }
+        Some(session)
     }
 
     pub fn list_sessions() -> Vec<SessionSummary> {
