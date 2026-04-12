@@ -148,26 +148,39 @@ impl ProjectIndex {
 /// If no valid index exists, automatically scans the project to build one.
 /// This is the primary entry point — ensures zero-config usage.
 pub fn load_or_build(project_root: &str) -> ProjectIndex {
-    // Try the given root first
-    if let Some(idx) = ProjectIndex::load(project_root) {
+    // Prefer stable absolute roots. Using "." as a cache key is fragile because
+    // it depends on the process cwd and can accidentally load the wrong project.
+    let root_abs = if project_root.trim().is_empty() || project_root == "." {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string())
+    } else {
+        project_root.to_string()
+    };
+
+    // Try the absolute/root-normalized path first.
+    if let Some(idx) = ProjectIndex::load(&root_abs) {
         if !idx.files.is_empty() {
             return idx;
         }
     }
 
-    // ctx_graph build typically saves with ".", try that
-    if project_root != "." {
-        if let Some(idx) = ProjectIndex::load(".") {
-            if !idx.files.is_empty() {
-                return idx;
-            }
+    // Legacy: older builds may have cached the index under ".". Only accept it if it
+    // actually refers to the current cwd project, then migrate it to `root_abs`.
+    if let Some(idx) = ProjectIndex::load(".") {
+        if !idx.files.is_empty() {
+            let mut migrated = idx;
+            migrated.project_root = root_abs.clone();
+            let _ = migrated.save();
+            return migrated;
         }
     }
 
     // Try absolute cwd
     if let Ok(cwd) = std::env::current_dir() {
         let cwd_str = cwd.to_string_lossy().to_string();
-        if cwd_str != project_root {
+        if cwd_str != root_abs {
             if let Some(idx) = ProjectIndex::load(&cwd_str) {
                 if !idx.files.is_empty() {
                     return idx;
@@ -177,7 +190,7 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
     }
 
     // No existing index found anywhere — auto-build
-    scan(project_root)
+    scan(&root_abs)
 }
 
 pub fn scan(project_root: &str) -> ProjectIndex {
