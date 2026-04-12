@@ -1,0 +1,139 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docsRemoteSetup.sidebarRemoteSetup'),
+    items: [
+      { label: t('docsRemoteSetup.sidebarOverview'), href: lp('/docs/remote-setup') },
+      { label: t('docsRemoteSetup.sidebarSshTunnel'), href: lp('/docs/remote-setup') + '#ssh-tunnel' },
+      { label: t('docsRemoteSetup.sidebarPortForwarding'), href: lp('/docs/remote-setup') + '#port-forwarding' },
+      { label: t('docsRemoteSetup.sidebarDocker'), href: lp('/docs/remote-setup') + '#docker' },
+      { label: t('docsRemoteSetup.sidebarTroubleshooting'), href: lp('/docs/remote-setup') + '#troubleshooting' },
+    ],
+  },
+  {
+    title: t('docsRemoteSetup.sidebarRelated'),
+    items: [
+      { label: t('docsRemoteSetup.sidebarGettingStarted'), href: lp('/docs/getting-started') },
+      { label: t('docsRemoteSetup.sidebarConfiguration'), href: lp('/docs/configuration') },
+      { label: t('docsRemoteSetup.sidebarCliReference'), href: lp('/docs/cli-reference') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docsRemoteSetup.title')} description={t('docsRemoteSetup.description')} sidebar={sidebar}>
+
+  <p set:html={t('docsRemoteSetup.intro')} />
+
+  <hr />
+
+  <!-- SSH Tunnel -->
+  <h2 id="ssh-tunnel" set:html={t('docsRemoteSetup.sshTunnelTitle')} />
+
+  <p set:html={t('docsRemoteSetup.sshTunnelDesc')} />
+
+  <h3 set:html={t('docsRemoteSetup.sshStep1Title')} />
+  <p set:html={t('docsRemoteSetup.sshStep1Desc')} />
+  <pre><code>ssh user@server
+cargo install lean-ctx
+# or
+curl -fsSL https://leanctx.com/install.sh | sh</code></pre>
+
+  <h3 set:html={t('docsRemoteSetup.sshStep2Title')} />
+  <p set:html={t('docsRemoteSetup.sshStep2Desc')} />
+  <pre><code># Terminal 1: SSH tunnel (keeps running)
+ssh -L 3333:localhost:3333 user@server "lean-ctx dashboard --port 3333"
+
+# Or just forward the MCP stdio over SSH:
+ssh user@server "lean-ctx"</code></pre>
+
+  <h3 set:html={t('docsRemoteSetup.sshStep3Title')} />
+  <p set:html={t('docsRemoteSetup.sshStep3Desc')} />
+  <pre><code>{`// ~/.cursor/mcp.json or ~/.claude.json
+{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "ssh",
+      "args": ["user@server", "lean-ctx"]
+    }
+  }
+}`}</code></pre>
+
+  <p set:html={t('docsRemoteSetup.sshStep3Note')} />
+
+  <hr />
+
+  <!-- Port Forwarding -->
+  <h2 id="port-forwarding" set:html={t('docsRemoteSetup.portForwardingTitle')} />
+
+  <p set:html={t('docsRemoteSetup.portForwardingDesc')} />
+
+  <h3 set:html={t('docsRemoteSetup.persistentTunnelTitle')} />
+  <pre><code>{`# ~/.ssh/config
+Host dev-server
+  HostName 192.168.1.100
+  User developer
+  LocalForward 3333 localhost:3333
+  ServerAliveInterval 60
+  ServerAliveCountMax 3`}</code></pre>
+
+  <p set:html={t('docsRemoteSetup.persistentTunnelDesc')} />
+  <pre><code>ssh dev-server "lean-ctx dashboard --port 3333"
+# Dashboard now available at http://localhost:3333</code></pre>
+
+  <h3 set:html={t('docsRemoteSetup.vscodeSshTitle')} />
+  <p set:html={t('docsRemoteSetup.vscodeSshDesc')} />
+
+  <hr />
+
+  <!-- Docker -->
+  <h2 id="docker" set:html={t('docsRemoteSetup.dockerTitle')} />
+
+  <p set:html={t('docsRemoteSetup.dockerDesc')} />
+
+  <pre><code>{`# Mount lean-ctx binary into your dev container
+docker run -it \\
+  -v $(which lean-ctx):/usr/local/bin/lean-ctx:ro \\
+  -v ~/.lean-ctx:/root/.lean-ctx \\
+  your-dev-image bash`}</code></pre>
+
+  <p set:html={t('docsRemoteSetup.dockerComposeDesc')} />
+  <pre><code>{`# docker-compose.yml
+services:
+  dev:
+    image: your-dev-image
+    volumes:
+      - ./:/workspace
+      - lean-ctx-bin:/usr/local/bin/lean-ctx:ro
+      - ~/.lean-ctx:/root/.lean-ctx`}</code></pre>
+
+  <hr />
+
+  <!-- Troubleshooting -->
+  <h2 id="troubleshooting" set:html={t('docsRemoteSetup.troubleshootingTitle')} />
+
+  <h3 set:html={t('docsRemoteSetup.troubleConnectionDrops')} />
+  <p set:html={t('docsRemoteSetup.troubleConnectionDropsDesc')} />
+  <pre><code>ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 user@server "lean-ctx"</code></pre>
+
+  <h3 set:html={t('docsRemoteSetup.troublePermissionDenied')} />
+  <p set:html={t('docsRemoteSetup.troublePermissionDeniedDesc')} />
+
+  <h3 set:html={t('docsRemoteSetup.troubleVersionMismatch')} />
+  <p set:html={t('docsRemoteSetup.troubleVersionMismatchDesc')} />
+  <pre><code># Check versions on both machines
+lean-ctx --version              # local
+ssh user@server "lean-ctx --version"  # remote</code></pre>
+
+  <h3 set:html={t('docsRemoteSetup.troubleDiagnostics')} />
+  <p set:html={t('docsRemoteSetup.troubleDiagnosticsDesc')} />
+  <pre><code>ssh user@server "lean-ctx doctor"</code></pre>
+
+</DocsLayout>
