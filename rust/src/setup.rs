@@ -598,9 +598,12 @@ fn write_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, Stri
     }
 }
 
-fn lean_ctx_server_entry(binary: &str) -> serde_json::Value {
+fn lean_ctx_server_entry(binary: &str, data_dir: &str) -> serde_json::Value {
     serde_json::json!({
         "command": binary,
+        "env": {
+            "LEAN_CTX_DATA_DIR": data_dir
+        },
         "autoApprove": [
             "ctx_read", "ctx_shell", "ctx_search", "ctx_tree",
             "ctx_overview", "ctx_compress", "ctx_metrics", "ctx_session",
@@ -614,7 +617,12 @@ fn lean_ctx_server_entry(binary: &str) -> serde_json::Value {
 }
 
 fn write_mcp_json(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    let desired = lean_ctx_server_entry(binary);
+    let data_dir = dirs::home_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?
+        .join(".lean-ctx")
+        .to_string_lossy()
+        .to_string();
+    let desired = lean_ctx_server_entry(binary, &data_dir);
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
         let mut json =
