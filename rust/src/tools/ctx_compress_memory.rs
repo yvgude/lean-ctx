@@ -263,12 +263,14 @@ mod tests {
     #[test]
     fn backup_path_computed_correctly() {
         assert_eq!(
-            build_backup_path("/home/user/.cursorrules"),
-            "/home/user/.cursorrules.original.md"
+            Path::new(&build_backup_path("/home/user/.cursorrules")),
+            Path::new("/home/user")
+                .join(".cursorrules.original.md")
+                .as_path()
         );
         assert_eq!(
-            build_backup_path("/project/CLAUDE.md"),
-            "/project/CLAUDE.original.md"
+            Path::new(&build_backup_path("/project/CLAUDE.md")),
+            Path::new("/project").join("CLAUDE.original.md").as_path()
         );
     }
 }
