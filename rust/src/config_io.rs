@@ -56,4 +56,3 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
 
     Ok(())
 }
-

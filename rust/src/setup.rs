@@ -275,7 +275,12 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
     };
 
     match agent {
-        "cursor" => push(&mut targets, "Cursor", home.join(".cursor/mcp.json"), ConfigType::McpJson),
+        "cursor" => push(
+            &mut targets,
+            "Cursor",
+            home.join(".cursor/mcp.json"),
+            ConfigType::McpJson,
+        ),
         "claude" | "claude-code" => push(
             &mut targets,
             "Claude Code",
@@ -327,7 +332,12 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             ConfigType::McpJson,
         ),
         "cline" => push(&mut targets, "Cline", cline_mcp_path(), ConfigType::McpJson),
-        "roo" => push(&mut targets, "Roo Code", roo_mcp_path(), ConfigType::McpJson),
+        "roo" => push(
+            &mut targets,
+            "Roo Code",
+            roo_mcp_path(),
+            ConfigType::McpJson,
+        ),
         "kiro" => push(
             &mut targets,
             "AWS Kiro",
@@ -601,7 +611,8 @@ fn write_mcp_json(target: &EditorTarget, binary: &str) -> Result<WriteAction, St
     let desired = lean_ctx_server_entry(binary);
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+        let mut json =
+            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
         let obj = json
             .as_object_mut()
             .ok_or_else(|| "root JSON must be an object".to_string())?;
@@ -652,7 +663,8 @@ fn write_zed_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, 
     });
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+        let mut json =
+            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
         let obj = json
             .as_object_mut()
             .ok_or_else(|| "root JSON must be an object".to_string())?;
@@ -711,7 +723,8 @@ fn write_vscode_mcp(target: &EditorTarget, binary: &str) -> Result<WriteAction, 
     let desired = serde_json::json!({ "command": binary, "args": [] });
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+        let mut json =
+            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
         let obj = json
             .as_object_mut()
             .ok_or_else(|| "root JSON must be an object".to_string())?;
@@ -762,7 +775,8 @@ fn write_opencode_config(target: &EditorTarget, binary: &str) -> Result<WriteAct
     });
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+        let mut json =
+            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
         let obj = json
             .as_object_mut()
             .ok_or_else(|| "root JSON must be an object".to_string())?;
@@ -810,7 +824,8 @@ fn write_crush_config(target: &EditorTarget, binary: &str) -> Result<WriteAction
     let desired = serde_json::json!({ "type": "stdio", "command": binary });
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+        let mut json =
+            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
         let obj = json
             .as_object_mut()
             .ok_or_else(|| "root JSON must be an object".to_string())?;
@@ -929,27 +944,39 @@ mod tests {
         let action = write_mcp_json(&t, "/new/path/lean-ctx").unwrap();
         assert_eq!(action, WriteAction::Updated);
 
-        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap())
-            .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
-        assert_eq!(json["mcpServers"]["lean-ctx"]["command"], "/new/path/lean-ctx");
+        assert_eq!(
+            json["mcpServers"]["lean-ctx"]["command"],
+            "/new/path/lean-ctx"
+        );
         assert!(json["mcpServers"]["lean-ctx"]["autoApprove"].is_array());
-        assert!(json["mcpServers"]["lean-ctx"]["autoApprove"].as_array().unwrap().len() > 5);
+        assert!(
+            json["mcpServers"]["lean-ctx"]["autoApprove"]
+                .as_array()
+                .unwrap()
+                .len()
+                > 5
+        );
     }
 
     #[test]
     fn crush_config_writes_mcp_root() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("crush.json");
-        std::fs::write(&path, r#"{ "mcp": { "lean-ctx": { "type": "stdio", "command": "old" } } }"#)
-            .unwrap();
+        std::fs::write(
+            &path,
+            r#"{ "mcp": { "lean-ctx": { "type": "stdio", "command": "old" } } }"#,
+        )
+        .unwrap();
 
         let t = target(path.clone(), ConfigType::Crush);
         let action = write_crush_config(&t, "new").unwrap();
         assert_eq!(action, WriteAction::Updated);
 
-        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap())
-            .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(json["mcp"]["lean-ctx"]["type"], "stdio");
         assert_eq!(json["mcp"]["lean-ctx"]["command"], "new");
     }
