@@ -184,14 +184,21 @@ pub async fn exchange_magic_link(
 
     let jwt = mint_jwt(&state, user_id)?;
     let cookie = format!(
-        "leanctx_session={jwt}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={}",
+        "leanctx_session={jwt}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age={}",
         60 * 60 * 24 * 7
     );
 
-    let mut res = axum::response::Response::new(axum::body::Body::from("ok"));
+    let body = serde_json::json!({ "token": jwt });
+    let mut res = axum::response::Response::new(
+        axum::body::Body::from(serde_json::to_string(&body).unwrap()),
+    );
     *res.status_mut() = StatusCode::OK;
     res.headers_mut()
         .insert(axum::http::header::SET_COOKIE, cookie.parse().unwrap());
+    res.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
     Ok(res)
 }
 
@@ -231,11 +238,23 @@ pub async fn auth_user(
     if let Some(v) = headers.get(axum::http::header::AUTHORIZATION) {
         if let Ok(s) = v.to_str() {
             if let Some(key) = s.strip_prefix("Bearer ").map(|x| x.trim()) {
+                if let Ok(td) = jsonwebtoken::decode::<Claims>(
+                    key,
+                    &jsonwebtoken::DecodingKey::from_secret(&state.jwt_secret),
+                    &Validation::default(),
+                ) {
+                    let user_id: Uuid = td.claims.sub.parse()
+                        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".into()))?;
+                    let email = lookup_user_email(&state.pool, user_id).await
+                        .map_err(internal_error)?
+                        .unwrap_or_default();
+                    return Ok((user_id, email));
+                }
                 let sha = sha256_hex(key);
                 if let Some((user_id, email)) = lookup_api_key(&state.pool, &sha).await.map_err(internal_error)? {
                     return Ok((user_id, email));
                 }
-                return Err((StatusCode::UNAUTHORIZED, "Invalid API key".into()));
+                return Err((StatusCode::UNAUTHORIZED, "Invalid token".into()));
             }
         }
     }
