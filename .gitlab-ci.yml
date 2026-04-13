@@ -1,0 +1,64 @@
+# GitLab CI/CD — lean-ctx website deployment
+# Triggered on the `deploy` branch → builds & restarts the lean-ctx-web Docker container
+#
+# Required GitLab CI/CD Variables (Settings → CI/CD → Variables):
+#   LEANCTX_SSH_KEY   — private SSH key content (type: File, protected: yes)
+#   LEANCTX_SSH_HOST  — server IP (e.g. 185.142.213.170)
+#   LEANCTX_SSH_USER  — SSH username (e.g. administrator)
+
+stages:
+  - deploy
+
+deploy-website:
+  stage: deploy
+  image: alpine:latest
+  only:
+    - deploy
+  before_script:
+    - apk add --no-cache openssh-client rsync
+    - eval $(ssh-agent -s)
+    - chmod 600 "$LEANCTX_SSH_KEY"
+    - ssh-add "$LEANCTX_SSH_KEY"
+    - mkdir -p ~/.ssh
+    - ssh-keyscan -H "$LEANCTX_SSH_HOST" >> ~/.ssh/known_hosts
+  script:
+    # Sync website/dist + nginx.conf + Dockerfile to server
+    - |
+      rsync -avz --delete \
+        website/dist/ \
+        website/nginx.conf \
+        website/Dockerfile \
+        "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST:/home/$LEANCTX_SSH_USER/lean-ctx-web/"
+    # Rebuild image and restart container on server
+    - |
+      ssh "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST" '
+        set -e
+        cd /home/'"$LEANCTX_SSH_USER"'/lean-ctx-web
+
+        echo "[1/4] Building Docker image..."
+        docker build -t lean-ctx-web .
+
+        echo "[2/4] Stopping old container..."
+        docker stop lean-ctx-web || true
+        docker rm lean-ctx-web || true
+
+        echo "[3/4] Starting new container..."
+        docker run -d \
+          --name lean-ctx-web \
+          --network coolify \
+          --restart unless-stopped \
+          --label "traefik.enable=true" \
+          --label "traefik.docker.network=coolify" \
+          --label "traefik.http.routers.lean-ctx.entrypoints=https" \
+          --label "traefik.http.routers.lean-ctx.rule=Host(\`leanctx.com\`) || Host(\`www.leanctx.com\`) || Host(\`lean-ctx.pounce.ch\`) || Host(\`leanctx.tech\`) || Host(\`www.leanctx.tech\`)" \
+          --label "traefik.http.routers.lean-ctx.tls=true" \
+          --label "traefik.http.routers.lean-ctx.tls.certresolver=letsencrypt" \
+          --label "traefik.http.services.lean-ctx.loadbalancer.server.port=80" \
+          lean-ctx-web
+
+        echo "[4/4] Done. Container status:"
+        docker ps --filter name=lean-ctx-web --format "table {{.Names}}\t{{.Status}}"
+      '
+  environment:
+    name: production
+    url: https://leanctx.com
