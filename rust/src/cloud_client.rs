@@ -97,7 +97,10 @@ pub fn sync_stats(stats: &[serde_json::Value]) -> Result<String, String> {
 pub fn contribute(entries: &[serde_json::Value]) -> Result<String, String> {
     let url = format!("{}/api/contribute", api_url());
 
-    let body = serde_json::json!({ "entries": entries });
+    let body = serde_json::json!({
+        "entries": entries,
+        "device_hash": device_hash()
+    });
 
     let resp = ureq::post(&url)
         .header("Content-Type", "application/json")
@@ -116,6 +119,66 @@ pub fn contribute(entries: &[serde_json::Value]) -> Result<String, String> {
         .as_str()
         .unwrap_or("Contributed")
         .to_string())
+}
+
+pub fn device_hash() -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let hostname = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default();
+    let input = format!("{hostname}:{user}:lean-ctx");
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    let h1 = hasher.finish();
+    let mut hasher2 = DefaultHasher::new();
+    format!("{h1}:salt").hash(&mut hasher2);
+    let h2 = hasher2.finish();
+    format!("{h1:016x}{h2:016x}")
+}
+
+pub fn fetch_leaderboard() -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/leaderboard", api_url());
+    let resp = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("Request failed: {e}"))?;
+    let body = resp.into_body().read_to_string().map_err(|e| format!("{e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {e}"))
+}
+
+pub fn fetch_global_stats() -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/global-stats", api_url());
+    let resp = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("Request failed: {e}"))?;
+    let body = resp.into_body().read_to_string().map_err(|e| format!("{e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {e}"))
+}
+
+pub fn fetch_profile() -> Result<serde_json::Value, String> {
+    let api_key = load_api_key().ok_or("Not logged in. Run: lean-ctx login")?;
+    let url = format!("{}/api/profile", api_url());
+    let resp = ureq::get(&url)
+        .header("Authorization", &format!("Bearer {api_key}"))
+        .call()
+        .map_err(|e| format!("Request failed: {e}"))?;
+    let body = resp.into_body().read_to_string().map_err(|e| format!("{e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {e}"))
+}
+
+pub fn accept_invite(code: &str) -> Result<serde_json::Value, String> {
+    let api_key = load_api_key().ok_or("Not logged in. Run: lean-ctx login")?;
+    let url = format!("{}/api/invite/{}/accept", api_url(), code);
+    let resp = ureq::post(&url)
+        .header("Authorization", &format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .send(b"{}".as_slice())
+        .map_err(|e| format!("Request failed: {e}"))?;
+    let body = resp.into_body().read_to_string().map_err(|e| format!("{e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {e}"))
 }
 
 pub fn push_knowledge(entries: &[serde_json::Value]) -> Result<String, String> {

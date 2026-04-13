@@ -273,6 +273,14 @@ fn main() {
                 cmd_cloud(&rest);
                 return;
             }
+            "leaderboard" | "lb" => {
+                cmd_leaderboard();
+                return;
+            }
+            "profile" => {
+                cmd_profile();
+                return;
+            }
             "upgrade" => {
                 cmd_upgrade();
                 return;
@@ -522,13 +530,30 @@ GITHUB:  https://github.com/yvgude/lean-ctx
 }
 
 fn cmd_login(args: &[String]) {
-    let email = match args.first() {
-        Some(e) => e.trim().to_lowercase(),
-        None => {
-            eprintln!("Usage: lean-ctx login <email>");
-            std::process::exit(1);
+    let mut email = String::new();
+    let mut invite_code: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--invite" => {
+                i += 1;
+                if i < args.len() {
+                    invite_code = Some(args[i].clone());
+                }
+            }
+            _ => {
+                if email.is_empty() {
+                    email = args[i].trim().to_lowercase();
+                }
+            }
         }
-    };
+        i += 1;
+    }
+
+    if email.is_empty() {
+        eprintln!("Usage: lean-ctx login <email> [--invite CODE]");
+        std::process::exit(1);
+    }
 
     if !email.contains('@') || !email.contains('.') {
         eprintln!("Invalid email address: {email}");
@@ -545,6 +570,14 @@ fn cmd_login(args: &[String]) {
             }
             println!("Logged in as {email}");
             println!("API key saved to ~/.lean-ctx/cloud/credentials.json");
+
+            if let Some(code) = invite_code {
+                println!("Accepting invite {code}...");
+                match cloud_client::accept_invite(&code) {
+                    Ok(_) => println!("Joined team via invite!"),
+                    Err(e) => eprintln!("Could not accept invite: {e}"),
+                }
+            }
         }
         Err(e) => {
             eprintln!("Login failed: {e}");
@@ -812,6 +845,113 @@ fn cmd_cloud(args: &[String]) {
             println!("  pull-models — Update adaptive compression models");
             println!("  status      — Show cloud connection status");
         }
+    }
+}
+
+fn cmd_leaderboard() {
+    match cloud_client::fetch_leaderboard() {
+        Ok(data) => {
+            if let Some(arr) = data.as_array() {
+                if arr.is_empty() {
+                    println!("Leaderboard is empty. Be the first to sync stats!");
+                    return;
+                }
+                println!("\n  LeanCTX Leaderboard — Top Token Savers\n");
+                println!("  {:<4} {:<14} {:<12} {}", "#", "User", "Saved", "Badges");
+                println!("  {}", "-".repeat(56));
+                for entry in arr.iter().take(15) {
+                    let rank = entry["rank"].as_i64().unwrap_or(0);
+                    let hash = entry["display_hash"].as_str().unwrap_or("?");
+                    let name = entry["username"].as_str().unwrap_or(hash);
+                    let saved = entry["total_tokens_saved"].as_i64().unwrap_or(0);
+                    let badges = entry["badges"]
+                        .as_array()
+                        .map(|b| {
+                            b.iter()
+                                .filter_map(|v| v.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    let saved_str = format_token_count(saved);
+                    println!("  {:<4} {:<14} {:<12} {}", rank, name, saved_str, badges);
+                }
+                println!();
+            } else {
+                println!("Unexpected response format.");
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to fetch leaderboard: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_profile() {
+    if !cloud_client::is_logged_in() {
+        eprintln!("Not logged in. Run: lean-ctx login <email>");
+        std::process::exit(1);
+    }
+
+    match cloud_client::fetch_profile() {
+        Ok(data) => {
+            let hash = data["display_hash"].as_str().unwrap_or("?");
+            let username = data["username"].as_str();
+            let saved = data["total_tokens_saved"].as_i64().unwrap_or(0);
+            let rank = data["rank"].as_i64().unwrap_or(0);
+            let invite = data["invite_code"].as_str().unwrap_or("?");
+            let badges = data["badges"]
+                .as_array()
+                .map(|b| {
+                    b.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_else(|| "none yet".into());
+
+            println!("\n  LeanCTX Profile\n");
+            println!("  Hash:     {hash}");
+            if let Some(name) = username {
+                println!("  Username: {name}");
+            }
+            println!("  Rank:     #{rank}");
+            println!("  Saved:    {}", format_token_count(saved));
+            println!("  Badges:   {badges}");
+            println!("  Invite:   {invite}");
+
+            if let Some(team) = data["team"].as_object() {
+                let team_name = team["name"].as_str().unwrap_or("?");
+                let team_saved = team["total_tokens_saved"].as_i64().unwrap_or(0);
+                let members = team["member_count"].as_i64().unwrap_or(0);
+                let is_owner = team["is_owner"].as_bool().unwrap_or(false);
+                println!("\n  Team:     {team_name} ({members} members)");
+                println!("  Team Saved: {}", format_token_count(team_saved));
+                if is_owner {
+                    println!("  Role:     Owner");
+                }
+            } else {
+                println!("\n  Team:     none (share your invite code to create one!)");
+            }
+            println!();
+        }
+        Err(e) => {
+            eprintln!("Failed to fetch profile: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn format_token_count(tokens: i64) -> String {
+    if tokens >= 1_000_000_000 {
+        format!("{:.1}B", tokens as f64 / 1_000_000_000.0)
+    } else if tokens >= 1_000_000 {
+        format!("{:.1}M", tokens as f64 / 1_000_000.0)
+    } else if tokens >= 1_000 {
+        format!("{:.1}K", tokens as f64 / 1_000.0)
+    } else {
+        format!("{tokens}")
     }
 }
 

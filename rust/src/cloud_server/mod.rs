@@ -2,8 +2,12 @@ mod auth;
 mod config;
 mod contribute;
 mod db;
+mod global_stats;
+mod invite;
 mod knowledge;
+mod leaderboard;
 mod models;
+pub(crate) mod profile;
 mod stats;
 
 use axum::routing::{get, post};
@@ -32,6 +36,7 @@ pub async fn run() -> anyhow::Result<()> {
         .allow_methods([
             Method::GET,
             Method::POST,
+            Method::PATCH,
             Method::OPTIONS,
         ])
         .allow_headers([
@@ -54,6 +59,15 @@ pub async fn run() -> anyhow::Result<()> {
         )
         .route("/api/cloud/models", get(models::get_models))
         .route("/api/pro/models", get(models::get_models))
+        .route("/api/leaderboard", get(leaderboard::get_leaderboard))
+        .route("/api/leaderboard/teams", get(leaderboard::get_team_leaderboard))
+        .route("/api/global-stats", get(global_stats::get_global_stats))
+        .route("/api/profile", get(profile::get_profile).post(profile::patch_profile))
+        .route("/api/profile/leave-team", post(profile::leave_team))
+        .route("/api/profile/rename-team", post(profile::rename_team))
+        .route("/api/invite/generate", post(invite::generate_invite))
+        .route("/api/invite/:code", get(invite::get_invite_info))
+        .route("/api/invite/:code/accept", post(invite::accept_invite))
         .with_state(state)
         .layer(cors);
 

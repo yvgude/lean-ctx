@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS contribute_entries (
   file_ext TEXT NOT NULL,
   size_bucket TEXT NOT NULL,
   best_mode TEXT NOT NULL,
-  compression_ratio DOUBLE PRECISION NOT NULL
+  compression_ratio DOUBLE PRECISION NOT NULL,
+  device_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS magic_links (
@@ -75,6 +76,42 @@ CREATE TABLE IF NOT EXISTS models_snapshot (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   payload_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS teams (
+  id UUID PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_id UUID NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  display_hash TEXT NOT NULL UNIQUE,
+  username TEXT,
+  total_tokens_saved BIGINT NOT NULL DEFAULT 0,
+  badge_flags INTEGER NOT NULL DEFAULT 0,
+  invite_code TEXT NOT NULL UNIQUE,
+  invited_by UUID REFERENCES users(id),
+  team_id UUID REFERENCES teams(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS global_counters (
+  key TEXT PRIMARY KEY,
+  value BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO global_counters (key, value) VALUES ('total_tokens_saved', 0)
+  ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_counters (key, value) VALUES ('total_users', 0)
+  ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_counters (key, value) VALUES ('total_contributions', 0)
+  ON CONFLICT (key) DO NOTHING;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contribute_device_day
+  ON contribute_entries (device_hash, (created_at::date))
+  WHERE device_hash IS NOT NULL;
 "#,
         )
         .await?;

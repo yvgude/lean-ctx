@@ -84,6 +84,15 @@ pub async fn post_stats(
     for entry in env.stats {
         upsert_daily(&state, user_id, entry).await?;
     }
+
+    let client = state.pool.get().await.map_err(internal_error)?;
+    super::profile::ensure_profile(&client, user_id)
+        .await
+        .map_err(internal_error)?;
+    super::profile::recalculate_tokens(&client, user_id)
+        .await
+        .map_err(internal_error)?;
+
     Ok(Json(serde_json::json!({ "message": "Synced" })))
 }
 
