@@ -84,8 +84,8 @@ const { id, label, columns } = Astro.props;
   .mega-dd-panel {
     position: absolute;
     top: calc(100% + 14px);
-    left: 50%;
-    transform: translateX(-50%) translateY(8px);
+    left: 0;
+    transform: translateY(8px);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -98,7 +98,7 @@ const { id, label, columns } = Astro.props;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
 
   .mega-dd-inner {

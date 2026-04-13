@@ -506,6 +506,25 @@ const docsColumns = [
     update();
   }
 
+  function positionPanel(wrapper: HTMLElement) {
+    const panel = wrapper.querySelector<HTMLElement>('.mega-dd-panel');
+    if (!panel) return;
+    panel.style.left = '0';
+    const triggerRect = wrapper.getBoundingClientRect();
+    const panelWidth = panel.offsetWidth;
+    const viewportW = window.innerWidth;
+    const pad = 12;
+    let idealLeft = (triggerRect.width - panelWidth) / 2;
+    const absLeft = triggerRect.left + idealLeft;
+    const absRight = absLeft + panelWidth;
+    if (absLeft < pad) {
+      idealLeft += pad - absLeft;
+    } else if (absRight > viewportW - pad) {
+      idealLeft -= absRight - (viewportW - pad);
+    }
+    panel.style.left = `${idealLeft}px`;
+  }
+
   document.querySelectorAll<HTMLDivElement>('.mega-dd-wrapper').forEach(wrapper => {
     const trigger = wrapper.querySelector('.mega-dd-trigger');
     let closeTimer: ReturnType<typeof setTimeout>;
@@ -516,6 +535,7 @@ const docsColumns = [
       });
       wrapper.classList.add('is-open');
       trigger?.setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(() => positionPanel(wrapper));
     }
     function close() {
       closeTimer = setTimeout(() => {
