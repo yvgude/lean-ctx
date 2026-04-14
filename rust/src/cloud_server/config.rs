@@ -3,6 +3,7 @@ pub struct Config {
     pub bind_host: String,
     pub bind_port: u16,
     pub public_base_url: String,
+    pub api_base_url: String,
     pub database_url: String,
     pub jwt_secret: String,
     pub smtp_host: Option<String>,
@@ -22,6 +23,8 @@ impl Config {
             .unwrap_or(8088);
         let public_base_url = std::env::var("LEANCTX_CLOUD_PUBLIC_BASE_URL")
             .unwrap_or_else(|_| "https://leanctx.com".into());
+        let api_base_url = std::env::var("LEANCTX_CLOUD_API_BASE_URL")
+            .unwrap_or_else(|_| "https://api.leanctx.com".into());
         let database_url = std::env::var("LEANCTX_CLOUD_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
             .map_err(|_| {
@@ -42,6 +45,7 @@ impl Config {
             bind_host,
             bind_port,
             public_base_url,
+            api_base_url,
             database_url,
             jwt_secret,
             smtp_host,

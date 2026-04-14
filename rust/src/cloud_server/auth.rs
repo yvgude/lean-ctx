@@ -154,7 +154,7 @@ pub async fn register(
                 .map_err(internal_error)?;
             let link = format!(
                 "{}/api/auth/verify-email?token={}",
-                state.cfg.public_base_url.trim_end_matches('/'),
+                state.cfg.api_base_url.trim_end_matches('/'),
                 token
             );
             if mailer.send_verification(&email, &link).await.is_ok() {
@@ -191,7 +191,7 @@ pub async fn register(
             .map_err(internal_error)?;
         let link = format!(
             "{}/api/auth/verify-email?token={}",
-            state.cfg.public_base_url.trim_end_matches('/'),
+            state.cfg.api_base_url.trim_end_matches('/'),
             token
         );
         if mailer.send_verification(&email, &link).await.is_ok() {
@@ -261,7 +261,7 @@ pub async fn login(
                 .map_err(internal_error)?;
             let link = format!(
                 "{}/api/auth/verify-email?token={}",
-                state.cfg.public_base_url.trim_end_matches('/'),
+                state.cfg.api_base_url.trim_end_matches('/'),
                 token
             );
             let _ = mailer.send_verification(&email, &link).await;
@@ -442,7 +442,7 @@ pub async fn resend_verification(
                     .map_err(internal_error)?;
                 let link = format!(
                     "{}/api/auth/verify-email?token={}",
-                    state.cfg.public_base_url.trim_end_matches('/'),
+                    state.cfg.api_base_url.trim_end_matches('/'),
                     token
                 );
                 let _ = mailer.send_verification(&email, &link).await;
