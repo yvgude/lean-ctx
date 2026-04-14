@@ -112,7 +112,7 @@ pub fn normalize_tool_path(path: &str) -> String {
     p
 }
 
-fn generate_rewrite_script(binary: &str) -> String {
+pub fn generate_rewrite_script(binary: &str) -> String {
     format!(
         r#"#!/usr/bin/env bash
 # lean-ctx PreToolUse hook — rewrites bash commands to lean-ctx equivalents
@@ -147,7 +147,7 @@ esac
     )
 }
 
-fn generate_compact_rewrite_script(binary: &str) -> String {
+pub fn generate_compact_rewrite_script(binary: &str) -> String {
     format!(
         r#"#!/usr/bin/env bash
 # lean-ctx hook — rewrites shell commands
@@ -364,9 +364,10 @@ pub fn install_agent_hook(agent: &str, global: bool) {
             &dirs::home_dir().unwrap_or_default().join(".amp/mcp.json"),
         ),
         "crush" => install_crush_hook(),
+        "antigravity" => install_gemini_hook(),
         _ => {
             eprintln!("Unknown agent: {agent}");
-            eprintln!("  Supported: claude, cursor, gemini, codex, windsurf, cline, roo, copilot, pi, qwen, trae, amazonq, jetbrains, kiro, verdent, opencode, aider, amp, crush");
+            eprintln!("  Supported: claude, cursor, gemini, codex, windsurf, cline, roo, copilot, pi, qwen, trae, amazonq, jetbrains, kiro, verdent, opencode, aider, amp, crush, antigravity");
             std::process::exit(1);
         }
     }
