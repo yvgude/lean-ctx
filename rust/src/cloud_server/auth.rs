@@ -20,6 +20,7 @@ pub async fn health() -> impl IntoResponse {
 pub struct AppState {
     pub pool: Pool,
     pub cfg: Config,
+    #[allow(dead_code)]
     pub jwt_secret: std::sync::Arc<Vec<u8>>,
     pub mailer: Option<Mailer>,
 }
