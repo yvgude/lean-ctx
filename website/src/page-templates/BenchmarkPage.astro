@@ -7,21 +7,21 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
 const readModes = [
-  { mode: 'full',       color: 'text-muted',   bg: 'bg-surface-2',   barPct: 0,  savings: t('benchmark.modeFullSavings'),       useCase: t('benchmark.modeFullUseCase'),       preserves: t('benchmark.modeFullPreserves') },
-  { mode: 'map',        color: 'text-accent',   bg: 'bg-accent/10',   barPct: 82, savings: t('benchmark.modeMapSavings'),        useCase: t('benchmark.modeMapUseCase'),        preserves: t('benchmark.modeMapPreserves') },
-  { mode: 'signatures', color: 'text-accent',   bg: 'bg-accent/10',   barPct: 78, savings: t('benchmark.modeSignaturesSavings'), useCase: t('benchmark.modeSignaturesUseCase'), preserves: t('benchmark.modeSignaturesPreserves') },
-  { mode: 'diff',       color: 'text-accent-2', bg: 'bg-accent-2/10', barPct: 90, savings: t('benchmark.modeDiffSavings'),       useCase: t('benchmark.modeDiffUseCase'),       preserves: t('benchmark.modeDiffPreserves') },
-  { mode: 'aggressive', color: 'text-accent',   bg: 'bg-accent/10',   barPct: 85, savings: t('benchmark.modeAggressiveSavings'), useCase: t('benchmark.modeAggressiveUseCase'), preserves: t('benchmark.modeAggressivePreserves') },
-  { mode: 'entropy',    color: 'text-accent',   bg: 'bg-accent/10',   barPct: 78, savings: t('benchmark.modeEntropySavings'),    useCase: t('benchmark.modeEntropyUseCase'),    preserves: t('benchmark.modeEntropyPreserves') },
-  { mode: 'task',       color: 'text-accent-3', bg: 'bg-accent-3/10', barPct: 77, savings: t('benchmark.modeTaskSavings'),       useCase: t('benchmark.modeTaskUseCase'),       preserves: t('benchmark.modeTaskPreserves') },
+  { mode: 'full',       color: 'text-muted',   barColor: 'var(--color-muted)',    barPct: 0,  savings: t('benchmark.modeFullSavings'),       useCase: t('benchmark.modeFullUseCase'),       preserves: t('benchmark.modeFullPreserves') },
+  { mode: 'map',        color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 82, savings: t('benchmark.modeMapSavings'),        useCase: t('benchmark.modeMapUseCase'),        preserves: t('benchmark.modeMapPreserves') },
+  { mode: 'signatures', color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 78, savings: t('benchmark.modeSignaturesSavings'), useCase: t('benchmark.modeSignaturesUseCase'), preserves: t('benchmark.modeSignaturesPreserves') },
+  { mode: 'diff',       color: 'text-accent-2', barColor: 'var(--color-accent-2)', barPct: 90, savings: t('benchmark.modeDiffSavings'),       useCase: t('benchmark.modeDiffUseCase'),       preserves: t('benchmark.modeDiffPreserves') },
+  { mode: 'aggressive', color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 85, savings: t('benchmark.modeAggressiveSavings'), useCase: t('benchmark.modeAggressiveUseCase'), preserves: t('benchmark.modeAggressivePreserves') },
+  { mode: 'entropy',    color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 78, savings: t('benchmark.modeEntropySavings'),    useCase: t('benchmark.modeEntropyUseCase'),    preserves: t('benchmark.modeEntropyPreserves') },
+  { mode: 'task',       color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 77, savings: t('benchmark.modeTaskSavings'),       useCase: t('benchmark.modeTaskUseCase'),       preserves: t('benchmark.modeTaskPreserves') },
 ];
 
 const realWorldExamples = [
-  { file: t('benchmark.realWorld1File'), detail: t('benchmark.realWorld1Detail'), tokens: t('benchmark.realWorld1Tokens'), savings: t('benchmark.realWorld1Savings'), accent: 'accent' },
-  { file: t('benchmark.realWorld2File'), detail: t('benchmark.realWorld2Detail'), tokens: t('benchmark.realWorld2Tokens'), savings: t('benchmark.realWorld2Savings'), accent: 'accent-2' },
-  { file: t('benchmark.realWorld3File'), detail: t('benchmark.realWorld3Detail'), tokens: t('benchmark.realWorld3Tokens'), savings: t('benchmark.realWorld3Savings'), accent: 'accent' },
-  { file: t('benchmark.realWorld4File'), detail: t('benchmark.realWorld4Detail'), tokens: t('benchmark.realWorld4Tokens'), savings: t('benchmark.realWorld4Savings'), accent: 'accent-3' },
-  { file: t('benchmark.realWorld5File'), detail: t('benchmark.realWorld5Detail'), tokens: t('benchmark.realWorld5Tokens'), savings: t('benchmark.realWorld5Savings'), accent: 'accent-2' },
+  { file: t('benchmark.realWorld1File'), detail: t('benchmark.realWorld1Detail'), tokens: t('benchmark.realWorld1Tokens'), savings: t('benchmark.realWorld1Savings'), barColor: 'var(--color-accent)',   textColor: 'var(--color-accent)' },
+  { file: t('benchmark.realWorld2File'), detail: t('benchmark.realWorld2Detail'), tokens: t('benchmark.realWorld2Tokens'), savings: t('benchmark.realWorld2Savings'), barColor: 'var(--color-accent-2)', textColor: 'var(--color-accent-2)' },
+  { file: t('benchmark.realWorld3File'), detail: t('benchmark.realWorld3Detail'), tokens: t('benchmark.realWorld3Tokens'), savings: t('benchmark.realWorld3Savings'), barColor: 'var(--color-accent)',   textColor: 'var(--color-accent)' },
+  { file: t('benchmark.realWorld4File'), detail: t('benchmark.realWorld4Detail'), tokens: t('benchmark.realWorld4Tokens'), savings: t('benchmark.realWorld4Savings'), barColor: 'var(--color-accent-3)', textColor: 'var(--color-accent-3)' },
+  { file: t('benchmark.realWorld5File'), detail: t('benchmark.realWorld5Detail'), tokens: t('benchmark.realWorld5Tokens'), savings: t('benchmark.realWorld5Savings'), barColor: 'var(--color-accent-2)', textColor: 'var(--color-accent-2)' },
 ];
 ---
 
@@ -39,30 +39,9 @@ const realWorldExamples = [
       <span class="gradient-text">{t('benchmark.heroTitleHighlight')}</span>
     </h1>
 
-    <div class="hero-proof animate-entrance stagger-2" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);">
-      <div class="hero-proof-item">
-        <span class="hero-proof-number font-display">95%</span>
-        <span class="hero-proof-label">{t('benchmark.heroProofSavings')}</span>
-      </div>
-      <div class="hero-proof-divider"></div>
-      <div class="hero-proof-item">
-        <span class="hero-proof-number font-display">98%</span>
-        <span class="hero-proof-label">{t('benchmark.heroProofQuality')}</span>
-      </div>
-      <div class="hero-proof-divider"></div>
-      <div class="hero-proof-item">
-        <span class="hero-proof-number font-display">7</span>
-        <span class="hero-proof-label">{t('benchmark.heroProofModes')}</span>
-      </div>
-    </div>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); max-width: 44rem;" set:html={t('benchmark.heroDesc')} />
 
-    <p class="fluid-body text-muted animate-entrance stagger-3" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 44rem;" set:html={t('benchmark.heroDesc')} />
-
-    <div class="bench-hero-cmd animate-entrance stagger-4" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);">
-      <code class="font-mono text-accent">{t('benchmark.heroCommand')}</code>
-    </div>
-
-    <div class="flex flex-wrap items-center animate-entrance stagger-5" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('benchmark.ctaGetStarted')}
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
@@ -252,7 +231,7 @@ const realWorldExamples = [
             <span class={`bench-mode-savings ${m.color}`}>{m.savings}</span>
           </div>
           <div class="bench-mode-bar-track">
-            <div class={`bench-mode-bar-fill ${m.bg}`} style={`width: ${m.barPct}%`}></div>
+            <div class="bench-mode-bar-fill" style={`width: ${m.barPct}%; background: ${m.barColor}`}></div>
           </div>
           <p class="fluid-sm text-text-bright" style="margin-bottom: 0.25rem;">{m.useCase}</p>
           <p class="text-[12px] text-muted">{m.preserves}</p>
@@ -380,14 +359,14 @@ const realWorldExamples = [
         <div class="card bench-realworld-card animate-entrance">
           <div class="bench-realworld-top">
             <span class="font-display font-semibold text-text-bright">{ex.file}</span>
-            <span class={`bench-realworld-pct text-${ex.accent}`}>{ex.savings}</span>
+            <span class="bench-realworld-pct" style={`color: ${ex.textColor}`}>{ex.savings}</span>
           </div>
           <p class="text-[12px] text-muted" style="margin-bottom: 0.75rem;">{ex.detail}</p>
           <div class="bench-realworld-tokens">
             <code class="text-[12px] font-mono text-muted">{ex.tokens}</code>
           </div>
           <div class="bench-realworld-bar-track">
-            <div class={`bench-realworld-bar-fill bg-${ex.accent}`} style={`width: ${ex.savings}`}></div>
+            <div class="bench-realworld-bar-fill" style={`width: ${ex.savings}; background: ${ex.barColor}`}></div>
           </div>
         </div>
       ))}
@@ -429,45 +408,6 @@ const realWorldExamples = [
 </BaseLayout>
 
 <style>
-  /* ── Hero command ────────────────────────── */
-  .bench-hero-cmd {
-    display: inline-flex;
-    padding: 0.625rem 1.25rem;
-    border-radius: 8px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
-  }
-
-  /* ── Hero proof (reuse IndexPage pattern) ── */
-  .hero-proof {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: clamp(1rem, 0.75rem + 0.75vw, 1.75rem);
-  }
-  .hero-proof-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .hero-proof-number {
-    font-size: clamp(1.5rem, 1.25rem + 1vw, 2.25rem);
-    font-weight: 700;
-    color: var(--color-text-bright);
-    letter-spacing: -0.03em;
-    line-height: 1;
-  }
-  .hero-proof-label {
-    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-    color: var(--color-muted);
-  }
-  .hero-proof-divider {
-    width: 1px;
-    height: 2rem;
-    background: var(--color-border);
-  }
-
   /* ── Before / After ─────────────────────── */
   .bench-compare {
     display: grid;
