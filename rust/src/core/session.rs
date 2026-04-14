@@ -695,7 +695,8 @@ fn extract_cd_target(command: &str, base_cwd: &str) -> Option<String> {
         Some(target.to_string())
     } else {
         let base = std::path::Path::new(base_cwd);
-        Some(base.join(target).to_string_lossy().to_string())
+        let joined = base.join(target).to_string_lossy().to_string();
+        Some(joined.replace('\\', "/"))
     }
 }
 

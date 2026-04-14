@@ -53,4 +53,5 @@ pub mod tokens;
 pub mod updater;
 pub mod vector_index;
 pub mod version_check;
+pub mod watcher;
 pub mod wrapped;
