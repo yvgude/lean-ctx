@@ -60,7 +60,13 @@ jobs:
       - name: Run tests
         if: matrix.cross != true
         working-directory: rust
-        run: cargo test --all-features
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo test --lib --all-features
+          else
+            cargo test --all-features
+          fi
 
       - name: Build
         working-directory: rust

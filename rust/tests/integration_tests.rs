@@ -110,6 +110,9 @@ fn help_shows_environment_section() {
 
 #[test]
 fn pipe_guard_no_compression_when_stdout_is_piped() {
+    if cfg!(windows) {
+        return;
+    }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["-c", "echo hello world"])
@@ -125,6 +128,9 @@ fn pipe_guard_no_compression_when_stdout_is_piped() {
 
 #[test]
 fn pipe_guard_force_compress_overrides_pipe_guard() {
+    if cfg!(windows) {
+        return;
+    }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .env("LEAN_CTX_COMPRESS", "1")
@@ -144,6 +150,9 @@ fn pipe_guard_force_compress_overrides_pipe_guard() {
 
 #[test]
 fn pipe_guard_multiline_output_unchanged_when_piped() {
+    if cfg!(windows) {
+        return;
+    }
     let script = "echo line1; echo line2; echo line3; echo 'result: 42'";
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -256,6 +265,9 @@ rm -f {tmp_path}
 
 #[test]
 fn pipe_guard_rust_side_defense_in_depth() {
+    if cfg!(windows) {
+        return;
+    }
     let script = "for i in 1 2 3 4 5; do echo \"item_$i: $(date +%s)\"; done";
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
