@@ -14,6 +14,7 @@ const sidebar = [
       { label: t('docs.gettingStarted.sidebarInstallBinary'), href: lp('/docs/getting-started#install') },
       { label: t('docs.gettingStarted.sidebarSetup'), href: lp('/docs/getting-started#shell-hook') },
       { label: t('docs.gettingStarted.sidebarVerify'), href: lp('/docs/getting-started#editor-setup') },
+      { label: 'Docker', href: lp('/docs/getting-started#docker') },
     ],
   },
   {
@@ -603,6 +604,81 @@ cargo build --release</code></pre>
   <p>{t('docs.gettingStarted.manualAltDesc')}</p>
   <pre><code>lean-ctx init --global</code></pre>
   <p>{t('docs.gettingStarted.manualAltNote')}</p>
+
+  <hr />
+
+  <h2 id="docker">Docker Installation</h2>
+  <p>
+    To use lean-ctx inside a Docker container (e.g. with Claude Code, Codex, or other AI agents),
+    use the statically-linked <strong>musl</strong> binary and set <code>BASH_ENV</code> so the
+    shell hook loads in non-interactive shells.
+  </p>
+
+  <pre><code>ARG LEAN_CTX_VERSION=3.1.2
+
+# Download the musl binary (statically linked, no glibc dependency)
+RUN curl -fsSL \
+    "https://github.com/yvgude/lean-ctx/releases/download/v$&#123;LEAN_CTX_VERSION&#125;/lean-ctx-x86_64-unknown-linux-musl.tar.gz" \
+    | tar -xz -C /usr/local/bin lean-ctx &amp;&amp; \
+    chmod +x /usr/local/bin/lean-ctx
+
+# Install shell hook (non-interactive) + configure your AI tool
+RUN lean-ctx init --global &amp;&amp; \
+    lean-ctx init --agent claude
+
+# Load shell hook in non-interactive shells (required for AI agents)
+ENV BASH_ENV="/root/.bashrc"</code></pre>
+
+  <h3>Why this works</h3>
+  <table>
+    <thead>
+      <tr><th>Step</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>musl</code> binary</td>
+        <td>Statically linked — works on any Linux distro without installing <code>gcc-libs</code> or <code>glibc</code></td>
+      </tr>
+      <tr>
+        <td><code>lean-ctx init --global</code></td>
+        <td>Installs shell hook into <code>~/.bashrc</code> (non-interactive, unlike <code>lean-ctx setup</code>)</td>
+      </tr>
+      <tr>
+        <td><code>lean-ctx init --agent claude</code></td>
+        <td>Writes MCP server config to <code>~/.claude.json</code>. Replace <code>claude</code> with your agent: <code>cursor</code>, <code>codex</code>, <code>gemini</code>, etc.</td>
+      </tr>
+      <tr>
+        <td><code>BASH_ENV</code></td>
+        <td>AI agents run commands via <code>bash -c "..."</code> (non-interactive). Without <code>BASH_ENV</code>, bash skips <code>.bashrc</code> and the <code>_lc</code> function is undefined.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Common issues</h3>
+  <table>
+    <thead>
+      <tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>command not found: _lc</code></td>
+        <td><code>BASH_ENV</code> not set — shell hook not loaded</td>
+        <td>Add <code>ENV BASH_ENV="/root/.bashrc"</code> (adjust path for non-root users)</td>
+      </tr>
+      <tr>
+        <td><code>lean-ctx setup</code> hangs</td>
+        <td>Interactive prompt with no stdin in Docker</td>
+        <td>Use <code>lean-ctx init --global</code> instead</td>
+      </tr>
+      <tr>
+        <td>Binary not found / exec format error</td>
+        <td>Wrong architecture or using <code>gnu</code> binary without glibc</td>
+        <td>Use the <code>musl</code> tarball for minimal containers</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
 
   <h2 id="editor-setup">{t('docs.gettingStarted.step3Title')}</h2>
   <ol>

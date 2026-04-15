@@ -1,8 +1,19 @@
 import { defaultLocale, isValidLocale, locales, type Locale } from './config';
+import manifestJson from '../../generated/mcp-tools.json';
 
 type FlatTranslations = Record<string, string>;
 
 const translationCache = new Map<string, FlatTranslations>();
+const MCP_EXAMPLE_TOOL_COUNT = 7;
+
+const mcpGlobalReplacements: Record<string, string> = {
+  mcpToolCount: String((manifestJson as any)?.counts?.granular ?? 0),
+  unifiedToolCount: String((manifestJson as any)?.counts?.unified ?? 0),
+  readModeCount: String((manifestJson as any)?.read_modes?.count ?? 0),
+  mcpToolMoreCount: String(
+    Math.max(0, Number((manifestJson as any)?.counts?.granular ?? 0) - MCP_EXAMPLE_TOOL_COUNT),
+  ),
+};
 
 function loadTranslation(locale: Locale): FlatTranslations {
   const cached = translationCache.get(locale);
@@ -23,10 +34,10 @@ export function useTranslations(locale: Locale) {
   return function t(key: string, replacements?: Record<string, string>): string {
     let value = translations[key] ?? fallback[key] ?? key;
 
-    if (replacements) {
-      for (const [placeholder, replacement] of Object.entries(replacements)) {
+    const merged = { ...mcpGlobalReplacements, ...(replacements ?? {}) };
+    for (const [placeholder, replacement] of Object.entries(merged)) {
+      if (replacement === undefined) continue;
         value = value.replaceAll(`{${placeholder}}`, replacement);
-      }
     }
 
     return value;

@@ -1,4 +1,9 @@
 ---
+import { getMcpManifest } from '../lib/mcpManifest';
+
+const manifest = getMcpManifest();
+const mcpToolCount = manifest.counts.granular;
+
 const features = [
   {
     eyebrow: 'Persistent Project Graph',
@@ -47,7 +52,7 @@ const features = [
         { text: 'Graph:    142 files, 847 symbols ✓', style: 'muted' },
         { text: '', style: 'muted' },
         { text: 'Launching Cursor with lean-ctx...', style: 'accent' },
-        { text: 'Context server: connected (34 tools)', style: 'accent' },
+        { text: `Context server: connected (${mcpToolCount} tools)`, style: 'accent' },
       ],
     },
     link: '/docs/getting-started#lctx',

@@ -1,9 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { getMcpManifest } from '../lib/mcpManifest';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
+const manifest = getMcpManifest();
+const mcpToolCount = manifest.counts.granular;
+const readModeCount = manifest.read_modes.count;
 ---
 
 <BaseLayout title={t('mcpServer.title')} description={t('mcpServer.metaDescription')} breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('mcpServer.heroLabel'), url: lp('/mcp-server/') }]}>
@@ -21,8 +25,8 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       {t('mcpServer.heroDesc')}
     </p>
     <div class="animate-entrance stagger-3 flex flex-wrap items-center gap-3">
-      <span class="mcp-hero-stat"><span class="text-accent font-bold">34</span> {t('mcpServer.heroStatTools')}</span>
-      <span class="mcp-hero-stat"><span class="text-accent font-bold">7</span> {t('mcpServer.heroStatModes')}</span>
+      <span class="mcp-hero-stat"><span class="text-accent font-bold">{mcpToolCount}</span> {t('mcpServer.heroStatTools')}</span>
+      <span class="mcp-hero-stat"><span class="text-accent font-bold">{readModeCount}</span> {t('mcpServer.heroStatModes')}</span>
       <span class="mcp-hero-stat"><span class="text-accent font-bold">99%</span> {t('mcpServer.heroStatMax')}</span>
     </div>
   </div>

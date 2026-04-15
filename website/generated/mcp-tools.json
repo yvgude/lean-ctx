@@ -1,0 +1,1390 @@
+{
+  "counts": {
+    "granular": 42,
+    "unified": 5
+  },
+  "read_modes": {
+    "count": 10,
+    "modes": [
+      "auto",
+      "full",
+      "map",
+      "signatures",
+      "diff",
+      "aggressive",
+      "entropy",
+      "task",
+      "reference",
+      "lines:N-M"
+    ]
+  },
+  "schema_version": 1,
+  "tools": {
+    "granular": [
+      {
+        "description": "Multi-agent coordination (shared message bus + persistent diaries). Actions: register (join with agent_type+role), post (broadcast or direct message with category), read (poll messages), status (update state: active|idle|finished), handoff (transfer task to another agent with summary), sync (overview of all agents + pending messages + shared contexts), diary (log discovery/decision/blocker/progress/insight — persisted across sessions), recall_diary (read agent diary), diaries (list all agent diaries), list, info.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Agent operation. diary: persistent log (category=discovery|decision|blocker|progress|insight). recall_diary: read diary. diaries: list all.",
+              "enum": [
+                "register",
+                "list",
+                "post",
+                "read",
+                "status",
+                "info",
+                "handoff",
+                "sync",
+                "diary",
+                "recall_diary",
+                "diaries"
+              ],
+              "type": "string"
+            },
+            "agent_type": {
+              "description": "Agent type for register (cursor, claude, codex, gemini, crush, subagent)",
+              "type": "string"
+            },
+            "category": {
+              "description": "Message category for post (finding, warning, request, status)",
+              "type": "string"
+            },
+            "message": {
+              "description": "Message text for post action, or status detail for status action",
+              "type": "string"
+            },
+            "role": {
+              "description": "Agent role (dev, review, test, plan)",
+              "type": "string"
+            },
+            "status": {
+              "description": "New status for status action",
+              "enum": [
+                "active",
+                "idle",
+                "finished"
+              ],
+              "type": "string"
+            },
+            "to_agent": {
+              "description": "Target agent ID for direct message (omit for broadcast)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_agent",
+        "schema_md5": "e3eed852993f6fa1e4da78fec9dbc764"
+      },
+      {
+        "description": "Entropy analysis — recommends optimal compression mode for a file.",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "File path to analyze",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_analyze",
+        "schema_md5": "cdaf58c465aa2e2e2e0519a2c66b1a8f"
+      },
+      {
+        "description": "Graph-based architecture analysis. Actions: overview|clusters|layers|cycles|entrypoints|module.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Architecture operation (default: overview)",
+              "enum": [
+                "overview",
+                "clusters",
+                "layers",
+                "cycles",
+                "entrypoints",
+                "module"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "description": "Used for action=module (module/file path)",
+              "type": "string"
+            },
+            "root": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_architecture",
+        "schema_md5": "3dd5e6f06ff0f8720cbaa1c1215e37ee"
+      },
+      {
+        "description": "Benchmark compression modes for a file or project.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "default": "file",
+              "description": "file (default) or project",
+              "type": "string"
+            },
+            "format": {
+              "default": "terminal",
+              "description": "Output format for project benchmark: terminal, markdown, json",
+              "type": "string"
+            },
+            "path": {
+              "description": "File path (action=file) or project directory (action=project)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_benchmark",
+        "schema_md5": "aa5cb517f08c47b509b4c25f35b8d802"
+      },
+      {
+        "description": "Cache ops: status|clear|invalidate.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Cache operation to perform",
+              "enum": [
+                "status",
+                "clear",
+                "invalidate"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "description": "File path (required for 'invalidate' action)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_cache",
+        "schema_md5": "be2d06bc26063e4b271e94537db7aa30"
+      },
+      {
+        "description": "Find all functions/methods called by a given symbol. Returns callee name, file, and line.",
+        "input_schema": {
+          "properties": {
+            "file": {
+              "description": "Optional: scope to a specific file",
+              "type": "string"
+            },
+            "symbol": {
+              "description": "Symbol name to find callees of",
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_callees",
+        "schema_md5": "1aebc705756ba4598d1a34593d10c9eb"
+      },
+      {
+        "description": "Find all symbols that call a given function/method. Returns caller file, symbol, and line.",
+        "input_schema": {
+          "properties": {
+            "file": {
+              "description": "Optional: scope to a specific file",
+              "type": "string"
+            },
+            "symbol": {
+              "description": "Symbol name to find callers of",
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_callers",
+        "schema_md5": "ccab40c20158d095e7e5b527409900c6"
+      },
+      {
+        "description": "Context checkpoint for long conversations.",
+        "input_schema": {
+          "properties": {
+            "include_signatures": {
+              "description": "Include signatures (default: true)",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_compress",
+        "schema_md5": "4637c2b83cb811d3fc007bf24d951664"
+      },
+      {
+        "description": "Compress a memory/config file (CLAUDE.md, .cursorrules, etc.) to save tokens on every session start. Preserves code blocks, URLs, paths, headings, tables. Creates .original.md backup.",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "Path to memory file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_compress_memory",
+        "schema_md5": "82f50feed0439dd2264d45f470bc2a5a"
+      },
+      {
+        "description": "Session context overview — cached files, seen files, session state.",
+        "input_schema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "ctx_context",
+        "schema_md5": "4fceb125360b2d16a872e883c0d67ab9"
+      },
+      {
+        "description": "Cost attribution (local-first). Actions: report|agent|tools|json|reset.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Operation to perform (default: report)",
+              "enum": [
+                "report",
+                "agent",
+                "tools",
+                "json",
+                "reset",
+                "status"
+              ],
+              "type": "string"
+            },
+            "agent_id": {
+              "description": "Agent ID for action=agent (optional)",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Max rows (default: 10)",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_cost",
+        "schema_md5": "4d585a666518c79a7301311252f4dfe6"
+      },
+      {
+        "description": "Cross-file dedup: analyze or apply shared block references.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "default": "analyze",
+              "description": "analyze (default) or apply (register shared blocks for auto-dedup in ctx_read)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_dedup",
+        "schema_md5": "05554f176d4289b9b9f41f48314e86fc"
+      },
+      {
+        "description": "Incremental diff — sends only changed lines since last read.",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "Absolute file path",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_delta",
+        "schema_md5": "3fd509ff5e2fa247f048df50bb5c642e"
+      },
+      {
+        "description": "Find missed compression opportunities in shell history.",
+        "input_schema": {
+          "properties": {
+            "limit": {
+              "description": "Max number of command types to show (default: 15)",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_discover",
+        "schema_md5": "5ed6881919de41fc3df4abfd4397c850"
+      },
+      {
+        "description": "Edit a file via search-and-replace. Works without native Read/Edit tools. Use this when the IDE's Edit tool requires Read but Read is unavailable.",
+        "input_schema": {
+          "properties": {
+            "create": {
+              "default": false,
+              "description": "Create a new file with new_string as content (ignores old_string)",
+              "type": "boolean"
+            },
+            "new_string": {
+              "description": "Replacement text",
+              "type": "string"
+            },
+            "old_string": {
+              "description": "Exact text to find and replace (must be unique unless replace_all=true)",
+              "type": "string"
+            },
+            "path": {
+              "description": "Absolute file path",
+              "type": "string"
+            },
+            "replace_all": {
+              "default": false,
+              "description": "Replace all occurrences (default: false)",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "path",
+            "new_string"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_edit",
+        "schema_md5": "88c3586c298b373fe7c65633d6a3c43e"
+      },
+      {
+        "description": "Run code in sandbox (11 languages). Only stdout enters context. Raw data never leaves subprocess. Languages: javascript, typescript, python, shell, ruby, go, rust, php, perl, r, elixir.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "batch — execute multiple scripts. Provide items as JSON array [{language, code}]",
+              "type": "string"
+            },
+            "code": {
+              "description": "Code to execute in sandbox",
+              "type": "string"
+            },
+            "intent": {
+              "description": "What you want from the output (triggers intent-driven filtering for large results)",
+              "type": "string"
+            },
+            "items": {
+              "description": "JSON array of [{\"language\": \"...\", \"code\": \"...\"}] for batch execution",
+              "type": "string"
+            },
+            "language": {
+              "description": "Language: javascript|typescript|python|shell|ruby|go|rust|php|perl|r|elixir",
+              "type": "string"
+            },
+            "path": {
+              "description": "For action=file: process a file in sandbox (auto-detects language)",
+              "type": "string"
+            },
+            "timeout": {
+              "description": "Timeout in seconds (default: 30)",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "language",
+            "code"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_execute",
+        "schema_md5": "193135d118da09d7f552ee677ee98c4f"
+      },
+      {
+        "description": "Budget-aware context fill — auto-selects compression per file within token limit.",
+        "input_schema": {
+          "properties": {
+            "budget": {
+              "description": "Maximum token budget to fill",
+              "type": "integer"
+            },
+            "paths": {
+              "description": "File paths to consider",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "paths",
+            "budget"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_fill",
+        "schema_md5": "18d9cf0b86cb4ed91498b97b8a0b6f30"
+      },
+      {
+        "description": "Code dependency graph. Actions: build (index project), related (find files connected to path), symbol (lookup definition/usages as file::name), impact (blast radius of changes to path), status (index stats).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Graph operation: build, related, symbol, impact, status",
+              "enum": [
+                "build",
+                "related",
+                "symbol",
+                "impact",
+                "status"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "description": "File path (related/impact) or file::symbol_name (symbol)",
+              "type": "string"
+            },
+            "project_root": {
+              "description": "Project root directory (default: .)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_graph",
+        "schema_md5": "d56dfd6355ec656b5e5f8ef7490b7969"
+      },
+      {
+        "description": "Generate a Mermaid diagram of the dependency or call graph. Useful for understanding architecture.",
+        "input_schema": {
+          "properties": {
+            "depth": {
+              "description": "Max depth (default: 2)",
+              "type": "integer"
+            },
+            "file": {
+              "description": "Optional: scope to dependencies of a specific file",
+              "type": "string"
+            },
+            "kind": {
+              "description": "deps (file dependencies) or calls (symbol call graph)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_graph_diagram",
+        "schema_md5": "71353a05e33f366b6c1bd38ddfd82efb"
+      },
+      {
+        "description": "File access heatmap (local-first). Actions: status|directory|cold|json.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Operation to perform (default: status)",
+              "enum": [
+                "status",
+                "directory",
+                "dirs",
+                "cold",
+                "json"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "description": "Project root for cold scan (default: .)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_heatmap",
+        "schema_md5": "fc6893448bdafc99d908b04cff5ff00e"
+      },
+      {
+        "description": "Graph-based impact analysis. Actions: analyze|chain|build|status.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Impact operation (default: analyze)",
+              "enum": [
+                "analyze",
+                "chain",
+                "build",
+                "status"
+              ],
+              "type": "string"
+            },
+            "depth": {
+              "description": "Max traversal depth (default: 5)",
+              "type": "integer"
+            },
+            "path": {
+              "description": "Target file path (required for analyze). For chain: from->to spec.",
+              "type": "string"
+            },
+            "root": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_impact",
+        "schema_md5": "d003c71639c192aca0ded2bb087aba14"
+      },
+      {
+        "description": "Intent detection — auto-reads relevant files based on task description.",
+        "input_schema": {
+          "properties": {
+            "project_root": {
+              "description": "Project root directory (default: .)",
+              "type": "string"
+            },
+            "query": {
+              "description": "Natural language description of the task",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_intent",
+        "schema_md5": "3beff15502666f133f1f8bc6e9ded57c"
+      },
+      {
+        "description": "Persistent project knowledge (survives sessions). Actions: remember (store fact with temporal tracking + contradiction detection), recall (search), pattern (record convention), consolidate (extract session findings), gotcha (record a bug/mistake to never repeat — trigger+resolution required), timeline (view fact history for a category), rooms (list knowledge categories), search (cross-session search across ALL projects), wakeup (compact AAAK briefing), status (list all), remove, export.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Knowledge operation. remember: auto-detects contradictions + tracks temporal validity. timeline: view version history. rooms: list categories. search: cross-project search. wakeup: compact AAAK briefing.",
+              "enum": [
+                "remember",
+                "recall",
+                "pattern",
+                "consolidate",
+                "gotcha",
+                "status",
+                "remove",
+                "export",
+                "timeline",
+                "rooms",
+                "search",
+                "wakeup"
+              ],
+              "type": "string"
+            },
+            "category": {
+              "description": "Fact category (architecture, api, testing, deployment, conventions, dependencies)",
+              "type": "string"
+            },
+            "confidence": {
+              "description": "Confidence score 0.0-1.0 for remember action (default: 0.8)",
+              "type": "number"
+            },
+            "examples": {
+              "description": "Examples for pattern action",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "key": {
+              "description": "Fact key/identifier (e.g. 'auth-method', 'db-engine', 'test-framework')",
+              "type": "string"
+            },
+            "pattern_type": {
+              "description": "Pattern type for pattern action (naming, structure, testing, error-handling)",
+              "type": "string"
+            },
+            "query": {
+              "description": "Search query for recall action (matches against category, key, and value)",
+              "type": "string"
+            },
+            "resolution": {
+              "description": "For gotcha action: how to fix/avoid it (e.g. 'Use .clone() or ref pattern')",
+              "type": "string"
+            },
+            "severity": {
+              "description": "For gotcha action: severity level (default: warning)",
+              "enum": [
+                "critical",
+                "warning",
+                "info"
+              ],
+              "type": "string"
+            },
+            "trigger": {
+              "description": "For gotcha action: what triggers the bug (e.g. 'cargo build fails with E0507 on match arms')",
+              "type": "string"
+            },
+            "value": {
+              "description": "Fact value or pattern description",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_knowledge",
+        "schema_md5": "17489a7860ca47296ec3e4e319dcea9e"
+      },
+      {
+        "description": "Session token stats, cache rates, per-tool savings.",
+        "input_schema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "ctx_metrics",
+        "schema_md5": "4fceb125360b2d16a872e883c0d67ab9"
+      },
+      {
+        "description": "Batch read files in one call. Same modes as ctx_read.",
+        "input_schema": {
+          "properties": {
+            "mode": {
+              "description": "Compression mode (default: full). Same modes as ctx_read (auto, full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M).",
+              "type": "string"
+            },
+            "paths": {
+              "description": "Absolute file paths to read, in order",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "paths"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_multi_read",
+        "schema_md5": "6b6e96a7372f9ab1f4a2dc11bba154cf"
+      },
+      {
+        "description": "List all symbols in a file (functions, structs, classes, methods) with signatures. Much fewer tokens than reading the full file.",
+        "input_schema": {
+          "properties": {
+            "kind": {
+              "description": "Optional filter: fn|struct|class|all",
+              "type": "string"
+            },
+            "path": {
+              "description": "File path",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_outline",
+        "schema_md5": "d5c2e2a1091f6b9ad00400a547063ada"
+      },
+      {
+        "description": "Task-relevant project map — use at session start.",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "Project root directory (default: .)",
+              "type": "string"
+            },
+            "task": {
+              "description": "Task description for relevance scoring (e.g. 'fix auth bug in login flow')",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_overview",
+        "schema_md5": "60d1fbc945e30b0b835c1a55f2fef00e"
+      },
+      {
+        "description": "Proactive context loader — caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            },
+            "task": {
+              "description": "Task description (e.g. 'fix auth bug in validate_token')",
+              "type": "string"
+            }
+          },
+          "required": [
+            "task"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_preload",
+        "schema_md5": "d72370b88a54db91288f2dd7981e3bc7"
+      },
+      {
+        "description": "Read file (cached, compressed). Re-reads ~13 tok. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
+        "input_schema": {
+          "properties": {
+            "fresh": {
+              "description": "Bypass cache and force a full re-read. Use when running as a subagent that may not have the parent's context.",
+              "type": "boolean"
+            },
+            "mode": {
+              "description": "Compression mode (default: full). Use 'map' for context-only files. For line ranges: 'lines:N-M' (e.g. 'lines:400-500').",
+              "type": "string"
+            },
+            "path": {
+              "description": "Absolute file path to read",
+              "type": "string"
+            },
+            "start_line": {
+              "description": "Read from this line number to end of file. Bypasses cache stub — always returns actual content.",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_read",
+        "schema_md5": "c009571a83db38f6a0f6e583cc96cc5c"
+      },
+      {
+        "description": "Compress LLM response text (remove filler, apply TDD).",
+        "input_schema": {
+          "properties": {
+            "text": {
+              "description": "Response text to compress",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_response",
+        "schema_md5": "aa9f7844e1cf4df53682cf13782c264e"
+      },
+      {
+        "description": "List HTTP routes/endpoints extracted from the project. Supports Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.",
+        "input_schema": {
+          "properties": {
+            "method": {
+              "description": "Optional: GET, POST, PUT, DELETE",
+              "type": "string"
+            },
+            "path": {
+              "description": "Optional: path prefix filter, e.g. /api/users",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_routes",
+        "schema_md5": "122d1b755aba8e0664e4d6f7eb54f2af"
+      },
+      {
+        "description": "Regex code search (.gitignore aware, compact results).",
+        "input_schema": {
+          "properties": {
+            "ext": {
+              "description": "File extension filter",
+              "type": "string"
+            },
+            "ignore_gitignore": {
+              "description": "Set true to scan ALL files including .gitignore'd paths (default: false)",
+              "type": "boolean"
+            },
+            "max_results": {
+              "description": "Max results (default: 20)",
+              "type": "integer"
+            },
+            "path": {
+              "description": "Directory to search",
+              "type": "string"
+            },
+            "pattern": {
+              "description": "Regex pattern",
+              "type": "string"
+            }
+          },
+          "required": [
+            "pattern"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_search",
+        "schema_md5": "96a35db29cc52cd209a240f3fa446f75"
+      },
+      {
+        "description": "Semantic code search (BM25 + optional embeddings/hybrid). action=reindex to rebuild.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "reindex to rebuild index",
+              "type": "string"
+            },
+            "languages": {
+              "description": "Optional: restrict to languages/extensions (e.g. [\"rust\",\"ts\",\"py\"] or [\"rs\",\"tsx\"])",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mode": {
+              "description": "Search mode (default: hybrid). bm25=lexical only, dense=embeddings only, hybrid=BM25+embeddings",
+              "enum": [
+                "bm25",
+                "dense",
+                "hybrid"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "description": "Project root to search (default: .)",
+              "type": "string"
+            },
+            "path_glob": {
+              "description": "Optional: glob over relative file paths (e.g. \"rust/src/**\" or \"**/*.rs\")",
+              "type": "string"
+            },
+            "query": {
+              "description": "Natural language search query",
+              "type": "string"
+            },
+            "top_k": {
+              "description": "Number of results (default: 10)",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_semantic_search",
+        "schema_md5": "634633b8dd18cb4cf44a1c1b2266d234"
+      },
+      {
+        "description": "Cross-session memory (CCP). Actions: load (restore previous session ~400 tok), save, status, task (set current task), finding (record discovery), decision (record choice), reset, list (show sessions), cleanup.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Session operation to perform",
+              "enum": [
+                "status",
+                "load",
+                "save",
+                "task",
+                "finding",
+                "decision",
+                "reset",
+                "list",
+                "cleanup"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "description": "Session ID for load action (default: latest)",
+              "type": "string"
+            },
+            "value": {
+              "description": "Value for task/finding/decision actions",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_session",
+        "schema_md5": "1c5262c872c35dc6a6a61b25712142ba"
+      },
+      {
+        "description": "Share cached file contexts between agents. Actions: push (share files from your cache to another agent), pull (receive files shared by other agents), list (show all shared contexts), clear (remove your shared contexts).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Share operation to perform",
+              "enum": [
+                "push",
+                "pull",
+                "list",
+                "clear"
+              ],
+              "type": "string"
+            },
+            "message": {
+              "description": "Optional context message explaining what was shared",
+              "type": "string"
+            },
+            "paths": {
+              "description": "Comma-separated file paths to share (for push action)",
+              "type": "string"
+            },
+            "to_agent": {
+              "description": "Target agent ID (omit for broadcast to all agents)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_share",
+        "schema_md5": "60408629ab4dfbd4954c4e094cc67148"
+      },
+      {
+        "description": "Run shell command (compressed output, 90+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking).",
+        "input_schema": {
+          "properties": {
+            "command": {
+              "description": "Shell command to execute",
+              "type": "string"
+            },
+            "cwd": {
+              "description": "Working directory for the command. If omitted, uses last cd target or project root.",
+              "type": "string"
+            },
+            "raw": {
+              "description": "Skip compression, return full uncompressed output. Use for small outputs or when full detail is critical.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_shell",
+        "schema_md5": "9548c197b405ed267a1881bbb8e07a97"
+      },
+      {
+        "description": "Auto-select optimal read mode for a file.",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "Absolute file path to read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_smart_read",
+        "schema_md5": "9205792117a3c8b955a18198d266a05e"
+      },
+      {
+        "description": "Read a specific symbol (function, struct, class) by name. Returns only the symbol code block instead of the entire file. 90-97% fewer tokens than full file read.",
+        "input_schema": {
+          "properties": {
+            "file": {
+              "description": "Optional: file path to narrow search",
+              "type": "string"
+            },
+            "kind": {
+              "description": "Optional: fn|struct|class|method|trait|enum",
+              "type": "string"
+            },
+            "name": {
+              "description": "Symbol name (function, struct, class, method)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_symbol",
+        "schema_md5": "6be622cc59d95ceb4ca9f77162b524c2"
+      },
+      {
+        "description": "Multi-agent task orchestration. Actions: create|update|list|get|cancel|message|info.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Task operation",
+              "enum": [
+                "create",
+                "update",
+                "list",
+                "get",
+                "cancel",
+                "message",
+                "info"
+              ],
+              "type": "string"
+            },
+            "description": {
+              "description": "Task description (for create)",
+              "type": "string"
+            },
+            "message": {
+              "description": "Optional message / reason",
+              "type": "string"
+            },
+            "state": {
+              "description": "New state for update (working|input-required|completed|failed|canceled)",
+              "type": "string"
+            },
+            "task_id": {
+              "description": "Task ID (required for update|get|cancel|message)",
+              "type": "string"
+            },
+            "to_agent": {
+              "description": "Target agent ID (required for create)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_task",
+        "schema_md5": "47ead080a82f37eecd5c6f3c7105b18f"
+      },
+      {
+        "description": "Directory listing with file counts.",
+        "input_schema": {
+          "properties": {
+            "depth": {
+              "description": "Max depth (default: 3)",
+              "type": "integer"
+            },
+            "path": {
+              "description": "Directory path (default: .)",
+              "type": "string"
+            },
+            "show_hidden": {
+              "description": "Show hidden files",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_tree",
+        "schema_md5": "08acd62450b0984d0931f74985fd5514"
+      },
+      {
+        "description": "Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Workflow operation (default: status)",
+              "enum": [
+                "start",
+                "status",
+                "transition",
+                "complete",
+                "evidence_add",
+                "evidence_list",
+                "stop"
+              ],
+              "type": "string"
+            },
+            "key": {
+              "description": "Evidence key (action=evidence_add)",
+              "type": "string"
+            },
+            "name": {
+              "description": "Optional workflow name override (action=start)",
+              "type": "string"
+            },
+            "spec": {
+              "description": "WorkflowSpec JSON (action=start). If omitted, uses builtin plan_code_test.",
+              "type": "string"
+            },
+            "to": {
+              "description": "Target state (action=transition)",
+              "type": "string"
+            },
+            "value": {
+              "description": "Optional evidence value / transition note",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_workflow",
+        "schema_md5": "b8c2ec2f293a4211b3c018f223cb2b92"
+      },
+      {
+        "description": "Savings report card. Periods: week|month|all.",
+        "input_schema": {
+          "properties": {
+            "period": {
+              "description": "Report period (default: week)",
+              "enum": [
+                "week",
+                "month",
+                "all"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_wrapped",
+        "schema_md5": "bdb231f135146bea02f4b01e284a5499"
+      }
+    ],
+    "unified": [
+      {
+        "description": "Meta-tool: set tool= to sub-tool name. Sub-tools: compress (checkpoint), metrics (stats), analyze (entropy), cache (status|clear|invalidate), discover (missed patterns), smart_read (auto-mode), delta (incremental diff), dedup (cross-file), fill (budget-aware batch read), intent (auto-read by task), response (compress LLM text), context (session state), graph (build|related|symbol|impact|status), session (load|save|task|finding|decision|status|reset|list|cleanup), knowledge (remember|recall|pattern|consolidate|timeline|rooms|search|wakeup|status|remove|export), agent (register|post|read|status|list|info|diary|recall_diary|diaries), overview (project map), wrapped (savings report), benchmark (file|project), multi_read (batch), semantic_search (BM25), cost (attribution), heatmap (file access), impact (graph impact), architecture (graph structure), task (A2A tasks), workflow (state machine).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "agent_id": {
+              "type": "string"
+            },
+            "agent_type": {
+              "type": "string"
+            },
+            "budget": {
+              "type": "integer"
+            },
+            "category": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "number"
+            },
+            "depth": {
+              "type": "integer"
+            },
+            "description": {
+              "type": "string"
+            },
+            "examples": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "format": {
+              "type": "string"
+            },
+            "include_signatures": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "mode": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "paths": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "pattern_type": {
+              "type": "string"
+            },
+            "period": {
+              "type": "string"
+            },
+            "project_root": {
+              "type": "string"
+            },
+            "query": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "root": {
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "show_hidden": {
+              "type": "boolean"
+            },
+            "spec": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task": {
+              "type": "string"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "to_agent": {
+              "type": "string"
+            },
+            "tool": {
+              "description": "compress|metrics|analyze|cache|discover|smart_read|delta|dedup|fill|intent|response|context|graph|session|knowledge|agent|overview|wrapped|benchmark|multi_read|semantic_search|cost|heatmap|impact|architecture|task|workflow",
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "type": "object"
+        },
+        "name": "ctx",
+        "schema_md5": "ab784efcae4e71c48415e1c4e51c0d64"
+      },
+      {
+        "description": "Read file (cached, compressed). Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
+        "input_schema": {
+          "properties": {
+            "fresh": {
+              "type": "boolean"
+            },
+            "mode": {
+              "type": "string"
+            },
+            "path": {
+              "description": "File path",
+              "type": "string"
+            },
+            "start_line": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_read",
+        "schema_md5": "43924555a3aab6de93f44643f3876f38"
+      },
+      {
+        "description": "Regex code search (.gitignore aware).",
+        "input_schema": {
+          "properties": {
+            "ext": {
+              "type": "string"
+            },
+            "ignore_gitignore": {
+              "type": "boolean"
+            },
+            "max_results": {
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "pattern": {
+              "description": "Regex pattern",
+              "type": "string"
+            }
+          },
+          "required": [
+            "pattern"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_search",
+        "schema_md5": "d60e5ad5b34c48edb218d76010558c1e"
+      },
+      {
+        "description": "Run shell command (compressed output). raw=true skips compression. cwd sets working directory.",
+        "input_schema": {
+          "properties": {
+            "command": {
+              "description": "Shell command",
+              "type": "string"
+            },
+            "cwd": {
+              "description": "Working directory (defaults to last cd or project root)",
+              "type": "string"
+            },
+            "raw": {
+              "description": "Skip compression for full output",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_shell",
+        "schema_md5": "facb06b5aa0add40ecfef388b1909515"
+      },
+      {
+        "description": "Directory listing with file counts.",
+        "input_schema": {
+          "properties": {
+            "depth": {
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "show_hidden": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_tree",
+        "schema_md5": "94bd4461caa9323f68ad88467ec1dc04"
+      }
+    ]
+  }
+}
