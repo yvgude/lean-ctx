@@ -610,7 +610,7 @@ cargo build --release</code></pre>
   <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
   <p set:html={t('docs.gettingStarted.dockerDesc')} />
 
-  <pre><code>ARG LEAN_CTX_VERSION=3.1.3
+  <pre><code>ARG LEAN_CTX_VERSION=3.1.4
 
 # Download the musl binary (statically linked, no glibc dependency)
 RUN curl -fsSL \
@@ -622,9 +622,11 @@ RUN curl -fsSL \
 RUN lean-ctx init --global &amp;&amp; \
     lean-ctx init --agent claude
 
-# Load shell hook in non-interactive shells (required for AI agents)
-# Note: must point to env.sh, NOT ~/.bashrc (which has a non-interactive guard)
-ENV BASH_ENV="/root/.lean-ctx/env.sh"</code></pre>
+# Load shell hook in non-interactive shells
+ENV BASH_ENV="/root/.lean-ctx/env.sh"
+
+# Claude Code: sources this file before each command
+ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
 
   <h3 set:html={t('docs.gettingStarted.dockerWhyTitle')} />
   <table>
@@ -647,6 +649,10 @@ ENV BASH_ENV="/root/.lean-ctx/env.sh"</code></pre>
       <tr>
         <td><code>BASH_ENV</code></td>
         <td set:html={t('docs.gettingStarted.dockerWhyBashEnv')} />
+      </tr>
+      <tr>
+        <td><code>CLAUDE_ENV_FILE</code></td>
+        <td set:html={t('docs.gettingStarted.dockerWhyClaudeEnv')} />
       </tr>
     </tbody>
   </table>
