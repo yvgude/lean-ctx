@@ -569,15 +569,15 @@ fn check_mcp_configs() -> String {
     };
 
     let mut found = Vec::new();
-    let configs: &[(&str, &str)] = &[
-        (".cursor/mcp.json", "Cursor"),
-        (".claude.json", "Claude Code"),
-        (".codeium/windsurf/mcp_config.json", "Windsurf"),
+    let claude_cfg = crate::setup::claude_config_json_path(&home);
+    let configs: Vec<(std::path::PathBuf, &str)> = vec![
+        (home.join(".cursor/mcp.json"), "Cursor"),
+        (claude_cfg, "Claude Code"),
+        (home.join(".codeium/windsurf/mcp_config.json"), "Windsurf"),
     ];
 
-    for (path, name) in configs {
-        let full = home.join(path);
-        if let Ok(content) = std::fs::read_to_string(&full) {
+    for (full, name) in &configs {
+        if let Ok(content) = std::fs::read_to_string(full) {
             if content.contains("lean-ctx") {
                 found.push(*name);
             }

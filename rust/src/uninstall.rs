@@ -81,7 +81,7 @@ fn remove_shell_hook(home: &Path) -> bool {
 fn remove_mcp_configs(home: &Path) -> bool {
     let configs: Vec<(&str, PathBuf)> = vec![
         ("Cursor", home.join(".cursor/mcp.json")),
-        ("Claude Code", home.join(".claude.json")),
+        ("Claude Code", crate::setup::claude_config_json_path(home)),
         ("Windsurf", home.join(".codeium/windsurf/mcp_config.json")),
         ("Gemini CLI", home.join(".gemini/settings/mcp.json")),
         (

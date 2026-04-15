@@ -403,7 +403,7 @@ fn install_claude_hook(global: bool) {
 }
 
 fn install_claude_global_md(home: &std::path::Path) {
-    let claude_dir = home.join(".claude");
+    let claude_dir = crate::setup::claude_config_dir(home);
     let _ = std::fs::create_dir_all(&claude_dir);
     let global_md = claude_dir.join("CLAUDE.md");
 
@@ -430,7 +430,7 @@ fn install_claude_global_md(home: &std::path::Path) {
 }
 
 fn install_claude_hook_scripts(home: &std::path::Path) {
-    let hooks_dir = home.join(".claude").join("hooks");
+    let hooks_dir = crate::setup::claude_config_dir(home).join("hooks");
     let _ = std::fs::create_dir_all(&hooks_dir);
 
     let binary = resolve_binary_path();
@@ -476,13 +476,13 @@ fn install_claude_hook_scripts(home: &std::path::Path) {
 }
 
 fn install_claude_hook_config(home: &std::path::Path) {
-    let hooks_dir = home.join(".claude").join("hooks");
+    let hooks_dir = crate::setup::claude_config_dir(home).join("hooks");
     let binary = resolve_binary_path();
 
     let rewrite_cmd = format!("{binary} hook rewrite");
     let redirect_cmd = format!("{binary} hook redirect");
 
-    let settings_path = home.join(".claude").join("settings.json");
+    let settings_path = crate::setup::claude_config_dir(home).join("settings.json");
     let settings_content = if settings_path.exists() {
         std::fs::read_to_string(&settings_path).unwrap_or_default()
     } else {

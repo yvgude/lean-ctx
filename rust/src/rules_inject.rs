@@ -278,7 +278,8 @@ fn is_tool_detected(target: &RulesTarget, home: &std::path::Path) -> bool {
             if command_exists("claude") {
                 return true;
             }
-            home.join(".claude.json").exists() || home.join(".claude").exists()
+            crate::setup::claude_config_json_path(home).exists()
+                || crate::setup::claude_config_dir(home).exists()
         }
         "Codex CLI" => home.join(".codex").exists() || command_exists("codex"),
         "Cursor" => home.join(".cursor").exists(),

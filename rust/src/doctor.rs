@@ -288,7 +288,7 @@ fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
         McpLocation {
             name: "Claude Code",
             display: "~/.claude.json",
-            path: home.join(".claude.json"),
+            path: crate::setup::claude_config_json_path(home),
         },
         McpLocation {
             name: "Windsurf",
@@ -562,40 +562,63 @@ fn session_state_outcome() -> Outcome {
     }
 }
 
-#[allow(dead_code)]
-fn docker_bash_env_outcome() -> Option<Outcome> {
+fn docker_env_outcomes() -> Vec<Outcome> {
     if !crate::shell::is_container() {
-        return None;
+        return vec![];
     }
+    let env_sh = dirs::home_dir()
+        .map(|h| {
+            h.join(".lean-ctx")
+                .join("env.sh")
+                .to_string_lossy()
+                .to_string()
+        })
+        .unwrap_or_else(|| "/root/.lean-ctx/env.sh".to_string());
+
+    let mut outcomes = vec![];
+
     let shell_name = std::env::var("SHELL").unwrap_or_default();
     let is_bash = shell_name.contains("bash") || shell_name.is_empty();
-    if !is_bash {
-        return None;
+
+    if is_bash {
+        let has_bash_env = std::env::var("BASH_ENV").is_ok();
+        outcomes.push(if has_bash_env {
+            Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}BASH_ENV{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
+                    std::env::var("BASH_ENV").unwrap_or_default()
+                ),
+            }
+        } else {
+            Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}BASH_ENV{RST}  {RED}not set{RST}  {YELLOW}(add to Dockerfile: ENV BASH_ENV=\"{env_sh}\"){RST}"
+                ),
+            }
+        });
     }
-    if std::env::var("BASH_ENV").is_ok() {
-        Some(Outcome {
+
+    let has_claude_env = std::env::var("CLAUDE_ENV_FILE").is_ok();
+    outcomes.push(if has_claude_env {
+        Outcome {
             ok: true,
             line: format!(
-                "{BOLD}BASH_ENV{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
-                std::env::var("BASH_ENV").unwrap_or_default()
+                "{BOLD}CLAUDE_ENV_FILE{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
+                std::env::var("CLAUDE_ENV_FILE").unwrap_or_default()
             ),
-        })
+        }
     } else {
-        let env_sh = dirs::home_dir()
-            .map(|h| {
-                h.join(".lean-ctx")
-                    .join("env.sh")
-                    .to_string_lossy()
-                    .to_string()
-            })
-            .unwrap_or_else(|| "/root/.lean-ctx/env.sh".to_string());
-        Some(Outcome {
+        Outcome {
             ok: false,
             line: format!(
-                "{BOLD}BASH_ENV{RST}  {RED}not set{RST}  {YELLOW}(Docker detected — add to Dockerfile: ENV BASH_ENV=\"{env_sh}\"){RST}"
+                "{BOLD}CLAUDE_ENV_FILE{RST}  {RED}not set{RST}  {YELLOW}(for Claude Code: ENV CLAUDE_ENV_FILE=\"{env_sh}\"){RST}"
             ),
-        })
-    }
+        }
+    });
+
+    outcomes
 }
 
 /// Run diagnostic checks and print colored results to stdout.
@@ -771,9 +794,9 @@ pub fn run() {
     }
     print_check(&session_outcome);
 
-    // 10) Docker BASH_ENV (optional, only in containers)
-    let docker = docker_bash_env_outcome();
-    if let Some(ref docker_check) = docker {
+    // 10) Docker env vars (optional, only in containers)
+    let docker_outcomes = docker_env_outcomes();
+    for docker_check in &docker_outcomes {
         if docker_check.ok {
             passed += 1;
         }
@@ -790,9 +813,7 @@ pub fn run() {
     }
 
     let mut effective_total = total + 1; // session_state always shown
-    if docker.is_some() {
-        effective_total += 1;
-    }
+    effective_total += docker_outcomes.len() as u32;
     if pi.is_some() {
         effective_total += 1;
     }

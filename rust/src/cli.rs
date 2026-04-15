@@ -1307,7 +1307,7 @@ fi
     }
 
     write_env_sh_for_containers(&aliases);
-    print_docker_bash_env_hint(is_zsh);
+    print_docker_env_hints(is_zsh);
 }
 
 fn write_env_sh_for_containers(aliases: &str) {
@@ -1324,11 +1324,8 @@ fn write_env_sh_for_containers(aliases: &str) {
     }
 }
 
-fn print_docker_bash_env_hint(is_zsh: bool) {
+fn print_docker_env_hints(is_zsh: bool) {
     if is_zsh || !crate::shell::is_container() {
-        return;
-    }
-    if std::env::var("BASH_ENV").is_ok() {
         return;
     }
     let env_sh = dirs::home_dir()
@@ -1339,12 +1336,25 @@ fn print_docker_bash_env_hint(is_zsh: bool) {
                 .to_string()
         })
         .unwrap_or_else(|| "/root/.lean-ctx/env.sh".to_string());
+
+    let has_bash_env = std::env::var("BASH_ENV").is_ok();
+    let has_claude_env = std::env::var("CLAUDE_ENV_FILE").is_ok();
+
+    if has_bash_env && has_claude_env {
+        return;
+    }
+
     eprintln!();
-    eprintln!("  \x1b[33m⚠  Docker detected — BASH_ENV is not set\x1b[0m");
-    eprintln!("  AI agents run commands via bash -c (non-interactive),");
-    eprintln!("  which skips ~/.bashrc. Add this to your Dockerfile:");
-    eprintln!();
-    eprintln!("    \x1b[1mENV BASH_ENV=\"{env_sh}\"\x1b[0m");
+    eprintln!("  \x1b[33m⚠  Docker detected — environment hints:\x1b[0m");
+
+    if !has_bash_env {
+        eprintln!("  For generic bash -c usage (non-interactive shells):");
+        eprintln!("    \x1b[1mENV BASH_ENV=\"{env_sh}\"\x1b[0m");
+    }
+    if !has_claude_env {
+        eprintln!("  For Claude Code (sources before each command):");
+        eprintln!("    \x1b[1mENV CLAUDE_ENV_FILE=\"{env_sh}\"\x1b[0m");
+    }
     eprintln!();
 }
 
