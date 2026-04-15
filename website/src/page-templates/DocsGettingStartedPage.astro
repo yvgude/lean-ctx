@@ -610,7 +610,7 @@ cargo build --release</code></pre>
   <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
   <p set:html={t('docs.gettingStarted.dockerDesc')} />
 
-  <pre><code>ARG LEAN_CTX_VERSION=3.1.2
+  <pre><code>ARG LEAN_CTX_VERSION=3.1.3
 
 # Download the musl binary (statically linked, no glibc dependency)
 RUN curl -fsSL \
@@ -623,7 +623,8 @@ RUN lean-ctx init --global &amp;&amp; \
     lean-ctx init --agent claude
 
 # Load shell hook in non-interactive shells (required for AI agents)
-ENV BASH_ENV="/root/.bashrc"</code></pre>
+# Note: must point to env.sh, NOT ~/.bashrc (which has a non-interactive guard)
+ENV BASH_ENV="/root/.lean-ctx/env.sh"</code></pre>
 
   <h3 set:html={t('docs.gettingStarted.dockerWhyTitle')} />
   <table>
