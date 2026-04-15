@@ -17,6 +17,8 @@ build-website:
     - deploy
   script:
     - cd website
+    - mkdir -p public/generated
+    - cp generated/mcp-tools.json public/generated/
     - npm ci --silent
     - npm run -s build
   artifacts:
