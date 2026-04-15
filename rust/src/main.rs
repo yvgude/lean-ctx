@@ -175,6 +175,45 @@ fn main() {
                                     cfg.max_concurrency = n;
                                 }
                             }
+                            "--max-rps" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    if let Ok(n) = rest[i].parse::<u32>() {
+                                        cfg.max_rps = n;
+                                    }
+                                }
+                            }
+                            arg if arg.starts_with("--max-rps=") => {
+                                if let Ok(n) = arg["--max-rps=".len()..].parse::<u32>() {
+                                    cfg.max_rps = n;
+                                }
+                            }
+                            "--rate-burst" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    if let Ok(n) = rest[i].parse::<u32>() {
+                                        cfg.rate_burst = n;
+                                    }
+                                }
+                            }
+                            arg if arg.starts_with("--rate-burst=") => {
+                                if let Ok(n) = arg["--rate-burst=".len()..].parse::<u32>() {
+                                    cfg.rate_burst = n;
+                                }
+                            }
+                            "--request-timeout-ms" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    if let Ok(n) = rest[i].parse::<u64>() {
+                                        cfg.request_timeout_ms = n;
+                                    }
+                                }
+                            }
+                            arg if arg.starts_with("--request-timeout-ms=") => {
+                                if let Ok(n) = arg["--request-timeout-ms=".len()..].parse::<u64>() {
+                                    cfg.request_timeout_ms = n;
+                                }
+                            }
                             "--help" | "-h" => {
                                 eprintln!(
                                     "Usage: lean-ctx serve [--host H] [--port N] [--project-root DIR]\\n\\
@@ -188,6 +227,9 @@ fn main() {
                                        --json/--sse          Response framing in stateless mode (default: json)\\n\\
                                        --max-body-bytes      Max request body size in bytes (default: 2097152)\\n\\
                                        --max-concurrency     Max concurrent requests (default: 32)\\n\\
+                                       --max-rps             Max requests/sec (global, default: 50)\\n\\
+                                       --rate-burst          Rate limiter burst (global, default: 100)\\n\\
+                                       --request-timeout-ms  REST tool-call timeout (default: 30000)\\n\\
                                        --allowed-host        Add allowed Host header (repeatable)\\n\\
                                        --disable-host-check  Disable Host header validation (unsafe)"
                                 );

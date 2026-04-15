@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use axum::{
     extract::Json,
+    extract::Query,
     extract::State,
     http::{header, Request, StatusCode},
     middleware::{self, Next},
@@ -15,6 +16,7 @@ use axum::{
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use serde::Deserialize;
 use serde_json::Value;
+use tokio::time::{Duration, Instant};
 
 use crate::engine::ContextEngine;
 use crate::tools::LeanCtxServer;
@@ -31,6 +33,9 @@ pub struct HttpServerConfig {
     pub allowed_hosts: Vec<String>,
     pub max_body_bytes: usize,
     pub max_concurrency: usize,
+    pub max_rps: u32,
+    pub rate_burst: u32,
+    pub request_timeout_ms: u64,
 }
 
 impl Default for HttpServerConfig {
@@ -47,6 +52,9 @@ impl Default for HttpServerConfig {
             allowed_hosts: Vec::new(),
             max_body_bytes: 2 * 1024 * 1024,
             max_concurrency: 32,
+            max_rps: 50,
+            rate_burst: 100,
+            request_timeout_ms: 30_000,
         }
     }
 }
@@ -92,7 +100,51 @@ impl HttpServerConfig {
 struct AppState {
     token: Option<String>,
     concurrency: Arc<tokio::sync::Semaphore>,
+    rate: Arc<RateLimiter>,
     engine: Arc<ContextEngine>,
+    timeout: Duration,
+}
+
+#[derive(Debug)]
+struct RateLimiter {
+    max_rps: f64,
+    burst: f64,
+    state: tokio::sync::Mutex<RateState>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RateState {
+    tokens: f64,
+    last: Instant,
+}
+
+impl RateLimiter {
+    fn new(max_rps: u32, burst: u32) -> Self {
+        let now = Instant::now();
+        Self {
+            max_rps: (max_rps.max(1)) as f64,
+            burst: (burst.max(1)) as f64,
+            state: tokio::sync::Mutex::new(RateState {
+                tokens: (burst.max(1)) as f64,
+                last: now,
+            }),
+        }
+    }
+
+    async fn allow(&self) -> bool {
+        let mut s = self.state.lock().await;
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(s.last);
+        let refill = elapsed.as_secs_f64() * self.max_rps;
+        s.tokens = (s.tokens + refill).min(self.burst);
+        s.last = now;
+        if s.tokens >= 1.0 {
+            s.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 async fn auth_middleware(
@@ -125,6 +177,20 @@ async fn auth_middleware(
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
+    next.run(req).await
+}
+
+async fn rate_limit_middleware(
+    State(state): State<AppState>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    if req.uri().path() == "/health" {
+        return next.run(req).await;
+    }
+    if !state.rate.allow().await {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
     next.run(req).await
 }
 
@@ -161,29 +227,59 @@ async fn v1_manifest(State(state): State<AppState>) -> impl IntoResponse {
     (StatusCode::OK, Json(v))
 }
 
-async fn v1_tools(State(state): State<AppState>) -> impl IntoResponse {
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolsQuery {
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+async fn v1_tools(State(state): State<AppState>, Query(q): Query<ToolsQuery>) -> impl IntoResponse {
     let v = state.engine.manifest();
     let tools = v
         .get("tools")
         .and_then(|t| t.get("granular"))
         .cloned()
         .unwrap_or(Value::Array(vec![]));
-    (StatusCode::OK, Json(serde_json::json!({ "tools": tools })))
+
+    let all = tools.as_array().cloned().unwrap_or_default();
+    let total = all.len();
+    let offset = q.offset.unwrap_or(0).min(total);
+    let limit = q.limit.unwrap_or(200).min(500);
+    let page = all.into_iter().skip(offset).take(limit).collect::<Vec<_>>();
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "tools": page,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        })),
+    )
 }
 
 async fn v1_tool_call(
     State(state): State<AppState>,
     Json(body): Json<ToolCallBody>,
 ) -> impl IntoResponse {
-    match state
-        .engine
-        .call_tool_value(&body.name, body.arguments)
-        .await
+    match tokio::time::timeout(
+        state.timeout,
+        state.engine.call_tool_value(&body.name, body.arguments),
+    )
+    .await
     {
-        Ok(v) => (StatusCode::OK, Json(serde_json::json!({ "result": v }))).into_response(),
-        Err(e) => (
+        Ok(Ok(v)) => (StatusCode::OK, Json(serde_json::json!({ "result": v }))).into_response(),
+        Ok(Err(e)) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+        Err(_) => (
+            StatusCode::GATEWAY_TIMEOUT,
+            Json(serde_json::json!({ "error": "request_timeout" })),
         )
             .into_response(),
     }
@@ -212,7 +308,9 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     let state = AppState {
         token: cfg.auth_token.clone().filter(|t| !t.is_empty()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrency.max(1))),
+        rate: Arc::new(RateLimiter::new(cfg.max_rps, cfg.rate_burst)),
         engine,
+        timeout: Duration::from_millis(cfg.request_timeout_ms.max(1)),
     };
 
     let app = Router::new()
@@ -222,6 +320,10 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
         .route("/v1/tools/call", axum::routing::post(v1_tool_call))
         .fallback_service(mcp_http)
         .layer(axum::extract::DefaultBodyLimit::max(cfg.max_body_bytes))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             concurrency_middleware,
@@ -280,11 +382,13 @@ mod tests {
         let state = AppState {
             token: Some("secret".to_string()),
             concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
+            rate: Arc::new(RateLimiter::new(50, 100)),
             engine: Arc::new(ContextEngine::from_server(
                 LeanCtxServer::new_with_project_root(Some(
                     dir.path().to_string_lossy().to_string(),
                 )),
             )),
+            timeout: Duration::from_millis(30_000),
         };
 
         let app = Router::new()
@@ -314,5 +418,42 @@ mod tests {
 
         let resp = app.clone().oneshot(req).await.expect("resp");
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_returns_429_when_exhausted() {
+        let state = AppState {
+            token: None,
+            concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
+            rate: Arc::new(RateLimiter::new(1, 1)),
+            engine: Arc::new(ContextEngine::new()),
+            timeout: Duration::from_millis(30_000),
+        };
+
+        let app = Router::new()
+            .route("/limited", get(|| async { (StatusCode::OK, "ok\n") }))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                rate_limit_middleware,
+            ))
+            .with_state(state);
+
+        let req1 = Request::builder()
+            .method("GET")
+            .uri("/limited")
+            .header("Host", "localhost")
+            .body(Body::empty())
+            .expect("req1");
+        let resp1 = app.clone().oneshot(req1).await.expect("resp1");
+        assert_eq!(resp1.status(), StatusCode::OK);
+
+        let req2 = Request::builder()
+            .method("GET")
+            .uri("/limited")
+            .header("Host", "localhost")
+            .body(Body::empty())
+            .expect("req2");
+        let resp2 = app.clone().oneshot(req2).await.expect("resp2");
+        assert_eq!(resp2.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 }
