@@ -140,10 +140,22 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '');
     border-radius: 12px;
   }
   .docs-mobile-nav summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
     list-style: none;
   }
   .docs-mobile-nav summary::-webkit-details-marker {
     display: none;
+  }
+  .docs-mobile-nav summary svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+  }
+  .docs-mobile-nav[open] summary svg {
+    transform: rotate(180deg);
   }
   .docs-mobile-nav[open] {
     border-color: rgba(52, 211, 153, 0.15);
