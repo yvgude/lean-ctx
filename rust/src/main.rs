@@ -86,6 +86,138 @@ fn main() {
                 run_async(dashboard::start(port, host));
                 return;
             }
+            "serve" => {
+                #[cfg(feature = "http-server")]
+                {
+                    let mut cfg = lean_ctx::http_server::HttpServerConfig::default();
+                    let mut i = 0;
+                    while i < rest.len() {
+                        match rest[i].as_str() {
+                            "--host" | "-H" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    cfg.host = rest[i].clone();
+                                }
+                            }
+                            arg if arg.starts_with("--host=") => {
+                                cfg.host = arg["--host=".len()..].to_string();
+                            }
+                            "--port" | "-p" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    if let Ok(p) = rest[i].parse::<u16>() {
+                                        cfg.port = p;
+                                    }
+                                }
+                            }
+                            arg if arg.starts_with("--port=") => {
+                                if let Ok(p) = arg["--port=".len()..].parse::<u16>() {
+                                    cfg.port = p;
+                                }
+                            }
+                            "--project-root" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    cfg.project_root = std::path::PathBuf::from(&rest[i]);
+                                }
+                            }
+                            arg if arg.starts_with("--project-root=") => {
+                                cfg.project_root =
+                                    std::path::PathBuf::from(&arg["--project-root=".len()..]);
+                            }
+                            "--auth-token" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    cfg.auth_token = Some(rest[i].clone());
+                                }
+                            }
+                            arg if arg.starts_with("--auth-token=") => {
+                                cfg.auth_token = Some(arg["--auth-token=".len()..].to_string());
+                            }
+                            "--stateful" => cfg.stateful_mode = true,
+                            "--stateless" => cfg.stateful_mode = false,
+                            "--json" => cfg.json_response = true,
+                            "--sse" => cfg.json_response = false,
+                            "--disable-host-check" => cfg.disable_host_check = true,
+                            "--allowed-host" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    cfg.allowed_hosts.push(rest[i].clone());
+                                }
+                            }
+                            arg if arg.starts_with("--allowed-host=") => {
+                                cfg.allowed_hosts
+                                    .push(arg["--allowed-host=".len()..].to_string());
+                            }
+                            "--max-body-bytes" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    if let Ok(n) = rest[i].parse::<usize>() {
+                                        cfg.max_body_bytes = n;
+                                    }
+                                }
+                            }
+                            arg if arg.starts_with("--max-body-bytes=") => {
+                                if let Ok(n) = arg["--max-body-bytes=".len()..].parse::<usize>() {
+                                    cfg.max_body_bytes = n;
+                                }
+                            }
+                            "--max-concurrency" => {
+                                i += 1;
+                                if i < rest.len() {
+                                    if let Ok(n) = rest[i].parse::<usize>() {
+                                        cfg.max_concurrency = n;
+                                    }
+                                }
+                            }
+                            arg if arg.starts_with("--max-concurrency=") => {
+                                if let Ok(n) = arg["--max-concurrency=".len()..].parse::<usize>() {
+                                    cfg.max_concurrency = n;
+                                }
+                            }
+                            "--help" | "-h" => {
+                                eprintln!(
+                                    "Usage: lean-ctx serve [--host H] [--port N] [--project-root DIR]\\n\\
+                                     \\n\\
+                                     Options:\\n\\
+                                       --host, -H            Bind host (default: 127.0.0.1)\\n\\
+                                       --port, -p            Bind port (default: 8080)\\n\\
+                                       --project-root        Resolve relative paths against this root (default: cwd)\\n\\
+                                       --auth-token          Require Authorization: Bearer <token> (required for non-loopback binds)\\n\\
+                                       --stateful/--stateless  Streamable HTTP session mode (default: stateless)\\n\\
+                                       --json/--sse          Response framing in stateless mode (default: json)\\n\\
+                                       --max-body-bytes      Max request body size in bytes (default: 2097152)\\n\\
+                                       --max-concurrency     Max concurrent requests (default: 32)\\n\\
+                                       --allowed-host        Add allowed Host header (repeatable)\\n\\
+                                       --disable-host-check  Disable Host header validation (unsafe)"
+                                );
+                                return;
+                            }
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+
+                    if cfg.auth_token.is_none() {
+                        if let Ok(v) = std::env::var("LEAN_CTX_HTTP_TOKEN") {
+                            if !v.trim().is_empty() {
+                                cfg.auth_token = Some(v);
+                            }
+                        }
+                    }
+
+                    if let Err(e) = run_async(lean_ctx::http_server::serve(cfg)) {
+                        eprintln!("HTTP server error: {e}");
+                        std::process::exit(1);
+                    }
+                    return;
+                }
+                #[cfg(not(feature = "http-server"))]
+                {
+                    eprintln!("lean-ctx serve is not available in this build");
+                    std::process::exit(1);
+                }
+            }
             "watch" => {
                 if let Err(e) = tui::run() {
                     eprintln!("TUI error: {e}");
@@ -354,6 +486,7 @@ fn print_help() {
 
 USAGE:
     lean-ctx                       Start MCP server (stdio)
+    lean-ctx serve                 Start MCP server (Streamable HTTP)
     lean-ctx -c \"command\"          Execute with compressed output
     lean-ctx -c --raw \"command\"    Execute without compression (full output)
     lean-ctx exec \"command\"        Same as -c
@@ -367,6 +500,7 @@ COMMANDS:
     gain --json                    Raw JSON export of all stats
     cep                            CEP impact report (score trends, cache, modes)
     dashboard [--port=N] [--host=H] Open web dashboard (default: http://localhost:3333)
+    serve [--host H] [--port N]    MCP over HTTP (Streamable HTTP, local-first)
     wrapped [--week|--month|--all] Savings report card (shareable)
     sessions [list|show|cleanup]   Manage CCP sessions (~/.lean-ctx/sessions/)
     benchmark run [path] [--json]  Run real benchmark on project files
@@ -412,9 +546,12 @@ SHELL HOOK PATTERNS (90+):
     data      JSON schema extraction, log deduplication
 
 READ MODES:
-    full (default)                 Full content (cached re-reads = 13 tokens)
+    auto                           Auto-select optimal mode (default)
+    full                           Full content (cached re-reads = 13 tokens)
     map                            Dependency graph + API signatures
     signatures                     tree-sitter AST extraction (18 languages)
+    task                           Task-relevant filtering (requires ctx_session task)
+    reference                      One-line reference stub (cheap cache key)
     aggressive                     Syntax-stripped content
     entropy                        Shannon entropy filtered
     diff                           Changed lines only

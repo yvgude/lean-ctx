@@ -1,4 +1,5 @@
 use crate::core::cache::SessionCache;
+use crate::core::heatmap;
 use crate::core::tokens::count_tokens;
 use crate::tools::ctx_read;
 use crate::tools::CrpMode;
@@ -27,6 +28,7 @@ pub fn handle_with_task(
         let chunk = ctx_read::handle_with_task(cache, path, mode, crp_mode, task);
         let original = cache.get(path).map(|e| e.original_tokens).unwrap_or(0);
         let sent = count_tokens(&chunk);
+        heatmap::record_file_access(path, original, original.saturating_sub(sent));
         total_original = total_original.saturating_add(original);
         total_saved = total_saved.saturating_add(original.saturating_sub(sent));
         sections.push(chunk);

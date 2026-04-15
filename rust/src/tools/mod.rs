@@ -46,6 +46,7 @@ pub mod ctx_smart_read;
 pub mod ctx_symbol;
 pub mod ctx_task;
 pub mod ctx_tree;
+pub mod ctx_workflow;
 pub mod ctx_wrapped;
 
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;
@@ -106,6 +107,7 @@ pub struct LeanCtxServer {
     pub client_name: Arc<RwLock<String>>,
     pub autonomy: Arc<autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
+    pub workflow: Arc<RwLock<Option<crate::core::workflow::WorkflowRun>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -126,6 +128,10 @@ impl Default for LeanCtxServer {
 
 impl LeanCtxServer {
     pub fn new() -> Self {
+        Self::new_with_project_root(None)
+    }
+
+    pub fn new_with_project_root(project_root: Option<String>) -> Self {
         let config = crate::core::config::Config::load();
 
         let interval = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL")
@@ -140,7 +146,10 @@ impl LeanCtxServer {
 
         let crp_mode = CrpMode::from_env();
 
-        let session = SessionState::load_latest().unwrap_or_default();
+        let mut session = SessionState::load_latest().unwrap_or_default();
+        if project_root.is_some() {
+            session.project_root = project_root;
+        }
         Self {
             cache: Arc::new(RwLock::new(SessionCache::new())),
             session: Arc::new(RwLock::new(session)),
@@ -157,6 +166,9 @@ impl LeanCtxServer {
                 crate::core::loop_detection::LoopDetector::with_config(
                     &crate::core::config::Config::load().loop_detection,
                 ),
+            )),
+            workflow: Arc::new(RwLock::new(
+                crate::core::workflow::load_active().ok().flatten(),
             )),
         }
     }
@@ -448,7 +460,7 @@ impl LeanCtxServer {
 
         let modes_used: std::collections::HashSet<&str> =
             calls.iter().filter_map(|c| c.mode.as_deref()).collect();
-        let mode_diversity = (modes_used.len() as f64 / 6.0).min(1.0);
+        let mode_diversity = (modes_used.len() as f64 / 10.0).min(1.0);
         let cache_util = stats.hit_rate() / 100.0;
         let cep_score = cache_util * 0.3 + mode_diversity * 0.2 + compression_rate * 0.5;
 

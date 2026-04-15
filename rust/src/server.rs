@@ -1,3 +1,4 @@
+use md5::{Digest, Md5};
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::*;
 use rmcp::service::{RequestContext, RoleServer};
@@ -66,6 +67,28 @@ impl ServerHandler for LeanCtxServer {
                 .collect()
         };
 
+        let tools = {
+            let active = self.workflow.read().await.clone();
+            if let Some(run) = active {
+                if let Some(state) = run.spec.state(&run.current) {
+                    if let Some(allowed) = &state.allowed_tools {
+                        let mut allow: std::collections::HashSet<&str> =
+                            allowed.iter().map(|s| s.as_str()).collect();
+                        allow.insert("ctx");
+                        allow.insert("ctx_workflow");
+                        return Ok(ListToolsResult {
+                            tools: tools
+                                .into_iter()
+                                .filter(|t| allow.contains(t.name.as_ref()))
+                                .collect(),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+            tools
+        };
+
         Ok(ListToolsResult {
             tools,
             ..Default::default()
@@ -103,6 +126,29 @@ impl ServerHandler for LeanCtxServer {
         };
         let name = resolved_name.as_str();
         let args = &resolved_args;
+
+        if name != "ctx_workflow" {
+            let active = self.workflow.read().await.clone();
+            if let Some(run) = active {
+                if let Some(state) = run.spec.state(&run.current) {
+                    if let Some(allowed) = &state.allowed_tools {
+                        let allowed_ok = allowed.iter().any(|t| t == name) || name == "ctx";
+                        if !allowed_ok {
+                            let mut shown = allowed.clone();
+                            shown.sort();
+                            shown.truncate(30);
+                            return Ok(CallToolResult::success(vec![Content::text(format!(
+                                "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed ({} shown): {}",
+                                run.spec.name,
+                                run.current,
+                                shown.len(),
+                                shown.join(", ")
+                            ))]));
+                        }
+                    }
+                }
+            }
+        }
 
         let auto_context = {
             let task = {
@@ -269,6 +315,7 @@ impl ServerHandler for LeanCtxServer {
                 }
                 self.record_call("ctx_read", original, saved, Some(mode.clone()))
                     .await;
+                crate::core::heatmap::record_file_access(&path, original, saved);
                 {
                     let sig =
                         crate::core::mode_predictor::FileSignature::from_path(&path, original);
@@ -1236,6 +1283,87 @@ impl ServerHandler for LeanCtxServer {
                 self.record_call("ctx_outline", original, saved, kind).await;
                 result
             }
+            "ctx_cost" => {
+                let action = get_str(args, "action").unwrap_or_else(|| "report".to_string());
+                let agent_id = get_str(args, "agent_id");
+                let limit = get_int(args, "limit").map(|n| n as usize);
+                let result = crate::tools::ctx_cost::handle(&action, agent_id.as_deref(), limit);
+                self.record_call("ctx_cost", 0, 0, Some(action)).await;
+                result
+            }
+            "ctx_heatmap" => {
+                let action = get_str(args, "action").unwrap_or_else(|| "status".to_string());
+                let path = get_str(args, "path");
+                let result = crate::tools::ctx_heatmap::handle(&action, path.as_deref());
+                self.record_call("ctx_heatmap", 0, 0, Some(action)).await;
+                result
+            }
+            "ctx_task" => {
+                let action = get_str(args, "action").unwrap_or_else(|| "list".to_string());
+                let current_agent_id = { self.agent_id.read().await.clone() };
+                let task_id = get_str(args, "task_id");
+                let to_agent = get_str(args, "to_agent");
+                let description = get_str(args, "description");
+                let state = get_str(args, "state");
+                let message = get_str(args, "message");
+                let result = crate::tools::ctx_task::handle(
+                    &action,
+                    current_agent_id.as_deref(),
+                    task_id.as_deref(),
+                    to_agent.as_deref(),
+                    description.as_deref(),
+                    state.as_deref(),
+                    message.as_deref(),
+                );
+                self.record_call("ctx_task", 0, 0, Some(action)).await;
+                result
+            }
+            "ctx_impact" => {
+                let action = get_str(args, "action").unwrap_or_else(|| "analyze".to_string());
+                let path = get_str(args, "path");
+                let depth = get_int(args, "depth").map(|d| d as usize);
+                let root = if let Some(r) = get_str(args, "root") {
+                    r
+                } else {
+                    let session = self.session.read().await;
+                    session
+                        .project_root
+                        .clone()
+                        .unwrap_or_else(|| ".".to_string())
+                };
+                let result =
+                    crate::tools::ctx_impact::handle(&action, path.as_deref(), &root, depth);
+                self.record_call("ctx_impact", 0, 0, Some(action)).await;
+                result
+            }
+            "ctx_architecture" => {
+                let action = get_str(args, "action").unwrap_or_else(|| "overview".to_string());
+                let path = get_str(args, "path");
+                let root = if let Some(r) = get_str(args, "root") {
+                    r
+                } else {
+                    let session = self.session.read().await;
+                    session
+                        .project_root
+                        .clone()
+                        .unwrap_or_else(|| ".".to_string())
+                };
+                let result =
+                    crate::tools::ctx_architecture::handle(&action, path.as_deref(), &root);
+                self.record_call("ctx_architecture", 0, 0, Some(action))
+                    .await;
+                result
+            }
+            "ctx_workflow" => {
+                let action = get_str(args, "action").unwrap_or_else(|| "status".to_string());
+                let result = {
+                    let mut session = self.session.write().await;
+                    crate::tools::ctx_workflow::handle_with_session(args, &mut session)
+                };
+                *self.workflow.write().await = crate::core::workflow::load_active().ok().flatten();
+                self.record_call("ctx_workflow", 0, 0, Some(action)).await;
+                result
+            }
             _ => {
                 return Err(ErrorData::invalid_params(
                     format!("Unknown tool: {name}"),
@@ -1298,6 +1426,37 @@ impl ServerHandler for LeanCtxServer {
             }
         }
 
+        {
+            let input = canonical_args_string(args);
+            let input_md5 = md5_hex(&input);
+            let output_md5 = md5_hex(&result_text);
+            let action = get_str(args, "action");
+            let agent_id = self.agent_id.read().await.clone();
+            let client_name = self.client_name.read().await.clone();
+
+            {
+                let mut session = self.session.write().await;
+                session.record_tool_receipt(
+                    name,
+                    action.as_deref(),
+                    &input_md5,
+                    &output_md5,
+                    agent_id.as_deref(),
+                    Some(&client_name),
+                );
+                if session.should_save() {
+                    let _ = session.save();
+                }
+            }
+
+            let agent_key = agent_id.unwrap_or_else(|| "unknown".to_string());
+            let input_tokens = crate::core::tokens::count_tokens(&input) as u64;
+            let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
+            let mut store = crate::core::a2a::cost_attribution::CostStore::load();
+            store.record_tool_call(&agent_key, &client_name, name, input_tokens, output_tokens);
+            let _ = store.save();
+        }
+
         let skip_checkpoint = matches!(
             name,
             "ctx_compress"
@@ -1314,6 +1473,12 @@ impl ServerHandler for LeanCtxServer {
                 | "ctx_wrapped"
                 | "ctx_overview"
                 | "ctx_preload"
+                | "ctx_cost"
+                | "ctx_heatmap"
+                | "ctx_task"
+                | "ctx_impact"
+                | "ctx_architecture"
+                | "ctx_workflow"
         );
 
         if !skip_checkpoint && self.increment_and_check() {
@@ -1371,6 +1536,39 @@ fn get_int(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<i
 
 fn get_bool(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<bool> {
     args.as_ref()?.get(key)?.as_bool()
+}
+
+fn md5_hex(s: &str) -> String {
+    let mut hasher = Md5::new();
+    hasher.update(s.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn canonicalize_json(v: &Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let mut out = serde_json::Map::new();
+            for k in keys {
+                if let Some(val) = map.get(k) {
+                    out.insert(k.clone(), canonicalize_json(val));
+                }
+            }
+            Value::Object(out)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(canonicalize_json).collect()),
+        other => other.clone(),
+    }
+}
+
+fn canonical_args_string(args: &Option<serde_json::Map<String, Value>>) -> String {
+    let v = args
+        .as_ref()
+        .map(|m| Value::Object(m.clone()))
+        .unwrap_or(Value::Null);
+    let canon = canonicalize_json(&v);
+    serde_json::to_string(&canon).unwrap_or_default()
 }
 
 fn extract_search_pattern_from_command(command: &str) -> Option<String> {

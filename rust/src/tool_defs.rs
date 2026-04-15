@@ -50,8 +50,7 @@ Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fre
                     },
                     "mode": {
                         "type": "string",
-                        "enum": ["full", "signatures", "map", "diff", "aggressive", "entropy"],
-                        "description": "Compression mode (default: full)"
+                        "description": "Compression mode (default: full). Same modes as ctx_read (auto, full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M)."
                     }
                 },
                 "required": ["paths"]
@@ -506,6 +505,118 @@ pull (receive files shared by other agents), list (show all shared contexts), cl
             }),
         ),
         tool_def(
+            "ctx_cost",
+            "Cost attribution (local-first). Actions: report|agent|tools|json|reset.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["report", "agent", "tools", "json", "reset", "status"],
+                        "description": "Operation to perform (default: report)"
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Agent ID for action=agent (optional)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max rows (default: 10)"
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "ctx_heatmap",
+            "File access heatmap (local-first). Actions: status|directory|cold|json.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["status", "directory", "dirs", "cold", "json"],
+                        "description": "Operation to perform (default: status)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Project root for cold scan (default: .)"
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "ctx_task",
+            "Multi-agent task orchestration. Actions: create|update|list|get|cancel|message|info.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create", "update", "list", "get", "cancel", "message", "info"],
+                        "description": "Task operation"
+                    },
+                    "task_id": { "type": "string", "description": "Task ID (required for update|get|cancel|message)" },
+                    "to_agent": { "type": "string", "description": "Target agent ID (required for create)" },
+                    "description": { "type": "string", "description": "Task description (for create)" },
+                    "state": { "type": "string", "description": "New state for update (working|input-required|completed|failed|canceled)" },
+                    "message": { "type": "string", "description": "Optional message / reason" }
+                },
+                "required": ["action"]
+            }),
+        ),
+        tool_def(
+            "ctx_impact",
+            "Graph-based impact analysis. Actions: analyze|chain|build|status.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["analyze", "chain", "build", "status"],
+                        "description": "Impact operation (default: analyze)"
+                    },
+                    "path": { "type": "string", "description": "Target file path (required for analyze). For chain: from->to spec." },
+                    "root": { "type": "string", "description": "Project root (default: .)" },
+                    "depth": { "type": "integer", "description": "Max traversal depth (default: 5)" }
+                }
+            }),
+        ),
+        tool_def(
+            "ctx_architecture",
+            "Graph-based architecture analysis. Actions: overview|clusters|layers|cycles|entrypoints|module.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["overview", "clusters", "layers", "cycles", "entrypoints", "module"],
+                        "description": "Architecture operation (default: overview)"
+                    },
+                    "path": { "type": "string", "description": "Used for action=module (module/file path)" },
+                    "root": { "type": "string", "description": "Project root (default: .)" }
+                }
+            }),
+        ),
+        tool_def(
+            "ctx_workflow",
+            "Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["start", "status", "transition", "complete", "evidence_add", "evidence_list", "stop"],
+                        "description": "Workflow operation (default: status)"
+                    },
+                    "name": { "type": "string", "description": "Optional workflow name override (action=start)" },
+                    "spec": { "type": "string", "description": "WorkflowSpec JSON (action=start). If omitted, uses builtin plan_code_test." },
+                    "to": { "type": "string", "description": "Target state (action=transition)" },
+                    "key": { "type": "string", "description": "Evidence key (action=evidence_add)" },
+                    "value": { "type": "string", "description": "Optional evidence value / transition note" }
+                }
+            }),
+        ),
+        tool_def(
             "ctx_semantic_search",
             "Semantic code search (BM25 + optional embeddings/hybrid). action=reindex to rebuild.",
             json!({
@@ -725,13 +836,15 @@ response (compress LLM text), context (session state), graph (build|related|symb
 session (load|save|task|finding|decision|status|reset|list|cleanup), \
 knowledge (remember|recall|pattern|consolidate|timeline|rooms|search|wakeup|status|remove|export), \
 agent (register|post|read|status|list|info|diary|recall_diary|diaries), overview (project map), \
-wrapped (savings report), benchmark (file|project), multi_read (batch), semantic_search (BM25).",
+wrapped (savings report), benchmark (file|project), multi_read (batch), semantic_search (BM25), \
+cost (attribution), heatmap (file access), impact (graph impact), architecture (graph structure), \
+task (A2A tasks), workflow (state machine).",
             json!({
                 "type": "object",
                 "properties": {
                     "tool": {
                         "type": "string",
-                        "description": "compress|metrics|analyze|cache|discover|smart_read|delta|dedup|fill|intent|response|context|graph|session|knowledge|agent|overview|wrapped|benchmark|multi_read|semantic_search"
+                        "description": "compress|metrics|analyze|cache|discover|smart_read|delta|dedup|fill|intent|response|context|graph|session|knowledge|agent|overview|wrapped|benchmark|multi_read|semantic_search|cost|heatmap|impact|architecture|task|workflow"
                     },
                     "action": { "type": "string" },
                     "path": { "type": "string" },
@@ -740,6 +853,8 @@ wrapped (savings report), benchmark (file|project), multi_read (batch), semantic
                     "value": { "type": "string" },
                     "category": { "type": "string" },
                     "key": { "type": "string" },
+                    "to": { "type": "string" },
+                    "spec": { "type": "string" },
                     "budget": { "type": "integer" },
                     "task": { "type": "string" },
                     "mode": { "type": "string" },
@@ -758,6 +873,12 @@ wrapped (savings report), benchmark (file|project), multi_read (batch), semantic
                     "include_signatures": { "type": "boolean" },
                     "limit": { "type": "integer" },
                     "to_agent": { "type": "string" },
+                    "task_id": { "type": "string" },
+                    "agent_id": { "type": "string" },
+                    "description": { "type": "string" },
+                    "state": { "type": "string" },
+                    "root": { "type": "string" },
+                    "depth": { "type": "integer" },
                     "show_hidden": { "type": "boolean" }
                 },
                 "required": ["tool"]
@@ -805,6 +926,12 @@ pull (receive shared files), list (show all shared contexts), clear (remove your
         ("ctx_overview", "Task-relevant project map — use at session start.", json!({"type": "object", "properties": {"task": {"type": "string"}, "path": {"type": "string"}}})),
         ("ctx_preload", "Proactive context loader — reads and caches task-relevant files, returns compact L-curve-optimized summary with critical lines, imports, and signatures. Costs ~50-100 tokens instead of ~5000 for individual reads.", json!({"type": "object", "properties": {"task": {"type": "string", "description": "Task description (e.g. 'fix auth bug in validate_token')"}, "path": {"type": "string", "description": "Project root (default: .)"}}, "required": ["task"]})),
         ("ctx_wrapped", "Savings report card. Periods: week|month|all.", json!({"type": "object", "properties": {"period": {"type": "string"}}})),
+        ("ctx_cost", "Cost attribution (local-first). Actions: report|agent|tools|json|reset.", json!({"type": "object", "properties": {"action": {"type": "string"}, "agent_id": {"type": "string"}, "limit": {"type": "integer"}}})),
+        ("ctx_heatmap", "File access heatmap (local-first). Actions: status|directory|cold|json.", json!({"type": "object", "properties": {"action": {"type": "string"}, "path": {"type": "string"}}})),
+        ("ctx_task", "Multi-agent task orchestration. Actions: create|update|list|get|cancel|message|info.", json!({"type": "object", "properties": {"action": {"type": "string"}, "task_id": {"type": "string"}, "to_agent": {"type": "string"}, "description": {"type": "string"}, "state": {"type": "string"}, "message": {"type": "string"}}, "required": ["action"]})),
+        ("ctx_impact", "Graph-based impact analysis. Actions: analyze|chain|build|status.", json!({"type": "object", "properties": {"action": {"type": "string"}, "path": {"type": "string"}, "root": {"type": "string"}, "depth": {"type": "integer"}}})),
+        ("ctx_architecture", "Graph-based architecture analysis. Actions: overview|clusters|layers|cycles|entrypoints|module.", json!({"type": "object", "properties": {"action": {"type": "string"}, "path": {"type": "string"}, "root": {"type": "string"}}})),
+        ("ctx_workflow", "Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.", json!({"type": "object", "properties": {"action": {"type": "string"}, "name": {"type": "string"}, "spec": {"type": "string"}, "to": {"type": "string"}, "key": {"type": "string"}, "value": {"type": "string"}}})),
         ("ctx_semantic_search", "Semantic code search (BM25 + optional embeddings/hybrid). action=reindex to rebuild.", json!({"type": "object", "properties": {"query": {"type": "string"}, "path": {"type": "string"}, "top_k": {"type": "integer"}, "action": {"type": "string"}, "mode": {"type": "string", "enum": ["bm25","dense","hybrid"]}, "languages": {"type": "array", "items": {"type": "string"}}, "path_glob": {"type": "string"}}, "required": ["query"]})),
         ("ctx_execute", "Run code in sandbox (11 languages). Only stdout enters context. Languages: javascript, typescript, python, shell, ruby, go, rust, php, perl, r, elixir. Actions: batch (multiple scripts), file (process file in sandbox).", json!({"type": "object", "properties": {"language": {"type": "string"}, "code": {"type": "string"}, "intent": {"type": "string"}, "timeout": {"type": "integer"}, "action": {"type": "string"}, "items": {"type": "string"}, "path": {"type": "string"}}, "required": ["language", "code"]})),
         ("ctx_symbol", "Read a specific symbol (function, struct, class) by name. Returns only the symbol code block instead of the entire file. 90-97% fewer tokens than full file read.", json!({"type": "object", "properties": {"name": {"type": "string"}, "file": {"type": "string"}, "kind": {"type": "string"}}, "required": ["name"]})),

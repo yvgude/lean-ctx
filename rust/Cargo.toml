@@ -25,12 +25,12 @@ path = "src/cloud_server_main.rs"
 required-features = ["cloud-server"]
 
 [features]
-default = ["tree-sitter", "embeddings"]
+default = ["tree-sitter", "embeddings", "http-server"]
 neural = ["dep:rten", "dep:rten-tensor"]
 embeddings = ["dep:rten", "dep:rten-tensor"]
+http-server = ["dep:axum", "dep:tower-http"]
 cloud-server = [
-  "dep:axum",
-  "dep:tower-http",
+  "http-server",
   "dep:deadpool-postgres",
   "dep:tokio-postgres",
   "dep:lettre",
@@ -63,9 +63,9 @@ tree-sitter = [
 ]
 
 [dependencies]
-rmcp = { version = "1", features = ["server", "transport-io"] }
+rmcp = { version = "1", features = ["server", "transport-io", "transport-streamable-http-server"] }
 tiktoken-rs = "0.6"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 md-5 = "0.10"
@@ -110,7 +110,7 @@ tree-sitter-dart = { version = "0.1", optional = true }
 rten = { version = "0.24", optional = true }
 rten-tensor = { version = "0.24", optional = true }
 axum = { version = "0.8", optional = true }
-tower-http = { version = "0.6", features = ["cors"], optional = true }
+tower-http = { version = "0.6", features = ["cors", "auth"], optional = true }
 deadpool-postgres = { version = "0.14", optional = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"], optional = true }
@@ -133,3 +133,4 @@ panic = "abort"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+tower = "0.5"

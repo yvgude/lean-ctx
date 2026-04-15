@@ -7,9 +7,12 @@ pub mod config_io;
 pub mod core;
 pub mod dashboard;
 pub mod doctor;
+pub mod engine;
 pub mod heatmap;
 pub mod hook_handlers;
 pub mod hooks;
+#[cfg(feature = "http-server")]
+pub mod http_server;
 pub mod instructions;
 pub mod mcp_stdio;
 pub mod report;
