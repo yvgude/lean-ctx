@@ -14,7 +14,7 @@ const sidebar = [
       { label: t('docs.gettingStarted.sidebarInstallBinary'), href: lp('/docs/getting-started#install') },
       { label: t('docs.gettingStarted.sidebarSetup'), href: lp('/docs/getting-started#shell-hook') },
       { label: t('docs.gettingStarted.sidebarVerify'), href: lp('/docs/getting-started#editor-setup') },
-      { label: 'Docker', href: lp('/docs/getting-started#docker') },
+      { label: t('docs.gettingStarted.sidebarDocker'), href: lp('/docs/getting-started#docker') },
     ],
   },
   {
@@ -607,12 +607,8 @@ cargo build --release</code></pre>
 
   <hr />
 
-  <h2 id="docker">Docker Installation</h2>
-  <p>
-    To use lean-ctx inside a Docker container (e.g. with Claude Code, Codex, or other AI agents),
-    use the statically-linked <strong>musl</strong> binary and set <code>BASH_ENV</code> so the
-    shell hook loads in non-interactive shells.
-  </p>
+  <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
+  <p set:html={t('docs.gettingStarted.dockerDesc')} />
 
   <pre><code>ARG LEAN_CTX_VERSION=3.1.2
 
@@ -629,51 +625,51 @@ RUN lean-ctx init --global &amp;&amp; \
 # Load shell hook in non-interactive shells (required for AI agents)
 ENV BASH_ENV="/root/.bashrc"</code></pre>
 
-  <h3>Why this works</h3>
+  <h3 set:html={t('docs.gettingStarted.dockerWhyTitle')} />
   <table>
     <thead>
-      <tr><th>Step</th><th>Purpose</th></tr>
+      <tr><th set:html={t('docs.gettingStarted.dockerWhyStep')} /><th set:html={t('docs.gettingStarted.dockerWhyPurpose')} /></tr>
     </thead>
     <tbody>
       <tr>
         <td><code>musl</code> binary</td>
-        <td>Statically linked — works on any Linux distro without installing <code>gcc-libs</code> or <code>glibc</code></td>
+        <td set:html={t('docs.gettingStarted.dockerWhyMusl')} />
       </tr>
       <tr>
         <td><code>lean-ctx init --global</code></td>
-        <td>Installs shell hook into <code>~/.bashrc</code> (non-interactive, unlike <code>lean-ctx setup</code>)</td>
+        <td set:html={t('docs.gettingStarted.dockerWhyInit')} />
       </tr>
       <tr>
         <td><code>lean-ctx init --agent claude</code></td>
-        <td>Writes MCP server config to <code>~/.claude.json</code>. Replace <code>claude</code> with your agent: <code>cursor</code>, <code>codex</code>, <code>gemini</code>, etc.</td>
+        <td set:html={t('docs.gettingStarted.dockerWhyAgent')} />
       </tr>
       <tr>
         <td><code>BASH_ENV</code></td>
-        <td>AI agents run commands via <code>bash -c "..."</code> (non-interactive). Without <code>BASH_ENV</code>, bash skips <code>.bashrc</code> and the <code>_lc</code> function is undefined.</td>
+        <td set:html={t('docs.gettingStarted.dockerWhyBashEnv')} />
       </tr>
     </tbody>
   </table>
 
-  <h3>Common issues</h3>
+  <h3 set:html={t('docs.gettingStarted.dockerIssuesTitle')} />
   <table>
     <thead>
-      <tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
+      <tr><th set:html={t('docs.gettingStarted.dockerIssuesError')} /><th set:html={t('docs.gettingStarted.dockerIssuesCause')} /><th set:html={t('docs.gettingStarted.dockerIssuesFix')} /></tr>
     </thead>
     <tbody>
       <tr>
         <td><code>command not found: _lc</code></td>
-        <td><code>BASH_ENV</code> not set — shell hook not loaded</td>
-        <td>Add <code>ENV BASH_ENV="/root/.bashrc"</code> (adjust path for non-root users)</td>
+        <td set:html={t('docs.gettingStarted.dockerIssuesLcError')} />
+        <td set:html={t('docs.gettingStarted.dockerIssuesLcFix')} />
       </tr>
       <tr>
         <td><code>lean-ctx setup</code> hangs</td>
-        <td>Interactive prompt with no stdin in Docker</td>
-        <td>Use <code>lean-ctx init --global</code> instead</td>
+        <td set:html={t('docs.gettingStarted.dockerIssuesSetupError')} />
+        <td set:html={t('docs.gettingStarted.dockerIssuesSetupFix')} />
       </tr>
       <tr>
         <td>Binary not found / exec format error</td>
-        <td>Wrong architecture or using <code>gnu</code> binary without glibc</td>
-        <td>Use the <code>musl</code> tarball for minimal containers</td>
+        <td set:html={t('docs.gettingStarted.dockerIssuesBinaryError')} />
+        <td set:html={t('docs.gettingStarted.dockerIssuesBinaryFix')} />
       </tr>
     </tbody>
   </table>
