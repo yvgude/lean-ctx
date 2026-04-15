@@ -49,6 +49,8 @@ deploy-website:
       rsync -avz website/nginx.conf website/Dockerfile \
         "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST:/home/$LEANCTX_SSH_USER/lean-ctx-web/"
     # Rebuild image and restart container on server
+    # Note: Traefik routing is handled by file-based config (leanctx-com.yml),
+    # so no Docker labels needed. Container name must be "leanctx-web" to match.
     - |
       ssh "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST" '
         set -e
@@ -58,25 +60,18 @@ deploy-website:
         docker build -t lean-ctx-web .
 
         echo "[2/4] Stopping old container..."
-        docker stop lean-ctx-web || true
-        docker rm lean-ctx-web || true
+        docker stop leanctx-web || true
+        docker rm leanctx-web || true
 
         echo "[3/4] Starting new container..."
         docker run -d \
-          --name lean-ctx-web \
+          --name leanctx-web \
           --network coolify \
           --restart unless-stopped \
-          --label "traefik.enable=true" \
-          --label "traefik.docker.network=coolify" \
-          --label "traefik.http.routers.lean-ctx.entrypoints=https" \
-          --label "traefik.http.routers.lean-ctx.rule=Host(\`leanctx.com\`) || Host(\`www.leanctx.com\`) || Host(\`lean-ctx.pounce.ch\`) || Host(\`leanctx.tech\`) || Host(\`www.leanctx.tech\`)" \
-          --label "traefik.http.routers.lean-ctx.tls=true" \
-          --label "traefik.http.routers.lean-ctx.tls.certresolver=letsencrypt" \
-          --label "traefik.http.services.lean-ctx.loadbalancer.server.port=80" \
           lean-ctx-web
 
         echo "[4/4] Done. Container status:"
-        docker ps --filter name=lean-ctx-web --format "table {{.Names}}\t{{.Status}}"
+        docker ps --filter name=leanctx-web --format "table {{.Names}}\t{{.Status}}"
       '
   environment:
     name: production
