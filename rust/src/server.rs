@@ -1479,7 +1479,10 @@ fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
     };
 
     if stdout_truncated || stderr_truncated {
-        text.push_str("\n[lean-ctx: output truncated — exceeded MAX_SHELL_CAPTURE_BYTES]");
+        text.push_str(&format!(
+            "\n[lean-ctx: output truncated — exceeded shell capture limit ({} bytes); adjust LCTX_MAX_SHELL_BYTES to change this cap]",
+            cap
+        ));
     }
 
     (text, code)
