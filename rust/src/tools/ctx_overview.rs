@@ -23,7 +23,19 @@ pub fn handle(
         .map(|p| p.to_string())
         .unwrap_or_else(|| ".".to_string());
 
-    let index = crate::core::graph_index::load_or_build(&project_root);
+    let index = if let Some(idx) = crate::core::index_orchestrator::try_load_graph_index(&project_root) {
+        idx
+    } else {
+        crate::core::index_orchestrator::ensure_all_background(&project_root);
+        return format!(
+            "INDEXING IN PROGRESS\n\n\
+            The knowledge graph for this project is being built in the background.\n\
+            Project: {}\n\n\
+            Because this is a large project, the initial scan may take a moment.\n\
+            Please try this command again in 1-2 minutes.",
+            project_root
+        );
+    };
 
     let (task_files, task_keywords) = if let Some(task_desc) = task {
         parse_task_hints(task_desc)
