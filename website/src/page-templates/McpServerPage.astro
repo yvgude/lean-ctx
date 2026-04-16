@@ -159,6 +159,7 @@ const readModeCount = manifest.read_modes.count;
           <span class="mcp-tool-tag">ctx_session</span>
           <span class="mcp-tool-tag">ctx_compress</span>
           <span class="mcp-tool-tag">ctx_analyze</span>
+          <span class="mcp-tool-tag">ctx_gain</span>
           <span class="mcp-tool-tag">ctx_benchmark</span>
           <span class="mcp-tool-tag">ctx_metrics</span>
           <span class="mcp-tool-tag">ctx_wrapped</span>
@@ -223,6 +224,11 @@ const readModeCount = manifest.read_modes.count;
           </thead>
           <tbody class="divide-y divide-border">
             <tr>
+              <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">auto</code></td>
+              <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">Best mode for context</td>
+              <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">Default — lean-ctx picks optimal strategy based on file type, size, and task</td>
+            </tr>
+            <tr>
               <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">full</code></td>
               <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.fullReturn')}</td>
               <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.fullWhen')}</td>
@@ -256,6 +262,11 @@ const readModeCount = manifest.read_modes.count;
               <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">task</code></td>
               <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.taskReturn')}</td>
               <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">{t('mcpServer.taskWhen')}</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">reference</code></td>
+              <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">Cross-reference context</td>
+              <td class="px-4 sm:px-5 py-3 text-muted text-[13px]">Related types, callers, and dependencies for the target symbol</td>
             </tr>
             <tr class="border-t border-border/30">
               <td class="px-4 sm:px-5 py-3"><code class="text-accent-2-bright bg-surface-3 px-1.5 py-0.5 rounded text-[11px] border border-border">lines:N-M</code></td>

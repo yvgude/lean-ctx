@@ -93,12 +93,15 @@ LEAN_CTX_DISABLED=1 lean-ctx -c git status</code></pre>
 
   <h3 id="read"><code>lean-ctx read &lt;file&gt; [-m &lt;mode&gt;]</code></h3>
   <p><Fragment set:html={t('docs.cliReference.readDesc')} /></p>
-  <pre><code>lean-ctx read src/main.rs                    # full content (cached)
+  <pre><code>lean-ctx read src/main.rs                    # auto-selects best mode
+lean-ctx read src/main.rs -m full            # full content (cached)
 lean-ctx read src/main.rs -m map             # dependency graph + exports
 lean-ctx read src/main.rs -m signatures      # tree-sitter AST extraction
 lean-ctx read src/main.rs -m aggressive      # syntax-stripped
 lean-ctx read src/main.rs -m entropy         # Shannon entropy filtered
 lean-ctx read src/main.rs -m diff            # changed lines only
+lean-ctx read src/main.rs -m task            # IB-filtered for current task
+lean-ctx read src/main.rs -m reference       # cross-reference context
 lean-ctx read src/main.rs -m lines:10-50     # specific line range
 lean-ctx read src/main.rs -m lines:10-50,80  # multiple ranges</code></pre>
 
@@ -138,12 +141,15 @@ lean-ctx deps frontend/</code></pre>
       <tr><th>{t('docs.cliReference.thMode')}</th><th>{t('docs.cliReference.thOutput')}</th><th>{t('docs.cliReference.thUseCase')}</th><th>{t('docs.cliReference.thSavings')}</th></tr>
     </thead>
     <tbody>
+      <tr><td><code>auto</code></td><td>Best mode for context</td><td>Default when no mode specified — lean-ctx picks optimal strategy</td><td>60–95%</td></tr>
       <tr><td><code>full</code></td><td>{t('docs.cliReference.modeFull')}</td><td>{t('docs.cliReference.modeFullUse')}</td><td>{t('docs.cliReference.modeFullSavings')}</td></tr>
       <tr><td><code>map</code></td><td>{t('docs.cliReference.modeMap')}</td><td>{t('docs.cliReference.modeMapUse')}</td><td>{t('docs.cliReference.modeMapSavings')}</td></tr>
       <tr><td><code>signatures</code></td><td>{t('docs.cliReference.modeSignatures')}</td><td>{t('docs.cliReference.modeSignaturesUse')}</td><td>{t('docs.cliReference.modeSignaturesSavings')}</td></tr>
       <tr><td><code>aggressive</code></td><td>{t('docs.cliReference.modeAggressive')}</td><td>{t('docs.cliReference.modeAggressiveUse')}</td><td>{t('docs.cliReference.modeAggressiveSavings')}</td></tr>
       <tr><td><code>entropy</code></td><td>{t('docs.cliReference.modeEntropy')}</td><td>{t('docs.cliReference.modeEntropyUse')}</td><td>{t('docs.cliReference.modeEntropySavings')}</td></tr>
       <tr><td><code>diff</code></td><td>{t('docs.cliReference.modeDiff')}</td><td>{t('docs.cliReference.modeDiffUse')}</td><td>{t('docs.cliReference.modeDiffSavings')}</td></tr>
+      <tr><td><code>task</code></td><td>Task-filtered content</td><td>IB-scored extraction based on current intent — only relevant code for the active task</td><td>70–90%</td></tr>
+      <tr><td><code>reference</code></td><td>Cross-reference context</td><td>Related types, callers, and dependencies for the target symbol or function</td><td>60–85%</td></tr>
       <tr><td><code>lines:N-M</code></td><td>{t('docs.cliReference.modeLines')}</td><td><Fragment set:html={t('docs.cliReference.modeLinesUse')} /></td><td>{t('docs.cliReference.modeLinesSavings')}</td></tr>
     </tbody>
   </table>
@@ -221,11 +227,23 @@ lean-ctx update --check # check if a newer version is available (no install)</co
 
   <h3 id="gain"><code>lean-ctx gain [flags]</code></h3>
   <p>{t('docs.cliReference.gainDesc')}</p>
+  <p>
+    Powered by the <strong>GainEngine</strong> — a unified observability API that consolidates compression metrics,
+    cost tracking, and session analytics into a single <strong>GainScore</strong> (0–100).
+    Uses embedded <strong>ModelPricing</strong> (no network required) and a <strong>TaskClassifier</strong> with 13 categories.
+  </p>
 
   <table>
     <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thOutput')}</th></tr></thead>
     <tbody>
       <tr><td><code>(none)</code></td><td>{t('docs.cliReference.gainNoneDesc')}</td></tr>
+      <tr><td><code>--score</code></td><td>GainScore (0–100) combining compression ratio, cost efficiency, quality, and consistency</td></tr>
+      <tr><td><code>--cost</code></td><td>Cost breakdown per model with embedded pricing (supports <code>--model=&lt;name&gt;</code> filter)</td></tr>
+      <tr><td><code>--tasks</code></td><td>Task classification breakdown across 13 categories (file-ops, search, shell, memory, etc.)</td></tr>
+      <tr><td><code>--agents</code></td><td>Per-agent statistics in multi-agent sessions (calls, tokens, cost attribution)</td></tr>
+      <tr><td><code>--heatmap</code></td><td>File access heatmap — which files are read most frequently by the AI</td></tr>
+      <tr><td><code>--wrapped</code></td><td>Spotify-Wrapped-style session summary (supports <code>--period=week|month|all</code>)</td></tr>
+      <tr><td><code>--deep</code></td><td>Combined deep-dive: report + tasks + cost + agents + heatmap in one output</td></tr>
       <tr><td><code>--live</code></td><td><Fragment set:html={t('docs.cliReference.gainLiveDesc')} /></td></tr>
       <tr><td><code>--graph</code></td><td>{t('docs.cliReference.gainGraphDesc')}</td></tr>
       <tr><td><code>--daily</code></td><td>{t('docs.cliReference.gainDailyDesc')}</td></tr>
@@ -233,11 +251,28 @@ lean-ctx update --check # check if a newer version is available (no install)</co
     </tbody>
   </table>
 
-  <pre><code>lean-ctx gain
-lean-ctx gain --live
-lean-ctx gain --graph
-lean-ctx gain --daily
-lean-ctx gain --json &gt; stats.json</code></pre>
+  <h4>Modifiers</h4>
+  <table>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thOutput')}</th></tr></thead>
+    <tbody>
+      <tr><td><code>--model=&lt;name&gt;</code></td><td>Filter cost/score output to a specific model (e.g. <code>--model=claude-4-sonnet</code>)</td></tr>
+      <tr><td><code>--period=&lt;p&gt;</code></td><td>Time window for analytics: <code>today</code>, <code>week</code>, <code>month</code>, <code>all</code> (default: <code>all</code>)</td></tr>
+      <tr><td><code>--limit=&lt;n&gt;</code></td><td>Max rows in ranked tables (default: 10)</td></tr>
+      <tr><td><code>--reset</code></td><td>Clear all stats data and start fresh</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx gain                          # overview with GainScore
+lean-ctx gain --score                  # GainScore breakdown
+lean-ctx gain --cost --model=claude-4-sonnet  # cost for specific model
+lean-ctx gain --tasks                  # task classification heatmap
+lean-ctx gain --agents                 # multi-agent cost attribution
+lean-ctx gain --deep                   # full deep-dive report
+lean-ctx gain --wrapped --period=week  # weekly summary
+lean-ctx gain --live                   # real-time monitoring
+lean-ctx gain --graph                  # ASCII savings graph
+lean-ctx gain --daily                  # daily breakdown
+lean-ctx gain --json &gt; stats.json      # machine-readable export</code></pre>
 
   <h3 id="cep"><code>lean-ctx cep</code></h3>
   <p>{t('docs.cliReference.cepDesc')}</p>

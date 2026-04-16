@@ -18,6 +18,8 @@ const sidebar = [
       { label: t('docsConfiguration.sidebarEnvVars'), href: lp('/docs/configuration') + '#environment-variables' },
       { label: t('docsConfiguration.sidebarHookRedirect'), href: lp('/docs/configuration') + '#hook-redirect' },
       { label: t('docsConfiguration.sidebarCursorRule'), href: lp('/docs/configuration') + '#cursor-rule' },
+      { label: 'Security Layer', href: lp('/docs/configuration') + '#security-layer' },
+      { label: 'Data Directory', href: lp('/docs/configuration') + '#data-directory' },
       { label: 'CLI File Cache', href: lp('/docs/configuration') + '#cli-cache' },
       { label: 'Loop Detection', href: lp('/docs/configuration') + '#loop-detection' },
       { label: 'Pipe Guard', href: lp('/docs/configuration') + '#pipe-guard' },
@@ -200,6 +202,21 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>path</td>
         <td set:html={t('docsConfiguration.modelsDirDesc')} />
       </tr>
+      <tr>
+        <td><code>LEAN_CTX_DATA_DIR</code></td>
+        <td>path (default: <code>~/.lean-ctx</code>)</td>
+        <td>Override the base directory for all lean-ctx persistent data (stats, knowledge, agents, cache, sessions). All modules resolve paths through this single env var. Useful for custom data locations or containerized environments.</td>
+      </tr>
+      <tr>
+        <td><code>LCTX_MAX_READ_BYTES</code></td>
+        <td>number (default: 5242880)</td>
+        <td>Maximum file size in bytes that <code>ctx_read</code> / <code>ctx_edit</code> will process. Files exceeding this limit are rejected with a clear error. Prevents accidental ingestion of very large files. Default: 5 MB.</td>
+      </tr>
+      <tr>
+        <td><code>LCTX_MAX_SHELL_BYTES</code></td>
+        <td>number (default: 1048576)</td>
+        <td>Maximum shell output capture size in bytes for <code>ctx_shell</code>. Output exceeding this limit is truncated with a <code>[truncated]</code> marker. Default: 1 MB.</td>
+      </tr>
     </tbody>
   </table>
 
@@ -262,12 +279,73 @@ replacement = ""</code></pre>
 
   <hr />
 
+  <h2 id="security-layer">Security Layer <span class="text-xs font-normal text-muted ml-2">v3.1.3</span></h2>
+  <p>
+    lean-ctx enforces a multi-layered security model by default. All protections are active
+    without configuration — install and go.
+  </p>
+
+  <h3>PathJail (Project-Root Sandbox)</h3>
+  <p>
+    Every file operation is validated through a single <code>resolve_path</code> choke point.
+    Paths must resolve inside the project root — symlink attacks, <code>../</code> traversal,
+    and absolute paths outside the project are rejected. The sandbox is enforced for
+    <code>ctx_read</code>, <code>ctx_edit</code>, <code>ctx_search</code>, <code>ctx_tree</code>,
+    and all other file-touching tools.
+  </p>
+
+  <h3>Size Caps</h3>
+  <table>
+    <thead>
+      <tr><th>Env Variable</th><th>Default</th><th>Protects</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>LCTX_MAX_READ_BYTES</code></td><td>5 MB</td><td>File reads (<code>ctx_read</code>, <code>ctx_edit</code>)</td></tr>
+      <tr><td><code>LCTX_MAX_SHELL_BYTES</code></td><td>1 MB</td><td>Shell output capture (<code>ctx_shell</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Prompt Injection Hardening</h3>
+  <p>
+    All metadata in tool responses is sanitized via <code>neutralize_metadata</code> — stripping
+    control characters, encoded sequences, and injection patterns. Sensitive output blocks
+    (knowledge, memory, gotchas) are wrapped in CSPRNG-fenced boundaries to prevent
+    prompt injection through LLM-generated content stored in memory.
+  </p>
+
+  <h3>TOCTOU Mitigation</h3>
+  <p>
+    <code>ctx_edit</code> uses the same file handle for read-verify-write, preventing
+    time-of-check-to-time-of-use race conditions where a file could be swapped between
+    the validation and write phases.
+  </p>
+
+  <hr />
+
+  <h2 id="data-directory">Data Directory <span class="text-xs font-normal text-muted ml-2">v3.1.3</span></h2>
+  <p>
+    All persistent data (stats, knowledge, agent state, sessions, cache) is stored under a
+    single base directory, resolved in this order:
+  </p>
+  <ol>
+    <li><code>LEAN_CTX_DATA_DIR</code> environment variable (if set)</li>
+    <li><code>~/.lean-ctx</code> (default)</li>
+  </ol>
+  <pre><code># Override for custom locations or containers
+export LEAN_CTX_DATA_DIR=/data/lean-ctx
+
+# Verify current data directory
+ls "$(lean-ctx config | grep data_dir)"</code></pre>
+
+  <hr />
+
   <h2 id="cli-cache">CLI File Cache <span class="text-xs font-normal text-muted ml-2">v2.21.1</span></h2>
   <p>
     Since v2.21.1, <code>lean-ctx read &lt;file&gt;</code> in CLI mode caches file content to
-    <code>~/.lean-ctx/cli-cache/cache.json</code>. Subsequent reads of unchanged files return a
-    compact ~13-token cache-hit response instead of the full file content. This enables caching
-    for CLI-mode integrations (e.g. pi-lean-ctx) that don't use the MCP server.
+    <code>$LEAN_CTX_DATA_DIR/cli-cache/cache.json</code> (default: <code>~/.lean-ctx/cli-cache/cache.json</code>).
+    Subsequent reads of unchanged files return a compact ~13-token cache-hit response instead
+    of the full file content. This enables caching for CLI-mode integrations (e.g. pi-lean-ctx)
+    that don't use the MCP server.
   </p>
   <table>
     <thead>

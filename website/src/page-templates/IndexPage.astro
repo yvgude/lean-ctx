@@ -1,10 +1,12 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getMcpManifest } from '../lib/mcpManifest';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
+const manifest = getMcpManifest();
 ---
 
 <BaseLayout title={t('index.title')}>
@@ -37,7 +39,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       </div>
       <div class="hero-proof-divider"></div>
       <div class="hero-proof-item">
-        <span class="hero-proof-number font-display">34</span>
+        <span class="hero-proof-number font-display">{manifest.counts.granular}</span>
         <span class="hero-proof-label">{t('index.heroProofTools')}</span>
       </div>
     </div>
@@ -239,7 +241,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         <span class="stat-desc">{t('index.statsReduction')}</span>
       </div>
       <div class="stat-item">
-        <span class="stat-number font-display text-accent-2">34</span>
+        <span class="stat-number font-display text-accent-2">{manifest.counts.granular}</span>
         <span class="stat-desc">{t('index.statsTools')}</span>
       </div>
       <div class="stat-item">

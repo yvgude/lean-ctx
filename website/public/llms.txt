@@ -1,19 +1,47 @@
-# LeanCTX — Reduce AI Coding Token Costs by 99%
+lean-ctx — Context Runtime for AI Agents
 
-> Open-source MCP server + shell hook that reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary with MCP tools, 90+ CLI compression patterns, and zero telemetry. Works with 24 AI coding tools.
+This website is generated from a single source of truth (SSOT).
+
+MCP tool list, tool counts, schemas, and read modes:
+- /generated/mcp-tools.json
+
+Core MCP tools (unified surface):
+- ctx_read
+- ctx_shell
+- ctx_search
+- ctx_tree
+- ctx
+
+Notes:
+- Exact counts and read modes are intentionally not hardcoded in this file.
+- Use the manifest for up-to-date numbers and schemas.
+
+# LeanCTX — Context Runtime for AI Agents
+
+> Open-source MCP server + shell hook that reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary with MCP tools, 90+ CLI compression patterns, and zero telemetry. Works with 24 AI coding tools. Security by default (PathJail sandbox, size caps, TOCTOU mitigation, prompt injection hardening).
 
 ## What is LeanCTX?
 
-LeanCTX (lean-ctx) is an open-source context compression system for AI coding tools. It sits transparently between your AI tool (Cursor, Claude Code, GitHub Copilot, Windsurf, Gemini CLI, etc.) and the LLM, compressing all context before it reaches the model. This reduces token usage by 60-99%, cuts API costs, and makes AI responses faster.
+LeanCTX (lean-ctx) is an open-source context runtime for AI coding agents. It sits transparently between your AI tool (Cursor, Claude Code, GitHub Copilot, Windsurf, Gemini CLI, etc.) and the LLM, compressing all context before it reaches the model. This reduces token usage by 60-99%, cuts API costs, and makes AI responses faster.
+
+Key capabilities:
+- **Compression**: AST-aware compression, session caching, 10 read modes, 90+ shell patterns
+- **Memory Runtime**: Biologically-inspired memory with adaptive forgetting, salience tagging, dual-process retrieval, prospective memory
+- **Security Layer**: PathJail project-root sandbox, size caps, TOCTOU mitigation, metadata neutralization, CSPRNG fencing
+- **Unified Gain**: GainScore (0-100), embedded ModelPricing, TaskClassifier (13 categories), cost attribution
+- **Intelligence Layer**: Graph-driven task reads, intent classification, dependency-aware context
+- **Multi-Agent**: A2A task delegation, agent diaries, context sharing, cost attribution per agent
 
 Install in 60 seconds: `npm install -g lean-ctx-bin && lean-ctx setup`
 
 ## How It Reduces Token Costs
 
-1. **MCP Server**: Compression-aware tools replace built-in file reads, shell commands, and code search. Uses tree-sitter AST parsing across supported languages. Read modes + caching; cached re-reads cost ~13 tokens.
+1. **MCP Server**: Compression-aware tools replace built-in file reads, shell commands, and code search. Uses tree-sitter AST parsing across 18 languages. 10 read modes + caching; cached re-reads cost ~13 tokens.
 2. **Shell Hook**: Intercepts 90+ CLI command patterns (git, npm, cargo, docker, kubectl, pip, go, tsc, curl) and compresses output by 60-95%.
 3. **AI Tool Hooks**: One-command integration for 24 editors via `lean-ctx setup`. No workflow changes needed.
 4. **Communication Protocols**: CEP (Cognitive Efficiency Protocol), CCP (Context Continuity Protocol), and TDD (Token Dense Dialect) teach the AI to respond more efficiently, saving 8-25% additional tokens.
+5. **Memory Runtime**: Persistent project knowledge with temporal fact tracking, adaptive forgetting, and cross-session recall. Automatically consolidates session findings into permanent knowledge.
+6. **Security Layer**: PathJail sandbox restricts all file access to project root. Size caps prevent context window overflow. TOCTOU mitigation prevents file-swap attacks. All outputs are sanitized and fenced against prompt injection.
 
 ## Real Token Savings
 
@@ -39,6 +67,36 @@ The compression engine is powered by six research-backed algorithms:
 5. **MMR Deduplication** — Jaccard similarity across cached files. Eliminates redundant patterns without losing unique information.
 6. **BPE Optimization** — Token-aligned encoding. Restructures output to minimize actual BPE token count, not just character count.
 
+## Memory Runtime
+
+The Memory Runtime is a biologically-inspired memory model:
+
+- **Deterministic Salience Tagging**: Facts scored by frequency, recency, and confirmation count
+- **Adaptive Forgetting**: Time-decay and salience thresholds archive low-value facts (rehydratable)
+- **Consolidation Engine**: Session findings promoted into permanent knowledge (budgeted, no prose)
+- **Dual-Process Retrieval**: Fast System-1 recall + deep System-2 semantic search with archive rehydration
+- **Prospective Memory**: Surfaces pending tasks at the right moment
+- **Temporal Facts**: Version tracking, contradiction detection, confidence scoring
+- **Knowledge Embeddings**: Optional local semantic recall (hybrid ranking: similarity + confidence + recency)
+
+## Unified Gain (Observability)
+
+- **GainScore** (0-100): Composite metric based on compression ratio, cost efficiency, quality, and consistency
+- **GainEngine**: Unified API consolidating metrics, costs, savings with gain-first framing
+- **ModelPricing**: Embedded pricing for all major LLM models (no network required)
+- **TaskClassifier**: 13 categories for automatic tool call classification
+- **ctx_gain**: MCP tool for querying gain metrics programmatically
+- **lean-ctx gain**: CLI with --score, --cost, --tasks, --agents, --heatmap, --wrapped, --deep, --json, --live, --graph, --daily flags
+
+## Security Layer
+
+- **PathJail**: Project-root sandbox — all file operations validated through single `resolve_path` choke point
+- **Size Caps**: `LCTX_MAX_READ_BYTES` (5 MB) and `LCTX_MAX_SHELL_BYTES` (1 MB) prevent context overflow
+- **TOCTOU Mitigation**: `ctx_edit` uses same file handle for read-verify-write
+- **Metadata Neutralization**: Control characters and injection patterns stripped from all outputs
+- **CSPRNG Fencing**: Sensitive output blocks (knowledge, gotchas) wrapped in random-fenced boundaries
+- **CI Guard**: Automated tests enforce that all FS-touching tools use `resolve_path`
+
 ## Supported AI Coding Tools (24)
 
 Cursor, Claude Code, GitHub Copilot, Windsurf, VS Code, Zed, OpenAI Codex CLI, Gemini CLI, Cline, Roo Code, Google Antigravity, Pi Coding Agent, OpenCode, Aider, Amp, AWS Kiro, JetBrains IDEs, Amazon Q Developer, Qwen Code, Trae, Continue, Crush, Google Antigravity.
@@ -47,12 +105,14 @@ All configured automatically with `lean-ctx setup`.
 
 ## Key Facts
 
-- Version: 2.21.1
+- Version: 3.1.5
 - License: MIT (fully open source)
 - Language: Rust (single binary, ~17 MB with tree-sitter, ~5.7 MB without)
 - Install: `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `brew install lean-ctx`
 - Setup: `lean-ctx setup` (auto-configures shell + all detected editors)
 - Telemetry: Zero. None. Ever.
+- Security: PathJail sandbox, size caps, TOCTOU mitigation, prompt injection hardening — all active by default
+- Data: `LEAN_CTX_DATA_DIR` (default: `~/.lean-ctx`) for all persistent data
 - Repository: https://github.com/yvgude/lean-ctx
 - Crate: https://crates.io/crates/lean-ctx
 - npm: https://www.npmjs.com/package/lean-ctx-bin
@@ -70,7 +130,7 @@ All configured automatically with `lean-ctx setup`.
 - [CLI Reference](https://leanctx.com/cli/): Terminal commands for humans
 - [Protocols](https://leanctx.com/protocols/): CEP, CCP, and TDD communication protocols
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation and setup guide
-- [Configuration](https://leanctx.com/docs/configuration/): config.toml, CLI cache, environment variables
+- [Configuration](https://leanctx.com/docs/configuration/): config.toml, security layer, environment variables
 - [Tool API Reference](https://leanctx.com/docs/tools/): All MCP tools documented
 - [Intelligence Layer](https://leanctx.com/docs/intelligence-layer/): 6 scientific compression algorithms explained
 - [Tree-sitter Engine](https://leanctx.com/docs/tree-sitter/): AST parsing for 18 languages
@@ -79,16 +139,19 @@ All configured automatically with `lean-ctx setup`.
 ## FAQ
 
 **How much money does lean-ctx save?**
-Active developers save $30-100+ per month on API costs. The exact amount depends on your AI tool, usage patterns, and pricing tier.
+Active developers save $30-100+ per month on API costs. The exact amount depends on your AI tool, usage patterns, and pricing tier. Use `lean-ctx gain --score` to see your personal GainScore.
 
 **Does lean-ctx work with Claude Code / Cursor / Copilot?**
-Yes — lean-ctx supports 24 AI coding tools out of the box. Run `lean-ctx setup` and it auto-detects and configures all installed editors.
+Yes — lean-ctx supports 24 AI coding tools out of the box. Run `lean-ctx setup` and it auto-detects and configures all installed editors. Docker/Claude Code environments get self-healing MCP configuration via `claude mcp add-json`.
 
 **Does it slow down my AI tool?**
 No. lean-ctx adds <1ms overhead per operation. Most users report their AI tools feel faster because less data means faster LLM responses.
 
 **Is it safe?**
-Zero telemetry — no data collection, no analytics, no network requests, ever. Everything runs 100% locally. MIT-licensed and fully auditable.
+Yes. Zero telemetry — no data collection, no analytics, no network requests, ever. Everything runs 100% locally. PathJail sandbox prevents file access outside the project root. Size caps prevent memory/context overflow. All outputs are sanitized against prompt injection. MIT-licensed and fully auditable.
+
+**What about security?**
+lean-ctx enforces security by default with no configuration needed: PathJail sandbox (project-root restriction), file and shell output size caps, TOCTOU mitigation for file edits, metadata neutralization, and CSPRNG fencing for memory outputs. See the Configuration docs for details.
 
 **What's the difference between lean-ctx and RTK?**
-lean-ctx is a hybrid architecture (shell hook + MCP server) while RTK is shell-hook only. lean-ctx offers a full MCP tool suite vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, and zero telemetry (RTK has default-on telemetry).
+lean-ctx is a hybrid architecture (shell hook + MCP server) while RTK is shell-hook only. lean-ctx offers a full MCP tool suite vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, includes a Memory Runtime with persistent knowledge and adaptive forgetting, provides a Security Layer (PathJail, size caps), and zero telemetry (RTK has default-on telemetry).

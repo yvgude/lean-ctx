@@ -34,6 +34,34 @@ const sidebar = [
 <DocsLayout title={t('docsToolsMemory.title')} description={t('docsToolsMemory.description')} sidebar={sidebar}>
   <p>{t('docsToolsMemory.intro')}</p>
 
+  <h2 id="memory-runtime">Memory Runtime (Autopilot)</h2>
+  <p>
+    The Memory Runtime is a biologically-inspired memory model that runs <strong>silently</strong> in the
+    background. No verbose outputs, no agent compliance needed — install and it just works.
+  </p>
+  <ul>
+    <li><strong>Ingestion</strong>: Tool receipts + compact session signals are recorded automatically.</li>
+    <li><strong>Deterministic Salience Tagging</strong>: Every fact gets a salience score based on frequency, recency, and confirmation count. High-salience facts surface first; low-salience facts decay into archives.</li>
+    <li><strong>Consolidation Engine</strong>: <code>consolidate_latest</code> promotes salient findings/decisions into permanent <code>ctx_knowledge</code> (budgeted, no prose).</li>
+    <li><strong>Adaptive Forgetting</strong>: Active sets stay small via time-decay and salience thresholds. Low-value facts are archived (not deleted) and can be rehydrated on demand.</li>
+    <li><strong>Dual-Process Retrieval</strong>: Fast <strong>System-1</strong> recall (keyword + salience lookup) for immediate answers. Deep <strong>System-2</strong> recall (semantic search + archive rehydration) when System-1 misses.</li>
+    <li><strong>Prospective Memory</strong>: The system remembers pending tasks and surfaces them at the right moment — e.g., "you planned to add error handling to this function" when the file is read again.</li>
+    <li><strong>Structured Intent Layer</strong>: Current task context flows through the entire pipeline, so all read modes, compression, and retrieval are task-aware without explicit configuration.</li>
+  </ul>
+
+  <h3>Storage & <code>LEAN_CTX_DATA_DIR</code></h3>
+  <p>
+    By default, data is stored under <code>~/.lean-ctx/</code>. For test isolation or custom locations, set
+    <code>LEAN_CTX_DATA_DIR</code> to point to the root directory used for all persistent stores.
+  </p>
+
+  <h3>How to verify it’s working</h3>
+  <ul>
+    <li><code>lean-ctx token-report --json</code> — session summary + intent counters.</li>
+    <li><code>ctx_knowledge action=status</code> — active vs archived facts and rooms.</li>
+    <li><code>ctx_cost action=report</code> and <code>ctx_heatmap action=status</code> — non‑empty after normal usage.</li>
+  </ul>
+
   <h2 id="ctx_knowledge">ctx_knowledge — Persistent Project Knowledge</h2>
   <p>
     A persistent knowledge store scoped to each project with temporal fact tracking, contradiction detection,
@@ -57,9 +85,12 @@ const sidebar = [
       <tr><td><code>search</code></td><td><code>query</code></td><td>Cross-session/cross-project search across ALL stored knowledge and sessions</td></tr>
       <tr><td><code>wakeup</code></td><td>—</td><td>Compact AAAK-formatted briefing of the most important project facts</td></tr>
       <tr><td><code>status</code></td><td>—</td><td>Show stored knowledge summary with active/archived counts and rooms</td></tr>
-      <tr><td><code>remove</code></td><td><code>category</code>, <code>key</code></td><td>Delete a fact</td></tr>
+      <tr><td><code>remove</code></td><td><code>category</code>, <code>key</code></td><td>Remove a fact from the active set (also removes its embedding entry if present)</td></tr>
       <tr><td><code>export</code></td><td>—</td><td>Export all knowledge as structured JSON</td></tr>
       <tr><td><code>gotcha</code></td><td><code>trigger</code>, <code>resolution</code>, <code>severity</code></td><td>Record a bug/mistake to never repeat</td></tr>
+      <tr><td><code>embeddings_status</code></td><td>—</td><td>Show semantic embeddings status (model present/missing, auto-download flag, index size)</td></tr>
+      <tr><td><code>embeddings_reset</code></td><td>—</td><td>Delete the local embeddings index for this project</td></tr>
+      <tr><td><code>embeddings_reindex</code></td><td>—</td><td>Rebuild embeddings index from current (non-archived) facts</td></tr>
     </tbody>
   </table>
 
@@ -113,6 +144,32 @@ ctx_knowledge action=wakeup
     Knowledge is stored per-project at <code>~/.lean-ctx/knowledge/&lt;project-hash&gt;/knowledge.json</code>.
     Archived facts remain in the same file with <code>valid_until</code> timestamps.
   </p>
+
+  <h3>Knowledge Embeddings (Semantic Recall)</h3>
+  <p>
+    When embeddings are enabled and the local model is available, <code>ctx_knowledge action=recall</code> with a <code>query</code>
+    performs semantic recall (hybrid ranking: semantic similarity + confidence + recency), and returns a scored list.
+  </p>
+  <p>
+    <strong>Auto-download is off by default.</strong> To allow first-use model download, set
+    <code>LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD=1</code>. Model files are stored under <code>~/.lean-ctx/models/</code>
+    (override with <code>LEAN_CTX_MODELS_DIR</code>).
+  </p>
+  <p>
+    Embeddings index (per project): <code>~/.lean-ctx/knowledge/&lt;project-hash&gt;/embeddings.json</code>.
+  </p>
+  <pre><code>ctx_knowledge action=embeddings_status
+→ Knowledge embeddings: model=present, auto_download=off, index_entries=128, path=~/.lean-ctx/knowledge/abc123/embeddings.json
+
+ctx_knowledge action=recall query="auth token refresh"
+→ Semantic recall 'auth token refresh' (showing 5):
+  [architecture/auth-method]: JWT RS256 (score: 92%, sem: 96%, conf: 95%)
+
+ctx_knowledge action=embeddings_reset
+→ Embeddings index reset.
+
+ctx_knowledge action=embeddings_reindex
+→ Embeddings reindex ok (embedded 128 facts).</code></pre>
 
   <h2 id="ctx_agent">ctx_agent — Multi-Agent Coordination & Diaries</h2>
   <p>

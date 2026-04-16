@@ -49,10 +49,19 @@ const sidebar = [
     </thead>
     <tbody>
       <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Absolute file path</td></tr>
-      <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>full</code> (default), <code>map</code>, <code>signatures</code>, <code>diff</code>, <code>aggressive</code>, <code>entropy</code>, or with a line range suffix e.g. <code>full lines:10-80</code> / <code>map lines:1-40</code> to read only lines N–M (1-based, inclusive)</td></tr>
+      <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>auto</code>, <code>full</code> (default), <code>map</code>, <code>signatures</code>, <code>diff</code>, <code>aggressive</code>, <code>entropy</code>, <code>task</code>, <code>reference</code>, or <code>lines:N-M</code> (e.g. <code>lines:10-80</code> or <code>lines:10-80,120,200-240</code>)</td></tr>
+      <tr><td><code>start_line</code></td><td>number</td><td>No</td><td>Read from this line number to end of file (bypasses cache stubs)</td></tr>
       <tr><td><code>fresh</code></td><td>boolean</td><td>No</td><td>Bypass cache and force a full re-read. Use after context compaction, in subagents, or when you see a cache-hit but no longer have the file content.</td></tr>
     </tbody>
   </table>
+
+  <h3>Mode: auto</h3>
+  <p>
+    Auto-selects the best mode for a file based on size, language, and token signature.
+    Use it when you’re not sure whether you need <code>map</code>, <code>signatures</code>, or <code>full</code>.
+  </p>
+  <pre><code>ctx_read server.rs --mode auto
+→ [auto] resolved to map</code></pre>
 
   <h3>Mode: full (default)</h3>
   <p>
@@ -61,12 +70,14 @@ const sidebar = [
   </p>
   <pre><code># First read: returns full content with structured header
 ctx_read auth.ts
-→ F1=auth.ts [123L +] deps:[db,crypto] exports:[createUser,validateSession]
-  [full file content...]
+→ [full file content...]
+  F1=auth.ts 123L
+   deps db,crypto
+   exports createUser,validateSession
 
 # Second read: returns cache hit (~13 tokens)
 ctx_read auth.ts
-→ F1=auth.ts [cached 2t 123L ∅]</code></pre>
+→ F1=auth.ts cached 2t 123L</code></pre>
   <p>Savings: <strong>~99%</strong> on re-reads.</p>
 
   <h3>Mode: map</h3>
@@ -125,16 +136,59 @@ ctx_read auth.ts
     Savings: <strong>60-85%</strong>.
   </p>
 
+  <h3>Mode: task (graph-driven)</h3>
+  <p>
+    Task-conditioned read: filters the file down to task-relevant lines (information bottleneck filter),
+    and appends a compact <strong>Graph Context</strong> footer listing the most relevant related files
+    (<code>imports</code>, <code>imported-by</code>, <code>transitive-dep</code>, <code>type-provider</code>).
+  </p>
+  <p>
+    <strong>How it knows the task:</strong> set your current task via <code>ctx_session action=task</code> (or any workflow that sets session task),
+    then read with <code>mode=task</code>.
+  </p>
+  <p>
+    <strong>Graph context is best-effort:</strong> it uses an existing project graph if present
+    (prefers SQLite property graph; falls back to the lightweight JSON graph index). It does not build graphs implicitly in task mode —
+    run <code>ctx_graph action=build</code> (fast) or <code>ctx_impact action=build</code> (deep) once per project to enable it.
+  </p>
+  <pre><code>ctx_session action=task value="fix auth refresh token bug"
+ctx_read src/auth/service.rs --mode task
+→ F1=src/auth/service.rs 412L [task-filtered: 412→38]
+  ...task-relevant lines...
+--- GRAPH CONTEXT (source=graph_index, 4 related files, 9180 tok) ---
+  src/auth/token.rs [imports] (1220 tok)
+  src/http/middleware.rs [imported-by] (980 tok)
+--- END GRAPH CONTEXT ---</code></pre>
+
+  <h3>Mode: reference</h3>
+  <p>
+    Ultra-compact reference line for files you want to keep in mind without pulling content into the context window.
+    Useful when a file is relevant by name/location, but you don’t want to spend tokens yet.
+  </p>
+  <pre><code>ctx_read Cargo.lock --mode reference
+→ F9=Cargo.lock: 14823 lines, 39210 tok (lock)</code></pre>
+
+  <h3>Mode: lines:N-M</h3>
+  <p>
+    Read only specific lines with line numbers. Supports single lines and comma-separated ranges:
+    <code>lines:10-80</code>, <code>lines:42</code>, <code>lines:10-80,120,200-240</code>.
+  </p>
+  <pre><code>ctx_read src/server.rs --mode lines:120-150
+→ F3=src/server.rs 812L lines:120-150
+  120| pub fn handle_request(...) &#123;
+  ...</code></pre>
+
   <h3>Structured Headers</h3>
   <p>Every <code>ctx_read</code> response includes a structured header:</p>
-  <pre><code>F1=auth.ts [123L +] deps:[db,crypto] exports:[createUser,validateSession]</code></pre>
+  <pre><code>F1=auth.ts 123L
+ deps db,crypto
+ exports createUser,validateSession</code></pre>
   <ul>
     <li><code>F1</code>, <code>F2</code>, ... — file reference IDs that persist for the session</li>
     <li><code>=short_path</code> — abbreviated file path</li>
-    <li><code>[NL]</code> — line count</li>
-    <li><code>+</code> — first read, <code>∅</code> — unchanged (cache hit)</li>
-    <li><code>deps:[...]</code> — imported modules</li>
-    <li><code>exports:[...]</code> — exported names</li>
+    <li><code>123L</code> — line count</li>
+    <li><code>deps ...</code> — imported modules (compact list)</li>
+    <li><code>exports ...</code> — exported names (compact list)</li>
   </ul>
 
   <h3>Compact Notation</h3>
@@ -143,6 +197,14 @@ ctx_read auth.ts
     <li><code>:s</code>, <code>:n</code>, <code>:b</code> — type abbreviations (string, number, boolean)</li>
     <li><code>fn</code>, <code>cl</code>, <code>if</code>, <code>tp</code> — keyword abbreviations</li>
   </ul>
+
+  <h3>Security</h3>
+  <p>
+    All file reads pass through the <strong>PathJail</strong> sandbox. Paths must resolve inside the project root —
+    <code>../</code> traversal, symlink attacks, and absolute paths outside the project are rejected.
+    Files exceeding <code>LCTX_MAX_READ_BYTES</code> (default: 5 MB) are rejected to prevent accidental
+    ingestion of large binaries or generated files.
+  </p>
 
   <h3>Cache Safety</h3>
   <p>
@@ -163,7 +225,10 @@ ctx_read auth.ts
       <tr><td>Checking changes</td><td><code>diff</code></td><td>Only changed lines</td></tr>
       <tr><td>Large boilerplate files</td><td><code>aggressive</code></td><td>~30-50%</td></tr>
       <tr><td>Repetitive patterns</td><td><code>entropy</code></td><td>~20-40%</td></tr>
-      <tr><td>Only a slice of a large file</td><td><code>full lines:N-M</code> (or other mode + <code>lines:N-M</code>)</td><td>Proportional to range</td></tr>
+      <tr><td>Task-driven context + next reads</td><td><code>task</code></td><td>Highly variable</td></tr>
+      <tr><td>Keep a pointer only</td><td><code>reference</code></td><td>~1 line</td></tr>
+      <tr><td>Only a slice of a large file</td><td><code>lines:N-M</code></td><td>Proportional to range</td></tr>
+      <tr><td>Not sure which mode to use</td><td><code>auto</code></td><td>Best-effort</td></tr>
     </tbody>
   </table>
 
@@ -259,17 +324,16 @@ ctx_read auth.ts
     <code>~/.lean-ctx/tee/</code>. Use <code>lean-ctx tee last</code> to view the most recent saved output.
   </p>
 
-  <h3>Input Validation</h3>
+  <h3>Input Validation & Security</h3>
   <p>
-    <code>ctx_shell</code> validates commands before execution and rejects file-write operations:
+    <code>ctx_shell</code> enforces multiple security layers:
   </p>
   <ul>
     <li><strong>File-write blocking</strong> — Shell redirects (<code>&gt;</code>, <code>&gt;&gt;</code>), heredocs (<code>&lt;&lt; EOF</code>), and <code>tee</code> are rejected with a clear error. Use the native Write tool instead.</li>
     <li><strong>Command size limit</strong> — Commands over 8KB are rejected. Large heredocs corrupt the MCP protocol stream.</li>
+    <li><strong>Output size cap</strong> — Output exceeding <code>LCTX_MAX_SHELL_BYTES</code> (default: 1 MB) is truncated with a <code>[truncated]</code> marker to prevent context window overflow.</li>
+    <li><strong>Metadata neutralization</strong> — All output is sanitized to strip control characters and potential prompt injection patterns.</li>
   </ul>
-  <p>
-    This prevents cascading MCP failures caused by oversized shell payloads (see <a href="https://github.com/yvgude/lean-ctx/issues/50">#50</a>).
-  </p>
 
   <h3>Supported Patterns (90+)</h3>
 

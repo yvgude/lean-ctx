@@ -1,10 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getMcpManifest } from '../lib/mcpManifest';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
+const manifest = getMcpManifest();
+const mcpToolMore = Math.max(0, manifest.counts.granular - 3);
 
 const faqSchema = JSON.stringify({
   '@context': 'https://schema.org',
@@ -86,10 +89,12 @@ const faqSchema = JSON.stringify({
 
 <span class="text-muted/60">With lean-ctx:</span>
 
-<span class="text-text-bright">You</span>  →  <span class="text-text-bright">AI Tool</span>  →  <span class="text-accent font-bold">lean-ctx</span> compresses  →  <span class="text-accent">signal only</span>  →  <span class="text-accent font-bold">LLM: 60–90% less noise</span>
+<span class="text-text-bright">You</span>  →  <span class="text-text-bright">AI Tool</span>  →  <span class="text-accent font-bold">lean-ctx</span> compresses  →  <span class="text-accent">signal only</span>  →  <span class="text-accent font-bold">LLM: 60–99% less noise</span>
+                           <span class="text-muted/40">├─ PathJail sandbox + size caps</span>
                            <span class="text-muted/40">├─ AST-aware compression</span>
+                           <span class="text-muted/40">├─ Memory Runtime (knowledge + forgetting)</span>
                            <span class="text-muted/40">├─ Session cache (re-read ≈ 13 tok)</span>
-                           <span class="text-muted/40">└─ 7 read modes per file type</span></pre>
+                           <span class="text-muted/40">└─ {manifest.read_modes.count} read modes per file type</span></pre>
         </div>
       </div>
     </div>
@@ -238,7 +243,7 @@ const faqSchema = JSON.stringify({
           <span class="hiw-tool-tag">ctx_read</span>
           <span class="hiw-tool-tag">ctx_shell</span>
           <span class="hiw-tool-tag">ctx_search</span>
-          <span class="hiw-tool-tag text-muted/50">+21</span>
+          <span class="hiw-tool-tag text-muted/50">+{mcpToolMore}</span>
         </div>
         <span class="hiw-layer-cta">
           {t('howItWorks.layer1Cta')}

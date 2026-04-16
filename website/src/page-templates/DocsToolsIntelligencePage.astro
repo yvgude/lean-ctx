@@ -145,6 +145,13 @@ const sidebar = [
     codebase, extracts symbols and dependencies, and stores the index on disk for instant access
     across sessions. Supports 5 actions for structural understanding of any project.
   </p>
+  <div class="border border-accent/20 rounded-lg p-4 mb-4 bg-accent/5">
+    <p class="mt-0 mb-0 text-sm text-muted">
+      <strong>Graph strategy:</strong> <code>ctx_graph</code> stores a lightweight JSON index for fast navigation
+      (symbols/related/quick impact). For deeper analysis, prefer <code>ctx_impact</code> and <code>ctx_architecture</code>,
+      which use the SQLite-backed property graph as the authoritative backend.
+    </p>
+  </div>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <table>
     <thead>
@@ -446,10 +453,10 @@ const sidebar = [
 
   <h3>Task-Aware KG Compression</h3>
   <p>
-    The <code>task</code> read mode leverages the project Knowledge Graph (built by <code>ctx_graph</code>)
-    to prioritize task-relevant code. It uses the Information Bottleneck (IB) filter to retain only
-    lines relevant to the specified task, while appending dependency context from the graph.
-    This results in 65-85% token savings while preserving task-critical information.
+    The <code>task</code> read mode is task-conditioned: it runs an Information Bottleneck (IB) filter to keep only
+    task-relevant lines, and appends a compact <strong>Graph Context</strong> footer with the most relevant related files.
+    Graph context is best-effort and uses an existing project graph (prefers the SQLite property graph; falls back to the lightweight JSON index).
+    To enable it, build a graph once per project with <code>ctx_graph action=build</code> or <code>ctx_impact action=build</code>.
   </p>
 
   <h3>Storage</h3>
