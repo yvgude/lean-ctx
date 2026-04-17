@@ -1,5 +1,7 @@
 ---
 import PrivacyPage from '../../page-templates/PrivacyPage.astro';
+import { getLocaleStaticPaths } from '../../i18n/routing.ts';
+export const getStaticPaths = getLocaleStaticPaths;
 ---
 <PrivacyPage />
 
