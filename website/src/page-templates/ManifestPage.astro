@@ -36,7 +36,7 @@ const sections = [
         <span class="mx-2 text-border-light">/</span>
         <span class="text-accent">5</span> {t('manifest.designPrinciplesCount')}
         <span class="mx-2 text-border-light">/</span>
-        <span class="text-accent">4</span> {t('manifest.architectureLayers')}
+        <span class="text-accent">7</span> {t('manifest.architectureLayers')}
       </p>
     </div>
 
@@ -218,6 +218,36 @@ const sections = [
               <p class="text-sm sm:text-[15px] text-muted leading-[1.8]">
                 {t('manifest.archLayer4Desc')}
               </p>
+            </div>
+          </div>
+
+          <div class="flex gap-4">
+            <div class="shrink-0 w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mt-0.5">
+              <span class="text-[10px] font-bold text-accent">5</span>
+            </div>
+            <div>
+              <h3 class="text-base font-medium text-text-bright mb-1 font-display" set:html={t('manifest.securityPillar')} />
+              <p class="text-sm sm:text-[15px] text-muted leading-[1.8]" set:html={t('manifest.securityPillarDesc')} />
+            </div>
+          </div>
+
+          <div class="flex gap-4">
+            <div class="shrink-0 w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mt-0.5">
+              <span class="text-[10px] font-bold text-accent">6</span>
+            </div>
+            <div>
+              <h3 class="text-base font-medium text-text-bright mb-1 font-display" set:html={t('manifest.integrityPillar')} />
+              <p class="text-sm sm:text-[15px] text-muted leading-[1.8]" set:html={t('manifest.integrityPillarDesc')} />
+            </div>
+          </div>
+
+          <div class="flex gap-4">
+            <div class="shrink-0 w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mt-0.5">
+              <span class="text-[10px] font-bold text-accent">7</span>
+            </div>
+            <div>
+              <h3 class="text-base font-medium text-text-bright mb-1 font-display" set:html={t('manifest.rrfPillar')} />
+              <p class="text-sm sm:text-[15px] text-muted leading-[1.8]" set:html={t('manifest.rrfPillarDesc')} />
             </div>
           </div>
         </div>

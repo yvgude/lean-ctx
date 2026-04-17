@@ -245,6 +245,32 @@ const realWorldExamples = [
 
 <div class="section-divider content-grid"></div>
 
+<!-- ═══════ 5b. ADVANCED COMPRESSION PIPELINE ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.advStage')}</p>
+    <h3 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);" set:html={t('benchmark.advPipelineTitle')} />
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3.5rem); max-width: 44rem;" set:html={t('benchmark.advPipelineDesc')} />
+
+    <div class="bench-pipeline-table animate-entrance stagger-3">
+      <table>
+        <thead><tr><th>{t('benchmark.advStage')}</th><th>{t('benchmark.advEffect')}</th><th>{t('benchmark.advSavings')}</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Thompson Sampling</strong></td><td set:html={t('benchmark.advThompsonEffect')} /><td>5–15%</td></tr>
+          <tr><td><strong>AST Pruning</strong></td><td set:html={t('benchmark.advAstEffect')} /><td>40–70%</td></tr>
+          <tr><td><strong>IDF Dedup</strong></td><td set:html={t('benchmark.advIdfEffect')} /><td>10–30%</td></tr>
+          <tr><td><strong>IB Filter</strong></td><td set:html={t('benchmark.advIbEffect')} /><td>15–25%</td></tr>
+          <tr><td><strong>Verbatim Compaction</strong></td><td set:html={t('benchmark.advVerbatimEffect')} /><td>5–20%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="fluid-sm text-muted mt-6 animate-entrance" set:html={t('benchmark.advCumulative')} />
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
 <!-- ═══════ 6. COMPRESSION QUALITY ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
@@ -533,6 +559,45 @@ const realWorldExamples = [
     height: 100%;
     border-radius: 2px;
     transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* ── Pipeline Table ───────────────────────── */
+  .bench-pipeline-table {
+    overflow-x: auto;
+  }
+  .bench-pipeline-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
+  }
+  .bench-pipeline-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid var(--color-border);
+    color: var(--color-text-bright);
+    font-family: var(--font-display);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .bench-pipeline-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-muted);
+    vertical-align: top;
+  }
+  .bench-pipeline-table td:first-child {
+    color: var(--color-text-bright);
+    white-space: nowrap;
+  }
+  .bench-pipeline-table td:last-child {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--color-accent);
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .bench-pipeline-table tr:last-child td {
+    border-bottom: none;
   }
 
   /* ── Stat Rings ─────────────────────────── */

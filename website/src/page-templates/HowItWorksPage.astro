@@ -213,6 +213,12 @@ const faqSchema = JSON.stringify({
         {t('howItWorks.cliCommandsPrefix')} <a href={lp('/cli')} class="text-accent hover:underline">{t('howItWorks.cliCommandsLink')}</a>
       </p>
     </div>
+
+    <div class="animate-entrance" style="margin-top: clamp(3rem, 2rem + 2vw, 5rem);">
+      <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2" set:html={t('howItWorks.rrfTitle')} />
+      <p class="fluid-sm text-muted mb-3" set:html={t('howItWorks.rrfDesc')} />
+      <p class="fluid-sm text-muted" set:html={t('howItWorks.rrfFormula')} />
+    </div>
   </div>
 </section>
 
@@ -337,6 +343,44 @@ const faqSchema = JSON.stringify({
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </a>
     </div>
+
+    <div class="animate-entrance" style="margin-top: clamp(3rem, 2rem + 2vw, 5rem);">
+      <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2" set:html={t('howItWorks.advancedPipelineTitle')} />
+      <p class="fluid-sm text-muted mb-4" set:html={t('howItWorks.advancedPipelineDesc')} />
+
+      <div class="rounded-lg border border-border overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-surface-2">
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('howItWorks.advPipelineComponent')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('howItWorks.advPipelineRole')}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/30">
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Thompson Sampling Bandit</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advThompson')} />
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Tree-sitter AST Pruning</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advTreeSitter')} />
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">IDF Deduplication</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advIdf')} />
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Information-Bottleneck Filter</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advIbFilter')} />
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Verbatim Compaction</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advVerbatim')} />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -387,6 +431,27 @@ const faqSchema = JSON.stringify({
         </div>
       </div>
     </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ SECURITY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      Defense in depth
+    </p>
+    <h3 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);" set:html={t('howItWorks.securityTitle')} />
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;" set:html={t('howItWorks.securityDesc')} />
+    <ul class="space-y-3 animate-entrance stagger-3" style="list-style: none; padding: 0; max-width: 48rem;">
+      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityPathJail')} />
+      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityShellCap')} />
+      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityToctou')} />
+      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityIntegrity')} />
+    </ul>
   </div>
 </section>
 

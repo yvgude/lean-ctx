@@ -520,6 +520,16 @@ sudo mv lean-ctx /usr/local/bin/</code></pre>
     </li>
   </ol>
 
+  <table>
+    <thead>
+      <tr><th>{t('docs.gettingStarted.tableCommand')}</th><th>{t('docs.gettingStarted.tableMethod')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>lean-ctx-x86_64-unknown-linux-musl.tar.gz</code></td><td>x86_64 — statically linked (musl)</td></tr>
+      <tr><td><code>lean-ctx-aarch64-unknown-linux-musl.tar.gz</code></td><td set:html={t('docs.gettingStarted.linuxArm64')} /></tr>
+    </tbody>
+  </table>
+
   <h3 id="windows">{t('docs.gettingStarted.windowsTitle')}</h3>
 
   <p set:html={t('docs.gettingStarted.windowsOptionA')} />
@@ -627,6 +637,12 @@ ENV BASH_ENV="/root/.lean-ctx/env.sh"
 
 # Claude Code: sources this file before each command
 ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
+
+  <p set:html={t('docs.gettingStarted.dockerArm64')} />
+  <pre><code># For ARM64 (Apple Silicon / Graviton), use the aarch64 binary:
+RUN curl -fsSL \
+    "https://github.com/yvgude/lean-ctx/releases/download/v$&#123;LEAN_CTX_VERSION&#125;/lean-ctx-aarch64-unknown-linux-musl.tar.gz" \
+    | tar -xz -C /usr/local/bin lean-ctx</code></pre>
 
   <h3 set:html={t('docs.gettingStarted.dockerWhyTitle')} />
   <table>
@@ -747,6 +763,18 @@ claude mcp add lean-ctx lean-ctx
 # Install the CLAUDE.md instructions (makes Claude use lean-ctx tools):
 lean-ctx init --agent claude</code></pre>
   <p>{t('docs.gettingStarted.editorClaudeNote')}</p>
+
+  <h4 set:html={t('docs.gettingStarted.claude2048Title')} />
+  <p set:html={t('docs.gettingStarted.claude2048Desc')} />
+  <p set:html={t('docs.gettingStarted.claude2048Fix')} />
+  <pre><code># Automatic (recommended) — run during init:
+lean-ctx init --agent claude
+
+# This automatically:
+# 1. Registers MCP server in ~/.claude.json
+# 2. Installs full instructions to ~/.claude/rules/lean-ctx.md
+# 3. Installs Agent Skill to ~/.claude/skills/lean-ctx/</code></pre>
+  <p set:html={t('docs.gettingStarted.claude2048Manual')} />
 
   <h3 id="editor-copilot">{t('docs.gettingStarted.editorCopilotTitle')}</h3>
   <ol>

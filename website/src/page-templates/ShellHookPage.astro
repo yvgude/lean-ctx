@@ -422,6 +422,24 @@ found 0 vulnerabilities</pre>
 <div class="section-divider content-grid"></div>
 
 
+<!-- ═══════ DOCKER / ENV.SH ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="max-width: 48rem;">
+      <h3 class="fluid-h3 font-bold font-display text-text-bright mb-3" set:html={t('shellHook.dockerTitle')} />
+      <p class="fluid-body text-muted mb-4" set:html={t('shellHook.dockerDesc')} />
+      <pre style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.25rem; overflow-x: auto;"><code style="font-size: 0.85rem;"># In your Dockerfile:
+ENV BASH_ENV="/root/.lean-ctx/env.sh"
+ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
+      <p class="fluid-body text-muted mt-4" set:html={t('shellHook.dockerSelfHeal')} />
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
 <!-- ═══════ CTA ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">

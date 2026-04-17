@@ -280,10 +280,17 @@ replacement = ""</code></pre>
   <hr />
 
   <h2 id="security-layer">Security Layer <span class="text-xs font-normal text-muted ml-2">v3.1.3</span></h2>
-  <p>
-    lean-ctx enforces a multi-layered security model by default. All protections are active
-    without configuration — install and go.
-  </p>
+
+  <h3 set:html={t('docs.configuration.securityTitle')} />
+  <p set:html={t('docs.configuration.securityDesc')} />
+  <table>
+    <thead><tr><th>{t('docs.configuration.securityFeature')}</th><th>{t('docs.configuration.securityBehavior')}</th></tr></thead>
+    <tbody>
+      <tr><td><strong>PathJail</strong></td><td set:html={t('docs.configuration.pathJailDesc')} /></tr>
+      <tr><td><strong>Shell Output Cap</strong></td><td set:html={t('docs.configuration.shellCapDesc')} /></tr>
+      <tr><td><strong>File Size Cap</strong></td><td set:html={t('docs.configuration.fileSizeCapDesc')} /></tr>
+    </tbody>
+  </table>
 
   <h3>PathJail (Project-Root Sandbox)</h3>
   <p>
@@ -365,6 +372,9 @@ lean-ctx cache clear        # Remove all entries
 lean-ctx cache invalidate &lt;path&gt;  # Remove specific file
 
 lean-ctx read file.rs --fresh     # Bypass cache for one read</code></pre>
+
+  <h4 set:html={t('docs.configuration.cacheEvictionTitle')} />
+  <p set:html={t('docs.configuration.cacheEvictionDesc')} />
 
   <hr />
 

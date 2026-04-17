@@ -14,6 +14,7 @@ const sidebar = [
       { label: t('docs.intelligenceLayer.sidebarSurprise'), href: lp('/docs/intelligence-layer') + '#surprise' },
       { label: t('docs.intelligenceLayer.sidebarSpectral'), href: lp('/docs/intelligence-layer') + '#spectral' },
       { label: t('docs.intelligenceLayer.sidebarBoltzmann'), href: lp('/docs/intelligence-layer') + '#boltzmann' },
+      { label: t('docs.intelligenceLayer.sidebarRrf'), href: lp('/docs/intelligence-layer') + '#rrf' },
       { label: t('docs.intelligenceLayer.sidebarChunking'), href: lp('/docs/intelligence-layer') + '#chunking' },
       { label: t('docs.intelligenceLayer.sidebarMmr'), href: lp('/docs/intelligence-layer') + '#mmr' },
       { label: t('docs.intelligenceLayer.sidebarBpe'), href: lp('/docs/intelligence-layer') + '#bpe' },
@@ -135,6 +136,18 @@ db.ts           |      0.31 |    180 | signatures
 routes.ts       |      0.22 |    128 | signatures
                                 ─────
 Total:                         5,728 tokens (within 8,000 budget)`}</code></pre>
+
+  <h3 set:html={t('docs.intelligenceLayer.rrfTitle')} />
+  <p set:html={t('docs.intelligenceLayer.rrfDesc')} />
+  <table>
+    <thead><tr><th>{t('docs.intelligenceLayer.rrfAspect')}</th><th>{t('docs.intelligenceLayer.rrfLegacy')}</th><th>{t('docs.intelligenceLayer.rrfNew')}</th></tr></thead>
+    <tbody>
+      <tr><td set:html={t('docs.intelligenceLayer.rrfSignals')} /><td set:html={t('docs.intelligenceLayer.rrfSignalsLegacy')} /><td set:html={t('docs.intelligenceLayer.rrfSignalsNew')} /></tr>
+      <tr><td set:html={t('docs.intelligenceLayer.rrfWeights')} /><td set:html={t('docs.intelligenceLayer.rrfWeightsLegacy')} /><td set:html={t('docs.intelligenceLayer.rrfWeightsNew')} /></tr>
+      <tr><td set:html={t('docs.intelligenceLayer.rrfEdge')} /><td set:html={t('docs.intelligenceLayer.rrfEdgeLegacy')} /><td set:html={t('docs.intelligenceLayer.rrfEdgeNew')} /></tr>
+    </tbody>
+  </table>
+  <p set:html={t('docs.intelligenceLayer.rrfFormula')} />
 
   <hr />
 

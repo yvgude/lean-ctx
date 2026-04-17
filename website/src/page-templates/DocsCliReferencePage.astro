@@ -207,6 +207,9 @@ lean-ctx config set checkpoint_interval 20</code></pre>
     <li>{t('docs.cliReference.doctorCheck6')}</li>
     <li>{t('docs.cliReference.doctorCheck7')}</li>
     <li>{t('docs.cliReference.doctorCheck8')}</li>
+    <li>{t('docs.cliReference.doctorCheck9')}</li>
+    <li>{t('docs.cliReference.doctorCheck10')}</li>
+    <li>{t('docs.cliReference.doctorCheck11')}</li>
   </ul>
   <pre><code>lean-ctx doctor</code></pre>
 
@@ -273,6 +276,12 @@ lean-ctx gain --live                   # real-time monitoring
 lean-ctx gain --graph                  # ASCII savings graph
 lean-ctx gain --daily                  # daily breakdown
 lean-ctx gain --json &gt; stats.json      # machine-readable export</code></pre>
+
+  <p>
+    The <code>ctx_gain</code> MCP tool provides the same analytics programmatically —
+    AI agents can query token savings, cost breakdowns, and GainScore directly during a session.
+    See <a href={lp('/docs/tools')}>MCP Tools Reference</a>.
+  </p>
 
   <h3 id="cep"><code>lean-ctx cep</code></h3>
   <p>{t('docs.cliReference.cepDesc')}</p>
