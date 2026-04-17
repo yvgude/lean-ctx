@@ -145,7 +145,7 @@ const manifest = getMcpManifest();
         </div>
         <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.7;">
           <div>
-            <span class="text-accent-2">AI calls:</span> <span class="text-text-bright">ctx_read("src/auth/service.ts", mode="map")</span>
+            <span class="text-accent-2">{t('index.demoAiCallsLabel')}</span> <span class="text-text-bright">ctx_read("src/auth/service.ts", mode="map")</span>
           </div>
           <div class="term-divider"></div>
           <div>
@@ -194,32 +194,32 @@ const manifest = getMcpManifest();
           </div>
           <div class="term-divider"></div>
           <div class="metrics-row">
-            <span class="text-text-bright">Tool calls</span>
+            <span class="text-text-bright">{t('index.demoMetricToolCalls')}</span>
             <span class="text-accent font-semibold">847</span>
           </div>
           <div class="metrics-row">
-            <span class="text-text-bright">Tokens saved</span>
+            <span class="text-text-bright">{t('index.demoMetricTokensSaved')}</span>
             <span class="text-accent font-semibold">412,830</span>
           </div>
           <div class="metrics-row">
-            <span class="text-text-bright">Cache hits</span>
+            <span class="text-text-bright">{t('index.demoMetricCacheHits')}</span>
             <span class="text-accent-2 font-semibold">73%</span>
           </div>
           <div class="metrics-row">
-            <span class="text-text-bright">Avg compression</span>
+            <span class="text-text-bright">{t('index.demoMetricAvgCompression')}</span>
             <span class="text-accent-3 font-semibold">91.4%</span>
           </div>
           <div class="term-divider"></div>
           <div class="metrics-row">
-            <span class="text-muted">Files cached</span>
+            <span class="text-muted">{t('index.demoMetricFilesCached')}</span>
             <span class="text-text">23</span>
           </div>
           <div class="metrics-row">
-            <span class="text-muted">Re-read cost</span>
+            <span class="text-muted">{t('index.demoMetricRereadCost')}</span>
             <span class="text-text">~13 tok</span>
           </div>
           <div class="metrics-row">
-            <span class="text-muted">Est. cost saved</span>
+            <span class="text-muted">{t('index.demoMetricEstCostSaved')}</span>
             <span class="text-accent font-semibold">$1.24</span>
           </div>
         </div>
@@ -395,7 +395,7 @@ const manifest = getMcpManifest();
       </div>
       <div class="leanctl-input">
         <span class="text-accent font-bold">❯</span>
-        <span class="text-muted italic">Ask anything…</span>
+        <span class="text-muted italic">{t('index.demoAskAnythingPlaceholder')}</span>
       </div>
     </div>
 
