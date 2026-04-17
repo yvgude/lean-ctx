@@ -87,21 +87,6 @@ fn roi_to_score(avoided_usd: f64, spend_usd: f64) -> u32 {
 
 fn quality_score(stats: &StatsStore) -> u32 {
     let cep = &stats.cep;
-    let cache_hit_rate = if cep.total_cache_reads > 0 {
-        cep.total_cache_hits as f64 / cep.total_cache_reads as f64
-    } else {
-        0.0
-    };
-
-    let mode_diversity = {
-        let used = cep.modes.len() as f64;
-        let total_modes = 6f64;
-        if total_modes > 0.0 {
-            (used / total_modes).min(1.0)
-        } else {
-            0.0
-        }
-    };
 
     let compression = {
         let saved = stats
@@ -114,7 +99,30 @@ fn quality_score(stats: &StatsStore) -> u32 {
         }
     };
 
-    let q = cache_hit_rate * 0.45 + mode_diversity * 0.30 + compression * 0.25;
+    let mode_diversity = {
+        let used = cep.modes.len().min(8) as f64;
+        let target = 8f64;
+        (used / target).min(1.0)
+    };
+
+    let tool_breadth = {
+        let total_tool_calls: u64 = cep.modes.values().sum();
+        let mcp_active = total_tool_calls > 0;
+        let shell_active = stats.total_commands > 10;
+        match (mcp_active, shell_active) {
+            (true, true) => 1.0,
+            (true, false) | (false, true) => 0.6,
+            (false, false) => 0.0,
+        }
+    };
+
+    let cache_efficiency = if cep.total_cache_reads > 5 {
+        (cep.total_cache_hits as f64 / cep.total_cache_reads as f64).min(1.0)
+    } else {
+        0.5
+    };
+
+    let q = compression * 0.40 + mode_diversity * 0.25 + tool_breadth * 0.20 + cache_efficiency * 0.15;
     (q * 100.0).round().clamp(0.0, 100.0) as u32
 }
 
