@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "रिक्वेस्ट असफल",
   "dash.errInvalidResetToken": "रीसेट टोकन अमान्य है।",
   "dash.infoResetOk": "पासवर्ड रीसेट हो गया! अब आप साइन इन कर सकते हैं।",
-  "dash.infoEmailVerified": "ईमेल वेरिफ़ाई हो गया! अब आप साइन इन कर सकते हैं।"
+  "dash.infoEmailVerified": "ईमेल वेरिफ़ाई हो गया! अब आप साइन इन कर सकते हैं।",
+
+  "cloudAuth.redirectTitle": "रीडायरेक्ट हो रहा है…",
+  "cloudAuth.redirectDesc": "डैशबोर्ड पर रीडायरेक्ट",
+  "cloudAuth.redirectBody": "डैशबोर्ड पर रीडायरेक्ट हो रहा है…",
+
+  "privacy.title": "गोपनीयता नीति",
+  "privacy.metaDescription": "LeanCTX गोपनीयता नीति: lean-ctx कौन सा डेटा इकट्ठा करता है, कैसे उपयोग होता है और आपके अधिकार।",
+  "privacy.labelLegal": "कानूनी",
+  "privacy.lastUpdated": "अंतिम अपडेट: {lastUpdated}",
+  "privacy.tldrTitle": "सारांश",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI और MCP सर्वर</strong> — 100% लोकल चलता है। कोई डेटा आपके डिवाइस से बाहर नहीं जाता।",
+  "privacy.tldrBullet2": "<strong>Chrome एक्सटेंशन</strong> — native messaging से लोकल कम्प्रेशन। बाहरी सर्वर पर डेटा नहीं जाता।",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud (वैकल्पिक)</strong> — opt-in पर सिर्फ अनाम कम्प्रेशन आँकड़े शेयर होते हैं। कभी भी कोड, फाइल नाम या निजी कंटेंट नहीं।",
+  "privacy.tldrBullet4": "<strong>leanctx.com वेबसाइट</strong> — स्टैन्डर्ड सर्वर लॉग (IP, ब्राउज़र)। कोई ट्रैकिंग पिक्सेल नहीं, कोई थर्ड-पार्टी एनालिटिक्स नहीं।",
+  "privacy.englishOnlyTitle": "पूरा टेक्स्ट (अंग्रेज़ी)",
+  "privacy.englishOnlyNote": "फिलहाल पूरा गोपनीयता नीति टेक्स्ट अंग्रेज़ी में उपलब्ध है: <a href=\"/privacy\">अंग्रेज़ी संस्करण खोलें</a>।"
 }

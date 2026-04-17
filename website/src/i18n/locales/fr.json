@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "Echec de la requete",
   "dash.errInvalidResetToken": "Jeton de reinitialisation invalide.",
   "dash.infoResetOk": "Mot de passe reinitialise ! Vous pouvez vous connecter.",
-  "dash.infoEmailVerified": "Email verifie ! Vous pouvez vous connecter."
+  "dash.infoEmailVerified": "Email verifie ! Vous pouvez vous connecter.",
+
+  "cloudAuth.redirectTitle": "Redirection…",
+  "cloudAuth.redirectDesc": "Redirection vers le tableau de bord",
+  "cloudAuth.redirectBody": "Redirection vers le tableau de bord…",
+
+  "privacy.title": "Politique de confidentialite",
+  "privacy.metaDescription": "Politique de confidentialite LeanCTX. Quelles donnees lean-ctx collecte, comment elles sont utilisees et vos droits.",
+  "privacy.labelLegal": "Juridique",
+  "privacy.lastUpdated": "Derniere mise a jour : {lastUpdated}",
+  "privacy.tldrTitle": "En bref",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI &amp; serveur MCP</strong> — fonctionne 100% en local. Aucune donnee ne quitte votre machine.",
+  "privacy.tldrBullet2": "<strong>Extension Chrome</strong> — la compression est locale via native messaging. Aucune donnee vers des serveurs externes.",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud (optionnel)</strong> — en opt-in, seules des statistiques anonymisees sont partagees. Jamais de code, noms de fichiers ou contenu personnel.",
+  "privacy.tldrBullet4": "<strong>site leanctx.com</strong> — logs serveur standards (IP, navigateur). Pas de pixels de tracking, pas d’analytics tiers.",
+  "privacy.englishOnlyTitle": "Texte complet (anglais)",
+  "privacy.englishOnlyNote": "Le texte complet est actuellement disponible en anglais : <a href=\"/privacy\">Ouvrir la politique en anglais</a>."
 }

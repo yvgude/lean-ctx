@@ -1,26 +1,27 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
 const lastUpdated = 'April 2026';
 ---
 
 <BaseLayout
-  title="Privacy Policy — LeanCTX"
-  description="LeanCTX Privacy Policy. Learn what data lean-ctx collects, how it is used, and your rights."
-  breadcrumbs={[{ name: 'Home', url: lp('/') }, { name: 'Privacy', url: lp('/privacy/') }]}>
+  title={`${t('privacy.title')} — LeanCTX`}
+  description={t('privacy.metaDescription')}
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('privacy.title'), url: lp('/privacy/') }]}>
 
 <section class="section-hero">
   <div class="content-grid" style="max-width: 52rem;">
-    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: 1rem;">Legal</p>
+    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: 1rem;">{t('privacy.labelLegal')}</p>
     <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1rem;">
-      Privacy Policy
+      {t('privacy.title')}
     </h1>
     <p class="fluid-body text-muted animate-entrance stagger-2">
-      Last updated: {lastUpdated}
+      {t('privacy.lastUpdated', { lastUpdated })}
     </p>
   </div>
 </section>
@@ -31,17 +32,18 @@ const lastUpdated = 'April 2026';
   <div class="content-grid privacy-content">
 
     <div class="privacy-summary animate-entrance">
-      <h2>TL;DR</h2>
+      <h2>{t('privacy.tldrTitle')}</h2>
       <ul>
-        <li><strong>lean-ctx CLI &amp; MCP server</strong> — runs 100% locally. No data ever leaves your machine.</li>
-        <li><strong>lean-ctx Chrome Extension</strong> — all compression happens locally via native messaging. No data sent to external servers.</li>
-        <li><strong>lean-ctx Cloud (optional)</strong> — if you opt in, only anonymized compression statistics are shared. Never code, file names, or personal content.</li>
-        <li><strong>leanctx.com website</strong> — standard web server logs (IP, browser). No tracking pixels, no third-party analytics.</li>
+        <li set:html={t('privacy.tldrBullet1')} />
+        <li set:html={t('privacy.tldrBullet2')} />
+        <li set:html={t('privacy.tldrBullet3')} />
+        <li set:html={t('privacy.tldrBullet4')} />
       </ul>
     </div>
 
     <div class="section-divider content-grid" style="margin: 2rem 0;"></div>
 
+    {locale === 'en' ? (
     <div class="animate-entrance stagger-1">
 
       <h2>1. Who We Are</h2>
@@ -137,6 +139,12 @@ const lastUpdated = 'April 2026';
       </p>
 
     </div>
+    ) : (
+    <div class="animate-entrance stagger-1">
+      <h2>{t('privacy.englishOnlyTitle')}</h2>
+      <p set:html={t('privacy.englishOnlyNote')} />
+    </div>
+    )}
   </div>
 </section>
 

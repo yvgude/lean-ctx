@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "リクエストに失敗しました",
   "dash.errInvalidResetToken": "リセットトークンが無効です。",
   "dash.infoResetOk": "パスワードをリセットしました。ログインできます。",
-  "dash.infoEmailVerified": "メール認証が完了しました。ログインできます。"
+  "dash.infoEmailVerified": "メール認証が完了しました。ログインできます。",
+
+  "cloudAuth.redirectTitle": "リダイレクト中…",
+  "cloudAuth.redirectDesc": "ダッシュボードへ移動しています",
+  "cloudAuth.redirectBody": "ダッシュボードへ移動しています…",
+
+  "privacy.title": "プライバシーポリシー",
+  "privacy.metaDescription": "LeanCTX のプライバシーポリシー：lean-ctx が収集するデータ、利用方法、あなたの権利。",
+  "privacy.labelLegal": "法務",
+  "privacy.lastUpdated": "最終更新：{lastUpdated}",
+  "privacy.tldrTitle": "要約",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI &amp; MCP サーバー</strong> — 100% ローカル実行。データは端末外に出ません。",
+  "privacy.tldrBullet2": "<strong>Chrome 拡張</strong> — native messaging によりローカルで圧縮。外部サーバーへデータ送信なし。",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud（任意）</strong> — opt-in の場合のみ匿名の圧縮統計を共有。コード・ファイル名・個人内容は一切送信しません。",
+  "privacy.tldrBullet4": "<strong>leanctx.com</strong> — 標準的なサーバーログ（IP、ブラウザ）。トラッキングピクセルなし、第三者分析なし。",
+  "privacy.englishOnlyTitle": "全文（英語）",
+  "privacy.englishOnlyNote": "現在、全文のプライバシーポリシーは英語で提供されています：<a href=\"/privacy\">英語版を開く</a>。"
 }

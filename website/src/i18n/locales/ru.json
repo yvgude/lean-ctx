@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "Запрос не удался",
   "dash.errInvalidResetToken": "Неверный токен сброса.",
   "dash.infoResetOk": "Пароль сброшен! Теперь можно войти.",
-  "dash.infoEmailVerified": "Email подтверждён! Теперь можно войти."
+  "dash.infoEmailVerified": "Email подтверждён! Теперь можно войти.",
+
+  "cloudAuth.redirectTitle": "Перенаправление…",
+  "cloudAuth.redirectDesc": "Перенаправление в дашборд",
+  "cloudAuth.redirectBody": "Перенаправление в дашборд…",
+
+  "privacy.title": "Политика конфиденциальности",
+  "privacy.metaDescription": "Политика конфиденциальности LeanCTX: какие данные собирает lean-ctx, как они используются и ваши права.",
+  "privacy.labelLegal": "Юридическая информация",
+  "privacy.lastUpdated": "Последнее обновление: {lastUpdated}",
+  "privacy.tldrTitle": "Коротко",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI и MCP сервер</strong> — работает на 100% локально. Данные не покидают ваш компьютер.",
+  "privacy.tldrBullet2": "<strong>Расширение Chrome</strong> — вся компрессия локально через native messaging. Никаких данных на внешние серверы.",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud (опционально)</strong> — при opt-in отправляются только анонимизированные статистики. Никогда код, имена файлов или личный контент.",
+  "privacy.tldrBullet4": "<strong>сайт leanctx.com</strong> — стандартные логи веб-сервера (IP, браузер). Нет трекинг-пикселей и сторонней аналитики.",
+  "privacy.englishOnlyTitle": "Полный текст (английский)",
+  "privacy.englishOnlyNote": "Полный текст политики сейчас доступен на английском: <a href=\"/privacy\">Открыть английскую версию</a>."
 }

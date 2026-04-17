@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "فشل الطلب",
   "dash.errInvalidResetToken": "رمز إعادة التعيين غير صالح.",
   "dash.infoResetOk": "تمت إعادة تعيين كلمة المرور! يمكنك تسجيل الدخول الآن.",
-  "dash.infoEmailVerified": "تم تأكيد البريد الإلكتروني! يمكنك تسجيل الدخول الآن."
+  "dash.infoEmailVerified": "تم تأكيد البريد الإلكتروني! يمكنك تسجيل الدخول الآن.",
+
+  "cloudAuth.redirectTitle": "جارٍ التحويل…",
+  "cloudAuth.redirectDesc": "جارٍ التحويل إلى لوحة التحكم",
+  "cloudAuth.redirectBody": "جارٍ التحويل إلى لوحة التحكم…",
+
+  "privacy.title": "سياسة الخصوصية",
+  "privacy.metaDescription": "سياسة خصوصية LeanCTX: ما البيانات التي يجمعها lean-ctx وكيف تُستخدم وحقوقك.",
+  "privacy.labelLegal": "قانوني",
+  "privacy.lastUpdated": "آخر تحديث: {lastUpdated}",
+  "privacy.tldrTitle": "باختصار",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI و MCP</strong> — يعمل 100% محليًا. لا تغادر أي بيانات جهازك.",
+  "privacy.tldrBullet2": "<strong>إضافة Chrome</strong> — الضغط محلي عبر native messaging. لا بيانات إلى خوادم خارجية.",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud (اختياري)</strong> — عند opt-in نشارك فقط إحصاءات ضغط مجهولة. لا كود ولا أسماء ملفات ولا محتوى شخصي.",
+  "privacy.tldrBullet4": "<strong>موقع leanctx.com</strong> — سجلات خادم قياسية (IP، المتصفح). بدون تتبع أو تحليلات طرف ثالث.",
+  "privacy.englishOnlyTitle": "النص الكامل (بالإنجليزية)",
+  "privacy.englishOnlyNote": "النص الكامل لسياسة الخصوصية متاح حاليًا بالإنجليزية: <a href=\"/privacy\">افتح النسخة الإنجليزية</a>."
 }

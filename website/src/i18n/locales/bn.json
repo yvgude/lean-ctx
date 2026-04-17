@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "রিকোয়েস্ট ব্যর্থ",
   "dash.errInvalidResetToken": "রিসেট টোকেন অবৈধ।",
   "dash.infoResetOk": "পাসওয়ার্ড রিসেট হয়েছে! এখন সাইন ইন করতে পারবেন।",
-  "dash.infoEmailVerified": "ইমেইল ভেরিফাই হয়েছে! এখন সাইন ইন করতে পারবেন।"
+  "dash.infoEmailVerified": "ইমেইল ভেরিফাই হয়েছে! এখন সাইন ইন করতে পারবেন।",
+
+  "cloudAuth.redirectTitle": "রিডাইরেক্ট হচ্ছে…",
+  "cloudAuth.redirectDesc": "ড্যাশবোর্ডে রিডাইরেক্ট",
+  "cloudAuth.redirectBody": "ড্যাশবোর্ডে রিডাইরেক্ট হচ্ছে…",
+
+  "privacy.title": "গোপনীয়তা নীতি",
+  "privacy.metaDescription": "LeanCTX গোপনীয়তা নীতি: lean-ctx কোন ডেটা সংগ্রহ করে, কীভাবে ব্যবহার হয় এবং আপনার অধিকার।",
+  "privacy.labelLegal": "আইনি",
+  "privacy.lastUpdated": "সর্বশেষ আপডেট: {lastUpdated}",
+  "privacy.tldrTitle": "সংক্ষেপে",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI ও MCP সার্ভার</strong> — 100% লোকালে চলে। কোন ডেটা আপনার ডিভাইস ছাড়ে না।",
+  "privacy.tldrBullet2": "<strong>Chrome এক্সটেনশন</strong> — native messaging দিয়ে লোকাল কমপ্রেশন। বাহ্যিক সার্ভারে কোন ডেটা যায় না।",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud (ঐচ্ছিক)</strong> — opt-in হলে শুধু অ্যানোনিমাস কমপ্রেশন স্ট্যাটস শেয়ার হয়। কখনও কোড, ফাইল নাম বা ব্যক্তিগত কনটেন্ট নয়।",
+  "privacy.tldrBullet4": "<strong>leanctx.com ওয়েবসাইট</strong> — স্ট্যান্ডার্ড সার্ভার লগ (IP, ব্রাউজার)। কোন ট্র্যাকিং পিক্সেল নেই, থার্ড-পার্টি অ্যানালিটিক্স নেই।",
+  "privacy.englishOnlyTitle": "পূর্ণ টেক্সট (ইংরেজি)",
+  "privacy.englishOnlyNote": "এই মুহূর্তে সম্পূর্ণ নীতিটি ইংরেজিতে উপলব্ধ: <a href=\"/privacy\">ইংরেজি সংস্করণ খুলুন</a>।"
 }

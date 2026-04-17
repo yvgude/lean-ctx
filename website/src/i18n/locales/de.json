@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "Anfrage fehlgeschlagen",
   "dash.errInvalidResetToken": "Ungueltiges Reset-Token.",
   "dash.infoResetOk": "Passwort zurueckgesetzt! Du kannst dich jetzt anmelden.",
-  "dash.infoEmailVerified": "E-Mail verifiziert! Du kannst dich jetzt anmelden."
+  "dash.infoEmailVerified": "E-Mail verifiziert! Du kannst dich jetzt anmelden.",
+
+  "cloudAuth.redirectTitle": "Weiterleitung…",
+  "cloudAuth.redirectDesc": "Weiterleitung zum Dashboard",
+  "cloudAuth.redirectBody": "Weiterleitung zum Dashboard…",
+
+  "privacy.title": "Datenschutzerklaerung",
+  "privacy.metaDescription": "LeanCTX Datenschutzerklaerung. Erfahre, welche Daten lean-ctx sammelt, wie sie verwendet werden und welche Rechte du hast.",
+  "privacy.labelLegal": "Rechtliches",
+  "privacy.lastUpdated": "Zuletzt aktualisiert: {lastUpdated}",
+  "privacy.tldrTitle": "Kurzfassung",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI &amp; MCP Server</strong> — laeuft 100% lokal. Keine Daten verlassen dein Geraet.",
+  "privacy.tldrBullet2": "<strong>lean-ctx Chrome Extension</strong> — Kompression erfolgt lokal via Native Messaging. Keine Daten an externe Server.",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud (optional)</strong> — bei Opt-in werden nur anonymisierte Kompressions-Statistiken geteilt. Niemals Code, Dateinamen oder persoenliche Inhalte.",
+  "privacy.tldrBullet4": "<strong>leanctx.com Website</strong> — Standard-Webserver-Logs (IP, Browser). Keine Tracking-Pixel, keine Third-Party-Analytics.",
+  "privacy.englishOnlyTitle": "Volltext (Englisch)",
+  "privacy.englishOnlyNote": "Der vollstaendige Text ist derzeit nur auf Englisch verfuegbar: <a href=\"/privacy\">Englische Datenschutzerklaerung oeffnen</a>."
 }

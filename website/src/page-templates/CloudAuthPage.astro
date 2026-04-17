@@ -1,9 +1,14 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const dashPath = getLocalizedPath('/dashboard/overview', locale);
 ---
-<BaseLayout title="Redirecting…" description="Redirecting to dashboard">
+<BaseLayout title={t('cloudAuth.redirectTitle')} description={t('cloudAuth.redirectDesc')}>
 <script type="module">
-  window.location.replace('/dashboard/overview');
+  window.location.replace({JSON.stringify(dashPath)});
 </script>
-<p style="text-align:center;padding:4rem 1rem;color:var(--color-muted)">Redirecting to dashboard…</p>
+<p style="text-align:center;padding:4rem 1rem;color:var(--color-muted)">{t('cloudAuth.redirectBody')}</p>
 </BaseLayout>

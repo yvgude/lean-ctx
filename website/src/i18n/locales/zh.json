@@ -2993,5 +2993,21 @@
   "dash.errRequestFailed": "请求失败",
   "dash.errInvalidResetToken": "重置令牌无效。",
   "dash.infoResetOk": "密码已重置！你现在可以登录。",
-  "dash.infoEmailVerified": "邮箱已验证！你现在可以登录。"
+  "dash.infoEmailVerified": "邮箱已验证！你现在可以登录。",
+
+  "cloudAuth.redirectTitle": "正在跳转…",
+  "cloudAuth.redirectDesc": "正在跳转到仪表盘",
+  "cloudAuth.redirectBody": "正在跳转到仪表盘…",
+
+  "privacy.title": "隐私政策",
+  "privacy.metaDescription": "LeanCTX 隐私政策：lean-ctx 收集哪些数据、如何使用以及你的权利。",
+  "privacy.labelLegal": "法律",
+  "privacy.lastUpdated": "最后更新：{lastUpdated}",
+  "privacy.tldrTitle": "简要说明",
+  "privacy.tldrBullet1": "<strong>lean-ctx CLI 与 MCP 服务器</strong> — 100% 本地运行，数据不会离开你的设备。",
+  "privacy.tldrBullet2": "<strong>lean-ctx Chrome 扩展</strong> — 通过 native messaging 在本地完成压缩，不会向外部服务器发送数据。",
+  "privacy.tldrBullet3": "<strong>lean-ctx Cloud（可选）</strong> — opt-in 时仅共享匿名压缩统计；绝不上传代码、文件名或个人内容。",
+  "privacy.tldrBullet4": "<strong>leanctx.com 网站</strong> — 标准服务器日志（IP、浏览器）。无跟踪像素、无第三方分析。",
+  "privacy.englishOnlyTitle": "完整正文（英文）",
+  "privacy.englishOnlyNote": "目前完整隐私政策正文以英文为准：<a href=\"/privacy\">打开英文隐私政策</a>。"
 }
