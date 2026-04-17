@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::deep_queries;
-use super::graph_index::{ProjectIndex, SymbolEntry};
+use super::graph_index::{normalize_project_root, ProjectIndex, SymbolEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraph {
@@ -24,7 +24,7 @@ pub struct CallEdge {
 impl CallGraph {
     pub fn new(project_root: &str) -> Self {
         Self {
-            project_root: project_root.to_string(),
+            project_root: normalize_project_root(project_root),
             edges: Vec::new(),
             file_hashes: HashMap::new(),
         }
@@ -208,6 +208,7 @@ fn resolve_path(relative: &str, project_root: &str) -> String {
     if p.is_absolute() && p.exists() {
         return relative.to_string();
     }
+    let relative = relative.trim_start_matches(['/', '\\']);
     let joined = Path::new(project_root).join(relative);
     joined.to_string_lossy().to_string()
 }
@@ -315,5 +316,17 @@ mod tests {
         let syms = vec![&sym];
         let result = find_enclosing_symbol(Some(&syms), 5);
         assert_eq!(result, "<module>");
+    }
+
+    #[test]
+    fn resolve_path_trims_rooted_relative_prefix() {
+        let resolved = resolve_path(r"\src\main\kotlin\Example.kt", r"C:\repo");
+        assert_eq!(
+            resolved,
+            Path::new(r"C:\repo")
+                .join(r"src\main\kotlin\Example.kt")
+                .to_string_lossy()
+                .to_string()
+        );
     }
 }

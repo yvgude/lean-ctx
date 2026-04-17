@@ -9,7 +9,8 @@ pub fn handle(symbol: &str, file: Option<&str>, project_root: &str) -> String {
     let mut callees = graph.callees_of(symbol);
 
     if let Some(f) = file {
-        callees.retain(|e| e.caller_file.contains(f));
+        let filter = graph_file_filter(f, project_root);
+        callees.retain(|e| graph_index::graph_match_key(&e.caller_file).contains(&filter));
     }
 
     if callees.is_empty() {
@@ -30,8 +31,19 @@ pub fn handle(symbol: &str, file: Option<&str>, project_root: &str) -> String {
     out
 }
 
+fn graph_file_filter(file: &str, project_root: &str) -> String {
+    let rel = graph_index::graph_relative_key(file, project_root);
+    let rel_key = graph_index::graph_match_key(&rel);
+    if rel_key.is_empty() {
+        graph_index::graph_match_key(file)
+    } else {
+        rel_key
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::graph_file_filter;
     use crate::core::call_graph::{CallEdge, CallGraph};
 
     #[test]
@@ -51,5 +63,16 @@ mod tests {
         });
         let callees = graph.callees_of("main");
         assert_eq!(callees.len(), 2);
+    }
+
+    #[test]
+    fn graph_file_filter_normalizes_windows_styles() {
+        let filter = graph_file_filter(r"C:/repo/src/main/kotlin/Example.kt", r"C:\repo");
+        let expected = if cfg!(windows) {
+            "src/main/kotlin/Example.kt"
+        } else {
+            "C:/repo/src/main/kotlin/Example.kt"
+        };
+        assert_eq!(filter, expected);
     }
 }
