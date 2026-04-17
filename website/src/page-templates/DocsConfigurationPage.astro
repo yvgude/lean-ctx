@@ -168,6 +168,11 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td set:html={t('docsConfiguration.activeDesc')} />
       </tr>
       <tr>
+        <td><code>LEAN_CTX_COMPRESS</code></td>
+        <td>set / unset</td>
+        <td>Force compression mode even for excluded commands. Overrides track mode. Useful for AI agents that need compressed output regardless of the global shell mode setting.</td>
+      </tr>
+      <tr>
         <td><code>LEAN_CTX_DISABLED</code></td>
         <td>set / unset</td>
         <td set:html={t('docsConfiguration.disabledDesc')} />
@@ -230,6 +235,14 @@ redirect_exclude = [".wolf/**", ".claude/**", "*.json", "CLAUDE.md"]</code></pre
 
   <pre><code># Or via environment variable (takes precedence)
 export LEAN_CTX_HOOK_EXCLUDE=".wolf/**,.claude/**,*.json"</code></pre>
+
+  <h3>Copilot Tool Name Support <span class="text-xs font-normal text-muted ml-2">v3.2.2</span></h3>
+  <p>
+    The hook redirect now recognizes GitHub Copilot's terminal tool names:
+    <code>runInTerminal</code>, <code>run_in_terminal</code>, <code>shell</code>, and <code>terminal</code>.
+    These are automatically intercepted and routed through lean-ctx compression, ensuring Copilot
+    terminal commands benefit from the same token savings as other AI tools.
+  </p>
 
   <h3>Binary File Passthrough (v2.21.0)</h3>
   <p>
