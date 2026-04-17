@@ -489,13 +489,26 @@ fn normalize_dashboard_demo_path(path: &str) -> String {
     }
 
     let candidate = Path::new(trimmed);
-    if candidate.is_absolute() {
+    if candidate.is_absolute() || is_windows_absolute_path(trimmed) {
         return trimmed.to_string();
     }
 
     trimmed
         .trim_start_matches(['\\', '/'])
         .replace('\\', std::path::MAIN_SEPARATOR_STR)
+}
+
+fn is_windows_absolute_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+    {
+        return true;
+    }
+
+    path.starts_with("\\\\") || path.starts_with("//")
 }
 
 fn compression_mode_json(output: &str, original_tokens: usize) -> serde_json::Value {
@@ -780,6 +793,12 @@ mod tests {
     #[test]
     fn normalize_dashboard_demo_path_preserves_absolute_windows_path() {
         let input = r"C:\repo\backend\list_tables.js";
+        assert_eq!(normalize_dashboard_demo_path(input), input);
+    }
+
+    #[test]
+    fn normalize_dashboard_demo_path_preserves_unc_path() {
+        let input = r"\\server\share\backend\list_tables.js";
         assert_eq!(normalize_dashboard_demo_path(input), input);
     }
 }
