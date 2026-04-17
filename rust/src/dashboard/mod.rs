@@ -347,6 +347,15 @@ fn route_response(
             });
             ("200 OK", "application/json", json)
         }
+        "/api/routes" => {
+            let root = detect_project_root_for_dashboard();
+            let index = crate::core::graph_index::load_or_build(&root);
+            let routes =
+                crate::core::route_extractor::extract_routes_from_project(&root, &index.files);
+            let json = serde_json::to_string(&routes)
+                .unwrap_or_else(|_| "{\"error\":\"failed to serialize routes\"}".to_string());
+            ("200 OK", "application/json", json)
+        }
         "/api/compression-demo" => {
             let body = match extract_query_param(query_str, "path") {
                 None => r#"{"error":"missing path query parameter"}"#.to_string(),
