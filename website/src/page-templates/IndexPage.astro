@@ -456,13 +456,13 @@ const manifest = getMcpManifest();
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center justify-between animate-entrance stagger-5" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <div class="flex flex-wrap items-center justify-between animate-entrance stagger-5" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
       <div class="flex flex-wrap items-center" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
         <a href="https://leanctl.com" target="_blank" rel="noopener" class="btn-primary inline-flex items-center gap-2 rounded-lg font-bold text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
           {t('index.ecoCta')}
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
         </a>
-        <span class="fluid-sm text-muted">Free with local models. $9/mo for cloud keys.</span>
+        <span class="fluid-sm text-muted">{t('index.ecoPricingNote')}</span>
       </div>
       <span class="fluid-sm text-muted/60 hidden sm:inline-flex items-center gap-1.5" style="margin-top: 0.5rem;">
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
@@ -547,14 +547,14 @@ const manifest = getMcpManifest();
       <div class="testimonial-col">
 
         <blockquote class="testimonial">
-          <p class="testimonial-text">"I installed lean-ctx and my Cursor sessions immediately felt snappier. Files that used to eat 2K tokens now cost 50."</p>
+          <p class="testimonial-text">{t('index.testimonial1Text')}</p>
           <footer class="testimonial-footer">
             <span class="testimonial-dash">—</span> <strong>Sebastian</strong> <span class="text-muted">TypeScript / React</span>
           </footer>
         </blockquote>
 
         <blockquote class="testimonial">
-          <p class="testimonial-text">"lean-ctx gain shows I've saved $48 in one week. That's real money. And the AI responses are actually better because it gets cleaner context."</p>
+          <p class="testimonial-text">{t('index.testimonial2Text')}</p>
           <footer class="testimonial-footer">
             <span class="testimonial-dash">—</span> <strong>Marco</strong> <span class="text-muted">SaaS Builder</span>
           </footer>
@@ -564,14 +564,14 @@ const manifest = getMcpManifest();
       <div class="testimonial-col">
 
         <blockquote class="testimonial">
-          <p class="testimonial-text">"Been using RTK before. lean-ctx is a completely different level — it doesn't just compress output, it understands code structure. The AST modes are insane."</p>
+          <p class="testimonial-text">{t('index.testimonial3Text')}</p>
           <footer class="testimonial-footer">
             <span class="testimonial-dash">—</span> <strong>Jay</strong> <span class="text-muted">AI Tools Enthusiast</span>
           </footer>
         </blockquote>
 
         <blockquote class="testimonial">
-          <p class="testimonial-text">"Finally someone built what Cursor should have built-in. Session caching alone — re-reads cost 13 tokens instead of thousands."</p>
+          <p class="testimonial-text">{t('index.testimonial4Text')}</p>
           <footer class="testimonial-footer">
             <span class="testimonial-dash">—</span> <strong>Erik</strong> <span class="text-muted">Platform Engineer</span>
           </footer>
@@ -581,14 +581,14 @@ const manifest = getMcpManifest();
       <div class="testimonial-col">
 
         <blockquote class="testimonial">
-          <p class="testimonial-text">"The shell hook saves hundreds of thousands of tokens per day. git log, cargo test, npm run — everything compressed automatically. Zero config."</p>
+          <p class="testimonial-text">{t('index.testimonial5Text')}</p>
           <footer class="testimonial-footer">
             <span class="testimonial-dash">—</span> <strong>Radmar</strong> <span class="text-muted">Open Source Contributor</span>
           </footer>
         </blockquote>
 
         <blockquote class="testimonial">
-          <p class="testimonial-text">"I was skeptical about the 99% claim. Then I ran ctx_read in map mode on a 400-line service file and got back 30 tokens. That's not marketing — that's math."</p>
+          <p class="testimonial-text">{t('index.testimonial6Text')}</p>
           <footer class="testimonial-footer">
             <span class="testimonial-dash">—</span> <strong>Daniel</strong> <span class="text-muted">Go / Rust Developer</span>
           </footer>
@@ -967,7 +967,7 @@ const manifest = getMcpManifest();
       var progress = Math.min((ts - startTime) / duration, 1);
       var ease = 1 - Math.pow(1 - progress, 3);
       var current = Math.floor(ease * target);
-      el.textContent = current.toLocaleString('en-US');
+      el.textContent = current.toLocaleString(undefined);
       if (progress < 1) requestAnimationFrame(step);
     }
     requestAnimationFrame(step);

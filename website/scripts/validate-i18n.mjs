@@ -69,6 +69,7 @@ function main() {
   const errors = [];
   const enPath = path.join(LOCALES_DIR, 'en.json');
   const en = readJson(enPath);
+  const enKeys = new Set(Object.keys(en));
   const requiredKeys = Object.keys(DYNAMIC_PLACEHOLDER_KEYS);
 
   for (const locale of LOCALES) {
@@ -78,6 +79,16 @@ function main() {
       continue;
     }
     const data = readJson(filePath);
+
+    // Key parity: every locale must match en.json
+    const keys = new Set(Object.keys(data));
+    for (const k of enKeys) {
+      if (!keys.has(k)) errors.push(`[${locale}] missing key: ${k}`);
+    }
+    for (const k of keys) {
+      if (!enKeys.has(k)) errors.push(`[${locale}] extra key: ${k}`);
+    }
+
     for (const key of requiredKeys) {
       if (typeof en[key] !== 'string') errors.push(`[en] missing key or non-string: ${key}`);
       if (typeof data[key] !== 'string') {
