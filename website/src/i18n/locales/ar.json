@@ -472,7 +472,7 @@
   "docs.cloud.collectMode": "أي وضع ضغط كان الأفضل",
   "docs.cloud.collectRatio": "نسبة الضغط",
   "docs.cloud.collectSize": "نطاق حجم الملف",
-  "docs.cloud.lead": "ميزات سحابية اختيارية — مزامنة الإحصائيات عبر الأجهزة.",
+  "docs.cloud.lead": "ميزات سحابية مجانية وبشكل opt-in — مزامنة الإحصائيات عبر الأجهزة. مستضافة ذاتيًا على بنية LeanCTX التحتية.",
   "docs.cloud.login": "تسجيل الدخول",
   "docs.cloud.loginDesc": "يسجل حسابك ويربط تثبيتك المحلي بسحابة LeanCTX.",
   "docs.cloud.neverCollectContents": "محتويات الملفات أو الكود",

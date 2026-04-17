@@ -472,7 +472,7 @@
   "docs.cloud.collectMode": "最も効果的だった圧縮モード",
   "docs.cloud.collectRatio": "圧縮率（パーセンテージ）",
   "docs.cloud.collectSize": "ファイルサイズ範囲（例：「2k-10k」）",
-  "docs.cloud.lead": "lean-ctxのオプションクラウド機能 — デバイス間で統計を同期し、経時的な節約を追跡。",
+  "docs.cloud.lead": "lean-ctx の無料・opt-in なクラウド機能 — デバイス間で統計を同期し、経時的な節約を追跡。LeanCTX の自社インフラ上で self-hosted です。",
   "docs.cloud.login": "ログイン",
   "docs.cloud.loginDesc": "アカウントを登録し、ローカルインストールをLeanCTX Cloudにリンクします。",
   "docs.cloud.neverCollectContents": "ファイルの内容やコード",

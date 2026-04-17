@@ -472,7 +472,7 @@
   "docs.cloud.collectMode": "Qué modo de compresión funcionó mejor",
   "docs.cloud.collectRatio": "Tasa de compresión (un porcentaje)",
   "docs.cloud.collectSize": "Rango de tamaño de archivo (ej. \"2k-10k\")",
-  "docs.cloud.lead": "Funciones opcionales en la nube para lean-ctx — sincroniza estadísticas entre dispositivos y rastrea tus ahorros a lo largo del tiempo.",
+  "docs.cloud.lead": "Funciones gratis y opt-in en la nube para lean-ctx — sincroniza estadísticas entre dispositivos y rastrea tus ahorros a lo largo del tiempo. Autoalojado en la infraestructura de LeanCTX.",
   "docs.cloud.login": "Iniciar sesión",
   "docs.cloud.loginDesc": "Esto registra tu cuenta y vincula tu instalación local a LeanCTX Cloud.",
   "docs.cloud.neverCollectContents": "Contenido de archivos o código",

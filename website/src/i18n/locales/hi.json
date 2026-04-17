@@ -472,7 +472,7 @@
   "docs.cloud.collectMode": "कौन सा कम्प्रेशन मोड सबसे अच्छा काम किया",
   "docs.cloud.collectRatio": "कम्प्रेशन अनुपात (एक प्रतिशत)",
   "docs.cloud.collectSize": "फ़ाइल आकार सीमा (जैसे \"2k-10k\")",
-  "docs.cloud.lead": "lean-ctx के लिए वैकल्पिक क्लाउड सुविधाएँ — उपकरणों में आँकड़े सिंक करें और समय के साथ अपनी बचत ट्रैक करें।",
+  "docs.cloud.lead": "lean-ctx के लिए मुफ़्त और opt-in क्लाउड सुविधाएँ — डिवाइसेज़ में आँकड़े सिंक करें और समय के साथ अपनी बचत ट्रैक करें। LeanCTX की अपनी इंफ्रास्ट्रक्चर पर self-hosted।",
   "docs.cloud.login": "लॉगिन",
   "docs.cloud.loginDesc": "यह आपका खाता पंजीकृत करता है और आपके स्थानीय इंस्टॉलेशन को LeanCTX Cloud से जोड़ता है।",
   "docs.cloud.neverCollectContents": "फ़ाइल सामग्री या कोड",

@@ -472,7 +472,7 @@
   "docs.cloud.collectMode": "最佳压缩模式",
   "docs.cloud.collectRatio": "压缩率（百分比）",
   "docs.cloud.collectSize": "文件大小范围（如 \"2k-10k\"）",
-  "docs.cloud.lead": "lean-ctx 的可选云端功能——跨设备同步统计数据，长期追踪您的节省量。",
+  "docs.cloud.lead": "lean-ctx 的免费、可选（opt-in）云端功能——跨设备同步统计数据，长期追踪您的节省量。运行在 LeanCTX 自有基础设施（self-hosted）上。",
   "docs.cloud.login": "登录",
   "docs.cloud.loginDesc": "此操作注册您的账户并将本地安装与 LeanCTX Cloud 关联。",
   "docs.cloud.neverCollectContents": "文件内容或代码",
