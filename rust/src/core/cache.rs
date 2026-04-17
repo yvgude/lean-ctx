@@ -28,7 +28,10 @@ pub struct CacheEntry {
 
 impl CacheEntry {
     pub fn eviction_score_legacy(&self, now: Instant) -> f64 {
-        let elapsed = now.duration_since(self.last_access).as_secs_f64();
+        let elapsed = now
+            .checked_duration_since(self.last_access)
+            .unwrap_or_default()
+            .as_secs_f64();
         let recency = 1.0 / (1.0 + elapsed.sqrt());
         let frequency = (self.read_count as f64 + 1.0).ln();
         let size_value = (self.original_tokens as f64 + 1.0).ln();
@@ -51,8 +54,14 @@ pub fn eviction_scores_rrf(entries: &[(&String, &CacheEntry)], now: Instant) -> 
 
     let mut recency_order: Vec<usize> = (0..n).collect();
     recency_order.sort_by(|&a, &b| {
-        let elapsed_a = now.duration_since(entries[a].1.last_access).as_secs_f64();
-        let elapsed_b = now.duration_since(entries[b].1.last_access).as_secs_f64();
+        let elapsed_a = now
+            .checked_duration_since(entries[a].1.last_access)
+            .unwrap_or_default()
+            .as_secs_f64();
+        let elapsed_b = now
+            .checked_duration_since(entries[b].1.last_access)
+            .unwrap_or_default()
+            .as_secs_f64();
         elapsed_a
             .partial_cmp(&elapsed_b)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -447,6 +456,8 @@ mod tests {
 
     #[test]
     fn rrf_eviction_prefers_recent() {
+        let base = Instant::now();
+        std::thread::sleep(std::time::Duration::from_millis(5));
         let now = Instant::now();
         let key_a = "a.rs".to_string();
         let key_b = "b.rs".to_string();
@@ -466,7 +477,7 @@ mod tests {
             original_tokens: 10,
             read_count: 1,
             path: "/b.rs".to_string(),
-            last_access: now - std::time::Duration::from_secs(300),
+            last_access: base,
         };
         let entries: Vec<(&String, &CacheEntry)> = vec![(&key_a, &recent), (&key_b, &old)];
         let scores = eviction_scores_rrf(&entries, now);

@@ -122,7 +122,8 @@ fn quality_score(stats: &StatsStore) -> u32 {
         0.5
     };
 
-    let q = compression * 0.40 + mode_diversity * 0.25 + tool_breadth * 0.20 + cache_efficiency * 0.15;
+    let q =
+        compression * 0.40 + mode_diversity * 0.25 + tool_breadth * 0.20 + cache_efficiency * 0.15;
     (q * 100.0).round().clamp(0.0, 100.0) as u32
 }
 
