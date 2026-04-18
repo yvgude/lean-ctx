@@ -490,9 +490,25 @@ export default function (pi: ExtensionAPI) {
       const lines: string[] = [];
       lines.push(found ? `Binary: ${bin}` : "Binary: NOT FOUND — install: cargo install lean-ctx");
       lines.push(`MCP bridge: ${status.mode} (${status.connected ? "connected" : "disconnected"})`);
+      lines.push(`Reconnect attempts: ${status.reconnectAttempts}`);
       lines.push(`MCP tools: ${status.toolCount} registered`);
       if (status.toolNames.length > 0) {
         lines.push(`  ${status.toolNames.join(", ")}`);
+      }
+      if (status.lastError) {
+        lines.push(`Last bridge error: ${status.lastError}`);
+      }
+      if (status.lastToolError) {
+        lines.push(`Last tool error: ${status.lastToolError}`);
+      }
+      if (status.lastCancellation) {
+        const c = status.lastCancellation;
+        lines.push(
+          `Last interruption: ${c.toolName} (${c.reason}) via ${c.clientName} at ${c.timestamp}`,
+        );
+      }
+      if (status.recentInterruptions.length > 0) {
+        lines.push(`Recent interruptions: ${status.recentInterruptions.length}`);
       }
 
       ctx.ui.notify(lines.join("\n"), found && status.connected ? "info" : "warning");

@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import type { McpBridgeStatus } from "./types.js";
+import type { McpBridgeStatus, McpToolInterruption } from "./types.js";
 
 const CLI_OVERRIDE_TOOLS = new Set([
   "ctx_read",
@@ -21,6 +21,26 @@ type McpTool = {
   inputSchema?: Record<string, unknown>;
 };
 
+const CLIENT_NAME = "pi-lean-ctx";
+const MAX_INTERRUPTION_HISTORY = 12;
+
+function isAbortLikeError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return error.name === "AbortError"
+    || msg.includes("aborted")
+    || msg.includes("cancelled")
+    || msg.includes("canceled");
+}
+
+function isHostToolRejection(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return msg.includes("the user doesn't want to proceed with this tool use")
+    || msg.includes("tool use was rejected")
+    || msg.includes("stop what you are doing and wait for the user to tell you how to proceed");
+}
+
 export class McpBridge {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
@@ -28,6 +48,10 @@ export class McpBridge {
   private connected = false;
   private binary: string;
   private reconnectAttempts = 0;
+  private lastError: string | undefined;
+  private lastToolError: string | undefined;
+  private lastCancellation: McpToolInterruption | undefined;
+  private recentInterruptions: McpToolInterruption[] = [];
 
   constructor(binary: string) {
     this.binary = binary;
@@ -39,6 +63,7 @@ export class McpBridge {
       await this.discoverAndRegisterTools(pi);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      this.lastError = msg;
       console.error(`[lean-ctx MCP bridge] Failed to start: ${msg}`);
     }
   }
@@ -51,26 +76,30 @@ export class McpBridge {
     });
 
     this.client = new Client({
-      name: "pi-lean-ctx",
+      name: CLIENT_NAME,
       version: "2.0.0",
     });
 
     this.transport.onclose = () => {
       this.connected = false;
+      this.recordInterruption("bridge", "disconnected");
       this.scheduleReconnect();
     };
 
     this.transport.onerror = (err) => {
+      this.lastError = err.message;
       console.error(`[lean-ctx MCP bridge] Transport error: ${err.message}`);
     };
 
     await this.client.connect(this.transport);
     this.connected = true;
     this.reconnectAttempts = 0;
+    this.lastError = undefined;
   }
 
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.lastError = `Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached.`;
       console.error(
         `[lean-ctx MCP bridge] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. MCP tools unavailable.`,
       );
@@ -84,7 +113,8 @@ export class McpBridge {
       try {
         await this.connect();
         console.error("[lean-ctx MCP bridge] Reconnected successfully");
-      } catch {
+      } catch (error) {
+        this.lastError = error instanceof Error ? error.message : String(error);
         this.scheduleReconnect();
       }
     }, delay);
@@ -112,8 +142,12 @@ export class McpBridge {
       description: tool.description ?? `lean-ctx MCP tool: ${tool.name}`,
       promptSnippet: tool.description ?? tool.name,
       parameters: schema,
-      async execute(_toolCallId, params, _signal) {
-        return bridge.callTool(tool.name, params as Record<string, unknown>);
+      async execute(_toolCallId, params, signal) {
+        return bridge.callTool(
+          tool.name,
+          params as Record<string, unknown>,
+          signal,
+        );
       },
     });
 
@@ -123,14 +157,23 @@ export class McpBridge {
   async callTool(
     name: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     if (!this.client || !this.connected) {
+      this.recordInterruption(name, "disconnected");
       throw new Error(
         `lean-ctx MCP bridge not connected. Tool "${name}" unavailable.`,
       );
     }
 
-    const result = await this.client.callTool({ name, arguments: args });
+    if (signal?.aborted) {
+      this.recordInterruption(name, "aborted");
+      throw new Error(`lean-ctx MCP tool "${name}" interrupted by host.`);
+    }
+
+    const call = this.client.callTool({ name, arguments: args });
+    const result = await this.withAbortSignal(call, name, signal);
+    this.lastToolError = undefined;
 
     const content = (
       result.content as Array<{ type: string; text?: string }>
@@ -140,6 +183,78 @@ export class McpBridge {
     }));
 
     return { content };
+  }
+
+  private async withAbortSignal<T>(
+    promise: Promise<T>,
+    toolName: string,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (!signal) {
+      return this.normalizeToolErrors(promise, toolName);
+    }
+
+    let onAbort: (() => void) | undefined;
+    const abortPromise = new Promise<never>((_, reject) => {
+      onAbort = () => {
+        signal.removeEventListener("abort", onAbort);
+        this.recordInterruption(toolName, "aborted");
+        reject(new Error(`lean-ctx MCP tool "${toolName}" interrupted by host.`));
+      };
+
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+
+    try {
+      return await this.normalizeToolErrors(
+        Promise.race([promise, abortPromise]),
+        toolName,
+      );
+    } finally {
+      if (onAbort) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    }
+  }
+
+  private async normalizeToolErrors<T>(
+    promise: Promise<T>,
+    toolName: string,
+  ): Promise<T> {
+    try {
+      return await promise;
+    } catch (error) {
+      if (isHostToolRejection(error)) {
+        this.recordInterruption(toolName, "rejected");
+        throw new Error(`lean-ctx MCP tool "${toolName}" interrupted by host.`);
+      }
+
+      if (isAbortLikeError(error)) {
+        this.recordInterruption(toolName, "aborted");
+        throw new Error(`lean-ctx MCP tool "${toolName}" interrupted by host.`);
+      }
+
+      this.lastToolError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  }
+
+  private recordInterruption(
+    toolName: string,
+    reason: McpToolInterruption["reason"],
+  ): void {
+    const event: McpToolInterruption = {
+      clientName: CLIENT_NAME,
+      toolName,
+      reason,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.lastCancellation = event;
+    this.recentInterruptions = [
+      event,
+      ...this.recentInterruptions,
+    ].slice(0, MAX_INTERRUPTION_HISTORY);
   }
 
   private jsonSchemaToTypebox(
@@ -198,6 +313,11 @@ export class McpBridge {
       connected: this.connected,
       toolCount: this.registeredTools.length,
       toolNames: [...this.registeredTools],
+      reconnectAttempts: this.reconnectAttempts,
+      lastError: this.lastError,
+      lastToolError: this.lastToolError,
+      lastCancellation: this.lastCancellation,
+      recentInterruptions: [...this.recentInterruptions],
     };
   }
 
