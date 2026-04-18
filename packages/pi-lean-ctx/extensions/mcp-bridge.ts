@@ -21,6 +21,23 @@ type McpTool = {
   inputSchema?: Record<string, unknown>;
 };
 
+function isAbortLikeError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return error.name === "AbortError"
+    || msg.includes("aborted")
+    || msg.includes("cancelled")
+    || msg.includes("canceled");
+}
+
+function isHostToolRejection(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return msg.includes("the user doesn't want to proceed with this tool use")
+    || msg.includes("tool use was rejected")
+    || msg.includes("stop what you are doing and wait for the user to tell you how to proceed");
+}
+
 export class McpBridge {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
@@ -112,8 +129,12 @@ export class McpBridge {
       description: tool.description ?? `lean-ctx MCP tool: ${tool.name}`,
       promptSnippet: tool.description ?? tool.name,
       parameters: schema,
-      async execute(_toolCallId, params, _signal) {
-        return bridge.callTool(tool.name, params as Record<string, unknown>);
+      async execute(_toolCallId, params, signal) {
+        return bridge.callTool(
+          tool.name,
+          params as Record<string, unknown>,
+          signal,
+        );
       },
     });
 
@@ -123,6 +144,7 @@ export class McpBridge {
   async callTool(
     name: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<{ content: Array<{ type: string; text: string }> }> {
     if (!this.client || !this.connected) {
       throw new Error(
@@ -130,7 +152,12 @@ export class McpBridge {
       );
     }
 
-    const result = await this.client.callTool({ name, arguments: args });
+    if (signal?.aborted) {
+      throw new Error(`lean-ctx MCP tool "${name}" interrupted by host.`);
+    }
+
+    const call = this.client.callTool({ name, arguments: args });
+    const result = await this.withAbortSignal(call, name, signal);
 
     const content = (
       result.content as Array<{ type: string; text?: string }>
@@ -140,6 +167,52 @@ export class McpBridge {
     }));
 
     return { content };
+  }
+
+  private async withAbortSignal<T>(
+    promise: Promise<T>,
+    toolName: string,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (!signal) {
+      return this.normalizeToolErrors(promise, toolName);
+    }
+
+    let onAbort: (() => void) | undefined;
+    const abortPromise = new Promise<never>((_, reject) => {
+      onAbort = () => {
+        signal.removeEventListener("abort", onAbort);
+        reject(new Error(`lean-ctx MCP tool "${toolName}" interrupted by host.`));
+      };
+
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+
+    try {
+      return await this.normalizeToolErrors(
+        Promise.race([promise, abortPromise]),
+        toolName,
+      );
+    } finally {
+      if (onAbort) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    }
+  }
+
+  private async normalizeToolErrors<T>(
+    promise: Promise<T>,
+    toolName: string,
+  ): Promise<T> {
+    try {
+      return await promise;
+    } catch (error) {
+      if (isHostToolRejection(error) || isAbortLikeError(error)) {
+        throw new Error(`lean-ctx MCP tool "${toolName}" interrupted by host.`);
+      }
+
+      throw error;
+    }
   }
 
   private jsonSchemaToTypebox(
