@@ -305,6 +305,51 @@ fn route_response(
             let json = crate::core::version_check::version_info_json();
             ("200 OK", "application/json", json)
         }
+        "/api/capabilities" => {
+            let payload = serde_json::json!({
+                "dashboard": {
+                    "views": {
+                        "overview": true,
+                        "live": true,
+                        "knowledge": true,
+                        "deps": true,
+                        "compression": true,
+                        "agents": true,
+                        "bugs": true,
+                        "search": true,
+                        "learning": true,
+                        "symbols": true,
+                        "callgraph": true,
+                        "routes": true
+                    },
+                    "api_endpoints": [
+                        "/api/stats",
+                        "/api/gain",
+                        "/api/mcp",
+                        "/api/agents",
+                        "/api/knowledge",
+                        "/api/gotchas",
+                        "/api/buddy",
+                        "/api/version",
+                        "/api/capabilities",
+                        "/api/heatmap",
+                        "/api/events",
+                        "/api/graph",
+                        "/api/call-graph",
+                        "/api/feedback",
+                        "/api/symbols",
+                        "/api/routes",
+                        "/api/session",
+                        "/api/search-index",
+                        "/api/search",
+                        "/api/compression-demo"
+                    ]
+                }
+            });
+            let json = serde_json::to_string(&payload)
+                .unwrap_or_else(|_| "{\"dashboard\":{\"views\":{}}}".to_string());
+            ("200 OK", "application/json", json)
+        }
         "/api/heatmap" => {
             let project_root = detect_project_root_for_dashboard();
             let index = crate::core::graph_index::load_or_build(&project_root);

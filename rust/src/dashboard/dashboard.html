@@ -562,10 +562,16 @@ let overviewPH = '';
 let liveInterval = null;
 let liveTotalTokens = 0;
 let liveFilter = 'all';
+let dashboardCapabilities = null;
+let supportedViews = new Set(VIEWS.map(v => v.id));
+
+function visibleViews() {
+  return VIEWS.filter(v => supportedViews.has(v.id));
+}
 
 function buildSidebar() {
   const nav = $('sidebarNav');
-  nav.innerHTML = VIEWS.map(v =>
+  nav.innerHTML = visibleViews().map(v =>
     `<div class="nav-item${v.id === currentView ? ' active' : ''}" data-view="${v.id}" onclick="switchView('${v.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${v.icon}</svg>
       <span class="nav-label">${v.label}</span>
@@ -574,6 +580,12 @@ function buildSidebar() {
 }
 
 function switchView(name) {
+  if (!supportedViews.has(name)) {
+    currentView = 'overview';
+    buildSidebar();
+    loadCurrentView();
+    return;
+  }
   if (currentView === name) return;
   currentView = name;
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
@@ -585,6 +597,31 @@ function switchView(name) {
   if (name === 'live') startLivePolling();
   else stopLivePolling();
   loadCurrentView();
+}
+
+async function loadCapabilities() {
+  try {
+    const data = await apiFetch('/api/capabilities', { timeoutMs: 2500 });
+    dashboardCapabilities = data || null;
+    const viewCaps = data?.dashboard?.views || null;
+    if (!viewCaps || typeof viewCaps !== 'object') {
+      supportedViews = new Set(VIEWS.map(v => v.id));
+      return;
+    }
+
+    supportedViews = new Set(
+      VIEWS
+        .filter(v => viewCaps[v.id] !== false)
+        .map(v => v.id)
+    );
+
+    if (!supportedViews.has(currentView)) {
+      currentView = supportedViews.has('overview') ? 'overview' : [...supportedViews][0] || 'overview';
+    }
+  } catch (e) {
+    dashboardCapabilities = null;
+    supportedViews = new Set(VIEWS.map(v => v.id));
+  }
 }
 
 function loadCurrentView() {
@@ -1808,9 +1845,19 @@ async function loadRoutes() {
       + '</tbody></table>';
   } catch (e) { showError(container, 'Could not load routes.'); }
 }
-buildSidebar();
-loadCurrentView();
-startAutoRefresh();
+async function initDashboard() {
+  await loadCapabilities();
+  buildSidebar();
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  const target = $('view-' + currentView);
+  if (target) target.classList.add('active');
+  const viewDef = VIEWS.find(v => v.id === currentView);
+  $('viewTitle').textContent = viewDef ? viewDef.label : currentView;
+  loadCurrentView();
+  startAutoRefresh();
+}
+
+initDashboard();
 </script>
 </body>
 </html>
