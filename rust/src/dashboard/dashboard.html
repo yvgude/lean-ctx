@@ -633,6 +633,15 @@ function howItWorks(title, content) {
 function showLoading(container) { container.innerHTML = '<div class="loading-state">Loading...</div>'; }
 function showEmpty(container, msg) { container.innerHTML = `<div class="empty-state"><h2>No data yet</h2><p>${msg}</p></div>`; }
 function showError(container, msg) { container.innerHTML = `<div class="empty-state"><h2>Connection Error</h2><p>${esc(msg)}</p></div>`; }
+function showGuidedEmpty(container, title, msg, hints, actionLabel, actionJs) {
+  const hintList = (hints || []).length
+    ? `<ul style="margin:14px auto 0;max-width:560px;text-align:left;color:var(--muted);font-size:12px;line-height:1.7;padding-left:18px">${hints.map(h => `<li>${esc(h)}</li>`).join('')}</ul>`
+    : '';
+  const action = actionLabel && actionJs
+    ? `<div style="margin-top:16px"><button class="btn" onclick="${actionJs}">${esc(actionLabel)}</button></div>`
+    : '';
+  container.innerHTML = `<div class="empty-state"><h2>${esc(title)}</h2><p>${esc(msg)}</p>${hintList}${action}</div>`;
+}
 
 const retryTimers = new Map();
 const retryDelays = new Map();
@@ -1742,18 +1751,37 @@ async function loadCallGraph() {
       return;
     }
     resetRetry('callgraph');
-    if (!data || !data.edges || !data.edges.length) {
-      container.innerHTML = '<div style="color:var(--dim);padding:24px;text-align:center">No call graph data available yet. LeanCTX builds it automatically once indexing finishes.</div>';
+    const edges = Array.isArray(data?.edges) ? data.edges : [];
+    if (!edges.length) {
+      const indexedFiles = data?.indexed_file_count ?? 0;
+      const indexedSymbols = data?.indexed_symbol_count ?? 0;
+      const analyzedFiles = data?.analyzed_file_count ?? 0;
+      showGuidedEmpty(
+        container,
+        'No call graph data yet',
+        data?.hint || 'LeanCTX has not produced any call edges for this project yet.',
+        [
+          `Indexed files: ${indexedFiles}`,
+          `Indexed symbols: ${indexedSymbols}`,
+          `Files analyzed for calls: ${analyzedFiles}`,
+          indexedFiles === 0
+            ? 'Open the project root in LeanCTX so indexing can discover source files first.'
+            : 'If this project is large, let indexing finish and then refresh this view.',
+          'If the graph still stays empty, refresh the dashboard or re-run LeanCTX from the project root to rebuild indexes.',
+        ],
+        'Refresh call graph',
+        'loadCallGraph()',
+      );
       return;
     }
     const nodes = new Map();
-    data.edges.forEach(e => {
+    edges.forEach(e => {
       nodes.set(e.caller_symbol, (nodes.get(e.caller_symbol) || 0) + 1);
       nodes.set(e.callee_name, (nodes.get(e.callee_name) || 0) + 1);
     });
     const topNodes = [...nodes.entries()].sort((a,b) => b[1]-a[1]).slice(0, 40).map(n => n[0]);
     const topSet = new Set(topNodes);
-    const filteredEdges = data.edges.filter(e => topSet.has(e.caller_symbol) || topSet.has(e.callee_name));
+    const filteredEdges = edges.filter(e => topSet.has(e.caller_symbol) || topSet.has(e.callee_name));
     const uniqueEdges = new Map();
     filteredEdges.forEach(e => {
       const key = e.caller_symbol + '→' + e.callee_name;
@@ -1761,7 +1789,7 @@ async function loadCallGraph() {
       else uniqueEdges.get(key).count++;
     });
     const graphNodes = [...new Set([...uniqueEdges.values()].flatMap(e => [e.source, e.target]))].map(n => ({ id: n, count: nodes.get(n) || 0 }));
-    container.innerHTML = `<div style="margin-bottom:8px;font-size:12px;color:var(--dim)">${data.edges.length} call edges, showing top ${graphNodes.length} symbols</div><div id="cgViz" style="width:100%;height:500px;background:var(--surface);border-radius:12px;border:1px solid var(--border)"></div>`;
+    container.innerHTML = `<div style="margin-bottom:8px;font-size:12px;color:var(--dim)">${edges.length} call edges, showing top ${graphNodes.length} symbols</div><div id="cgViz" style="width:100%;height:500px;background:var(--surface);border-radius:12px;border:1px solid var(--border)"></div>`;
     const width = container.clientWidth, height = 500;
     const svg = d3.select('#cgViz').append('svg').attr('width', width).attr('height', height);
     const sim = d3.forceSimulation(graphNodes)
@@ -1797,14 +1825,33 @@ async function loadRoutes() {
       return;
     }
     resetRetry('routes');
-    if (!data || !data.length) {
-      container.innerHTML = '<div style="color:var(--dim);padding:24px;text-align:center">No HTTP routes found in this project.</div>';
+    const routes = Array.isArray(data) ? data : (Array.isArray(data?.routes) ? data.routes : []);
+    if (!routes.length) {
+      const indexedFiles = data?.indexed_file_count ?? 0;
+      const routeCandidates = data?.route_candidate_count ?? 0;
+      const frameworks = Array.isArray(data?.supported_frameworks) ? data.supported_frameworks.join(', ') : 'Express, Flask, FastAPI, Actix, Spring, Rails, Next.js';
+      showGuidedEmpty(
+        container,
+        'No HTTP routes found',
+        data?.hint || 'LeanCTX did not detect any supported HTTP route declarations in this project.',
+        [
+          `Indexed files: ${indexedFiles}`,
+          `Likely route candidates scanned: ${routeCandidates}`,
+          `Supported frameworks: ${frameworks}`,
+          routeCandidates === 0
+            ? 'This project may not contain server route files, or LeanCTX may be pointed at the wrong project root.'
+            : 'This project may use a framework or routing style that LeanCTX does not extract yet.',
+          'If this looks wrong, refresh the dashboard after indexing completes or re-run LeanCTX from the project root to rebuild the project index.',
+        ],
+        'Refresh routes',
+        'loadRoutes()',
+      );
       return;
     }
     const methodColors = { GET: '#34d399', POST: '#60a5fa', PUT: '#fbbf24', PATCH: '#c084fc', DELETE: '#f87171', HEAD: '#94a3b8', OPTIONS: '#94a3b8' };
-    container.innerHTML = `<div style="margin-bottom:12px;font-size:12px;color:var(--dim)">${data.length} route(s) found</div>
+    container.innerHTML = `<div style="margin-bottom:12px;font-size:12px;color:var(--dim)">${routes.length} route(s) found</div>
       <table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;font-size:11px;color:var(--dim)"><th style="padding:6px">Method</th><th style="padding:6px">Path</th><th style="padding:6px">Handler</th><th style="padding:6px">File</th><th style="padding:6px">Line</th></tr></thead><tbody>`
-      + data.map(r => `<tr style="border-top:1px solid var(--border)"><td style="padding:6px"><span style="background:${methodColors[r.method] || '#6b6b88'};color:#000;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${esc(r.method)}</span></td><td style="padding:6px;font-family:var(--mono);font-size:13px">${esc(r.path)}</td><td style="padding:6px;font-size:12px;color:var(--green)">${esc(r.handler || '—')}</td><td style="padding:6px;font-size:12px;color:var(--dim)">${esc(r.file)}</td><td style="padding:6px;font-size:12px">${r.line}</td></tr>`).join('')
+      + routes.map(r => `<tr style="border-top:1px solid var(--border)"><td style="padding:6px"><span style="background:${methodColors[r.method] || '#6b6b88'};color:#000;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${esc(r.method)}</span></td><td style="padding:6px;font-family:var(--mono);font-size:13px">${esc(r.path)}</td><td style="padding:6px;font-size:12px;color:var(--green)">${esc(r.handler || '—')}</td><td style="padding:6px;font-size:12px;color:var(--dim)">${esc(r.file)}</td><td style="padding:6px;font-size:12px">${r.line}</td></tr>`).join('')
       + '</tbody></table>';
   } catch (e) { showError(container, 'Could not load routes.'); }
 }

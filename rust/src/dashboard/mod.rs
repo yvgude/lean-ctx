@@ -329,8 +329,37 @@ fn route_response(
             let index = crate::core::graph_index::load_or_build(&root);
             let call_graph = crate::core::call_graph::CallGraph::load_or_build(&root, &index);
             let _ = call_graph.save();
-            let json = serde_json::to_string(&call_graph)
-                .unwrap_or_else(|_| "{\"error\":\"failed to serialize call graph\"}".to_string());
+            let unique_callers = call_graph
+                .edges
+                .iter()
+                .map(|edge| edge.caller_symbol.as_str())
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            let unique_callees = call_graph
+                .edges
+                .iter()
+                .map(|edge| edge.callee_name.as_str())
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            let payload = serde_json::json!({
+                "status": if call_graph.edges.is_empty() { "empty" } else { "ready" },
+                "project_root": call_graph.project_root,
+                "edges": call_graph.edges,
+                "indexed_file_count": index.files.len(),
+                "indexed_symbol_count": index.symbols.len(),
+                "analyzed_file_count": call_graph.file_hashes.len(),
+                "edge_count": call_graph.edges.len(),
+                "unique_caller_count": unique_callers,
+                "unique_callee_count": unique_callees,
+                "hint": if unique_callers == 0 && unique_callees == 0 {
+                    "LeanCTX has indexed files, but it has not found call edges yet."
+                } else {
+                    "Call graph data is ready."
+                }
+            });
+            let json = serde_json::to_string(&payload).unwrap_or_else(|_| {
+                "{\"error\":\"failed to serialize call graph payload\"}".to_string()
+            });
             ("200 OK", "application/json", json)
         }
         "/api/feedback" => {
@@ -353,7 +382,33 @@ fn route_response(
             let index = crate::core::graph_index::load_or_build(&root);
             let routes =
                 crate::core::route_extractor::extract_routes_from_project(&root, &index.files);
-            let json = serde_json::to_string(&routes).unwrap_or_else(|_| "[]".to_string());
+            let route_candidate_count = index
+                .files
+                .keys()
+                .filter(|path| is_dashboard_route_candidate(path))
+                .count();
+            let payload = serde_json::json!({
+                "status": if routes.is_empty() { "empty" } else { "ready" },
+                "routes": routes,
+                "indexed_file_count": index.files.len(),
+                "route_candidate_count": route_candidate_count,
+                "supported_frameworks": [
+                    "Express",
+                    "Flask",
+                    "FastAPI",
+                    "Actix",
+                    "Spring",
+                    "Rails",
+                    "Next.js"
+                ],
+                "hint": if route_candidate_count == 0 {
+                    "No route-like source files were detected in the indexed project."
+                } else {
+                    "LeanCTX scanned likely route files but did not find supported HTTP route patterns."
+                }
+            });
+            let json =
+                serde_json::to_string(&payload).unwrap_or_else(|_| "{\"routes\":[]}".to_string());
             ("200 OK", "application/json", json)
         }
         "/api/session" => {
@@ -539,6 +594,17 @@ fn percent_decode_query_component(s: &str) -> String {
         }
     }
     String::from_utf8_lossy(&out).into_owned()
+}
+
+fn is_dashboard_route_candidate(path: &str) -> bool {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    matches!(
+        ext,
+        "js" | "ts" | "jsx" | "tsx" | "py" | "rs" | "java" | "rb" | "go" | "kt"
+    )
 }
 
 fn normalize_dashboard_demo_path(path: &str) -> String {
