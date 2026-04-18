@@ -306,48 +306,7 @@ fn route_response(
             ("200 OK", "application/json", json)
         }
         "/api/capabilities" => {
-            let payload = serde_json::json!({
-                "dashboard": {
-                    "views": {
-                        "overview": true,
-                        "live": true,
-                        "knowledge": true,
-                        "deps": true,
-                        "compression": true,
-                        "agents": true,
-                        "bugs": true,
-                        "search": true,
-                        "learning": true,
-                        "symbols": true,
-                        "callgraph": true,
-                        "routes": true
-                    },
-                    "api_endpoints": [
-                        "/api/stats",
-                        "/api/gain",
-                        "/api/mcp",
-                        "/api/agents",
-                        "/api/knowledge",
-                        "/api/gotchas",
-                        "/api/buddy",
-                        "/api/version",
-                        "/api/capabilities",
-                        "/api/heatmap",
-                        "/api/events",
-                        "/api/graph",
-                        "/api/call-graph",
-                        "/api/feedback",
-                        "/api/symbols",
-                        "/api/routes",
-                        "/api/session",
-                        "/api/search-index",
-                        "/api/search",
-                        "/api/compression-demo"
-                    ]
-                }
-            });
-            let json = serde_json::to_string(&payload)
-                .unwrap_or_else(|_| "{\"dashboard\":{\"views\":{}}}".to_string());
+            let json = r#"{"dashboard":{"views":{"overview":true,"live":true,"knowledge":true,"deps":true,"compression":true,"agents":true,"bugs":true,"search":true,"learning":true,"symbols":true,"callgraph":true,"routes":true},"api_endpoints":["/api/stats","/api/gain","/api/mcp","/api/agents","/api/knowledge","/api/gotchas","/api/buddy","/api/version","/api/capabilities","/api/heatmap","/api/events","/api/graph","/api/call-graph","/api/feedback","/api/symbols","/api/routes","/api/session","/api/search-index","/api/search","/api/compression-demo"]}}"#.to_string();
             ("200 OK", "application/json", json)
         }
         "/api/heatmap" => {
@@ -942,6 +901,21 @@ mod tests {
         assert!(!"/".starts_with("/api/"));
         assert!(!"/index.html".starts_with("/api/"));
         assert!(!"/favicon.ico".starts_with("/api/"));
+    }
+
+    #[test]
+    fn capabilities_route_returns_expected_views() {
+        let (_, content_type, body) = route_response("/api/capabilities", "", &None, &None);
+        assert_eq!(content_type, "application/json");
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("capabilities payload should be valid json");
+        let views = &parsed["dashboard"]["views"];
+
+        assert_eq!(views["overview"], true);
+        assert_eq!(views["symbols"], true);
+        assert_eq!(views["callgraph"], true);
+        assert_eq!(views["routes"], true);
     }
 
     #[test]
