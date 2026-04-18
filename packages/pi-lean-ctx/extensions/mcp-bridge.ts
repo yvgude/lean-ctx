@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import type { McpBridgeStatus } from "./types.js";
+import type { McpBridgeRetryState, McpBridgeStatus } from "./types.js";
 
 const CLI_OVERRIDE_TOOLS = new Set([
   "ctx_read",
@@ -14,12 +14,28 @@ const CLI_OVERRIDE_TOOLS = new Set([
 
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAY_MS = 2000;
+const TOOL_CALL_TIMEOUT_MS = 120000;
 
 type McpTool = {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
 };
+
+function isRetrySafeTool(name: string): boolean {
+  const lower = name.toLowerCase();
+  const mutatingHints = [
+    "edit",
+    "fill",
+    "cache",
+    "workflow",
+    "execute",
+    "session",
+    "knowledge",
+    "response",
+  ];
+  return !mutatingHints.some((hint) => lower.includes(hint));
+}
 
 export class McpBridge {
   private client: Client | null = null;
@@ -28,6 +44,9 @@ export class McpBridge {
   private connected = false;
   private binary: string;
   private reconnectAttempts = 0;
+  private lastError: string | undefined;
+  private lastHungTool: string | undefined;
+  private lastRetry: McpBridgeRetryState | undefined;
 
   constructor(binary: string) {
     this.binary = binary;
@@ -39,6 +58,7 @@ export class McpBridge {
       await this.discoverAndRegisterTools(pi);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      this.lastError = msg;
       console.error(`[lean-ctx MCP bridge] Failed to start: ${msg}`);
     }
   }
@@ -57,20 +77,24 @@ export class McpBridge {
 
     this.transport.onclose = () => {
       this.connected = false;
+      this.lastError = "MCP transport closed";
       this.scheduleReconnect();
     };
 
     this.transport.onerror = (err) => {
+      this.lastError = err.message;
       console.error(`[lean-ctx MCP bridge] Transport error: ${err.message}`);
     };
 
     await this.client.connect(this.transport);
     this.connected = true;
     this.reconnectAttempts = 0;
+    this.lastError = undefined;
   }
 
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.lastError = `Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached.`;
       console.error(
         `[lean-ctx MCP bridge] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. MCP tools unavailable.`,
       );
@@ -84,10 +108,23 @@ export class McpBridge {
       try {
         await this.connect();
         console.error("[lean-ctx MCP bridge] Reconnected successfully");
-      } catch {
+      } catch (error) {
+        this.lastError = error instanceof Error ? error.message : String(error);
         this.scheduleReconnect();
       }
     }, delay);
+  }
+
+  private async forceReconnect(): Promise<void> {
+    this.connected = false;
+    try {
+      await this.client?.close();
+    } catch {
+      // best-effort cleanup
+    }
+    this.client = null;
+    this.transport = null;
+    await this.connect();
   }
 
   private async discoverAndRegisterTools(pi: ExtensionAPI): Promise<void> {
@@ -130,8 +167,66 @@ export class McpBridge {
       );
     }
 
-    const result = await this.client.callTool({ name, arguments: args });
+    try {
+      const result = await this.callToolWithTimeout(name, args);
+      this.lastError = undefined;
+      return this.toTextBlocks(result);
+    } catch (error) {
+      if (this.isTimeoutError(error) && isRetrySafeTool(name)) {
+        this.lastRetry = {
+          toolName: name,
+          reason: "timeout",
+          retried: true,
+          timestamp: new Date().toISOString(),
+        };
+        await this.forceReconnect();
+        const retried = await this.callToolWithTimeout(name, args);
+        this.lastError = undefined;
+        return this.toTextBlocks(retried);
+      }
 
+      this.lastError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  }
+
+  private async callToolWithTimeout(
+    name: string,
+    args: Record<string, unknown>,
+  ) {
+    const call = this.client?.callTool({ name, arguments: args });
+    if (!call) {
+      throw new Error(`lean-ctx MCP bridge not connected. Tool "${name}" unavailable.`);
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        this.lastHungTool = name;
+        reject(
+          new Error(
+            `lean-ctx MCP tool "${name}" timed out after ${Math.round(TOOL_CALL_TIMEOUT_MS / 1000)}s.`,
+          ),
+        );
+      }, TOOL_CALL_TIMEOUT_MS);
+    });
+
+    try {
+      return await Promise.race([call, timeout]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    return error instanceof Error && error.message.includes("timed out after");
+  }
+
+  private toTextBlocks(
+    result: Awaited<ReturnType<Client["callTool"]>>,
+  ): { content: Array<{ type: string; text: string }> } {
     const content = (
       result.content as Array<{ type: string; text?: string }>
     ).map((block) => ({
@@ -198,6 +293,10 @@ export class McpBridge {
       connected: this.connected,
       toolCount: this.registeredTools.length,
       toolNames: [...this.registeredTools],
+      reconnectAttempts: this.reconnectAttempts,
+      lastError: this.lastError,
+      lastHungTool: this.lastHungTool,
+      lastRetry: this.lastRetry,
     };
   }
 
