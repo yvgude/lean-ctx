@@ -87,12 +87,9 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
         }
     };
 
-    let rel_target = target
-        .strip_prefix(root)
-        .unwrap_or(target)
-        .trim_start_matches('/');
+    let rel_target = graph_index::graph_relative_key(target, root);
 
-    let related = index.get_related(rel_target, 2);
+    let related = index.get_related(&rel_target, 2);
     if related.is_empty() {
         return format!(
             "No related files found for {}",
@@ -139,10 +136,7 @@ fn handle_symbol(
         }
     };
 
-    let rel_file = file_part
-        .strip_prefix(root)
-        .unwrap_or(file_part)
-        .trim_start_matches('/');
+    let rel_file = graph_index::graph_relative_key(file_part, root);
 
     let key = format!("{rel_file}::{symbol_name}");
     let symbol = match index.get_symbol(&key) {
@@ -151,7 +145,7 @@ fn handle_symbol(
             let available: Vec<&str> = index
                 .symbols
                 .keys()
-                .filter(|k| k.starts_with(rel_file))
+                .filter(|k| k.starts_with(&rel_file))
                 .map(|k| k.as_str())
                 .take(10)
                 .collect();
@@ -168,7 +162,10 @@ fn handle_symbol(
     let abs_path = if Path::new(file_part).is_absolute() {
         file_part.to_string()
     } else {
-        format!("{root}/{rel_file}")
+        Path::new(root)
+            .join(rel_file.trim_start_matches(['/', '\\']))
+            .to_string_lossy()
+            .to_string()
     };
 
     let content = match std::fs::read_to_string(&abs_path) {
@@ -186,7 +183,7 @@ fn handle_symbol(
 
     let mut result = format!(
         "{}::{} ({}:{}-{})\n",
-        crate::core::protocol::shorten_path(rel_file),
+        crate::core::protocol::shorten_path(&rel_file),
         symbol_name,
         symbol.kind,
         symbol.start_line,
@@ -214,15 +211,16 @@ fn file_path_to_module_prefixes(
     project_root: &str,
     index: &ProjectIndex,
 ) -> Vec<String> {
-    let without_ext = rel_path
+    let rel_path_slash = graph_index::graph_match_key(rel_path);
+    let without_ext = rel_path_slash
         .strip_suffix(".rs")
-        .or_else(|| rel_path.strip_suffix(".ts"))
-        .or_else(|| rel_path.strip_suffix(".tsx"))
-        .or_else(|| rel_path.strip_suffix(".js"))
-        .or_else(|| rel_path.strip_suffix(".py"))
-        .or_else(|| rel_path.strip_suffix(".kt"))
-        .or_else(|| rel_path.strip_suffix(".kts"))
-        .unwrap_or(rel_path);
+        .or_else(|| rel_path_slash.strip_suffix(".ts"))
+        .or_else(|| rel_path_slash.strip_suffix(".tsx"))
+        .or_else(|| rel_path_slash.strip_suffix(".js"))
+        .or_else(|| rel_path_slash.strip_suffix(".py"))
+        .or_else(|| rel_path_slash.strip_suffix(".kt"))
+        .or_else(|| rel_path_slash.strip_suffix(".kts"))
+        .unwrap_or(&rel_path_slash);
 
     let module_path = without_ext
         .strip_prefix("src/")
@@ -263,7 +261,7 @@ fn file_path_to_module_prefixes(
         .and_then(|e| e.to_str())
         .unwrap_or("");
     if matches!(ext, "kt" | "kts") {
-        let abs_path = Path::new(project_root).join(rel_path);
+        let abs_path = Path::new(project_root).join(rel_path.trim_start_matches(['/', '\\']));
         if let Ok(content) = std::fs::read_to_string(abs_path) {
             if let Some(package_name) = content.lines().map(str::trim).find_map(|line| {
                 line.strip_prefix("package ")
@@ -308,12 +306,9 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
         }
     };
 
-    let rel_target = target
-        .strip_prefix(root)
-        .unwrap_or(target)
-        .trim_start_matches('/');
+    let rel_target = graph_index::graph_relative_key(target, root);
 
-    let module_prefixes = file_path_to_module_prefixes(rel_target, root, &index);
+    let module_prefixes = file_path_to_module_prefixes(&rel_target, root, &index);
 
     let direct: Vec<&str> = index
         .edges
