@@ -54,6 +54,7 @@ pub mod mode_predictor;
 pub mod neural;
 pub mod pathjail;
 pub mod patterns;
+pub mod pipeline;
 pub mod pop_pruning;
 pub mod portable_binary;
 pub mod preservation;
