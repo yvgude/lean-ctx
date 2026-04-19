@@ -1,0 +1,6 @@
+Contact: https://github.com/yvgude/lean-ctx/security/advisories
+Contact: mailto:security@leanctx.com
+Expires: 2027-04-19T00:00:00.000Z
+Preferred-Languages: en, de
+Canonical: https://leanctx.com/.well-known/security.txt
+Policy: https://github.com/yvgude/lean-ctx/security/policy

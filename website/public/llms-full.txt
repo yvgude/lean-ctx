@@ -1,0 +1,43 @@
+# LeanCTX
+
+> Open-source context intelligence layer for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry.
+
+## Documentation
+
+- [Getting Started](https://leanctx.com/docs/getting-started/): Installation, setup, and first steps
+- [Configuration](https://leanctx.com/docs/configuration/): config.toml, security layer, environment variables
+- [Tool API Reference](https://leanctx.com/docs/tools/): All MCP tools with schemas and examples
+- [CLI Reference](https://leanctx.com/cli/): Terminal commands and flags
+- [Quick Reference](https://leanctx.com/docs/quick-reference/): Daily workflow cheat sheet
+
+## Features
+
+- [How It Works](https://leanctx.com/how-it-works/): Data flow, compression pipeline, quality preservation
+- [MCP Server](https://leanctx.com/mcp-server/): MCP tools documentation and read modes
+- [Shell Hook](https://leanctx.com/shell-hook/): 90+ command patterns with before/after examples
+- [Intelligence Layer](https://leanctx.com/docs/intelligence-layer/): 6 scientific compression algorithms
+- [Tree-sitter Engine](https://leanctx.com/docs/tree-sitter/): AST parsing for 18 languages
+- [Protocols](https://leanctx.com/protocols/): CEP, CCP, and TDD communication protocols
+
+## Compatibility
+
+- [Supported AI Tools](https://leanctx.com/compatibility/): 24 AI coding tools with setup commands
+- [Benchmark](https://leanctx.com/benchmark/): Token savings measurement and verification
+
+## API
+
+- [MCP Tools Manifest](https://leanctx.com/generated/mcp-tools.json): Machine-readable tool schemas
+- [MCP Discovery](https://leanctx.com/.well-known/mcp.json): MCP server discovery endpoint
+
+## Resources
+
+- [GitHub Repository](https://github.com/yvgude/lean-ctx): Source code
+- [npm Package](https://www.npmjs.com/package/lean-ctx-bin): Binary distribution
+- [crates.io](https://crates.io/crates/lean-ctx): Rust crate
+- [Discord](https://discord.gg/pTHkG9Hew9): Community
+- [Privacy Policy](https://leanctx.com/privacy/): Data handling and privacy
+
+## Optional
+
+- [Home](https://leanctx.com/): Marketing overview and quick start
+- [Manifest](https://leanctx.com/manifest/): Architecture and design philosophy

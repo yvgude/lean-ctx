@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "server": {
+    "name": "lean-ctx",
+    "description": "Context intelligence layer for AI coding agents. Reduces LLM token costs by up to 99% through intelligent compression, caching, and semantic extraction.",
+    "version": "3.2.1",
+    "repository": "https://github.com/yvgude/lean-ctx",
+    "documentation": "https://leanctx.com/docs/getting-started",
+    "license": "MIT AND Apache-2.0",
+    "transport": "stdio",
+    "install": {
+      "npm": "npm install -g lean-ctx-bin",
+      "curl": "curl -fsSL https://leanctx.com/install.sh | sh",
+      "homebrew": "brew install yvgude/tap/lean-ctx",
+      "cargo": "cargo install lean-ctx",
+      "aur": "yay -S lean-ctx"
+    }
+  },
+  "tools_manifest": "https://leanctx.com/generated/mcp-tools.json",
+  "llms_txt": "https://leanctx.com/llms.txt",
+  "llms_full_txt": "https://leanctx.com/llms-full.txt"
+}
