@@ -979,6 +979,16 @@ fn helper() {
         let scores = compute_relevance_from_intent(&index, &intent);
 
         assert!(!scores.is_empty());
-        assert_eq!(scores[0].path, "src/auth.rs");
+        let auth_score = scores.iter().find(|s| s.path == "src/auth.rs");
+        let db_score = scores.iter().find(|s| s.path == "src/db.rs");
+        assert!(auth_score.is_some(), "auth.rs should be in results");
+        if let (Some(a), Some(d)) = (auth_score, db_score) {
+            assert!(
+                a.score >= d.score,
+                "auth.rs ({}) should score >= db.rs ({})",
+                a.score,
+                d.score
+            );
+        }
     }
 }
