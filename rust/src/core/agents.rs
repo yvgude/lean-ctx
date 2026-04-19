@@ -511,6 +511,123 @@ impl Drop for FileLock {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRole {
+    Coder,
+    Reviewer,
+    Planner,
+    Explorer,
+    Debugger,
+    Tester,
+    Orchestrator,
+}
+
+impl AgentRole {
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "review" | "reviewer" | "code_review" => Self::Reviewer,
+            "plan" | "planner" | "architect" => Self::Planner,
+            "explore" | "explorer" | "research" => Self::Explorer,
+            "debug" | "debugger" => Self::Debugger,
+            "test" | "tester" | "qa" => Self::Tester,
+            "orchestrator" | "coordinator" | "manager" => Self::Orchestrator,
+            _ => Self::Coder,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextDepthConfig {
+    pub max_files_full: usize,
+    pub max_files_signatures: usize,
+    pub preferred_mode: &'static str,
+    pub include_graph: bool,
+    pub include_knowledge: bool,
+    pub include_gotchas: bool,
+    pub context_budget_ratio: f64,
+}
+
+impl ContextDepthConfig {
+    pub fn for_role(role: AgentRole) -> Self {
+        match role {
+            AgentRole::Coder => Self {
+                max_files_full: 5,
+                max_files_signatures: 15,
+                preferred_mode: "full",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: true,
+                context_budget_ratio: 0.7,
+            },
+            AgentRole::Reviewer => Self {
+                max_files_full: 3,
+                max_files_signatures: 20,
+                preferred_mode: "signatures",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: true,
+                context_budget_ratio: 0.5,
+            },
+            AgentRole::Planner => Self {
+                max_files_full: 1,
+                max_files_signatures: 10,
+                preferred_mode: "map",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: false,
+                context_budget_ratio: 0.3,
+            },
+            AgentRole::Explorer => Self {
+                max_files_full: 2,
+                max_files_signatures: 8,
+                preferred_mode: "map",
+                include_graph: true,
+                include_knowledge: false,
+                include_gotchas: false,
+                context_budget_ratio: 0.4,
+            },
+            AgentRole::Debugger => Self {
+                max_files_full: 8,
+                max_files_signatures: 5,
+                preferred_mode: "full",
+                include_graph: false,
+                include_knowledge: true,
+                include_gotchas: true,
+                context_budget_ratio: 0.8,
+            },
+            AgentRole::Tester => Self {
+                max_files_full: 4,
+                max_files_signatures: 10,
+                preferred_mode: "full",
+                include_graph: false,
+                include_knowledge: false,
+                include_gotchas: true,
+                context_budget_ratio: 0.6,
+            },
+            AgentRole::Orchestrator => Self {
+                max_files_full: 0,
+                max_files_signatures: 5,
+                preferred_mode: "map",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: false,
+                context_budget_ratio: 0.2,
+            },
+        }
+    }
+
+    pub fn mode_for_rank(&self, rank: usize) -> &'static str {
+        if rank < self.max_files_full {
+            "full"
+        } else if rank < self.max_files_full + self.max_files_signatures {
+            "signatures"
+        } else {
+            "map"
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -635,5 +752,48 @@ mod tests {
             diary.add_entry(DiaryEntryType::Progress, &format!("Step {i}"), None);
         }
         assert!(diary.entries.len() <= 100);
+    }
+
+    #[test]
+    fn role_from_str_loose_variants() {
+        assert_eq!(AgentRole::from_str_loose("review"), AgentRole::Reviewer);
+        assert_eq!(AgentRole::from_str_loose("reviewer"), AgentRole::Reviewer);
+        assert_eq!(AgentRole::from_str_loose("plan"), AgentRole::Planner);
+        assert_eq!(AgentRole::from_str_loose("debug"), AgentRole::Debugger);
+        assert_eq!(AgentRole::from_str_loose("test"), AgentRole::Tester);
+        assert_eq!(AgentRole::from_str_loose("qa"), AgentRole::Tester);
+        assert_eq!(
+            AgentRole::from_str_loose("orchestrator"),
+            AgentRole::Orchestrator
+        );
+        assert_eq!(AgentRole::from_str_loose("unknown"), AgentRole::Coder);
+        assert_eq!(AgentRole::from_str_loose(""), AgentRole::Coder);
+    }
+
+    #[test]
+    fn context_depth_coder_vs_orchestrator() {
+        let coder = ContextDepthConfig::for_role(AgentRole::Coder);
+        let orch = ContextDepthConfig::for_role(AgentRole::Orchestrator);
+        assert!(coder.max_files_full > orch.max_files_full);
+        assert!(coder.context_budget_ratio > orch.context_budget_ratio);
+    }
+
+    #[test]
+    fn context_depth_debugger_more_full() {
+        let debugger = ContextDepthConfig::for_role(AgentRole::Debugger);
+        let planner = ContextDepthConfig::for_role(AgentRole::Planner);
+        assert!(debugger.max_files_full > planner.max_files_full);
+        assert!(debugger.context_budget_ratio > planner.context_budget_ratio);
+    }
+
+    #[test]
+    fn mode_for_rank_degrades() {
+        let cfg = ContextDepthConfig::for_role(AgentRole::Coder);
+        assert_eq!(cfg.mode_for_rank(0), "full");
+        assert_eq!(cfg.mode_for_rank(cfg.max_files_full), "signatures");
+        assert_eq!(
+            cfg.mode_for_rank(cfg.max_files_full + cfg.max_files_signatures),
+            "map"
+        );
     }
 }
