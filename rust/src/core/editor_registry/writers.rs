@@ -89,15 +89,20 @@ fn auto_approve_tools() -> Vec<&'static str> {
     ]
 }
 
-fn lean_ctx_server_entry(binary: &str, data_dir: &str) -> Value {
-    serde_json::json!({
+fn lean_ctx_server_entry(binary: &str, data_dir: &str, include_auto_approve: bool) -> Value {
+    let mut entry = serde_json::json!({
         "command": binary,
         "env": {
             "LEAN_CTX_DATA_DIR": data_dir
-        },
-        "autoApprove": auto_approve_tools()
-    })
+        }
+    });
+    if include_auto_approve {
+        entry["autoApprove"] = serde_json::json!(auto_approve_tools());
+    }
+    entry
 }
+
+const NO_AUTO_APPROVE_EDITORS: &[&str] = &["Antigravity"];
 
 fn default_data_dir() -> Result<String, String> {
     Ok(crate::core::data_dir::lean_ctx_data_dir()?
@@ -111,7 +116,8 @@ fn write_mcp_json(
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
     let data_dir = default_data_dir()?;
-    let desired = lean_ctx_server_entry(binary, &data_dir);
+    let include_aa = !NO_AUTO_APPROVE_EDITORS.contains(&target.name);
+    let desired = lean_ctx_server_entry(binary, &data_dir, include_aa);
 
     // Claude Code manages ~/.claude.json and may overwrite it on first start.
     // Prefer the official CLI integration when available.
@@ -733,5 +739,28 @@ args = ["x"]
         assert!(tools.contains(&"ctx_search"));
         assert!(tools.contains(&"ctx_workflow"));
         assert!(tools.contains(&"ctx_cost"));
+    }
+
+    #[test]
+    fn antigravity_config_omits_auto_approve() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp_config.json");
+
+        let t = EditorTarget {
+            name: "Antigravity",
+            agent_key: "gemini".to_string(),
+            config_path: path.clone(),
+            detect_path: PathBuf::from("/nonexistent"),
+            config_type: ConfigType::McpJson,
+        };
+        let res = write_mcp_json(&t, "/usr/local/bin/lean-ctx", WriteOptions::default()).unwrap();
+        assert_eq!(res.action, WriteAction::Created);
+
+        let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(json["mcpServers"]["lean-ctx"]["autoApprove"].is_null());
+        assert_eq!(
+            json["mcpServers"]["lean-ctx"]["command"],
+            "/usr/local/bin/lean-ctx"
+        );
     }
 }
