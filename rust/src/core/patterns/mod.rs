@@ -289,6 +289,34 @@ fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
     if c.starts_with("jq ") || c == "jq" {
         return json_schema::compress(output);
     }
+    if c.starts_with("hadolint") {
+        return eslint::compress(c, output);
+    }
+    if c.starts_with("yamllint") || c.starts_with("npx yamllint") {
+        return eslint::compress(c, output);
+    }
+    if c.starts_with("markdownlint") || c.starts_with("npx markdownlint") {
+        return eslint::compress(c, output);
+    }
+    if c.starts_with("oxlint") || c.starts_with("npx oxlint") {
+        return eslint::compress(c, output);
+    }
+    if c.starts_with("pyright") || c.starts_with("basedpyright") {
+        return mypy::compress(c, output);
+    }
+    if c.starts_with("turbo ") || c.starts_with("npx turbo") {
+        return npm::compress(c, output);
+    }
+    if c.starts_with("nx ") || c.starts_with("npx nx") {
+        return npm::compress(c, output);
+    }
+    if c.starts_with("gcc ")
+        || c.starts_with("g++ ")
+        || c.starts_with("cc ")
+        || c.starts_with("c++ ")
+    {
+        return cmake::compress(c, output);
+    }
 
     None
 }
@@ -407,5 +435,28 @@ mod tests {
     fn routes_jq_to_json_schema() {
         let output = "{\"name\": \"test\", \"version\": \"1.0\", \"items\": [{\"id\": 1}, {\"id\": 2}, {\"id\": 3}, {\"id\": 4}, {\"id\": 5}, {\"id\": 6}, {\"id\": 7}, {\"id\": 8}, {\"id\": 9}, {\"id\": 10}]}";
         assert!(try_specific_pattern("jq '.items' data.json", output).is_some());
+    }
+
+    #[test]
+    fn routes_linting_tools() {
+        let lint_output = "src/main.py:10: error: Missing return\nsrc/main.py:20: error: Unused var\nFound 2 errors";
+        assert!(try_specific_pattern("hadolint Dockerfile", lint_output).is_some());
+        assert!(try_specific_pattern("oxlint src/", lint_output).is_some());
+        assert!(try_specific_pattern("pyright src/", lint_output).is_some());
+        assert!(try_specific_pattern("basedpyright src/", lint_output).is_some());
+    }
+
+    #[test]
+    fn routes_build_tools() {
+        let build_output = "   Compiling foo v0.1.0\n    Finished release [optimized]";
+        assert!(try_specific_pattern("gcc -o main main.c", build_output).is_some());
+        assert!(try_specific_pattern("g++ -o main main.cpp", build_output).is_some());
+    }
+
+    #[test]
+    fn routes_monorepo_tools() {
+        let output = "npm warn deprecated inflight@1.0.6\nnpm warn deprecated rimraf@3.0.2\nadded 150 packages, and audited 151 packages in 5s\n\n25 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities";
+        assert!(try_specific_pattern("turbo install", output).is_some());
+        assert!(try_specific_pattern("nx install", output).is_some());
     }
 }
