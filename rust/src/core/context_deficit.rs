@@ -223,10 +223,7 @@ mod tests {
         let mut ledger = ContextLedger::new();
         ledger.record("src/auth.rs", "full", 500, 500);
         let intent = StructuredIntent::from_query("fix bug in auth.rs");
-        let known = vec![
-            "src/auth.rs".to_string(),
-            "tests/auth_test.rs".to_string(),
-        ];
+        let known = vec!["src/auth.rs".to_string(), "tests/auth_test.rs".to_string()];
         let deficit = detect_deficit(&ledger, &intent, &known);
         let test_suggestions: Vec<_> = deficit
             .suggested_files
