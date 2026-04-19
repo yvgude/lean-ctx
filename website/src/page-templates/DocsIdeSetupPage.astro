@@ -94,10 +94,30 @@ lean-ctx doctor</code></pre>
         <td><code>~/.pi/agent/mcp.json</code></td>
         <td><code>lean-ctx init --agent pi</code></td>
       </tr>
+      <tr>
+        <td>Hermes Agent</td>
+        <td><code>~/.hermes/config.yaml</code></td>
+        <td><code>lean-ctx init --agent hermes</code></td>
+      </tr>
     </tbody>
   </table>
 
   <p class="text-sm text-muted mt-2" set:html={t('docsIdeSetup.matrixNote')} />
+
+  <h3 id="hermes-notes">Hermes Agent notes</h3>
+  <p class="text-sm text-muted">
+    Hermes registers MCP tools as <code>mcp_&lt;server&gt;_&lt;tool&gt;</code>. For lean-ctx, this typically looks like
+    <code>mcp_lean_ctx_ctx_read</code>, <code>mcp_lean_ctx_ctx_shell</code>, etc. This is expected and avoids tool-name collisions.
+  </p>
+  <p class="text-sm text-muted">
+    If you want fewer tools (smaller context overhead), use an allowlist in <code>~/.hermes/config.yaml</code>:
+  </p>
+  <pre><code>{`mcp_servers:
+  lean-ctx:
+    command: "lean-ctx"
+    args: ["mcp"]
+    tools:
+      include: [ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_edit, ctx_session]`}</code></pre>
 
   <hr />
 

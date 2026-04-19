@@ -125,6 +125,12 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>Exclude tools from the MCP tool list to reduce token overhead. Example: <code>["ctx_benchmark", "ctx_metrics", "ctx_wrapped"]</code>. Also available via <code>LEAN_CTX_DISABLED_TOOLS</code> env var (comma-separated).</td>
       </tr>
       <tr>
+        <td><code>rules_scope</code></td>
+        <td>string</td>
+        <td><code>null</code> (= both)</td>
+        <td set:html={t('docsConfiguration.rulesScopeDesc')} />
+      </tr>
+      <tr>
         <td><code>[loop_detection]</code></td>
         <td>table</td>
         <td>—</td>
@@ -196,6 +202,31 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td><code>LEAN_CTX_DISABLED_TOOLS</code></td>
         <td>comma-separated tool names</td>
         <td>Exclude specific tools from the MCP tool list. Overrides <code>disabled_tools</code> in config.toml when set. Example: <code>ctx_benchmark,ctx_metrics,ctx_wrapped</code></td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_LAZY_TOOLS</code></td>
+        <td>set / unset</td>
+        <td>Expose a minimal core toolset (plus <code>ctx_discover_tools</code>) to reduce MCP tool-schema token overhead. Recommended for smaller models or tool-heavy environments.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_UNIFIED</code></td>
+        <td>set / unset</td>
+        <td>Expose the unified toolset (very few tools, broader schemas) for extreme context optimization.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_RULES_SCOPE</code></td>
+        <td><code>global</code> | <code>project</code> | <code>both</code></td>
+        <td set:html={t('docsConfiguration.rulesScopeEnvDesc')} />
+      </tr>
+      <tr>
+        <td><code>LCTX_ALLOW_PATH</code></td>
+        <td>path list</td>
+        <td>Allow additional filesystem prefixes outside the project root. Uses your OS path separator (<code>:</code> on macOS/Linux, <code>;</code> on Windows). Example: <code>/home/user/.codex:/home/user/shared</code></td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ALLOW_PATH</code></td>
+        <td>path list</td>
+        <td>Alias for <code>LCTX_ALLOW_PATH</code>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_SHELL</code></td>
