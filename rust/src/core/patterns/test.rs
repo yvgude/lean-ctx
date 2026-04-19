@@ -14,6 +14,9 @@ pub fn compress(output: &str) -> Option<String> {
     if let Some(r) = try_rspec(output) {
         return Some(r);
     }
+    if let Some(r) = try_mocha(output) {
+        return Some(r);
+    }
     None
 }
 
@@ -265,4 +268,85 @@ fn try_rspec(output: &str) -> Option<String> {
     }
 
     None
+}
+
+fn try_mocha(output: &str) -> Option<String> {
+    let has_passing = output.contains(" passing");
+    let has_failing = output.contains(" failing");
+    if !has_passing && !has_failing {
+        return None;
+    }
+
+    let mut passing = 0u32;
+    let mut failing = 0u32;
+    let mut duration = String::new();
+    let mut failures = Vec::new();
+    let mut in_failure = false;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains(" passing") {
+            let before_passing = trimmed.split(" passing").next().unwrap_or("");
+            if let Ok(n) = before_passing.trim().parse::<u32>() {
+                passing = n;
+            }
+            if let Some(start) = trimmed.rfind('(') {
+                if let Some(end) = trimmed.rfind(')') {
+                    if start < end {
+                        duration = trimmed[start + 1..end].to_string();
+                    }
+                }
+            }
+        }
+        if trimmed.contains(" failing") {
+            let before_failing = trimmed.split(" failing").next().unwrap_or("");
+            if let Ok(n) = before_failing.trim().parse::<u32>() {
+                failing = n;
+                in_failure = true;
+            }
+        }
+        if in_failure && trimmed.starts_with(|c: char| c.is_ascii_digit()) && trimmed.contains(')')
+        {
+            if let Some((_, desc)) = trimmed.split_once(')') {
+                failures.push(desc.trim().to_string());
+            }
+        }
+    }
+
+    let mut result = format!("mocha: {passing} passed");
+    if failing > 0 {
+        result.push_str(&format!(", {failing} failed"));
+    }
+    if !duration.is_empty() {
+        result.push_str(&format!(" ({duration})"));
+    }
+
+    for f in failures.iter().take(10) {
+        result.push_str(&format!("\n  FAIL: {f}"));
+    }
+
+    Some(result)
+}
+
+#[cfg(test)]
+mod mocha_tests {
+    use super::*;
+
+    #[test]
+    fn mocha_passing_only() {
+        let output = "  3 passing (50ms)";
+        let result = try_mocha(output).expect("should match");
+        assert!(result.contains("3 passed"));
+        assert!(result.contains("50ms"));
+    }
+
+    #[test]
+    fn mocha_with_failures() {
+        let output =
+            "  2 passing (100ms)\n  1 failing\n\n  1) Array #indexOf():\n     Error: expected -1";
+        let result = try_mocha(output).expect("should match");
+        assert!(result.contains("2 passed"));
+        assert!(result.contains("1 failed"));
+        assert!(result.contains("FAIL:"));
+    }
 }

@@ -42,6 +42,7 @@ pub mod psql;
 pub mod ruby;
 pub mod ruff;
 pub mod swift;
+pub mod sysinfo;
 pub mod systemd;
 pub mod terraform;
 pub mod test;
@@ -264,6 +265,30 @@ fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
     if c.starts_with("systemctl ") || c.starts_with("journalctl") {
         return systemd::compress(c, output);
     }
+    if c.starts_with("jest") || c.starts_with("npx jest") || c.starts_with("pnpm jest") {
+        return test::compress(output);
+    }
+    if c.starts_with("mocha") || c.starts_with("npx mocha") {
+        return test::compress(output);
+    }
+    if c.starts_with("tofu ") {
+        return terraform::compress(c, output);
+    }
+    if c.starts_with("ps ") || c == "ps" {
+        return sysinfo::compress_ps(output);
+    }
+    if c.starts_with("df ") || c == "df" {
+        return sysinfo::compress_df(output);
+    }
+    if c.starts_with("du ") || c == "du" {
+        return sysinfo::compress_du(output);
+    }
+    if c.starts_with("ping ") {
+        return sysinfo::compress_ping(output);
+    }
+    if c.starts_with("jq ") || c == "jq" {
+        return json_schema::compress(output);
+    }
 
     None
 }
@@ -340,5 +365,47 @@ mod tests {
     fn routes_deno_task() {
         let output = "Task dev deno run --allow-net server.ts\nListening on http://localhost:8000";
         assert!(try_specific_pattern("deno task dev", output).is_some());
+    }
+
+    #[test]
+    fn routes_jest_commands() {
+        let output = "PASS  tests/main.test.js\nTest Suites: 1 passed, 1 total\nTests:       5 passed, 5 total\nTime:        2.5 s";
+        assert!(try_specific_pattern("jest", output).is_some());
+        assert!(try_specific_pattern("npx jest --coverage", output).is_some());
+    }
+
+    #[test]
+    fn routes_mocha_commands() {
+        let output = "  3 passing (50ms)\n  1 failing\n\n  1) Array #indexOf():\n     Error: expected -1 to equal 0";
+        assert!(try_specific_pattern("mocha", output).is_some());
+        assert!(try_specific_pattern("npx mocha tests/", output).is_some());
+    }
+
+    #[test]
+    fn routes_tofu_commands() {
+        let output = "Initializing the backend...\nInitializing provider plugins...\nTerraform has been successfully initialized!";
+        assert!(try_specific_pattern("tofu init", output).is_some());
+    }
+
+    #[test]
+    fn routes_ps_commands() {
+        let mut lines = vec!["USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND".to_string()];
+        for i in 0..20 {
+            lines.push(format!("user {i} 0.0 0.1 1234 123 ? S 10:00 0:00 proc_{i}"));
+        }
+        let output = lines.join("\n");
+        assert!(try_specific_pattern("ps aux", &output).is_some());
+    }
+
+    #[test]
+    fn routes_ping_commands() {
+        let output = "PING google.com (1.2.3.4): 56 data bytes\n64 bytes from 1.2.3.4: icmp_seq=0 ttl=116 time=12ms\n3 packets transmitted, 3 packets received, 0.0% packet loss\nrtt min/avg/max/stddev = 11/12/13/1 ms";
+        assert!(try_specific_pattern("ping -c 3 google.com", output).is_some());
+    }
+
+    #[test]
+    fn routes_jq_to_json_schema() {
+        let output = "{\"name\": \"test\", \"version\": \"1.0\", \"items\": [{\"id\": 1}, {\"id\": 2}, {\"id\": 3}, {\"id\": 4}, {\"id\": 5}, {\"id\": 6}, {\"id\": 7}, {\"id\": 8}, {\"id\": 9}, {\"id\": 10}]}";
+        assert!(try_specific_pattern("jq '.items' data.json", output).is_some());
     }
 }

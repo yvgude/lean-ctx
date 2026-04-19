@@ -48,13 +48,14 @@ fn is_provider_init_noise(line: &str) -> bool {
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let c = command.trim();
-    if c != "terraform" && !c.starts_with("terraform ") {
+    let prefix = if c == "terraform" || c.starts_with("terraform ") {
+        "terraform"
+    } else if c == "tofu" || c.starts_with("tofu ") {
+        "tofu"
+    } else {
         return None;
-    }
-    let sub = c
-        .strip_prefix("terraform")
-        .map(str::trim_start)
-        .unwrap_or("");
+    };
+    let sub = c.strip_prefix(prefix).map(str::trim_start).unwrap_or("");
     let sub_cmd = sub.split_whitespace().next().unwrap_or("");
 
     match sub_cmd {
