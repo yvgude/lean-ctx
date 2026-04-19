@@ -115,7 +115,7 @@ impl ContextLedger {
             .iter()
             .map(|e| (e.path.clone(), e.sent_tokens))
             .collect();
-        costs.sort_by(|a, b| b.1.cmp(&a.1));
+        costs.sort_by_key(|b| std::cmp::Reverse(b.1));
         costs
     }
 

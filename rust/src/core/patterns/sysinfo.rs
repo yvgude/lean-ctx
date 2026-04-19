@@ -117,7 +117,7 @@ pub fn compress_du(output: &str) -> Option<String> {
         })
         .collect();
 
-    parsed.sort_by(|a, b| b.0.cmp(&a.0));
+    parsed.sort_by_key(|b| std::cmp::Reverse(b.0));
 
     let top: Vec<String> = parsed
         .iter()
