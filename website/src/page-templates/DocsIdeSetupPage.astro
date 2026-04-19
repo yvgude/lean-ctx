@@ -140,5 +140,32 @@ lean-ctx setup</code></pre>
   <pre><code>brew unlink lean-ctx || true
 brew link --overwrite lean-ctx
 lean-ctx --version</code></pre>
+
+  <h3 set:html={t('docsIdeSetup.troubleAntigravityTitle')} />
+  <p set:html={t('docsIdeSetup.troubleAntigravityDesc')} />
+  <pre><code>{`# Find your binary path
+which lean-ctx
+
+# Edit ~/.gemini/antigravity/mcp_config.json
+{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "/full/path/to/lean-ctx",
+      "env": {
+        "LEAN_CTX_DATA_DIR": "/home/you/.lean-ctx"
+      }
+    }
+  }
+}`}</code></pre>
+  <p set:html={t('docsIdeSetup.troubleAntigravityNote')} />
+
+  <h3 set:html={t('docsIdeSetup.troublePathEscapeTitle')} />
+  <p set:html={t('docsIdeSetup.troublePathEscapeDesc')} />
+  <pre><code>{`# Allow a specific directory
+export LCTX_ALLOW_PATH="$HOME/.codex"
+
+# Allow multiple directories (colon-separated)
+export LCTX_ALLOW_PATH="$HOME/.codex:$HOME/.config/my-tool"`}</code></pre>
+  <p set:html={t('docsIdeSetup.troublePathEscapeNote')} />
 </DocsLayout>
 
