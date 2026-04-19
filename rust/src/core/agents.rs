@@ -231,6 +231,38 @@ impl AgentRegistry {
             .collect()
     }
 
+    pub fn share_knowledge(
+        &mut self,
+        from_agent: &str,
+        category: &str,
+        facts: &[(String, String)],
+    ) {
+        for (key, value) in facts {
+            let msg = format!("K:{category}:{key}={value}");
+            self.post_message(from_agent, None, "knowledge", &msg);
+        }
+    }
+
+    pub fn receive_shared_knowledge(&mut self, agent_id: &str) -> Vec<SharedFact> {
+        let messages = self.read_unread(agent_id);
+        messages
+            .iter()
+            .filter(|m| m.category == "knowledge")
+            .filter_map(|m| {
+                let body = m.message.strip_prefix("K:")?;
+                let (cat_key, value) = body.split_once('=')?;
+                let (category, key) = cat_key.split_once(':')?;
+                Some(SharedFact {
+                    from_agent: m.from_agent.clone(),
+                    category: category.to_string(),
+                    key: key.to_string(),
+                    value: value.to_string(),
+                    timestamp: m.timestamp,
+                })
+            })
+            .collect()
+    }
+
     pub fn cleanup_stale(&mut self, max_age_hours: u64) {
         let cutoff = Utc::now() - chrono::Duration::hours(max_age_hours as i64);
 
@@ -511,6 +543,15 @@ impl Drop for FileLock {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SharedFact {
+    pub from_agent: String,
+    pub category: String,
+    pub key: String,
+    pub value: String,
+    pub timestamp: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRole {
@@ -752,6 +793,35 @@ mod tests {
             diary.add_entry(DiaryEntryType::Progress, &format!("Step {i}"), None);
         }
         assert!(diary.entries.len() <= 100);
+    }
+
+    #[test]
+    fn share_and_receive_knowledge() {
+        let mut reg = AgentRegistry::new();
+        let facts = vec![
+            ("db_type".to_string(), "postgres".to_string()),
+            ("api_version".to_string(), "v3".to_string()),
+        ];
+        reg.share_knowledge("agent-a", "architecture", &facts);
+
+        let received = reg.receive_shared_knowledge("agent-b");
+        assert_eq!(received.len(), 2);
+        assert_eq!(received[0].category, "architecture");
+        assert_eq!(received[0].key, "db_type");
+        assert_eq!(received[0].value, "postgres");
+        assert_eq!(received[1].key, "api_version");
+    }
+
+    #[test]
+    fn shared_knowledge_not_received_by_sender() {
+        let mut reg = AgentRegistry::new();
+        reg.share_knowledge(
+            "agent-a",
+            "config",
+            &[("port".to_string(), "8080".to_string())],
+        );
+        let received = reg.receive_shared_knowledge("agent-a");
+        assert!(received.is_empty());
     }
 
     #[test]
