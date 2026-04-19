@@ -144,6 +144,113 @@ pub fn compute_relevance(
     result
 }
 
+pub fn compute_relevance_from_intent(
+    index: &ProjectIndex,
+    intent: &super::intent_engine::StructuredIntent,
+) -> Vec<RelevanceScore> {
+    use super::intent_engine::IntentScope;
+
+    let mut file_seeds: Vec<String> = Vec::new();
+    let mut extra_keywords: Vec<String> = intent.keywords.clone();
+
+    for target in &intent.targets {
+        if target.contains('.') || target.contains('/') {
+            let matched = resolve_target_to_files(index, target);
+            if matched.is_empty() {
+                extra_keywords.push(target.clone());
+            } else {
+                file_seeds.extend(matched);
+            }
+        } else {
+            let from_symbol = resolve_symbol_to_files(index, target);
+            if from_symbol.is_empty() {
+                extra_keywords.push(target.clone());
+            } else {
+                file_seeds.extend(from_symbol);
+            }
+        }
+    }
+
+    if let Some(lang) = &intent.language_hint {
+        let lang_ext = match lang.as_str() {
+            "rust" => Some("rs"),
+            "typescript" => Some("ts"),
+            "javascript" => Some("js"),
+            "python" => Some("py"),
+            "go" => Some("go"),
+            "ruby" => Some("rb"),
+            "java" => Some("java"),
+            _ => None,
+        };
+        if let Some(ext) = lang_ext {
+            if file_seeds.is_empty() {
+                for path in index.files.keys() {
+                    if path.ends_with(&format!(".{ext}")) {
+                        extra_keywords.push(
+                            std::path::Path::new(path)
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result = compute_relevance(index, &file_seeds, &extra_keywords);
+
+    match intent.scope {
+        IntentScope::SingleFile => {
+            result.truncate(5);
+        }
+        IntentScope::MultiFile => {
+            result.truncate(15);
+        }
+        IntentScope::CrossModule | IntentScope::ProjectWide => {}
+    }
+
+    result
+}
+
+fn resolve_target_to_files(index: &ProjectIndex, target: &str) -> Vec<String> {
+    let mut matches = Vec::new();
+    for path in index.files.keys() {
+        if path.ends_with(target) || path.contains(target) {
+            matches.push(path.clone());
+        }
+    }
+    matches
+}
+
+fn resolve_symbol_to_files(index: &ProjectIndex, symbol: &str) -> Vec<String> {
+    let sym_lower = symbol.to_lowercase();
+    let mut matches = Vec::new();
+    for entry in index.symbols.values() {
+        let name_lower = entry.name.to_lowercase();
+        if (name_lower == sym_lower || name_lower.contains(&sym_lower))
+            && !matches.contains(&entry.file)
+        {
+            matches.push(entry.file.clone());
+        }
+    }
+    if matches.is_empty() {
+        for (path, file_entry) in &index.files {
+            if file_entry
+                .exports
+                .iter()
+                .any(|e| e.to_lowercase().contains(&sym_lower))
+                && !matches.contains(path)
+            {
+                matches.push(path.clone());
+            }
+        }
+    }
+    matches
+}
+
 fn recommend_mode(score: f64) -> &'static str {
     if score >= 0.8 {
         "full"
@@ -793,5 +900,85 @@ fn helper() {
         let w = StructuralWeights::for_task_type(None);
         assert!((w.error_handling - 1.5).abs() < f64::EPSILON);
         assert!((w.definition - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn resolve_target_to_files_matches_suffix() {
+        let mut index = ProjectIndex::new("/tmp/test");
+        index.files.insert(
+            "src/core/session.rs".to_string(),
+            crate::core::graph_index::FileEntry {
+                path: "src/core/session.rs".to_string(),
+                hash: String::new(),
+                language: "rust".to_string(),
+                line_count: 100,
+                token_count: 500,
+                exports: vec!["SessionState".to_string()],
+                summary: String::new(),
+            },
+        );
+        let result = resolve_target_to_files(&index, "session.rs");
+        assert_eq!(result, vec!["src/core/session.rs"]);
+    }
+
+    #[test]
+    fn resolve_symbol_finds_exported_name() {
+        let mut index = ProjectIndex::new("/tmp/test");
+        index.files.insert(
+            "src/config.rs".to_string(),
+            crate::core::graph_index::FileEntry {
+                path: "src/config.rs".to_string(),
+                hash: String::new(),
+                language: "rust".to_string(),
+                line_count: 50,
+                token_count: 200,
+                exports: vec!["Config".to_string(), "load_config".to_string()],
+                summary: String::new(),
+            },
+        );
+        let result = resolve_symbol_to_files(&index, "Config");
+        assert!(result.contains(&"src/config.rs".to_string()));
+    }
+
+    #[test]
+    fn intent_to_relevance_uses_targets_as_seeds() {
+        use crate::core::intent_engine::StructuredIntent;
+
+        let mut index = ProjectIndex::new("/tmp/test");
+        index.files.insert(
+            "src/auth.rs".to_string(),
+            crate::core::graph_index::FileEntry {
+                path: "src/auth.rs".to_string(),
+                hash: String::new(),
+                language: "rust".to_string(),
+                line_count: 100,
+                token_count: 500,
+                exports: vec!["authenticate".to_string()],
+                summary: String::new(),
+            },
+        );
+        index.files.insert(
+            "src/db.rs".to_string(),
+            crate::core::graph_index::FileEntry {
+                path: "src/db.rs".to_string(),
+                hash: String::new(),
+                language: "rust".to_string(),
+                line_count: 100,
+                token_count: 500,
+                exports: vec!["query".to_string()],
+                summary: String::new(),
+            },
+        );
+        index.edges.push(crate::core::graph_index::IndexEdge {
+            from: "src/auth.rs".to_string(),
+            to: "src/db.rs".to_string(),
+            kind: "imports".to_string(),
+        });
+
+        let intent = StructuredIntent::from_query("fix the auth bug in auth.rs");
+        let scores = compute_relevance_from_intent(&index, &intent);
+
+        assert!(!scores.is_empty());
+        assert_eq!(scores[0].path, "src/auth.rs");
     }
 }
