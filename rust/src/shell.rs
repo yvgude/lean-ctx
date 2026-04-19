@@ -367,6 +367,25 @@ fn compress_and_measure(command: &str, stdout: &str, stderr: &str) -> (String, u
     (result, output_tokens)
 }
 
+fn show_shell_stats() -> bool {
+    std::env::var("LEAN_CTX_SHELL_STATS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+fn maybe_stats_suffix(original: usize, compressed: usize) -> String {
+    if !show_shell_stats() {
+        return String::new();
+    }
+    let saved = original.saturating_sub(compressed);
+    let pct = if original > 0 {
+        (saved as f64 / original as f64 * 100.0).round() as usize
+    } else {
+        0
+    };
+    format!("\n[lean-ctx: {original}→{compressed} tok, -{pct}%]")
+}
+
 fn compress_if_beneficial(command: &str, output: &str) -> String {
     if output.trim().is_empty() {
         return String::new();
@@ -388,11 +407,8 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
         if !compressed.trim().is_empty() {
             let compressed_tokens = count_tokens(&compressed);
             if compressed_tokens >= min_output_tokens && compressed_tokens < original_tokens {
-                let saved = original_tokens - compressed_tokens;
-                let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-                return format!(
-                    "{compressed}\n[lean-ctx: {original_tokens}→{compressed_tokens} tok, -{pct}%]"
-                );
+                let suffix = maybe_stats_suffix(original_tokens, compressed_tokens);
+                return format!("{compressed}{suffix}");
             }
             if compressed_tokens < min_output_tokens {
                 return output.to_string();
@@ -400,7 +416,6 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
         }
     }
 
-    // Apply lightweight cleanup to remove whitespace-only lines and collapse braces
     let cleaned = crate::core::compressor::lightweight_cleanup(output);
     let cleaned_tokens = count_tokens(&cleaned);
     if cleaned_tokens < original_tokens {
@@ -417,17 +432,13 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
             );
             let ct = count_tokens(&compressed);
             if ct < original_tokens {
-                let saved = original_tokens - ct;
-                let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-                return format!("{compressed}\n[lean-ctx: {original_tokens}→{ct} tok, -{pct}%]");
+                let suffix = maybe_stats_suffix(original_tokens, ct);
+                return format!("{compressed}{suffix}");
             }
         }
         if cleaned_tokens < original_tokens {
-            let saved = original_tokens - cleaned_tokens;
-            let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-            return format!(
-                "{cleaned}\n[lean-ctx: {original_tokens}→{cleaned_tokens} tok, -{pct}%]"
-            );
+            let suffix = maybe_stats_suffix(original_tokens, cleaned_tokens);
+            return format!("{cleaned}{suffix}");
         }
     }
 
@@ -443,11 +454,8 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
         );
         let compressed_tokens = count_tokens(&compressed);
         if compressed_tokens < original_tokens {
-            let saved = original_tokens - compressed_tokens;
-            let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-            return format!(
-                "{compressed}\n[lean-ctx: {original_tokens}→{compressed_tokens} tok, -{pct}%]"
-            );
+            let suffix = maybe_stats_suffix(original_tokens, compressed_tokens);
+            return format!("{compressed}{suffix}");
         }
     }
 

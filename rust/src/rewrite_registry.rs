@@ -10,6 +10,10 @@ pub const REWRITE_COMMANDS: &[RewriteEntry] = &[
     re("npm", Category::PackageManager),
     re("pnpm", Category::PackageManager),
     re("yarn", Category::PackageManager),
+    re("bun", Category::Build),
+    re("bunx", Category::Build),
+    re("deno", Category::Build),
+    re("vite", Category::Build),
     // Python
     re("pip", Category::PackageManager),
     re("pip3", Category::PackageManager),
@@ -25,16 +29,31 @@ pub const REWRITE_COMMANDS: &[RewriteEntry] = &[
     re("kubectl", Category::Infra),
     re("helm", Category::Infra),
     re("aws", Category::Infra),
+    re("terraform", Category::Infra),
+    re("tofu", Category::Infra),
     // Linters / Formatters
     re("eslint", Category::Lint),
     re("prettier", Category::Lint),
     re("tsc", Category::Lint),
+    re("biome", Category::Lint),
     // HTTP
     re("curl", Category::Http),
     re("wget", Category::Http),
     // PHP
     re("php", Category::Build),
     re("composer", Category::PackageManager),
+    // .NET
+    re("dotnet", Category::Build),
+    // Ruby
+    re("bundle", Category::PackageManager),
+    re("rake", Category::Build),
+    // Elixir
+    re("mix", Category::Build),
+    // Swift / Zig / CMake
+    re("swift", Category::Build),
+    re("zig", Category::Build),
+    re("cmake", Category::Build),
+    re("make", Category::Build),
     // Search (only in shell aliases, NOT in hook rewrite to avoid overriding native tools)
     re("rg", Category::Search),
 ];
@@ -152,6 +171,13 @@ mod tests {
         assert!(is_rewritable_command("npm run build"));
         assert!(is_rewritable_command("eslint"));
         assert!(is_rewritable_command("docker-compose up"));
+        assert!(is_rewritable_command("bun install"));
+        assert!(is_rewritable_command("bunx vitest"));
+        assert!(is_rewritable_command("deno test"));
+        assert!(is_rewritable_command("vite build"));
+        assert!(is_rewritable_command("terraform plan"));
+        assert!(is_rewritable_command("make build"));
+        assert!(is_rewritable_command("dotnet build"));
     }
 
     #[test]
