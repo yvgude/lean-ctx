@@ -1,10 +1,36 @@
 use std::path::{Path, PathBuf};
 
+const IDE_CONFIG_DIRS: &[&str] = &[
+    ".lean-ctx",
+    ".cursor",
+    ".claude",
+    ".codex",
+    ".codeium",
+    ".gemini",
+    ".qwen",
+    ".trae",
+    ".kiro",
+    ".verdent",
+    ".pi",
+    ".amp",
+    ".aider",
+    ".continue",
+];
+
 fn allow_paths_from_env() -> Vec<PathBuf> {
     let mut out = Vec::new();
 
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
         out.push(canonicalize_or_self(&data_dir));
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        for dir in IDE_CONFIG_DIRS {
+            let p = home.join(dir);
+            if p.exists() {
+                out.push(canonicalize_or_self(&p));
+            }
+        }
     }
 
     let v = std::env::var("LCTX_ALLOW_PATH")
@@ -131,5 +157,14 @@ mod tests {
         let p = root.join("new").join("file.txt");
         let ok = jail_path(&p, &root).unwrap();
         assert!(ok.to_string_lossy().contains("file.txt"));
+    }
+
+    #[test]
+    fn ide_config_dirs_list_is_not_empty() {
+        assert!(IDE_CONFIG_DIRS.len() >= 10);
+        assert!(IDE_CONFIG_DIRS.contains(&".codex"));
+        assert!(IDE_CONFIG_DIRS.contains(&".cursor"));
+        assert!(IDE_CONFIG_DIRS.contains(&".claude"));
+        assert!(IDE_CONFIG_DIRS.contains(&".gemini"));
     }
 }
