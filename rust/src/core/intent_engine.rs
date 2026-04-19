@@ -453,7 +453,7 @@ pub enum IntentScope {
     ProjectWide,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StructuredIntent {
     pub task_type: TaskType,
     pub confidence: f64,
