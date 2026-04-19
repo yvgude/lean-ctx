@@ -26,8 +26,8 @@ pub fn handle(
 
     let index = crate::core::graph_index::load_or_build(&project_root);
 
-    let session_intent = crate::core::session::SessionState::load_latest()
-        .and_then(|s| s.active_structured_intent);
+    let session_intent =
+        crate::core::session::SessionState::load_latest().and_then(|s| s.active_structured_intent);
 
     let (task_files, task_keywords) = parse_task_hints(task);
     let relevance = if let Some(ref intent) = session_intent {

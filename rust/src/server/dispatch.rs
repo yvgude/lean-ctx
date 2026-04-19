@@ -938,9 +938,8 @@ impl LeanCtxServer {
                 }
             }
 
-            let agent_role = crate::core::agents::AgentRole::from_str_loose(
-                role.as_deref().unwrap_or("coder"),
-            );
+            let agent_role =
+                crate::core::agents::AgentRole::from_str_loose(role.as_deref().unwrap_or("coder"));
             let depth = crate::core::agents::ContextDepthConfig::for_role(agent_role);
             let depth_hint = format!(
                 "\n[context] role={:?} preferred_mode={} max_full={} max_sig={} budget_ratio={:.0}%",
@@ -1044,8 +1043,7 @@ impl LeanCtxServer {
                     .iter()
                     .map(|f| f.path.clone())
                     .collect();
-                let deficit =
-                    crate::core::context_deficit::detect_deficit(&ledger, intent, &known);
+                let deficit = crate::core::context_deficit::detect_deficit(&ledger, intent, &known);
                 if !deficit.suggested_files.is_empty() {
                     result.push_str("\n\n--- SUGGESTED FILES ---");
                     for s in &deficit.suggested_files {
