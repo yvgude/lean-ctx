@@ -170,6 +170,73 @@ impl Pipeline {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct PipelineStats {
+    pub runs: usize,
+    pub per_layer: HashMap<LayerKind, AggregatedMetrics>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AggregatedMetrics {
+    pub total_input_tokens: usize,
+    pub total_output_tokens: usize,
+    pub total_duration_us: u64,
+    pub count: usize,
+}
+
+impl AggregatedMetrics {
+    pub fn avg_ratio(&self) -> f64 {
+        if self.total_input_tokens == 0 {
+            return 1.0;
+        }
+        self.total_output_tokens as f64 / self.total_input_tokens as f64
+    }
+
+    pub fn avg_duration_ms(&self) -> f64 {
+        if self.count == 0 {
+            return 0.0;
+        }
+        self.total_duration_us as f64 / self.count as f64 / 1000.0
+    }
+}
+
+impl PipelineStats {
+    pub fn record(&mut self, metrics: &[LayerMetrics]) {
+        self.runs += 1;
+        for m in metrics {
+            let agg = self.per_layer.entry(m.layer).or_default();
+            agg.total_input_tokens += m.input_tokens;
+            agg.total_output_tokens += m.output_tokens;
+            agg.total_duration_us += m.duration_us;
+            agg.count += 1;
+        }
+    }
+
+    pub fn total_tokens_saved(&self) -> usize {
+        self.per_layer
+            .values()
+            .map(|a| a.total_input_tokens.saturating_sub(a.total_output_tokens))
+            .sum()
+    }
+
+    pub fn format_summary(&self) -> String {
+        let mut out = format!("Pipeline Stats ({} runs):\n", self.runs);
+        for kind in LayerKind::all() {
+            if let Some(agg) = self.per_layer.get(kind) {
+                out.push_str(&format!(
+                    "  {}: avg {:.0}% ratio, {:.1}ms, {} invocations\n",
+                    kind,
+                    agg.avg_ratio() * 100.0,
+                    agg.avg_duration_ms(),
+                    agg.count,
+                ));
+            }
+        }
+        out.push_str(&format!("  SAVED: {} tokens\n", self.total_tokens_saved()));
+        out
+    }
+}
+
 impl Default for Pipeline {
     fn default() -> Self {
         Self::new()
@@ -312,5 +379,40 @@ mod tests {
         let (output, metrics) = pipeline.execute(input);
         assert_eq!(output.content, "test");
         assert!(metrics.is_empty());
+    }
+
+    #[test]
+    fn pipeline_stats_record_and_summarize() {
+        let mut stats = PipelineStats::default();
+        let metrics = vec![
+            LayerMetrics::new(LayerKind::Input, 1000, 1000, 100),
+            LayerMetrics::new(LayerKind::Compression, 1000, 300, 5000),
+            LayerMetrics::new(LayerKind::Delivery, 300, 300, 50),
+        ];
+        stats.record(&metrics);
+        stats.record(&metrics);
+
+        assert_eq!(stats.runs, 2);
+        assert_eq!(stats.total_tokens_saved(), 1400);
+
+        let agg = stats.per_layer.get(&LayerKind::Compression).unwrap();
+        assert_eq!(agg.count, 2);
+        assert_eq!(agg.total_input_tokens, 2000);
+        assert_eq!(agg.total_output_tokens, 600);
+
+        let summary = stats.format_summary();
+        assert!(summary.contains("2 runs"));
+        assert!(summary.contains("SAVED: 1400"));
+    }
+
+    #[test]
+    fn aggregated_metrics_avg() {
+        let mut agg = AggregatedMetrics::default();
+        agg.total_input_tokens = 1000;
+        agg.total_output_tokens = 500;
+        agg.total_duration_us = 10000;
+        agg.count = 2;
+        assert!((agg.avg_ratio() - 0.5).abs() < f64::EPSILON);
+        assert!((agg.avg_duration_ms() - 5.0).abs() < f64::EPSILON);
     }
 }
