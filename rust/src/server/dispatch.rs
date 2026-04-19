@@ -937,6 +937,21 @@ impl LeanCtxServer {
                     *self.agent_id.write().await = Some(id);
                 }
             }
+
+            let agent_role = crate::core::agents::AgentRole::from_str_loose(
+                role.as_deref().unwrap_or("coder"),
+            );
+            let depth = crate::core::agents::ContextDepthConfig::for_role(agent_role);
+            let depth_hint = format!(
+                "\n[context] role={:?} preferred_mode={} max_full={} max_sig={} budget_ratio={:.0}%",
+                agent_role,
+                depth.preferred_mode,
+                depth.max_files_full,
+                depth.max_files_signatures,
+                depth.context_budget_ratio * 100.0,
+            );
+            self.record_call("ctx_agent", 0, 0, Some(action)).await;
+            return Ok(format!("{result}{depth_hint}"));
         }
         self.record_call("ctx_agent", 0, 0, Some(action)).await;
         Ok(result)
