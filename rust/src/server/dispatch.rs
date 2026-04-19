@@ -1491,6 +1491,7 @@ impl LeanCtxServer {
                     }
                 }
                 let session = { self.session.read().await.clone() };
+                let active_intent = session.active_structured_intent.clone();
                 let tool_calls = { self.tool_calls.read().await.clone() };
                 let workflow = { self.workflow.read().await.clone() };
                 let agent_id = { self.agent_id.read().await.clone() };
@@ -1508,7 +1509,26 @@ impl LeanCtxServer {
                     },
                 )
                 .map_err(|e| ErrorData::internal_error(format!("create ledger: {e}"), None))?;
-                crate::tools::ctx_handoff::format_created(&path, &ledger)
+
+                let ctx_ledger = self.ledger.read().await;
+                let package = crate::core::handoff_ledger::HandoffPackage::build(
+                    ledger.clone(),
+                    active_intent.as_ref(),
+                    if ctx_ledger.entries.is_empty() {
+                        None
+                    } else {
+                        Some(&*ctx_ledger)
+                    },
+                );
+                drop(ctx_ledger);
+
+                let mut output = crate::tools::ctx_handoff::format_created(&path, &ledger);
+                let compact = package.format_compact();
+                if !compact.is_empty() {
+                    output.push_str("\n\n");
+                    output.push_str(&compact);
+                }
+                output
             }
             "pull" => {
                 let path = get_str(args, "path").ok_or_else(|| {
