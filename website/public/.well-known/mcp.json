@@ -3,7 +3,7 @@
   "server": {
     "name": "lean-ctx",
     "description": "Context intelligence layer for AI coding agents. Reduces LLM token costs by up to 99% through intelligent compression, caching, and semantic extraction.",
-    "version": "3.2.1",
+    "version": "3.2.6",
     "repository": "https://github.com/yvgude/lean-ctx",
     "documentation": "https://leanctx.com/docs/getting-started",
     "license": "MIT AND Apache-2.0",

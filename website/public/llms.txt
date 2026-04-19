@@ -105,7 +105,7 @@ All configured automatically with `lean-ctx setup`.
 
 ## Key Facts
 
-- Version: 3.2.1
+- Version: 3.2.6
 - License: MIT + Apache-2.0 (dual-licensed, fully open source)
 - Language: Rust (single binary, ~17 MB with tree-sitter, ~5.7 MB without)
 - Install: `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `brew install lean-ctx`
