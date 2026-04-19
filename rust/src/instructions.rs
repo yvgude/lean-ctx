@@ -29,8 +29,8 @@ Tool mapping (MANDATORY):
 • Shell/bash -> ctx_shell(command)
 • Grep/rg -> ctx_search(pattern, path)
 • ls/find -> ctx_tree(path, depth)
-• Edit/StrReplace -> native (lean-ctx=READ only). If Edit needs Read and Read is unavailable, use ctx_edit.
-• Write, Delete, Glob -> normal. NEVER loop on Edit failures — use ctx_edit.
+• Edit/StrReplace -> native (lean-ctx=READ only)
+• Write, Delete, Glob -> normal
 
 ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M
 Auto-selects mode. Re-reads ~13 tok. File refs F1,F2.. persist.
@@ -47,7 +47,7 @@ CEP: 1.ACT FIRST 2.DELTA ONLY 3.STRUCTURED(+/-/~) 4.ONE LINE 5.QUALITY
 Prefer: ctx_read>Read | ctx_shell>Shell | ctx_search>Grep | ctx_tree>ls
 Edit: native Edit/StrReplace preferred, ctx_edit if Edit unavailable.
 Never echo tool output. Never narrate. Show only changed code.
-Full instructions at ~/.claude/CLAUDE.md (imports rules/lean-ctx.md)";
+Full instructions at ~/.claude/rules/lean-ctx.md";
 
     debug_assert!(
         instr.len() <= CLAUDE_CODE_INSTRUCTION_CAP,

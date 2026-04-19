@@ -186,68 +186,31 @@ impl LeanCtxServer {
             return Ok(normalized);
         }
         let p = std::path::Path::new(&normalized);
+        let session = self.session.read().await;
+        let jail_root = session
+            .project_root
+            .as_deref()
+            .or(session.shell_cwd.as_deref())
+            .unwrap_or(".");
 
-        let (resolved, jail_root) = {
-            let session = self.session.read().await;
-            let jail_root = session
-                .project_root
-                .as_deref()
-                .or(session.shell_cwd.as_deref())
-                .unwrap_or(".")
-                .to_string();
-
-            let resolved = if p.is_absolute() || p.exists() {
-                std::path::PathBuf::from(&normalized)
-            } else if let Some(ref root) = session.project_root {
-                let joined = std::path::Path::new(root).join(&normalized);
-                if joined.exists() {
-                    joined
-                } else if let Some(ref cwd) = session.shell_cwd {
-                    std::path::Path::new(cwd).join(&normalized)
-                } else {
-                    std::path::Path::new(&jail_root).join(&normalized)
-                }
+        let resolved = if p.is_absolute() || p.exists() {
+            std::path::PathBuf::from(&normalized)
+        } else if let Some(ref root) = session.project_root {
+            let joined = std::path::Path::new(root).join(&normalized);
+            if joined.exists() {
+                joined
             } else if let Some(ref cwd) = session.shell_cwd {
                 std::path::Path::new(cwd).join(&normalized)
             } else {
-                std::path::Path::new(&jail_root).join(&normalized)
-            };
-
-            (resolved, jail_root)
-        };
-
-        let jail_root_path = std::path::Path::new(&jail_root);
-        let jailed = match crate::core::pathjail::jail_path(&resolved, jail_root_path) {
-            Ok(p) => p,
-            Err(e) => {
-                if p.is_absolute() {
-                    if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
-                        let jail_has_marker = has_project_marker(jail_root_path);
-                        let candidate_under_jail = resolved.starts_with(jail_root_path);
-
-                        if !candidate_under_jail
-                            && (!jail_has_marker || is_suspicious_root(jail_root_path))
-                        {
-                            let mut session = self.session.write().await;
-                            session.project_root = Some(new_root.to_string_lossy().to_string());
-                            if session.shell_cwd.is_none() {
-                                session.shell_cwd = Some(new_root.to_string_lossy().to_string());
-                            }
-                            let _ = session.save();
-
-                            crate::core::pathjail::jail_path(&resolved, &new_root)?
-                        } else {
-                            return Err(e);
-                        }
-                    } else {
-                        return Err(e);
-                    }
-                } else {
-                    return Err(e);
-                }
+                std::path::Path::new(jail_root).join(&normalized)
             }
+        } else if let Some(ref cwd) = session.shell_cwd {
+            std::path::Path::new(cwd).join(&normalized)
+        } else {
+            std::path::Path::new(jail_root).join(&normalized)
         };
 
+        let jailed = crate::core::pathjail::jail_path(&resolved, std::path::Path::new(jail_root))?;
         Ok(crate::hooks::normalize_tool_path(
             &jailed.to_string_lossy().replace('\\', "/"),
         ))
@@ -552,13 +515,10 @@ impl LeanCtxServer {
         let complexity = crate::core::adaptive::classify_from_context(&cache);
 
         let cs = Self::compute_cep_stats(&calls, stats, &complexity);
-        let started_at = calls
-            .first()
-            .map(|c| c.timestamp.clone())
-            .unwrap_or_default();
 
         drop(cache);
         drop(calls);
+
         let live = serde_json::json!({
             "cep_score": cs.cep_score,
             "cache_utilization": cs.cache_util,
@@ -571,7 +531,6 @@ impl LeanCtxServer {
             "tokens_saved": cs.total_saved,
             "tokens_original": cs.total_original,
             "tool_calls": cs.tool_call_count,
-            "started_at": started_at,
             "updated_at": chrono::Local::now().to_rfc3339(),
         });
 
@@ -606,48 +565,6 @@ impl LeanCtxServer {
 
 pub fn create_server() -> LeanCtxServer {
     LeanCtxServer::new()
-}
-
-const PROJECT_ROOT_MARKERS: &[&str] = &[
-    ".git",
-    ".lean-ctx.toml",
-    "Cargo.toml",
-    "package.json",
-    "go.mod",
-    "pyproject.toml",
-    "pom.xml",
-    "build.gradle",
-    "Makefile",
-    ".planning",
-];
-
-fn has_project_marker(dir: &std::path::Path) -> bool {
-    PROJECT_ROOT_MARKERS.iter().any(|m| dir.join(m).exists())
-}
-
-fn is_suspicious_root(dir: &std::path::Path) -> bool {
-    let s = dir.to_string_lossy();
-    s.contains("/.claude")
-        || s.contains("/.codex")
-        || s.contains("\\.claude")
-        || s.contains("\\.codex")
-}
-
-fn maybe_derive_project_root_from_absolute(abs: &std::path::Path) -> Option<std::path::PathBuf> {
-    let mut cur = if abs.is_dir() {
-        abs.to_path_buf()
-    } else {
-        abs.parent()?.to_path_buf()
-    };
-    loop {
-        if has_project_marker(&cur) {
-            return Some(crate::core::pathutil::safe_canonicalize_or_self(&cur));
-        }
-        if !cur.pop() {
-            break;
-        }
-    }
-    None
 }
 
 fn auto_consolidate_knowledge(project_root: &str) {
@@ -704,56 +621,4 @@ fn auto_consolidate_knowledge(project_root: &str) {
     );
     knowledge.consolidate(&summary, vec![session.id.clone()]);
     let _ = knowledge.save();
-}
-
-#[cfg(test)]
-mod resolve_path_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn resolve_path_can_auto_update_stale_root_from_absolute_project_path() {
-        let tmp = tempfile::tempdir().unwrap();
-        let stale = tmp.path().join("stale");
-        let real = tmp.path().join("real");
-        std::fs::create_dir_all(&stale).unwrap();
-        std::fs::create_dir_all(&real).unwrap();
-        std::fs::create_dir_all(real.join(".git")).unwrap();
-        std::fs::write(real.join("a.txt"), "ok").unwrap();
-
-        let server =
-            LeanCtxServer::new_with_project_root(Some(stale.to_string_lossy().to_string()));
-
-        let out = server
-            .resolve_path(&real.join("a.txt").to_string_lossy())
-            .await
-            .unwrap();
-
-        assert!(out.ends_with("/a.txt"));
-
-        let session = server.session.read().await;
-        let expected = crate::core::pathutil::safe_canonicalize_or_self(&real)
-            .to_string_lossy()
-            .to_string();
-        assert_eq!(session.project_root.as_deref(), Some(expected.as_str()));
-    }
-
-    #[tokio::test]
-    async fn resolve_path_does_not_auto_update_when_current_root_is_real_project() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("root");
-        let other = tmp.path().join("other");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::create_dir_all(&other).unwrap();
-        std::fs::create_dir_all(root.join(".git")).unwrap();
-        std::fs::create_dir_all(other.join(".git")).unwrap();
-        std::fs::write(other.join("b.txt"), "no").unwrap();
-
-        let server = LeanCtxServer::new_with_project_root(Some(root.to_string_lossy().to_string()));
-
-        let err = server
-            .resolve_path(&other.join("b.txt").to_string_lossy())
-            .await
-            .unwrap_err();
-        assert!(err.contains("path escapes project root"));
-    }
 }

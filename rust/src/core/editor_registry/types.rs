@@ -17,7 +17,4 @@ pub enum ConfigType {
     VsCodeMcp,
     OpenCode,
     Crush,
-    JetBrains,
-    Amp,
-    HermesYaml,
 }

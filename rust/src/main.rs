@@ -49,22 +49,6 @@ fn main() {
                 core::stats::flush();
                 std::process::exit(code);
             }
-            "-t" | "--track" => {
-                let cmd_args = &args[2..];
-                let command = if cmd_args.len() == 1 {
-                    cmd_args[0].clone()
-                } else {
-                    shell::join_command(cmd_args)
-                };
-                if std::env::var("LEAN_CTX_ACTIVE").is_ok()
-                    || std::env::var("LEAN_CTX_DISABLED").is_ok()
-                {
-                    passthrough(&command);
-                }
-                let code = shell::exec(&command);
-                core::stats::flush();
-                std::process::exit(code);
-            }
             "shell" | "--shell" => {
                 shell::interactive();
                 return;
@@ -174,7 +158,10 @@ fn main() {
                         tools::ctx_gain::handle("heatmap", None, None, Some(limit))
                     );
                 } else {
-                    println!("{}", core::stats::format_gain());
+                    println!(
+                        "{}",
+                        tools::ctx_gain::handle("report", None, model.as_deref(), Some(limit))
+                    );
                 }
                 return;
             }
@@ -198,13 +185,6 @@ fn main() {
                     .iter()
                     .find_map(|p| p.strip_prefix("--host=").or_else(|| p.strip_prefix("-H=")))
                     .map(String::from);
-                let project = rest
-                    .iter()
-                    .find_map(|p| p.strip_prefix("--project="))
-                    .map(String::from);
-                if let Some(ref p) = project {
-                    std::env::set_var("LEAN_CTX_DASHBOARD_PROJECT", p);
-                }
                 run_async(dashboard::start(port, host));
                 return;
             }
@@ -388,89 +368,6 @@ fn main() {
                     std::process::exit(1);
                 }
                 return;
-            }
-            "proxy" => {
-                #[cfg(feature = "http-server")]
-                {
-                    let sub = rest.first().map(|s| s.as_str()).unwrap_or("help");
-                    match sub {
-                        "start" => {
-                            let port: u16 = rest
-                                .iter()
-                                .find_map(|p| {
-                                    p.strip_prefix("--port=").or_else(|| p.strip_prefix("-p="))
-                                })
-                                .and_then(|p| p.parse().ok())
-                                .unwrap_or(4444);
-                            let autostart = rest.iter().any(|a| a == "--autostart");
-                            if autostart {
-                                lean_ctx::proxy_autostart::install(port, false);
-                                return;
-                            }
-                            if let Err(e) = run_async(lean_ctx::proxy::start_proxy(port)) {
-                                eprintln!("Proxy error: {e}");
-                                std::process::exit(1);
-                            }
-                        }
-                        "stop" => {
-                            match ureq::get(&format!(
-                                "http://127.0.0.1:{}/health",
-                                rest.iter()
-                                    .find_map(|p| p.strip_prefix("--port="))
-                                    .and_then(|p| p.parse::<u16>().ok())
-                                    .unwrap_or(4444)
-                            ))
-                            .call()
-                            {
-                                Ok(_) => {
-                                    println!("Proxy is running. Use Ctrl+C or kill the process.");
-                                }
-                                Err(_) => {
-                                    println!("No proxy running on that port.");
-                                }
-                            }
-                        }
-                        "status" => {
-                            let port: u16 = rest
-                                .iter()
-                                .find_map(|p| p.strip_prefix("--port="))
-                                .and_then(|p| p.parse().ok())
-                                .unwrap_or(4444);
-                            match ureq::get(&format!("http://127.0.0.1:{port}/status")).call() {
-                                Ok(resp) => {
-                                    let body =
-                                        resp.into_body().read_to_string().unwrap_or_default();
-                                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body)
-                                    {
-                                        println!("lean-ctx proxy status:");
-                                        println!("  Requests:    {}", v["requests_total"]);
-                                        println!("  Compressed:  {}", v["requests_compressed"]);
-                                        println!("  Tokens saved: {}", v["tokens_saved"]);
-                                        println!(
-                                            "  Compression: {}%",
-                                            v["compression_ratio_pct"].as_str().unwrap_or("0.0")
-                                        );
-                                    } else {
-                                        println!("{body}");
-                                    }
-                                }
-                                Err(_) => {
-                                    println!("No proxy running on port {port}.");
-                                    println!("Start with: lean-ctx proxy start");
-                                }
-                            }
-                        }
-                        _ => {
-                            println!("Usage: lean-ctx proxy <start|stop|status> [--port=4444]");
-                        }
-                    }
-                    return;
-                }
-                #[cfg(not(feature = "http-server"))]
-                {
-                    eprintln!("lean-ctx proxy is not available in this build");
-                    std::process::exit(1);
-                }
             }
             "init" => {
                 cli::cmd_init(&rest);
@@ -680,11 +577,9 @@ fn main() {
                 match action {
                     "rewrite" => hook_handlers::handle_rewrite(),
                     "redirect" => hook_handlers::handle_redirect(),
-                    "copilot" => hook_handlers::handle_copilot(),
-                    "rewrite-inline" => hook_handlers::handle_rewrite_inline(),
                     _ => {
-                        eprintln!("Usage: lean-ctx hook <rewrite|redirect|copilot|rewrite-inline>");
-                        eprintln!("  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)");
+                        eprintln!("Usage: lean-ctx hook <rewrite|redirect>");
+                        eprintln!("  Internal commands used by agent hooks (Claude, Cursor, etc.)");
                         std::process::exit(1);
                     }
                 }
@@ -806,8 +701,7 @@ fn print_help() {
 USAGE:
     lean-ctx                       Start MCP server (stdio)
     lean-ctx serve                 Start MCP server (Streamable HTTP)
-    lean-ctx -t \"command\"          Track command (full output + stats, no compression)
-    lean-ctx -c \"command\"          Execute with compressed output (used by AI hooks)
+    lean-ctx -c \"command\"          Execute with compressed output
     lean-ctx -c --raw \"command\"    Execute without compression (full output)
     lean-ctx exec \"command\"        Same as -c
     lean-ctx shell                 Interactive shell with compression
@@ -820,12 +714,8 @@ COMMANDS:
     gain --json                    Raw JSON export of all stats
          token-report [--json]          Token + memory report (project + session + CEP)
     cep                            CEP impact report (score trends, cache, modes)
-    watch                          Live TUI dashboard (real-time event stream)
     dashboard [--port=N] [--host=H] Open web dashboard (default: http://localhost:3333)
     serve [--host H] [--port N]    MCP over HTTP (Streamable HTTP, local-first)
-    proxy start [--port=4444]      API proxy: compress tool_results before LLM API
-    proxy status                   Show proxy statistics
-    cache [list|clear|stats]       Show/manage file read cache
     wrapped [--week|--month|--all] Savings report card (shareable)
     sessions [list|show|cleanup]   Manage CCP sessions (~/.lean-ctx/sessions/)
     benchmark run [path] [--json]  Run real benchmark on project files
@@ -914,12 +804,9 @@ EXAMPLES:
     lean-ctx setup                 One-command setup (shell + editors + verify)
     lean-ctx bootstrap             Non-interactive setup + fix (zero-config)
     lean-ctx bootstrap --json      Machine-readable bootstrap report
-    lean-ctx init --global         Install shell aliases (includes lean-ctx-on/off/mode/status)
-    lean-ctx-on                    Enable shell aliases in track mode (full output + stats)
-    lean-ctx-off                   Disable all shell aliases
-    lean-ctx-mode track            Track mode: full output, stats recorded (default)
-    lean-ctx-mode compress         Compress mode: all output compressed (power users)
-    lean-ctx-mode off              Same as lean-ctx-off
+    lean-ctx init --global         Install shell aliases (includes lean-ctx-on/off/status)
+    lean-ctx-on                    Enable all compression aliases (after init)
+    lean-ctx-off                   Disable all compression aliases (human-readable mode)
     lean-ctx-status                Show whether compression is active
     lean-ctx init --agent pi       Install Pi Coding Agent extension
     lean-ctx doctor                Check PATH, config, MCP, and dashboard port
@@ -1126,7 +1013,54 @@ fn cmd_sync() {
 }
 
 fn build_sync_entries(store: &core::stats::StatsStore) -> Vec<serde_json::Value> {
-    lean_ctx::cloud_sync::build_sync_entries(store)
+    let mut entries = Vec::new();
+    let cep = &store.cep;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+    let mut cep_cache_by_day: std::collections::HashMap<String, (u64, u64)> =
+        std::collections::HashMap::new();
+    for s in &cep.scores {
+        if let Some(date) = s.timestamp.get(..10) {
+            let entry = cep_cache_by_day.entry(date.to_string()).or_default();
+            let calls = s.tool_calls.max(1);
+            let hits = (calls as f64 * s.cache_hit_rate as f64 / 100.0).round() as u64;
+            entry.0 += calls;
+            entry.1 += hits;
+        }
+    }
+
+    for day in &store.daily {
+        let tokens_original = day.input_tokens;
+        let tokens_compressed = day.output_tokens;
+        let tokens_saved = tokens_original.saturating_sub(tokens_compressed);
+        let (day_calls, day_hits) = cep_cache_by_day.get(&day.date).copied().unwrap_or((0, 0));
+        let cache_hits = day_hits;
+        let cache_misses = day_calls.saturating_sub(day_hits);
+        entries.push(serde_json::json!({
+            "date": day.date,
+            "tokens_original": tokens_original,
+            "tokens_compressed": tokens_compressed,
+            "tokens_saved": tokens_saved,
+            "tool_calls": day.commands,
+            "cache_hits": cache_hits,
+            "cache_misses": cache_misses,
+        }));
+    }
+
+    let has_today = entries.iter().any(|e| e["date"].as_str() == Some(&today));
+    if !has_today && (cep.total_tokens_original > 0 || store.total_commands > 0) {
+        entries.push(serde_json::json!({
+            "date": today,
+            "tokens_original": cep.total_tokens_original,
+            "tokens_compressed": cep.total_tokens_compressed,
+            "tokens_saved": cep.total_tokens_original.saturating_sub(cep.total_tokens_compressed),
+            "tool_calls": store.total_commands,
+            "cache_hits": cep.total_cache_hits,
+            "cache_misses": cep.total_cache_reads.saturating_sub(cep.total_cache_hits),
+        }));
+    }
+
+    entries
 }
 
 fn collect_knowledge_entries() -> Vec<serde_json::Value> {

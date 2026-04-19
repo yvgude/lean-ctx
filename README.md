@@ -105,8 +105,7 @@ AI coding tools like **Cursor**, **Claude Code**, **GitHub Copilot**, **Windsurf
 
 ```bash
 # 1. Install (pick one)
-curl -fsSL https://leanctx.com/install.sh | sh      # universal (sh or bash), no Rust needed
-# or: curl -fsSL https://leanctx.com/install.sh | bash
+curl -fsSL https://leanctx.com/install.sh | sh     # universal, no Rust needed
 brew tap yvgude/lean-ctx && brew install lean-ctx    # macOS / Linux
 npm install -g lean-ctx-bin                          # Node.js
 cargo install lean-ctx                               # Rust
@@ -715,93 +714,6 @@ Pi's `bash`, `read`, `grep`, `find`, and `ls` tools are automatically routed thr
 ```
 
 </details>
-
-<details>
-<summary><strong>Hermes Agent</strong></summary>
-
-`~/.hermes/config.yaml`:
-```yaml
-mcp_servers:
-  lean-ctx:
-    command: "lean-ctx"
-    args: ["mcp"]
-```
-
-**Tool naming**: Hermes prefixes all MCP tools with `mcp_<server>_`, so lean-ctx tools appear as `mcp_lean_ctx_ctx_read`, `mcp_lean_ctx_ctx_shell`, etc. This is standard Hermes behavior.
-
-**Reduce tool count** (recommended for smaller models):
-```yaml
-mcp_servers:
-  lean-ctx:
-    command: "lean-ctx"
-    args: ["mcp"]
-    tools:
-      include: [ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_edit, ctx_session]
-```
-
-</details>
-
-<br>
-
-## 🎛 Tool Modes & Context Optimization
-
-lean-ctx exposes tools in three modes. Choose based on your model's context window:
-
-| Mode | Tools | Schema tokens | Best for | Env var |
-|:---|:---:|:---:|:---|:---|
-| **Granular** (default) | ~46 | ~15-20K | Cursor, Claude Code, Codex (large context) | _(default)_ |
-| **Lazy** | 9 + discover | ~3-4K | Hermes, Ollama, smaller models | `LEAN_CTX_LAZY_TOOLS=1` |
-| **Unified** | 5 | ~2K | Extreme optimization | `LEAN_CTX_UNIFIED=1` |
-
-**Lazy mode** exposes only core tools (`ctx_read`, `ctx_shell`, `ctx_search`, `ctx_tree`, `ctx_edit`, `ctx_session`, `ctx_knowledge`, `ctx_multi_read`) plus `ctx_discover_tools` for on-demand loading of additional tools.
-
-### Disabling specific tools
-
-Via config (`~/.lean-ctx/config.toml`):
-```toml
-disabled_tools = ["ctx_graph", "ctx_architecture", "ctx_heatmap"]
-```
-
-Via environment variable:
-```bash
-export LEAN_CTX_DISABLED_TOOLS="ctx_graph,ctx_architecture,ctx_heatmap"
-```
-
-### Rules file placement
-
-By default, `lean-ctx setup` and `lean-ctx init --agent` install agent rule files in **both** the home directory (global) and the current project (project-local). To avoid duplicates and save context tokens, configure the placement scope:
-
-Via config (`~/.lean-ctx/config.toml`):
-```toml
-rules_scope = "global"    # only home-dir rules (~/.claude/rules/, ~/.cursor/rules/, etc.)
-# rules_scope = "project" # only project-local rules (.claude/rules/, .cursor/rules/, etc.)
-# rules_scope = "both"    # default — install everywhere
-```
-
-Via environment variable:
-```bash
-export LEAN_CTX_RULES_SCOPE="project"
-```
-
-Via CLI:
-```bash
-lean-ctx config set rules_scope global
-```
-
-Per-project override via `.lean-ctx.toml` in the project root:
-```toml
-rules_scope = "project"
-```
-
-### Path access outside project root
-
-By default, lean-ctx restricts file access to the project root for security. To allow access to additional directories:
-
-```bash
-export LCTX_ALLOW_PATH="/home/user/.codex:/home/user/shared-data"
-```
-
-When running inside Codex CLI (`CODEX_CLI_SESSION` set), `~/.codex` is automatically allowed. When running inside Claude Code, `~/.claude` is automatically allowed.
 
 <br>
 

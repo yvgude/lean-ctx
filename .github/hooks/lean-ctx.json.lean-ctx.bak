@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "command": "lean-ctx hook rewrite",
+        "timeout": 15,
+        "type": "command"
+      },
+      {
+        "command": "lean-ctx hook redirect",
+        "timeout": 5,
+        "type": "command"
+      }
+    ]
+  }
+}

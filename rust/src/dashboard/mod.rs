@@ -305,25 +305,6 @@ fn route_response(
             let json = crate::core::version_check::version_info_json();
             ("200 OK", "application/json", json)
         }
-        "/api/pulse" => {
-            let stats_path = crate::core::data_dir::lean_ctx_data_dir()
-                .map(|d| d.join("stats.json"))
-                .unwrap_or_default();
-            let meta = std::fs::metadata(&stats_path).ok();
-            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-            let mtime = meta
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            use md5::Digest;
-            let hash = format!(
-                "{:x}",
-                md5::Md5::digest(format!("{size}-{mtime}").as_bytes())
-            );
-            let json = format!(r#"{{"hash":"{hash}","ts":{mtime}}}"#);
-            ("200 OK", "application/json", json)
-        }
         "/api/heatmap" => {
             let project_root = detect_project_root_for_dashboard();
             let index = crate::core::graph_index::load_or_build(&project_root);
@@ -343,63 +324,11 @@ fn route_response(
             });
             ("200 OK", "application/json", json)
         }
-        "/api/call-graph" => {
-            let root = detect_project_root_for_dashboard();
-            let index = crate::core::graph_index::load_or_build(&root);
-            let call_graph = crate::core::call_graph::CallGraph::load_or_build(&root, &index);
-            let _ = call_graph.save();
-            let payload = serde_json::json!({
-                "project_root": call_graph.project_root,
-                "edges": call_graph.edges,
-                "file_hashes": call_graph.file_hashes,
-                "indexed_file_count": index.files.len(),
-                "indexed_symbol_count": index.symbols.len(),
-                "analyzed_file_count": call_graph.file_hashes.len(),
-            });
-            let json = serde_json::to_string(&payload)
-                .unwrap_or_else(|_| "{\"error\":\"failed to serialize call graph\"}".to_string());
-            ("200 OK", "application/json", json)
-        }
         "/api/feedback" => {
             let store = crate::core::feedback::FeedbackStore::load();
             let json = serde_json::to_string(&store).unwrap_or_else(|_| {
                 "{\"error\":\"failed to serialize feedback store\"}".to_string()
             });
-            ("200 OK", "application/json", json)
-        }
-        "/api/symbols" => {
-            let root = detect_project_root_for_dashboard();
-            let index = crate::core::graph_index::load_or_build(&root);
-            let q = extract_query_param(query_str, "q");
-            let kind = extract_query_param(query_str, "kind");
-            let json = build_symbols_json(&index, q.as_deref(), kind.as_deref());
-            ("200 OK", "application/json", json)
-        }
-        "/api/routes" => {
-            let root = detect_project_root_for_dashboard();
-            let index = crate::core::graph_index::load_or_build(&root);
-            let routes =
-                crate::core::route_extractor::extract_routes_from_project(&root, &index.files);
-            let route_candidate_count = index
-                .files
-                .keys()
-                .filter(|p| {
-                    std::path::Path::new(p.as_str())
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .map(|e| {
-                            matches!(e, "js" | "ts" | "py" | "rs" | "java" | "rb" | "go" | "kt")
-                        })
-                        .unwrap_or(false)
-                })
-                .count();
-            let payload = serde_json::json!({
-                "routes": routes,
-                "indexed_file_count": index.files.len(),
-                "route_candidate_count": route_candidate_count,
-            });
-            let json =
-                serde_json::to_string(&payload).unwrap_or_else(|_| "{\"routes\":[]}".to_string());
             ("200 OK", "application/json", json)
         }
         "/api/session" => {
@@ -418,40 +347,6 @@ fn route_response(
             });
             ("200 OK", "application/json", json)
         }
-        "/api/search" => {
-            let q = extract_query_param(query_str, "q").unwrap_or_default();
-            let limit: usize = extract_query_param(query_str, "limit")
-                .and_then(|l| l.parse().ok())
-                .unwrap_or(20);
-            if q.trim().is_empty() {
-                (
-                    "200 OK",
-                    "application/json",
-                    r#"{"results":[]}"#.to_string(),
-                )
-            } else {
-                let root_s = detect_project_root_for_dashboard();
-                let root = std::path::Path::new(&root_s);
-                let index = crate::core::vector_index::BM25Index::load_or_build(root);
-                let hits = index.search(&q, limit);
-                let results: Vec<serde_json::Value> = hits
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "score": (r.score * 100.0).round() / 100.0,
-                            "file_path": r.file_path,
-                            "symbol_name": r.symbol_name,
-                            "kind": r.kind,
-                            "start_line": r.start_line,
-                            "end_line": r.end_line,
-                            "snippet": r.snippet,
-                        })
-                    })
-                    .collect();
-                let json = serde_json::json!({ "results": results }).to_string();
-                ("200 OK", "application/json", json)
-            }
-        }
         "/api/compression-demo" => {
             let body = match extract_query_param(query_str, "path") {
                 None => r#"{"error":"missing path query parameter"}"#.to_string(),
@@ -459,7 +354,6 @@ fn route_response(
                     let task = extract_query_param(query_str, "task");
                     let root = detect_project_root_for_dashboard();
                     let root_pb = std::path::Path::new(&root);
-                    let rel = normalize_dashboard_demo_path(&rel);
                     let candidate = std::path::Path::new(&rel);
                     let full = if candidate.is_absolute() {
                         candidate.to_path_buf()
@@ -587,35 +481,6 @@ fn percent_decode_query_component(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn normalize_dashboard_demo_path(path: &str) -> String {
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-
-    let candidate = Path::new(trimmed);
-    if candidate.is_absolute() || is_windows_absolute_path(trimmed) {
-        return trimmed.to_string();
-    }
-
-    trimmed
-        .trim_start_matches(['\\', '/'])
-        .replace('\\', std::path::MAIN_SEPARATOR_STR)
-}
-
-fn is_windows_absolute_path(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    if bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'\\' | b'/')
-    {
-        return true;
-    }
-
-    path.starts_with("\\\\") || path.starts_with("//")
-}
-
 fn compression_mode_json(output: &str, original_tokens: usize) -> serde_json::Value {
     let tokens = crate::core::tokens::count_tokens(output);
     let savings_pct = if original_tokens > 0 {
@@ -702,65 +567,6 @@ fn bm25_index_summary_json(index: &crate::core::vector_index::BM25Index) -> serd
         "top_chunks_by_token_count": top,
         "language_distribution": lang,
     })
-}
-
-fn build_symbols_json(
-    index: &crate::core::graph_index::ProjectIndex,
-    query: Option<&str>,
-    kind: Option<&str>,
-) -> String {
-    let query = query
-        .map(|q| q.trim().to_lowercase())
-        .filter(|q| !q.is_empty());
-    let kind = kind
-        .map(|k| k.trim().to_lowercase())
-        .filter(|k| !k.is_empty());
-
-    let mut symbols: Vec<&crate::core::graph_index::SymbolEntry> = index
-        .symbols
-        .values()
-        .filter(|sym| {
-            let kind_match = match kind.as_ref() {
-                Some(k) => sym.kind.eq_ignore_ascii_case(k),
-                None => true,
-            };
-            let query_match = match query.as_ref() {
-                Some(q) => {
-                    let name = sym.name.to_lowercase();
-                    let file = sym.file.to_lowercase();
-                    let symbol_kind = sym.kind.to_lowercase();
-                    name.contains(q) || file.contains(q) || symbol_kind.contains(q)
-                }
-                None => true,
-            };
-            kind_match && query_match
-        })
-        .collect();
-
-    symbols.sort_by(|a, b| {
-        a.file
-            .cmp(&b.file)
-            .then_with(|| a.start_line.cmp(&b.start_line))
-            .then_with(|| a.name.cmp(&b.name))
-    });
-    symbols.truncate(500);
-
-    serde_json::to_string(
-        &symbols
-            .into_iter()
-            .map(|sym| {
-                serde_json::json!({
-                    "name": sym.name,
-                    "kind": sym.kind,
-                    "file": sym.file,
-                    "start_line": sym.start_line,
-                    "end_line": sym.end_line,
-                    "is_exported": sym.is_exported,
-                })
-            })
-            .collect::<Vec<_>>(),
-    )
-    .unwrap_or_else(|_| "[]".to_string())
 }
 
 fn build_heatmap_json(index: &crate::core::graph_index::ProjectIndex) -> String {
@@ -852,23 +658,12 @@ fn build_agents_json() -> String {
 }
 
 fn detect_project_root_for_dashboard() -> String {
-    if let Ok(explicit) = std::env::var("LEAN_CTX_DASHBOARD_PROJECT") {
-        if !explicit.trim().is_empty() {
-            return promote_to_git_root(&explicit);
-        }
-    }
-
+    // Prefer last known project context from the persisted session. This makes the dashboard
+    // show the same project data even if it is launched from an arbitrary working directory.
     if let Some(session) = crate::core::session::SessionState::load_latest() {
-        // Try project_root first, but only if it resolves to a real project (has .git or markers).
-        // MCP sessions often set project_root to a temp sandbox directory that contains no code.
         if let Some(root) = session.project_root.as_deref() {
             if !root.trim().is_empty() {
-                if let Some(git_root) = git_root_for(root) {
-                    return git_root;
-                }
-                if is_real_project(root) {
-                    return root.to_string();
-                }
+                return promote_to_git_root(root);
             }
         }
         if let Some(cwd) = session.shell_cwd.as_deref() {
@@ -893,26 +688,6 @@ fn detect_project_root_for_dashboard() -> String {
         .unwrap_or_else(|_| ".".to_string());
     let r = crate::core::protocol::detect_project_root_or_cwd(&cwd);
     promote_to_git_root(&r)
-}
-
-fn is_real_project(path: &str) -> bool {
-    let p = Path::new(path);
-    if !p.is_dir() {
-        return false;
-    }
-    const MARKERS: &[&str] = &[
-        ".git",
-        "Cargo.toml",
-        "package.json",
-        "go.mod",
-        "pyproject.toml",
-        "requirements.txt",
-        "pom.xml",
-        "build.gradle",
-        "CMakeLists.txt",
-        ".lean-ctx.toml",
-    ];
-    MARKERS.iter().any(|m| p.join(m).exists())
 }
 
 fn promote_to_git_root(path: &str) -> String {
@@ -974,26 +749,5 @@ mod tests {
         assert!(!"/".starts_with("/api/"));
         assert!(!"/index.html".starts_with("/api/"));
         assert!(!"/favicon.ico".starts_with("/api/"));
-    }
-
-    #[test]
-    fn normalize_dashboard_demo_path_strips_rooted_relative_windows_path() {
-        let normalized = normalize_dashboard_demo_path(r"\backend\list_tables.js");
-        assert_eq!(
-            normalized,
-            format!("backend{}list_tables.js", std::path::MAIN_SEPARATOR)
-        );
-    }
-
-    #[test]
-    fn normalize_dashboard_demo_path_preserves_absolute_windows_path() {
-        let input = r"C:\repo\backend\list_tables.js";
-        assert_eq!(normalize_dashboard_demo_path(input), input);
-    }
-
-    #[test]
-    fn normalize_dashboard_demo_path_preserves_unc_path() {
-        let input = r"\\server\share\backend\list_tables.js";
-        assert_eq!(normalize_dashboard_demo_path(input), input);
     }
 }

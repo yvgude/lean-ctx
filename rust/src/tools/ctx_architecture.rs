@@ -299,10 +299,10 @@ fn handle_module(path: Option<&str>, root: &str) -> String {
         Err(e) => return e,
     };
 
-    let canon_root = crate::core::pathutil::safe_canonicalize(std::path::Path::new(root))
+    let canon_root = std::fs::canonicalize(root)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| root.to_string());
-    let canon_target = crate::core::pathutil::safe_canonicalize(std::path::Path::new(target))
+    let canon_target = std::fs::canonicalize(target)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| target.to_string());
     let root_slash = if canon_root.ends_with('/') {

@@ -299,8 +299,8 @@ mod tests {
         assert!(root.is_some(), "should find a project root for nested .git");
         let root_path = std::path::PathBuf::from(root.unwrap());
         assert_eq!(
-            crate::core::pathutil::safe_canonicalize(&root_path).ok(),
-            crate::core::pathutil::safe_canonicalize(&base).ok(),
+            root_path.canonicalize().ok(),
+            base.canonicalize().ok(),
             "should return outermost .git, not inner"
         );
 

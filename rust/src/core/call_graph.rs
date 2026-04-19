@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::deep_queries;
-use super::graph_index::{normalize_project_root, ProjectIndex, SymbolEntry};
+use super::graph_index::{ProjectIndex, SymbolEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraph {
@@ -24,7 +24,7 @@ pub struct CallEdge {
 impl CallGraph {
     pub fn new(project_root: &str) -> Self {
         Self {
-            project_root: normalize_project_root(project_root),
+            project_root: project_root.to_string(),
             edges: Vec::new(),
             file_hashes: HashMap::new(),
         }
