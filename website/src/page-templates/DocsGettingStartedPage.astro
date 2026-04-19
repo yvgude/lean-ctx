@@ -428,7 +428,7 @@ const sidebar = [
     </div>
     <div class="terminal-body px-4 py-3 font-mono text-[13px]">
       <pre class="text-text whitespace-pre-wrap"><span class="text-muted"># 1. Install (pick one)</span>
-curl -fsSL https://leanctx.com/install.sh | sh          <span class="text-muted"># universal (sh or bash)</span>
+curl -fsSL https://leanctx.com/install.sh | sh          <span class="text-muted"># universal</span>
 brew tap yvgude/lean-ctx && brew install lean-ctx        <span class="text-muted"># macOS / Linux</span>
 npm install -g lean-ctx-bin                              <span class="text-muted"># Node.js</span>
 cargo install lean-ctx                                   <span class="text-muted"># Rust</span>
@@ -452,9 +452,7 @@ source ~/.zshrc  <span class="text-muted"># or ~/.bashrc</span></pre>
 
   <h3 id="universal">{t('docs.gettingStarted.universalTitle')}</h3>
   <p>{t('docs.gettingStarted.universalDesc')}</p>
-  <pre><code>curl -fsSL https://leanctx.com/install.sh | sh
-# or:
-curl -fsSL https://leanctx.com/install.sh | bash</code></pre>
+  <pre><code>curl -fsSL https://leanctx.com/install.sh | sh</code></pre>
   <p set:html={t('docs.gettingStarted.universalDetails')} />
   <p>{t('docs.gettingStarted.universalManual')}</p>
   <pre><code>curl -fsSL https://leanctx.com/install.sh -o install.sh
@@ -1098,7 +1096,7 @@ sudo ln -sf $(pwd)/bin/lctx /usr/local/bin/lctx</code></pre>
       <tr><td>Cargo</td><td><code>cargo install lean-ctx</code></td></tr>
       <tr><td>npm</td><td><code>npm update -g lean-ctx-bin</code></td></tr>
       <tr><td>AUR</td><td><code>yay -Syu lean-ctx</code></td></tr>
-      <tr><td>install.sh</td><td>Re-run <code>curl -fsSL https://leanctx.com/install.sh | sh</code> (or <code>... | bash</code>)</td></tr>
+      <tr><td>install.sh</td><td>Re-run <code>curl -fsSL https://leanctx.com/install.sh | sh</code></td></tr>
       <tr><td>Binary</td><td>Download latest from <a href="https://github.com/yvgude/lean-ctx/releases/latest">GitHub Releases</a></td></tr>
     </tbody>
   </table>

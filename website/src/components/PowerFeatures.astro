@@ -1,21 +1,24 @@
 ---
 import { getMcpManifest } from '../lib/mcpManifest';
+import { getLocaleFromUrl, useTranslations } from '../i18n/utils';
 
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
 const manifest = getMcpManifest();
 const mcpToolCount = manifest.counts.granular;
 
 const features = [
   {
-    eyebrow: 'Persistent Project Graph',
-    title: 'Your codebase, mapped.',
-    description: 'Incremental scanning builds a persistent dependency graph of your entire project. Find related files, trace symbol usage, and measure impact — without re-scanning every session.',
+    eyebrow: t('power.graphEyebrow'),
+    title: t('power.graphTitle'),
+    description: t('power.graphDesc'),
     badge: 'Since v2.7.0',
     actions: [
-      { cmd: 'build', desc: 'Scan & persist project structure' },
-      { cmd: 'related', desc: 'BFS traversal for connected files' },
-      { cmd: 'symbol', desc: 'Jump to any exported symbol' },
-      { cmd: 'impact', desc: 'Reverse dependency analysis' },
-      { cmd: 'status', desc: 'Index metadata & freshness' },
+      { cmd: 'build', desc: t('power.graphBuild') },
+      { cmd: 'related', desc: t('power.graphRelated') },
+      { cmd: 'symbol', desc: t('power.graphSymbol') },
+      { cmd: 'impact', desc: t('power.graphImpact') },
+      { cmd: 'status', desc: t('power.graphStatus') },
     ],
     terminal: {
       title: '$ ctx_graph action=build',
@@ -33,14 +36,14 @@ const features = [
     link: '/docs/tools#ctx_graph',
   },
   {
-    eyebrow: 'Multi-Agent Launcher',
-    title: 'One command. Any AI agent.',
-    description: 'Auto-detects your AI tool (Cursor, Claude, Gemini, Codex, Crush, Windsurf, Cline), builds the project graph, and launches with lean-ctx pre-configured. Zero manual setup.',
+    eyebrow: t('power.launcherEyebrow'),
+    title: t('power.launcherTitle'),
+    description: t('power.launcherDesc'),
     badge: 'Since v2.7.0',
     actions: [
-      { cmd: 'lctx', desc: 'Auto-detect agent & launch' },
-      { cmd: 'lctx cursor', desc: 'Launch specific agent' },
-      { cmd: 'lctx --list', desc: 'Show supported agents' },
+      { cmd: 'lctx', desc: t('power.launcherDetect') },
+      { cmd: 'lctx cursor', desc: t('power.launcherSpecific') },
+      { cmd: 'lctx --list', desc: t('power.launcherList') },
     ],
     terminal: {
       title: '$ lctx',
@@ -58,16 +61,16 @@ const features = [
     link: '/docs/getting-started#lctx',
   },
   {
-    eyebrow: 'Universal Installation',
-    title: 'Five ways to install. Zero friction.',
-    description: 'From a one-line curl command to npm, Homebrew, Cargo, or AUR — install lean-ctx however you prefer. No Rust toolchain required for binary installs.',
+    eyebrow: t('power.installEyebrow'),
+    title: t('power.installTitle'),
+    description: t('power.installDesc'),
     badge: 'Since v2.7.0',
     actions: [
-      { cmd: 'curl | sh (or bash)', desc: 'Universal one-liner with SHA256 verification' },
-      { cmd: 'npm i -g lean-ctx-bin', desc: 'Node.js binary distribution' },
-      { cmd: 'brew install', desc: 'Homebrew (macOS/Linux)' },
-      { cmd: 'cargo install', desc: 'From source via crates.io' },
-      { cmd: 'yay -S', desc: 'Arch Linux (AUR)' },
+      { cmd: 'curl | sh', desc: t('power.installCurl') },
+      { cmd: 'npm i -g lean-ctx-bin', desc: t('power.installNpm') },
+      { cmd: 'brew install', desc: t('power.installBrew') },
+      { cmd: 'cargo install', desc: t('power.installCargo') },
+      { cmd: 'yay -S', desc: t('power.installAur') },
     ],
     terminal: {
       title: '$ curl -fsSL https://leanctx.com/install.sh | sh',
@@ -94,14 +97,9 @@ const features = [
 
   <div class="relative max-w-7xl mx-auto px-4 sm:px-6">
     <div class="text-center mb-12 sm:mb-16">
-      <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-3">Beyond Compression</p>
-      <h2 class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.1] text-text-bright mb-4">
-        Not just smaller. <span class="gradient-text-green">Sharper.</span>
-      </h2>
-      <p class="text-sm text-muted leading-relaxed max-w-2xl mx-auto">
-        lean-ctx goes beyond token compression. It understands your project structure,
-        launches any AI agent with one command, and installs without friction.
-      </p>
+      <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-3">{t('power.beyondCompression')}</p>
+      <h2 class="font-display text-2xl sm:text-[2.5rem] font-bold tracking-tight leading-[1.1] text-text-bright mb-4" set:html={t('power.heading')} />
+      <p class="text-sm text-muted leading-relaxed max-w-2xl mx-auto">{t('power.desc')}</p>
     </div>
 
     <div class="space-y-8 sm:space-y-12">
@@ -128,7 +126,7 @@ const features = [
             </div>
 
             <a href={f.link} class="inline-flex items-center text-xs text-accent hover:text-accent/80 transition-colors font-medium">
-              Learn more
+              {t('power.learnMore')}
               <svg class="ml-1 w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
             </a>
           </div>

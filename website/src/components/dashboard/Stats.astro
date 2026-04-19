@@ -11,28 +11,28 @@ const { t } = Astro.props;
     <div class="dash-kpi" style="--kpi-color:#34d399">
       <div class="dash-kpi-icon"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22"/></svg></div>
       <span class="dash-kpi-val font-display" id="statsTfTokens">—</span>
-      <span class="dash-kpi-label">Tokens Saved</span>
+      <span class="dash-kpi-label">{t('dash.kpiTokensSaved')}</span>
     </div>
     <div class="dash-kpi" style="--kpi-color:#fbbf24">
       <div class="dash-kpi-icon"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
       <span class="dash-kpi-val font-display" id="statsTfCost">—</span>
-      <span class="dash-kpi-label">Cost Saved</span>
+      <span class="dash-kpi-label">{t('dash.kpiCostSaved')}</span>
       <span class="dash-kpi-sub" id="statsTfCostSub"></span>
     </div>
     <div class="dash-kpi" style="--kpi-color:#60a5fa">
       <div class="dash-kpi-icon"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3"/></svg></div>
       <span class="dash-kpi-val font-display" id="statsTfCalls">—</span>
-      <span class="dash-kpi-label">Tool Calls</span>
+      <span class="dash-kpi-label">{t('dash.kpiToolCalls')}</span>
     </div>
     <div class="dash-kpi" style="--kpi-color:#f472b6">
       <div class="dash-kpi-icon"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg></div>
       <span class="dash-kpi-val font-display" id="statsTfRate">—</span>
-      <span class="dash-kpi-label">Savings Rate</span>
+      <span class="dash-kpi-label">{t('dash.kpiSavingsRate')}</span>
     </div>
     <div class="dash-kpi" style="--kpi-color:#a78bfa">
       <div class="dash-kpi-icon"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
       <span class="dash-kpi-val font-display" id="statsTfCacheHit">—</span>
-      <span class="dash-kpi-label">Cache Hit Rate</span>
+      <span class="dash-kpi-label">{t('dash.kpiCacheHitRate')}</span>
     </div>
   </div>
 
@@ -41,7 +41,7 @@ const { t } = Astro.props;
     <button class="dash-tf-btn" data-tf="7">7d</button>
     <button class="dash-tf-btn is-active" data-tf="30">30d</button>
     <button class="dash-tf-btn" data-tf="90">90d</button>
-    <button class="dash-tf-btn" data-tf="0">All</button>
+    <button class="dash-tf-btn" data-tf="0">{t('dash.tfAll')}</button>
   </div>
 
   <!-- Daily Activity Chart -->
@@ -53,15 +53,15 @@ const { t } = Astro.props;
   <!-- Cache & Savings Charts -->
   <div class="dash-grid-3">
     <div class="dash-card">
-      <div class="dash-card-head">Savings Rate Trend</div>
+      <div class="dash-card-head">{t('dash.chartSavingsRateTrend')}</div>
       <div class="dash-card-body dash-chart-wrap"><canvas id="chartSavingsRate" height="160"></canvas></div>
     </div>
     <div class="dash-card">
-      <div class="dash-card-head">Cache Performance</div>
+      <div class="dash-card-head">{t('dash.chartCachePerformance')}</div>
       <div class="dash-card-body dash-chart-wrap"><canvas id="chartCache" height="160"></canvas></div>
     </div>
     <div class="dash-card">
-      <div class="dash-card-head">Token Distribution</div>
+      <div class="dash-card-head">{t('dash.chartTokenDistribution')}</div>
       <div class="dash-card-body" style="display:flex;align-items:center;justify-content:center;padding:1.25rem"><canvas id="chartTokenDist" height="140" width="140"></canvas></div>
     </div>
   </div>
@@ -72,7 +72,7 @@ const { t } = Astro.props;
       <span>{t('dash.statsTitle')}</span>
       <div style="display:flex;align-items:center;gap:0.5rem">
         <span id="statsCount" style="font-weight:400;text-transform:none;letter-spacing:0"></span>
-        <button class="dash-copy-btn" id="exportCsvBtn" style="font-size:0.5625rem;padding:0.25rem 0.5rem">Export CSV</button>
+        <button class="dash-copy-btn" id="exportCsvBtn" style="font-size:0.5625rem;padding:0.25rem 0.5rem">{t('dash.exportCsv')}</button>
       </div>
     </div>
     <div class="dash-card-body" id="statsTable" style="padding:0">

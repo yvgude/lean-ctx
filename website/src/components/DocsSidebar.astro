@@ -21,19 +21,19 @@ const t = useTranslations(locale);
 
 const defaultSections: SidebarSection[] = [
   {
-    title: 'Getting Started',
+    title: t('docs.sidebarGettingStarted'),
     items: [
-      { label: 'Overview', href: '/docs/getting-started' },
-      { label: 'Quick Reference', href: '/docs/quick-reference' },
-      { label: 'Configuration', href: '/docs/configuration' },
+      { label: t('docs.sidebarOverview'), href: '/docs/getting-started' },
+      { label: t('docs.sidebarQuickRef'), href: '/docs/quick-reference' },
+      { label: t('docs.sidebarConfiguration'), href: '/docs/configuration' },
     ],
   },
   {
-    title: 'Reference',
+    title: t('docs.sidebarReference'),
     items: [
-      { label: 'Tool API Reference', href: '/docs/tools' },
-      { label: 'Tree-sitter Engine', href: '/docs/tree-sitter' },
-      { label: 'Token Cost Guide', href: '/docs/token-guide' },
+      { label: t('docs.sidebarToolApi'), href: '/docs/tools' },
+      { label: t('docs.sidebarTreeSitter'), href: '/docs/tree-sitter' },
+      { label: t('docs.sidebarTokenGuide'), href: '/docs/token-guide' },
     ],
   },
 ];

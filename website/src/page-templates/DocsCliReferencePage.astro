@@ -11,7 +11,7 @@ const sidebar = [
     title: t('docs.cliReference.sidebarTitle'),
     items: [
       { label: t('docs.common.overview'), href: lp('/docs/cli-reference') },
-      { label: t('docs.cliReference.sidebarSmartShell'), href: lp('/docs/cli-reference#shell-compression') },
+      { label: t('docs.cliReference.sidebarShellCompression'), href: lp('/docs/cli-reference#shell-compression') },
       { label: t('docs.cliReference.sidebarRawMode'), href: lp('/docs/cli-reference#raw-mode') },
       { label: t('docs.cliReference.sidebarFileOps'), href: lp('/docs/cli-reference#file-operations') },
       { label: t('docs.cliReference.sidebarReadModes'), href: lp('/docs/cli-reference#read-modes') },
@@ -47,14 +47,6 @@ const sidebar = [
   <h2 id="shell-compression">{t('docs.cliReference.shellCompressionTitle')}</h2>
 
   <p><Fragment set:html={t('docs.cliReference.shellCompressionDesc')} /></p>
-
-  <h3 id="track"><code>lean-ctx -t "&lt;command&gt;"</code> <span class="text-xs font-normal text-muted ml-2">v3.2.2</span></h3>
-  <p><Fragment set:html={t('docs.cliReference.trackDesc')} /></p>
-  <pre><code>lean-ctx -t "git status"
-lean-ctx -t "kubectl get pods -A"
-lean-ctx -t "cargo build 2>&amp;1"
-lean-ctx --track "docker ps"</code></pre>
-  <p><Fragment set:html={t('docs.cliReference.trackNote')} /></p>
 
   <h3 id="exec"><code>lean-ctx -c "&lt;command&gt;"</code></h3>
   <p><Fragment set:html={t('docs.cliReference.execDesc')} /></p>
@@ -428,9 +420,6 @@ lean-ctx slow-log clear</code></pre>
   <table>
     <thead><tr><th>{t('docs.cliReference.thAlias')}</th><th>{t('docs.cliReference.thAction')}</th></tr></thead>
     <tbody>
-      <tr><td><code>_lc &lt;cmd&gt;</code></td><td><Fragment set:html={t('docs.cliReference.aliasLcAction')} /></td></tr>
-      <tr><td><code>_lc_compress &lt;cmd&gt;</code></td><td><Fragment set:html={t('docs.cliReference.aliasLcCompressAction')} /></td></tr>
-      <tr><td><code>lean-ctx-mode &lt;mode&gt;</code></td><td><Fragment set:html={t('docs.cliReference.aliasLeanCtxModeAction')} /></td></tr>
       <tr><td><code>lean-ctx-on</code></td><td>{t('docs.cliReference.aliasOnAction')}</td></tr>
       <tr><td><code>lean-ctx-off</code></td><td>{t('docs.cliReference.aliasOffAction')}</td></tr>
       <tr><td><code>lean-ctx-status</code></td><td>{t('docs.cliReference.aliasStatusAction')}</td></tr>
@@ -438,19 +427,10 @@ lean-ctx slow-log clear</code></pre>
     </tbody>
   </table>
 
-  <pre><code># Smart Shell Mode (v3.2.2+)
-_lc git status     # full output preserved, stats recorded (default)
-_lc_compress git status  # explicitly compressed output
-
-# Switch modes globally
-lean-ctx-mode track     # full output (default for humans)
-lean-ctx-mode compress  # compressed output (for AI sessions)
-lean-ctx-mode off       # disable lean-ctx shell integration
-
-# Legacy aliases (still available)
-lean-ctx-status    # check current state
-lean-ctx-off       # temporarily disable
-lean-ctx-on        # re-enable</code></pre>
+  <pre><code>lean-ctx-status    # check current state
+lean-ctx-off       # temporarily disable for human reading
+git log            # now shows full, uncompressed output
+lean-ctx-on        # re-enable for AI sessions</code></pre>
 
   <p><Fragment set:html={t('docs.cliReference.whenToDisable')} /></p>
 

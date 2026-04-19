@@ -17,13 +17,13 @@ const { t } = Astro.props;
 
   <!-- API Key -->
   <div class="dash-card">
-    <div class="dash-card-head">API Key</div>
+    <div class="dash-card-head">{t('dash.settingsApiKey')}</div>
     <div class="dash-card-body">
-      <p style="font-size:0.75rem;color:var(--color-muted);margin-bottom:0.75rem">Your authentication key for CLI access. Keep it secret.</p>
+      <p style="font-size:0.75rem;color:var(--color-muted);margin-bottom:0.75rem">{t('dash.settingsApiKeyDesc')}</p>
       <div class="dash-api-key-wrap">
         <input type="password" class="dash-api-key-input" id="apiKeyDisplay" readonly />
-        <button class="dash-copy-btn" id="toggleApiKey" type="button">Show</button>
-        <button class="dash-copy-btn" id="copyApiKey" type="button">Copy</button>
+        <button class="dash-copy-btn" id="toggleApiKey" type="button">{t('dash.settingsShow')}</button>
+        <button class="dash-copy-btn" id="copyApiKey" type="button">{t('dash.settingsCopy')}</button>
       </div>
     </div>
   </div>

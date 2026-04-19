@@ -15,7 +15,7 @@ const { t } = Astro.props;
     <div class="dash-kpi" style="--kpi-color:#fbbf24">
       <div class="dash-kpi-icon"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
       <span class="dash-kpi-val font-display" id="kpiCostSaved">—</span>
-      <span class="dash-kpi-label">Est. Cost Saved</span>
+      <span class="dash-kpi-label">{t('dash.kpiEstCostSaved')}</span>
       <span class="dash-kpi-sub" id="kpiCostSub"></span>
     </div>
     <div class="dash-kpi" style="--kpi-color:#60a5fa">
@@ -36,7 +36,7 @@ const { t } = Astro.props;
     <div class="dash-kpi" style="--kpi-color:#2dd4bf">
       <div class="dash-kpi-icon"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3"/></svg></div>
       <span class="dash-kpi-val font-display" id="kpiAvgDaily">—</span>
-      <span class="dash-kpi-label">Avg. Saved/Day</span>
+      <span class="dash-kpi-label">{t('dash.kpiAvgSavedDay')}</span>
     </div>
   </div>
 
@@ -45,7 +45,7 @@ const { t } = Astro.props;
     <button class="dash-tf-btn" data-tf="7">7d</button>
     <button class="dash-tf-btn is-active" data-tf="30">30d</button>
     <button class="dash-tf-btn" data-tf="90">90d</button>
-    <button class="dash-tf-btn" data-tf="0">All</button>
+    <button class="dash-tf-btn" data-tf="0">{t('dash.tfAll')}</button>
   </div>
 
   <div class="dash-grid-2">
@@ -60,7 +60,7 @@ const { t } = Astro.props;
   </div>
 
   <div class="dash-card">
-    <div class="dash-card-head">Tokemon Buddy</div>
+    <div class="dash-card-head">{t('dash.tokemonBuddy')}</div>
     <div class="dash-card-body" id="buddyWidget">
       <div class="dash-skeleton dash-skeleton-line" style="width:60%"></div>
       <div class="dash-skeleton dash-skeleton-line" style="width:40%"></div>
@@ -78,9 +78,9 @@ const { t } = Astro.props;
 
   <!-- Quick nav links -->
   <div class="dash-quick-nav">
-    <button class="dash-quick-link" data-view="stats"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/></svg> Daily Stats</button>
-    <button class="dash-quick-link" data-view="commands"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3"/></svg> Commands</button>
-    <button class="dash-quick-link" data-view="performance"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5"/></svg> Performance</button>
-    <button class="dash-quick-link" data-view="knowledge"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292"/></svg> Knowledge</button>
+    <button class="dash-quick-link" data-view="stats"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/></svg> {t('dash.quickDailyStats')}</button>
+    <button class="dash-quick-link" data-view="commands"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3"/></svg> {t('dash.quickCommands')}</button>
+    <button class="dash-quick-link" data-view="performance"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5"/></svg> {t('dash.quickPerformance')}</button>
+    <button class="dash-quick-link" data-view="knowledge"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292"/></svg> {t('dash.quickKnowledge')}</button>
   </div>
 </div>
