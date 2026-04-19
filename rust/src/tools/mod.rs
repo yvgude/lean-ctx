@@ -112,6 +112,7 @@ pub struct LeanCtxServer {
     pub autonomy: Arc<autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
     pub workflow: Arc<RwLock<Option<crate::core::workflow::WorkflowRun>>>,
+    pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
 }
 
 #[derive(Clone, Debug)]
@@ -173,6 +174,9 @@ impl LeanCtxServer {
             )),
             workflow: Arc::new(RwLock::new(
                 crate::core::workflow::load_active().ok().flatten(),
+            )),
+            ledger: Arc::new(RwLock::new(
+                crate::core::context_ledger::ContextLedger::new(),
             )),
         }
     }
