@@ -1012,13 +1012,38 @@ impl LeanCtxServer {
             }
         };
         let mut cache = self.cache.write().await;
-        let result = crate::tools::ctx_preload::handle(
+        let mut result = crate::tools::ctx_preload::handle(
             &mut cache,
             &task,
             resolved_path.as_deref(),
             self.crp_mode,
         );
         drop(cache);
+
+        let session = self.session.read().await;
+        if let Some(ref intent) = session.active_structured_intent {
+            let ledger = self.ledger.read().await;
+            if !ledger.entries.is_empty() {
+                let known: Vec<String> = session
+                    .files_touched
+                    .iter()
+                    .map(|f| f.path.clone())
+                    .collect();
+                let deficit =
+                    crate::core::context_deficit::detect_deficit(&ledger, intent, &known);
+                if !deficit.suggested_files.is_empty() {
+                    result.push_str("\n\n--- SUGGESTED FILES ---");
+                    for s in &deficit.suggested_files {
+                        result.push_str(&format!(
+                            "\n  {} ({:?}, ~{} tok, mode: {})",
+                            s.path, s.reason, s.estimated_tokens, s.recommended_mode
+                        ));
+                    }
+                }
+            }
+        }
+        drop(session);
+
         self.record_call("ctx_preload", 0, 0, Some("preload".to_string()))
             .await;
         Ok(result)
