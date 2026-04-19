@@ -163,6 +163,97 @@ impl ContextLedger {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ReinjectionAction {
+    pub path: String,
+    pub current_mode: String,
+    pub new_mode: String,
+    pub tokens_freed: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReinjectionPlan {
+    pub actions: Vec<ReinjectionAction>,
+    pub total_tokens_freed: usize,
+    pub new_utilization: f64,
+}
+
+impl ContextLedger {
+    pub fn reinjection_plan(
+        &self,
+        intent: &super::intent_engine::StructuredIntent,
+        target_utilization: f64,
+    ) -> ReinjectionPlan {
+        let current_util = self.total_tokens_sent as f64 / self.window_size as f64;
+        if current_util <= target_utilization {
+            return ReinjectionPlan {
+                actions: Vec::new(),
+                total_tokens_freed: 0,
+                new_utilization: current_util,
+            };
+        }
+
+        let tokens_to_free =
+            self.total_tokens_sent - (self.window_size as f64 * target_utilization) as usize;
+
+        let target_set: std::collections::HashSet<&str> =
+            intent.targets.iter().map(|t| t.as_str()).collect();
+
+        let mut candidates: Vec<(usize, &LedgerEntry)> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| !target_set.iter().any(|t| e.path.contains(t)))
+            .collect();
+
+        candidates.sort_by(|a, b| {
+            let a_age = a.1.timestamp;
+            let b_age = b.1.timestamp;
+            a_age.cmp(&b_age)
+        });
+
+        let mut actions = Vec::new();
+        let mut freed = 0usize;
+
+        for (_, entry) in &candidates {
+            if freed >= tokens_to_free {
+                break;
+            }
+            if let Some((new_mode, new_tokens)) = downgrade_mode(&entry.mode, entry.sent_tokens) {
+                let saving = entry.sent_tokens.saturating_sub(new_tokens);
+                if saving > 0 {
+                    actions.push(ReinjectionAction {
+                        path: entry.path.clone(),
+                        current_mode: entry.mode.clone(),
+                        new_mode,
+                        tokens_freed: saving,
+                    });
+                    freed += saving;
+                }
+            }
+        }
+
+        let new_sent = self.total_tokens_sent.saturating_sub(freed);
+        let new_utilization = new_sent as f64 / self.window_size as f64;
+
+        ReinjectionPlan {
+            actions,
+            total_tokens_freed: freed,
+            new_utilization,
+        }
+    }
+}
+
+fn downgrade_mode(current_mode: &str, current_tokens: usize) -> Option<(String, usize)> {
+    match current_mode {
+        "full" => Some(("signatures".to_string(), current_tokens / 5)),
+        "aggressive" => Some(("signatures".to_string(), current_tokens / 3)),
+        "signatures" => Some(("map".to_string(), current_tokens / 2)),
+        "map" => Some(("reference".to_string(), current_tokens / 4)),
+        _ => None,
+    }
+}
+
 impl Default for ContextLedger {
     fn default() -> Self {
         Self::new()
@@ -268,5 +359,70 @@ mod tests {
         let summary = ledger.format_summary();
         assert!(summary.contains("500/10000"));
         assert!(summary.contains("1 files"));
+    }
+
+    #[test]
+    fn reinjection_no_action_when_low_pressure() {
+        use crate::core::intent_engine::StructuredIntent;
+
+        let mut ledger = ContextLedger::with_window_size(10000);
+        ledger.record("a.rs", "full", 100, 100);
+        let intent = StructuredIntent::from_query("fix bug in a.rs");
+        let plan = ledger.reinjection_plan(&intent, 0.7);
+        assert!(plan.actions.is_empty());
+        assert_eq!(plan.total_tokens_freed, 0);
+    }
+
+    #[test]
+    fn reinjection_downgrades_non_target_files() {
+        use crate::core::intent_engine::StructuredIntent;
+
+        let mut ledger = ContextLedger::with_window_size(1000);
+        ledger.record("src/target.rs", "full", 400, 400);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        ledger.record("src/other.rs", "full", 400, 400);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        ledger.record("src/utils.rs", "full", 200, 200);
+
+        let intent = StructuredIntent::from_query("fix bug in target.rs");
+        let plan = ledger.reinjection_plan(&intent, 0.5);
+
+        assert!(!plan.actions.is_empty());
+        assert!(
+            plan.actions.iter().all(|a| !a.path.contains("target")),
+            "should not downgrade target file"
+        );
+        assert!(plan.total_tokens_freed > 0);
+    }
+
+    #[test]
+    fn reinjection_preserves_targets() {
+        use crate::core::intent_engine::StructuredIntent;
+
+        let mut ledger = ContextLedger::with_window_size(1000);
+        ledger.record("src/auth.rs", "full", 900, 900);
+        let intent = StructuredIntent::from_query("fix bug in auth.rs");
+        let plan = ledger.reinjection_plan(&intent, 0.5);
+        assert!(
+            plan.actions.is_empty(),
+            "should not downgrade target files even under pressure"
+        );
+    }
+
+    #[test]
+    fn downgrade_mode_chain() {
+        assert_eq!(
+            downgrade_mode("full", 1000),
+            Some(("signatures".to_string(), 200))
+        );
+        assert_eq!(
+            downgrade_mode("signatures", 200),
+            Some(("map".to_string(), 100))
+        );
+        assert_eq!(
+            downgrade_mode("map", 100),
+            Some(("reference".to_string(), 25))
+        );
+        assert_eq!(downgrade_mode("reference", 25), None);
     }
 }
