@@ -42,15 +42,14 @@ const softwareJsonLd = JSON.stringify({
   operatingSystem: 'macOS, Linux, Windows',
   url: 'https://leanctx.com',
   downloadUrl: 'https://crates.io/crates/lean-ctx',
-  softwareVersion: '2.21.1',
+  softwareVersion: '3.2.1',
   license: 'https://opensource.org/licenses/MIT',
   description: `Reduce Claude Code, Cursor & Copilot token costs by 99%. Open-source MCP server + shell hook with ${getMcpManifest().counts.granular} intelligent tools. Zero telemetry.`,
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
   author: { '@type': 'Person', name: 'Yves Gugger', url: 'https://github.com/yvgude' },
   codeRepository: 'https://github.com/yvgude/lean-ctx',
   programmingLanguage: 'Rust',
-  dateModified: '2026-04-08',
-  aggregateRating: undefined,
+  dateModified: '2026-04-19',
 });
 
 const webPageJsonLd = !isHome ? JSON.stringify({
@@ -61,7 +60,7 @@ const webPageJsonLd = !isHome ? JSON.stringify({
   url: canonicalURL.toString(),
   isPartOf: { '@type': 'WebSite', name: 'LeanCTX', url: 'https://leanctx.com' },
   author: { '@type': 'Person', name: 'Yves Gugger' },
-  dateModified: '2026-04-08',
+  dateModified: '2026-04-19',
 }) : null;
 
 const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
@@ -96,9 +95,9 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <meta property="og:type" content={isHome ? 'website' : 'article'} />
   <meta property="og:url" content={canonicalURL} />
   <meta property="og:site_name" content="LeanCTX" />
-  <meta property="og:locale" content={locale === 'de' ? 'de_DE' : locale === 'ar' ? 'ar_SA' : 'en_US'} />
+  <meta property="og:locale" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[locale] || 'en_US'} />
   {locales.filter(l => l !== locale).map(l => (
-    <meta property="og:locale:alternate" content={l === 'de' ? 'de_DE' : l === 'ar' ? 'ar_SA' : 'en_US'} />
+    <meta property="og:locale:alternate" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[l] || 'en_US'} />
   ))}
   {locales.map(l => (
     <link rel="alternate" hreflang={l} href={new URL(getLocalizedPath(currentPathWithoutLocale, l), Astro.site)} />
@@ -122,11 +121,12 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <link rel="icon" type="image/x-icon" sizes="48x48" href="/favicon.ico" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
-  <link rel="sitemap" href="/sitemap.xml" />
+  <link rel="sitemap" href="/sitemap-index.xml" />
 
   <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" as="style" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
 
   <title>{title}</title>

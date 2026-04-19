@@ -2067,6 +2067,7 @@
   "index.testimonialLabel": "開発者の声",
   "index.testimonialTitle": "実際のユーザーからの実際のフィードバック。",
   "index.title": "LeanCTX — AI コーディングのためのコンテキストエンジニアリングレイヤー",
+  "index.metaDesc": "AI コーディングの token コストを最大 99% 削減するオープンソース MCP サーバー + シェルフック。インテリジェントな圧縮、セッションキャッシュ、テレメトリなしの単一 Rust バイナリ。",
   "index.with1": "AI が 800 行のファイルを読み取り",
   "index.with2": "→ lean-ctx が AST 解析で圧縮",
   "index.with3": "型、シグネチャ、ロジックを保持",

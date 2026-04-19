@@ -2067,6 +2067,7 @@
   "index.testimonialLabel": "What Developers Say",
   "index.testimonialTitle": "Real feedback from real users.",
   "index.title": "LeanCTX — Reduce Claude Code, Cursor & Copilot Token Costs by 99%",
+  "index.metaDesc": "Open-source MCP server + shell hook that reduces AI coding token costs by up to 99%. Single Rust binary with intelligent compression, session caching, and zero telemetry.",
   "index.with1": "AI reads 800-line file",
   "index.with2": "→ lean-ctx compresses via AST parsing",
   "index.with3": "Keeps types, signatures, logic",

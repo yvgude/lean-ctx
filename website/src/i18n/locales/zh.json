@@ -2067,6 +2067,7 @@
   "index.testimonialLabel": "开发者的评价",
   "index.testimonialTitle": "来自真实用户的真实反馈。",
   "index.title": "LeanCTX — AI 编码的上下文工程层",
+  "index.metaDesc": "开源 MCP 服务器 + Shell 钩子，可将 AI 编码的 token 成本降低高达 99%。单一 Rust 二进制文件，具备智能压缩、会话缓存，且零遥测。",
   "index.with1": "AI 读取 800 行文件",
   "index.with2": "→ lean-ctx 通过 AST 解析压缩",
   "index.with3": "保留类型、签名、逻辑",

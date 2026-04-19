@@ -2067,6 +2067,7 @@
   "index.testimonialLabel": "ডেভেলপাররা কী বলেন",
   "index.testimonialTitle": "প্রকৃত ব্যবহারকারীদের প্রকৃত মতামত।",
   "index.title": "LeanCTX — AI কোডিংয়ের জন্য Context Engineering লেয়ার",
+  "index.metaDesc": "ওপেন-সোর্স MCP সার্ভার + শেল হুক যা AI কোডিংয়ে token খরচ ৯৯% পর্যন্ত কমায়। বুদ্ধিমান কম্প্রেশন, সেশন ক্যাশিং এবং শূন্য টেলিমেট্রি সহ একক Rust বাইনারি।",
   "index.with1": "AI ৮০০-লাইনের ফাইল পড়ে",
   "index.with2": "→ lean-ctx AST পার্সিংয়ের মাধ্যমে কম্প্রেস করে",
   "index.with3": "টাইপ, সিগনেচার, লজিক রাখে",

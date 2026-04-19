@@ -2067,6 +2067,7 @@
   "index.testimonialLabel": "O que Desenvolvedores Dizem",
   "index.testimonialTitle": "Feedback real de usuários reais.",
   "index.title": "LeanCTX — A Camada de Engenharia de Contexto para Codificação com IA",
+  "index.metaDesc": "Servidor MCP de código aberto + hook de shell que reduz os custos de token na codificação com IA em até 99 %. Um único binário Rust com compressão inteligente, cache de sessão e zero telemetria.",
   "index.with1": "IA lê arquivo de 800 linhas",
   "index.with2": "→ lean-ctx comprime via análise AST",
   "index.with3": "Mantém tipos, assinaturas, lógica",

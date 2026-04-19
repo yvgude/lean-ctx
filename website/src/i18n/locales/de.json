@@ -1928,6 +1928,7 @@
   "index.testimonialLabel": "Was Entwickler sagen",
   "index.testimonialTitle": "Echtes Feedback von echten Nutzern.",
   "index.title": "LeanCTX — Die Context Engineering Ebene für AI-Coding",
+  "index.metaDesc": "Open-Source MCP-Server + Shell-Hook, der die Token-Kosten beim AI-Coding um bis zu 99 % senkt. Ein einzelnes Rust-Binary mit intelligenter Komprimierung, Session-Caching und ohne Telemetrie.",
   "index.with1": "KI liest 800-Zeilen-Datei",
   "index.with2": "→ lean-ctx komprimiert via AST-Parsing",
   "index.with3": "Behält Typen, Signaturen, Logik",
