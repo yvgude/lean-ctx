@@ -1,5 +1,5 @@
-fn extract_arm_body<'a>(src: &'a str, tool: &str) -> Option<&'a str> {
-    let needle = format!("\"{tool}\" => {{");
+fn extract_method_body<'a>(src: &'a str, method_name: &str) -> Option<&'a str> {
+    let needle = format!("async fn {method_name}(");
     let start = src.find(&needle)?;
     let brace_start = src[start..].find('{')? + start;
     let mut depth = 0u32;
@@ -21,7 +21,7 @@ fn extract_arm_body<'a>(src: &'a str, tool: &str) -> Option<&'a str> {
 
 #[test]
 fn server_fs_tools_use_resolve_path_chokepoint() {
-    let src = include_str!("../src/server.rs");
+    let src = include_str!("../src/server/dispatch.rs");
     let tools = [
         "ctx_read",
         "ctx_multi_read",
@@ -43,10 +43,12 @@ fn server_fs_tools_use_resolve_path_chokepoint() {
         "ctx_execute",
     ];
     for t in tools {
-        let body = extract_arm_body(src, t).unwrap_or_else(|| panic!("missing tool arm: {t}"));
+        let method = format!("handle_{}", t);
+        let body = extract_method_body(src, &method)
+            .unwrap_or_else(|| panic!("missing method: {method}"));
         assert!(
             body.contains("resolve_path("),
-            "{t} arm must call resolve_path() for path arguments"
+            "{t} handler must call resolve_path() for path arguments"
         );
     }
 }

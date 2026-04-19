@@ -1,0 +1,94 @@
+use md5::{Digest, Md5};
+use serde_json::Value;
+
+pub fn get_str_array(
+    args: &Option<serde_json::Map<String, Value>>,
+    key: &str,
+) -> Option<Vec<String>> {
+    let arr = args.as_ref()?.get(key)?.as_array()?;
+    let mut out = Vec::with_capacity(arr.len());
+    for v in arr {
+        let s = v.as_str()?.to_string();
+        out.push(s);
+    }
+    Some(out)
+}
+
+pub fn get_str(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<String> {
+    args.as_ref()?.get(key)?.as_str().map(|s| s.to_string())
+}
+
+pub fn get_int(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<i64> {
+    args.as_ref()?.get(key)?.as_i64()
+}
+
+pub fn get_bool(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<bool> {
+    args.as_ref()?.get(key)?.as_bool()
+}
+
+pub fn md5_hex(s: &str) -> String {
+    let mut hasher = Md5::new();
+    hasher.update(s.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+pub fn canonicalize_json(v: &Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let mut out = serde_json::Map::new();
+            for k in keys {
+                if let Some(val) = map.get(k) {
+                    out.insert(k.clone(), canonicalize_json(val));
+                }
+            }
+            Value::Object(out)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(canonicalize_json).collect()),
+        other => other.clone(),
+    }
+}
+
+pub fn canonical_args_string(args: &Option<serde_json::Map<String, Value>>) -> String {
+    let v = args
+        .as_ref()
+        .map(|m| Value::Object(m.clone()))
+        .unwrap_or(Value::Null);
+    let canon = canonicalize_json(&v);
+    serde_json::to_string(&canon).unwrap_or_default()
+}
+
+pub fn extract_search_pattern_from_command(command: &str) -> Option<String> {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let cmd = parts[0];
+    if cmd == "grep" || cmd == "rg" || cmd == "ag" || cmd == "ack" {
+        for (i, part) in parts.iter().enumerate().skip(1) {
+            if !part.starts_with('-') {
+                return Some(part.to_string());
+            }
+            if (*part == "-e" || *part == "--regexp" || *part == "-m") && i + 1 < parts.len() {
+                return Some(parts[i + 1].to_string());
+            }
+        }
+    }
+    if cmd == "find" || cmd == "fd" {
+        for (i, part) in parts.iter().enumerate() {
+            if (*part == "-name" || *part == "-iname") && i + 1 < parts.len() {
+                return Some(
+                    parts[i + 1]
+                        .trim_matches('\'')
+                        .trim_matches('"')
+                        .to_string(),
+                );
+            }
+        }
+        if cmd == "fd" && parts.len() >= 2 && !parts[1].starts_with('-') {
+            return Some(parts[1].to_string());
+        }
+    }
+    None
+}
