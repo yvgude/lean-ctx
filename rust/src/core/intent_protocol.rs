@@ -4,6 +4,8 @@ use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use super::intent_engine::TaskType;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IntentSource {
@@ -85,6 +87,8 @@ pub struct IntentRecord {
     #[serde(default)]
     pub occurrences: u32,
     pub timestamp: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_type: Option<TaskType>,
 }
 
 impl IntentRecord {
@@ -125,6 +129,7 @@ pub fn infer_from_tool_call(
                 evidence_keys: evidence_keys_for(tool, action),
                 occurrences: 1,
                 timestamp: Utc::now(),
+                task_type: None,
             })
         }
         "ctx_workflow" => {
@@ -143,6 +148,7 @@ pub fn infer_from_tool_call(
                 evidence_keys: evidence_keys_for(tool, Some(a)),
                 occurrences: 1,
                 timestamp: Utc::now(),
+                task_type: None,
             })
         }
         "ctx_knowledge" => {
@@ -168,6 +174,7 @@ pub fn infer_from_tool_call(
                         evidence_keys: evidence_keys_for(tool, Some(a)),
                         occurrences: 1,
                         timestamp: Utc::now(),
+                        task_type: None,
                     })
                 }
                 "recall" => Some(IntentRecord {
@@ -183,6 +190,7 @@ pub fn infer_from_tool_call(
                     evidence_keys: evidence_keys_for(tool, Some(a)),
                     occurrences: 1,
                     timestamp: Utc::now(),
+                    task_type: None,
                 }),
                 _ => None,
             }
@@ -202,6 +210,7 @@ pub fn infer_from_tool_call(
             if v.is_empty() {
                 return None;
             }
+            let classified = super::intent_engine::classify(&v);
             Some(IntentRecord {
                 id: stable_id(tool, Some(a), &v),
                 source: IntentSource::Inferred,
@@ -214,6 +223,7 @@ pub fn infer_from_tool_call(
                 evidence_keys: evidence_keys_for(tool, Some(a)),
                 occurrences: 1,
                 timestamp: Utc::now(),
+                task_type: Some(classified.task_type),
             })
         }
         "setup" | "doctor" | "bootstrap" => Some(IntentRecord {
@@ -228,6 +238,7 @@ pub fn infer_from_tool_call(
             evidence_keys: evidence_keys_for(tool, action),
             occurrences: 1,
             timestamp: Utc::now(),
+            task_type: Some(TaskType::Config),
         }),
         _ => None,
     }
@@ -246,16 +257,16 @@ pub fn intent_from_query(query: &str, project_root: Option<&str>) -> IntentRecor
         }
     }
 
-    // Plain text → deterministic intent classification (short, no reads).
     let multi = crate::core::intent_engine::detect_multi_intent(q);
     let primary = multi.first();
-    let (intent_type, confidence) = if let Some(p) = primary {
+    let (intent_type, confidence, classified_task_type) = if let Some(p) = primary {
         (
             IntentType::Task,
             (p.confidence as f32).clamp(0.0, 1.0).max(0.6),
+            Some(p.task_type),
         )
     } else {
-        (IntentType::Task, 0.6)
+        (IntentType::Task, 0.6, None)
     };
 
     let assertion = truncate_one_line(q, 220);
@@ -271,6 +282,7 @@ pub fn intent_from_query(query: &str, project_root: Option<&str>) -> IntentRecor
         evidence_keys: evidence_keys_for("ctx_intent", Some("query")),
         occurrences: 1,
         timestamp: now,
+        task_type: classified_task_type,
     }
 }
 
@@ -335,6 +347,7 @@ fn intent_from_json(
                 evidence_keys: evidence_keys_for("ctx_intent", Some("knowledge_fact")),
                 occurrences: 1,
                 timestamp: now,
+                task_type: None,
             })
         }
         "task" => {
@@ -346,6 +359,7 @@ fn intent_from_json(
             if assertion.trim().is_empty() {
                 return None;
             }
+            let classified = super::intent_engine::classify(&assertion);
             Some(IntentRecord {
                 id: stable_id("ctx_intent", Some("task"), &assertion),
                 source: IntentSource::Explicit,
@@ -362,6 +376,7 @@ fn intent_from_json(
                 evidence_keys: evidence_keys_for("ctx_intent", Some("task")),
                 occurrences: 1,
                 timestamp: now,
+                task_type: Some(classified.task_type),
             })
         }
         _ => None,

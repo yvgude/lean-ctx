@@ -59,15 +59,25 @@ Full instructions at ~/.claude/rules/lean-ctx.md";
 
 fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
     let profile = crate::core::litm::LitmProfile::from_client_name(client_name);
-    let session_block = match crate::core::session::SessionState::load_latest() {
+    let (session_block, session_end_block) = match crate::core::session::SessionState::load_latest()
+    {
         Some(ref session) => {
             let positioned = crate::core::litm::position_optimize(session);
-            format!(
+            let begin = format!(
                 "\n\n--- ACTIVE SESSION (LITM P1: begin position, profile: {}) ---\n{}\n---\n",
                 profile.name, positioned.begin_block
-            )
+            );
+            let end = if positioned.end_block.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "\n--- SESSION CONTEXT (LITM P2: end position) ---\n{}\n---\n",
+                    positioned.end_block
+                )
+            };
+            (begin, end)
         }
-        None => String::new(),
+        None => (String::new(), String::new()),
     };
 
     let project_root_for_blocks = crate::core::session::SessionState::load_latest()
@@ -144,6 +154,7 @@ CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) 4.ONE LINE PER A
 \n\
 --- ORIGIN ---\n\
 {origin}\n\
+{session_end_block}\
 \n\
 --- TOOL PREFERENCE (LITM-END) ---\n\
 Prefer: ctx_read over Read | ctx_shell over Shell | ctx_search over Grep | ctx_tree over ls\n\

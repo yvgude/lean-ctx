@@ -155,6 +155,10 @@ impl SessionState {
         self.stats.unsaved_changes += 1;
     }
 
+    pub fn active_task_type(&self) -> Option<crate::core::intent_engine::TaskType> {
+        self.intents.iter().rev().find_map(|i| i.task_type)
+    }
+
     pub fn should_save(&self) -> bool {
         self.stats.unsaved_changes >= BATCH_SAVE_INTERVAL
     }
