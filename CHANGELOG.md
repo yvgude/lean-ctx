@@ -3,6 +3,115 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.2.7] — 2026-04-19
+
+### Added
+- **Context Engine Wiring**: Connected all modular Context Layer components into a live, end-to-end pipeline. Nine previously test-only modules now run in production:
+  - **ContextLedger** tracks every file the model has seen (path, mode, token count) across the session — enabling pressure detection and smart re-injection.
+  - **StructuredIntent** is automatically created on every task change (`set_task`), extracting task type, targets, scope, language hint, and urgency from the query.
+  - **Task-aware compression** (`task_aware_compress`): When a StructuredIntent is active, the `aggressive` read mode uses intent-focused compression (e.g., FixBug keeps error paths, Refactor keeps interfaces). Falls back to standard compression when no intent exists.
+  - **Intent-based relevance** (`compute_relevance_from_intent`): `ctx_preload` uses structured intent targets and scope for richer file relevance scoring instead of plain keyword matching.
+  - **Deficit detection**: After preloading, the system compares the ContextLedger against the active intent to identify missing files and suggests them to the agent.
+  - **Role-based context depth**: `ctx_agent register` now classifies the agent role (Coder, Reviewer, Debugger, Planner, etc.) and returns recommended context settings (preferred mode, file limits, budget ratio).
+  - **Structured handoff packages**: `ctx_handoff create` now builds a `HandoffPackage` with intent snapshot and context window state, enabling richer context transfer between agents.
+- **Pipeline architecture** (`core/pipeline.rs`): Formal layer contracts with input/output types, per-layer metrics, and a composable pipeline orchestrator.
+- **Cross-agent knowledge sharing**: Agents in the same project can share findings via scratchpad with automatic deduplication.
+- **New CLI compression patterns**: Added compressors for `jest`, `mocha`, `tofu` (OpenTofu/Terraform), `ps`, `df`, `du`, `ping`, and `jq` output. Also added routing for linting tools (`eslint`, `pylint`, `rubocop`, `golangci-lint`), build tools (`gradle`, `mvn`, `cmake`, `meson`), and monorepo tools (`nx`, `turbo`, `lerna`, `rush`).
+- **Intent-aware auto mode selection**: `ctx_read` now considers the active `StructuredIntent` when choosing the optimal read mode, matching file content to the current task type.
+- **Graph heat seeding from intent**: `StructuredIntent` targets are used as seed nodes for the knowledge graph heatmap, improving relevance scoring for related files.
+
+### Refactored
+- **God-file splits**: Major codebase restructuring for maintainability:
+  - `server.rs` (2185 lines) → `server/mod.rs` + `server/dispatch.rs` + `server/execute.rs` + `server/helpers.rs`
+  - `cli.rs` (1847 lines) → `cli/mod.rs` + `cli/shell_init.rs`
+  - `main.rs` (1475 lines) → 19 lines (logic moved to `cli/`)
+  - `hooks.rs` (1518 lines) → `hooks/mod.rs` + `hooks/agents.rs`
+  - `tool_defs.rs` (1095 lines) → `tool_defs/mod.rs` + `tool_defs/granular.rs`
+- **LITM end_block activation**: The Lost-In-The-Middle `end_block` (findings, test results, next steps) is now injected at the end of instructions, not just `begin_block`.
+- **Intent system unification**: `intent_engine` (task classification) and `intent_protocol` (tool-call tracking) are now connected — `IntentRecord` carries `TaskType`.
+- **Task-type-aware IB filter**: The information bottleneck filter adapts its structural weights based on the detected task type (FixBug prioritizes error lines, Test prioritizes assertions).
+
+### Fixed
+- **Antigravity MCP config**: Removed `autoApprove` and use absolute binary path for compatibility.
+- **PathJail auto-allowlist**: IDE config directories (`.codex/`, `.claude/`, `.cursor/`) are automatically allowed in PathJail.
+
+## [3.2.6] — 2026-04-19
+
+### Fixed
+- **Project root stuck at agent sandbox path** (#124): The MCP session could retain a stale project root from a temporary directory (e.g. `~/.claude`, `/tmp/`). Fixed with multi-layer healing: `initialize` now validates roots against project markers, `session::load_by_id` detects and corrects agent/temp roots, and `resolve_path` can auto-update a suspicious root when given an absolute project path. Agents like Codex that start in sandbox directories now correctly resolve the actual project.
+- **`lean-ctx gain` showing 0% for Shell Hooks** (#126): Small savings percentages were rounded to 0% in the "Savings by Source" and "Live Observatory" sections. Introduced `format_pct_1dp` for one-decimal-place display, `<0.1%` for very small values, and `n/a` when no input data exists.
+- **`install.sh` fails on WSL2/Ubuntu** (`set: Illegal option -o pipefail`): `curl -fsSL leanctx.com/install.sh | sh` failed because `install.sh` used Bashisms but was executed by POSIX `sh` (dash). Added a POSIX-compliant preamble that auto-detects and re-executes under `bash`, with a clear error message if `bash` is unavailable. Both `| sh` and `| bash` now work.
+- **Dashboard "Live Observatory" showing 0 tokens saved**: The Live Observatory pulled data exclusively from the active MCP session, ignoring shell hook savings. Now falls back to today's aggregate daily stats when no MCP session is active.
+
+### Added
+- **`rules_scope` configuration**: Control where agent rule files are installed — `"global"` (home directory only), `"project"` (repo-local only), or `"both"` (default). Avoids duplicate rule files that waste context tokens. Configurable via `config.toml`, `LEAN_CTX_RULES_SCOPE` env var, `lean-ctx config set rules_scope`, or per-project `.lean-ctx.toml` override.
+- **Codex/Claude path jail auto-allowlist**: When running inside Codex CLI (`CODEX_CLI_SESSION` set), `~/.codex` is automatically added to allowed paths. Similarly, `~/.claude` is auto-allowed for Claude Code sessions. No manual `LCTX_ALLOW_PATH` needed.
+- **`bunx` and `vp`/`vite-plus` CLI compression** (#125): Shell hook now routes `bunx` commands through the bun compressor and `vp`/`vite-plus` through the Next.js build compressor.
+- **`lean-ctx update` auto-refreshes setup**: Running `lean-ctx update` now automatically re-runs the full setup (shell hooks, MCP configs, rules) after updating, even when already on the latest version. Ensures all wiring stays current.
+- **Website docs**: `rules_scope` documented on configuration page in all 11 languages.
+
+## [3.2.5] — 2026-04-18
+
+### Fixed
+- **Critical: shell hook recursion causing 100% CPU/memory** — The `.zshenv` / `.bashenv` shell hooks introduced in v3.2.4 were missing the `LEAN_CTX_ACTIVE` recursion guard. When an AI agent (Claude Code, Codex, etc.) ran a command, `lean-ctx -c` spawned a new shell that re-triggered the hook infinitely, causing a fork bomb. Fixed by checking `LEAN_CTX_ACTIVE` before intercepting and adding a double-guard in `exec()`. Users must run `lean-ctx setup` after updating to refresh the hooks.
+
+## [3.2.4] — 2026-04-18
+
+### Fixed
+- **Git stash compression too aggressive** (#114): `git stash list` with ≤5 entries is now preserved verbatim. `git stash show -p` correctly routes to the diff compressor instead of the stash compressor. Added `safeguard_ratio` to `ctx_shell` to prevent over-compression (minimum 15% of original output preserved).
+- **Windows Bash hook path stripping** (#113): On Windows with Git Bash / MSYS2, the lean-ctx binary path had slashes stripped (`E:packageslean-ctx.exe` instead of `/e/packages/lean-ctx.exe`). `resolve_binary()` now applies `to_bash_compatible_path` on all platforms.
+- **Windows UNC path breakage** (`\\?\` prefix): `std::fs::canonicalize()` on Windows adds extended-length path prefixes that break tools and string comparisons. New `core::pathutil` module provides `safe_canonicalize()` and `strip_verbatim()` used consistently across graph indexing, session state, path jailing, architecture tool, and hook handlers.
+- **Dashboard showing empty graphs**: `detect_project_root_for_dashboard()` was using the MCP session's temp sandbox directory instead of the actual project. Now validates project roots against `.git` and project markers before using them; falls through to `shell_cwd` when project_root is invalid. Added `--project=` CLI flag and `LEAN_CTX_DASHBOARD_PROJECT` env var for explicit override.
+- **Dashboard Call Graph/Route Map empty states**: Enriched `/api/call-graph` and `/api/routes` responses with metadata (indexed file count, symbol count, route candidates) so the UI shows actionable guidance instead of generic "nothing found" messages.
+- **Codex uninstall incomplete** (#116): `lean-ctx uninstall` now correctly removes the `[mcp_servers.lean-ctx]` section from Codex's TOML config, removes `~/.codex/hooks.json`, and resets the `codex_hooks` feature flag.
+- **Repo-local config missing fields** (#98): `merge_local()` now supports `auto_consolidate`, `dedup_threshold`, `consolidate_every_calls`, `consolidate_cooldown_secs`, and bidirectional `silent_preload` override from `.lean-ctx.toml`.
+
+### Added
+- **Hermes Agent support** (#112): Full integration for Hermes Agent (Nous Research). `lean-ctx init --agent hermes --global` configures MCP via YAML (`~/.hermes/config.yaml`), creates `HERMES.md` rules. Setup auto-detects `~/.hermes/`, doctor checks Hermes config, uninstall cleans up YAML + rules.
+- **Kotlin graph analysis** (#96): `ctx_graph`, `ctx_callers`, and `ctx_callees` now produce meaningful results for Kotlin projects. Tree-sitter-backed import extraction, call-site analysis, type-definition extraction, and Java interop with stdlib filtering.
+- **Repo-local configuration** (#98): `.lean-ctx.toml` in project root for per-project overrides. Supports `extra_ignore_patterns` (graph/overview exclusions), autonomy settings, and all config fields. `lean-ctx cache reset --project` clears only current project's cache.
+- **Post-update MCP refresh**: `lean-ctx update` now verifies and refreshes MCP configurations for all detected editors after binary replacement.
+- **Dashboard "Savings by Source"**: Live Observatory and `lean-ctx gain` now show a breakdown of MCP Tools vs. Shell Hooks with individual compression rates and proportional bars.
+- **Pi MCP bridge resilience**: Host-cancelled tool calls are handled cleanly with abort signal forwarding and error normalization. Hung MCP calls timeout after 120s with automatic reconnect and retry for read-safe tools. Bridge status includes diagnostics (last error, hung tool, retry state).
+
+### Community
+- Merged PR #111 — fix Windows graph path compatibility (@Chokitus)
+- Merged PR #115 — handle host-cancelled MCP tool calls in Pi bridge (@frpboy)
+- Merged PR #118 — improve dashboard empty-state UX for Route Map and Call Graph (@frpboy)
+- Merged PR #122 — timeout and retry hung MCP tool calls in Pi bridge (@frpboy)
+
+## [3.2.3] — 2026-04-17
+
+### Fixed
+- **Claude Code project rules missing** (cowwoc): `lean-ctx init --agent claude-code` now creates `.claude/rules/lean-ctx.md` in the project root (project-local rules), in addition to the existing global `~/.claude/rules/lean-ctx.md`. Claude Code reads both locations.
+- **`--help` missing commands** (#109): `watch` (live TUI dashboard) and `cache` (file cache management) were implemented but not listed in `lean-ctx --help`.
+- **install.sh fails without Rust** (#108): `curl -fsSL https://leanctx.com/install.sh | sh` now auto-detects missing `cargo` and downloads a pre-built binary instead of failing. Users with Rust still get a source build by default.
+
+## [3.2.2] — 2026-04-17
+
+### Added
+- **Smart Shell Mode**: New `-t` / `--track` subcommand for human shell usage — full output preserved, only stats recorded. Shell aliases (`_lc`) now default to track mode instead of compress mode, eliminating unwanted output compression for interactive users.
+- **`lean-ctx-mode` shell function**: Switch between `track` (default), `compress`, and `off` modes without editing config files. Available in both POSIX (bash/zsh) and Fish shells.
+- **`_lc_compress` shell function**: Explicit compression wrapper for power users who want compressed output in their terminal.
+- **Unified Rewrite Registry** (`rewrite_registry.rs`): Single source of truth for all 24+ rewritable commands, used consistently across shell aliases, hook rewrite, and compound command lexer.
+- **Compound Command Lexer** (`compound_lexer.rs`): Intelligent splitting of `&&`, `;`, `||` compound commands for selective rewriting — only rewritable segments get wrapped with `-c`.
+- **Extended hook support**: Copilot hooks now recognize `runInTerminal`, `run_in_terminal`, `shell`, and `terminal` tool names in addition to `Bash`/`bash`.
+- **Dashboard API routes**: New `/api/symbols`, `/api/call-graph`, `/api/routes`, `/api/search` endpoints for the web dashboard.
+- **22 IDE/agent targets**: Rules injection now supports Crush, Verdent, Pi Coding Agent, AWS Kiro, Antigravity, Qwen Code, Trae, Amazon Q Developer, and JetBrains IDEs (22 total).
+
+### Fixed
+- **Shell commands compressed for humans** (#101): `ls`, `git status`, and other aliased commands were always compressed because `_lc` used `-c`. Now defaults to `-t` (track) which preserves full output.
+- **"Authorization required" on Ubuntu** (#101): `exec_buffered` pipe redirection triggered X11/Wayland auth errors on headless Linux. Track mode uses `exec_inherit_tracked` (direct stdio), avoiding this entirely.
+- **Token counting accuracy**: `stats::record` now uses `count_tokens()` (tiktoken) instead of byte length for output measurement.
+- **Dashboard Windows path normalization**: Compression Lab demo paths now correctly handle Windows absolute paths (merged PR #102).
+- **Dashboard "d streak" label**: Fixed to display "days streak" (merged PR #106).
+
+### Community
+- Merged PR #102 — fix compression lab path resolution (@frpboy)
+- Merged PR #103 — add symbols API route (@frpboy)
+- Merged PR #104 — add call graph API route (@frpboy)
+- Merged PR #106 — fix dashboard streak label (@frpboy)
+
 ## [3.2.1] — 2026-04-17
 
 ### Fixed
