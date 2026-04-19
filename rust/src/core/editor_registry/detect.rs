@@ -82,7 +82,7 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
         },
         EditorTarget {
             name: "OpenCode",
-            agent_key: "opencode".to_string(),
+            agent_key: "".to_string(),
             config_path: opencode_cfg,
             detect_path: opencode_detect,
             config_type: ConfigType::OpenCode,
@@ -113,7 +113,7 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             agent_key: "jetbrains".to_string(),
             config_path: home.join(".jb-mcp.json"),
             detect_path: detect_jetbrains_path(home),
-            config_type: ConfigType::JetBrains,
+            config_type: ConfigType::McpJson,
         },
         EditorTarget {
             name: "Cline",
@@ -156,27 +156,6 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             config_path: home.join(".pi/agent/mcp.json"),
             detect_path: home.join(".pi/agent"),
             config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Aider",
-            agent_key: "aider".to_string(),
-            config_path: home.join(".aider/mcp.json"),
-            detect_path: home.join(".aider"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Amp",
-            agent_key: "amp".to_string(),
-            config_path: home.join(".config/amp/settings.json"),
-            detect_path: home.join(".config/amp"),
-            config_type: ConfigType::Amp,
-        },
-        EditorTarget {
-            name: "Hermes Agent",
-            agent_key: "hermes".to_string(),
-            config_path: home.join(".hermes/config.yaml"),
-            detect_path: home.join(".hermes"),
-            config_type: ConfigType::HermesYaml,
         },
     ]
 }
@@ -270,21 +249,6 @@ pub fn detect_jetbrains_path(home: &Path) -> PathBuf {
         let cfg = home.join(".config/JetBrains");
         if cfg.exists() {
             return cfg;
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let jb = std::path::PathBuf::from(appdata).join("JetBrains");
-            if jb.exists() {
-                return jb;
-            }
-        }
-        if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            let jb = std::path::PathBuf::from(local).join("JetBrains");
-            if jb.exists() {
-                return jb;
-            }
         }
     }
     if home.join(".jb-mcp.json").exists() {

@@ -9,8 +9,8 @@ pub fn handle(symbol: &str, file: Option<&str>, project_root: &str) -> String {
     let mut callers = graph.callers_of(symbol);
 
     if let Some(f) = file {
-        let filter = graph_file_filter(f, project_root);
-        callers.retain(|e| graph_index::graph_match_key(&e.caller_file).contains(&filter));
+        let filter = make_relative(f, project_root);
+        callers.retain(|e| e.caller_file.contains(&filter));
     }
 
     if callers.is_empty() {
@@ -31,19 +31,16 @@ pub fn handle(symbol: &str, file: Option<&str>, project_root: &str) -> String {
     out
 }
 
-fn graph_file_filter(file: &str, project_root: &str) -> String {
-    let rel = graph_index::graph_relative_key(file, project_root);
-    let rel_key = graph_index::graph_match_key(&rel);
-    if rel_key.is_empty() {
-        graph_index::graph_match_key(file)
-    } else {
-        rel_key
-    }
+fn make_relative(path: &str, root: &str) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .trim_start_matches('/')
+        .trim_start_matches('\\')
+        .to_string()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::graph_file_filter;
     use crate::core::call_graph::{CallEdge, CallGraph};
 
     #[test]
@@ -58,16 +55,5 @@ mod tests {
         let callers = graph.callers_of("init");
         assert_eq!(callers.len(), 1);
         assert_eq!(callers[0].caller_symbol, "main");
-    }
-
-    #[test]
-    fn graph_file_filter_normalizes_windows_styles() {
-        let filter = graph_file_filter(r"C:/repo/src/main/kotlin/Example.kt", r"C:\repo");
-        let expected = if cfg!(windows) {
-            "src/main/kotlin/Example.kt"
-        } else {
-            "C:/repo/src/main/kotlin/Example.kt"
-        };
-        assert_eq!(filter, expected);
     }
 }

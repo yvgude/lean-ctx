@@ -100,7 +100,6 @@ fn resolve_one(
         "sh" | "bash" => resolve_bash(imp, file_path, ctx),
         "dart" => resolve_dart(imp, file_path, ctx),
         "zig" => resolve_zig(imp, file_path, ctx),
-        "kt" | "kts" => resolve_kotlin(imp, ctx),
         _ => (None, true),
     }
 }
@@ -455,58 +454,6 @@ fn resolve_java(imp: &ImportInfo, ctx: &ResolverContext) -> (Option<String>, boo
         let candidate = format!("{root}{file_path}");
         if ctx.file_exists(&candidate) {
             return (Some(candidate), false);
-        }
-    }
-
-    (
-        None,
-        !ctx.file_paths.iter().any(|f| f.contains(&package_path)),
-    )
-}
-
-// ---------------------------------------------------------------------------
-// Kotlin
-// ---------------------------------------------------------------------------
-
-fn resolve_kotlin(imp: &ImportInfo, ctx: &ResolverContext) -> (Option<String>, bool) {
-    let source = &imp.source;
-
-    if source.starts_with("java.")
-        || source.starts_with("javax.")
-        || source.starts_with("kotlin.")
-        || source.starts_with("kotlinx.")
-        || source.starts_with("android.")
-        || source.starts_with("androidx.")
-        || source.starts_with("org.junit.")
-        || source.starts_with("org.jetbrains.")
-    {
-        return (None, true);
-    }
-
-    let parts: Vec<&str> = source.rsplitn(2, '.').collect();
-    if parts.len() < 2 {
-        return (None, true);
-    }
-
-    let class_name = parts[0];
-    let package_path = parts[1].replace('.', "/");
-
-    let search_roots = [
-        "",
-        "src/main/kotlin/",
-        "src/main/java/",
-        "src/",
-        "app/src/main/kotlin/",
-        "app/src/main/java/",
-        "src/commonMain/kotlin/",
-    ];
-
-    for root in &search_roots {
-        for ext in &["kt", "kts", "java"] {
-            let candidate = format!("{root}{package_path}/{class_name}.{ext}");
-            if ctx.file_exists(&candidate) {
-                return (Some(candidate), false);
-            }
         }
     }
 
@@ -1210,44 +1157,6 @@ mod tests {
         assert_eq!(
             results[0].resolved_path.as_deref(),
             Some("lib/src/util.dart")
-        );
-        assert!(!results[0].is_external);
-    }
-
-    #[test]
-    fn kotlin_import_resolves_to_src_main_kotlin() {
-        let ctx = make_ctx(&[
-            "src/main/kotlin/com/example/service/UserService.kt",
-            "src/main/kotlin/com/example/App.kt",
-        ]);
-        let imp = make_import("com.example.service.UserService");
-        let results = resolve_imports(&[imp], "src/main/kotlin/com/example/App.kt", "kt", &ctx);
-        assert_eq!(
-            results[0].resolved_path.as_deref(),
-            Some("src/main/kotlin/com/example/service/UserService.kt")
-        );
-        assert!(!results[0].is_external);
-    }
-
-    #[test]
-    fn kotlin_stdlib_import_is_external() {
-        let ctx = make_ctx(&["src/main/kotlin/App.kt"]);
-        let imp = make_import("kotlin.collections.List");
-        let results = resolve_imports(&[imp], "src/main/kotlin/App.kt", "kt", &ctx);
-        assert!(results[0].is_external);
-    }
-
-    #[test]
-    fn kotlin_import_resolves_java_file() {
-        let ctx = make_ctx(&[
-            "src/main/java/com/example/LegacyUtil.java",
-            "src/main/kotlin/com/example/App.kt",
-        ]);
-        let imp = make_import("com.example.LegacyUtil");
-        let results = resolve_imports(&[imp], "src/main/kotlin/com/example/App.kt", "kt", &ctx);
-        assert_eq!(
-            results[0].resolved_path.as_deref(),
-            Some("src/main/java/com/example/LegacyUtil.java")
         );
         assert!(!results[0].is_external);
     }

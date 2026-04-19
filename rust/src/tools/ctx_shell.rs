@@ -149,7 +149,7 @@ pub fn handle(command: &str, output: &str, crp_mode: CrpMode) -> String {
     }
 
     let raw_compressed = match patterns::compress_output(command, output) {
-        Some(c) => crate::core::compressor::safeguard_ratio(output, &c),
+        Some(c) => c,
         None if is_search_command(command) => {
             let stripped = crate::core::compressor::strip_ansi(output);
             stripped.to_string()

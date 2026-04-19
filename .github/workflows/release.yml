@@ -153,13 +153,10 @@ jobs:
             echo ""
             echo "#### Upgrade"
             echo '```bash'
-            echo "lean-ctx update                 # recommended (auto-downloads + refreshes shell hooks)"
             echo "cargo install lean-ctx          # or"
             echo "npm update -g lean-ctx-bin      # or"
             echo "brew upgrade lean-ctx"
             echo '```'
-            echo ""
-            echo "> **Note:** After upgrading via cargo/npm/brew, run \`lean-ctx setup\` to refresh shell aliases. \`lean-ctx update\` does this automatically."
             echo ""
             echo "**Full Changelog**: https://github.com/yvgude/lean-ctx/compare/${PREV_TAG}...v${VERSION}"
             echo "BODY_EOF"

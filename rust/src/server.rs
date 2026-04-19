@@ -27,38 +27,6 @@ impl ServerHandler for LeanCtxServer {
         tracing::info!("MCP client connected: {:?}", name);
         *self.client_name.write().await = name.clone();
 
-        let derived_root = derive_project_root_from_cwd();
-        let cwd_str = std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        {
-            let mut session = self.session.write().await;
-            if !cwd_str.is_empty() {
-                session.shell_cwd = Some(cwd_str.clone());
-            }
-            if let Some(ref root) = derived_root {
-                session.project_root = Some(root.clone());
-                tracing::info!("Project root set to: {root}");
-            } else if let Some(ref root) = session.project_root {
-                let root_path = std::path::Path::new(root);
-                let root_has_marker = has_project_marker(root_path);
-                let root_str = root_path.to_string_lossy();
-                let root_suspicious = root_str.contains("/.claude")
-                    || root_str.contains("/.codex")
-                    || root_str.contains("/var/folders/")
-                    || root_str.contains("/tmp/")
-                    || root_str.contains("\\.claude")
-                    || root_str.contains("\\.codex")
-                    || root_str.contains("\\AppData\\Local\\Temp")
-                    || root_str.contains("\\Temp\\");
-                if root_suspicious && !root_has_marker {
-                    session.project_root = None;
-                }
-            }
-            let _ = session.save();
-        }
-
         tokio::task::spawn_blocking(|| {
             if let Some(home) = dirs::home_dir() {
                 let _ = crate::rules_inject::inject_all_rules(&home);
@@ -2147,74 +2115,6 @@ fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
     (text, code)
 }
 
-const PROJECT_MARKERS: &[&str] = &[
-    ".git",
-    "Cargo.toml",
-    "package.json",
-    "go.mod",
-    "pyproject.toml",
-    "setup.py",
-    "pom.xml",
-    "build.gradle",
-    "Makefile",
-    ".lean-ctx.toml",
-];
-
-fn has_project_marker(dir: &std::path::Path) -> bool {
-    PROJECT_MARKERS.iter().any(|m| dir.join(m).exists())
-}
-
-fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {
-    if let Some(home) = dirs::home_dir() {
-        if dir == home {
-            return true;
-        }
-    }
-    let dir_str = dir.to_string_lossy();
-    dir_str.ends_with("/.claude")
-        || dir_str.ends_with("/.codex")
-        || dir_str.contains("/.claude/")
-        || dir_str.contains("/.codex/")
-}
-
-fn git_toplevel_from(dir: &std::path::Path) -> Option<String> {
-    std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(dir)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                String::from_utf8(o.stdout)
-                    .ok()
-                    .map(|s| s.trim().to_string())
-            } else {
-                None
-            }
-        })
-}
-
-pub fn derive_project_root_from_cwd() -> Option<String> {
-    let cwd = std::env::current_dir().ok()?;
-    let canonical = crate::core::pathutil::safe_canonicalize_or_self(&cwd);
-
-    if is_home_or_agent_dir(&canonical) {
-        return git_toplevel_from(&canonical);
-    }
-
-    if has_project_marker(&canonical) {
-        return Some(canonical.to_string_lossy().to_string());
-    }
-
-    if let Some(git_root) = git_toplevel_from(&canonical) {
-        return Some(git_root);
-    }
-
-    None
-}
-
 pub fn tool_descriptions_for_test() -> Vec<(&'static str, &'static str)> {
     crate::tool_defs::list_all_tool_defs()
         .into_iter()
@@ -2232,36 +2132,6 @@ pub fn tool_schemas_json_for_test() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn project_markers_detected() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("myproject");
-        std::fs::create_dir_all(&root).unwrap();
-        assert!(!has_project_marker(&root));
-
-        std::fs::create_dir(root.join(".git")).unwrap();
-        assert!(has_project_marker(&root));
-    }
-
-    #[test]
-    fn home_dir_detected_as_agent_dir() {
-        if let Some(home) = dirs::home_dir() {
-            assert!(is_home_or_agent_dir(&home));
-        }
-    }
-
-    #[test]
-    fn agent_dirs_detected() {
-        let claude = std::path::PathBuf::from("/home/user/.claude");
-        assert!(is_home_or_agent_dir(&claude));
-        let codex = std::path::PathBuf::from("/home/user/.codex");
-        assert!(is_home_or_agent_dir(&codex));
-        let project = std::path::PathBuf::from("/home/user/projects/myapp");
-        assert!(!is_home_or_agent_dir(&project));
-    }
-
     #[test]
     fn test_unified_tool_count() {
         let tools = crate::tool_defs::unified_tool_defs();

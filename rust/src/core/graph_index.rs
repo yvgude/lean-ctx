@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::import_resolver;
 use crate::core::signatures;
 
-const INDEX_VERSION: u32 = 6;
+const INDEX_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectIndex {
@@ -50,7 +50,7 @@ impl ProjectIndex {
     pub fn new(project_root: &str) -> Self {
         Self {
             version: INDEX_VERSION,
-            project_root: normalize_project_root(project_root),
+            project_root: project_root.to_string(),
             last_scan: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             files: HashMap::new(),
             edges: Vec::new(),
@@ -59,7 +59,7 @@ impl ProjectIndex {
     }
 
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
-        let hash = short_hash(&normalize_project_root(project_root));
+        let hash = short_hash(project_root);
         crate::core::data_dir::lean_ctx_data_dir()
             .ok()
             .map(|d| d.join("graphs").join(hash))
@@ -159,10 +159,10 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
     let root_abs = if project_root.trim().is_empty() || project_root == "." {
         std::env::current_dir()
             .ok()
-            .map(|p| normalize_project_root(&p.to_string_lossy()))
+            .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ".".to_string())
     } else {
-        normalize_project_root(project_root)
+        project_root.to_string()
     };
 
     // Try the absolute/root-normalized path first.
@@ -185,7 +185,7 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
 
     // Try absolute cwd
     if let Ok(cwd) = std::env::current_dir() {
-        let cwd_str = normalize_project_root(&cwd.to_string_lossy());
+        let cwd_str = cwd.to_string_lossy().to_string();
         if cwd_str != root_abs {
             if let Some(idx) = ProjectIndex::load(&cwd_str) {
                 if !idx.files.is_empty() {
@@ -200,9 +200,8 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
 }
 
 pub fn scan(project_root: &str) -> ProjectIndex {
-    let project_root = normalize_project_root(project_root);
-    let existing = ProjectIndex::load(&project_root);
-    let mut index = ProjectIndex::new(&project_root);
+    let existing = ProjectIndex::load(project_root);
+    let mut index = ProjectIndex::new(project_root);
 
     let old_files: HashMap<String, (String, Vec<(String, SymbolEntry)>)> =
         if let Some(ref prev) = existing {
@@ -222,20 +221,13 @@ pub fn scan(project_root: &str) -> ProjectIndex {
             HashMap::new()
         };
 
-    let walker = ignore::WalkBuilder::new(&project_root)
+    let walker = ignore::WalkBuilder::new(project_root)
         .hidden(true)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
         .max_depth(Some(10))
         .build();
-
-    let cfg = crate::core::config::Config::load();
-    let extra_ignores: Vec<glob::Pattern> = cfg
-        .extra_ignore_patterns
-        .iter()
-        .filter_map(|p| glob::Pattern::new(p).ok())
-        .collect();
 
     let mut scanned = 0usize;
     let mut reused = 0usize;
@@ -245,18 +237,13 @@ pub fn scan(project_root: &str) -> ProjectIndex {
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
-        let file_path = normalize_absolute_path(&entry.path().to_string_lossy());
+        let file_path = entry.path().to_string_lossy().to_string();
         let ext = Path::new(&file_path)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
 
         if !is_indexable_ext(ext) {
-            continue;
-        }
-
-        let rel = make_relative(&file_path, &project_root);
-        if extra_ignores.iter().any(|p| p.matches(&rel)) {
             continue;
         }
 
@@ -270,7 +257,7 @@ pub fn scan(project_root: &str) -> ProjectIndex {
         };
 
         let hash = compute_hash(&content);
-        let rel_path = make_relative(&file_path, &project_root);
+        let rel_path = make_relative(&file_path, project_root);
 
         if let Some((old_hash, old_syms)) = old_files.get(&rel_path) {
             if *old_hash == hash {
@@ -352,7 +339,7 @@ pub fn scan(project_root: &str) -> ProjectIndex {
 fn build_edges(index: &mut ProjectIndex) {
     index.edges.clear();
 
-    let root = normalize_project_root(&index.project_root);
+    let root = index.project_root.clone();
     let root_path = Path::new(&root);
 
     let mut file_paths: Vec<String> = index.files.keys().cloned().collect();
@@ -361,7 +348,7 @@ fn build_edges(index: &mut ProjectIndex) {
     let resolver_ctx = import_resolver::ResolverContext::new(root_path, file_paths.clone());
 
     for rel_path in &file_paths {
-        let abs_path = root_path.join(rel_path.trim_start_matches(['/', '\\']));
+        let abs_path = root_path.join(rel_path);
         let content = match std::fs::read_to_string(&abs_path) {
             Ok(c) => c,
             Err(_) => continue,
@@ -372,6 +359,7 @@ fn build_edges(index: &mut ProjectIndex) {
             .and_then(|e| e.to_str())
             .unwrap_or("");
 
+        // Vue/Svelte store JS/TS imports inside <script>; resolution is best-effort TS-like.
         let resolve_ext = match ext {
             "vue" | "svelte" => "ts",
             _ => ext,
@@ -548,54 +536,11 @@ fn short_hash(input: &str) -> String {
     format!("{:08x}", hasher.finish() & 0xFFFF_FFFF)
 }
 
-fn normalize_absolute_path(path: &str) -> String {
-    if let Ok(canon) = crate::core::pathutil::safe_canonicalize(std::path::Path::new(path)) {
-        return canon.to_string_lossy().to_string();
-    }
-
-    let mut normalized = path.to_string();
-    while normalized.ends_with("\\.") || normalized.ends_with("/.") {
-        normalized.truncate(normalized.len() - 2);
-    }
-    while normalized.len() > 1
-        && (normalized.ends_with('\\') || normalized.ends_with('/'))
-        && !normalized.ends_with(":\\")
-        && !normalized.ends_with(":/")
-        && normalized != "\\"
-        && normalized != "/"
-    {
-        normalized.pop();
-    }
-    normalized
-}
-
-pub fn normalize_project_root(path: &str) -> String {
-    normalize_absolute_path(path)
-}
-
-pub fn graph_match_key(path: &str) -> String {
-    let stripped =
-        crate::core::pathutil::strip_verbatim_str(path).unwrap_or_else(|| path.replace('\\', "/"));
-    stripped.trim_start_matches('/').to_string()
-}
-
-pub fn graph_relative_key(path: &str, root: &str) -> String {
-    let root_norm = normalize_project_root(root);
-    let path_norm = normalize_absolute_path(path);
-    let root_path = Path::new(&root_norm);
-    let path_path = Path::new(&path_norm);
-
-    if let Ok(rel) = path_path.strip_prefix(root_path) {
-        let rel = rel.to_string_lossy().to_string();
-        return rel.trim_start_matches(['/', '\\']).to_string();
-    }
-
-    path.trim_start_matches(['/', '\\'])
-        .replace('/', std::path::MAIN_SEPARATOR_STR)
-}
-
 fn make_relative(path: &str, root: &str) -> String {
-    graph_relative_key(path, root)
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .trim_start_matches('/')
+        .to_string()
 }
 
 fn is_indexable_ext(ext: &str) -> bool {
@@ -626,40 +571,9 @@ mod tests {
     fn test_make_relative() {
         assert_eq!(
             make_relative("/foo/bar/src/main.rs", "/foo/bar"),
-            graph_relative_key("/foo/bar/src/main.rs", "/foo/bar")
+            "src/main.rs"
         );
-        assert_eq!(
-            make_relative("src/main.rs", "/foo/bar"),
-            graph_relative_key("src/main.rs", "/foo/bar")
-        );
-        assert_eq!(
-            make_relative("C:\\repo\\src\\main\\kotlin\\Example.kt", "C:\\repo"),
-            graph_relative_key("C:\\repo\\src\\main\\kotlin\\Example.kt", "C:\\repo")
-        );
-        assert_eq!(
-            make_relative("//?/C:/repo/src/main/kotlin/Example.kt", "//?/C:/repo"),
-            graph_relative_key("//?/C:/repo/src/main/kotlin/Example.kt", "//?/C:/repo")
-        );
-    }
-
-    #[test]
-    fn test_normalize_project_root() {
-        assert_eq!(normalize_project_root("C:\\repo\\"), "C:\\repo");
-        assert_eq!(normalize_project_root("C:\\repo\\."), "C:\\repo");
-        assert_eq!(normalize_project_root("//?/C:/repo/"), "//?/C:/repo");
-    }
-
-    #[test]
-    fn test_graph_match_key_normalizes_windows_forms() {
-        assert_eq!(
-            graph_match_key(r"C:\repo\src\main.rs"),
-            "C:/repo/src/main.rs"
-        );
-        assert_eq!(
-            graph_match_key(r"\\?\C:\repo\src\main.rs"),
-            "C:/repo/src/main.rs"
-        );
-        assert_eq!(graph_match_key(r"\src\main.rs"), "src/main.rs");
+        assert_eq!(make_relative("src/main.rs", "/foo/bar"), "src/main.rs");
     }
 
     #[test]

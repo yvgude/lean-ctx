@@ -51,7 +51,6 @@ pub mod memory_lifecycle;
 pub mod mode_predictor;
 pub mod neural;
 pub mod pathjail;
-pub mod pathutil;
 pub mod patterns;
 pub mod pop_pruning;
 pub mod portable_binary;

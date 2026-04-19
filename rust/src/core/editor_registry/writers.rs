@@ -40,13 +40,10 @@ pub fn write_config_with_options(
         ConfigType::VsCodeMcp => write_vscode_mcp(target, binary, opts),
         ConfigType::OpenCode => write_opencode_config(target, binary, opts),
         ConfigType::Crush => write_crush_config(target, binary, opts),
-        ConfigType::JetBrains => write_jetbrains_config(target, binary, opts),
-        ConfigType::Amp => write_amp_config(target, binary, opts),
-        ConfigType::HermesYaml => write_hermes_yaml(target, binary, opts),
     }
 }
 
-pub fn auto_approve_tools() -> Vec<&'static str> {
+fn auto_approve_tools() -> Vec<&'static str> {
     vec![
         "ctx_read",
         "ctx_shell",
@@ -174,7 +171,6 @@ fn write_mcp_json(
 fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
 
     let server_json = serde_json::to_string(desired).map_err(|e| e.to_string())?;
 
@@ -186,34 +182,20 @@ fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String> {
         .spawn()
         .map_err(|e| e.to_string())?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(server_json.as_bytes());
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(server_json.as_bytes())
+            .map_err(|e| e.to_string())?;
     }
+    let status = child.wait().map_err(|e| e.to_string())?;
 
-    let deadline = Duration::from_secs(3);
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                return if status.success() {
-                    Ok(WriteResult {
-                        action: WriteAction::Updated,
-                        note: Some("via claude mcp add-json".to_string()),
-                    })
-                } else {
-                    Err("claude mcp add-json failed".to_string())
-                };
-            }
-            Ok(None) => {
-                if start.elapsed() > deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err("claude mcp add-json timed out".to_string());
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            Err(e) => return Err(e.to_string()),
-        }
+    if status.success() {
+        Ok(WriteResult {
+            action: WriteAction::Updated,
+            note: Some("via claude mcp add-json".to_string()),
+        })
+    } else {
+        Err("claude mcp add-json failed".to_string())
     }
 }
 
@@ -349,10 +331,7 @@ fn write_vscode_mcp(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let desired = serde_json::json!({ "type": "stdio", "command": binary, "args": [], "env": { "LEAN_CTX_DATA_DIR": data_dir } });
+    let desired = serde_json::json!({ "command": binary, "args": [] });
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
@@ -406,11 +385,8 @@ fn write_vscode_mcp_fresh(
     binary: &str,
     note: Option<String>,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
     let content = serde_json::to_string_pretty(&serde_json::json!({
-        "servers": { "lean-ctx": { "type": "stdio", "command": binary, "args": [], "env": { "LEAN_CTX_DATA_DIR": data_dir } } }
+        "servers": { "lean-ctx": { "command": binary, "args": [] } }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;
@@ -429,14 +405,10 @@ fn write_opencode_config(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
     let desired = serde_json::json!({
         "type": "local",
         "command": [binary],
-        "enabled": true,
-        "environment": { "LEAN_CTX_DATA_DIR": data_dir }
+        "enabled": true
     });
 
     if target.config_path.exists() {
@@ -488,12 +460,9 @@ fn write_opencode_fresh(
     binary: &str,
     note: Option<String>,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
     let content = serde_json::to_string_pretty(&serde_json::json!({
         "$schema": "https://opencode.ai/config.json",
-        "mcp": { "lean-ctx": { "type": "local", "command": [binary], "enabled": true, "environment": { "LEAN_CTX_DATA_DIR": data_dir } } }
+        "mcp": { "lean-ctx": { "type": "local", "command": [binary], "enabled": true } }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;
@@ -504,141 +473,6 @@ fn write_opencode_fresh(
             WriteAction::Created
         },
         note,
-    })
-}
-
-fn write_jetbrains_config(
-    target: &EditorTarget,
-    binary: &str,
-    opts: WriteOptions,
-) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let entry = serde_json::json!({
-        "name": "lean-ctx",
-        "command": binary,
-        "args": [],
-        "env": { "LEAN_CTX_DATA_DIR": data_dir }
-    });
-
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = match serde_json::from_str::<Value>(&content) {
-            Ok(v) => v,
-            Err(e) => {
-                if !opts.overwrite_invalid {
-                    return Err(e.to_string());
-                }
-                backup_invalid_file(&target.config_path)?;
-                let fresh = serde_json::json!({ "servers": [entry] });
-                let formatted = serde_json::to_string_pretty(&fresh).map_err(|e| e.to_string())?;
-                crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-                return Ok(WriteResult {
-                    action: WriteAction::Updated,
-                    note: Some("overwrote invalid JSON".to_string()),
-                });
-            }
-        };
-        let obj = json
-            .as_object_mut()
-            .ok_or_else(|| "root JSON must be an object".to_string())?;
-        let servers = obj
-            .entry("servers")
-            .or_insert_with(|| serde_json::json!([]));
-        if let Some(arr) = servers.as_array_mut() {
-            let already = arr
-                .iter()
-                .any(|s| s.get("name").and_then(|n| n.as_str()) == Some("lean-ctx"));
-            if already {
-                return Ok(WriteResult {
-                    action: WriteAction::Already,
-                    note: None,
-                });
-            }
-            arr.push(entry);
-        }
-        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-        return Ok(WriteResult {
-            action: WriteAction::Updated,
-            note: None,
-        });
-    }
-
-    let config = serde_json::json!({ "servers": [entry] });
-    let formatted = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-    Ok(WriteResult {
-        action: WriteAction::Created,
-        note: None,
-    })
-}
-
-fn write_amp_config(
-    target: &EditorTarget,
-    binary: &str,
-    opts: WriteOptions,
-) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let entry = serde_json::json!({
-        "command": binary,
-        "env": { "LEAN_CTX_DATA_DIR": data_dir }
-    });
-
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = match serde_json::from_str::<Value>(&content) {
-            Ok(v) => v,
-            Err(e) => {
-                if !opts.overwrite_invalid {
-                    return Err(e.to_string());
-                }
-                backup_invalid_file(&target.config_path)?;
-                let fresh = serde_json::json!({ "amp.mcpServers": { "lean-ctx": entry } });
-                let formatted = serde_json::to_string_pretty(&fresh).map_err(|e| e.to_string())?;
-                crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-                return Ok(WriteResult {
-                    action: WriteAction::Updated,
-                    note: Some("overwrote invalid JSON".to_string()),
-                });
-            }
-        };
-        let obj = json
-            .as_object_mut()
-            .ok_or_else(|| "root JSON must be an object".to_string())?;
-        let servers = obj
-            .entry("amp.mcpServers")
-            .or_insert_with(|| serde_json::json!({}));
-        let servers_obj = servers
-            .as_object_mut()
-            .ok_or_else(|| "\"amp.mcpServers\" must be an object".to_string())?;
-
-        let existing = servers_obj.get("lean-ctx").cloned();
-        if existing.as_ref() == Some(&entry) {
-            return Ok(WriteResult {
-                action: WriteAction::Already,
-                note: None,
-            });
-        }
-        servers_obj.insert("lean-ctx".to_string(), entry);
-
-        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-        return Ok(WriteResult {
-            action: WriteAction::Updated,
-            note: None,
-        });
-    }
-
-    let config = serde_json::json!({ "amp.mcpServers": { "lean-ctx": entry } });
-    let formatted = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-    Ok(WriteResult {
-        action: WriteAction::Created,
-        note: None,
     })
 }
 
@@ -776,99 +610,6 @@ fn upsert_codex_toml(existing: &str, binary: &str) -> String {
     out
 }
 
-fn write_hermes_yaml(
-    target: &EditorTarget,
-    binary: &str,
-    _opts: WriteOptions,
-) -> Result<WriteResult, String> {
-    let data_dir = default_data_dir()?;
-
-    let lean_ctx_block = format!(
-        "  lean-ctx:\n    command: \"{binary}\"\n    env:\n      LEAN_CTX_DATA_DIR: \"{data_dir}\""
-    );
-
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-
-        if content.contains("lean-ctx") {
-            return Ok(WriteResult {
-                action: WriteAction::Already,
-                note: None,
-            });
-        }
-
-        let updated = upsert_hermes_yaml_mcp(&content, &lean_ctx_block);
-        crate::config_io::write_atomic_with_backup(&target.config_path, &updated)?;
-        return Ok(WriteResult {
-            action: WriteAction::Updated,
-            note: None,
-        });
-    }
-
-    let content = format!("mcp_servers:\n{lean_ctx_block}\n");
-    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
-    Ok(WriteResult {
-        action: WriteAction::Created,
-        note: None,
-    })
-}
-
-fn upsert_hermes_yaml_mcp(existing: &str, lean_ctx_block: &str) -> String {
-    let mut out = String::with_capacity(existing.len() + lean_ctx_block.len() + 32);
-    let mut in_mcp_section = false;
-    let mut saw_mcp_child = false;
-    let mut inserted = false;
-    let lines: Vec<&str> = existing.lines().collect();
-
-    for line in &lines {
-        if !inserted && line.trim_end() == "mcp_servers:" {
-            in_mcp_section = true;
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-
-        if in_mcp_section && !inserted {
-            let is_child = line.starts_with("  ") && !line.trim().is_empty();
-            let is_toplevel = !line.starts_with(' ') && !line.trim().is_empty();
-
-            if is_child {
-                saw_mcp_child = true;
-                out.push_str(line);
-                out.push('\n');
-                continue;
-            }
-
-            if saw_mcp_child && (line.trim().is_empty() || is_toplevel) {
-                out.push_str(lean_ctx_block);
-                out.push('\n');
-                inserted = true;
-                in_mcp_section = false;
-            }
-        }
-
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    if in_mcp_section && !inserted {
-        out.push_str(lean_ctx_block);
-        out.push('\n');
-        inserted = true;
-    }
-
-    if !inserted {
-        if !out.ends_with('\n') {
-            out.push('\n');
-        }
-        out.push_str("\nmcp_servers:\n");
-        out.push_str(lean_ctx_block);
-        out.push('\n');
-    }
-
-    out
-}
-
 fn backup_invalid_file(path: &std::path::Path) -> Result<(), String> {
     if !path.exists() {
         return Ok(());
@@ -992,40 +733,5 @@ args = ["x"]
         assert!(tools.contains(&"ctx_search"));
         assert!(tools.contains(&"ctx_workflow"));
         assert!(tools.contains(&"ctx_cost"));
-    }
-
-    #[test]
-    fn hermes_yaml_inserts_into_existing_mcp_servers() {
-        let existing = "model: anthropic/claude-sonnet-4\n\nmcp_servers:\n  github:\n    command: \"npx\"\n    args: [\"-y\", \"@modelcontextprotocol/server-github\"]\n\ntool_allowlist:\n  - terminal\n";
-        let block = "  lean-ctx:\n    command: \"lean-ctx\"\n    env:\n      LEAN_CTX_DATA_DIR: \"/home/user/.lean-ctx\"";
-        let result = upsert_hermes_yaml_mcp(existing, block);
-        assert!(result.contains("lean-ctx"));
-        assert!(result.contains("model: anthropic/claude-sonnet-4"));
-        assert!(result.contains("tool_allowlist:"));
-        assert!(result.contains("github:"));
-    }
-
-    #[test]
-    fn hermes_yaml_creates_mcp_servers_section() {
-        let existing = "model: openai/gpt-4o\n";
-        let block = "  lean-ctx:\n    command: \"lean-ctx\"";
-        let result = upsert_hermes_yaml_mcp(existing, block);
-        assert!(result.contains("mcp_servers:"));
-        assert!(result.contains("lean-ctx"));
-        assert!(result.contains("model: openai/gpt-4o"));
-    }
-
-    #[test]
-    fn hermes_yaml_skips_if_already_present() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.yaml");
-        std::fs::write(
-            &path,
-            "mcp_servers:\n  lean-ctx:\n    command: \"lean-ctx\"\n",
-        )
-        .unwrap();
-        let t = target(path.clone(), ConfigType::HermesYaml);
-        let res = write_hermes_yaml(&t, "lean-ctx", WriteOptions::default()).unwrap();
-        assert_eq!(res.action, WriteAction::Already);
     }
 }

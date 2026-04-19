@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "lean-ctx": {
+      "args": [],
+      "command": "lean-ctx",
+      "env": {
+        "LEAN_CTX_DATA_DIR": "/Users/yvesgugger/.lean-ctx"
+      },
+      "type": "stdio"
+    }
+  }
+}

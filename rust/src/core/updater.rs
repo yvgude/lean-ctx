@@ -30,11 +30,6 @@ pub fn run(args: &[String]) {
         println!("  \x1b[32m✓\x1b[0m Already up to date (v{CURRENT_VERSION}).");
         println!("  \x1b[2mIf your IDE still uses an older version, restart it to reconnect the MCP server.\x1b[0m");
         println!();
-        if !check_only {
-            println!("  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m");
-            post_update_rewire();
-            println!();
-        }
         return;
     }
 
@@ -75,9 +70,6 @@ pub fn run(args: &[String]) {
 
     if let Err(e) = replace_binary(&bytes, &asset_name, &current_exe) {
         eprintln!("Failed to replace binary: {e}");
-        eprintln!();
-        eprintln!("Continuing with a setup refresh so your wiring stays correct.");
-        post_update_rewire();
         std::process::exit(1);
     }
 
@@ -86,8 +78,8 @@ pub fn run(args: &[String]) {
     println!("  \x1b[2mBinary: {}\x1b[0m", current_exe.display());
 
     println!();
-    println!("  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m");
-    post_update_rewire();
+    println!("  \x1b[36m\x1b[1mUpdating agent rules & hooks…\x1b[0m");
+    post_update_refresh();
 
     println!();
     crate::terminal_ui::print_logo_animated();
@@ -101,15 +93,91 @@ pub fn run(args: &[String]) {
     println!();
 }
 
-fn post_update_rewire() {
-    let opts = crate::setup::SetupOptions {
-        non_interactive: true,
-        yes: true,
-        fix: false,
-        json: false,
-    };
-    if let Err(e) = crate::setup::run_setup_with_options(opts) {
-        eprintln!("  Setup refresh error: {e}");
+fn post_update_refresh() {
+    if let Some(home) = dirs::home_dir() {
+        let rules_result = crate::rules_inject::inject_all_rules(&home);
+        let rules_count = rules_result.injected.len() + rules_result.updated.len();
+        if rules_count > 0 {
+            let names: Vec<String> = rules_result
+                .injected
+                .iter()
+                .chain(rules_result.updated.iter())
+                .cloned()
+                .collect();
+            println!("    \x1b[32m✓\x1b[0m Rules updated: {}", names.join(", "));
+        }
+        if !rules_result.already.is_empty() {
+            println!(
+                "    \x1b[32m✓\x1b[0m Rules up-to-date: {}",
+                rules_result.already.join(", ")
+            );
+        }
+
+        crate::hooks::refresh_installed_hooks();
+        println!("    \x1b[32m✓\x1b[0m Hook scripts refreshed");
+
+        refresh_shell_aliases(&home);
+    }
+}
+
+fn refresh_shell_aliases(home: &std::path::Path) {
+    let binary = std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "lean-ctx".to_string());
+    let bash_binary = crate::hooks::to_bash_compatible_path(&binary);
+
+    let shell_configs: &[(&str, &str)] = &[
+        (".zshrc", "zsh"),
+        (".bashrc", "bash"),
+        (".config/fish/config.fish", "fish"),
+    ];
+
+    let mut updated = false;
+
+    for (rc_file, shell_name) in shell_configs {
+        let rc_path = home.join(rc_file);
+        if !rc_path.exists() {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&rc_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if !content.contains("lean-ctx shell hook") {
+            continue;
+        }
+
+        match *shell_name {
+            "zsh" => crate::cli::init_posix(true, &bash_binary),
+            "bash" => crate::cli::init_posix(false, &bash_binary),
+            "fish" => crate::cli::init_fish(&bash_binary),
+            _ => continue,
+        }
+        println!("    \x1b[32m✓\x1b[0m Shell aliases updated (~/{rc_file})");
+        updated = true;
+    }
+
+    #[cfg(windows)]
+    {
+        let ps_profile = home
+            .join("Documents")
+            .join("PowerShell")
+            .join("Microsoft.PowerShell_profile.ps1");
+        if ps_profile.exists() {
+            if let Ok(content) = std::fs::read_to_string(&ps_profile) {
+                if content.contains("lean-ctx shell hook") {
+                    crate::cli::init_powershell(&binary);
+                    println!("    \x1b[32m✓\x1b[0m PowerShell aliases updated");
+                    updated = true;
+                }
+            }
+        }
+    }
+
+    if !updated {
+        println!(
+            "    \x1b[2m—\x1b[0m No shell aliases to refresh (run 'lean-ctx setup' to install)"
+        );
     }
 }
 

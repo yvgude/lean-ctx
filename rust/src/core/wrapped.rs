@@ -110,7 +110,7 @@ impl WrappedReport {
              {saved_str} tokens saved      {cost_str} avoided\n  \
              {sessions} sessions            {cmds} commands\n  \
              Top: {top_str}\n  \
-             Compression rate: {cache:.1}%\n \
+             Cache efficiency: {cache:.1}%\n \
              {border}\n  \
              \"Your AI saw only what mattered.\"\n  \
              leanctx.com\n",
@@ -132,7 +132,7 @@ impl WrappedReport {
             .join(" | ");
 
         format!(
-            "WRAPPED [{}]: {} tok saved, {} avoided, {} sessions, {} cmds | Top: {} | Compression: {:.1}%",
+            "WRAPPED [{}]: {} tok saved, {} avoided, {} sessions, {} cmds | Top: {} | Cache: {:.1}%",
             self.period, saved_str, cost_str, self.sessions_count,
             self.total_commands, top_str, self.cache_hit_rate,
         )

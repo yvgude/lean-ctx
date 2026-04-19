@@ -53,13 +53,12 @@ pub fn run_setup() {
 
     terminal_ui::print_setup_header();
 
-    // Step 1: Shell hook (legacy aliases + universal shell hook)
-    terminal_ui::print_step_header(1, 6, "Shell Hook");
+    // Step 1: Shell hook
+    terminal_ui::print_step_header(1, 5, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
-    crate::shell_hook::install_all(false);
 
     // Step 2: Editor auto-detection + configuration
-    terminal_ui::print_step_header(2, 6, "AI Tool Detection");
+    terminal_ui::print_step_header(2, 5, "AI Tool Detection");
 
     let targets = crate::core::editor_registry::build_targets(&home);
     let mut newly_configured: Vec<&str> = Vec::new();
@@ -119,7 +118,7 @@ pub fn run_setup() {
     }
 
     // Step 3: Agent rules injection
-    terminal_ui::print_step_header(3, 6, "Agent Rules");
+    terminal_ui::print_step_header(3, 5, "Agent Rules");
     let rules_result = crate::rules_inject::inject_all_rules(&home);
     for name in &rules_result.injected {
         terminal_ui::print_status_new(&format!("{name:<20} \x1b[2mrules injected\x1b[0m"));
@@ -149,17 +148,8 @@ pub fn run_setup() {
         crate::hooks::install_agent_hook(&target.agent_key, true);
     }
 
-    // Step 4: API Proxy configuration
-    terminal_ui::print_step_header(4, 6, "API Proxy");
-    crate::proxy_setup::install_proxy_env(&home, crate::proxy_setup::default_port(), false);
-    println!();
-    println!("  \x1b[2mStart proxy for maximum token savings:\x1b[0m");
-    println!("    \x1b[1mlean-ctx proxy start\x1b[0m");
-    println!("  \x1b[2mEnable autostart:\x1b[0m");
-    println!("    \x1b[1mlean-ctx proxy start --autostart\x1b[0m");
-
-    // Step 5: Data directory + diagnostics
-    terminal_ui::print_step_header(5, 6, "Environment Check");
+    // Step 4: Data directory + diagnostics
+    terminal_ui::print_step_header(4, 5, "Environment Check");
     let lean_dir = home.join(".lean-ctx");
     if !lean_dir.exists() {
         let _ = std::fs::create_dir_all(&lean_dir);
@@ -169,8 +159,8 @@ pub fn run_setup() {
     }
     crate::doctor::run_compact();
 
-    // Step 6: Data sharing
-    terminal_ui::print_step_header(6, 6, "Help Improve lean-ctx");
+    // Step 5: Data sharing
+    terminal_ui::print_step_header(5, 5, "Help Improve lean-ctx");
     println!("  Share anonymous compression stats to make lean-ctx better.");
     println!("  \x1b[1mNo code, no file names, no personal data — ever.\x1b[0m");
     println!();
@@ -313,18 +303,11 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         } else {
             crate::cli::cmd_init(&["--global".to_string()]);
         }
-        crate::shell_hook::install_all(opts.json);
         shell_step.items.push(SetupItem {
             name: "init --global".to_string(),
             status: "ran".to_string(),
             path: None,
             note: None,
-        });
-        shell_step.items.push(SetupItem {
-            name: "universal_shell_hook".to_string(),
-            status: "installed".to_string(),
-            path: None,
-            note: Some("~/.zshenv, ~/.bashenv, agent aliases".to_string()),
         });
     } else {
         shell_step
@@ -433,23 +416,6 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         rules_step.errors.push(e);
     }
     steps.push(rules_step);
-
-    // Step: Proxy env vars
-    let mut proxy_step = SetupStepReport {
-        name: "proxy_env".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    crate::proxy_setup::install_proxy_env(&home, crate::proxy_setup::default_port(), opts.json);
-    proxy_step.items.push(SetupItem {
-        name: "proxy_env".to_string(),
-        status: "configured".to_string(),
-        path: None,
-        note: Some("ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GEMINI_API_BASE_URL".to_string()),
-    });
-    steps.push(proxy_step);
 
     // Step: Environment / doctor (compact)
     let mut env_step = SetupStepReport {
@@ -604,59 +570,11 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             home.join(".verdent/mcp.json"),
             ConfigType::McpJson,
         ),
-        "jetbrains" => {
-            // JetBrains uses servers[] array format, handled by install_jetbrains_hook
-        }
-        "qwen" => push(
+        "jetbrains" => push(
             &mut targets,
-            "Qwen Code",
-            home.join(".qwen/mcp.json"),
+            "JetBrains IDEs",
+            home.join(".jb-mcp.json"),
             ConfigType::McpJson,
-        ),
-        "trae" => push(
-            &mut targets,
-            "Trae",
-            home.join(".trae/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "amazonq" => push(
-            &mut targets,
-            "Amazon Q Developer",
-            home.join(".aws/amazonq/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "opencode" => {
-            #[cfg(windows)]
-            let opencode_path = if let Ok(appdata) = std::env::var("APPDATA") {
-                std::path::PathBuf::from(appdata)
-                    .join("opencode")
-                    .join("opencode.json")
-            } else {
-                home.join(".config/opencode/opencode.json")
-            };
-            #[cfg(not(windows))]
-            let opencode_path = home.join(".config/opencode/opencode.json");
-            push(
-                &mut targets,
-                "OpenCode",
-                opencode_path,
-                ConfigType::OpenCode,
-            );
-        }
-        "aider" => push(
-            &mut targets,
-            "Aider",
-            home.join(".aider/mcp.json"),
-            ConfigType::McpJson,
-        ),
-        "amp" => {
-            // Amp uses amp.mcpServers in ~/.config/amp/settings.json, handled by install_amp_hook
-        }
-        "hermes" => push(
-            &mut targets,
-            "Hermes Agent",
-            home.join(".hermes/config.yaml"),
-            ConfigType::HermesYaml,
         ),
         _ => {
             return Err(format!("Unknown agent '{agent}'"));

@@ -44,26 +44,45 @@ fn path_in_path_env() -> bool {
 }
 
 fn resolve_lean_ctx_binary() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            if cfg!(windows) {
-                let exe = dir.join("lean-ctx.exe");
-                if exe.is_file() {
-                    return Some(exe);
-                }
-                let cmd = dir.join("lean-ctx.cmd");
-                if cmd.is_file() {
-                    return Some(cmd);
-                }
-            } else {
-                let bin = dir.join("lean-ctx");
-                if bin.is_file() {
-                    return Some(bin);
-                }
-            }
+    #[cfg(unix)]
+    {
+        let output = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg("command -v lean-ctx")
+            .env("LEAN_CTX_ACTIVE", "1")
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if s.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(s))
         }
     }
-    None
+
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("where.exe")
+            .arg("lean-ctx")
+            .env("LEAN_CTX_ACTIVE", "1")
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = stdout
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect();
+        let exe_line = lines.iter().find(|l| l.ends_with(".exe"));
+        let best = exe_line.or(lines.first()).map(|s| s.to_string());
+        best.map(PathBuf::from)
+    }
 }
 
 fn lean_ctx_version_from_path() -> Outcome {
@@ -72,15 +91,77 @@ fn lean_ctx_version_from_path() -> Outcome {
         .clone()
         .unwrap_or_else(|| std::env::current_exe().unwrap_or_else(|_| "lean-ctx".into()));
 
-    let v = env!("CARGO_PKG_VERSION");
-    let note = match std::env::current_exe() {
-        Ok(exe) if exe == bin => format!("{DIM}(this binary){RST}"),
-        Ok(_) => format!("{DIM}(resolved: {}){RST}", bin.display()),
-        Err(_) => format!("{DIM}(resolved: {}){RST}", bin.display()),
+    let try_run = |cmd: &std::path::Path| -> Result<String, String> {
+        let output = std::process::Command::new(cmd)
+            .args(["--version"])
+            .env("LEAN_CTX_ACTIVE", "1")
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(format!(
+                "exited with {}",
+                output.status.code().unwrap_or(-1)
+            ));
+        }
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if text.is_empty() {
+            return Err("empty output".to_string());
+        }
+        Ok(text)
     };
-    Outcome {
-        ok: true,
-        line: format!("{BOLD}lean-ctx version{RST}  {WHITE}lean-ctx {v}{RST}  {note}"),
+
+    match try_run(&bin) {
+        Ok(text) => Outcome {
+            ok: true,
+            line: format!("{BOLD}lean-ctx version{RST}  {WHITE}{text}{RST}"),
+        },
+        Err(_first_err) => {
+            #[cfg(windows)]
+            {
+                let candidates = [
+                    bin.with_extension("exe"),
+                    bin.parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .join("node_modules")
+                        .join("lean-ctx-bin")
+                        .join("bin")
+                        .join("lean-ctx.exe"),
+                ];
+                for candidate in &candidates {
+                    if candidate.is_file() {
+                        if let Ok(text) = try_run(candidate) {
+                            return Outcome {
+                                ok: true,
+                                line: format!(
+                                    "{BOLD}lean-ctx version{RST}  {WHITE}{text}{RST}  {DIM}(via {}){RST}",
+                                    candidate.display()
+                                ),
+                            };
+                        }
+                    }
+                }
+            }
+
+            let current_exe_result = std::env::current_exe();
+            if let Ok(ref exe) = current_exe_result {
+                if exe != &bin {
+                    if let Ok(text) = try_run(exe) {
+                        return Outcome {
+                            ok: true,
+                            line: format!("{BOLD}lean-ctx version{RST}  {WHITE}{text}{RST}  {DIM}(this binary){RST}"),
+                        };
+                    }
+                }
+            }
+
+            Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}lean-ctx version{RST}  {RED}failed to run `lean-ctx --version`: {_first_err}{RST}  {DIM}(resolved: {}){RST}",
+                    bin.display()
+                ),
+            }
+        }
     }
 }
 
@@ -285,21 +366,6 @@ fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
         display: "~/.config/crush/crush.json".into(),
         path: home.join(".config").join("crush").join("crush.json"),
     });
-    locations.push(McpLocation {
-        name: "Pi",
-        display: "~/.pi/agent/mcp.json".into(),
-        path: home.join(".pi").join("agent").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Aider",
-        display: "~/.aider/mcp.json".into(),
-        path: home.join(".aider").join("mcp.json"),
-    });
-    locations.push(McpLocation {
-        name: "Amp",
-        display: "~/.config/amp/settings.json".into(),
-        path: home.join(".config").join("amp").join("settings.json"),
-    });
 
     {
         #[cfg(unix)]
@@ -351,33 +417,6 @@ fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
                 name: "VS Code / Copilot",
                 display: "%APPDATA%/Code/User/mcp.json".into(),
                 path: vscode_mcp,
-            });
-        }
-    }
-
-    locations.push(McpLocation {
-        name: "Hermes Agent",
-        display: "~/.hermes/config.yaml".into(),
-        path: home.join(".hermes").join("config.yaml"),
-    });
-
-    {
-        let cline_path = crate::core::editor_registry::cline_mcp_path();
-        if cline_path.to_str().is_some_and(|s| s != "/nonexistent") {
-            locations.push(McpLocation {
-                name: "Cline",
-                display: cline_path.display().to_string(),
-                path: cline_path,
-            });
-        }
-    }
-    {
-        let roo_path = crate::core::editor_registry::roo_mcp_path();
-        if roo_path.to_str().is_some_and(|s| s != "/nonexistent") {
-            locations.push(McpLocation {
-                name: "Roo Code",
-                display: roo_path.display().to_string(),
-                path: roo_path,
             });
         }
     }

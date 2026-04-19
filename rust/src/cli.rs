@@ -37,7 +37,7 @@ pub fn cmd_read(args: &[String]) {
             CacheResult::Hit { entry, file_ref } => {
                 let msg = cli_cache::format_hit(&entry, &file_ref, &short);
                 println!("{msg}");
-                stats::record("cli_read", entry.original_tokens, count_tokens(&msg));
+                stats::record("cli_read", entry.original_tokens, msg.len());
                 return;
             }
             CacheResult::Miss { content } if content.is_empty() => {
@@ -650,15 +650,6 @@ pub fn cmd_config(args: &[String]) {
                 "passthrough_urls" => {
                     cfg.passthrough_urls = val.split(',').map(|s| s.trim().to_string()).collect();
                 }
-                "rules_scope" => match val.as_str() {
-                    "global" | "project" | "both" => {
-                        cfg.rules_scope = Some(val.to_string());
-                    }
-                    _ => {
-                        eprintln!("Valid rules_scope values: global, project, both");
-                        std::process::exit(1);
-                    }
-                },
                 _ => {
                     eprintln!("Unknown config key: {key}");
                     std::process::exit(1);
@@ -677,14 +668,10 @@ pub fn cmd_config(args: &[String]) {
 }
 
 pub fn cmd_cheatsheet() {
-    let ver = env!("CARGO_PKG_VERSION");
-    let ver_pad = format!("v{ver}");
-    let header = format!(
-        "\x1b[1;36m╔══════════════════════════════════════════════════════════════╗\x1b[0m
-\x1b[1;36m║\x1b[0m  \x1b[1;37mlean-ctx Workflow Cheat Sheet\x1b[0m                     \x1b[2m{ver_pad:>6}\x1b[0m  \x1b[1;36m║\x1b[0m
-\x1b[1;36m╚══════════════════════════════════════════════════════════════╝\x1b[0m");
     println!(
-        "{header}
+        "\x1b[1;36m╔══════════════════════════════════════════════════════════════╗\x1b[0m
+\x1b[1;36m║\x1b[0m  \x1b[1;37mlean-ctx Workflow Cheat Sheet\x1b[0m                     \x1b[2mv2.9.7\x1b[0m  \x1b[1;36m║\x1b[0m
+\x1b[1;36m╚══════════════════════════════════════════════════════════════╝\x1b[0m
 
 \x1b[1;33m━━━ BEFORE YOU START ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m
   ctx_session load               \x1b[2m# restore previous session\x1b[0m
@@ -969,7 +956,7 @@ pub fn cmd_init(args: &[String]) {
         qprintln!("  Would backup:  {rc}.lean-ctx.bak");
         qprintln!("  Would alias:   git npm pnpm yarn cargo docker docker-compose kubectl");
         qprintln!("                 gh pip pip3 ruff go golangci-lint eslint prettier tsc");
-        qprintln!("                 curl wget php composer (24 commands + k)");
+        qprintln!("                 ls find grep curl wget php composer (24 commands + k)");
         qprintln!("  Would create:  ~/.lean-ctx/");
         qprintln!("  Binary:        {binary}");
         qprintln!("\n  Safety: aliases auto-fallback to original command if lean-ctx is removed.");
@@ -1022,9 +1009,7 @@ pub fn cmd_init(args: &[String]) {
     }
     qprintln!();
     qprintln!("For AI tool integration: lean-ctx init --agent <tool>");
-    qprintln!("  Supported: aider, amazonq, amp, antigravity, claude, cline, codex, copilot,");
-    qprintln!("    crush, cursor, emacs, gemini, hermes, jetbrains, kiro, neovim, opencode,");
-    qprintln!("    pi, qwen, roo, sublime, trae, verdent, windsurf");
+    qprintln!("  Supported: claude, cursor, gemini, codex, windsurf, cline, copilot, crush, pi");
 }
 
 pub fn cmd_init_quiet(args: &[String]) {
@@ -1164,26 +1149,11 @@ pub fn init_fish(binary: &str) {
         .map(|h| h.join(".config/fish/config.fish"))
         .unwrap_or_default();
 
-    let alias_list = crate::rewrite_registry::shell_alias_list();
     let aliases = format!(
-        "\n# lean-ctx shell hook — smart shell mode (track-by-default)\n\
-        set -g _lean_ctx_cmds {alias_list}\n\
+        "\n# lean-ctx shell hook — transparent CLI compression (90+ patterns)\n\
+        set -g _lean_ctx_cmds git npm pnpm yarn cargo docker docker-compose kubectl gh pip pip3 ruff go golangci-lint eslint prettier tsc ls find grep curl wget\n\
         \n\
         function _lc\n\
-        \tif set -q LEAN_CTX_DISABLED; or not isatty stdout\n\
-        \t\tcommand $argv\n\
-        \t\treturn\n\
-        \tend\n\
-        \t'{binary}' -t $argv\n\
-        \tset -l _lc_rc $status\n\
-        \tif test $_lc_rc -eq 127 -o $_lc_rc -eq 126\n\
-        \t\tcommand $argv\n\
-        \telse\n\
-        \t\treturn $_lc_rc\n\
-        \tend\n\
-        end\n\
-        \n\
-        function _lc_compress\n\
         \tif set -q LEAN_CTX_DISABLED; or not isatty stdout\n\
         \t\tcommand $argv\n\
         \t\treturn\n\
@@ -1203,7 +1173,7 @@ pub fn init_fish(binary: &str) {
         \tend\n\
         \talias k '_lc kubectl'\n\
         \tset -gx LEAN_CTX_ENABLED 1\n\
-        \techo 'lean-ctx: ON (track mode — full output, stats recorded)'\n\
+        \techo 'lean-ctx: ON'\n\
         end\n\
         \n\
         function lean-ctx-off\n\
@@ -1213,27 +1183,6 @@ pub fn init_fish(binary: &str) {
         \tfunctions --erase k 2>/dev/null; true\n\
         \tset -e LEAN_CTX_ENABLED\n\
         \techo 'lean-ctx: OFF'\n\
-        end\n\
-        \n\
-        function lean-ctx-mode\n\
-        \tswitch $argv[1]\n\
-        \t\tcase compress\n\
-        \t\t\tfor _lc_cmd in $_lean_ctx_cmds\n\
-        \t\t\t\talias $_lc_cmd '_lc_compress '$_lc_cmd\n\
-        \t\t\t\tend\n\
-        \t\t\talias k '_lc_compress kubectl'\n\
-        \t\t\tset -gx LEAN_CTX_ENABLED 1\n\
-        \t\t\techo 'lean-ctx: COMPRESS mode (all output compressed)'\n\
-        \t\tcase track\n\
-        \t\t\tlean-ctx-on\n\
-        \t\tcase off\n\
-        \t\t\tlean-ctx-off\n\
-        \t\tcase '*'\n\
-        \t\t\techo 'Usage: lean-ctx-mode <track|compress|off>'\n\
-        \t\t\techo '  track    — Full output, stats recorded (default)'\n\
-        \t\t\techo '  compress — Compressed output for all commands'\n\
-        \t\t\techo '  off      — No aliases, raw shell'\n\
-        \tend\n\
         end\n\
         \n\
         function lean-ctx-raw\n\
@@ -1304,27 +1253,12 @@ pub fn init_posix(is_zsh: bool, binary: &str) {
             .unwrap_or_default()
     };
 
-    let alias_list = crate::rewrite_registry::shell_alias_list();
     let aliases = format!(
         r#"
-# lean-ctx shell hook — smart shell mode (track-by-default)
-_lean_ctx_cmds=({alias_list})
+# lean-ctx shell hook — transparent CLI compression (90+ patterns)
+_lean_ctx_cmds=(git npm pnpm yarn cargo docker docker-compose kubectl gh pip pip3 ruff go golangci-lint eslint prettier tsc ls find grep curl wget php composer)
 
 _lc() {{
-    if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
-        command "$@"
-        return
-    fi
-    '{binary}' -t "$@"
-    local _lc_rc=$?
-    if [ "$_lc_rc" -eq 127 ] || [ "$_lc_rc" -eq 126 ]; then
-        command "$@"
-    else
-        return "$_lc_rc"
-    fi
-}}
-
-_lc_compress() {{
     if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ ! -t 1 ]; then
         command "$@"
         return
@@ -1345,7 +1279,7 @@ lean-ctx-on() {{
     done
     alias k='_lc kubectl'
     export LEAN_CTX_ENABLED=1
-    echo "lean-ctx: ON (track mode — full output, stats recorded)"
+    echo "lean-ctx: ON"
 }}
 
 lean-ctx-off() {{
@@ -1355,32 +1289,6 @@ lean-ctx-off() {{
     unalias k 2>/dev/null || true
     unset LEAN_CTX_ENABLED
     echo "lean-ctx: OFF"
-}}
-
-lean-ctx-mode() {{
-    case "${{1:-}}" in
-        compress)
-            for _lc_cmd in "${{_lean_ctx_cmds[@]}}"; do
-                # shellcheck disable=SC2139
-                alias "$_lc_cmd"='_lc_compress '"$_lc_cmd"
-            done
-            alias k='_lc_compress kubectl'
-            export LEAN_CTX_ENABLED=1
-            echo "lean-ctx: COMPRESS mode (all output compressed)"
-            ;;
-        track)
-            lean-ctx-on
-            ;;
-        off)
-            lean-ctx-off
-            ;;
-        *)
-            echo "Usage: lean-ctx-mode <track|compress|off>"
-            echo "  track    — Full output, stats recorded (default)"
-            echo "  compress — Compressed output for all commands"
-            echo "  off      — No aliases, raw shell"
-            ;;
-    esac
 }}
 
 lean-ctx-raw() {{
@@ -1849,7 +1757,7 @@ export EDITOR=vim
         command "$@"
         return
     fi
-    '{binary}' -t "$@"
+    '{binary}' -c "$@"
 }}"#
         );
         assert!(
@@ -1860,54 +1768,6 @@ export EDITOR=vim
             hook.contains("LEAN_CTX_DISABLED") && hook.contains("! -t 1"),
             "pipe guard must be in the same conditional as LEAN_CTX_DISABLED"
         );
-    }
-
-    #[test]
-    fn test_lc_uses_track_mode_by_default() {
-        let binary = "/usr/local/bin/lean-ctx";
-        let alias_list = crate::rewrite_registry::shell_alias_list();
-        let aliases = format!(
-            r#"_lc() {{
-    '{binary}' -t "$@"
-}}
-_lc_compress() {{
-    '{binary}' -c "$@"
-}}"#
-        );
-        assert!(
-            aliases.contains("-t \"$@\""),
-            "_lc must use -t (track mode) by default"
-        );
-        assert!(
-            aliases.contains("-c \"$@\""),
-            "_lc_compress must use -c (compress mode)"
-        );
-        let _ = alias_list;
-    }
-
-    #[test]
-    fn test_posix_shell_has_lean_ctx_mode() {
-        let alias_list = crate::rewrite_registry::shell_alias_list();
-        let aliases = r#"
-lean-ctx-mode() {{
-    case "${{1:-}}" in
-        compress) echo compress ;;
-        track) echo track ;;
-        off) echo off ;;
-    esac
-}}
-"#
-        .to_string();
-        assert!(
-            aliases.contains("lean-ctx-mode()"),
-            "lean-ctx-mode function must exist"
-        );
-        assert!(
-            aliases.contains("compress"),
-            "compress mode must be available"
-        );
-        assert!(aliases.contains("track"), "track mode must be available");
-        let _ = alias_list;
     }
 
     #[test]

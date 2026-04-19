@@ -158,17 +158,6 @@ pub struct RulesTargetStatus {
 }
 
 pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
-    if crate::core::config::Config::load().rules_scope_effective()
-        == crate::core::config::RulesScope::Project
-    {
-        return InjectResult {
-            injected: Vec::new(),
-            updated: Vec::new(),
-            already: Vec::new(),
-            errors: Vec::new(),
-        };
-    }
-
     let targets = build_rules_targets(home);
 
     let mut result = InjectResult {
@@ -386,7 +375,6 @@ fn is_tool_detected(target: &RulesTarget, home: &std::path::Path) -> bool {
         "Pi Coding Agent" => home.join(".pi").exists() || command_exists("pi"),
         "AWS Kiro" => home.join(".kiro").exists(),
         "Crush" => home.join(".config/crush").exists() || command_exists("crush"),
-        "Verdent" => home.join(".verdent").exists(),
         _ => false,
     }
 }
@@ -583,7 +571,7 @@ fn build_rules_targets(home: &std::path::Path) -> Vec<RulesTarget> {
         },
         RulesTarget {
             name: "AWS Kiro",
-            path: home.join(".kiro/steering/lean-ctx.md"),
+            path: home.join(".kiro/rules/lean-ctx.md"),
             format: RulesFormat::DedicatedMarkdown,
         },
         RulesTarget {

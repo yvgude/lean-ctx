@@ -42,7 +42,7 @@ pub fn exec(command: &str) -> i32 {
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let command = command.as_str();
 
-    if std::env::var("LEAN_CTX_DISABLED").is_ok() || std::env::var("LEAN_CTX_ACTIVE").is_ok() {
+    if std::env::var("LEAN_CTX_DISABLED").is_ok() {
         return exec_inherit(command, &shell, &shell_flag);
     }
 
@@ -106,9 +106,6 @@ fn exec_buffered(command: &str, shell: &str, shell_flag: &str, cfg: &config::Con
         .arg(shell_flag)
         .arg(command)
         .env("LEAN_CTX_ACTIVE", "1")
-        .env_remove("DISPLAY")
-        .env_remove("XAUTHORITY")
-        .env_remove("WAYLAND_DISPLAY")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -294,24 +291,7 @@ const BUILTIN_PASSTHROUGH: &[&str] = &[
 fn is_excluded_command(command: &str, excluded: &[String]) -> bool {
     let cmd = command.trim().to_lowercase();
     for pattern in BUILTIN_PASSTHROUGH {
-        if pattern.starts_with("--") {
-            if cmd.contains(pattern) {
-                return true;
-            }
-        } else if pattern.ends_with(' ') || pattern.ends_with('\t') {
-            if cmd == pattern.trim() || cmd.starts_with(pattern) {
-                return true;
-            }
-        } else if cmd == *pattern
-            || cmd.starts_with(&format!("{pattern} "))
-            || cmd.starts_with(&format!("{pattern}\t"))
-            || cmd.contains(&format!(" {pattern} "))
-            || cmd.contains(&format!(" {pattern}\t"))
-            || cmd.contains(&format!("|{pattern} "))
-            || cmd.contains(&format!("|{pattern}\t"))
-            || cmd.ends_with(&format!(" {pattern}"))
-            || cmd.ends_with(&format!("|{pattern}"))
-        {
+        if cmd == *pattern || cmd.starts_with(&format!("{pattern} ")) || cmd.contains(pattern) {
             return true;
         }
     }
@@ -383,14 +363,7 @@ fn compress_and_measure(command: &str, stdout: &str, stderr: &str) -> (String, u
         result.push_str(&compressed_stderr);
     }
 
-    // Count tokens on content BEFORE the [lean-ctx: ...] footer to avoid
-    // counting the annotation overhead against savings.
-    let content_for_counting = if let Some(pos) = result.rfind("\n[lean-ctx: ") {
-        &result[..pos]
-    } else {
-        &result
-    };
-    let output_tokens = count_tokens(content_for_counting);
+    let output_tokens = count_tokens(&result);
     (result, output_tokens)
 }
 
@@ -417,12 +390,9 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
             if compressed_tokens >= min_output_tokens && compressed_tokens < original_tokens {
                 let saved = original_tokens - compressed_tokens;
                 let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-                if pct >= 5 {
-                    return format!(
-                        "{compressed}\n[lean-ctx: {original_tokens}→{compressed_tokens} tok, -{pct}%]"
-                    );
-                }
-                return compressed;
+                return format!(
+                    "{compressed}\n[lean-ctx: {original_tokens}→{compressed_tokens} tok, -{pct}%]"
+                );
             }
             if compressed_tokens < min_output_tokens {
                 return output.to_string();
@@ -449,23 +419,15 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
             if ct < original_tokens {
                 let saved = original_tokens - ct;
                 let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-                if pct >= 5 {
-                    return format!(
-                        "{compressed}\n[lean-ctx: {original_tokens}→{ct} tok, -{pct}%]"
-                    );
-                }
-                return compressed;
+                return format!("{compressed}\n[lean-ctx: {original_tokens}→{ct} tok, -{pct}%]");
             }
         }
         if cleaned_tokens < original_tokens {
             let saved = original_tokens - cleaned_tokens;
             let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-            if pct >= 5 {
-                return format!(
-                    "{cleaned}\n[lean-ctx: {original_tokens}→{cleaned_tokens} tok, -{pct}%]"
-                );
-            }
-            return cleaned;
+            return format!(
+                "{cleaned}\n[lean-ctx: {original_tokens}→{cleaned_tokens} tok, -{pct}%]"
+            );
         }
     }
 
@@ -483,12 +445,9 @@ fn compress_if_beneficial(command: &str, output: &str) -> String {
         if compressed_tokens < original_tokens {
             let saved = original_tokens - compressed_tokens;
             let pct = (saved as f64 / original_tokens as f64 * 100.0).round() as usize;
-            if pct >= 5 {
-                return format!(
-                    "{compressed}\n[lean-ctx: {original_tokens}→{compressed_tokens} tok, -{pct}%]"
-                );
-            }
-            return compressed;
+            return format!(
+                "{compressed}\n[lean-ctx: {original_tokens}→{compressed_tokens} tok, -{pct}%]"
+            );
         }
     }
 
