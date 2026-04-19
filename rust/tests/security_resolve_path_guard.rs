@@ -44,8 +44,8 @@ fn server_fs_tools_use_resolve_path_chokepoint() {
     ];
     for t in tools {
         let method = format!("handle_{}", t);
-        let body = extract_method_body(src, &method)
-            .unwrap_or_else(|| panic!("missing method: {method}"));
+        let body =
+            extract_method_body(src, &method).unwrap_or_else(|| panic!("missing method: {method}"));
         assert!(
             body.contains("resolve_path("),
             "{t} handler must call resolve_path() for path arguments"
