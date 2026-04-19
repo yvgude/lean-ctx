@@ -173,16 +173,13 @@ impl SessionState {
             progress_pct: None,
         });
 
-        let touched: Vec<String> = self
-            .files_touched
-            .iter()
-            .map(|f| f.path.clone())
-            .collect();
+        let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();
         let si = if touched.is_empty() {
             crate::core::intent_engine::StructuredIntent::from_query(description)
         } else {
             crate::core::intent_engine::StructuredIntent::from_query_with_session(
-                description, &touched,
+                description,
+                &touched,
             )
         };
         if si.confidence >= 0.7 {
