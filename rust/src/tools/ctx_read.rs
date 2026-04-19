@@ -559,7 +559,14 @@ fn process_mode(
             let ast_pruned: Option<String> = None;
 
             let base = ast_pruned.as_deref().unwrap_or(content);
-            let raw = compressor::aggressive_compress(base, Some(ext));
+
+            let session_intent = crate::core::session::SessionState::load_latest()
+                .and_then(|s| s.active_structured_intent);
+            let raw = if let Some(ref intent) = session_intent {
+                compressor::task_aware_compress(base, Some(ext), intent)
+            } else {
+                compressor::aggressive_compress(base, Some(ext))
+            };
             let compressed = compressor::safeguard_ratio(content, &raw);
             let header = build_header(file_ref, short, ext, content, line_count, true);
 
