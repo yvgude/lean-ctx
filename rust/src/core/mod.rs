@@ -15,6 +15,7 @@ pub mod codebook;
 pub mod compressor;
 pub mod config;
 pub mod consolidation_engine;
+pub mod context_ledger;
 pub mod data_dir;
 pub mod deep_queries;
 pub mod deps;
