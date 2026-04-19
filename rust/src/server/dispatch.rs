@@ -168,6 +168,10 @@ impl LeanCtxServer {
             .await;
         crate::core::heatmap::record_file_access(&path, original, saved);
         {
+            let mut ledger = self.ledger.write().await;
+            ledger.record(&path, &resolved_mode, original, output_tokens);
+        }
+        {
             let sig = crate::core::mode_predictor::FileSignature::from_path(&path, original);
             let density = if output_tokens > 0 {
                 original as f64 / output_tokens as f64
