@@ -444,6 +444,231 @@ pub fn format_briefing_header(classification: &TaskClassification) -> String {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntentScope {
+    SingleFile,
+    MultiFile,
+    CrossModule,
+    ProjectWide,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StructuredIntent {
+    pub task_type: TaskType,
+    pub confidence: f64,
+    pub targets: Vec<String>,
+    pub keywords: Vec<String>,
+    pub scope: IntentScope,
+    pub language_hint: Option<String>,
+    pub urgency: f64,
+    pub action_verb: Option<String>,
+}
+
+impl StructuredIntent {
+    pub fn from_query(query: &str) -> Self {
+        let classification = classify(query);
+        let complexity = classify_complexity(query, &classification);
+        let file_targets = classification
+            .targets
+            .iter()
+            .filter(|t| t.contains('.') || t.contains('/'))
+            .count();
+        let scope = match complexity {
+            super::adaptive::TaskComplexity::Mechanical => IntentScope::SingleFile,
+            super::adaptive::TaskComplexity::Standard => {
+                if file_targets > 1 {
+                    IntentScope::MultiFile
+                } else {
+                    IntentScope::SingleFile
+                }
+            }
+            super::adaptive::TaskComplexity::Architectural => {
+                let q = query.to_lowercase();
+                if q.contains("all files") || q.contains("everywhere") || q.contains("migration") {
+                    IntentScope::ProjectWide
+                } else {
+                    IntentScope::CrossModule
+                }
+            }
+        };
+
+        let language_hint = detect_language_hint(query, &classification.targets);
+        let urgency = detect_urgency(query);
+        let action_verb = extract_action_verb(query);
+
+        StructuredIntent {
+            task_type: classification.task_type,
+            confidence: classification.confidence,
+            targets: classification.targets,
+            keywords: classification.keywords,
+            scope,
+            language_hint,
+            urgency,
+            action_verb,
+        }
+    }
+
+    pub fn from_query_with_session(query: &str, touched_files: &[String]) -> Self {
+        let mut intent = Self::from_query(query);
+
+        if intent.language_hint.is_none() && !touched_files.is_empty() {
+            intent.language_hint = detect_language_from_files(touched_files);
+        }
+
+        if intent.scope == IntentScope::SingleFile && touched_files.len() > 3 {
+            let dirs: std::collections::HashSet<&str> = touched_files
+                .iter()
+                .filter_map(|f| std::path::Path::new(f).parent()?.to_str())
+                .collect();
+            if dirs.len() > 2 {
+                intent.scope = IntentScope::MultiFile;
+            }
+        }
+
+        intent
+    }
+
+    pub fn format_header(&self) -> String {
+        format!(
+            "[TASK:{} SCOPE:{} CONF:{:.0}%{}{}]",
+            self.task_type.as_str(),
+            match self.scope {
+                IntentScope::SingleFile => "single",
+                IntentScope::MultiFile => "multi",
+                IntentScope::CrossModule => "cross",
+                IntentScope::ProjectWide => "project",
+            },
+            self.confidence * 100.0,
+            self.language_hint
+                .as_ref()
+                .map(|l| format!(" LANG:{l}"))
+                .unwrap_or_default(),
+            if self.urgency > 0.5 { " URGENT" } else { "" },
+        )
+    }
+}
+
+fn detect_language_hint(query: &str, targets: &[String]) -> Option<String> {
+    for t in targets {
+        let ext = std::path::Path::new(t).extension().and_then(|e| e.to_str());
+        match ext {
+            Some("rs") => return Some("rust".into()),
+            Some("ts" | "tsx") => return Some("typescript".into()),
+            Some("js" | "jsx") => return Some("javascript".into()),
+            Some("py") => return Some("python".into()),
+            Some("go") => return Some("go".into()),
+            Some("rb") => return Some("ruby".into()),
+            Some("java") => return Some("java".into()),
+            Some("swift") => return Some("swift".into()),
+            Some("zig") => return Some("zig".into()),
+            _ => {}
+        }
+    }
+
+    let q = query.to_lowercase();
+    let lang_keywords: &[(&str, &str)] = &[
+        ("rust", "rust"),
+        ("python", "python"),
+        ("typescript", "typescript"),
+        ("javascript", "javascript"),
+        ("golang", "go"),
+        (" go ", "go"),
+        ("ruby", "ruby"),
+        ("java ", "java"),
+        ("swift", "swift"),
+    ];
+    for &(kw, lang) in lang_keywords {
+        if q.contains(kw) {
+            return Some(lang.into());
+        }
+    }
+
+    None
+}
+
+fn detect_language_from_files(files: &[String]) -> Option<String> {
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for f in files {
+        let ext = std::path::Path::new(f)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let lang = match ext {
+            "rs" => "rust",
+            "ts" | "tsx" => "typescript",
+            "js" | "jsx" => "javascript",
+            "py" => "python",
+            "go" => "go",
+            "rb" => "ruby",
+            "java" => "java",
+            _ => continue,
+        };
+        *counts.entry(lang).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(l, _)| l.to_string())
+}
+
+fn detect_urgency(query: &str) -> f64 {
+    let q = query.to_lowercase();
+    let urgent_words = [
+        "urgent",
+        "asap",
+        "immediately",
+        "critical",
+        "hotfix",
+        "emergency",
+        "blocker",
+        "breaking",
+    ];
+    let hits = urgent_words.iter().filter(|w| q.contains(*w)).count();
+    (hits as f64 * 0.4).min(1.0)
+}
+
+fn extract_action_verb(query: &str) -> Option<String> {
+    let verbs = [
+        "fix",
+        "add",
+        "create",
+        "implement",
+        "refactor",
+        "debug",
+        "test",
+        "write",
+        "update",
+        "remove",
+        "delete",
+        "rename",
+        "move",
+        "extract",
+        "split",
+        "merge",
+        "deploy",
+        "review",
+        "check",
+        "build",
+        "generate",
+        "optimize",
+        "clean",
+    ];
+    let q = query.to_lowercase();
+    let words: Vec<&str> = q.split_whitespace().collect();
+    for v in &verbs {
+        if words.first() == Some(v) || words.get(1) == Some(v) {
+            return Some(v.to_string());
+        }
+    }
+    for v in &verbs {
+        if words.contains(v) {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,5 +762,78 @@ mod tests {
             &r,
         );
         assert_eq!(c, super::super::adaptive::TaskComplexity::Architectural);
+    }
+
+    #[test]
+    fn structured_intent_from_fixbug_query() {
+        let intent = StructuredIntent::from_query("fix the NaN bug in entropy.rs");
+        assert_eq!(intent.task_type, TaskType::FixBug);
+        assert!(intent.targets.iter().any(|t| t.contains("entropy.rs")));
+        assert_eq!(intent.language_hint.as_deref(), Some("rust"));
+        assert_eq!(intent.action_verb.as_deref(), Some("fix"));
+        assert_eq!(intent.scope, IntentScope::SingleFile);
+    }
+
+    #[test]
+    fn structured_intent_project_wide() {
+        let intent =
+            StructuredIntent::from_query("refactor auth across all files and update migration");
+        assert_eq!(intent.task_type, TaskType::Refactor);
+        assert_eq!(intent.scope, IntentScope::ProjectWide);
+    }
+
+    #[test]
+    fn structured_intent_urgency() {
+        let normal = StructuredIntent::from_query("add a new function");
+        let urgent = StructuredIntent::from_query("urgent hotfix for critical auth bug");
+        assert!(urgent.urgency > normal.urgency);
+        assert!(urgent.urgency >= 0.8);
+    }
+
+    #[test]
+    fn structured_intent_language_from_targets() {
+        let intent = StructuredIntent::from_query("fix main.py auth handler");
+        assert_eq!(intent.language_hint.as_deref(), Some("python"));
+    }
+
+    #[test]
+    fn structured_intent_with_session() {
+        let files = vec![
+            "src/core/session.rs".to_string(),
+            "src/core/litm.rs".to_string(),
+            "src/tools/ctx_read.rs".to_string(),
+        ];
+        let intent = StructuredIntent::from_query_with_session("how does this work?", &files);
+        assert_eq!(intent.language_hint.as_deref(), Some("rust"));
+    }
+
+    #[test]
+    fn structured_intent_header_format() {
+        let intent = StructuredIntent::from_query("fix bug in entropy.rs");
+        let header = intent.format_header();
+        assert!(header.contains("TASK:fix_bug"));
+        assert!(header.contains("SCOPE:"));
+        assert!(header.contains("LANG:rust"));
+    }
+
+    #[test]
+    fn detect_urgency_none() {
+        assert_eq!(detect_urgency("add a function"), 0.0);
+    }
+
+    #[test]
+    fn detect_urgency_multiple() {
+        let u = detect_urgency("urgent critical blocker");
+        assert!(u > 0.9);
+    }
+
+    #[test]
+    fn action_verb_extraction() {
+        assert_eq!(extract_action_verb("fix the bug"), Some("fix".to_string()));
+        assert_eq!(
+            extract_action_verb("please add logging"),
+            Some("add".to_string())
+        );
+        assert_eq!(extract_action_verb("xyz qqq"), None);
     }
 }
