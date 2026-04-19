@@ -576,8 +576,13 @@ fn process_mode(
                     "{header}\n{content}\n[task mode: no keywords extracted — returned full]"
                 );
             }
-            let filtered =
-                crate::core::task_relevance::information_bottleneck_filter(content, &keywords, 0.3);
+            let classified_type = crate::core::intent_engine::classify(task_str).task_type;
+            let filtered = crate::core::task_relevance::information_bottleneck_filter_typed(
+                content,
+                &keywords,
+                0.3,
+                Some(classified_type),
+            );
             let filtered_lines = filtered.lines().count();
             let header = format!(
                 "{file_ref}={short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]"

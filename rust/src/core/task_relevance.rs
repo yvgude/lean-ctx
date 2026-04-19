@@ -279,6 +279,75 @@ const STOP_WORDS: &[&str] = &[
     "mit",
 ];
 
+/// Structural scoring weights, varied by task type for better IB filtering.
+struct StructuralWeights {
+    error_handling: f64,
+    definition: f64,
+    control_flow: f64,
+    closing_brace: f64,
+    other: f64,
+}
+
+impl StructuralWeights {
+    const DEFAULT: Self = Self {
+        error_handling: 1.5,
+        definition: 1.0,
+        control_flow: 0.5,
+        closing_brace: 0.15,
+        other: 0.3,
+    };
+
+    fn for_task_type(task_type: Option<super::intent_engine::TaskType>) -> Self {
+        use super::intent_engine::TaskType;
+        match task_type {
+            Some(TaskType::FixBug) => Self {
+                error_handling: 2.0,
+                definition: 0.8,
+                control_flow: 0.8,
+                closing_brace: 0.1,
+                other: 0.2,
+            },
+            Some(TaskType::Debug) => Self {
+                error_handling: 2.0,
+                definition: 0.6,
+                control_flow: 1.0,
+                closing_brace: 0.1,
+                other: 0.2,
+            },
+            Some(TaskType::Generate) => Self {
+                error_handling: 0.8,
+                definition: 1.5,
+                control_flow: 0.3,
+                closing_brace: 0.15,
+                other: 0.4,
+            },
+            Some(TaskType::Refactor) => Self {
+                error_handling: 1.0,
+                definition: 1.5,
+                control_flow: 0.6,
+                closing_brace: 0.2,
+                other: 0.3,
+            },
+            Some(TaskType::Test) => Self {
+                error_handling: 1.2,
+                definition: 1.3,
+                control_flow: 0.4,
+                closing_brace: 0.15,
+                other: 0.3,
+            },
+            Some(TaskType::Review) => Self {
+                error_handling: 1.3,
+                definition: 1.2,
+                control_flow: 0.6,
+                closing_brace: 0.15,
+                other: 0.3,
+            },
+            Some(TaskType::Explore) | None => Self::DEFAULT,
+            Some(_) => Self::DEFAULT,
+        }
+    }
+}
+
 /// Information Bottleneck filter v3 — Mutual Information scoring, QUITO-X inspired.
 ///
 /// IB principle: maximize I(T;Y) (task relevance) while minimizing I(T;X) (input redundancy).
@@ -293,6 +362,16 @@ pub fn information_bottleneck_filter(
     content: &str,
     task_keywords: &[String],
     budget_ratio: f64,
+) -> String {
+    information_bottleneck_filter_typed(content, task_keywords, budget_ratio, None)
+}
+
+/// Task-type-aware IB filter. Uses `TaskType` to adjust structural weights.
+pub fn information_bottleneck_filter_typed(
+    content: &str,
+    task_keywords: &[String],
+    budget_ratio: f64,
+    task_type: Option<super::intent_engine::TaskType>,
 ) -> String {
     let lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
@@ -323,6 +402,8 @@ pub fn information_bottleneck_filter(
     } else {
         budget_ratio
     };
+
+    let weights = StructuralWeights::for_task_type(task_type);
 
     let mut scored_lines: Vec<(usize, &str, f64)> = lines
         .iter()
@@ -359,15 +440,15 @@ pub fn information_bottleneck_filter(
                 .count() as f64;
 
             let structural = if is_error_handling(trimmed) {
-                1.5
+                weights.error_handling
             } else if is_definition_line(trimmed) {
-                1.0
+                weights.definition
             } else if is_control_flow(trimmed) {
-                0.5
+                weights.control_flow
             } else if is_closing_brace(trimmed) {
-                0.15
+                weights.closing_brace
             } else {
-                0.3
+                weights.other
             };
             let relevance = mi_score * 0.4 + keyword_hits * 0.3 + structural;
 
@@ -658,5 +739,59 @@ mod tests {
             budget_rep < budget_div,
             "repetitive content should get lower budget"
         );
+    }
+
+    #[test]
+    fn ib_fixbug_type_boosts_error_handling() {
+        use crate::core::intent_engine::TaskType;
+
+        let content = "\
+fn process() {
+    let data = fetch_data();
+    let parsed = parse(data);
+    return Err(\"invalid input\");
+    let x = 1;
+    let y = 2;
+    let z = 3;
+}";
+        let kw = vec!["process".to_string()];
+        let default_result = information_bottleneck_filter(content, &kw, 0.4);
+        let fixbug_result =
+            information_bottleneck_filter_typed(content, &kw, 0.4, Some(TaskType::FixBug));
+        assert!(
+            fixbug_result.contains("return Err"),
+            "FixBug should preserve error handling"
+        );
+        let _ = default_result;
+    }
+
+    #[test]
+    fn ib_generate_type_boosts_definitions() {
+        use crate::core::intent_engine::TaskType;
+
+        let content = "\
+fn main() {
+    let x = 1;
+}
+pub struct Config {
+    pub name: String,
+}
+fn helper() {
+    let y = 2;
+}";
+        let kw = vec!["config".to_string()];
+        let gen_result =
+            information_bottleneck_filter_typed(content, &kw, 0.4, Some(TaskType::Generate));
+        assert!(
+            gen_result.contains("pub struct Config"),
+            "Generate should prioritize definitions"
+        );
+    }
+
+    #[test]
+    fn structural_weights_default_matches_none() {
+        let w = StructuralWeights::for_task_type(None);
+        assert!((w.error_handling - 1.5).abs() < f64::EPSILON);
+        assert!((w.definition - 1.0).abs() < f64::EPSILON);
     }
 }
