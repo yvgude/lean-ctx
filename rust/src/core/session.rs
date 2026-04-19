@@ -30,6 +30,8 @@ pub struct SessionState {
     pub evidence: Vec<EvidenceRecord>,
     #[serde(default)]
     pub intents: Vec<IntentRecord>,
+    #[serde(default)]
+    pub active_structured_intent: Option<crate::core::intent_engine::StructuredIntent>,
     pub stats: SessionStats,
 }
 
@@ -145,6 +147,7 @@ impl SessionState {
             next_steps: Vec::new(),
             evidence: Vec::new(),
             intents: Vec::new(),
+            active_structured_intent: None,
             stats: SessionStats::default(),
         }
     }
@@ -169,6 +172,23 @@ impl SessionState {
             intent: intent.map(|s| s.to_string()),
             progress_pct: None,
         });
+
+        let touched: Vec<String> = self
+            .files_touched
+            .iter()
+            .map(|f| f.path.clone())
+            .collect();
+        let si = if touched.is_empty() {
+            crate::core::intent_engine::StructuredIntent::from_query(description)
+        } else {
+            crate::core::intent_engine::StructuredIntent::from_query_with_session(
+                description, &touched,
+            )
+        };
+        if si.confidence >= 0.7 {
+            self.active_structured_intent = Some(si);
+        }
+
         self.increment();
     }
 
