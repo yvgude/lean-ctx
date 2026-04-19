@@ -242,6 +242,55 @@ pub fn verbatim_compact(text: &str) -> String {
     lines.join("\n")
 }
 
+pub fn task_aware_compress(
+    content: &str,
+    ext: Option<&str>,
+    intent: &super::intent_engine::StructuredIntent,
+) -> String {
+    use super::intent_engine::{IntentScope, TaskType};
+
+    let budget_ratio = match intent.scope {
+        IntentScope::SingleFile => 0.7,
+        IntentScope::MultiFile => 0.5,
+        IntentScope::CrossModule => 0.35,
+        IntentScope::ProjectWide => 0.25,
+    };
+
+    match intent.task_type {
+        TaskType::FixBug | TaskType::Debug => {
+            let filtered = super::task_relevance::information_bottleneck_filter_typed(
+                content,
+                &intent.keywords,
+                budget_ratio,
+                Some(intent.task_type),
+            );
+            safeguard_ratio(content, &filtered)
+        }
+        TaskType::Refactor | TaskType::Review => {
+            let cleaned = lightweight_cleanup(content);
+            let filtered = super::task_relevance::information_bottleneck_filter_typed(
+                &cleaned,
+                &intent.keywords,
+                budget_ratio.max(0.5),
+                Some(intent.task_type),
+            );
+            safeguard_ratio(content, &filtered)
+        }
+        TaskType::Generate | TaskType::Test => {
+            let compressed = aggressive_compress(content, ext);
+            safeguard_ratio(content, &compressed)
+        }
+        TaskType::Explore => {
+            let cleaned = lightweight_cleanup(content);
+            safeguard_ratio(content, &cleaned)
+        }
+        TaskType::Config | TaskType::Deploy => {
+            let cleaned = lightweight_cleanup(content);
+            safeguard_ratio(content, &cleaned)
+        }
+    }
+}
+
 fn flush_repeats(lines: &mut [String], prev_line: &mut Option<String>, count: &mut u32) {
     if *count > 1 {
         if let Some(ref prev) = prev_line {
@@ -427,5 +476,58 @@ mod tests {
     fn test_ansi_density_nonzero_for_colored() {
         let input = "\x1b[31mred\x1b[0m";
         assert!(ansi_density(input) > 0.0);
+    }
+
+    #[test]
+    fn task_aware_fixbug_uses_ib_filter() {
+        use crate::core::intent_engine::StructuredIntent;
+
+        let content = "\
+fn main() {
+    let x = 1;
+    let y = 2;
+    let z = 3;
+    return Err(\"auth failed\");
+    let a = 4;
+    let b = 5;
+    let c = 6;
+    let d = 7;
+    let e = 8;
+}";
+        let intent = StructuredIntent::from_query("fix the auth bug");
+        let result = task_aware_compress(content, Some("rs"), &intent);
+        assert!(
+            result.contains("Err") || result.contains("auth"),
+            "FixBug compression should preserve error-related content"
+        );
+    }
+
+    #[test]
+    fn task_aware_generate_uses_aggressive() {
+        use crate::core::intent_engine::StructuredIntent;
+
+        let content = "\
+// This is a comment
+// Another comment
+/* Block comment */
+fn main() {
+    println!(\"hello\");
+}";
+        let intent = StructuredIntent::from_query("create a new handler");
+        let result = task_aware_compress(content, Some("rs"), &intent);
+        assert!(
+            !result.contains("// This is"),
+            "Generate should strip comments via aggressive compress"
+        );
+    }
+
+    #[test]
+    fn task_aware_respects_safeguard() {
+        use crate::core::intent_engine::StructuredIntent;
+
+        let content = "fn main() { println!(\"hello\"); }";
+        let intent = StructuredIntent::from_query("explore the codebase");
+        let result = task_aware_compress(content, Some("rs"), &intent);
+        assert!(!result.is_empty(), "Safeguard should prevent empty output");
     }
 }
