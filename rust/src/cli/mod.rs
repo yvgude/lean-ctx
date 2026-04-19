@@ -1,5 +1,8 @@
+mod cloud;
+mod dispatch;
 pub mod shell_init;
 
+pub use dispatch::run;
 pub use shell_init::{cmd_init, cmd_init_quiet, init_fish, init_posix, init_powershell};
 
 use std::path::Path;
