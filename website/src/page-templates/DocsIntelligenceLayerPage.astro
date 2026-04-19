@@ -18,6 +18,10 @@ const sidebar = [
       { label: t('docs.intelligenceLayer.sidebarChunking'), href: lp('/docs/intelligence-layer') + '#chunking' },
       { label: t('docs.intelligenceLayer.sidebarMmr'), href: lp('/docs/intelligence-layer') + '#mmr' },
       { label: t('docs.intelligenceLayer.sidebarBpe'), href: lp('/docs/intelligence-layer') + '#bpe' },
+      { label: t('docs.intelligenceLayer.sidebarIntent'), href: lp('/docs/intelligence-layer') + '#intent' },
+      { label: t('docs.intelligenceLayer.sidebarPipeline'), href: lp('/docs/intelligence-layer') + '#pipeline' },
+      { label: t('docs.intelligenceLayer.sidebarLedger'), href: lp('/docs/intelligence-layer') + '#ledger' },
+      { label: t('docs.intelligenceLayer.sidebarMultiAgent'), href: lp('/docs/intelligence-layer') + '#multi-agent' },
     ],
   },
   {
@@ -256,6 +260,101 @@ Mode breakdown:
   map:         22% of files
   signatures:   8% of files
   aggressive:   2% of files`}</code></pre>
+
+  <hr />
+
+  <h2 id="intent">{t('docs.intelligenceLayer.intentTitle')}</h2>
+  <p set:html={t('docs.intelligenceLayer.intentIntro')} />
+  <p set:html={t('docs.intelligenceLayer.intentTaskTypes')} />
+  <p set:html={t('docs.intelligenceLayer.intentScope')} />
+
+  <h3>{t('docs.common.howItWorks')}</h3>
+  <p set:html={t('docs.intelligenceLayer.intentCompression')} />
+  <p set:html={t('docs.intelligenceLayer.intentModeSelection')} />
+
+  <h3>{t('docs.common.example')}</h3>
+  <pre><code>{`Query: "fix the NaN bug in entropy.rs"
+
+StructuredIntent:
+  task_type:    FixBug (confidence: 0.95)
+  targets:      ["entropy.rs"]
+  scope:        SingleFile
+  language:     Rust
+  urgency:      0.8
+  action_verb:  "fix"
+
+→ Compression: Information Bottleneck filter (error lines boosted)
+→ Mode:        task (error-focused extraction)
+→ Suggestions: tests/entropy_test.rs (deficit detection)`}</code></pre>
+
+  <hr />
+
+  <h2 id="pipeline">{t('docs.intelligenceLayer.pipelineTitle')}</h2>
+  <p set:html={t('docs.intelligenceLayer.pipelineIntro')} />
+
+  <h3>{t('docs.common.howItWorks')}</h3>
+  <pre><code>{`Input → Intent → Relevance → Compression → Translation → Delivery
+  │        │          │            │              │            │
+  │        │          │            │              │            └─ Final output to LLM
+  │        │          │            │              └─ BPE optimization, protocol formatting
+  │        │          │            └─ AST-aware compression per intent
+  │        │          └─ Graph heat + relevance scoring
+  │        └─ StructuredIntent classification
+  └─ Raw file content / shell output`}</code></pre>
+  <p set:html={t('docs.intelligenceLayer.pipelineMetrics')} />
+
+  <hr />
+
+  <h2 id="ledger">{t('docs.intelligenceLayer.ledgerTitle')}</h2>
+  <p set:html={t('docs.intelligenceLayer.ledgerIntro')} />
+
+  <h3>{t('docs.common.howItWorks')}</h3>
+  <p set:html={t('docs.intelligenceLayer.ledgerPressure')} />
+
+  <h3>{t('docs.common.example')}</h3>
+  <pre><code>{`Context Window: 128,000 tokens
+Loaded: 89,600 tokens (70% utilization)
+Pressure: None → safe
+
+After loading 3 more files:
+Loaded: 115,200 tokens (90% utilization)
+Pressure: Compress → downgrade non-target files
+
+Re-Injection Plan:
+  utils.rs:    full → signatures  (save 2,400 tokens)
+  helpers.rs:  full → map         (save 1,800 tokens)
+  config.rs:   full → signatures  (save 1,200 tokens)
+  Protected:   auth.rs, login.ts  (target files)`}</code></pre>
+  <p set:html={t('docs.intelligenceLayer.ledgerDeficit')} />
+  <p set:html={t('docs.intelligenceLayer.ledgerReinjection')} />
+
+  <hr />
+
+  <h2 id="multi-agent">{t('docs.intelligenceLayer.multiAgentTitle')}</h2>
+  <p set:html={t('docs.intelligenceLayer.multiAgentIntro')} />
+
+  <h3>{t('docs.common.howItWorks')}</h3>
+  <p set:html={t('docs.intelligenceLayer.multiAgentHandoff')} />
+  <p set:html={t('docs.intelligenceLayer.multiAgentRoles')} />
+
+  <h3>{t('docs.common.example')}</h3>
+  <pre><code>{`Agent "coder-1" (role: Coder):
+  max_files_full: 8
+  preferred_mode: full
+  context_budget: 80%
+
+Agent "reviewer-1" (role: Reviewer):
+  max_files_full: 3
+  preferred_mode: signatures
+  context_budget: 60%
+
+Shared Knowledge:
+  K:discovery:auth_bug = "null check missing in line 42"
+  K:decision:fix_approach = "add Option<T> wrapper"
+  → reviewer-1 inherits these facts without re-reading files`}</code></pre>
+  <p set:html={t('docs.intelligenceLayer.multiAgentKnowledge')} />
+
+  <hr />
 
   <h2>{t('docs.common.seeAlso')}</h2>
   <ul>
