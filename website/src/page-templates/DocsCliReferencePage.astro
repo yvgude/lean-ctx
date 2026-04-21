@@ -23,6 +23,8 @@ const sidebar = [
       { label: t('docs.cliReference.sidebarUtilities'), href: lp('/docs/cli-reference#utilities') },
       { label: t('docs.cliReference.sidebarProjectGraph'), href: lp('/docs/cli-reference#project-graph') },
       { label: t('docs.cliReference.sidebarHeatmap'), href: lp('/docs/cli-reference#heatmap') },
+      { label: t('docs.cliReference.sidebarSafetyLevels'), href: lp('/docs/cli-reference#safety-levels') },
+      { label: t('docs.cliReference.sidebarBypass'), href: lp('/docs/cli-reference#bypass') },
       { label: t('docs.cliReference.sidebarShellAliases'), href: lp('/docs/cli-reference#shell-aliases') },
     ],
   },
@@ -82,8 +84,18 @@ ctx_shell(command="cat package.json", raw=true)
 # Environment variable
 LEAN_CTX_RAW=1 lean-ctx -c npm list
 
+# Bypass command — guaranteed zero compression
+lean-ctx bypass "git diff HEAD~1"
+
 # Kill-switch: disable ALL compression
 LEAN_CTX_DISABLED=1 lean-ctx -c git status</code></pre>
+
+  <h3 id="bypass"><code>lean-ctx bypass "&lt;command&gt;"</code></h3>
+  <p>{t('docs.cliReference.bypassDesc')}</p>
+  <pre><code>lean-ctx bypass "git diff HEAD~1"     # guaranteed unmodified output
+lean-ctx bypass "docker logs myapp"   # no compression, no truncation
+lean-ctx bypass "npm audit"           # raw vulnerability report</code></pre>
+  <p><Fragment set:html={t('docs.cliReference.bypassNote')} /></p>
 
   <hr />
 
@@ -170,11 +182,19 @@ lean-ctx deps frontend/</code></pre>
     <li><Fragment set:html={t('docs.cliReference.setupStep3')} /></li>
   </ol>
 
-  <h3 id="init"><code>lean-ctx init [--global]</code></h3>
+  <h3 id="init"><code>lean-ctx init [--global | &lt;shell&gt;]</code></h3>
   <p>{t('docs.cliReference.initDesc')}</p>
-  <pre><code>lean-ctx init           # install for current shell
-lean-ctx init --global  # same, explicit flag</code></pre>
+  <pre><code># File-based: writes aliases directly into your shell profile
+lean-ctx init           # install for current shell
+lean-ctx init --global  # same, explicit flag
+
+# Eval-based: prints hook code to stdout (like starship, zoxide, atuin)
+eval "$(lean-ctx init bash)"        # bash: add to ~/.bashrc
+eval "$(lean-ctx init zsh)"         # zsh: add to ~/.zshrc
+lean-ctx init fish | source         # fish: add to config.fish
+lean-ctx init powershell | Invoke-Expression  # PowerShell: add to $PROFILE</code></pre>
   <p><Fragment set:html={t('docs.cliReference.initNote')} /></p>
+  <p><Fragment set:html={t('docs.cliReference.initEvalNote')} /></p>
 
   <h3 id="init-agent"><code>lean-ctx init --agent &lt;name&gt;</code></h3>
   <p>{t('docs.cliReference.initAgentDesc')}</p>
@@ -410,6 +430,28 @@ lean-ctx slow-log clear</code></pre>
   <h3 id="heatmap-cmd"><code>lean-ctx heatmap</code></h3>
   <p>{t('docs.cliReference.heatmapCliDesc')}</p>
   <pre><code>lean-ctx heatmap</code></pre>
+
+  <hr />
+
+  <h2 id="safety-levels">{t('docs.cliReference.safetyLevelsTitle')}</h2>
+
+  <p>{t('docs.cliReference.safetyLevelsDesc')}</p>
+
+  <h3 id="safety-levels-cmd"><code>lean-ctx safety-levels</code></h3>
+  <p>{t('docs.cliReference.safetyLevelsCmdDesc')}</p>
+  <pre><code>lean-ctx safety-levels</code></pre>
+
+  <table>
+    <thead><tr><th>{t('docs.cliReference.thLevel')}</th><th>{t('docs.cliReference.thCommands')}</th><th>{t('docs.cliReference.thBehavior')}</th></tr></thead>
+    <tbody>
+      <tr><td><code>VERBATIM</code></td><td><code>df, git status, git stash, ls, find, wc, env</code></td><td>{t('docs.cliReference.safetyVerbatimDesc')}</td></tr>
+      <tr><td><code>MINIMAL</code></td><td><code>git diff, git log, docker ps, grep, ruff, npm audit, pytest, pip, curl</code></td><td>{t('docs.cliReference.safetyMinimalDesc')}</td></tr>
+      <tr><td><code>STANDARD</code></td><td><code>cargo build, npm install, eslint, tsc, go build, maven, gradle, dotnet</code></td><td>{t('docs.cliReference.safetyStandardDesc')}</td></tr>
+      <tr><td><code>AGGRESSIVE</code></td><td><code>kubectl describe, aws, terraform, docker images</code></td><td>{t('docs.cliReference.safetyAggressiveDesc')}</td></tr>
+    </tbody>
+  </table>
+
+  <p><Fragment set:html={t('docs.cliReference.safetyLevelsGlobalNote')} /></p>
 
   <hr />
 

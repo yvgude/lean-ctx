@@ -615,6 +615,21 @@ cargo build --release</code></pre>
   <pre><code>lean-ctx init --global</code></pre>
   <p>{t('docs.gettingStarted.manualAltNote')}</p>
 
+  <h3 id="eval-init">{t('docs.gettingStarted.evalInitTitle')}</h3>
+  <p set:html={t('docs.gettingStarted.evalInitDesc')} />
+  <pre><code># bash: add to ~/.bashrc
+eval "$(lean-ctx init bash)"
+
+# zsh: add to ~/.zshrc
+eval "$(lean-ctx init zsh)"
+
+# fish: add to ~/.config/fish/config.fish
+lean-ctx init fish | source
+
+# powershell: add to $PROFILE
+lean-ctx init powershell | Invoke-Expression</code></pre>
+  <p set:html={t('docs.gettingStarted.evalInitNote')} />
+
   <hr />
 
   <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
