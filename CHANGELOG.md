@@ -3,6 +3,38 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.3.2] — 2026-04-22
+
+### Codex Hook Fix + Docker Knowledge Collision Prevention
+
+#### Bug fixes — Codex CLI integration (PR #136)
+- **Codex PreToolUse hook**: Added dedicated `handle_codex_pretooluse()` handler that uses block-and-reroute pattern (exit code 2) instead of the incompatible `updatedInput` field. Commands matched by lean-ctx compression rules are blocked with an actionable re-run suggestion.
+- **Codex SessionStart hook**: New `handle_codex_session_start()` injects a short instruction telling Codex to prefer `lean-ctx -c "<command>"` for shell commands.
+- **Refactored rewrite logic**: Extracted `rewrite_candidate()` from `handle_rewrite()` to share rewrite detection across Claude Code, Codex, Copilot, and inline-rewrite handlers. Eliminates duplicated skip/wrap/compound logic.
+- **New `hooks/support.rs` module**: Shared helpers for hook installation — `install_named_json_server`, `upsert_lean_ctx_codex_hook_entries`, `ensure_codex_hooks_enabled`. Reduces code duplication across agent integrations.
+- **Hook dispatch updated**: `lean-ctx hook codex-pretooluse` and `lean-ctx hook codex-session-start` subcommands added to both `main.rs` and `dispatch.rs`.
+- **Doctor integration**: `doctor --fix` now sets `LEAN_CTX_QUIET=1` when running in JSON mode to suppress noisy setup output.
+
+#### Bug fixes — Knowledge hash collisions in Docker environments
+- **New `project_hash.rs` module**: Composite project hashing that combines the project root path with a detected project identity marker. Prevents knowledge collisions when different projects share the same Docker mount path (e.g. `/workspace`).
+- **8 identity detection sources** (checked in priority order):
+  1. `.git/config` → remote "origin" URL (normalized: lowercase, stripped `.git` suffix, SSH→path conversion)
+  2. `Cargo.toml` → `[package] name`
+  3. `package.json` → `"name"` field
+  4. `pyproject.toml` → `[project] name` or `[tool.poetry] name`
+  5. `go.mod` → `module` path
+  6. `composer.json` → `"name"` field
+  7. `settings.gradle` / `settings.gradle.kts` → `rootProject.name`
+  8. `*.sln` → solution filename
+- **Backward compatible**: When no identity marker is found, hash falls back to path-only (identical to pre-3.3.2 behavior). Existing projects without git/manifest files see zero change.
+- **Auto-migration**: On `load()`, if the new composite hash directory doesn't exist but the old path-only hash does, knowledge files are automatically copied to the new location. Ownership verification prevents one project from claiming another's data.
+- **Consolidated hashing**: Removed duplicate `hash_project()` from `gotcha_tracker.rs` — now uses shared `project_hash::hash_project_root()`.
+- **20 new tests**: Collision avoidance, identity detection for all 8 ecosystems, git URL normalization, migration file copying, ownership verification (accept/reject), backward compatibility, empty directory handling.
+
+#### Closed issues
+- **#125** (feat: more cmdline compression): Closed — all requested patterns (bun, deno, vite) already implemented in v3.3.0+ and expanded further in v3.3.1.
+- **#135** (bug: Codex PreToolUse hook uses unsupported updatedInput): Fixed by PR #136.
+
 ## [3.3.1] — 2026-04-18
 
 ### Shell Hook Hardening: Complete Developer Environment Coverage

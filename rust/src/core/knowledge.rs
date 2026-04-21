@@ -573,8 +573,25 @@ impl ProjectKnowledge {
         let dir = knowledge_dir(&hash).ok()?;
         let path = dir.join("knowledge.json");
 
-        let content = std::fs::read_to_string(&path).ok()?;
-        serde_json::from_str(&content).ok()
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(k) = serde_json::from_str::<Self>(&content) {
+                return Some(k);
+            }
+        }
+
+        let old_hash = crate::core::project_hash::hash_path_only(project_root);
+        if old_hash != hash {
+            crate::core::project_hash::migrate_if_needed(&old_hash, &hash, project_root);
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(mut k) = serde_json::from_str::<Self>(&content) {
+                    k.project_hash = hash;
+                    let _ = k.save();
+                    return Some(k);
+                }
+            }
+        }
+
+        None
     }
 
     pub fn load_or_create(project_root: &str) -> Self {
@@ -672,8 +689,7 @@ impl ProjectKnowledge {
         target.updated_at = Utc::now();
         target.save()?;
 
-        // Backup legacy file so we don't keep re-importing it.
-        let legacy_hash = hash_project_root("");
+        let legacy_hash = crate::core::project_hash::hash_path_only("");
         let legacy_dir = knowledge_dir(&legacy_hash)?;
         let legacy_path = legacy_dir.join("knowledge.json");
         if legacy_path.exists() {
@@ -880,12 +896,7 @@ fn salience_score(f: &KnowledgeFact) -> u32 {
 }
 
 fn hash_project_root(root: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    root.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    crate::core::project_hash::hash_project_root(root)
 }
 
 #[cfg(test)]

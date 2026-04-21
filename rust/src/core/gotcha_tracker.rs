@@ -282,7 +282,7 @@ impl GotchaStore {
     }
 
     pub fn load(project_root: &str) -> Self {
-        let hash = hash_project(project_root);
+        let hash = crate::core::project_hash::hash_project_root(project_root);
         let path = gotcha_path(&hash);
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(mut store) = serde_json::from_str::<GotchaStore>(&content) {
@@ -295,7 +295,7 @@ impl GotchaStore {
     }
 
     pub fn save(&self, project_root: &str) -> Result<(), String> {
-        let hash = hash_project(project_root);
+        let hash = crate::core::project_hash::hash_project_root(project_root);
         let path = gotcha_path(&hash);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -998,12 +998,6 @@ fn gotcha_path(project_hash: &str) -> PathBuf {
         .join("knowledge")
         .join(project_hash)
         .join("gotchas.json")
-}
-
-fn hash_project(root: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    root.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
 }
 
 fn gotcha_id(trigger: &str, category: &GotchaCategory) -> String {
