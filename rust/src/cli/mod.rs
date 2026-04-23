@@ -656,7 +656,14 @@ pub fn cmd_config(args: &[String]) {
                 }
                 "passthrough_urls" => {
                     cfg.passthrough_urls = val.split(',').map(|s| s.trim().to_string()).collect();
-                }
+                },
+                "excluded_commands" => {
+                    cfg.excluded_commands = val
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                },
                 "rules_scope" => match val.as_str() {
                     "global" | "project" | "both" => {
                         cfg.rules_scope = Some(val.to_string());
