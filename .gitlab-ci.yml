@@ -22,6 +22,7 @@ build-website:
     - npm ci --silent
     - node scripts/validate-manifest.mjs
     - node scripts/validate-i18n.mjs
+    - node scripts/validate-docs-coverage.mjs
     - npm run -s build
   artifacts:
     paths:

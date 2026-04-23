@@ -22,8 +22,6 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 
 const tools = manifest.tools.granular;
 
-const CATEGORY_PAGES = ['core', 'intelligence', 'session', 'memory'];
-
 function toolNameToSlug(name) {
   return name.replace(/_/g, '-');
 }
@@ -57,10 +55,6 @@ let skipped = 0;
 
 for (const tool of tools) {
   const slug = toolNameToSlug(tool.name);
-
-  if (CATEGORY_PAGES.includes(slug.replace('ctx-', ''))) {
-    continue;
-  }
 
   const rootFile = path.join(rootDir, `${slug}.astro`);
   const localeFile = path.join(localeDir, `${slug}.astro`);
