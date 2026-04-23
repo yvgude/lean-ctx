@@ -1,0 +1,186 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'First Session',
+    items: [
+      { label: 'Prerequisites', href: lp('/docs/guides/first-session') + '#prerequisites' },
+      { label: 'Step 1: Install', href: lp('/docs/guides/first-session') + '#install' },
+      { label: 'Step 2: Configure', href: lp('/docs/guides/first-session') + '#configure' },
+      { label: 'Step 3: First Read', href: lp('/docs/guides/first-session') + '#first-read' },
+      { label: 'Step 4: Shell', href: lp('/docs/guides/first-session') + '#shell' },
+      { label: 'Step 5: Token Savings', href: lp('/docs/guides/first-session') + '#savings' },
+      { label: 'Next Steps', href: lp('/docs/guides/first-session') + '#next' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: lp('/docs/getting-started') },
+      { label: 'IDE Setup', href: lp('/docs/ide-setup') },
+      { label: 'Workflow Blueprint', href: lp('/docs/guides/workflow-blueprint') },
+      { label: 'Read Modes', href: lp('/docs/concepts/read-modes') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Your First Session — 10 Minutes to Token Savings"
+  description="Get lean-ctx running and saving tokens in 10 minutes. Step-by-step guide from install to your first compressed file read and shell command."
+  sidebar={sidebar}
+>
+  <p>
+    This guide takes you from zero to productive in <strong>10 minutes</strong>.
+    By the end, you'll have lean-ctx installed, configured in your editor, and see real token savings.
+  </p>
+
+  <h2 id="prerequisites">Prerequisites</h2>
+  <ul>
+    <li>One of: <strong>Cursor</strong>, <strong>Claude Code</strong>, <strong>Codex CLI</strong>, <strong>Gemini CLI</strong>, <strong>Windsurf</strong>, or any MCP-compatible editor</li>
+    <li>A project directory to work with (any language)</li>
+    <li>macOS, Linux, or Windows (WSL recommended)</li>
+  </ul>
+
+  <h2 id="install">Step 1: Install lean-ctx (2 min)</h2>
+  <p>Pick your preferred method:</p>
+
+  <h3>Option A: Cargo (recommended)</h3>
+  <pre><code>{`cargo install lean-ctx
+lean-ctx --version
+→ lean-ctx 3.3.4`}</code></pre>
+
+  <h3>Option B: Pre-built Binary</h3>
+  <pre><code>{`# macOS (Apple Silicon)
+curl -L https://github.com/yvgude/lean-ctx/releases/latest/download/lean-ctx-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv lean-ctx /usr/local/bin/
+
+# Linux (x64)
+curl -L https://github.com/yvgude/lean-ctx/releases/latest/download/lean-ctx-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv lean-ctx /usr/local/bin/`}</code></pre>
+
+  <h3>Option C: Docker</h3>
+  <pre><code>{`docker pull ghcr.io/yvgude/lean-ctx:latest`}</code></pre>
+
+  <h3>Verify Installation</h3>
+  <pre><code>{`lean-ctx doctor
+→ ✓ Binary: v3.3.4
+  ✓ Config: ~/.lean-ctx/config.toml (created)
+  ✓ Cache directory: OK
+  ✓ Tree-sitter: 18 languages loaded
+  ...
+  All 11 checks passed`}</code></pre>
+
+  <h2 id="configure">Step 2: Configure Your Editor (3 min)</h2>
+
+  <h3>Cursor</h3>
+  <p>Add to your <code>.cursor/mcp.json</code> (project-level) or global settings:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "args": ["serve", "--stdio"]
+    }
+  }
+}`}</code></pre>
+
+  <h3>Claude Code</h3>
+  <pre><code>{`claude mcp add lean-ctx lean-ctx serve --stdio`}</code></pre>
+
+  <h3>Gemini CLI</h3>
+  <p>Add to <code>~/.gemini/settings.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "args": ["serve", "--stdio"]
+    }
+  }
+}`}</code></pre>
+
+  <h3>Codex CLI</h3>
+  <pre><code>{`# Codex uses .codex/config.yaml
+mcp_servers:
+  lean-ctx:
+    command: lean-ctx
+    args: ["serve", "--stdio"]`}</code></pre>
+
+  <p>
+    <a href={lp('/docs/ide-setup')}>Full IDE setup guide for all 21 supported editors →</a>
+  </p>
+
+  <h2 id="first-read">Step 3: Your First Compressed Read (2 min)</h2>
+  <p>Open your project in the editor and ask the AI to read a file. Instead of the native file read, lean-ctx intercepts it:</p>
+
+  <h3>What you'll see:</h3>
+  <pre><code>{`# Agent calls: ctx_read path="src/server.ts"
+
+→ F1=server.ts 262L
+   deps: express, cors, helmet, morgan
+   exports: app, startServer
+   [full file content...]
+   [0 tok saved — first read]`}</code></pre>
+
+  <h3>Now read it again:</h3>
+  <pre><code>{`# Agent calls: ctx_read path="src/server.ts"
+
+→ F1=server.ts cached 2t 262L
+   [5,842 tok saved (99%)]`}</code></pre>
+  <p>
+    <strong>99% savings</strong> on the second read! The file content is cached with an MD5 hash.
+    The agent gets a 13-token stub that confirms the file is unchanged.
+  </p>
+
+  <h3>Try map mode:</h3>
+  <pre><code>{`# Agent calls: ctx_read path="src/server.ts" mode="map"
+
+→ F1=server.ts [262L]
+   deps: express, cors, helmet, morgan
+   exports: app, startServer
+   API:
+     fn startServer(port:n):void
+     fn setupMiddleware(app:Express):void
+     fn setupRoutes(app:Express):void
+   [4,973 tok saved (85%)]`}</code></pre>
+
+  <h2 id="shell">Step 4: Your First Compressed Shell Command (2 min)</h2>
+  <p>Ask the AI to run a shell command. lean-ctx automatically compresses the output:</p>
+
+  <pre><code>{`# Agent calls: ctx_shell command="git status"
+
+→ main ↑0
+   staged: +auth.ts ~server.ts
+   unstaged: ~config.ts
+   untracked: test.ts
+   [534 tok saved (87%)]`}</code></pre>
+
+  <pre><code>{`# Agent calls: ctx_shell command="npm test"
+
+→ 42 passed, 2 failed (3.2s)
+   FAIL auth.test.ts:23 "should validate token"
+     Expected: true, Received: false
+   [1,800 tok saved (90%)]`}</code></pre>
+
+  <h2 id="savings">Step 5: Check Your Token Savings (1 min)</h2>
+  <pre><code>{`# Agent calls: ctx_gain
+
+→ Session gain: 88.4% (11,149 tokens saved)
+   File reads:   91.2% (8,815 tok saved, 3 reads, 1 cache hit)
+   Shell output: 78.3% (2,334 tok saved, 2 commands)
+   Total cost saved: ~$0.11 (at Claude Sonnet rates)`}</code></pre>
+
+  <h2 id="next">Next Steps</h2>
+  <ul>
+    <li><a href={lp('/docs/concepts/read-modes')}>Learn all 10 read modes</a> — the decision tree helps you pick the right one</li>
+    <li><a href={lp('/docs/guides/workflow-blueprint')}>5-session workflow blueprint</a> — complete project workflow patterns</li>
+    <li><a href={lp('/docs/concepts/caching')}>Understand caching & compression</a> — how the layers work together</li>
+    <li><a href={lp('/docs/tools')}>Explore all 46 tools</a> — each tool has its own reference page</li>
+    <li><a href={lp('/docs/configuration')}>Customize configuration</a> — config.toml, environment variables, filters</li>
+  </ul>
+</DocsLayout>

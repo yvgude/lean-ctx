@@ -1,0 +1,170 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Docker Setup',
+    items: [
+      { label: 'Quick Start', href: lp('/docs/guides/docker') + '#quick-start' },
+      { label: 'Docker Compose', href: lp('/docs/guides/docker') + '#compose' },
+      { label: 'Configuration', href: lp('/docs/guides/docker') + '#config' },
+      { label: 'Volume Mounts', href: lp('/docs/guides/docker') + '#volumes' },
+      { label: 'CI/CD Integration', href: lp('/docs/guides/docker') + '#ci-cd' },
+      { label: 'Troubleshooting', href: lp('/docs/guides/docker') + '#troubleshooting' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: lp('/docs/getting-started') },
+      { label: 'Remote Setup', href: lp('/docs/guides/remote-setup') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Docker Setup Guide"
+  description="Run lean-ctx in Docker containers for consistent environments, CI/CD pipelines, and remote development setups."
+  sidebar={sidebar}
+>
+  <p>
+    lean-ctx is available as a Docker image for containerized development, CI/CD pipelines,
+    and remote setups. The image is minimal (~20 MB) and includes all tree-sitter grammars.
+  </p>
+
+  <h2 id="quick-start">Quick Start</h2>
+  <pre><code>{`# Pull the latest image
+docker pull ghcr.io/yvgude/lean-ctx:latest
+
+# Run lean-ctx as an MCP server (stdio mode)
+docker run -i --rm \\
+  -v "$(pwd):/workspace" \\
+  -w /workspace \\
+  ghcr.io/yvgude/lean-ctx:latest \\
+  serve --stdio
+
+# Run a one-off command with compression
+docker run --rm \\
+  -v "$(pwd):/workspace" \\
+  -w /workspace \\
+  ghcr.io/yvgude/lean-ctx:latest \\
+  -c "git status"`}</code></pre>
+
+  <h2 id="compose">Docker Compose</h2>
+  <p>For projects using Docker Compose, add lean-ctx as a service:</p>
+  <pre><code>{`# docker-compose.yml
+services:
+  lean-ctx:
+    image: ghcr.io/yvgude/lean-ctx:latest
+    command: serve --stdio
+    volumes:
+      - .:/workspace:ro
+      - lean-ctx-cache:/root/.lean-ctx
+    working_dir: /workspace
+    stdin_open: true
+
+volumes:
+  lean-ctx-cache:`}</code></pre>
+
+  <h2 id="config">Configuration in Docker</h2>
+  <p>Mount your config file or use environment variables:</p>
+
+  <h3>Option A: Mount config.toml</h3>
+  <pre><code>{`docker run -i --rm \\
+  -v "$(pwd):/workspace" \\
+  -v "$HOME/.lean-ctx/config.toml:/root/.lean-ctx/config.toml:ro" \\
+  -w /workspace \\
+  ghcr.io/yvgude/lean-ctx:latest serve --stdio`}</code></pre>
+
+  <h3>Option B: Environment Variables</h3>
+  <pre><code>{`docker run -i --rm \\
+  -v "$(pwd):/workspace" \\
+  -w /workspace \\
+  -e LEAN_CTX_HEADLESS=1 \\
+  -e LCTX_MAX_READ_BYTES=10485760 \\
+  -e LCTX_MAX_SHELL_BYTES=2097152 \\
+  ghcr.io/yvgude/lean-ctx:latest serve --stdio`}</code></pre>
+
+  <h3>Key Environment Variables</h3>
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>LEAN_CTX_HEADLESS</code></td><td><code>0</code></td><td>Disable interactive features (Observatory, prompts)</td></tr>
+      <tr><td><code>LCTX_MAX_READ_BYTES</code></td><td><code>5242880</code></td><td>Max file read size (bytes)</td></tr>
+      <tr><td><code>LCTX_MAX_SHELL_BYTES</code></td><td><code>1048576</code></td><td>Max shell output size (bytes)</td></tr>
+      <tr><td><code>CRP_MODE</code></td><td>—</td><td>Set to <code>tdd</code> for maximum compression</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="volumes">Volume Mounts</h2>
+  <table>
+    <thead>
+      <tr><th>Mount</th><th>Purpose</th><th>Mode</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>/workspace</code></td><td>Your project directory</td><td><code>ro</code> or <code>rw</code></td></tr>
+      <tr><td><code>/root/.lean-ctx</code></td><td>Cache, knowledge, sessions</td><td><code>rw</code> (named volume recommended)</td></tr>
+      <tr><td><code>/root/.lean-ctx/config.toml</code></td><td>Configuration file</td><td><code>ro</code></td></tr>
+      <tr><td><code>/root/.lean-ctx/filters/</code></td><td>Custom TOML filter files</td><td><code>ro</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="ci-cd">CI/CD Integration</h2>
+
+  <h3>GitHub Actions</h3>
+  <pre><code>{`# .github/workflows/lint-context.yml
+name: Context Lint
+on: [pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run lean-ctx doctor
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \\
+            ghcr.io/yvgude/lean-ctx:latest doctor
+      - name: Benchmark compression
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \\
+            ghcr.io/yvgude/lean-ctx:latest benchmark --project`}</code></pre>
+
+  <h3>GitLab CI</h3>
+  <pre><code>{`# .gitlab-ci.yml
+context-check:
+  image: ghcr.io/yvgude/lean-ctx:latest
+  script:
+    - lean-ctx doctor
+    - lean-ctx benchmark --project`}</code></pre>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>Permission Issues</h3>
+  <p>If lean-ctx can't read files, ensure the volume mount permissions are correct:</p>
+  <pre><code>{`# Run as your user ID
+docker run --rm -u "$(id -u):$(id -g)" \\
+  -v "$(pwd):/workspace" \\
+  -w /workspace \\
+  ghcr.io/yvgude/lean-ctx:latest doctor`}</code></pre>
+
+  <h3>Cache Persistence</h3>
+  <p>
+    Use a named volume for <code>/root/.lean-ctx</code> to persist the session cache,
+    knowledge base, and configuration between container restarts.
+  </p>
+
+  <h3>Headless Mode</h3>
+  <p>
+    In CI/CD environments, set <code>LEAN_CTX_HEADLESS=1</code> to disable the Observatory
+    dashboard and any interactive prompts.
+  </p>
+</DocsLayout>
