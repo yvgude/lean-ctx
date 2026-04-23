@@ -1,14 +1,16 @@
 ---
-import { getLocaleFromUrl, useTranslations } from '../i18n/utils';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 interface SidebarItem {
   label: string;
   href: string;
+  badge?: string;
 }
 
 interface SidebarSection {
   title: string;
   compact?: boolean;
+  collapsed?: boolean;
   items: SidebarItem[];
 }
 
@@ -18,28 +20,83 @@ interface Props {
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
 
 const defaultSections: SidebarSection[] = [
   {
     title: t('docs.sidebarGettingStarted'),
     items: [
-      { label: t('docs.sidebarOverview'), href: '/docs/getting-started' },
-      { label: t('docs.sidebarQuickRef'), href: '/docs/quick-reference' },
-      { label: t('docs.sidebarConfiguration'), href: '/docs/configuration' },
+      { label: t('docs.sidebarOverview'), href: lp('/docs/getting-started') },
+      { label: t('docs.sidebarQuickRef'), href: lp('/docs/quick-reference') },
+      { label: 'IDE Setup', href: lp('/docs/ide-setup') },
+      { label: t('docs.sidebarConfiguration'), href: lp('/docs/configuration') },
+    ],
+  },
+  {
+    title: 'Concepts',
+    items: [
+      { label: 'Read Modes', href: lp('/docs/concepts/read-modes'), badge: 'new' },
+      { label: 'Caching & Compression', href: lp('/docs/concepts/caching'), badge: 'new' },
+      { label: 'Shell Patterns', href: lp('/docs/concepts/shell-patterns'), badge: 'new' },
+      { label: 'Protocols', href: lp('/docs/concepts/protocols'), badge: 'new' },
+      { label: 'Multi-Agent', href: lp('/docs/concepts/multi-agent'), badge: 'new' },
+      { label: 'Token Savings', href: lp('/docs/concepts/token-savings'), badge: 'new' },
     ],
   },
   {
     title: t('docs.sidebarReference'),
     items: [
-      { label: t('docs.sidebarToolApi'), href: '/docs/tools' },
-      { label: t('docs.sidebarTreeSitter'), href: '/docs/tree-sitter' },
-      { label: t('docs.sidebarTokenGuide'), href: '/docs/token-guide' },
+      { label: t('docs.sidebarToolApi') + ' (46)', href: lp('/docs/tools') },
+      { label: 'Core Tools', href: lp('/docs/tools/core') },
+      { label: 'Intelligence', href: lp('/docs/tools/intelligence') },
+      { label: 'Memory & Multi-Agent', href: lp('/docs/tools/memory') },
+      { label: 'Session & Monitoring', href: lp('/docs/tools/session') },
+      { label: 'Workflow', href: lp('/docs/tools/workflow'), badge: 'new' },
+      { label: 'Analysis & Graphs', href: lp('/docs/tools/analysis'), badge: 'new' },
+    ],
+  },
+  {
+    title: 'Guides',
+    items: [
+      { label: 'First Session', href: lp('/docs/guides/first-session'), badge: 'new' },
+      { label: 'Workflow Blueprint', href: lp('/docs/guides/workflow-blueprint'), badge: 'new' },
+      { label: 'Docker & Container', href: lp('/docs/guides/docker'), badge: 'new' },
+      { label: 'Remote Setup', href: lp('/docs/remote-setup') },
+      { label: 'Editor Integrations', href: lp('/docs/guides/editor-integrations'), badge: 'new' },
+      { label: 'Observatory Dashboard', href: lp('/docs/guides/observatory'), badge: 'new' },
+    ],
+  },
+  {
+    title: 'Configuration',
+    collapsed: true,
+    items: [
+      { label: 'config.toml Reference', href: lp('/docs/configuration') },
+      { label: 'Environment Variables', href: lp('/docs/configuration/env-vars'), badge: 'new' },
+      { label: 'CLI Reference', href: lp('/docs/cli-reference') },
+    ],
+  },
+  {
+    title: 'Advanced',
+    collapsed: true,
+    items: [
+      { label: 'Intelligence Layer', href: lp('/docs/intelligence-layer') },
+      { label: 'Tree-Sitter', href: lp('/docs/tree-sitter') },
+      { label: 'Analytics & Dashboard', href: lp('/docs/analytics') },
+      { label: 'Cloud', href: lp('/docs/cloud') },
+      { label: 'Changelog', href: lp('/docs/changelog'), badge: 'new' },
     ],
   },
 ];
 
 const sections = Astro.props.sections ?? defaultSections;
 const currentPath = Astro.url.pathname.replace(/\/$/, '');
+
+function isSectionActive(section: SidebarSection): boolean {
+  return section.items.some(item => {
+    const itemPage = item.href.split('#')[0].replace(/\/$/, '');
+    return currentPath === itemPage || currentPath.startsWith(itemPage + '/');
+  });
+}
 ---
 
 <!-- Mobile: inline collapsible nav -->
@@ -51,14 +108,14 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '');
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
       </svg>
     </summary>
-    <div class="px-2 pb-3 pt-1 grid grid-cols-2 gap-x-2">
+    <div class="px-2 pb-3 pt-1">
       {sections.map(section => (
-        <div class="col-span-2 mb-3 last:mb-0">
+        <div class="mb-3 last:mb-0">
           <h4 class="fluid-label text-muted/50 mb-1 px-2">{section.title}</h4>
-          <div class={section.compact ? 'grid grid-cols-2 gap-x-1' : ''}>
+          <div>
             {section.items.map(item => {
               const itemPage = item.href.split('#')[0].replace(/\/$/, '');
-              const isPageActive = currentPath === itemPage && !item.href.includes('#');
+              const isPageActive = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
               return (
                 <a
                   href={item.href}
@@ -72,6 +129,7 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '');
                   data-anchor={item.href.includes('#') ? item.href.split('#')[1] : undefined}
                 >
                   {item.label}
+                  {item.badge && <span class="sidebar-badge">{item.badge}</span>}
                 </a>
               );
             })}
@@ -84,36 +142,46 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '');
 
 <!-- Desktop: sticky sidebar -->
 <aside class="hidden lg:block">
-  <nav class="sticky top-24 space-y-6 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2 sidebar-scroll">
-    {sections.map(section => (
-      <div>
-        <h4 class="fluid-label text-muted mb-3 font-display">{section.title}</h4>
-        <ul class:list={['relative', section.compact ? 'space-y-0' : 'space-y-0.5']}>
-          {section.items.map(item => {
-            const itemPage = item.href.split('#')[0].replace(/\/$/, '');
-            const isPageActive = currentPath === itemPage && !item.href.includes('#');
-            return (
-              <li>
-                <a
-                  href={item.href}
-                  data-anchor={item.href.includes('#') ? item.href.split('#')[1] : undefined}
-                  class:list={[
-                    'docs-nav-link block rounded-lg transition-all duration-200 relative',
-                    section.compact ? 'py-1 px-3' : 'py-1.5 px-3',
-                    isPageActive
-                      ? 'text-accent bg-accent/8 font-medium sidebar-active'
-                      : 'text-muted hover:text-text-bright hover:bg-surface-2'
-                  ]}
-                  style={`font-size: ${section.compact ? 'clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem)' : 'clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem)'};`}
-                >
-                  {item.label}
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    ))}
+  <nav class="sticky top-24 space-y-1 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2 sidebar-scroll">
+    {sections.map(section => {
+      const active = isSectionActive(section);
+      const shouldCollapse = section.collapsed && !active;
+      return (
+        <details class="sidebar-section" open={!shouldCollapse}>
+          <summary class="sidebar-section-title cursor-pointer select-none flex items-center justify-between">
+            <h4 class="fluid-label text-muted font-display m-0">{section.title}</h4>
+            <svg class="sidebar-chevron w-3 h-3 text-muted/40 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </summary>
+          <ul class:list={['relative mt-1 mb-3', section.compact ? 'space-y-0' : 'space-y-0.5']}>
+            {section.items.map(item => {
+              const itemPage = item.href.split('#')[0].replace(/\/$/, '');
+              const isPageActive = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
+              return (
+                <li>
+                  <a
+                    href={item.href}
+                    data-anchor={item.href.includes('#') ? item.href.split('#')[1] : undefined}
+                    class:list={[
+                      'docs-nav-link block rounded-lg transition-all duration-200 relative',
+                      section.compact ? 'py-1 px-3' : 'py-1.5 px-3',
+                      isPageActive
+                        ? 'text-accent bg-accent/8 font-medium sidebar-active'
+                        : 'text-muted hover:text-text-bright hover:bg-surface-2'
+                    ]}
+                    style={`font-size: ${section.compact ? 'clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem)' : 'clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem)'};`}
+                  >
+                    {item.label}
+                    {item.badge && <span class="sidebar-badge">{item.badge}</span>}
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      );
+    })}
   </nav>
 </aside>
 
@@ -159,6 +227,35 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '');
   }
   .docs-mobile-nav[open] {
     border-color: rgba(52, 211, 153, 0.15);
+  }
+
+  .sidebar-section summary {
+    list-style: none;
+    padding: 0.5rem 0.25rem;
+  }
+  .sidebar-section summary::-webkit-details-marker {
+    display: none;
+  }
+  .sidebar-section[open] .sidebar-chevron {
+    transform: rotate(180deg);
+  }
+  .sidebar-section:not([open]) .sidebar-chevron {
+    transform: rotate(-90deg);
+  }
+
+  .sidebar-badge {
+    display: inline-block;
+    font-size: 0.5625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.0625rem 0.375rem;
+    margin-left: 0.375rem;
+    border-radius: 4px;
+    background: rgba(52, 211, 153, 0.12);
+    color: var(--color-accent);
+    vertical-align: middle;
+    line-height: 1.4;
   }
 
   .sidebar-scroll::-webkit-scrollbar {
