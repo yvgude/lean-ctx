@@ -111,7 +111,9 @@ function isSectionActive(section: SidebarSection): boolean {
           <div>
             {section.items.map(item => {
               const itemPage = item.href.split('#')[0].replace(/\/$/, '');
-              const isPageActive = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
+              const hasAnchor = item.href.includes('#');
+              const isExactPage = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
+              const isPageActive = isExactPage && !hasAnchor;
               return (
                 <a
                   href={item.href}
@@ -122,7 +124,7 @@ function isSectionActive(section: SidebarSection): boolean {
                       : 'text-muted hover:text-text-bright'
                   ]}
                   style="font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);"
-                  data-anchor={item.href.includes('#') ? item.href.split('#')[1] : undefined}
+                  data-anchor={hasAnchor ? item.href.split('#')[1] : undefined}
                 >
                   {item.label}
                   {item.badge && <span class="sidebar-badge">{item.badge}</span>}
@@ -153,12 +155,14 @@ function isSectionActive(section: SidebarSection): boolean {
           <ul class:list={['relative mt-1 mb-3', section.compact ? 'space-y-0' : 'space-y-0.5']}>
             {section.items.map(item => {
               const itemPage = item.href.split('#')[0].replace(/\/$/, '');
-              const isPageActive = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
+              const hasAnchor = item.href.includes('#');
+              const isExactPage = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
+              const isPageActive = isExactPage && !hasAnchor;
               return (
                 <li>
                   <a
                     href={item.href}
-                    data-anchor={item.href.includes('#') ? item.href.split('#')[1] : undefined}
+                    data-anchor={hasAnchor ? item.href.split('#')[1] : undefined}
                     class:list={[
                       'docs-nav-link block rounded-lg transition-all duration-200 relative',
                       section.compact ? 'py-1 px-3' : 'py-1.5 px-3',
