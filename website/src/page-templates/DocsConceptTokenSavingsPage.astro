@@ -1,0 +1,187 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Token Savings',
+    items: [
+      { label: 'Overview', href: lp('/docs/concepts/token-savings') },
+      { label: 'Where Savings Come From', href: lp('/docs/concepts/token-savings') + '#sources' },
+      { label: 'Measuring Savings', href: lp('/docs/concepts/token-savings') + '#measuring' },
+      { label: 'Cost Calculation', href: lp('/docs/concepts/token-savings') + '#cost' },
+      { label: 'Real-World Example', href: lp('/docs/concepts/token-savings') + '#example' },
+      { label: 'Optimization Tips', href: lp('/docs/concepts/token-savings') + '#tips' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'ctx_gain', href: lp('/docs/tools/ctx-gain') },
+      { label: 'ctx_benchmark', href: lp('/docs/tools/ctx-benchmark') },
+      { label: 'ctx_metrics', href: lp('/docs/tools/ctx-metrics') },
+      { label: 'ctx_cost', href: lp('/docs/tools/ctx-cost') },
+      { label: 'Token Guide', href: lp('/docs/token-guide') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Token Savings — How lean-ctx Reduces Costs"
+  description="Deep dive into how lean-ctx achieves 74-99% token savings: file caching, read mode compression, shell patterns, TDD mode, and the archive system."
+  sidebar={sidebar}
+>
+  <p>
+    lean-ctx typically saves <strong>74-99%</strong> of tokens across a development session.
+    This page explains where those savings come from, how to measure them, and how to maximize them.
+  </p>
+
+  <h2 id="sources">Where Savings Come From</h2>
+  <p>Token savings accumulate across 5 layers, each multiplying the effect:</p>
+
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Mechanism</th><th>Typical Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1. Session Cache</strong></td>
+        <td>Re-reads return ~13 token stub instead of full file</td>
+        <td>~99% on re-reads</td>
+      </tr>
+      <tr>
+        <td><strong>2. Read Modes</strong></td>
+        <td>map, signatures, entropy etc. compress first reads</td>
+        <td>20-95% per first read</td>
+      </tr>
+      <tr>
+        <td><strong>3. Shell Compression</strong></td>
+        <td>90+ tool patterns strip boilerplate output</td>
+        <td>50-95% per command</td>
+      </tr>
+      <tr>
+        <td><strong>4. TDD/CRP Mode</strong></td>
+        <td>Abbreviated notation, symbol maps, diff-only</td>
+        <td>Additional 20-40%</td>
+      </tr>
+      <tr>
+        <td><strong>5. Archive + Expand</strong></td>
+        <td>Large results stored to disk, retrieved on demand</td>
+        <td>80-95% for large outputs</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Compound Effect</h3>
+  <p>
+    In a typical session, the agent reads 15-30 files and runs 10-20 shell commands.
+    With caching eliminating re-reads and compression reducing first reads, the total
+    token savings compound to 74-99% depending on the workload.
+  </p>
+
+  <h2 id="measuring">Measuring Your Savings</h2>
+  <p>lean-ctx provides several tools to monitor token savings in real-time:</p>
+
+  <h3>ctx_gain — Session Savings Report</h3>
+  <pre><code>{`ctx_gain
+→ Session gain: 88.4% (34,218 tokens saved)
+  File reads:   91.2% (28,450 tokens saved, 23 reads, 14 cache hits)
+  Shell output: 78.3% (5,768 tokens saved, 12 commands)
+  Total cost saved: ~$0.34 (at Claude Sonnet rates)`}</code></pre>
+
+  <h3>ctx_metrics — Detailed Breakdown</h3>
+  <pre><code>{`ctx_metrics
+→ Session metrics:
+  Duration: 12 min
+  Tool calls: 35
+  File reads: 23 (14 cache hits, 61% hit rate)
+  Shell commands: 12
+  Tokens: 4,018 used / 38,236 without lean-ctx
+  Savings: 34,218 tokens (89.5%)
+  Compression ratio: 9.5:1`}</code></pre>
+
+  <h3>ctx_benchmark — Per-File Analysis</h3>
+  <pre><code>{`ctx_benchmark path="src/auth.ts"
+→ auth.ts (123 lines, 4,210 raw tokens):
+  full:       4,210 tok (0% savings)
+  map:          420 tok (90% savings)
+  signatures:   546 tok (87% savings)
+  aggressive: 2,947 tok (30% savings)
+  entropy:      842 tok (80% savings)
+  cached:        13 tok (99.7% savings)`}</code></pre>
+
+  <h2 id="cost">Cost Calculation</h2>
+  <p>
+    <code>ctx_cost</code> tracks token spend attributed to individual agents and tools,
+    enabling precise cost accounting in team environments.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Model</th><th>Input Price</th><th>1M Tokens Saved</th><th>Daily Savings*</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Claude Sonnet 4</td><td>$3/1M</td><td>$3.00</td><td>~$6-15</td></tr>
+      <tr><td>Claude Opus 4</td><td>$15/1M</td><td>$15.00</td><td>~$30-75</td></tr>
+      <tr><td>GPT-4o</td><td>$2.50/1M</td><td>$2.50</td><td>~$5-12</td></tr>
+      <tr><td>Gemini 2.5 Pro</td><td>$1.25/1M</td><td>$1.25</td><td>~$2.50-6</td></tr>
+    </tbody>
+  </table>
+  <p class="text-xs text-muted">*Based on typical session with 2-4M tokens saved per day, 88% compression rate.</p>
+
+  <h2 id="example">Real-World Example: 5-File Bug Fix</h2>
+  <p>A typical debugging session fixing an auth bug:</p>
+
+  <table>
+    <thead>
+      <tr><th>Action</th><th>Without lean-ctx</th><th>With lean-ctx</th><th>Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Read auth.ts (full, first time)</td><td>4,210 tok</td><td>4,210 tok</td><td>0%</td></tr>
+      <tr><td>Read server.ts (map mode)</td><td>8,420 tok</td><td>842 tok</td><td>90%</td></tr>
+      <tr><td>Read db.ts (signatures)</td><td>3,200 tok</td><td>416 tok</td><td>87%</td></tr>
+      <tr><td>Re-read auth.ts (cached)</td><td>4,210 tok</td><td>13 tok</td><td>99.7%</td></tr>
+      <tr><td>git status</td><td>600 tok</td><td>80 tok</td><td>87%</td></tr>
+      <tr><td>npm test</td><td>2,000 tok</td><td>200 tok</td><td>90%</td></tr>
+      <tr><td>Re-read auth.ts (diff)</td><td>4,210 tok</td><td>84 tok</td><td>98%</td></tr>
+      <tr><td>git diff</td><td>800 tok</td><td>120 tok</td><td>85%</td></tr>
+      <tr><td><strong>Total</strong></td><td><strong>27,650 tok</strong></td><td><strong>5,965 tok</strong></td><td><strong>78.4%</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="tips">Optimization Tips</h2>
+  <ol>
+    <li>
+      <strong>Use <code>ctx_preload</code> at session start:</strong> Loads relevant files in optimal modes
+      instead of multiple individual reads.
+    </li>
+    <li>
+      <strong>Prefer <code>map</code> or <code>signatures</code> for context files:</strong> Only use
+      <code>full</code> for files you'll actually edit.
+    </li>
+    <li>
+      <strong>Enable TDD mode for large projects:</strong> Set <code>CRP_MODE=tdd</code> for maximum
+      compression when working with many files.
+    </li>
+    <li>
+      <strong>Use <code>ctx_compress</code> periodically:</strong> Creates checkpoints that survive
+      context window truncation, avoiding expensive re-reads.
+    </li>
+    <li>
+      <strong>Enable the archive:</strong> Large tool results are stored to disk and retrieved
+      on demand, keeping the context window small.
+    </li>
+    <li>
+      <strong>Monitor with <code>ctx_gain</code>:</strong> Check your savings periodically to
+      identify optimization opportunities.
+    </li>
+    <li>
+      <strong>Use <code>lines:N-M</code> for surgical reads:</strong> When you only need a specific
+      function in a large file, read just those lines.
+    </li>
+  </ol>
+</DocsLayout>

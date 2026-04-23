@@ -1,0 +1,169 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Caching & Compression',
+    items: [
+      { label: 'Overview', href: lp('/docs/concepts/caching') },
+      { label: 'Session Cache', href: lp('/docs/concepts/caching') + '#session-cache' },
+      { label: 'File References', href: lp('/docs/concepts/caching') + '#file-references' },
+      { label: 'Shell Compression', href: lp('/docs/concepts/caching') + '#shell-compression' },
+      { label: 'Archive System', href: lp('/docs/concepts/caching') + '#archive' },
+      { label: 'Compaction', href: lp('/docs/concepts/caching') + '#compaction' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Read Modes', href: lp('/docs/concepts/read-modes') },
+      { label: 'ctx_cache', href: lp('/docs/tools/ctx-cache') },
+      { label: 'ctx_compress', href: lp('/docs/tools/ctx-compress') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Caching & Compression"
+  description="How lean-ctx caches files, compresses shell output, and manages the context window to achieve 74-99% token savings."
+  sidebar={sidebar}
+>
+  <p>
+    lean-ctx uses a multi-layered caching and compression system to minimize token usage.
+    Understanding these layers helps you get the most out of the system.
+  </p>
+
+  <h2 id="session-cache">Session Cache</h2>
+  <p>
+    Every file read via <code>ctx_read</code> is stored in a per-session in-memory cache with an MD5 content hash.
+    When the same file is read again:
+  </p>
+  <ul>
+    <li><strong>Content unchanged:</strong> Returns a compact cache-hit stub (~13 tokens) instead of the full file</li>
+    <li><strong>Content changed:</strong> Returns the full new content and updates the cache</li>
+    <li><strong>Different mode requested:</strong> Re-reads with the new mode</li>
+  </ul>
+
+  <h3>Cache Lifecycle</h3>
+  <pre><code>{`# 1. First read: full content cached
+ctx_read src/auth.ts
+→ F1=auth.ts 123L [full content...]  (~450 tokens)
+
+# 2. Second read: cache hit
+ctx_read src/auth.ts
+→ F1=auth.ts cached 2t 123L  (~13 tokens, 97% saved)
+
+# 3. File was edited externally, third read: detects change
+ctx_read src/auth.ts
+→ F1=auth.ts 125L [new full content...]
+
+# 4. Force bypass cache
+ctx_read src/auth.ts fresh=true
+→ F1=auth.ts 125L [re-read full content...]`}</code></pre>
+
+  <h3>Cache Management</h3>
+  <table>
+    <thead>
+      <tr><th>Command</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>ctx_cache action="status"</code></td><td>Show cached files, sizes, and hit rates</td></tr>
+      <tr><td><code>ctx_cache action="clear"</code></td><td>Clear entire session cache</td></tr>
+      <tr><td><code>ctx_cache action="invalidate" path="..."</code></td><td>Invalidate a specific file</td></tr>
+      <tr><td><code>ctx_read fresh=true</code></td><td>Bypass cache for a single read</td></tr>
+    </tbody>
+  </table>
+  <p>The cache auto-clears after 5 minutes of inactivity to prevent stale data.</p>
+
+  <h2 id="file-references">File References (F1, F2, ...)</h2>
+  <p>
+    Each file read in a session gets a persistent short ID: <code>F1</code>, <code>F2</code>, etc.
+    These IDs survive across the entire session and can be used instead of full paths to save tokens.
+  </p>
+  <pre><code>{`F1=auth.ts 123L      → Use "F1" instead of "src/auth/service.ts"
+F2=server.rs 262L    → Use "F2" instead of "src/http/server.rs"
+F3=db.ts 64L         → Use "F3" instead of "src/database/db.ts"`}</code></pre>
+  <p>
+    In TDD mode, even longer identifiers within file content are mapped to short symbols
+    (<code>α1</code>, <code>α2</code>...) for further compression.
+  </p>
+
+  <h2 id="shell-compression">Shell Output Compression</h2>
+  <p>
+    <code>ctx_shell</code> applies pattern-based compression to the output of 90+ recognized developer tools.
+    Each tool has a specialized compressor that preserves actionable information while stripping boilerplate.
+  </p>
+  <h3>How It Works</h3>
+  <ol>
+    <li><strong>Command Detection:</strong> Identifies the tool from the command string (git, npm, docker, etc.)</li>
+    <li><strong>Pattern Matching:</strong> Applies the tool-specific compression pattern</li>
+    <li><strong>Structured Output:</strong> Returns only the essential information with token savings count</li>
+    <li><strong>Fallback:</strong> Unrecognized commands get generic compression (ANSI stripping, empty line removal)</li>
+  </ol>
+
+  <h3>Compression Examples</h3>
+  <table>
+    <thead>
+      <tr><th>Command</th><th>Raw Output</th><th>Compressed</th><th>Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>git status</code></td><td>~600 tokens</td><td>~80 tokens</td><td>87%</td></tr>
+      <tr><td><code>npm install</code></td><td>~300 tokens</td><td>~85 tokens</td><td>71%</td></tr>
+      <tr><td><code>npm test</code></td><td>~2000 tokens</td><td>~200 tokens</td><td>90%</td></tr>
+      <tr><td><code>docker compose ps</code></td><td>~400 tokens</td><td>~100 tokens</td><td>75%</td></tr>
+      <tr><td><code>kubectl get pods</code></td><td>~800 tokens</td><td>~200 tokens</td><td>75%</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Error Recovery (Tee)</h3>
+  <p>
+    When a command fails (non-zero exit code), the full uncompressed output is automatically saved
+    to <code>~/.lean-ctx/tee/</code>. Use <code>lean-ctx tee last</code> to recover the full output.
+    This ensures compression never hides error details.
+  </p>
+
+  <h2 id="archive">Tool Result Archive</h2>
+  <p>
+    When enabled, the archive system stores full tool results to disk when they exceed a token threshold.
+    The compressed response includes an <code>[ARCHIVE: &lt;id&gt;]</code> reference that the agent
+    can use with <code>ctx_expand</code> to retrieve the full content on demand.
+  </p>
+  <h3>Flow</h3>
+  <ol>
+    <li>Tool result exceeds threshold (default: 500 tokens)</li>
+    <li>Full result stored in <code>~/.lean-ctx/archive/</code></li>
+    <li>Compressed response + archive ID sent to the agent</li>
+    <li>Agent calls <code>ctx_expand id="..."</code> when full detail is needed</li>
+    <li>Archived entries auto-expire after TTL (default: 120 minutes)</li>
+  </ol>
+  <h3>Configuration</h3>
+  <pre><code>{`# config.toml
+[archive]
+enabled = true
+threshold_tokens = 500
+ttl_minutes = 120`}</code></pre>
+
+  <h2 id="compaction">Context Compaction</h2>
+  <p>
+    <code>ctx_compress</code> creates a checkpoint of the current session state for long conversations.
+    It summarizes all cached files, their signatures, and the session context into a compact format
+    that can survive context window truncation.
+  </p>
+  <p>
+    <strong>When to use:</strong> After 15-20 tool calls, or when approaching context window limits.
+    lean-ctx auto-triggers checkpoints at configurable intervals.
+  </p>
+  <pre><code>{`ctx_compress
+→ Session checkpoint created:
+  12 files cached (F1-F12)
+  3 signatures preserved
+  Session context: 2 tasks, 1 workflow
+  Checkpoint size: ~800 tokens (vs ~15000 tokens for full state)`}</code></pre>
+</DocsLayout>
