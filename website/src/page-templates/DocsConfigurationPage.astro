@@ -23,6 +23,9 @@ const sidebar = [
       { label: 'CLI File Cache', href: lp('/docs/configuration') + '#cli-cache' },
       { label: 'Loop Detection', href: lp('/docs/configuration') + '#loop-detection' },
       { label: 'Pipe Guard', href: lp('/docs/configuration') + '#pipe-guard' },
+      { label: 'Tool Result Archive', href: lp('/docs/configuration') + '#archive' },
+      { label: 'Terse Agent Mode', href: lp('/docs/configuration') + '#terse-agent' },
+      { label: 'Headless MCP Mode', href: lp('/docs/configuration') + '#headless-mode' },
       { label: t('docsConfiguration.sidebarExitCodes'), href: lp('/docs/configuration') + '#exit-codes' },
       { label: t('docsConfiguration.sidebarTokenCounting'), href: lp('/docs/configuration') + '#token-counting' },
     ],
@@ -125,6 +128,18 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>Exclude tools from the MCP tool list to reduce token overhead. Example: <code>["ctx_benchmark", "ctx_metrics", "ctx_wrapped"]</code>. Also available via <code>LEAN_CTX_DISABLED_TOOLS</code> env var (comma-separated).</td>
       </tr>
       <tr>
+        <td><code>terse_agent</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Enable bidirectional token optimization. Agent receives CEP v1 output protocol: delta-only, function references, 150-token budget. Reduces agent verbosity by 30-50%. See <a href="#terse-agent">Terse Agent Mode</a>.</td>
+      </tr>
+      <tr>
+        <td><code>[archive]</code></td>
+        <td>table</td>
+        <td>—</td>
+        <td>Configure zero-loss compression. Full tool results are saved to disk; the agent retrieves them on demand via <code>ctx_expand</code>. See <a href="#archive">Tool Result Archive</a>.</td>
+      </tr>
+      <tr>
         <td><code>[loop_detection]</code></td>
         <td>table</td>
         <td>—</td>
@@ -196,6 +211,31 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td><code>LEAN_CTX_SHELL</code></td>
         <td>path to shell binary</td>
         <td>Override which shell lean-ctx uses for <code>ctx_shell</code> / <code>lean-ctx -c</code>. Useful on Windows when PowerShell detection fails. Example: <code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_TERSE_AGENT</code></td>
+        <td><code>true</code> / <code>false</code></td>
+        <td>Override <code>terse_agent</code> config setting. When <code>true</code>, agent instructions include the CEP v1 output protocol for bidirectional token optimization. See <a href="#terse-agent">Terse Agent Mode</a>.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ARCHIVE</code></td>
+        <td><code>true</code> / <code>false</code></td>
+        <td>Override <code>archive.enabled</code> config. Enable zero-loss compression via the <a href="#archive">Tool Result Archive</a>.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td>
+        <td>number (default: 500)</td>
+        <td>Minimum token count before a tool result is archived. Override for <code>archive.threshold_tokens</code>.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ARCHIVE_TTL</code></td>
+        <td>number (default: 120)</td>
+        <td>Auto-cleanup interval in minutes for archived results. Override for <code>archive.ttl_minutes</code>.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HEADLESS</code></td>
+        <td>set / unset</td>
+        <td>Start MCP server in headless mode — skip all auto-setup (rules injection, hook installation, CLAUDE.md modification, agent registry). See <a href="#headless-mode">Headless MCP Mode</a>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_MODELS_DIR</code></td>
@@ -446,6 +486,142 @@ search_group_limit = 10   # total search calls before block</code></pre>
       <tr><td>PowerShell</td><td><code>[Console]::IsOutputRedirected</code></td></tr>
     </tbody>
   </table>
+
+  <hr />
+
+  <h2 id="archive">Tool Result Archive <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <p>
+    When compression removes details you might need later, the <strong>Tool Result Archive</strong> saves
+    the full uncompressed output to disk and returns a reference ID. The agent can retrieve the full
+    content at any time using <a href={lp('/docs/tools/core') + '#ctx_expand'}><code>ctx_expand</code></a>.
+  </p>
+  <p>
+    This is the core of <strong>zero-loss compression</strong>: the context window stays small,
+    but no information is permanently lost.
+  </p>
+
+  <h3>How It Works</h3>
+  <ol>
+    <li>A tool response exceeds the configured token threshold</li>
+    <li>LeanCTX stores the full output to <code>~/.lean-ctx/archive/</code> (content-addressed by SHA-256)</li>
+    <li>The compressed response includes an <code>[ARCHIVE: &lt;id&gt;]</code> reference</li>
+    <li>The agent calls <code>ctx_expand &lt;id&gt;</code> to retrieve the full content on demand</li>
+  </ol>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+[archive]
+enabled = true                # Enable tool result archiving (default: false)
+threshold_tokens = 500        # Minimum tokens before archiving kicks in (default: 500)
+ttl_minutes = 120             # Auto-cleanup after N minutes (default: 120)</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>archive.enabled</code></td><td>bool</td><td><code>false</code></td><td>Enable the archive system. When disabled, compression is permanent (no retrieval).</td></tr>
+      <tr><td><code>archive.threshold_tokens</code></td><td>u32</td><td><code>500</code></td><td>Only archive results above this token count. Small outputs don't benefit from archiving.</td></tr>
+      <tr><td><code>archive.ttl_minutes</code></td><td>u32</td><td><code>120</code></td><td>Archived results are automatically cleaned up after this duration.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Environment Variables</h3>
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>LEAN_CTX_ARCHIVE</code></td><td><code>true</code> / <code>false</code></td><td>Override <code>archive.enabled</code> at runtime.</td></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td><td>number</td><td>Override <code>archive.threshold_tokens</code>.</td></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE_TTL</code></td><td>number (minutes)</td><td>Override <code>archive.ttl_minutes</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Storage</h3>
+  <p>
+    Archived results are content-addressed (SHA-256 hash of the full output). Duplicate content
+    is automatically deduplicated. Race conditions from parallel tool calls are handled via
+    PID-unique temporary files with atomic rename.
+  </p>
+
+  <hr />
+
+  <h2 id="terse-agent">Terse Agent Mode <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <p>
+    Terse Agent Mode optimizes both directions of the AI conversation: not just <em>input</em>
+    tokens (tool responses), but also <em>output</em> tokens (the agent's own responses).
+    When enabled, the agent instructions include the CEP v1 protocol which trains the agent
+    to use function references, delta-only output, and structured notation.
+  </p>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+terse_agent = true</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>terse_agent</code></td><td>bool</td><td><code>false</code></td><td>Enable bidirectional token optimization. The agent receives CEP protocol instructions and a 150-token budget per response.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Environment Variables</h3>
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>true</code> / <code>false</code></td><td>Override <code>terse_agent</code> at runtime.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>What Changes</h3>
+  <p>
+    When terse mode is active, the agent instructions include the <strong>CEP v1</strong> output protocol:
+  </p>
+  <ul>
+    <li><strong>Act First</strong> — Tool calls before narration</li>
+    <li><strong>Delta Only</strong> — Only changed lines, using function references (F1, F2...)</li>
+    <li><strong>Structured Notation</strong> — <code>+</code> (add), <code>-</code> (remove), <code>~</code> (modify)</li>
+    <li><strong>One Line Per Action</strong> — No verbose explanations</li>
+    <li><strong>150 Token Budget</strong> — Maximum response length for non-code output</li>
+  </ul>
+  <p>
+    This can reduce total token usage by <strong>30-50%</strong> per conversation turn.
+    Best suited for experienced developers who prefer concise, code-focused interactions.
+  </p>
+
+  <hr />
+
+  <h2 id="headless-mode">Headless MCP Mode <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <p>
+    By default, when lean-ctx starts as an MCP server it automatically configures the environment:
+    injecting rules, installing hooks, updating CLAUDE.md, and registering itself. If you want full
+    control over your configuration — for example when using a custom launcher — you can disable
+    all auto-setup behavior.
+  </p>
+
+  <h3>Usage</h3>
+  <pre><code># Set before launching the MCP server
+export LEAN_CTX_HEADLESS=1
+
+# lean-ctx will start as a pure MCP server:
+# - No rules injection
+# - No hook installation
+# - No CLAUDE.md modification
+# - No agent registry updates
+# - No background version check</code></pre>
+
+  <h3>When to Use</h3>
+  <ul>
+    <li><strong>Custom launchers</strong> — You inject lean-ctx instructions via <code>--append-system-prompt</code></li>
+    <li><strong>Toggle setups</strong> — You want to switch lean-ctx on/off per session</li>
+    <li><strong>CI/CD pipelines</strong> — No interactive environment, no need for hooks</li>
+    <li><strong>Sandboxed environments</strong> — You don't want lean-ctx modifying files outside the project</li>
+  </ul>
 
   <hr />
 

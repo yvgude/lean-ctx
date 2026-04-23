@@ -17,6 +17,7 @@ const sidebar = [
       { label: 'ctx_shell', href: lp('/docs/tools/core') + '#ctx_shell' },
       { label: 'ctx_search', href: lp('/docs/tools/core') + '#ctx_search' },
       { label: 'ctx_execute', href: lp('/docs/tools/core') + '#ctx_execute' },
+      { label: 'ctx_expand', href: lp('/docs/tools/core') + '#ctx_expand' },
     ],
   },
   {
@@ -329,7 +330,7 @@ ctx_read src/auth/service.rs --mode task
     <code>ctx_shell</code> enforces multiple security layers:
   </p>
   <ul>
-    <li><strong>File-write blocking</strong> — Shell redirects (<code>&gt;</code>, <code>&gt;&gt;</code>), heredocs (<code>&lt;&lt; EOF</code>), and <code>tee</code> are rejected with a clear error. Use the native Write tool instead.</li>
+    <li><strong>File-write blocking</strong> — Shell redirects (<code>&gt;</code>, <code>&gt;&gt;</code>), heredocs that write to files (<code>cat &lt;&lt;EOF &gt; file.txt</code>), and <code>tee</code> are rejected with a clear error. Heredocs for input piping (e.g. <code>psql &lt;&lt;EOF</code>) are allowed. Use the native Write tool for file creation.</li>
     <li><strong>Command size limit</strong> — Commands over 8KB are rejected. Large heredocs corrupt the MCP protocol stream.</li>
     <li><strong>Output size cap</strong> — Output exceeding <code>LCTX_MAX_SHELL_BYTES</code> (default: 1 MB) is truncated with a <code>[truncated]</code> marker to prevent context window overflow.</li>
     <li><strong>Metadata neutralization</strong> — All output is sanitized to strip control characters and potential prompt injection patterns.</li>
@@ -580,4 +581,52 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     <li>Large outputs are smart-truncated (60% head / 40% tail) to stay within token limits</li>
     <li>Only stdout enters the AI context — stderr is shown separately for debugging</li>
   </ul>
+
+  <h2 id="ctx_expand">ctx_expand <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <p>
+    <code>ctx_expand</code> retrieves the full uncompressed content of a previously archived tool result.
+    When the <a href={lp('/docs/configuration') + '#archive'}>Tool Result Archive</a> is enabled,
+    compressed tool responses include an <code>[ARCHIVE: &lt;id&gt;]</code> reference.
+    The agent calls <code>ctx_expand</code> to get back the complete data on demand.
+  </p>
+  <p>
+    This enables <strong>zero-loss compression</strong>: the context window stays small,
+    but the agent can always access the full details when needed.
+  </p>
+
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <table>
+    <thead>
+      <tr><th>{t('docsToolsCore.thParameter')}</th><th>{t('docsToolsCore.thType')}</th><th>{t('docsToolsCore.thRequired')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>string</td><td>Yes</td><td>The archive reference ID (from the <code>[ARCHIVE: ...]</code> marker in a compressed response)</td></tr>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>get</code> (default) — retrieve full content; <code>list</code> — show all archived entries; <code>stats</code> — show archive statistics</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example: Retrieve Archived Content</h3>
+  <pre><code>{`# Agent sees in compressed response:
+#   [ARCHIVE: a1b2c3d4] Use ctx_expand to retrieve full output
+
+ctx_expand id="a1b2c3d4"
+→ [Full uncompressed content from original tool call]`}</code></pre>
+
+  <h3>Example: List Archives</h3>
+  <pre><code>{`ctx_expand action="list"
+→ 3 archived results (2.1 MB total)
+  a1b2c3d4  ctx_shell "cargo test"      12 min ago  45KB
+  e5f6g7h8  ctx_read server.rs          8 min ago   23KB
+  i9j0k1l2  ctx_search "TODO"           3 min ago   12KB`}</code></pre>
+
+  <h3>How It Works</h3>
+  <ol>
+    <li>When a tool result exceeds the configured token threshold (default: 500), LeanCTX stores the full content to <code>~/.lean-ctx/archive/</code></li>
+    <li>The compressed response includes the archive reference ID</li>
+    <li>The agent calls <code>ctx_expand</code> with that ID to retrieve the original content</li>
+    <li>Archived entries are automatically cleaned up after the configured TTL (default: 120 minutes)</li>
+  </ol>
+  <p>
+    Configure the archive via <code>config.toml</code> — see <a href={lp('/docs/configuration') + '#archive'}>Archive Configuration</a>.
+  </p>
 </DocsLayout>

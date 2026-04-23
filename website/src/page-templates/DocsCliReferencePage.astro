@@ -25,6 +25,7 @@ const sidebar = [
       { label: t('docs.cliReference.sidebarHeatmap'), href: lp('/docs/cli-reference#heatmap') },
       { label: t('docs.cliReference.sidebarSafetyLevels'), href: lp('/docs/cli-reference#safety-levels') },
       { label: t('docs.cliReference.sidebarBypass'), href: lp('/docs/cli-reference#bypass') },
+      { label: 'Cloud Auth', href: lp('/docs/cli-reference#login') },
       { label: t('docs.cliReference.sidebarShellAliases'), href: lp('/docs/cli-reference#shell-aliases') },
     ],
   },
@@ -181,6 +182,12 @@ lean-ctx deps frontend/</code></pre>
     <li>{t('docs.cliReference.setupStep2')}</li>
     <li><Fragment set:html={t('docs.cliReference.setupStep3')} /></li>
   </ol>
+  <p>
+    Since v3.3.3, the setup wizard includes a <strong>Premium Features</strong> step where you can
+    configure <a href={lp('/docs/configuration') + '#terse-agent'}>Terse Agent Mode</a>,
+    <a href={lp('/docs/configuration') + '#archive'}>Tool Result Archive</a>, and
+    Output Density interactively.
+  </p>
 
   <h3 id="init"><code>lean-ctx init [--global | &lt;shell&gt;]</code></h3>
   <p>{t('docs.cliReference.initDesc')}</p>
@@ -237,6 +244,32 @@ lean-ctx config set checkpoint_interval 20</code></pre>
   <p>{t('docs.cliReference.updateDesc')}</p>
   <pre><code>lean-ctx update         # download and install latest version
 lean-ctx update --check # check if a newer version is available (no install)</code></pre>
+
+  <h3 id="login"><code>lean-ctx login &lt;email&gt; [--password &lt;pw&gt;]</code> <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h3>
+  <p>
+    Authenticate with LeanCTX Cloud. Only attempts login — does <strong>not</strong> create a new account.
+    If password is omitted, prompts interactively.
+  </p>
+  <pre><code>lean-ctx login user@example.com
+lean-ctx login user@example.com --password mypassword</code></pre>
+  <p>
+    On success, saves the API key to <code>~/.lean-ctx/cloud/credentials.json</code> and syncs
+    your data. If your email is not yet verified, you'll receive a reminder to check your inbox.
+  </p>
+
+  <h3 id="register"><code>lean-ctx register &lt;email&gt; [--password &lt;pw&gt;]</code> <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h3>
+  <p>
+    Create a new LeanCTX Cloud account. Separate from <code>login</code> — no auto-fallback.
+    A verification email is sent after registration.
+  </p>
+  <pre><code>lean-ctx register user@example.com
+lean-ctx register user@example.com --password mypassword</code></pre>
+
+  <h3 id="forgot-password"><code>lean-ctx forgot-password &lt;email&gt;</code></h3>
+  <p>
+    Request a password reset email for an existing LeanCTX Cloud account.
+  </p>
+  <pre><code>lean-ctx forgot-password user@example.com</code></pre>
 
   <h3 id="uninstall"><code>lean-ctx uninstall</code></h3>
   <p><Fragment set:html={t('docs.cliReference.uninstallDesc')} /></p>

@@ -27,7 +27,16 @@ const sidebar = [
 
 <h2 id="login">{t('docs.cloud.login')}</h2>
 
-<pre><code>lean-ctx login your@email.com</code></pre>
+<p>Since v3.3.3, login and registration are separate commands:</p>
+
+<pre><code># Create a new account
+lean-ctx register your@email.com
+
+# Log into an existing account
+lean-ctx login your@email.com
+
+# Reset your password
+lean-ctx forgot-password your@email.com</code></pre>
 
 <p>{t('docs.cloud.loginDesc')}</p>
 
