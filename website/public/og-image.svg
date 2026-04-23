@@ -85,7 +85,7 @@
 
   <!-- Secondary stats row -->
   <text x="600" y="465" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="15" fill="#64748b">
-    <tspan fill="#34d399">Rust</tspan>  ·  <tspan fill="#94a3b8">Single Binary</tspan>  ·  <tspan fill="#34d399">Zero Telemetry</tspan>  ·  <tspan fill="#94a3b8">Apache 2.0</tspan>  ·  <tspan fill="#34d399">18 Languages</tspan>
+    <tspan fill="#34d399">Rust</tspan>  ·  <tspan fill="#94a3b8">Single Binary</tspan>  ·  <tspan fill="#34d399">Zero Telemetry</tspan>  ·  <tspan fill="#94a3b8">MIT Licensed</tspan>  ·  <tspan fill="#34d399">18 Languages</tspan>
   </text>
 
   <!-- Install command -->

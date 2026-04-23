@@ -20,7 +20,7 @@ interface Props {
 const {
   title,
   description = `Reduce Claude Code, Cursor & Copilot token costs by 99%. Open-source MCP server + shell hook with ${getMcpManifest().counts.granular} tools and 90+ compression patterns. Single Rust binary, zero telemetry.`,
-  ogImage = '/og-image.png',
+  ogImage = '/og-image-v3.png',
   noindex = false,
   keywords = 'lean-ctx, reduce AI token costs, MCP server, Claude Code costs, Cursor token optimization, Copilot API costs, context compression, Rust, Gemini CLI, Windsurf, context engineering, agentic coding',
   breadcrumbs,
@@ -109,6 +109,7 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   {ogImage && <meta property="og:image:alt" content={title} />}
 
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@leanctx" />
   <meta name="twitter:title" content={title} />
   <meta name="twitter:description" content={description} />
   {ogImage && <meta name="twitter:image" content={new URL(ogImage, Astro.site)} />}
