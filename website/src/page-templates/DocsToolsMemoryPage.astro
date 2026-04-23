@@ -171,6 +171,8 @@ ctx_knowledge action=embeddings_reset
 ctx_knowledge action=embeddings_reindex
 → Embeddings reindex ok (embedded 128 facts).</code></pre>
 
+  <a href={lp('/docs/tools/ctx-knowledge')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_agent">ctx_agent — Multi-Agent Coordination & Diaries</h2>
   <p>
     Coordinates multiple concurrent AI agents working on the same project.
@@ -237,6 +239,8 @@ ctx_agent action=diaries
     Agent diaries: <code>~/.lean-ctx/agents/diaries/&lt;agent-id&gt;.json</code>.
   </p>
 
+  <a href={lp('/docs/tools/ctx-agent')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_share">ctx_share — Multi-Agent Context Sharing</h2>
   <p>
     Enables agents to share cached file contents with each other. When one agent has read and cached files,
@@ -269,6 +273,8 @@ ctx_share action=pull
   <p>
     Shared contexts are stored at <code>~/.lean-ctx/agents/shared/</code> as JSON files.
   </p>
+
+  <a href={lp('/docs/tools/ctx-share')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_overview">ctx_overview — Task-Aware Project Map with Wake-Up Briefing</h2>
   <p>
@@ -319,6 +325,8 @@ ctx_share action=pull
   RECENT_DECISIONS:Use refresh tokens|Add rate limiting
   AGENTS:cursor-a3f8(dev),claude-b7e2(review)</code></pre>
 
+  <a href={lp('/docs/tools/ctx-overview')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_task">ctx_task — A2A Task Delegation</h2>
   <p>
     Agent-to-Agent (A2A) task management following the Google A2A protocol. Agents can create,
@@ -366,6 +374,8 @@ ctx_task action=list
   <h3>Storage</h3>
   <p>Tasks are stored at <code>~/.lean-ctx/agents/tasks.json</code>.</p>
 
+  <a href={lp('/docs/tools/ctx-task')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_cost">ctx_cost — Token Cost Attribution</h2>
   <p>
     Tracks and reports token costs per agent and per tool. Provides detailed breakdowns of which
@@ -406,4 +416,6 @@ ctx_task action=list
 
   <h3>Storage</h3>
   <p>Cost data is stored at <code>~/.lean-ctx/costs.json</code> and resets per session.</p>
+
+  <a href={lp('/docs/tools/ctx-cost')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 </DocsLayout>

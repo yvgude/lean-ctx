@@ -23,6 +23,8 @@ build-website:
     - node scripts/validate-manifest.mjs
     - node scripts/validate-i18n.mjs
     - node scripts/validate-docs-coverage.mjs
+    - node scripts/validate-tool-docs.mjs
+    - node scripts/validate-i18n-duplicates.mjs
     - npm run -s build
   artifacts:
     paths:

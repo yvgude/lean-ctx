@@ -1,0 +1,319 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Versions',
+    items: [
+      { label: '3.3.3 (Current)', href: lp('/docs/changelog') + '#v3.3.3' },
+      { label: '3.3.2', href: lp('/docs/changelog') + '#v3.3.2' },
+      { label: '3.3.1', href: lp('/docs/changelog') + '#v3.3.1' },
+      { label: '3.3.0', href: lp('/docs/changelog') + '#v3.3.0' },
+      { label: '3.2.9', href: lp('/docs/changelog') + '#v3.2.9' },
+      { label: '3.2.8', href: lp('/docs/changelog') + '#v3.2.8' },
+      { label: '3.2.6', href: lp('/docs/changelog') + '#v3.2.6' },
+      { label: '3.2.0', href: lp('/docs/changelog') + '#v3.2.0' },
+      { label: '3.0.1', href: lp('/docs/changelog') + '#v3.0.1' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: lp('/docs/getting-started') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+      { label: 'Tool API (46)', href: lp('/docs/tools') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Changelog"
+  description="lean-ctx version history — new features, improvements, and bug fixes for every release."
+  sidebar={sidebar}
+>
+  <p>
+    Complete version history for lean-ctx. Each release includes new features,
+    improvements, and bug fixes. lean-ctx follows semantic versioning.
+  </p>
+
+  <!-- 3.3.3 -->
+  <h2 id="v3.3.3">3.3.3 <span class="text-xs text-muted">(April 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Official release tag:</strong> lean-ctx 3.3.3 is the current recommended version, marked as the official stable build</li>
+    <li>Stability improvements across all 46 MCP tools</li>
+    <li>Refined CEP v1 (Context Efficiency Protocol) instruction codes</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Improved CRP mode density — budget enforcement at ≤150 tokens per response</li>
+    <li>Enhanced <code>ctx_knowledge</code> with <code>rooms</code>, <code>search</code>, and <code>wakeup</code> actions</li>
+    <li>Better session resume flow with <code>ctx_session</code> resume action</li>
+    <li>Polished Observatory TUI dashboard layout</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed edge case where <code>ctx_dedup</code> could skip entries with identical hashes but different paths</li>
+    <li>Corrected cache-hit stub token count reporting in <code>ctx_gain</code></li>
+    <li>Fixed <code>ctx_tree</code> depth parameter not respecting symlink boundaries</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.3.2 -->
+  <h2 id="v3.3.2">3.3.2 <span class="text-xs text-muted">(March 2026)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Composite project hash:</strong> New <code>project_hash</code> combines content hash, structure hash, and config hash into a single deterministic fingerprint for change detection</li>
+    <li><strong>Codex hooks integration:</strong> Native hook support for OpenAI Codex CLI — <code>PreToolCall</code>, <code>PostToolCall</code>, and <code>SessionStart</code> events</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>project_hash</code> — composite hash for CI caching and drift detection across branches</li>
+    <li>Codex hook scripts auto-installed via <code>lean-ctx install --codex</code></li>
+    <li><code>ctx_knowledge action="timeline"</code> — chronological view of knowledge base entries</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Faster <code>ctx_preload</code> with parallel file reads (up to 4x speedup on large projects)</li>
+    <li>Reduced memory footprint for sessions with 50+ cached files</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed <code>project_hash</code> inconsistency when <code>.gitignore</code> patterns changed between runs</li>
+    <li>Resolved Codex hook permission errors on Windows WSL environments</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.3.1 -->
+  <h2 id="v3.3.1">3.3.1 <span class="text-xs text-muted">(February 2026)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>85+ new passthrough entries:</strong> Massive expansion of the shell passthrough table — commands that are passed through uncompressed when compression would lose critical information</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li>85+ new passthrough patterns for debugging tools (<code>strace</code>, <code>ltrace</code>, <code>perf</code>), database CLIs (<code>psql</code>, <code>mysql</code>, <code>redis-cli</code>), and cloud CLIs (<code>aws</code>, <code>gcloud</code>, <code>az</code>)</li>
+    <li><code>ctx_shell raw=true</code> — explicit bypass for any command, returning uncompressed output</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Better error messages when passthrough entries conflict with custom compression patterns</li>
+    <li>Shell pattern matching now supports glob wildcards in command prefixes</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed passthrough not triggering for commands with leading whitespace</li>
+    <li>Resolved <code>ctx_shell</code> timeout not resetting between chained commands</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.3.0 -->
+  <h2 id="v3.3.0">3.3.0 <span class="text-xs text-muted">(January 2026)</span></h2>
+  <p class="text-sm text-muted">Major release — expanded tool surface and protocol overhaul.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>46 MCP tools:</strong> Expanded from 38 to 46 tools, adding analysis, graph, and workflow categories</li>
+    <li><strong>CEP v1 protocol:</strong> New Context Efficiency Protocol with 5-rule framework and instruction codes</li>
+    <li><strong>18 tree-sitter grammars:</strong> Full language coverage for structural analysis</li>
+  </ul>
+
+  <h3>New Tools</h3>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Category</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code><a href={lp('/docs/tools/ctx-architecture')}>ctx_architecture</a></code></td><td>Analysis</td><td>Project architecture overview with dependency graph</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-graph')}>ctx_graph</a></code></td><td>Analysis</td><td>Build and query code dependency graphs</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-graph-diagram')}>ctx_graph_diagram</a></code></td><td>Analysis</td><td>Visual Mermaid diagrams from dependency data</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-heatmap')}>ctx_heatmap</a></code></td><td>Analysis</td><td>File complexity and change-frequency heatmaps</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-impact')}>ctx_impact</a></code></td><td>Analysis</td><td>Change impact analysis — what breaks if you modify X</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-workflow')}>ctx_workflow</a></code></td><td>Workflow</td><td>Multi-step workflow orchestration</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-wrapped')}>ctx_wrapped</a></code></td><td>Workflow</td><td>Wrapped tool calls with pre/post hooks</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-execute')}>ctx_execute</a></code></td><td>Workflow</td><td>Execute workflow steps with rollback</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Rewritten instruction system with <code>ACT1</code>, <code>BRIEF</code>, <code>FULL</code>, <code>DELTA</code>, <code>NOREPEAT</code>, <code>STRUCT</code>, <code>1LINE</code> codes</li>
+    <li>Auto-checkpoint every 15 tool calls (configurable)</li>
+    <li>Tree-sitter grammars now cover TypeScript, Python, Rust, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, Scala, Lua, Zig, Elixir, Haskell, OCaml</li>
+  </ul>
+
+  <h3>Breaking Changes</h3>
+  <ul>
+    <li>CRP mode output format changed — agents using hard-coded parsers should update</li>
+    <li><code>ctx_agent action="handoff"</code> renamed to <code>ctx_handoff</code> (old form still accepted with deprecation warning)</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.9 -->
+  <h2 id="v3.2.9">3.2.9 <span class="text-xs text-muted">(December 2025)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>LEAN_CTX_SHELL_TIMEOUT_MS</code>:</strong> New environment variable to control shell command timeout globally — prevents runaway processes from blocking sessions</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>LEAN_CTX_SHELL_TIMEOUT_MS</code> — configurable shell timeout (default: 30000ms), applied to all <code>ctx_shell</code> invocations</li>
+    <li><code>ctx_shell</code> now reports timeout kills with exit code and partial output</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Graceful SIGTERM → SIGKILL escalation for timed-out processes (500ms grace period)</li>
+    <li>Timeout duration shown in <code>ctx_metrics</code> per-command breakdown</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed zombie process accumulation when timeout killed a process group</li>
+    <li>Resolved <code>ctx_shell</code> not cleaning up temp files after timeout</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.8 -->
+  <h2 id="v3.2.8">3.2.8 <span class="text-xs text-muted">(November 2025)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Gemini path change:</strong> Gemini CLI MCP configuration moved from <code>~/.gemini/config.json</code> to VS Code <code>settings.json</code> — lean-ctx auto-detects the new path</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li>Auto-detection of Gemini MCP config in <code>settings.json</code> during <code>lean-ctx install --gemini</code></li>
+    <li><code>lean-ctx doctor</code> now checks both legacy and new Gemini config locations</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Installer shows migration instructions when legacy Gemini config is detected</li>
+    <li>Updated <a href={lp('/docs/guides/editor-integrations')}>Editor Integrations</a> guide with new Gemini setup steps</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed installer creating duplicate MCP entries when both config locations existed</li>
+    <li>Resolved Gemini config validation failing on Windows backslash paths</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.6 -->
+  <h2 id="v3.2.6">3.2.6 <span class="text-xs text-muted">(October 2025)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>rules_scope</code>:</strong> New config option to control which rule files lean-ctx injects — filter by <code>project</code>, <code>user</code>, or <code>global</code> scope</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>rules_scope</code> config option — restrict injected rules to specific scopes (<code>"project"</code>, <code>"user"</code>, <code>"global"</code>, or combinations)</li>
+    <li><code>ctx_read mode="reference"</code> — compact reference-only output for documentation files</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Rule injection now respects <code>.cursorignore</code> patterns</li>
+    <li>Faster startup when many rule files are present (lazy loading)</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed <code>rules_scope="project"</code> accidentally including workspace-level rules</li>
+    <li>Resolved rules not reloading after config change without server restart</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.0 -->
+  <h2 id="v3.2.0">3.2.0 <span class="text-xs text-muted">(August 2025)</span></h2>
+  <p class="text-sm text-muted">Major feature release — HTTP server mode.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>lean-ctx serve</code>:</strong> HTTP server mode for running lean-ctx as a standalone service — enables remote agents, web integrations, and custom toolchains to use lean-ctx over HTTP</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>lean-ctx serve</code> — starts an HTTP server with REST API endpoints mirroring all MCP tools</li>
+    <li><code>lean-ctx serve --stdio</code> — stdio mode for container and pipe-based integrations</li>
+    <li><code>lean-ctx serve --port 9315</code> — configurable port (default: 9315)</li>
+    <li>Health check endpoint at <code>/health</code> with session and cache stats</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>All 38 tools (at the time) accessible via <code>POST /tool/:name</code> with JSON body</li>
+    <li>Session management via <code>X-Session-ID</code> header — enables multi-tenant usage</li>
+    <li>CORS support for browser-based integrations</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed stdio mode not flushing output buffers on slow connections</li>
+    <li>Resolved session cleanup not triggering for HTTP sessions after idle timeout</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.0.1 -->
+  <h2 id="v3.0.1">3.0.1 <span class="text-xs text-muted">(June 2025)</span></h2>
+  <p class="text-sm text-muted">First stable release of the v3 series.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>lean-ctx watch</code> (Observatory TUI):</strong> Real-time terminal dashboard showing active sessions, tool calls, token savings, cache status, and agent activity</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>lean-ctx watch</code> — interactive terminal UI with live session monitoring</li>
+    <li>Dashboard panels: active agents, recent tool calls, token savings graph, cache hit rate, file reference table</li>
+    <li>Keyboard shortcuts: <kbd>q</kbd> quit, <kbd>r</kbd> refresh, <kbd>t</kbd> toggle tool detail, <kbd>f</kbd> filter by agent</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Complete rewrite from Node.js to Rust — 10x faster startup, 5x lower memory</li>
+    <li>Single binary distribution — no runtime dependencies</li>
+    <li>Tree-sitter integration for structural code analysis (initial 12 grammars)</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed file watcher not detecting changes on NFS-mounted directories</li>
+    <li>Resolved TUI rendering artifacts on terminals with non-standard color support</li>
+    <li>Fixed <code>ctx_read</code> returning stale content when file was replaced (not modified in-place)</li>
+  </ul>
+</DocsLayout>

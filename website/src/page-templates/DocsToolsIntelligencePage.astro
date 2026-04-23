@@ -62,6 +62,8 @@ const sidebar = [
   <pre><code>ctx_smart_read src/auth.ts
 → [auto:map] Selected map mode (file cached, 915 tokens → 89 tokens)</code></pre>
 
+  <a href={lp('/docs/tools/ctx-smart-read')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_delta">ctx_delta</h2>
   <p>
     Incremental file update using Myers diff. Only sends changed lines (hunks with context)
@@ -77,6 +79,8 @@ const sidebar = [
   @@ -45,3 +45,5 @@
   + const token = generateJWT(user);
   + res.cookie('session', token);</code></pre>
+
+  <a href={lp('/docs/tools/ctx-delta')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_fill">ctx_fill</h2>
   <p>
@@ -97,6 +101,8 @@ const sidebar = [
   db.ts       → map        (89 tokens, priority 5)
   routes.ts   → signatures (42 tokens, priority 3)
   Total: 1046/2000 tokens used</code></pre>
+
+  <a href={lp('/docs/tools/ctx-fill')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_intent">ctx_intent</h2>
   <p>
@@ -125,6 +131,8 @@ const sidebar = [
   F3=src/__tests__/auth.test.ts (full, 340t) — heat: 0.65
   F4=src/middleware.ts (map, 89t) — heat: 0.45</code></pre>
 
+  <a href={lp('/docs/tools/ctx-intent')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_context">ctx_context</h2>
   <p>
     Multi-turn context manager. Shows what files the LLM has already seen,
@@ -138,6 +146,8 @@ const sidebar = [
   F1=auth.ts ✓cached [5 reads]
   F2=db.ts ✓cached [3 reads]
   F3=routes.ts ✓cached [2 reads, modified]</code></pre>
+
+  <a href={lp('/docs/tools/ctx-context')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_graph">ctx_graph</h2>
   <p>
@@ -235,6 +245,8 @@ const sidebar = [
   Last build: 2026-03-27 14:30 (12 min ago)
   Stale files: 3 (re-run build to update)</code></pre>
 
+  <a href={lp('/docs/tools/ctx-graph')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_dedup">ctx_dedup</h2>
   <p>
     Cross-file deduplication analysis. Finds shared imports, boilerplate blocks,
@@ -250,6 +262,8 @@ const sidebar = [
   "import { db } from '../pages/docs/lib/db'" — 5 files (saving ~40 tokens)
   "export default handler" — 4 files (saving ~25 tokens)`}</code></pre>
 
+  <a href={lp('/docs/tools/ctx-dedup')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_response">ctx_response</h2>
   <p>
     Bi-directional response compression. Compresses LLM response text by removing filler
@@ -259,6 +273,8 @@ const sidebar = [
   <ul>
     <li><code>text</code> (required) — text to compress</li>
   </ul>
+
+  <a href={lp('/docs/tools/ctx-response')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_discover">ctx_discover</h2>
   <p>
@@ -274,6 +290,8 @@ const sidebar = [
 → Shell commands that would benefit from lean-ctx:
   docker ps -a        — ran 12x, ~800 tokens each → ~9,600 tokens saveable
   kubectl get pods    — ran 8x, ~1,200 tokens each → ~9,600 tokens saveable</code></pre>
+
+  <a href={lp('/docs/tools/ctx-discover')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_edit">ctx_edit</h2>
   <p>
@@ -292,6 +310,8 @@ const sidebar = [
   <pre><code>ctx_edit path=src/config.ts old_string="timeout: 5000" new_string="timeout: 10000"
 → Replaced 1 occurrence in src/config.ts (cache updated)</code></pre>
 
+  <a href={lp('/docs/tools/ctx-edit')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_preload">ctx_preload</h2>
   <p>
     Proactive context loader. Given a task description, automatically identifies and caches
@@ -307,6 +327,8 @@ const sidebar = [
 → Preloaded 5 files (2,340 tokens):
   F1=src/auth.ts (full) F2=src/lib/jwt.ts (full) F3=src/middleware.ts (map)
   F4=src/config.ts (signatures) F5=src/routes.ts (signatures)</code></pre>
+
+  <a href={lp('/docs/tools/ctx-preload')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_semantic_search">ctx_semantic_search</h2>
   <p>
@@ -329,6 +351,8 @@ const sidebar = [
   2. src/middleware.ts:5-20 — auth middleware (score: 0.76)
   3. src/lib/jwt.ts:1-35 — JWT utilities (score: 0.71)</code></pre>
 
+  <a href={lp('/docs/tools/ctx-semantic-search')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_symbol">ctx_symbol</h2>
   <p set:html={t('docsToolsIntelligence.ctxSymbolDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -338,6 +362,8 @@ const sidebar = [
     <li><code>kind</code> (optional) — <code>fn</code>, <code>struct</code>, <code>class</code>, <code>method</code>, <code>trait</code>, <code>enum</code></li>
   </ul>
 
+  <a href={lp('/docs/tools/ctx-symbol')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_outline">ctx_outline</h2>
   <p set:html={t('docsToolsIntelligence.ctxOutlineDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -345,6 +371,8 @@ const sidebar = [
     <li><code>path</code> (required) — file path</li>
     <li><code>kind</code> (optional) — filter by kind</li>
   </ul>
+
+  <a href={lp('/docs/tools/ctx-outline')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_callers">ctx_callers</h2>
   <p set:html={t('docsToolsIntelligence.ctxCallersDesc')} />
@@ -354,6 +382,8 @@ const sidebar = [
     <li><code>file</code> (optional) — filter by caller file</li>
   </ul>
 
+  <a href={lp('/docs/tools/ctx-callers')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_callees">ctx_callees</h2>
   <p set:html={t('docsToolsIntelligence.ctxCalleesDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -362,6 +392,8 @@ const sidebar = [
     <li><code>file</code> (optional) — filter by caller file</li>
   </ul>
 
+  <a href={lp('/docs/tools/ctx-callees')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_routes">ctx_routes</h2>
   <p set:html={t('docsToolsIntelligence.ctxRoutesDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -369,6 +401,8 @@ const sidebar = [
     <li><code>method</code> (optional) — HTTP method (GET, POST, ...)</li>
     <li><code>path</code> (optional) — path prefix (e.g. <code>/api</code>)</li>
   </ul>
+
+  <a href={lp('/docs/tools/ctx-routes')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_graph_diagram">ctx_graph_diagram</h2>
   <p set:html={t('docsToolsIntelligence.ctxGraphDiagramDesc')} />
@@ -379,12 +413,16 @@ const sidebar = [
     <li><code>depth</code> (optional) — max depth (default 2)</li>
   </ul>
 
+  <a href={lp('/docs/tools/ctx-graph-diagram')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_compress_memory">ctx_compress_memory</h2>
   <p set:html={t('docsToolsIntelligence.ctxCompressMemoryDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
     <li><code>path</code> (required) — file path to compress</li>
   </ul>
+
+  <a href={lp('/docs/tools/ctx-compress-memory')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_impact">ctx_impact — Reverse Dependency Analysis</h2>
   <p>
@@ -406,6 +444,8 @@ const sidebar = [
 
   Transitive (depth 2): 7 more files
   Blast radius: 10 files (7% of project)</code></pre>
+
+  <a href={lp('/docs/tools/ctx-impact')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_architecture">ctx_architecture — Project Architecture Map</h2>
   <p>
@@ -430,6 +470,8 @@ const sidebar = [
   Dependencies:
     API → Service → Data → Config
     API → Config (direct)</code></pre>
+
+  <a href={lp('/docs/tools/ctx-architecture')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2>Adaptive Compression (Wave 5)</h2>
   <p>

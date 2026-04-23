@@ -233,6 +233,8 @@ ctx_read src/auth/service.rs --mode task
     </tbody>
   </table>
 
+  <a href={lp('/docs/tools/ctx-read')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_multi_read">ctx_multi_read</h2>
   <p>
     Batch variant of <code>ctx_read</code>: pass multiple file paths in one call. Each file uses the same
@@ -254,6 +256,8 @@ ctx_read src/auth/service.rs --mode task
   <pre><code>ctx_multi_read paths=["/app/src/auth.ts","/app/src/db.ts"] --mode map
 → F1=auth.ts [88L] ...
   F2=db.ts [64L] ...</code></pre>
+
+  <a href={lp('/docs/tools/ctx-multi-read')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_tree">ctx_tree</h2>
   <p>
@@ -298,6 +302,8 @@ ctx_read src/auth/service.rs --mode task
     Tree output is already ultra-compact by design. TDD mode does not apply additional compression
     to <code>ctx_tree</code> — the output format is the same regardless of <code>CRP_MODE</code>.
   </p>
+
+  <a href={lp('/docs/tools/ctx-tree')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_shell">ctx_shell</h2>
   <p>
@@ -463,6 +469,8 @@ lean-ctx shell</code></pre>
     strips ANSI codes, and truncates very long output with a summary.
   </p>
 
+  <a href={lp('/docs/tools/ctx-shell')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_search">ctx_search</h2>
   <p>
     <code>ctx_search</code> searches files for patterns using regex and returns only matching lines
@@ -515,6 +523,8 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     <li>Compact path shortening (home directory → <code>~</code>)</li>
     <li>Token savings summary appended to results</li>
   </ul>
+
+  <a href={lp('/docs/tools/ctx-search')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_execute">ctx_execute</h2>
   <p>
@@ -584,6 +594,8 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     <li>Only stdout enters the AI context — stderr is shown separately for debugging</li>
   </ul>
 
+  <a href={lp('/docs/tools/ctx-execute')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
   <h2 id="ctx_expand">ctx_expand <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
   <p>
     <code>ctx_expand</code> retrieves the full uncompressed content of a previously archived tool result.
@@ -631,4 +643,6 @@ ctx_expand id="a1b2c3d4"
   <p>
     Configure the archive via <code>config.toml</code> — see <a href={lp('/docs/configuration') + '#archive'}>Archive Configuration</a>.
   </p>
+
+  <a href={lp('/docs/tools/ctx-expand')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 </DocsLayout>

@@ -15,6 +15,8 @@ const sidebar = [
       { label: 'File References', href: lp('/docs/concepts/caching') + '#file-references' },
       { label: 'Shell Compression', href: lp('/docs/concepts/caching') + '#shell-compression' },
       { label: 'Archive System', href: lp('/docs/concepts/caching') + '#archive' },
+      { label: 'Zero-Loss Archive', href: lp('/docs/concepts/caching') + '#zero-loss-archive' },
+      { label: 'Cache-Safe Guarantee', href: lp('/docs/concepts/caching') + '#cache-safe' },
       { label: 'Compaction', href: lp('/docs/concepts/caching') + '#compaction' },
     ],
   },
@@ -149,6 +151,86 @@ F3=db.ts 64L         → Use "F3" instead of "src/database/db.ts"`}</code></pre>
 enabled = true
 threshold_tokens = 500
 ttl_minutes = 120`}</code></pre>
+
+  <h2 id="zero-loss-archive">Zero-Loss Archive (ctx_expand)</h2>
+  <p>
+    The archive system stores large tool outputs to disk so they never consume context window space —
+    but unlike simple truncation, <strong>nothing is lost</strong>. The full content is always available
+    on demand via <code>ctx_expand</code>.
+  </p>
+
+  <h3>How It Works</h3>
+  <ol>
+    <li>A tool result exceeds the configured token threshold</li>
+    <li>The full output is written to <code>~/.lean-ctx/archives/</code> with a unique ID</li>
+    <li>The model receives a compact hint instead of the full output:
+      <pre><code>{`[ARCHIVE:a7f3c2] auth.ts analysis (2,847 tokens) — 14 functions, 3 classes
+  Key exports: AuthService, TokenManager, validateJWT
+  Use ctx_expand id="a7f3c2" for full content`}</code></pre>
+    </li>
+    <li>The agent calls <code>ctx_expand id="a7f3c2"</code> only when full detail is actually needed</li>
+  </ol>
+
+  <h3>Configuration</h3>
+  <pre><code>{`# config.toml
+[archive]
+enabled = true
+threshold_tokens = 500   # Archive results larger than this
+ttl_minutes = 120        # Auto-expire after 2 hours
+max_disk_mb = 256        # Disk space limit for archives
+mask_secrets = true      # Redact detected secrets before archiving`}</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>enabled</code></td><td><code>true</code></td><td>Enable/disable the archive system</td></tr>
+      <tr><td><code>threshold_tokens</code></td><td><code>500</code></td><td>Minimum token count to trigger archiving</td></tr>
+      <tr><td><code>ttl_minutes</code></td><td><code>120</code></td><td>Time-to-live before auto-expiration</td></tr>
+      <tr><td><code>max_disk_mb</code></td><td><code>256</code></td><td>Maximum total disk usage for archives</td></tr>
+      <tr><td><code>mask_secrets</code></td><td><code>true</code></td><td>Redact API keys, tokens, and passwords before writing to disk</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Secret Masking</h3>
+  <p>
+    When <code>mask_secrets</code> is enabled, lean-ctx scans archived content for common secret patterns
+    (API keys, JWT tokens, connection strings, private keys) and replaces them with
+    <code>[REDACTED:type]</code> placeholders before writing to disk. This ensures sensitive data
+    never persists in the archive directory.
+  </p>
+
+  <h2 id="cache-safe">Cache-Safe Guarantee</h2>
+  <p>
+    lean-ctx provides a <strong>cache-safe guarantee</strong>: content already present in the model's
+    context window is never mutated or corrupted by lean-ctx operations. This is a critical invariant
+    that prevents subtle bugs from stale or inconsistent data.
+  </p>
+
+  <h3>What This Means</h3>
+  <ul>
+    <li><strong>No silent overwrites:</strong> Once a file is cached as F1 with a specific hash, the F1 reference always points to that exact content until explicitly invalidated</li>
+    <li><strong>Hash-based validation:</strong> Every cache hit verifies the MD5 content hash — if the file changed on disk, the cache entry is invalidated and a full re-read occurs</li>
+    <li><strong>Immutable archive entries:</strong> Archived content (<code>ctx_expand</code> IDs) is immutable once written — the same ID always returns the same content</li>
+    <li><strong>No partial reads:</strong> If a read fails mid-stream, no partial content enters the cache</li>
+  </ul>
+
+  <h3>Doctor Cache-Safety Check</h3>
+  <p>
+    <code>lean-ctx doctor</code> includes a cache-safety validation step that verifies:
+  </p>
+  <ul>
+    <li>All cached file hashes match current disk content</li>
+    <li>No archive entries have been externally modified</li>
+    <li>Session state is consistent with the file reference table</li>
+    <li>No orphaned cache entries exist from crashed sessions</li>
+  </ul>
+  <pre><code>{`lean-ctx doctor
+→ Cache safety: ✓ All 12 cached files verified
+  Archive integrity: ✓ 8 entries, 0 corrupted
+  Session state: ✓ Consistent
+  Orphaned entries: ✓ None found`}</code></pre>
 
   <h2 id="compaction">Context Compaction</h2>
   <p>

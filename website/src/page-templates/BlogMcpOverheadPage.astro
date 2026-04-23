@@ -24,6 +24,15 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     <div class="blog-content animate-entrance stagger-1">
 
+      <div class="blog-snapshot-notice">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span>
+          This article is a <strong>historical snapshot</strong> from lean-ctx v2.8.2 (21 tools).
+          The current version has 46+ tools.
+          <a href={lp('/docs/tools')}>See the full tool reference →</a>
+        </span>
+      </div>
+
       <p>{t('blog.mcpOverhead.introP1')}</p>
 
       <h2>{t('blog.mcpOverhead.measurementTitle')}</h2>
@@ -211,5 +220,40 @@ export LEAN_CTX_UNIFIED=1</code></pre>
     background: none;
     padding: 0;
     line-height: 1.6;
+  }
+
+  .blog-snapshot-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent-2) 30%, transparent);
+    background: color-mix(in srgb, var(--color-accent-2) 6%, transparent);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--color-text);
+  }
+
+  .blog-snapshot-notice svg {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+    color: var(--color-accent-2);
+  }
+
+  .blog-snapshot-notice strong {
+    color: var(--color-text-bright);
+    font-weight: 600;
+  }
+
+  .blog-snapshot-notice a {
+    color: var(--color-accent);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .blog-snapshot-notice a:hover {
+    text-decoration: underline;
   }
 </style>

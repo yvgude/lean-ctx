@@ -15,6 +15,8 @@ const sidebar = [
       { label: 'Measuring Savings', href: lp('/docs/concepts/token-savings') + '#measuring' },
       { label: 'Cost Calculation', href: lp('/docs/concepts/token-savings') + '#cost' },
       { label: 'Real-World Example', href: lp('/docs/concepts/token-savings') + '#example' },
+      { label: 'Bidirectional Optimization', href: lp('/docs/concepts/token-savings') + '#bidirectional' },
+      { label: 'Terse Agent', href: lp('/docs/concepts/token-savings') + '#terse-agent' },
       { label: 'Optimization Tips', href: lp('/docs/concepts/token-savings') + '#tips' },
     ],
   },
@@ -152,6 +154,123 @@ const sidebar = [
       <tr><td><strong>Total</strong></td><td><strong>27,650 tok</strong></td><td><strong>5,965 tok</strong></td><td><strong>78.4%</strong></td></tr>
     </tbody>
   </table>
+
+  <h2 id="bidirectional">Bidirectional Token Optimization</h2>
+  <p>
+    lean-ctx is the only context runtime that optimizes <strong>both input and output tokens
+    simultaneously</strong>. Most alternatives address only one side of the equation:
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Input Optimization</th><th>Output Optimization</th><th>Both?</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>RTK (Repomix)</strong></td>
+        <td>✓ Context packing, file filtering</td>
+        <td>✗ No output compression</td>
+        <td>✗</td>
+      </tr>
+      <tr>
+        <td><strong>Caveman</strong></td>
+        <td>✗ No input optimization</td>
+        <td>✓ Terse prompting</td>
+        <td>✗</td>
+      </tr>
+      <tr>
+        <td><strong>lean-ctx</strong></td>
+        <td>✓ Caching, read modes, shell compression, archive, dedup</td>
+        <td>✓ Terse Agent (3 levels), CRP mode, CEP instruction codes</td>
+        <td><strong>✓</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Input Token Savings</h3>
+  <p>Achieved through the 5-layer system described above:</p>
+  <ul>
+    <li><strong>Session cache</strong> — ~13 token stubs replace re-reads (99% on re-reads)</li>
+    <li><strong>Read modes</strong> — map, signatures, entropy, aggressive compress first reads (20-95%)</li>
+    <li><strong>Shell compression</strong> — 90+ tool-specific patterns strip boilerplate (50-95%)</li>
+    <li><strong>Archive + Expand</strong> — large results stored to disk, retrieved on demand (80-95%)</li>
+    <li><strong>Deduplication</strong> — <code>ctx_dedup</code> detects and eliminates redundant content in context</li>
+  </ul>
+
+  <h3>Output Token Savings</h3>
+  <p>Achieved through the Terse Agent system and protocol modes:</p>
+  <ul>
+    <li><strong>Terse Agent</strong> — 3 compression levels applied to model output (30-75% savings)</li>
+    <li><strong>CRP mode</strong> — maximum density protocol with abbreviations and symbol mapping</li>
+    <li><strong>CEP instruction codes</strong> — <code>ACT1</code>, <code>DELTA</code>, <code>1LINE</code>, <code>DIFF</code> control output verbosity</li>
+  </ul>
+
+  <h3>Combined Effect</h3>
+  <p>
+    By reducing both input <em>and</em> output tokens, lean-ctx achieves cost savings that
+    are multiplicative, not additive. A session that saves 85% on input and 50% on output
+    reduces total token cost by approximately <strong>67%</strong> overall — far more than
+    either optimization alone.
+  </p>
+
+  <h2 id="terse-agent">Terse Agent</h2>
+  <p>
+    The Terse Agent system instructs the model to produce compressed output at 3 escalating levels.
+    Each level trades readability for token efficiency, and the right level depends on the task.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Level</th><th>Output Savings</th><th>Behavior</th><th>Best For</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>lite</strong></td>
+        <td>30-40%</td>
+        <td>Shorter sentences, no redundant explanations, concise code comments</td>
+        <td>General development, code review</td>
+      </tr>
+      <tr>
+        <td><strong>full</strong></td>
+        <td>50-65%</td>
+        <td>Abbreviated notation, diff-only output, function refs (F1:42), no narration</td>
+        <td>Experienced developers, refactoring</td>
+      </tr>
+      <tr>
+        <td><strong>ultra</strong></td>
+        <td>65-75%</td>
+        <td>Maximum compression: +/-/~ notation, 1 line per action, symbol abbreviations (fn, cfg, impl, deps)</td>
+        <td>High-volume sessions, CI/CD agents</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>CRP Mode Interaction</h3>
+  <p>
+    When <code>CRP_MODE=tdd</code> is set, Terse Agent automatically activates at
+    <strong>ultra</strong> level with additional constraints:
+  </p>
+  <ul>
+    <li>Budget limited to ≤150 tokens per response</li>
+    <li>Zero narration — only tool calls and changed code</li>
+    <li>Fn refs only (<code>F1:42</code>) instead of full file paths</li>
+    <li>Structured notation: <code>+F1:42 param(timeout:Duration)</code> for additions, <code>-F1:10-15</code> for removals, <code>~F1:42 old→new</code> for modifications</li>
+  </ul>
+
+  <h3>Per-Project Override</h3>
+  <p>
+    Set the Terse Agent level per project in <code>config.toml</code> or via environment variable:
+  </p>
+  <pre><code>{`# config.toml
+[terse]
+level = "full"    # "lite", "full", or "ultra"
+
+# Or via environment variable
+export LCTX_TERSE_LEVEL=full`}</code></pre>
+  <p>
+    The level can also be changed mid-session via <code>ctx_session</code> without restarting
+    the lean-ctx server.
+  </p>
 
   <h2 id="tips">Optimization Tips</h2>
   <ol>

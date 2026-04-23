@@ -17,6 +17,7 @@ const sidebar = [
       { label: 'Shared Cache', href: lp('/docs/concepts/multi-agent') + '#shared-cache' },
       { label: 'Diaries', href: lp('/docs/concepts/multi-agent') + '#diaries' },
       { label: 'Context Handoff', href: lp('/docs/concepts/multi-agent') + '#handoff' },
+      { label: 'Compaction Survival', href: lp('/docs/concepts/multi-agent') + '#compaction-survival' },
     ],
   },
   {
@@ -162,6 +163,73 @@ ctx_handoff action="save" apply_knowledge=true apply_session=true apply_workflow
 ctx_handoff action="load"
 → Restored: 12 cached files (F1-F12), 3 knowledge entries, workflow "bugfix" at step "test"
   Ready to continue where Agent A left off.`}</code></pre>
+
+  <h2 id="compaction-survival">Compaction Survival</h2>
+  <p>
+    When AI providers truncate or compact the context window (e.g., Claude's context window management,
+    Cursor's automatic compaction), lean-ctx sessions can lose critical state. The <strong>Compaction
+    Survival</strong> system detects and recovers from these events automatically.
+  </p>
+
+  <h3>PreCompact Hook</h3>
+  <p>
+    The <code>PreCompact</code> hook fires when lean-ctx detects an imminent compaction event,
+    giving the system a chance to save critical state before the context is truncated:
+  </p>
+  <ul>
+    <li>Saves current session state (cached files, file references, active tasks)</li>
+    <li>Creates a compact resume block (≤500 tokens) summarizing everything needed to continue</li>
+    <li>Writes the resume block to <code>~/.lean-ctx/sessions/&lt;id&gt;/resume.json</code></li>
+  </ul>
+
+  <h3>Heuristic Detection</h3>
+  <p>
+    lean-ctx detects compaction even without an explicit hook by monitoring for a
+    <strong>tool-call counter mismatch</strong>:
+  </p>
+  <ol>
+    <li>lean-ctx tracks how many tool calls have been made in the session (server-side counter)</li>
+    <li>The model's context includes an expected counter value from the session banner</li>
+    <li>After compaction, the model may "forget" recent calls — the next tool call has a counter gap</li>
+    <li>When a gap is detected, lean-ctx automatically injects the resume block into the response</li>
+  </ol>
+  <pre><code>{`# Normal flow: counters match
+Tool call #15 → server expects #15 ✓
+
+# After compaction: model "forgot" calls 10-14
+Tool call #10 → server expects #15 ✗ (gap detected)
+→ Auto-injecting resume block...`}</code></pre>
+
+  <h3>Resume Block</h3>
+  <p>
+    The resume block is a compact summary (max 500 tokens) that restores critical session context:
+  </p>
+  <pre><code>{`ctx_session action="resume"
+→ Session resumed from checkpoint:
+  Files: F1=auth.ts F2=server.rs F3=db.ts (3 cached)
+  Task: "Fix JWT refresh race condition" (step 3/5)
+  Archives: [a7f3c2] auth analysis, [b8d4e1] test results
+  Diary: 2 entries (1 decision, 1 discovery)
+  Agent: cursor-dev-1, role: dev`}</code></pre>
+
+  <h3>Archive Interaction</h3>
+  <p>
+    The resume block includes references to all active <code>ctx_expand</code> archive IDs.
+    This means that even after compaction, the agent can still retrieve large tool results
+    that were archived before the context was truncated:
+  </p>
+  <ul>
+    <li>Archive IDs listed in resume block are validated — expired entries are excluded</li>
+    <li>The agent can call <code>ctx_expand id="..."</code> to retrieve any listed archive</li>
+    <li>If the archive TTL expired during compaction, the resume block notes it as <code>[expired]</code></li>
+  </ul>
+
+  <h3>Configuration</h3>
+  <pre><code>{`# config.toml
+[compaction]
+resume_max_tokens = 500       # Max size of the resume block
+auto_detect = true            # Enable heuristic detection
+counter_gap_threshold = 2     # Min gap to trigger resume injection`}</code></pre>
 
   <h2>Best Practices</h2>
   <ul>

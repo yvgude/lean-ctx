@@ -63,6 +63,10 @@ const manifest = getMcpManifest();
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
     </div>
+
+    <div class="hero-install animate-entrance stagger-5">
+      <code class="hero-install-code">curl -fsSL https://leanctx.com/install | sh</code>
+    </div>
   </div>
 </section>
 
@@ -673,6 +677,23 @@ const manifest = getMcpManifest();
     .hero-proof {
       gap: 0.75rem 1.25rem;
     }
+  }
+
+  /* ── Hero Install ───────────────────────────────────── */
+  .hero-install {
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+  }
+  .hero-install-code {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);
+    color: var(--color-muted);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    user-select: all;
+    cursor: text;
   }
 
   /* ── Compare Cards ──────────────────────────────────── */

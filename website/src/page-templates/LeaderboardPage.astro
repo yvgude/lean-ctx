@@ -5,7 +5,7 @@ import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/uti
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
-const dashUrl = lp('/dashboard');
+const redirectUrl = lp('/docs/getting-started');
 ---
 
 <BaseLayout
@@ -17,18 +17,18 @@ const dashUrl = lp('/dashboard');
 <section class="section-hero">
   <div class="content-grid" style="text-align: center; max-width: 36rem; margin: 0 auto;">
     <div class="animate-entrance">
-      <p class="fluid-label text-accent" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2rem);">
-        {t('leaderboard.heroLabel')}
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2rem);">
+        Feature retired
       </p>
     </div>
     <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem;">
-      {t('leaderboard.movedTitle')}
+      This feature is not available
     </h1>
     <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: 2rem;">
-      {t('leaderboard.movedDesc')}
+      The leaderboard has been retired. You will be redirected to the Getting Started guide in a few seconds.
     </p>
-    <a href={dashUrl} class="btn-primary inline-flex items-center gap-2 rounded-lg animate-entrance stagger-3" style="padding: 0.75rem 2rem; font-size: 0.9375rem;">
-      {t('leaderboard.goToDashboard')}
+    <a href={redirectUrl} class="btn-primary inline-flex items-center gap-2 rounded-lg animate-entrance stagger-3" style="padding: 0.75rem 2rem; font-size: 0.9375rem;">
+      Go to Getting Started
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
     </a>
   </div>
@@ -36,6 +36,6 @@ const dashUrl = lp('/dashboard');
 
 </BaseLayout>
 
-<script define:vars={{ dashUrl }}>
-  setTimeout(() => { window.location.href = dashUrl; }, 3000);
+<script define:vars={{ redirectUrl }}>
+  setTimeout(() => { window.location.href = redirectUrl; }, 3000);
 </script>

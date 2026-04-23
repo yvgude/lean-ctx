@@ -53,6 +53,21 @@ for (const tool of tools) {
   check(tool.input_schema?.type === 'object', `tool "${tool.name}" has object schema`);
 }
 
+// Cross-check: tool page count matches manifest granular count
+const pagesDir = path.join(ROOT, 'src', 'pages', 'docs', 'tools');
+if (fs.existsSync(pagesDir)) {
+  const toolPages = fs.readdirSync(pagesDir).filter(f => f.startsWith('ctx-') && f.endsWith('.astro'));
+  check(
+    toolPages.length === manifest.counts?.granular,
+    `tool page count matches granular count (${toolPages.length} pages vs ${manifest.counts?.granular} tools)`
+  );
+} else {
+  check(false, 'tool pages directory exists at src/pages/docs/tools/');
+}
+
+// Cross-check: read modes count is exactly 10
+check(manifest.read_modes?.count === 10, `read mode count is exactly 10 (got ${manifest.read_modes?.count})`);
+
 const enrichPath = path.join(ROOT, 'generated', 'tool-enrichments.json');
 if (fs.existsSync(enrichPath)) {
   const enrichments = JSON.parse(fs.readFileSync(enrichPath, 'utf-8'));
