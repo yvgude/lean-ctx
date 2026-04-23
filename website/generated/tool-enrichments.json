@@ -1,0 +1,149 @@
+{
+  "categories": {
+    "core": {
+      "label": "Core Tools",
+      "description": "Essential file reading, searching, editing, and shell execution",
+      "tools": ["ctx_read", "ctx_multi_read", "ctx_smart_read", "ctx_search", "ctx_shell", "ctx_tree", "ctx_edit", "ctx_delta"]
+    },
+    "intelligence": {
+      "label": "Intelligence Tools",
+      "description": "Adaptive compression, intent detection, semantic search, and AST-powered analysis",
+      "tools": ["ctx_fill", "ctx_intent", "ctx_preload", "ctx_dedup", "ctx_compress", "ctx_compress_memory", "ctx_response", "ctx_discover", "ctx_semantic_search", "ctx_graph", "ctx_graph_diagram", "ctx_impact", "ctx_architecture", "ctx_overview", "ctx_prefetch", "ctx_analyze"]
+    },
+    "memory": {
+      "label": "Memory & Multi-Agent",
+      "description": "Knowledge persistence, multi-agent coordination, and task delegation",
+      "tools": ["ctx_agent", "ctx_share", "ctx_task", "ctx_cost", "ctx_knowledge", "ctx_context"]
+    },
+    "session": {
+      "label": "Session & Monitoring",
+      "description": "Session state, metrics, heatmaps, caching, and token savings reports",
+      "tools": ["ctx_session", "ctx_metrics", "ctx_gain", "ctx_heatmap", "ctx_cache", "ctx_benchmark", "ctx_wrapped"]
+    },
+    "workflow": {
+      "label": "Workflow & Orchestration",
+      "description": "Workflow state machines, context handoff, code execution, and feedback",
+      "tools": ["ctx_workflow", "ctx_handoff", "ctx_execute", "ctx_feedback"]
+    },
+    "analysis": {
+      "label": "Analysis & Navigation",
+      "description": "Symbol navigation, call graphs, route extraction, and code outlining",
+      "tools": ["ctx_symbol", "ctx_callers", "ctx_callees", "ctx_outline", "ctx_routes"]
+    }
+  },
+  "tools": {
+    "ctx_read": {
+      "when_to_use": "Reading source files with automatic compression mode selection. Default starting point for any file read.",
+      "when_not_to_use": "When you need to read multiple files at once (use ctx_multi_read) or need raw grep results (use ctx_search).",
+      "related": ["ctx_multi_read", "ctx_smart_read", "ctx_fill", "ctx_cache"],
+      "token_impact": "74-99% savings depending on mode. Re-reads from cache cost ~13 tokens.",
+      "cli_equivalent": "lean-ctx read <path> [--mode <mode>]",
+      "examples": [
+        {
+          "title": "Auto-mode read (default)",
+          "call": "ctx_read path=\"src/auth.ts\"",
+          "description": "lean-ctx selects the best compression mode automatically based on file size, recency, and task context."
+        },
+        {
+          "title": "Force full read",
+          "call": "ctx_read path=\"src/auth.ts\" mode=\"full\"",
+          "description": "Returns complete file content. Use when editing or when you need every detail."
+        },
+        {
+          "title": "Read specific line range",
+          "call": "ctx_read path=\"src/auth.ts\" mode=\"lines:42-80\"",
+          "description": "Surgical read of lines 42-80 only. Minimal token cost."
+        }
+      ]
+    },
+    "ctx_shell": {
+      "when_to_use": "Running any shell command with automatic output compression. Replaces native terminal tools.",
+      "when_not_to_use": "For long-running processes (dev servers) — those should be run natively. Also skip for simple file reads (use ctx_read).",
+      "related": ["ctx_execute", "ctx_search", "ctx_tree"],
+      "token_impact": "60-95% output compression for common tools (git, npm, cargo, docker, etc.)",
+      "cli_equivalent": "lean-ctx -c <command>",
+      "examples": [
+        {
+          "title": "Git status with compression",
+          "call": "ctx_shell command=\"git status\"",
+          "description": "Output is automatically compressed by the git pattern module."
+        },
+        {
+          "title": "Raw output (skip compression)",
+          "call": "ctx_shell command=\"cat package.json\" raw=true",
+          "description": "Returns uncompressed output. Use when you need exact formatting."
+        }
+      ]
+    },
+    "ctx_search": {
+      "when_to_use": "Finding code patterns across files with regex. Faster than reading entire files when looking for specific code.",
+      "when_not_to_use": "For semantic/meaning-based search (use ctx_semantic_search) or when you know exactly which file (use ctx_read).",
+      "related": ["ctx_semantic_search", "ctx_read", "ctx_symbol"],
+      "token_impact": "~1200 tokens saved vs reading full files for typical search results.",
+      "cli_equivalent": null
+    },
+    "ctx_tree": {
+      "when_to_use": "Exploring project structure. Great at session start or when navigating unfamiliar codebases.",
+      "when_not_to_use": "When you need file contents (use ctx_read) or when you know the exact path already.",
+      "related": ["ctx_overview", "ctx_architecture", "ctx_read"],
+      "token_impact": "Compact tree output vs listing all files individually.",
+      "cli_equivalent": "lean-ctx tree [path] [--depth N]"
+    },
+    "ctx_agent": {
+      "when_to_use": "Multi-agent workflows where multiple AI editors need to coordinate, share findings, or hand off tasks.",
+      "when_not_to_use": "Single-agent sessions where you're the only AI working on the project.",
+      "related": ["ctx_share", "ctx_task", "ctx_handoff", "ctx_cost"],
+      "token_impact": "Agent registration adds ~50 tokens. Diary entries persist across sessions.",
+      "cli_equivalent": null
+    },
+    "ctx_session": {
+      "when_to_use": "Persisting task context across chat sessions. Recording key findings and decisions for later recovery.",
+      "when_not_to_use": "For short, one-off questions that don't need persistence.",
+      "related": ["ctx_knowledge", "ctx_gain", "ctx_metrics"],
+      "token_impact": "Session load recovers full context in ~200-500 tokens instead of re-reading files.",
+      "cli_equivalent": null
+    },
+    "ctx_gain": {
+      "when_to_use": "Checking how many tokens lean-ctx saved in the current session. Useful for reporting and optimization.",
+      "when_not_to_use": "During active development — checking gain too often wastes tokens itself.",
+      "related": ["ctx_metrics", "ctx_benchmark", "ctx_cost"],
+      "token_impact": "Report itself costs ~100-200 tokens.",
+      "cli_equivalent": "lean-ctx gain [--score] [--cost] [--daily] [--wrapped]"
+    },
+    "ctx_preload": {
+      "when_to_use": "At session start — give it your task description and it auto-loads relevant files into cache.",
+      "when_not_to_use": "When you already know exactly which files to read (use ctx_read directly).",
+      "related": ["ctx_overview", "ctx_fill", "ctx_intent"],
+      "token_impact": "Pre-loads 3-8 files in optimal modes, saving individual read roundtrips.",
+      "cli_equivalent": null
+    },
+    "ctx_overview": {
+      "when_to_use": "First call in a new session — gives project structure, key files, and entry points in one call.",
+      "when_not_to_use": "When you already have context from a previous session (use ctx_session load instead).",
+      "related": ["ctx_preload", "ctx_tree", "ctx_architecture"],
+      "token_impact": "One call replaces 3-5 individual reads for orientation.",
+      "cli_equivalent": null
+    },
+    "ctx_workflow": {
+      "when_to_use": "Managing multi-step workflows with state machines — enforces step ordering and evidence collection.",
+      "when_not_to_use": "Simple tasks without multiple stages. Overhead isn't worth it for quick fixes.",
+      "related": ["ctx_task", "ctx_handoff", "ctx_session"],
+      "token_impact": "Workflow state tracking adds ~50-100 tokens per transition.",
+      "cli_equivalent": null
+    },
+    "ctx_execute": {
+      "when_to_use": "Running code snippets in a sandboxed environment (11 languages). Safe execution without affecting the project.",
+      "when_not_to_use": "For shell commands (use ctx_shell) or when you need to modify project files (use ctx_edit).",
+      "related": ["ctx_shell", "ctx_benchmark"],
+      "token_impact": "Output is compressed like ctx_shell.",
+      "cli_equivalent": null
+    },
+    "ctx_knowledge": {
+      "when_to_use": "Storing and recalling project-specific knowledge — patterns, gotchas, conventions that persist across sessions.",
+      "when_not_to_use": "For temporary findings (use ctx_session finding instead).",
+      "related": ["ctx_session", "ctx_context", "ctx_feedback"],
+      "token_impact": "Knowledge recall costs ~20-50 tokens. Saves full re-discovery across sessions.",
+      "cli_equivalent": "lean-ctx gotchas"
+    }
+  }
+}

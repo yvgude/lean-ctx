@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export type McpManifest = {
@@ -10,7 +11,16 @@ export type McpManifest = {
       name: string;
       description: string;
       schema_md5: string;
-      input_schema: unknown;
+      input_schema: {
+        properties?: Record<string, {
+          description?: string;
+          type?: string;
+          enum?: string[];
+          default?: unknown;
+        }>;
+        required?: string[];
+        type?: string;
+      };
     }>;
     unified: Array<{
       name: string;
@@ -21,14 +31,57 @@ export type McpManifest = {
   };
 };
 
+export type ToolExample = {
+  title: string;
+  call: string;
+  description: string;
+};
+
+export type ToolEnrichment = {
+  when_to_use?: string;
+  when_not_to_use?: string;
+  related?: string[];
+  token_impact?: string;
+  cli_equivalent?: string | null;
+  examples?: ToolExample[];
+};
+
+export type ToolCategory = {
+  label: string;
+  description: string;
+  tools: string[];
+};
+
+export type ToolEnrichments = {
+  categories: Record<string, ToolCategory>;
+  tools: Record<string, ToolEnrichment>;
+};
+
 let cached: McpManifest | null = null;
+let enrichmentsCache: ToolEnrichments | null = null;
 
 export function getMcpManifest(): McpManifest {
   if (cached) return cached;
-  const manifestPath = fileURLToPath(new URL('../../generated/mcp-tools.json', import.meta.url));
+  const manifestPath = resolveGeneratedFile('mcp-tools.json');
   const raw = fs.readFileSync(manifestPath, 'utf-8');
   cached = JSON.parse(raw) as McpManifest;
   return cached;
+}
+
+function resolveGeneratedFile(filename: string): string {
+  const viaImportMeta = fileURLToPath(new URL(`../../generated/${filename}`, import.meta.url));
+  if (fs.existsSync(viaImportMeta)) return viaImportMeta;
+  const viaCwd = path.join(process.cwd(), 'generated', filename);
+  if (fs.existsSync(viaCwd)) return viaCwd;
+  throw new Error(`Cannot find generated/${filename} (tried ${viaImportMeta} and ${viaCwd})`);
+}
+
+export function getToolEnrichments(): ToolEnrichments {
+  if (enrichmentsCache) return enrichmentsCache;
+  const enrichPath = resolveGeneratedFile('tool-enrichments.json');
+  const raw = fs.readFileSync(enrichPath, 'utf-8');
+  enrichmentsCache = JSON.parse(raw) as ToolEnrichments;
+  return enrichmentsCache;
 }
 
 export function getGranularTools(): McpManifest['tools']['granular'] {
@@ -37,6 +90,26 @@ export function getGranularTools(): McpManifest['tools']['granular'] {
 
 export function getGranularToolByName(name: string): McpManifest['tools']['granular'][number] | undefined {
   return getMcpManifest().tools.granular.find((t) => t.name === name);
+}
+
+export function getToolEnrichmentByName(name: string): ToolEnrichment | undefined {
+  return getToolEnrichments().tools[name];
+}
+
+export function getCategoryForTool(toolName: string): { key: string; category: ToolCategory } | undefined {
+  const enrichments = getToolEnrichments();
+  for (const [key, cat] of Object.entries(enrichments.categories)) {
+    if (cat.tools.includes(toolName)) return { key, category: cat };
+  }
+  return undefined;
+}
+
+export function toolNameToSlug(name: string): string {
+  return name.replace(/_/g, '-');
+}
+
+export function slugToToolName(slug: string): string {
+  return slug.replace(/-/g, '_');
 }
 
 export function getMcpI18nReplacements(opts?: { exampleToolCount?: number }): Record<string, string> {

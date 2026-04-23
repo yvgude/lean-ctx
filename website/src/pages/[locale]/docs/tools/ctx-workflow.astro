@@ -1,0 +1,6 @@
+---
+import DocsToolDetailPage from '../../../../page-templates/DocsToolDetailPage.astro';
+import { getLocaleStaticPaths } from '../../../../i18n/routing.ts';
+export const getStaticPaths = getLocaleStaticPaths;
+---
+<DocsToolDetailPage toolName="ctx_workflow" />

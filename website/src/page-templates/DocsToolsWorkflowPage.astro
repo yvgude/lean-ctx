@@ -1,0 +1,148 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getToolEnrichments, getGranularToolByName, toolNameToSlug } from '../lib/mcpManifest';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const enrichments = getToolEnrichments();
+const category = enrichments.categories.workflow;
+const tools = category.tools.map(name => ({
+  name,
+  slug: toolNameToSlug(name),
+  tool: getGranularToolByName(name),
+})).filter(t => t.tool);
+
+const sidebar = [
+  {
+    title: 'Workflow Tools',
+    compact: true,
+    items: tools.map(t => ({
+      label: t.name,
+      href: lp(`/docs/tools/${t.slug}`),
+    })),
+  },
+  {
+    title: 'Other Categories',
+    items: [
+      { label: 'All Tools', href: lp('/docs/tools') },
+      { label: 'Core Tools', href: lp('/docs/tools/core') },
+      { label: 'Intelligence Tools', href: lp('/docs/tools/intelligence') },
+      { label: 'Session & Monitoring', href: lp('/docs/tools/session') },
+      { label: 'Memory & Multi-Agent', href: lp('/docs/tools/memory') },
+      { label: 'Analysis & Navigation', href: lp('/docs/tools/analysis') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Workflow & Orchestration Tools"
+  description={category.description}
+  sidebar={sidebar}
+>
+  <p>{category.description}</p>
+  <p>
+    These tools manage multi-step workflows with state machines, enable context handoff between sessions,
+    execute code in sandboxed environments, and collect quality feedback for continuous improvement.
+  </p>
+
+  <h2>Tools Overview</h2>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>What It Does</th></tr>
+    </thead>
+    <tbody>
+      {tools.map(({ name, slug, tool }) => (
+        <tr>
+          <td><a href={lp(`/docs/tools/${slug}`)}><code>{name}</code></a></td>
+          <td>{tool!.description}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <h2 id="ctx_workflow">ctx_workflow</h2>
+  <p>
+    <code>ctx_workflow</code> implements state-machine-driven workflows for complex multi-step tasks.
+    Define named workflows with ordered steps, transition between states, and enforce evidence collection
+    at each stage.
+  </p>
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td>Workflow operation to perform</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>No</td><td>Workflow name (for create/start)</td></tr>
+      <tr><td><code>key</code></td><td>string</td><td>No</td><td>Workflow key / identifier</td></tr>
+      <tr><td><code>spec</code></td><td>string</td><td>No</td><td>Workflow specification (JSON)</td></tr>
+      <tr><td><code>to</code></td><td>string</td><td>No</td><td>Target state for transition</td></tr>
+      <tr><td><code>value</code></td><td>string</td><td>No</td><td>Evidence value for the current step</td></tr>
+    </tbody>
+  </table>
+  <h3>Example: Bug Fix Workflow</h3>
+  <pre><code>{`ctx_workflow action="start" name="bugfix" spec='{"steps":["reproduce","diagnose","fix","test","verify"]}'
+→ Workflow bugfix started at step: reproduce
+
+ctx_workflow action="transition" key="bugfix" to="diagnose" value="Reproduced in test_auth.rs:42"
+→ bugfix: reproduce → diagnose (evidence saved)`}</code></pre>
+
+  <h2 id="ctx_handoff">ctx_handoff</h2>
+  <p>
+    <code>ctx_handoff</code> enables context transfer between sessions or agents. Save your current
+    context (files, decisions, progress) and restore it in a new session without re-reading everything.
+  </p>
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td>Handoff operation</td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>No</td><td>Path for save/load</td></tr>
+      <tr><td><code>paths</code></td><td>string[]</td><td>No</td><td>Multiple paths to include</td></tr>
+      <tr><td><code>apply_knowledge</code></td><td>boolean</td><td>No</td><td>Include knowledge base in handoff</td></tr>
+      <tr><td><code>apply_session</code></td><td>boolean</td><td>No</td><td>Include session state</td></tr>
+      <tr><td><code>apply_workflow</code></td><td>boolean</td><td>No</td><td>Include workflow state</td></tr>
+    </tbody>
+  </table>
+  <h3>Example: Save & Restore Context</h3>
+  <pre><code>{`# Save current context before ending session
+ctx_handoff action="save" apply_knowledge=true apply_session=true
+→ Context saved: 12 files, 3 knowledge entries, 1 workflow
+
+# In new session: restore everything
+ctx_handoff action="load"
+→ Restored: 12 cached files, 3 knowledge entries, workflow "bugfix" at step "test"`}</code></pre>
+
+  <h2 id="ctx_execute">ctx_execute</h2>
+  <p>
+    Run code in sandboxed subprocesses across 11 languages. See the
+    <a href={lp('/docs/tools/ctx-execute')}>full ctx_execute documentation</a> for language support and examples.
+  </p>
+
+  <h2 id="ctx_feedback">ctx_feedback</h2>
+  <p>
+    <code>ctx_feedback</code> records quality signals about tool usage — latency, token counts, model info,
+    and free-form notes. This data feeds into LeanCTX's adaptive optimization over time.
+  </p>
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td>Feedback operation</td></tr>
+      <tr><td><code>intent</code></td><td>string</td><td>No</td><td>What the agent was trying to do</td></tr>
+      <tr><td><code>model</code></td><td>string</td><td>No</td><td>LLM model name</td></tr>
+      <tr><td><code>latency_ms</code></td><td>number</td><td>No</td><td>Time taken in milliseconds</td></tr>
+      <tr><td><code>llm_input_tokens</code></td><td>number</td><td>No</td><td>Input token count</td></tr>
+      <tr><td><code>llm_output_tokens</code></td><td>number</td><td>No</td><td>Output token count</td></tr>
+      <tr><td><code>note</code></td><td>string</td><td>No</td><td>Free-form quality note</td></tr>
+    </tbody>
+  </table>
+</DocsLayout>

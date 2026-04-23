@@ -7,7 +7,8 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build && npx pagefind --site dist",
+    "generate:tools": "node scripts/generate-tool-docs.mjs",
+    "build": "node scripts/generate-tool-docs.mjs && astro build && npx pagefind --site dist",
     "preview": "astro preview",
     "astro": "astro"
   },
