@@ -860,14 +860,12 @@ fn sessions_dir() -> Option<PathBuf> {
 }
 
 fn generate_session_id() -> String {
+    static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let now = Utc::now();
     let ts = now.format("%Y%m%d-%H%M%S").to_string();
-    let random: u32 = (std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos())
-        % 10000;
-    format!("{ts}-{random:04}")
+    let nanos = now.timestamp_subsec_micros();
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{ts}-{nanos:06}s{seq}")
 }
 
 /// Extracts the `cd` target from a command string.
