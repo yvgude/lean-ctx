@@ -419,7 +419,10 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
   </p>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
-  <p>No parameters. Returns the current heatmap data for the project.</p>
+  <ul>
+    <li><code>action</code> (optional) — <code>status</code> (default), <code>directory</code> (per-dir breakdown), <code>dirs</code> (top directories), <code>cold</code> (least-accessed files), or <code>json</code> (raw data)</li>
+    <li><code>path</code> (optional) — filter to a specific directory</li>
+  </ul>
 
   <h3>Example</h3>
   <pre><code>ctx_heatmap
@@ -438,4 +441,28 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
 
   <h3>Storage</h3>
   <p>Heatmap data is stored at <code>~/.lean-ctx/heatmap.json</code> and persists across sessions.</p>
+
+  <h2 id="ctx_gain">ctx_gain — Token Savings Report</h2>
+  <p>
+    Reports token savings for the current session or across all sessions. Shows per-tool breakdowns,
+    estimated cost savings, and compression effectiveness. Also available via CLI: <code>lean-ctx gain</code>.
+  </p>
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <ul>
+    <li><code>action</code> (optional) — <code>report</code> (default), <code>score</code> (CEP score), <code>live</code> (real-time), <code>json</code> (machine-readable), <code>reset</code></li>
+    <li><code>period</code> (optional) — time range: <code>session</code> (default), <code>day</code>, <code>week</code>, <code>month</code>, <code>all</code></li>
+    <li><code>model</code> (optional) — pricing model for cost estimates (default: <code>claude-sonnet</code>)</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>{`ctx_gain
+→ TOKEN SAVINGS REPORT (session)
+  Total input:     234,500 tokens
+  After lean-ctx:   28,140 tokens
+  Saved:           206,360 tokens (88%)
+  Est. cost saved: $0.62
+
+  By mechanism:
+    Read caching:    112,400 tok (54%)
+    Shell compress:   58,200 tok (28%)
+    Deduplication:    35,760 tok (17%)`}</code></pre>
 </DocsLayout>

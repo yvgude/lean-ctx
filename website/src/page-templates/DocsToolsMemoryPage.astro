@@ -332,7 +332,7 @@ ctx_share action=pull
       <tr><th>Action</th><th>{t('docsToolsCore.parameters')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>create</code></td><td><code>title</code>, <code>description</code>, <code>assignee</code></td><td>Create a new task with optional assignee</td></tr>
+      <tr><td><code>create</code></td><td><code>title</code>, <code>description</code>, <code>to_agent</code></td><td>Create a new task with optional target agent</td></tr>
       <tr><td><code>update</code></td><td><code>task_id</code>, <code>state</code></td><td>Update task state (Working, InputRequired, Completed, Failed, Canceled)</td></tr>
       <tr><td><code>list</code></td><td>—</td><td>List all tasks with their current state</td></tr>
       <tr><td><code>get</code></td><td><code>task_id</code></td><td>Get detailed info about a specific task</td></tr>
@@ -349,8 +349,8 @@ ctx_share action=pull
   </p>
 
   <h3>Example</h3>
-  <pre><code>ctx_task action=create title="Fix auth middleware" description="Token refresh not working" assignee=claude
-→ Task created: t-a3f8c1 "Fix auth middleware" (state: Created, assignee: claude)
+  <pre><code>ctx_task action=create title="Fix auth middleware" description="Token refresh not working" to_agent=claude
+→ Task created: t-a3f8c1 "Fix auth middleware" (state: Created, to_agent: claude)
 
 ctx_task action=update task_id=t-a3f8c1 state=Working
 → Task t-a3f8c1 updated: Created → Working
@@ -379,7 +379,11 @@ ctx_task action=list
       <tr><th>Action</th><th>{t('docsToolsCore.parameters')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>report</code></td><td><code>limit</code></td><td>Show cost attribution report (top N agents/tools)</td></tr>
+      <tr><td><code>report</code></td><td><code>limit</code>, <code>agent_id</code></td><td>Show cost attribution report (top N agents/tools)</td></tr>
+      <tr><td><code>agent</code></td><td><code>agent_id</code></td><td>Show costs for a specific agent</td></tr>
+      <tr><td><code>tool</code></td><td><code>limit</code></td><td>Show per-tool cost breakdown</td></tr>
+      <tr><td><code>session</code></td><td>—</td><td>Show costs for current session only</td></tr>
+      <tr><td><code>json</code></td><td>—</td><td>Export cost data as JSON</td></tr>
       <tr><td><code>reset</code></td><td>—</td><td>Reset all cost tracking data</td></tr>
     </tbody>
   </table>

@@ -11,7 +11,7 @@
 <h3 align="center">Reduce Claude Code, Cursor & Copilot Token Costs by 99% — Open Source MCP Server</h3>
 
 <p align="center">
-  <strong>Shell Hook + Context Server · 34 tools · 8 read modes · 90+ patterns · Single Rust binary</strong>
+  <strong>Shell Hook + Context Server · 46 tools · 10 read modes · 90+ patterns · Single Rust binary</strong>
 </p>
 
 <p align="center">
@@ -226,7 +226,7 @@ Symbol shorthand (`λ` `§` `∂` `τ` `ε`) and ROI-based identifier mapping fo
 
 | Tool | Purpose | Savings |
 |:---|:---|:---:|
-| `ctx_read` | File reads — 8 modes + `lines:N-M`, caching, `fresh=true` | 74-99% |
+| `ctx_read` | File reads — 10 modes incl. `lines:N-M`, caching, `fresh=true` | 74-99% |
 | `ctx_multi_read` | Multiple file reads in one round trip | 74-99% |
 | `ctx_tree` | Directory listings (ls, find, Glob) | 34-60% |
 | `ctx_shell` | Shell commands with 90+ compression patterns, cwd tracking | 60-90% |
@@ -646,7 +646,7 @@ args = []
 <details>
 <summary><strong>Gemini CLI</strong></summary>
 
-`~/.gemini/settings/mcp.json`:
+`~/.gemini/settings.json`:
 ```json
 {
   "mcpServers": {
@@ -697,7 +697,7 @@ Pi's `bash`, `read`, `grep`, `find`, and `ls` tools are automatically routed thr
 | Architecture | Shell hook only | **Shell hook + MCP server** |
 | Process model | Spawns per command | **Persistent server** (no EAGAIN) |
 | CLI patterns | ~50 | **90+** |
-| File reading | Signatures only | **8 modes** (full, map, signatures, diff, aggressive, entropy, task, lines) |
+| File reading | Signatures only | **10 modes** (full, map, signatures, diff, aggressive, entropy, task, reference, auto, lines:N-M) |
 | File caching | ✗ | ✓ (re-reads ≈ 13 tokens) |
 | Signature engine | Regex (4 langs) | **tree-sitter AST (18 langs)** |
 | Dependency maps | ✗ | ✓ |
@@ -781,7 +781,7 @@ lean-ctx has **zero telemetry** — no data collection, no analytics, no network
 <details>
 <summary><strong>What's the difference between lean-ctx and Rust Token Killer (RTK)?</strong></summary>
 
-lean-ctx is a hybrid architecture (shell hook + MCP server) while Rust Token Killer is shell-hook only. lean-ctx offers 34 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and — critically — zero telemetry (RTK has default-on telemetry with PII).
+lean-ctx is a hybrid architecture (shell hook + MCP server) while Rust Token Killer is shell-hook only. lean-ctx offers 46 tools vs RTK's basic compression, supports 21 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and — critically — zero telemetry (RTK has default-on telemetry with PII).
 
 </details>
 

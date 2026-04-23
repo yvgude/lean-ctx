@@ -88,7 +88,7 @@ const sidebar = [
   <ul>
     <li><code>paths</code> (required) — array of file paths</li>
     <li><code>budget</code> (required) — maximum token budget</li>
-    <li><code>priorities</code> (optional) — array of priority values (1-10) matching the paths</li>
+    <li><code>task</code> (optional) — task description for priority-based POP-Intent ordering</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_fill ["src/auth.ts", "src/db.ts", "src/routes.ts"] budget=2000
@@ -161,7 +161,6 @@ const sidebar = [
       <tr><td><code>action</code></td><td>string</td><td>Yes</td><td><code>build</code>, <code>related</code>, <code>symbol</code>, <code>impact</code>, or <code>status</code></td></tr>
       <tr><td><code>path</code></td><td>string</td><td>For related/symbol/impact</td><td>File path or symbol name to query</td></tr>
       <tr><td><code>project_root</code></td><td>string</td><td>No</td><td>Project root path (defaults to cwd)</td></tr>
-      <tr><td><code>depth</code></td><td>number</td><td>No</td><td>BFS traversal depth for <code>related</code> (default 2)</td></tr>
     </tbody>
   </table>
 
@@ -242,7 +241,9 @@ const sidebar = [
     and repeated patterns across all cached files. Reports potential token savings.
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
-  <p>No parameters. Analyzes all files currently in the session cache.</p>
+  <ul>
+    <li><code>action</code> (optional) — <code>analyze</code> (default, report-only) or <code>apply</code> (apply dedup optimizations)</li>
+  </ul>
   <h3>Example</h3>
   <pre><code>{`ctx_dedup
 → Found 3 shared patterns across 8 cached files:
@@ -282,8 +283,10 @@ const sidebar = [
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
     <li><code>path</code> (required) — file path to edit</li>
-    <li><code>old_string</code> (required) — exact text to find</li>
+    <li><code>old_string</code> (optional) — exact text to find. Omit when creating a new file.</li>
     <li><code>new_string</code> (required) — replacement text</li>
+    <li><code>create</code> (optional, boolean) — create the file if it does not exist. Default: <code>false</code>.</li>
+    <li><code>replace_all</code> (optional, boolean) — replace all occurrences, not just the first. Default: <code>false</code>.</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_edit path=src/config.ts old_string="timeout: 5000" new_string="timeout: 10000"
@@ -296,7 +299,7 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>task</code> (optional) — description of current task</li>
+    <li><code>task</code> (required) — description of current task for relevance-based file selection</li>
     <li><code>path</code> (optional) — project root path</li>
   </ul>
   <h3>Example</h3>
@@ -390,8 +393,8 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>path</code> (required) — file to analyze impact for</li>
-    <li><code>depth</code> (optional) — max dependency depth (default: 3)</li>
+    <li><code>action</code> (required) — <code>analyze</code> (default), <code>chain</code> (dependency chain), <code>build</code> (rebuild index), or <code>status</code></li>
+    <li><code>root</code> (required for analyze/chain) — file path to analyze impact for</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_impact path=src/auth.ts
@@ -411,10 +414,11 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>path</code> (optional) — project root (defaults to cwd)</li>
+    <li><code>action</code> (required) — <code>overview</code> (default), <code>clusters</code>, <code>layers</code>, <code>cycles</code>, <code>entrypoints</code>, or <code>module</code></li>
+    <li><code>root</code> (optional) — project root or module path (defaults to cwd)</li>
   </ul>
   <h3>Example</h3>
-  <pre><code>ctx_architecture
+  <pre><code>ctx_architecture action=overview
 → ARCHITECTURE — /Users/you/project (142 files)
 
   Layers:

@@ -14,6 +14,9 @@ const readModes = [
   { mode: 'aggressive', color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 85, savings: t('benchmark.modeAggressiveSavings'), useCase: t('benchmark.modeAggressiveUseCase'), preserves: t('benchmark.modeAggressivePreserves') },
   { mode: 'entropy',    color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 78, savings: t('benchmark.modeEntropySavings'),    useCase: t('benchmark.modeEntropyUseCase'),    preserves: t('benchmark.modeEntropyPreserves') },
   { mode: 'task',       color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 77, savings: t('benchmark.modeTaskSavings'),       useCase: t('benchmark.modeTaskUseCase'),       preserves: t('benchmark.modeTaskPreserves') },
+  { mode: 'auto',       color: 'text-accent-2', barColor: 'var(--color-accent-2)', barPct: 88, savings: '70-99%',  useCase: 'Default — lean-ctx selects the best mode automatically',   preserves: 'Adapts per file: size, recency, task relevance' },
+  { mode: 'reference',  color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 80, savings: '80-95%',  useCase: 'API docs and reference lookup — keeps types and signatures', preserves: 'Public API, types, docstrings' },
+  { mode: 'lines:N-M',  color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 95, savings: '90-99%',  useCase: 'Read specific line range — surgical precision',            preserves: 'Exact lines requested, with context' },
 ];
 
 const realWorldExamples = [
@@ -159,7 +162,7 @@ const realWorldExamples = [
         </div>
         <h3 class="fluid-h3 font-semibold font-display text-text-bright" style="margin-bottom: 0.5rem;">{t('benchmark.step3Title')}</h3>
         <p class="fluid-sm text-muted" style="margin-bottom: 0.75rem;">{t('benchmark.step3Desc')}</p>
-        <code class="block text-[11px] font-mono text-accent-3/70">7 modes compared</code>
+        <code class="block text-[11px] font-mono text-accent-3/70">10 modes compared</code>
       </div>
     </div>
   </div>

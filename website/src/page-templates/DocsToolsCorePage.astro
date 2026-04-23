@@ -316,6 +316,7 @@ ctx_read src/auth/service.rs --mode task
     </thead>
     <tbody>
       <tr><td><code>command</code></td><td>string</td><td>Yes</td><td>Shell command to execute</td></tr>
+      <tr><td><code>cwd</code></td><td>string</td><td>No</td><td>Working directory for command execution. Persists via <code>cd</code> tracking across calls.</td></tr>
       <tr><td><code>raw</code></td><td>boolean</td><td>No</td><td>Skip compression and return full uncompressed output. Use for small outputs or when full detail is critical. Default: <code>false</code>.</td></tr>
     </tbody>
   </table>
@@ -478,6 +479,7 @@ lean-ctx shell</code></pre>
       <tr><td><code>path</code></td><td>string</td><td>No</td><td>Directory to search in (default: current dir)</td></tr>
       <tr><td><code>ext</code></td><td>string</td><td>No</td><td>File extension filter (e.g. "rs", "ts")</td></tr>
       <tr><td><code>max_results</code></td><td>number</td><td>No</td><td>Maximum matches to return (default: 20)</td></tr>
+      <tr><td><code>ignore_gitignore</code></td><td>boolean</td><td>No</td><td>Include files normally excluded by <code>.gitignore</code>. Default: <code>false</code>.</td></tr>
     </tbody>
   </table>
 
