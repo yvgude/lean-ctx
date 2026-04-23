@@ -20,6 +20,9 @@ server.md
 DISCORD_POST.md
 DEPLOY_CHECKLIST.md
 
+# ── Private workflows ──
+n8n-workflows/
+
 # ── Lab / Neural (private, not for OSS) ──
 
 lab/
