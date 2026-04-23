@@ -251,7 +251,7 @@ function isMcpAdapterConfigured(): boolean {
 
 async function execLeanCtx(pi: ExtensionAPI, args: string[]) {
   const bin = resolveBinary();
-  const result = await pi.exec(bin, args, { env: { LEAN_CTX_COMPRESS: "1" } });
+  const result = await pi.exec(bin, args, { env: { ...process.env, LEAN_CTX_COMPRESS: "1" } });
   if (result.code !== 0) {
     const msg = (result.stderr || result.stdout || `lean-ctx failed: ${args.join(" ")}`).trim();
     throw new Error(msg);

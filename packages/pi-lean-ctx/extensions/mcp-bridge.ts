@@ -78,6 +78,7 @@ export class McpBridge {
     this.transport = new StdioClientTransport({
       command: this.binary,
       args: [],
+      env: { ...process.env, LEAN_CTX_COMPRESS: "1" },
       stderr: "pipe",
     });
 
