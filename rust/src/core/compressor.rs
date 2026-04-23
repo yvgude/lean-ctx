@@ -410,7 +410,7 @@ mod tests {
     fn test_lightweight_cleanup_collapses_braces() {
         let mut lines: Vec<String> = (0..210).map(|i| format!("line {i}")).collect();
         lines.extend(
-            vec!["}", "}", "}", "}", "}", "}", "}", "}"]
+            ["}", "}", "}", "}", "}", "}", "}", "}"]
                 .iter()
                 .map(|s| s.to_string()),
         );

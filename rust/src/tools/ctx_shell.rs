@@ -6,18 +6,6 @@ use crate::tools::CrpMode;
 
 const MAX_COMMAND_BYTES: usize = 8192;
 
-const HEREDOC_PATTERNS: &[&str] = &[
-    "<< 'EOF'",
-    "<<'EOF'",
-    "<< 'ENDOFFILE'",
-    "<<'ENDOFFILE'",
-    "<< 'END'",
-    "<<'END'",
-    "<< EOF",
-    "<<EOF",
-    "cat <<",
-];
-
 /// Validates a shell command before execution. Returns Some(error_message) if
 /// the command should be rejected, None if it's safe to run.
 pub fn validate_command(command: &str) -> Option<String> {
@@ -52,18 +40,35 @@ pub fn validate_command(command: &str) -> Option<String> {
         );
     }
 
-    for pattern in HEREDOC_PATTERNS {
-        if cmd_lower.contains(&pattern.to_lowercase()) {
-            return Some(
-                "ERROR: ctx_shell detected a heredoc file-write command. \
-                 Use the native Write tool to create/modify files. \
-                 ctx_shell is ONLY for reading command output."
-                    .to_string(),
-            );
-        }
+    if is_heredoc_file_write(command) {
+        return Some(
+            "ERROR: ctx_shell detected a heredoc writing to a file. \
+             Use the native Write tool to create/modify files. \
+             ctx_shell is ONLY for reading command output. \
+             Note: heredocs for input piping (e.g. psql <<EOF) are allowed."
+                .to_string(),
+        );
     }
 
     None
+}
+
+/// Returns true only for heredocs that redirect to files (the dangerous pattern).
+/// Legitimate heredoc uses (input piping, inline scripts) are allowed through.
+fn is_heredoc_file_write(command: &str) -> bool {
+    let has_heredoc = command.contains("<<");
+    if !has_heredoc {
+        return false;
+    }
+    // Only block: heredoc combined with file output redirect
+    // e.g. `cat <<EOF > file.txt` or `cat <<'EOF' >> output.log`
+    let cmd_lower = command.to_lowercase();
+    let heredoc_patterns = ["<<eof", "<<'eof'", "<<\"eof\"", "<<end", "<<'end'"];
+    let has_known_heredoc = heredoc_patterns.iter().any(|p| cmd_lower.contains(p));
+    if !has_known_heredoc {
+        return false;
+    }
+    has_file_write_redirect(command)
 }
 
 /// Detects shell redirect operators (`>` or `>>`) that write to files.
@@ -344,11 +349,26 @@ mod tests {
 
     #[test]
     fn validate_blocks_file_writes() {
-        assert!(validate_command("cat > file.py << 'EOF'\nprint('hi')\nEOF").is_some());
         assert!(validate_command("echo 'data' > output.txt").is_some());
         assert!(validate_command("tee /tmp/file.txt").is_some());
         assert!(validate_command("printf 'hello' > test.txt").is_some());
-        assert!(validate_command("cat << EOF\ncontent\nEOF").is_some());
+    }
+
+    #[test]
+    fn validate_blocks_heredoc_with_file_redirect() {
+        assert!(validate_command("cat > file.py <<'EOF'\nprint('hi')\nEOF").is_some());
+        assert!(validate_command("cat <<EOF > output.txt\nhello\nEOF").is_some());
+        assert!(validate_command("cat <<'END' >> logfile.txt\ndata\nEND").is_some());
+    }
+
+    #[test]
+    fn validate_allows_heredoc_without_file_redirect() {
+        assert!(validate_command("cat <<EOF\nhello world\nEOF").is_none());
+        assert!(validate_command("psql -d mydb <<EOF\nSELECT 1;\nEOF").is_none());
+        assert!(
+            validate_command("git commit -m \"$(cat <<'EOF'\nfix: something\nEOF\n)\"").is_none()
+        );
+        assert!(validate_command("grep pattern <<EOF\nfoo\nbar\nEOF").is_none());
     }
 
     #[test]

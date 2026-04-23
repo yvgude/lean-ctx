@@ -71,7 +71,7 @@ jobs:
         working-directory: rust
         shell: bash
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          if [[ "${{ runner.os }}" == "Windows" || "${{ matrix.musl }}" == "true" ]]; then
             cargo test --lib --all-features
           else
             cargo test --all-features

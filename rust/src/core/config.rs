@@ -14,6 +14,48 @@ pub enum TeeMode {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+pub enum TerseAgent {
+    #[default]
+    Off,
+    Lite,
+    Full,
+    Ultra,
+}
+
+impl TerseAgent {
+    pub fn from_env() -> Self {
+        match std::env::var("LEAN_CTX_TERSE_AGENT")
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str()
+        {
+            "lite" => Self::Lite,
+            "full" => Self::Full,
+            "ultra" => Self::Ultra,
+            "off" | "0" | "false" => Self::Off,
+            _ => Self::Off,
+        }
+    }
+
+    pub fn effective(config_val: &TerseAgent) -> Self {
+        match std::env::var("LEAN_CTX_TERSE_AGENT") {
+            Ok(val) if !val.is_empty() => match val.to_lowercase().as_str() {
+                "lite" => Self::Lite,
+                "full" => Self::Full,
+                "ultra" => Self::Ultra,
+                _ => Self::Off,
+            },
+            _ => config_val.clone(),
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        !matches!(self, Self::Off)
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum OutputDensity {
     #[default]
     Normal,
@@ -84,6 +126,39 @@ pub struct Config {
     /// Example: ["externals/**", "target/**", "temp/**"]
     #[serde(default)]
     pub extra_ignore_patterns: Vec<String>,
+    /// Controls agent output verbosity via instructions injection.
+    /// Values: "off" (default), "lite", "full", "ultra".
+    /// Override via LEAN_CTX_TERSE_AGENT env var.
+    #[serde(default)]
+    pub terse_agent: TerseAgent,
+    /// Archive configuration for zero-loss compression.
+    #[serde(default)]
+    pub archive: ArchiveConfig,
+    /// Additional paths allowed by PathJail (absolute).
+    /// Useful for multi-project workspaces where the jail root is a parent directory.
+    /// Override via LEAN_CTX_ALLOW_PATH env var (path-list separator).
+    #[serde(default)]
+    pub allow_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArchiveConfig {
+    pub enabled: bool,
+    pub threshold_chars: usize,
+    pub max_age_hours: u64,
+    pub max_disk_mb: u64,
+}
+
+impl Default for ArchiveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold_chars: 4096,
+            max_age_hours: 48,
+            max_disk_mb: 500,
+        }
+    }
 }
 
 fn default_buddy_enabled() -> bool {
@@ -271,6 +346,9 @@ impl Default for Config {
             loop_detection: LoopDetectionConfig::default(),
             rules_scope: None,
             extra_ignore_patterns: Vec::new(),
+            terse_agent: TerseAgent::default(),
+            archive: ArchiveConfig::default(),
+            allow_paths: Vec::new(),
         }
     }
 }
@@ -666,6 +744,24 @@ impl Config {
             != AutonomyConfig::default().consolidate_cooldown_secs
         {
             self.autonomy.consolidate_cooldown_secs = local.autonomy.consolidate_cooldown_secs;
+        }
+        if local.terse_agent != TerseAgent::default() {
+            self.terse_agent = local.terse_agent;
+        }
+        if !local.archive.enabled {
+            self.archive.enabled = false;
+        }
+        if local.archive.threshold_chars != ArchiveConfig::default().threshold_chars {
+            self.archive.threshold_chars = local.archive.threshold_chars;
+        }
+        if local.archive.max_age_hours != ArchiveConfig::default().max_age_hours {
+            self.archive.max_age_hours = local.archive.max_age_hours;
+        }
+        if local.archive.max_disk_mb != ArchiveConfig::default().max_disk_mb {
+            self.archive.max_disk_mb = local.archive.max_disk_mb;
+        }
+        if !local.allow_paths.is_empty() {
+            self.allow_paths.extend(local.allow_paths);
         }
     }
 

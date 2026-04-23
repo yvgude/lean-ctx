@@ -65,6 +65,9 @@ impl ServerHandler for LeanCtxServer {
         let agent_root = derived_root.clone().unwrap_or_default();
         let agent_id_handle = self.agent_id.clone();
         tokio::task::spawn_blocking(move || {
+            if std::env::var("LEAN_CTX_HEADLESS").is_ok() {
+                return;
+            }
             if let Some(home) = dirs::home_dir() {
                 let _ = crate::rules_inject::inject_all_rules(&home);
             }
@@ -289,10 +292,40 @@ impl ServerHandler for LeanCtxServer {
 
         let mut result_text = result_text;
 
+        // Archive large tool outputs before density compression (zero-loss recovery)
+        let archive_hint = {
+            use crate::core::archive;
+            let archivable = matches!(
+                name,
+                "ctx_shell"
+                    | "ctx_read"
+                    | "ctx_multi_read"
+                    | "ctx_smart_read"
+                    | "ctx_execute"
+                    | "ctx_search"
+                    | "ctx_tree"
+            );
+            if archivable && archive::should_archive(&result_text) {
+                let cmd = helpers::get_str(args, "command")
+                    .or_else(|| helpers::get_str(args, "path"))
+                    .unwrap_or_default();
+                let session_id = self.session.read().await.id.clone();
+                let tokens = crate::core::tokens::count_tokens(&result_text);
+                archive::store(name, &cmd, &result_text, Some(&session_id))
+                    .map(|id| archive::format_hint(&id, result_text.len(), tokens))
+            } else {
+                None
+            }
+        };
+
         {
             let config = crate::core::config::Config::load();
             let density = crate::core::config::OutputDensity::effective(&config.output_density);
             result_text = crate::core::protocol::compress_output(&result_text, &density);
+        }
+
+        if let Some(hint) = archive_hint {
+            result_text = format!("{result_text}\n{hint}");
         }
 
         if let Some(ctx) = auto_context {
@@ -552,6 +585,45 @@ pub fn derive_project_root_from_cwd() -> Option<String> {
         return Some(git_root);
     }
 
+    if let Some(root) = detect_multi_root_workspace(&canonical) {
+        return Some(root);
+    }
+
+    None
+}
+
+/// Detect a multi-root workspace: a directory that has no project markers
+/// itself, but contains child directories that do. In this case, use the
+/// parent as jail root and auto-allow all child projects via LEAN_CTX_ALLOW_PATH.
+fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut child_projects: Vec<String> = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && has_project_marker(&path) {
+            let canonical = crate::core::pathutil::safe_canonicalize_or_self(&path);
+            child_projects.push(canonical.to_string_lossy().to_string());
+        }
+    }
+
+    if child_projects.len() >= 2 {
+        let existing = std::env::var("LEAN_CTX_ALLOW_PATH").unwrap_or_default();
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let merged = if existing.is_empty() {
+            child_projects.join(sep)
+        } else {
+            format!("{existing}{sep}{}", child_projects.join(sep))
+        };
+        std::env::set_var("LEAN_CTX_ALLOW_PATH", &merged);
+        tracing::info!(
+            "Multi-root workspace detected at {}: auto-allowing {} child projects",
+            dir.display(),
+            child_projects.len()
+        );
+        return Some(dir.to_string_lossy().to_string());
+    }
+
     None
 }
 
@@ -650,5 +722,42 @@ mod tests {
             .filter(|t| !disabled.iter().any(|d| t.name.as_ref() == d.as_str()))
             .collect();
         assert_eq!(filtered.len(), total);
+    }
+
+    #[test]
+    fn detect_multi_root_workspace_with_child_projects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let proj_a = workspace.join("project-a");
+        let proj_b = workspace.join("project-b");
+        std::fs::create_dir_all(proj_a.join(".git")).unwrap();
+        std::fs::create_dir_all(&proj_b).unwrap();
+        std::fs::write(proj_b.join("package.json"), "{}").unwrap();
+
+        let result = detect_multi_root_workspace(&workspace);
+        assert!(
+            result.is_some(),
+            "should detect workspace with 2 child projects"
+        );
+
+        std::env::remove_var("LEAN_CTX_ALLOW_PATH");
+    }
+
+    #[test]
+    fn detect_multi_root_workspace_returns_none_for_single_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let proj_a = workspace.join("project-a");
+        std::fs::create_dir_all(proj_a.join(".git")).unwrap();
+
+        let result = detect_multi_root_workspace(&workspace);
+        assert!(
+            result.is_none(),
+            "should not detect workspace with only 1 child project"
+        );
     }
 }

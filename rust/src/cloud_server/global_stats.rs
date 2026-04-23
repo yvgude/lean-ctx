@@ -40,16 +40,10 @@ pub async fn get_global_stats(
         .map_err(internal_error)?
         .get(0);
 
-    let total_teams: i64 = client
-        .query_one("SELECT COUNT(*) FROM teams", &[])
-        .await
-        .map_err(internal_error)?
-        .get(0);
-
     Ok(Json(GlobalStatsResponse {
         total_tokens_saved: tokens_saved,
         total_users,
         total_contributions,
-        total_teams,
+        total_teams: 0,
     }))
 }

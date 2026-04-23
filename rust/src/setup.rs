@@ -78,12 +78,12 @@ pub fn run_setup() {
     terminal_ui::print_setup_header();
 
     // Step 1: Shell hook (legacy aliases + universal shell hook)
-    terminal_ui::print_step_header(1, 6, "Shell Hook");
+    terminal_ui::print_step_header(1, 7, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
     crate::shell_hook::install_all(false);
 
     // Step 2: Editor auto-detection + configuration
-    terminal_ui::print_step_header(2, 6, "AI Tool Detection");
+    terminal_ui::print_step_header(2, 7, "AI Tool Detection");
 
     let targets = crate::core::editor_registry::build_targets(&home);
     let mut newly_configured: Vec<&str> = Vec::new();
@@ -143,7 +143,7 @@ pub fn run_setup() {
     }
 
     // Step 3: Agent rules injection
-    terminal_ui::print_step_header(3, 6, "Agent Rules");
+    terminal_ui::print_step_header(3, 7, "Agent Rules");
     let rules_result = crate::rules_inject::inject_all_rules(&home);
     for name in &rules_result.injected {
         terminal_ui::print_status_new(&format!("{name:<20} \x1b[2mrules injected\x1b[0m"));
@@ -174,7 +174,7 @@ pub fn run_setup() {
     }
 
     // Step 4: API Proxy configuration
-    terminal_ui::print_step_header(4, 6, "API Proxy");
+    terminal_ui::print_step_header(4, 7, "API Proxy");
     crate::proxy_setup::install_proxy_env(&home, crate::proxy_setup::default_port(), false);
     println!();
     println!("  \x1b[2mStart proxy for maximum token savings:\x1b[0m");
@@ -183,7 +183,7 @@ pub fn run_setup() {
     println!("    \x1b[1mlean-ctx proxy start --autostart\x1b[0m");
 
     // Step 5: Data directory + diagnostics
-    terminal_ui::print_step_header(5, 6, "Environment Check");
+    terminal_ui::print_step_header(5, 7, "Environment Check");
     let lean_dir = home.join(".lean-ctx");
     if !lean_dir.exists() {
         let _ = std::fs::create_dir_all(&lean_dir);
@@ -194,7 +194,7 @@ pub fn run_setup() {
     crate::doctor::run_compact();
 
     // Step 6: Data sharing
-    terminal_ui::print_step_header(6, 6, "Help Improve lean-ctx");
+    terminal_ui::print_step_header(6, 7, "Help Improve lean-ctx");
     println!("  Share anonymous compression stats to make lean-ctx better.");
     println!("  \x1b[1mNo code, no file names, no personal data — ever.\x1b[0m");
     println!();
@@ -226,6 +226,10 @@ pub fn run_setup() {
     } else {
         terminal_ui::print_status_skip("Skipped — enable later with: lean-ctx config");
     }
+
+    // Step 7: Premium Features Configuration
+    terminal_ui::print_step_header(7, 7, "Premium Features");
+    configure_premium_features(&home);
 
     // Summary
     println!();
@@ -774,4 +778,107 @@ fn shorten_path(path: &str, home: &str) -> String {
     } else {
         path.to_string()
     }
+}
+
+fn configure_premium_features(home: &std::path::Path) {
+    use crate::terminal_ui;
+    use std::io::Write;
+
+    let config_dir = home.join(".lean-ctx");
+    let _ = std::fs::create_dir_all(&config_dir);
+    let config_path = config_dir.join("config.toml");
+    let mut config_content = std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    let dim = "\x1b[2m";
+    let bold = "\x1b[1m";
+    let rst = "\x1b[0m";
+
+    // Terse Agent Mode
+    println!(
+        "\n  {bold}Agent Output Optimization{rst} {dim}(reduces output tokens by 40-70%){rst}"
+    );
+    println!(
+        "  {dim}Levels: lite (concise), full (max density), ultra (expert pair-programmer){rst}"
+    );
+    print!("  Terse agent mode? {bold}[off/lite/full/ultra]{rst} {dim}(default: off){rst} ");
+    std::io::stdout().flush().ok();
+
+    let mut terse_input = String::new();
+    let terse_level = if std::io::stdin().read_line(&mut terse_input).is_ok() {
+        match terse_input.trim().to_lowercase().as_str() {
+            "lite" => "lite",
+            "full" => "full",
+            "ultra" => "ultra",
+            _ => "off",
+        }
+    } else {
+        "off"
+    };
+
+    if terse_level != "off" && !config_content.contains("terse_agent") {
+        if !config_content.is_empty() && !config_content.ends_with('\n') {
+            config_content.push('\n');
+        }
+        config_content.push_str(&format!("terse_agent = \"{terse_level}\"\n"));
+        terminal_ui::print_status_ok(&format!("Terse agent: {terse_level}"));
+    } else if terse_level == "off" {
+        terminal_ui::print_status_skip(
+            "Terse agent: off (change later with: lean-ctx terse <level>)",
+        );
+    }
+
+    // Tool Result Archive
+    println!(
+        "\n  {bold}Tool Result Archive{rst} {dim}(zero-loss: large outputs archived, retrievable via ctx_expand){rst}"
+    );
+    print!("  Enable auto-archive? {bold}[Y/n]{rst} ");
+    std::io::stdout().flush().ok();
+
+    let mut archive_input = String::new();
+    let archive_on = if std::io::stdin().read_line(&mut archive_input).is_ok() {
+        let a = archive_input.trim().to_lowercase();
+        a.is_empty() || a == "y" || a == "yes"
+    } else {
+        true
+    };
+
+    if archive_on && !config_content.contains("[archive]") {
+        if !config_content.is_empty() && !config_content.ends_with('\n') {
+            config_content.push('\n');
+        }
+        config_content.push_str("\n[archive]\nenabled = true\n");
+        terminal_ui::print_status_ok("Tool Result Archive: enabled");
+    } else if !archive_on {
+        terminal_ui::print_status_skip("Archive: off (enable later in config.toml)");
+    }
+
+    // Output Density
+    println!(
+        "\n  {bold}Output Density{rst} {dim}(compresses tool output: normal, terse, ultra){rst}"
+    );
+    print!("  Output density? {bold}[normal/terse/ultra]{rst} {dim}(default: normal){rst} ");
+    std::io::stdout().flush().ok();
+
+    let mut density_input = String::new();
+    let density = if std::io::stdin().read_line(&mut density_input).is_ok() {
+        match density_input.trim().to_lowercase().as_str() {
+            "terse" => "terse",
+            "ultra" => "ultra",
+            _ => "normal",
+        }
+    } else {
+        "normal"
+    };
+
+    if density != "normal" && !config_content.contains("output_density") {
+        if !config_content.is_empty() && !config_content.ends_with('\n') {
+            config_content.push('\n');
+        }
+        config_content.push_str(&format!("output_density = \"{density}\"\n"));
+        terminal_ui::print_status_ok(&format!("Output density: {density}"));
+    } else if density == "normal" {
+        terminal_ui::print_status_skip("Output density: normal (change later in config.toml)");
+    }
+
+    let _ = std::fs::write(&config_path, config_content);
 }

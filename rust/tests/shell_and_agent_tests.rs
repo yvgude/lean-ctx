@@ -243,7 +243,7 @@ fn codex_pretooluse_blocks_rewritable_bash_with_reroute_message() {
     assert!(
         stderr.contains("Re-run with:")
             && stderr.contains("lean-ctx -c")
-            && stderr.contains(r#""git status""#),
+            && stderr.contains("git status"),
         "stderr should contain reroute command: {stderr}"
     );
 }

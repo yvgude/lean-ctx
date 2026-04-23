@@ -3,6 +3,112 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Multi-Project Workspace Support (GitHub Issue #141)
+- **`allow_paths` in config.toml**: New config field to explicitly allow additional paths in PathJail. Useful for mono-repos and multi-project workspaces where projects live outside the detected root.
+- **Auto-detect multi-root workspaces**: When the CWD has no project markers but contains 2+ child directories with markers (`.git`, `Cargo.toml`, `package.json`, etc.), lean-ctx auto-detects this as a workspace and allows all child projects via PathJail.
+- **Improved error messages**: PathJail errors now include a hint suggesting `LEAN_CTX_ALLOW_PATH` or `allow_paths` in `config.toml`.
+
+### Windows PowerShell Fixes (GitHub Issue #142)
+- **Pipe-guard in profile snippet**: The `[Console]::IsOutputRedirected` check is now embedded directly in the PowerShell profile source line, preventing errors when IDEs redirect stdout.
+- **Binary path resolution**: `resolve_portable_binary()` now takes only the first line of `where` output on Windows, and prefers `.cmd`/`.exe` variants to avoid corrupted path detection.
+
+## [3.3.4] — 2026-04-23
+
+### Heredoc Support (GitHub Issue #140)
+- **Smart heredoc detection in `ctx_shell`**: Heredocs are no longer blanket-rejected. Only heredoc + file redirect combinations (`cat <<EOF > file.txt`) are blocked. Legitimate uses like `psql <<EOF`, `git commit -m "$(cat <<'EOF'...)"`, and input piping are now allowed through.
+- **Hook passthrough for heredoc commands**: The PreToolUse hook (Claude Code, Codex, Copilot) no longer wraps heredoc-containing commands in `lean-ctx -c '...'`. Heredocs cannot survive the quoting round-trip (newlines get escaped to `\\n`), so they are passed through to the shell directly.
+
+### Headless MCP Mode
+- **New `LEAN_CTX_HEADLESS=1` environment variable**: When set, the MCP server skips all auto-setup during `initialize()` — no rules injection, no hook updates, no version check, no agent registry writes. Session management and all MCP tools remain fully functional. Designed for users who manage their own configuration (e.g. custom launchers with `--append-system-prompt`).
+
+### Cloud Auth Hardening
+- **Login and Register are now separate commands**: `lean-ctx login` only calls `/api/auth/login`. `lean-ctx register` only calls `/api/auth/register`. The previous behavior auto-fell back to registration on any non-specific login error (network, 500, DNS), which caused users to unknowingly create duplicate accounts.
+- **Clear error messages**: Specific guidance for wrong password, unverified email, non-existent account, and server errors.
+
+### Interactive Setup with Premium Features
+- **Setup wizard extended to 7 steps**: New "Premium Features" step offers configuration of Terse Agent Mode (off/lite/full/ultra), Tool Result Archive (on/off), and Output Density (normal/terse/ultra) during `lean-ctx setup`.
+
+### Dependency Updates
+- **Dependabot #12 resolved**: `rand 0.8.5` phantom dependency removed via `cargo update` (GHSA-cq8v-f236-94qc).
+- Updated: `tokio` 1.52.1, `rustls` 0.23.39, `rmcp` 1.5.0, `uuid` 1.23.1, and 20+ other transitive dependencies.
+
+### Premium Features — Tool Result Archive, Terse Agent Mode, Compaction Survival
+
+#### Tool Result Archive + ctx_expand (Zero-Loss Compression)
+- **Archive-on-disk**: Large tool outputs (>4096 chars) are automatically archived to `~/.lean-ctx/archives/` before density compression. The compressed response includes an `[Archived: ... Retrieve: ctx_expand(id="...")]` hint so the agent can retrieve the full original output at any time.
+- **New MCP tool `ctx_expand`**: Retrieve archived tool output by ID. Supports full retrieval, line-range retrieval (`start_line`/`end_line`), pattern search (`search`), and listing all archives (`action="list"`).
+- **Session-scoped archives**: Each archive entry is tagged with the session ID, enabling per-session listing and cleanup.
+- **TTL-based cleanup**: Archives older than `max_age_hours` (default 48h) are automatically cleaned up. Configurable via `archive.max_age_hours` in `config.toml` or `LEAN_CTX_ARCHIVE_TTL` env var.
+- **Idempotent storage**: Content-hash-based IDs ensure the same output is never stored twice.
+- **Config**: `archive.enabled`, `archive.threshold_chars`, `archive.max_age_hours`, `archive.max_disk_mb` in `config.toml`. Env overrides: `LEAN_CTX_ARCHIVE`, `LEAN_CTX_ARCHIVE_THRESHOLD`, `LEAN_CTX_ARCHIVE_TTL`.
+
+#### Bidirectional Token Optimization (Terse Agent Mode)
+- **New `terse_agent` config**: Controls agent output verbosity via instructions injection. Levels: `off` (default), `lite` (concise, bullet points), `full` (max density, diff-only), `ultra` (expert pair-programmer, minimal narration).
+- **Smart CRP interaction**: Terse `lite`/`full` are skipped when CRP mode is `tdd` (already maximally dense). `ultra` always applies as an additional layer.
+- **CLI toggle**: `lean-ctx terse <off|lite|full|ultra>` for instant switching.
+- **Per-project override**: `terse_agent = "full"` in `.lean-ctx.toml`.
+- **Env override**: `LEAN_CTX_TERSE_AGENT=full`.
+
+#### Compaction Survival (Session-Resilience)
+- **`build_resume_block()`**: Generates a compact (~500 token) session resume containing task, decisions, modified files, next steps, archive references, and stats.
+- **Automatic injection**: The resume block is injected into MCP instructions whenever an active session with tool calls exists, ensuring context survives agent compaction events.
+- **New `ctx_session(action="resume")` action**: Explicit retrieval of the resume block for agents that need on-demand session state.
+
+### Bug Fixes
+
+#### `ctx_expand` not registered in MCP tool listing
+- **Fixed**: `ctx_expand` was implemented (dispatch handler, archive storage, tool definition in `list_all_tool_defs()`) but was missing from `granular_tool_defs()` — the function that the MCP server actually uses to build the `tools/list` response. Agents could never discover or call `ctx_expand` despite the feature being fully coded. Now registered as tool #47.
+
+#### `TerseAgent::effective()` ignores environment variable
+- **Fixed**: `TerseAgent::effective()` was supposed to let `LEAN_CTX_TERSE_AGENT` override the config.toml value, but fell through to the config value when the env var was set to `"off"`. Rewritten to explicitly check the env var first, then fall back to config.
+
+#### CLI dispatch sync — `terse`, `register`, `forgot-password` not wired in `main.rs`
+- **Fixed**: `lean-ctx terse`, `lean-ctx register`, and `lean-ctx forgot-password` were implemented in `cli/dispatch.rs` but the primary dispatch in `main.rs` was missing the match arms. All three commands now work from the CLI.
+- **New**: `lean-ctx forgot-password <email>` — sends a password reset email via the LeanCTX Cloud API. Previously referenced in help text but not implemented.
+- **Help text**: Updated in both `main.rs` and `cli/dispatch.rs` to consistently list `terse`, `register`, and `forgot-password`.
+
+#### `lean-ctx doctor` ignores `LEAN_CTX_DATA_DIR` (Discord: GlemSom)
+- **Fixed**: `doctor` now uses `lean_ctx_data_dir()` instead of hardcoded `~/.lean-ctx` at all 4 locations: shell-hook checks, Docker env.sh path, data directory check, and `compact_score()`. Users with custom `LEAN_CTX_DATA_DIR` will now see correct paths in doctor output.
+
+#### Windows "path escapes project root" (GitHub Issue #139)
+- **Fixed**: `pathjail.rs` now uses `safe_canonicalize_or_self()` (which strips the `\\?\` verbatim prefix) instead of raw `std::fs::canonicalize()`. This resolves the mismatch where Windows canonicalized paths (`\\?\C:\Users\...`) didn't match normal paths (`C:/Users/...`), causing false "path escapes project root" errors on Windows with Codex.
+- **Windows path normalization hardened**: `is_under_prefix_windows` now strips `\\?\` prefix before comparison, and `allow_paths_from_env` uses the safe canonicalization consistently.
+
+### Shell Quoting Hardening
+
+#### Bug fixes — Argument preservation for complex shell commands
+- **Direct argv execution in `-t` mode**: Shell aliases (`_lc gh`, `_lc find`, etc.) now bypass the argv-to-string-to-argv round-trip entirely when multiple arguments are present. `exec_argv()` calls `Command::new().args()` directly, preserving em-dashes (`—`), `#` signs, nested quotes, and all other special characters exactly as the user's shell parsed them. Single-string commands still use `sh -c` for backward compatibility.
+- **Single-quote wrapping for hook rewrites**: `wrap_single_command` in hook handlers now uses POSIX single-quote escaping (`'...'` with `'\''` for embedded single quotes) instead of double-quote escaping. This protects `$`, backticks, `!`, and `"` from unintended expansion when commands are passed through Claude Code, Codex, or Copilot hooks.
+- **`gh` added to full passthrough**: All `gh` CLI commands (not just `gh auth`) are now excluded from compression and tracking. The GitHub CLI's output is typically short, and its complex argument patterns (multi-word `--comment` values, issue references with `#`) are prone to quoting issues.
+
+#### Code quality
+- 20+ new unit tests covering: `exec_direct` / `exec_argv` direct execution, `quote_posix` edge cases (em-dash, `$`, backtick, nested quotes), `wrap_single_command` special characters (`$HOME`, backticks, `find` with long exclude lists, `!`), and `gh` full passthrough verification.
+- All integration tests updated for new single-quote format.
+
+## [3.3.3] — 2026-04-28
+
+### Session Stability + Dashboard Clarity
+
+#### Bug fixes — Session root handling (PR #138)
+- **Stale session root across checkouts**: Fixed issue where switching between project directories could load a session from a different workspace. New `load_latest_for_project_root()` scans all session files and returns the most recent session matching the target project root, using canonicalized path comparison.
+- **Session normalization extracted**: `normalize_loaded_session()` now handles empty-string cleanup and stale project root healing in a single place, called from both `load_by_id()` and `load_latest_for_project_root()`.
+- **Startup context detection**: New `detect_startup_context()` derives the correct project root and shell working directory at MCP server startup, even when the IDE provides only a subdirectory path (e.g. `repo/src`).
+- **Trusted re-rooting**: `resolve_path()` now checks `startup_project_root` before allowing session re-rooting from absolute paths. Only paths matching the trusted startup root can trigger a re-root, preventing accidental session takeover by untrusted paths.
+- **Helper functions**: Added `session_matches_project_root()`, `has_project_marker()`, and `is_agent_or_temp_dir()` to `session.rs` for robust session matching and stale-root detection.
+
+#### Improvements — Dashboard and metrics clarity
+- **0%-savings tools hidden from `lean-ctx gain`**: Write-only tools like `ctx_edit` that don't compress output are no longer shown in the "Top Commands" section, preventing confusing "0% savings" entries.
+- **0%-savings tools hidden from `ctx_metrics`**: The MCP `ctx_metrics` tool now filters out tools with zero token activity from the "By Tool" breakdown.
+
+#### Code quality
+- Fixed all clippy warnings: resolved `MutexGuard` held across await points in tests, `vec!` macro used where array literal suffices, and `Default::default()` struct update with all fields specified.
+- All 1295 tests pass with zero warnings, zero clippy errors, full parallel execution.
+
+#### Closed issues
+- **#137** (stale session root across checkouts): Fixed by PR #138.
+
 ## [3.3.2] — 2026-04-22
 
 ### Codex Hook Fix + Docker Knowledge Collision Prevention

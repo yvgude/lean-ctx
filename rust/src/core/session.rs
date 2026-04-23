@@ -623,6 +623,73 @@ impl SessionState {
             .and_then(|(_, path)| std::fs::read_to_string(path).ok())
     }
 
+    /// Build a compact resume block for post-compaction injection.
+    /// Max ~500 tokens. Includes task, decisions, files, and archive references.
+    pub fn build_resume_block(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+
+        if let Some(ref root) = self.project_root {
+            let short = root.rsplit('/').next().unwrap_or(root);
+            parts.push(format!("Project: {short}"));
+        }
+
+        if let Some(ref task) = self.task {
+            let pct = task
+                .progress_pct
+                .map_or(String::new(), |p| format!(" [{p}%]"));
+            parts.push(format!("Task: {}{pct}", task.description));
+        }
+
+        if !self.decisions.is_empty() {
+            let items: Vec<&str> = self
+                .decisions
+                .iter()
+                .rev()
+                .take(5)
+                .map(|d| d.summary.as_str())
+                .collect();
+            parts.push(format!("Decisions: {}", items.join("; ")));
+        }
+
+        if !self.files_touched.is_empty() {
+            let modified: Vec<&str> = self
+                .files_touched
+                .iter()
+                .filter(|f| f.modified)
+                .take(10)
+                .map(|f| f.path.as_str())
+                .collect();
+            if !modified.is_empty() {
+                parts.push(format!("Modified: {}", modified.join(", ")));
+            }
+        }
+
+        if !self.next_steps.is_empty() {
+            let steps: Vec<&str> = self.next_steps.iter().take(3).map(|s| s.as_str()).collect();
+            parts.push(format!("Next: {}", steps.join("; ")));
+        }
+
+        let archives = super::archive::list_entries(Some(&self.id));
+        if !archives.is_empty() {
+            let hints: Vec<String> = archives
+                .iter()
+                .take(5)
+                .map(|a| format!("{}({})", a.id, a.tool))
+                .collect();
+            parts.push(format!("Archives: {}", hints.join(", ")));
+        }
+
+        parts.push(format!(
+            "Stats: {} calls, {} tok saved",
+            self.stats.total_tool_calls, self.stats.total_tokens_saved
+        ));
+
+        format!(
+            "--- SESSION RESUME (post-compaction) ---\n{}\n---",
+            parts.join("\n")
+        )
+    }
+
     pub fn save(&mut self) -> Result<(), String> {
         let dir = sessions_dir().ok_or("cannot determine home directory")?;
         if !dir.exists() {
@@ -657,56 +724,49 @@ impl SessionState {
         Self::load_by_id(&pointer.id)
     }
 
+    pub fn load_latest_for_project_root(project_root: &str) -> Option<Self> {
+        let dir = sessions_dir()?;
+        let target_root =
+            crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(project_root));
+        let mut latest_match: Option<Self> = None;
+
+        for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            if path.file_name().and_then(|n| n.to_str()) == Some("latest.json") {
+                continue;
+            }
+
+            let Some(id) = path.file_stem().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Some(session) = Self::load_by_id(id) else {
+                continue;
+            };
+
+            if !session_matches_project_root(&session, &target_root) {
+                continue;
+            }
+
+            if latest_match
+                .as_ref()
+                .is_none_or(|existing| session.updated_at > existing.updated_at)
+            {
+                latest_match = Some(session);
+            }
+        }
+
+        latest_match
+    }
+
     pub fn load_by_id(id: &str) -> Option<Self> {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{id}.json"));
         let json = std::fs::read_to_string(&path).ok()?;
-        let mut session: Self = serde_json::from_str(&json).ok()?;
-        // Legacy/malformed sessions may serialize empty strings instead of null.
-        if matches!(session.project_root.as_deref(), Some(r) if r.trim().is_empty()) {
-            session.project_root = None;
-        }
-        if matches!(session.shell_cwd.as_deref(), Some(c) if c.trim().is_empty()) {
-            session.shell_cwd = None;
-        }
-
-        // Heal stale project_root caused by agent/temp working directories.
-        // If project_root doesn't look like a real project root but shell_cwd does, prefer shell_cwd.
-        if let (Some(ref root), Some(ref cwd)) = (&session.project_root, &session.shell_cwd) {
-            fn has_marker(dir: &std::path::Path) -> bool {
-                const MARKERS: &[&str] = &[
-                    ".git",
-                    ".lean-ctx.toml",
-                    "Cargo.toml",
-                    "package.json",
-                    "go.mod",
-                    "pyproject.toml",
-                    ".planning",
-                ];
-                MARKERS.iter().any(|m| dir.join(m).exists())
-            }
-            fn is_agent_or_temp_dir(dir: &std::path::Path) -> bool {
-                let s = dir.to_string_lossy();
-                s.contains("/.claude")
-                    || s.contains("/.codex")
-                    || s.contains("/var/folders/")
-                    || s.contains("/tmp/")
-                    || s.contains("\\.claude")
-                    || s.contains("\\.codex")
-                    || s.contains("\\AppData\\Local\\Temp")
-                    || s.contains("\\Temp\\")
-            }
-
-            let root_p = std::path::Path::new(root);
-            let cwd_p = std::path::Path::new(cwd);
-            let root_looks_real = has_marker(root_p);
-            let cwd_looks_real = has_marker(cwd_p);
-
-            if !root_looks_real && cwd_looks_real && is_agent_or_temp_dir(root_p) {
-                session.project_root = Some(cwd.clone());
-            }
-        }
-        Some(session)
+        let session: Self = serde_json::from_str(&json).ok()?;
+        Some(normalize_loaded_session(session))
     }
 
     pub fn list_sessions() -> Vec<SessionSummary> {
@@ -850,6 +910,75 @@ fn shorten_path(path: &str) -> String {
     }
     let last_two: Vec<&str> = parts.iter().rev().take(2).copied().collect();
     format!("…/{}/{}", last_two[1], last_two[0])
+}
+
+fn normalize_loaded_session(mut session: SessionState) -> SessionState {
+    if matches!(session.project_root.as_deref(), Some(r) if r.trim().is_empty()) {
+        session.project_root = None;
+    }
+    if matches!(session.shell_cwd.as_deref(), Some(c) if c.trim().is_empty()) {
+        session.shell_cwd = None;
+    }
+
+    // Heal stale project_root caused by agent/temp working directories.
+    // If project_root doesn't look like a real project root but shell_cwd does, prefer shell_cwd.
+    if let (Some(ref root), Some(ref cwd)) = (&session.project_root, &session.shell_cwd) {
+        let root_p = std::path::Path::new(root);
+        let cwd_p = std::path::Path::new(cwd);
+        let root_looks_real = has_project_marker(root_p);
+        let cwd_looks_real = has_project_marker(cwd_p);
+
+        if !root_looks_real && cwd_looks_real && is_agent_or_temp_dir(root_p) {
+            session.project_root = Some(cwd.clone());
+        }
+    }
+
+    session
+}
+
+fn session_matches_project_root(session: &SessionState, target_root: &std::path::Path) -> bool {
+    if let Some(root) = session.project_root.as_deref() {
+        let root_path =
+            crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(root));
+        if root_path == target_root {
+            return true;
+        }
+        if has_project_marker(&root_path) {
+            return false;
+        }
+    }
+
+    if let Some(cwd) = session.shell_cwd.as_deref() {
+        let cwd_path = crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(cwd));
+        return cwd_path == target_root || cwd_path.starts_with(target_root);
+    }
+
+    false
+}
+
+fn has_project_marker(dir: &std::path::Path) -> bool {
+    const MARKERS: &[&str] = &[
+        ".git",
+        ".lean-ctx.toml",
+        "Cargo.toml",
+        "package.json",
+        "go.mod",
+        "pyproject.toml",
+        ".planning",
+    ];
+    MARKERS.iter().any(|m| dir.join(m).exists())
+}
+
+fn is_agent_or_temp_dir(dir: &std::path::Path) -> bool {
+    let s = dir.to_string_lossy();
+    s.contains("/.claude")
+        || s.contains("/.codex")
+        || s.contains("/var/folders/")
+        || s.contains("/tmp/")
+        || s.contains("\\.claude")
+        || s.contains("\\.codex")
+        || s.contains("\\AppData\\Local\\Temp")
+        || s.contains("\\Temp\\")
 }
 
 #[cfg(test)]

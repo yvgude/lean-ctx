@@ -591,14 +591,9 @@ fn docker_env_outcomes() -> Vec<Outcome> {
     if !crate::shell::is_container() {
         return vec![];
     }
-    let env_sh = dirs::home_dir()
-        .map(|h| {
-            h.join(".lean-ctx")
-                .join("env.sh")
-                .to_string_lossy()
-                .to_string()
-        })
-        .unwrap_or_else(|| "/root/.lean-ctx/env.sh".to_string());
+    let env_sh = crate::core::data_dir::lean_ctx_data_dir()
+        .map(|d| d.join("env.sh").to_string_lossy().to_string())
+        .unwrap_or_else(|_| "/root/.lean-ctx/env.sh".to_string());
 
     let mut outcomes = vec![];
 
@@ -688,15 +683,15 @@ pub fn run() {
     }
     print_check(&ver);
 
-    // 3) ~/.lean-ctx directory
-    let lean_dir = dirs::home_dir().map(|h| h.join(".lean-ctx"));
+    // 3) data directory (respects LEAN_CTX_DATA_DIR)
+    let lean_dir = crate::core::data_dir::lean_ctx_data_dir().ok();
     let dir_outcome = match &lean_dir {
         Some(p) if p.is_dir() => {
             passed += 1;
             Outcome {
                 ok: true,
                 line: format!(
-                    "{BOLD}~/.lean-ctx/{RST}  {GREEN}exists{RST}  {DIM}{}{RST}",
+                    "{BOLD}data dir{RST}  {GREEN}exists{RST}  {DIM}{}{RST}",
                     p.display()
                 ),
             }
@@ -704,13 +699,13 @@ pub fn run() {
         Some(p) => Outcome {
             ok: false,
             line: format!(
-                "{BOLD}~/.lean-ctx/{RST}  {RED}missing or not a directory{RST}  {DIM}{}{RST}",
+                "{BOLD}data dir{RST}  {RED}missing or not a directory{RST}  {DIM}{}{RST}",
                 p.display()
             ),
         },
         None => Outcome {
             ok: false,
-            line: format!("{BOLD}~/.lean-ctx/{RST}  {RED}could not resolve home directory{RST}"),
+            line: format!("{BOLD}data dir{RST}  {RED}could not resolve data directory{RST}"),
         },
     };
     print_check(&dir_outcome);
@@ -1189,7 +1184,7 @@ pub fn compact_score() -> (u32, u32) {
     if resolve_lean_ctx_binary().is_some() || path_in_path_env() {
         passed += 1;
     }
-    let lean_dir = dirs::home_dir().map(|h| h.join(".lean-ctx"));
+    let lean_dir = crate::core::data_dir::lean_ctx_data_dir().ok();
     if lean_dir.as_ref().is_some_and(|p| p.is_dir()) {
         passed += 1;
     }

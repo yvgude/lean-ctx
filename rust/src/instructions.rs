@@ -59,19 +59,28 @@ Full instructions at ~/.claude/CLAUDE.md (imports rules/lean-ctx.md)";
 
 fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
     let profile = crate::core::litm::LitmProfile::from_client_name(client_name);
-    let session_block = match crate::core::session::SessionState::load_latest() {
+    let loaded_session = crate::core::session::SessionState::load_latest();
+
+    let session_block = match loaded_session {
         Some(ref session) => {
             let positioned = crate::core::litm::position_optimize(session);
+            let resume = if session.stats.total_tool_calls > 0 {
+                format!("\n{}", session.build_resume_block())
+            } else {
+                String::new()
+            };
             format!(
-                "\n\n--- ACTIVE SESSION (LITM P1: begin position, profile: {}) ---\n{}\n---\n",
+                "\n\n--- ACTIVE SESSION (LITM P1: begin position, profile: {}) ---\n{}{resume}\n---\n",
                 profile.name, positioned.begin_block
             )
         }
         None => String::new(),
     };
 
-    let project_root_for_blocks = crate::core::session::SessionState::load_latest()
-        .and_then(|s| s.project_root)
+    // Reuse loaded session instead of loading again (prevents race + saves I/O)
+    let project_root_for_blocks = loaded_session
+        .as_ref()
+        .and_then(|s| s.project_root.clone())
         .or_else(|| {
             std::env::current_dir()
                 .ok()
@@ -99,7 +108,8 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
     let gotcha_block = match &project_root_for_blocks {
         Some(root) => {
             let store = crate::core::gotcha_tracker::GotchaStore::load(root);
-            let files: Vec<String> = crate::core::session::SessionState::load_latest()
+            let files: Vec<String> = loaded_session
+                .as_ref()
                 .map(|s| s.files_touched.iter().map(|ft| ft.path.clone()).collect())
                 .unwrap_or_default();
             let block = store.format_injection_block(&files);
@@ -163,17 +173,18 @@ See the ctx() tool description for available sub-tools.\n",
     }
 
     let intelligence_block = build_intelligence_block();
+    let terse_block = build_terse_agent_block(&crp_mode);
 
     let base = base;
     match crp_mode {
-        CrpMode::Off => format!("{base}\n\n{intelligence_block}"),
+        CrpMode::Off => format!("{base}\n\n{terse_block}{intelligence_block}"),
         CrpMode::Compact => {
             format!(
                 "{base}\n\n\
 CRP MODE: compact\n\
 Omit filler. Abbreviate: fn,cfg,impl,deps,req,res,ctx,err,ret,arg,val,ty,mod.\n\
 Diff lines (+/-) only. TARGET: <=200 tok. Trust tool outputs.\n\n\
-{intelligence_block}"
+{terse_block}{intelligence_block}"
             )
         }
         CrpMode::Tdd => {
@@ -184,7 +195,7 @@ Max density. Every token carries meaning. Fn refs only, diff lines (+/-) only.\n
 Abbreviate: fn,cfg,impl,deps,req,res,ctx,err,ret,arg,val,ty,mod.\n\
 +F1:42 param(timeout:Duration) | -F1:10-15 | ~F1:42 old->new\n\
 BUDGET: <=150 tok. ZERO NARRATION. Trust tool outputs.\n\n\
-{intelligence_block}"
+{terse_block}{intelligence_block}"
             )
         }
     }
@@ -196,6 +207,40 @@ pub fn claude_code_instructions() -> String {
 
 pub fn full_instructions_for_rules_file(crp_mode: CrpMode) -> String {
     build_full_instructions(crp_mode, "")
+}
+
+fn build_terse_agent_block(crp_mode: &CrpMode) -> String {
+    use crate::core::config::{Config, TerseAgent};
+    let cfg = Config::load();
+    let level = TerseAgent::effective(&cfg.terse_agent);
+    if !level.is_active() {
+        return String::new();
+    }
+    // CRP Tdd already enforces extreme density — only Ultra adds value on top
+    if matches!(crp_mode, CrpMode::Tdd) && !matches!(level, TerseAgent::Ultra) {
+        return String::new();
+    }
+    let text = match level {
+        TerseAgent::Off => return String::new(),
+        TerseAgent::Lite => {
+            "\
+OUTPUT STYLE: Prefer concise responses. Skip narration, explain only when asked.\n\
+Use bullet points over paragraphs. Code > words. Diff > full file."
+        }
+        TerseAgent::Full => {
+            "\
+OUTPUT STYLE: Maximum density. Every token carries meaning.\n\
+Code changes: diff only (+/-), no full blocks. Explanations: 1 sentence max unless asked.\n\
+Lists: no filler words. Never repeat what the user said. Never explain what you're about to do."
+        }
+        TerseAgent::Ultra => {
+            "\
+OUTPUT STYLE: Ultra-terse. Expert pair programmer mode.\n\
+Skip: greetings, transitions, summaries, \"I'll\", \"Let me\", \"Here's\".\n\
+Max 2 sentences per explanation. Code speaks. Act, don't narrate. When uncertain: ask 1 question."
+        }
+    };
+    format!("{text}\n\n")
 }
 
 fn build_intelligence_block() -> String {

@@ -109,7 +109,9 @@ pub fn handle(
             }
         }
 
-        _ => format!("Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore"),
+        "resume" => session.build_resume_block(),
+
+        _ => format!("Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume"),
     }
 }
 

@@ -748,6 +748,56 @@ pub fn cmd_cheatsheet() {
     );
 }
 
+pub fn cmd_terse(args: &[String]) {
+    use crate::core::config::{Config, TerseAgent};
+
+    let action = args.first().map(|s| s.as_str());
+    match action {
+        Some("off" | "lite" | "full" | "ultra") => {
+            let level = action.unwrap();
+            let mut cfg = Config::load();
+            cfg.terse_agent = match level {
+                "lite" => TerseAgent::Lite,
+                "full" => TerseAgent::Full,
+                "ultra" => TerseAgent::Ultra,
+                _ => TerseAgent::Off,
+            };
+            if let Err(e) = cfg.save() {
+                eprintln!("Error saving config: {e}");
+                std::process::exit(1);
+            }
+            let desc = match level {
+                "lite" => "concise responses, bullet points over paragraphs",
+                "full" => "maximum density, diff-only code, 1-sentence explanations",
+                "ultra" => "expert pair-programmer mode, minimal narration",
+                _ => "normal verbose output",
+            };
+            println!("Terse agent mode: {level} ({desc})");
+            println!("Restart your agent/IDE for changes to take effect.");
+        }
+        _ => {
+            let cfg = Config::load();
+            let effective = TerseAgent::effective(&cfg.terse_agent);
+            let name = match &effective {
+                TerseAgent::Off => "off",
+                TerseAgent::Lite => "lite",
+                TerseAgent::Full => "full",
+                TerseAgent::Ultra => "ultra",
+            };
+            println!("Terse agent mode: {name}");
+            println!();
+            println!("Usage: lean-ctx terse <off|lite|full|ultra>");
+            println!("  off   — Normal verbose output (default)");
+            println!("  lite  — Concise: bullet points, skip narration");
+            println!("  full  — Dense: diff-only, 1-sentence max");
+            println!("  ultra — Expert: minimal narration, code speaks");
+            println!();
+            println!("Override per session: LEAN_CTX_TERSE_AGENT=full");
+            println!("Override per project: terse_agent = \"full\" in .lean-ctx.toml");
+        }
+    }
+}
+
 pub fn cmd_slow_log(args: &[String]) {
     use crate::core::slow_log;
 

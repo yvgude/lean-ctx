@@ -106,7 +106,10 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
             entry.saved += call.saved_tokens;
         }
 
-        let mut sorted: Vec<_> = by_tool.iter().collect();
+        let mut sorted: Vec<_> = by_tool
+            .iter()
+            .filter(|(_, ts)| ts.original > 0 || ts.saved > 0)
+            .collect();
         sorted.sort_by_key(|x| std::cmp::Reverse(x.1.saved));
 
         for (tool, ts) in &sorted {

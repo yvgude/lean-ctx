@@ -83,6 +83,29 @@ pub fn register(email: &str, password: Option<&str>) -> Result<RegisterResult, S
     })
 }
 
+pub fn forgot_password(email: &str) -> Result<String, String> {
+    let url = format!("{}/api/auth/forgot-password", api_url());
+    let body = serde_json::json!({ "email": email });
+
+    let resp = ureq::post(&url)
+        .header("Content-Type", "application/json")
+        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    let resp_body = resp
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read response: {e}"))?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&resp_body).map_err(|e| format!("Invalid JSON: {e}"))?;
+
+    Ok(json["message"]
+        .as_str()
+        .unwrap_or("If an account exists, a reset email has been sent.")
+        .to_string())
+}
+
 pub fn login(email: &str, password: &str) -> Result<RegisterResult, String> {
     let url = format!("{}/api/auth/login", api_url());
     let body = serde_json::json!({ "email": email, "password": password });

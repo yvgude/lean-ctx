@@ -390,20 +390,22 @@ mod tests {
 
     #[test]
     fn save_and_load_roundtrip() {
-        let dir = std::env::temp_dir().join("lean_ctx_embed_idx_test");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data_dir = tempfile::tempdir().unwrap();
+        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+
+        let project_dir = tempfile::tempdir().unwrap();
 
         let mut idx = EmbeddingIndex::new(3);
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
         idx.update(&chunks, &[(0, vec![1.0, 2.0, 3.0])], &["a.rs".to_string()]);
-        idx.save(&dir).unwrap();
+        idx.save(project_dir.path()).unwrap();
 
-        let loaded = EmbeddingIndex::load(&dir).unwrap();
+        let loaded = EmbeddingIndex::load(project_dir.path()).unwrap();
         assert_eq!(loaded.dimensions, 3);
         assert_eq!(loaded.entries.len(), 1);
         assert!((loaded.entries[0].embedding[0] - 1.0).abs() < 1e-6);
 
-        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
     }
 }

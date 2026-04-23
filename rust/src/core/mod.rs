@@ -3,6 +3,7 @@ pub mod adaptive;
 pub mod adaptive_mode_policy;
 pub mod adaptive_thresholds;
 pub mod agents;
+pub mod archive;
 pub mod attention_model;
 pub mod bandit;
 pub mod benchmark;

@@ -29,12 +29,18 @@ fn is_rewritable(cmd: &str) -> bool {
 }
 
 fn wrap_single_command(cmd: &str, binary: &str) -> String {
-    let shell_escaped = cmd.replace('\\', "\\\\").replace('"', "\\\"");
-    format!("{binary} -c \"{shell_escaped}\"")
+    let shell_escaped = cmd.replace('\'', "'\\''");
+    format!("{binary} -c '{shell_escaped}'")
 }
 
 fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
     if cmd.starts_with("lean-ctx ") || cmd.starts_with(&format!("{binary} ")) {
+        return None;
+    }
+
+    // Heredocs cannot survive the quoting round-trip through `lean-ctx -c '...'`.
+    // Newlines get escaped, breaking the heredoc syntax entirely (GitHub #140).
+    if cmd.contains("<<") {
         return None;
     }
 
@@ -214,13 +220,13 @@ mod tests {
     #[test]
     fn wrap_single() {
         let r = wrap_single_command("git status", "lean-ctx");
-        assert_eq!(r, r#"lean-ctx -c "git status""#);
+        assert_eq!(r, "lean-ctx -c 'git status'");
     }
 
     #[test]
     fn wrap_with_quotes() {
         let r = wrap_single_command(r#"curl -H "Auth" https://api.com"#, "lean-ctx");
-        assert_eq!(r, r#"lean-ctx -c "curl -H \"Auth\" https://api.com""#);
+        assert_eq!(r, r#"lean-ctx -c 'curl -H "Auth" https://api.com'"#);
     }
 
     #[test]
@@ -235,16 +241,38 @@ mod tests {
     fn rewrite_candidate_wraps_single_command() {
         assert_eq!(
             rewrite_candidate("git status", "lean-ctx"),
-            Some(r#"lean-ctx -c "git status""#.to_string())
+            Some("lean-ctx -c 'git status'".to_string())
+        );
+    }
+
+    #[test]
+    fn rewrite_candidate_passes_through_heredoc() {
+        assert_eq!(
+            rewrite_candidate(
+                "git commit -m \"$(cat <<'EOF'\nfix: something\nEOF\n)\"",
+                "lean-ctx"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn rewrite_candidate_passes_through_heredoc_compound() {
+        assert_eq!(
+            rewrite_candidate(
+                "git add . && git commit -m \"$(cat <<EOF\nfeat: add\nEOF\n)\"",
+                "lean-ctx"
+            ),
+            None
         );
     }
 
     #[test]
     fn codex_reroute_message_includes_exact_rewritten_command() {
-        let message = codex_reroute_message(r#"lean-ctx -c "git status""#);
+        let message = codex_reroute_message("lean-ctx -c 'git status'");
         assert_eq!(
             message,
-            r#"Command should run via lean-ctx for compact output. Do not retry the original command. Re-run with: lean-ctx -c "git status""#
+            "Command should run via lean-ctx for compact output. Do not retry the original command. Re-run with: lean-ctx -c 'git status'"
         );
     }
 
@@ -253,7 +281,7 @@ mod tests {
         let result = build_rewrite_compound("cd src && git status && echo done", "lean-ctx");
         assert_eq!(
             result,
-            Some(r#"cd src && lean-ctx -c "git status" && echo done"#.into())
+            Some("cd src && lean-ctx -c 'git status' && echo done".into())
         );
     }
 
@@ -262,7 +290,7 @@ mod tests {
         let result = build_rewrite_compound("git log --oneline | head -5", "lean-ctx");
         assert_eq!(
             result,
-            Some(r#"lean-ctx -c "git log --oneline" | head -5"#.into())
+            Some("lean-ctx -c 'git log --oneline' | head -5".into())
         );
     }
 
@@ -278,7 +306,7 @@ mod tests {
         assert_eq!(
             result,
             Some(
-                r#"lean-ctx -c "git add ." && lean-ctx -c "cargo test" && lean-ctx -c "npm run lint""#
+                "lean-ctx -c 'git add .' && lean-ctx -c 'cargo test' && lean-ctx -c 'npm run lint'"
                     .into()
             )
         );
@@ -289,17 +317,14 @@ mod tests {
         let result = build_rewrite_compound("git add .; git commit -m 'fix'", "lean-ctx");
         assert_eq!(
             result,
-            Some(r#"lean-ctx -c "git add ." ; lean-ctx -c "git commit -m 'fix'""#.into())
+            Some("lean-ctx -c 'git add .' ; lean-ctx -c 'git commit -m '\\''fix'\\'''".into())
         );
     }
 
     #[test]
     fn compound_rewrite_or_chain() {
         let result = build_rewrite_compound("git pull || echo failed", "lean-ctx");
-        assert_eq!(
-            result,
-            Some(r#"lean-ctx -c "git pull" || echo failed"#.into())
-        );
+        assert_eq!(result, Some("lean-ctx -c 'git pull' || echo failed".into()));
     }
 
     #[test]
@@ -307,7 +332,7 @@ mod tests {
         let result = build_rewrite_compound("lean-ctx -c git status && git diff", "lean-ctx");
         assert_eq!(
             result,
-            Some(r#"lean-ctx -c git status && lean-ctx -c "git diff""#.into())
+            Some("lean-ctx -c git status && lean-ctx -c 'git diff'".into())
         );
     }
 
@@ -392,6 +417,48 @@ mod tests {
         assert!(
             result.starts_with("/e/packages/lean-ctx.exe"),
             "must use bash-compatible path, got: {result}"
+        );
+    }
+
+    #[test]
+    fn wrap_single_command_em_dash() {
+        let r = wrap_single_command("gh --comment \"closing — see #407\"", "lean-ctx");
+        assert_eq!(r, "lean-ctx -c 'gh --comment \"closing — see #407\"'");
+    }
+
+    #[test]
+    fn wrap_single_command_dollar_sign() {
+        let r = wrap_single_command("echo $HOME", "lean-ctx");
+        assert_eq!(r, "lean-ctx -c 'echo $HOME'");
+    }
+
+    #[test]
+    fn wrap_single_command_backticks() {
+        let r = wrap_single_command("echo `date`", "lean-ctx");
+        assert_eq!(r, "lean-ctx -c 'echo `date`'");
+    }
+
+    #[test]
+    fn wrap_single_command_nested_single_quotes() {
+        let r = wrap_single_command("echo 'hello world'", "lean-ctx");
+        assert_eq!(r, r"lean-ctx -c 'echo '\''hello world'\'''");
+    }
+
+    #[test]
+    fn wrap_single_command_exclamation_mark() {
+        let r = wrap_single_command("echo hello!", "lean-ctx");
+        assert_eq!(r, "lean-ctx -c 'echo hello!'");
+    }
+
+    #[test]
+    fn wrap_single_command_find_with_many_excludes() {
+        let r = wrap_single_command(
+            "find . -not -path ./node_modules -not -path ./.git -not -path ./dist",
+            "lean-ctx",
+        );
+        assert_eq!(
+            r,
+            "lean-ctx -c 'find . -not -path ./node_modules -not -path ./.git -not -path ./dist'"
         );
     }
 }

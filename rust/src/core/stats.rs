@@ -1222,7 +1222,11 @@ pub fn format_gain_themed_at(t: &Theme, tick: Option<u64>) -> String {
         o.push(format!("  {ln}", ln = t.border_line(w)));
         o.push(String::new());
 
-        let mut sorted: Vec<_> = store.commands.iter().collect();
+        let mut sorted: Vec<_> = store
+            .commands
+            .iter()
+            .filter(|(_, s)| s.input_tokens > s.output_tokens)
+            .collect();
         sorted.sort_by(|a, b2| {
             let sa = cmd_total_saved(a.1, &cost_model);
             let sb = cmd_total_saved(b2.1, &cost_model);

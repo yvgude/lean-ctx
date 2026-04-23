@@ -31,4 +31,16 @@ Fixed in v3.2.6. The stats line is no longer appended to stdout by default. Upda
 Fixed in recent versions. Binary/image files are now passed through without compression. Update: `lean-ctx update`.
 
 **Q: `git commit -m "$(cat <<'EOF' ...)"` fails with syntax error!**
-Fixed in v3.2.0+. The shell hook now handles heredoc/EOF-style commit messages correctly. Update: `lean-ctx update`.
+Fixed comprehensively in v3.3.4+. Two fixes:
+1. The PreToolUse hook (Claude Code/Codex/Copilot) no longer wraps heredoc commands in `lean-ctx -c '...'` — they pass through to the shell directly.
+2. `ctx_shell` now uses smart heredoc detection: only heredoc + file redirect (`cat <<EOF > file.txt`) is blocked. Legitimate heredoc uses (input piping, SQL, commit messages) are allowed.
+Update: `lean-ctx update`.
+
+**Q: `gh --comment "closing — see #407"` or `find` with many excludes gives wrong results!**
+Fixed in v3.3.4+. The shell hook now uses direct argv execution, preserving em-dashes, `#` signs, nested quotes, and all special characters exactly as typed. Update: `lean-ctx update`.
+
+If you still hit issues with a specific command, exclude it:
+```toml
+# ~/.lean-ctx/config.toml
+excluded_commands = ["your-command"]
+```

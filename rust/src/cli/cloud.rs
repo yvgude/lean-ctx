@@ -1,6 +1,6 @@
 use crate::{cloud_client, core};
 
-pub fn cmd_login(args: &[String]) {
+fn parse_auth_args(args: &[String]) -> (String, Option<String>) {
     let mut email = String::new();
     let mut password: Option<String> = None;
     let mut i = 0;
@@ -20,12 +20,16 @@ pub fn cmd_login(args: &[String]) {
         }
         i += 1;
     }
+    (email, password)
+}
+
+fn require_email_and_password(args: &[String], usage: &str) -> (String, String) {
+    let (email, password) = parse_auth_args(args);
 
     if email.is_empty() {
-        eprintln!("Usage: lean-ctx login <email> [--password <password>]");
+        eprintln!("Usage: {usage}");
         std::process::exit(1);
     }
-
     if !email.contains('@') || !email.contains('.') {
         eprintln!("Invalid email address: {email}");
         std::process::exit(1);
@@ -41,48 +45,99 @@ pub fn cmd_login(args: &[String]) {
             }
         },
     };
-
     if pw.len() < 8 {
         eprintln!("Password must be at least 8 characters.");
         std::process::exit(1);
     }
+    (email, pw)
+}
 
-    println!("Connecting to LeanCTX Cloud...");
+fn save_and_report(r: &cloud_client::RegisterResult, email: &str) {
+    if let Err(e) = cloud_client::save_credentials(&r.api_key, &r.user_id, email) {
+        eprintln!("Warning: Could not save credentials: {e}");
+        eprintln!("Please try again.");
+        return;
+    }
+    if let Ok(plan) = cloud_client::fetch_plan() {
+        let _ = cloud_client::save_plan(&plan);
+    }
+    println!("API key saved to ~/.lean-ctx/cloud/credentials.json");
+    if r.verification_sent {
+        println!("Verification email sent — please check your inbox.");
+    }
+    if !r.email_verified {
+        println!("Note: Your email is not yet verified.");
+    }
+}
 
-    let result = {
-        let login_result = cloud_client::login(&email, &pw);
-        match &login_result {
-            Ok(_) => login_result,
-            Err(e) if e.contains("403") => {
-                eprintln!("Please verify your email first. Check your inbox.");
-                std::process::exit(1);
-            }
-            Err(e) if e.contains("Invalid email or password") => login_result,
-            Err(_) => cloud_client::register(&email, Some(&pw)),
-        }
-    };
+pub fn cmd_login(args: &[String]) {
+    let (email, pw) = require_email_and_password(args, "lean-ctx login <email> [--password <pw>]");
 
-    match result {
+    println!("Logging in to LeanCTX Cloud...");
+
+    match cloud_client::login(&email, &pw) {
         Ok(r) => {
-            if let Err(e) = cloud_client::save_credentials(&r.api_key, &r.user_id, &email) {
-                eprintln!("Warning: Could not save credentials: {e}");
-                eprintln!("Please try logging in again.");
-                return;
-            }
-            if let Ok(plan) = cloud_client::fetch_plan() {
-                let _ = cloud_client::save_plan(&plan);
-            }
+            save_and_report(&r, &email);
             println!("Logged in as {email}");
-            println!("API key saved to ~/.lean-ctx/cloud/credentials.json");
-            if r.verification_sent {
-                println!("Verification email sent — please check your inbox.");
-            }
-            if !r.email_verified {
-                println!("Note: Your email is not yet verified.");
-            }
+        }
+        Err(e) if e.contains("403") => {
+            eprintln!("Please verify your email first. Check your inbox.");
+            std::process::exit(1);
+        }
+        Err(e) if e.contains("Invalid email or password") => {
+            eprintln!("Invalid email or password.");
+            eprintln!("Forgot your password? Run: lean-ctx forgot-password <email>");
+            eprintln!("No account yet? Run: lean-ctx register <email>");
+            std::process::exit(1);
         }
         Err(e) => {
             eprintln!("Login failed: {e}");
+            eprintln!("If you don't have an account yet, run: lean-ctx register <email>");
+            std::process::exit(1);
+        }
+    }
+}
+
+pub fn cmd_forgot_password(args: &[String]) {
+    let (email, _) = parse_auth_args(args);
+
+    if email.is_empty() {
+        eprintln!("Usage: lean-ctx forgot-password <email>");
+        std::process::exit(1);
+    }
+
+    println!("Sending password reset email...");
+
+    match cloud_client::forgot_password(&email) {
+        Ok(msg) => {
+            println!("{msg}");
+            println!("Check your inbox and follow the reset link.");
+        }
+        Err(e) => {
+            eprintln!("Failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+pub fn cmd_register(args: &[String]) {
+    let (email, pw) =
+        require_email_and_password(args, "lean-ctx register <email> [--password <pw>]");
+
+    println!("Creating LeanCTX Cloud account...");
+
+    match cloud_client::register(&email, Some(&pw)) {
+        Ok(r) => {
+            save_and_report(&r, &email);
+            println!("Account created for {email}");
+        }
+        Err(e) if e.contains("409") || e.contains("already exists") => {
+            eprintln!("An account with this email already exists.");
+            eprintln!("Run: lean-ctx login <email>");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Registration failed: {e}");
             std::process::exit(1);
         }
     }

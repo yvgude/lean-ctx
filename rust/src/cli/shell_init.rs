@@ -76,7 +76,7 @@ end
 fn source_line_powershell() -> String {
     r#"# lean-ctx shell hook
 $leanCtxHook = Join-Path $HOME ".lean-ctx" "shell-hook.ps1"
-if (Test-Path $leanCtxHook) { . $leanCtxHook }
+if ((Test-Path $leanCtxHook) -and -not [Console]::IsOutputRedirected) { . $leanCtxHook }
 "#
     .to_string()
 }

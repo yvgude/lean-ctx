@@ -654,6 +654,10 @@ pub fn run() {
                 super::cmd_tee(&rest);
                 return;
             }
+            "terse" => {
+                super::cmd_terse(&rest);
+                return;
+            }
             "slow-log" => {
                 super::cmd_slow_log(&rest);
                 return;
@@ -708,6 +712,14 @@ pub fn run() {
             }
             "login" => {
                 super::cloud::cmd_login(&rest);
+                return;
+            }
+            "register" => {
+                super::cloud::cmd_register(&rest);
+                return;
+            }
+            "forgot-password" => {
+                super::cloud::cmd_forgot_password(&rest);
                 return;
             }
             "sync" => {
@@ -850,6 +862,7 @@ COMMANDS:
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
     theme [list|set|export|import] Customize terminal colors and themes
     tee [list|clear|show <file>|last] Manage output tee files (~/.lean-ctx/tee/)
+    terse [off|lite|full|ultra]    Set agent output verbosity (saves 25-65% output tokens)
     slow-log [list|clear]          Show/clear slow command log (~/.lean-ctx/slow-commands.log)
     update [--check]               Self-update lean-ctx binary from GitHub Releases
     gotchas [list|clear|export|stats] Bug Memory: view/manage auto-detected error patterns
@@ -933,7 +946,9 @@ EXAMPLES:
 
 CLOUD:
     cloud status                   Show cloud connection status
-    login <email>                  Register/login to LeanCTX Cloud
+    login <email>                  Log into existing LeanCTX Cloud account
+    register <email>               Create a new LeanCTX Cloud account
+    forgot-password <email>        Send password reset email
     sync                           Upload local stats to cloud dashboard
     contribute                     Share anonymized compression data
 

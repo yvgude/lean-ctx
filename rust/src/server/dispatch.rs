@@ -1184,6 +1184,15 @@ impl LeanCtxServer {
                 self.record_call("ctx_graph_diagram", 0, 0, kind).await;
                 result
             }
+            "ctx_expand" => {
+                let args_val = args
+                    .as_ref()
+                    .map(|m| serde_json::Value::Object(m.clone()))
+                    .unwrap_or(serde_json::Value::Null);
+                let result = crate::tools::ctx_expand::handle(&args_val);
+                self.record_call("ctx_expand", 0, 0, None).await;
+                result
+            }
             "ctx_routes" => {
                 let method = get_str(args, "method");
                 let path_prefix = get_str(args, "path");

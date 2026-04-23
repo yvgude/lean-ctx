@@ -109,6 +109,50 @@ pub fn is_non_interactive() -> bool {
     !io::stdin().is_terminal()
 }
 
+/// Execute a command from pre-split argv without going through `sh -c`.
+/// Used by `-t` mode when the shell hook passes `"$@"` — arguments are
+/// already correctly split by the user's shell, so re-serializing them
+/// into a string and re-parsing via `sh -c` would risk mangling complex
+/// quoted arguments (em-dashes, `#`, nested quotes, etc.).
+pub fn exec_argv(args: &[String]) -> i32 {
+    if args.is_empty() {
+        return 127;
+    }
+
+    if std::env::var("LEAN_CTX_DISABLED").is_ok() || std::env::var("LEAN_CTX_ACTIVE").is_ok() {
+        return exec_direct(args);
+    }
+
+    let joined = join_command(args);
+    let cfg = config::Config::load();
+
+    if is_excluded_command(&joined, &cfg.excluded_commands) {
+        return exec_direct(args);
+    }
+
+    let code = exec_direct(args);
+    stats::record(&joined, 0, 0);
+    code
+}
+
+fn exec_direct(args: &[String]) -> i32 {
+    let status = Command::new(&args[0])
+        .args(&args[1..])
+        .env("LEAN_CTX_ACTIVE", "1")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status();
+
+    match status {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("lean-ctx: failed to execute: {e}");
+            127
+        }
+    }
+}
+
 pub fn exec(command: &str) -> i32 {
     let (shell, shell_flag) = shell_and_flag();
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
@@ -512,7 +556,7 @@ const BUILTIN_PASSTHROUGH: &[&str] = &[
     // Authentication flows (device code, OAuth, SSO)
     "az login",
     "az account",
-    "gh auth",
+    "gh",
     "gcloud auth",
     "gcloud init",
     "aws sso",
@@ -1272,6 +1316,8 @@ mod passthrough_tests {
     fn auth_commands_excluded() {
         assert!(is_excluded_command("az login --use-device-code", &[]));
         assert!(is_excluded_command("gh auth login", &[]));
+        assert!(is_excluded_command("gh pr close --comment 'done'", &[]));
+        assert!(is_excluded_command("gh issue list", &[]));
         assert!(is_excluded_command("gcloud auth login", &[]));
         assert!(is_excluded_command("aws sso login", &[]));
         assert!(is_excluded_command("firebase login", &[]));
@@ -1525,6 +1571,141 @@ mod passthrough_tests {
         assert!(!is_excluded_command("yarn test", &[]));
         assert!(!is_excluded_command("pnpm run lint", &[]));
         assert!(!is_excluded_command("bun run build", &[]));
+    }
+
+    #[test]
+    fn gh_fully_excluded() {
+        assert!(is_excluded_command("gh", &[]));
+        assert!(is_excluded_command(
+            "gh pr close --comment 'closing — see #407'",
+            &[]
+        ));
+        assert!(is_excluded_command(
+            "gh issue create --title \"bug\" --body \"desc\"",
+            &[]
+        ));
+        assert!(is_excluded_command("gh api repos/owner/repo/pulls", &[]));
+        assert!(is_excluded_command("gh run list --limit 5", &[]));
+    }
+
+    #[test]
+    fn exec_direct_runs_true() {
+        let code = super::exec_direct(&["true".to_string()]);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn exec_direct_runs_false() {
+        let code = super::exec_direct(&["false".to_string()]);
+        assert_ne!(code, 0);
+    }
+
+    #[test]
+    fn exec_direct_preserves_args_with_special_chars() {
+        let code = super::exec_direct(&[
+            "echo".to_string(),
+            "hello world".to_string(),
+            "it's here".to_string(),
+            "a \"quoted\" thing".to_string(),
+        ]);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn exec_direct_nonexistent_returns_127() {
+        let code = super::exec_direct(&["__nonexistent_binary_12345__".to_string()]);
+        assert_eq!(code, 127);
+    }
+
+    #[test]
+    fn exec_argv_empty_returns_127() {
+        let code = super::exec_argv(&[]);
+        assert_eq!(code, 127);
+    }
+
+    #[test]
+    fn exec_argv_runs_simple_command() {
+        let code = super::exec_argv(&["true".to_string()]);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn exec_argv_passes_through_when_disabled() {
+        std::env::set_var("LEAN_CTX_DISABLED", "1");
+        let code = super::exec_argv(&["true".to_string()]);
+        std::env::remove_var("LEAN_CTX_DISABLED");
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn join_command_preserves_structure() {
+        let args = vec![
+            "git".to_string(),
+            "commit".to_string(),
+            "-m".to_string(),
+            "my message".to_string(),
+        ];
+        let joined = super::join_command(&args);
+        assert!(joined.contains("git"));
+        assert!(joined.contains("commit"));
+        assert!(joined.contains("my message") || joined.contains("'my message'"));
+    }
+
+    #[test]
+    fn quote_posix_handles_em_dash() {
+        let result = super::quote_posix("closing — see #407");
+        assert!(
+            result.starts_with('\''),
+            "em-dash args must be single-quoted: {result}"
+        );
+    }
+
+    #[test]
+    fn quote_posix_handles_nested_single_quotes() {
+        let result = super::quote_posix("it's a test");
+        assert!(
+            result.contains("\\'"),
+            "single quotes must be escaped: {result}"
+        );
+    }
+
+    #[test]
+    fn quote_posix_safe_chars_unquoted() {
+        let result = super::quote_posix("simple_word");
+        assert_eq!(result, "simple_word");
+    }
+
+    #[test]
+    fn quote_posix_empty_string() {
+        let result = super::quote_posix("");
+        assert_eq!(result, "''");
+    }
+
+    #[test]
+    fn quote_posix_dollar_expansion_protected() {
+        let result = super::quote_posix("$HOME/test");
+        assert!(
+            result.starts_with('\''),
+            "dollar signs must be single-quoted: {result}"
+        );
+    }
+
+    #[test]
+    fn quote_posix_backtick_protected() {
+        let result = super::quote_posix("echo `date`");
+        assert!(
+            result.starts_with('\''),
+            "backticks must be single-quoted: {result}"
+        );
+    }
+
+    #[test]
+    fn quote_posix_double_quotes_protected() {
+        let result = super::quote_posix(r#"he said "hello""#);
+        assert!(
+            result.starts_with('\''),
+            "double quotes must be single-quoted: {result}"
+        );
     }
 }
 

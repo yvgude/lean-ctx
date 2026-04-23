@@ -447,11 +447,12 @@ mod tests {
 
     #[test]
     fn aggregated_metrics_avg() {
-        let mut agg = AggregatedMetrics::default();
-        agg.total_input_tokens = 1000;
-        agg.total_output_tokens = 500;
-        agg.total_duration_us = 10000;
-        agg.count = 2;
+        let agg = AggregatedMetrics {
+            total_input_tokens: 1000,
+            total_output_tokens: 500,
+            total_duration_us: 10000,
+            count: 2,
+        };
         assert!((agg.avg_ratio() - 0.5).abs() < f64::EPSILON);
         assert!((agg.avg_duration_ms() - 5.0).abs() < f64::EPSILON);
     }

@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -22,6 +23,7 @@ pub mod ctx_delta;
 pub mod ctx_discover;
 pub mod ctx_edit;
 pub mod ctx_execute;
+pub mod ctx_expand;
 pub mod ctx_feedback;
 pub mod ctx_fill;
 pub mod ctx_gain;
@@ -114,6 +116,8 @@ pub struct LeanCtxServer {
     pub workflow: Arc<RwLock<Option<crate::core::workflow::WorkflowRun>>>,
     pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
     pub pipeline_stats: Arc<RwLock<crate::core::pipeline::PipelineStats>>,
+    startup_project_root: Option<String>,
+    startup_shell_cwd: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +142,10 @@ impl LeanCtxServer {
     }
 
     pub fn new_with_project_root(project_root: Option<String>) -> Self {
+        Self::new_with_startup(project_root, std::env::current_dir().ok())
+    }
+
+    fn new_with_startup(project_root: Option<String>, startup_cwd: Option<PathBuf>) -> Self {
         let config = crate::core::config::Config::load();
 
         let interval = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL")
@@ -152,10 +160,20 @@ impl LeanCtxServer {
 
         let crp_mode = CrpMode::from_env();
 
-        let mut session = SessionState::load_latest().unwrap_or_default();
-        if project_root.is_some() {
-            session.project_root = project_root;
+        let startup = detect_startup_context(project_root.as_deref(), startup_cwd.as_deref());
+        let mut session = if let Some(ref root) = startup.project_root {
+            SessionState::load_latest_for_project_root(root).unwrap_or_default()
+        } else {
+            SessionState::load_latest().unwrap_or_default()
+        };
+
+        if let Some(ref root) = startup.project_root {
+            session.project_root = Some(root.clone());
         }
+        if let Some(ref cwd) = startup.shell_cwd {
+            session.shell_cwd = Some(cwd.clone());
+        }
+
         Self {
             cache: Arc::new(RwLock::new(SessionCache::new())),
             session: Arc::new(RwLock::new(session)),
@@ -180,6 +198,8 @@ impl LeanCtxServer {
                 crate::core::context_ledger::ContextLedger::new(),
             )),
             pipeline_stats: Arc::new(RwLock::new(crate::core::pipeline::PipelineStats::new())),
+            startup_project_root: startup.project_root,
+            startup_shell_cwd: startup.shell_cwd,
         }
     }
 
@@ -228,17 +248,28 @@ impl LeanCtxServer {
             Err(e) => {
                 if p.is_absolute() {
                     if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
-                        let jail_has_marker = has_project_marker(jail_root_path);
                         let candidate_under_jail = resolved.starts_with(jail_root_path);
-
-                        if !candidate_under_jail
-                            && (!jail_has_marker || is_suspicious_root(jail_root_path))
-                        {
-                            let mut session = self.session.write().await;
-                            session.project_root = Some(new_root.to_string_lossy().to_string());
-                            if session.shell_cwd.is_none() {
-                                session.shell_cwd = Some(new_root.to_string_lossy().to_string());
+                        let allow_reroot = if !candidate_under_jail {
+                            if let Some(ref trusted_root) = self.startup_project_root {
+                                std::path::Path::new(trusted_root) == new_root.as_path()
+                            } else {
+                                !has_project_marker(jail_root_path)
+                                    || is_suspicious_root(jail_root_path)
                             }
+                        } else {
+                            false
+                        };
+
+                        if allow_reroot {
+                            let mut session = self.session.write().await;
+                            let new_root_str = new_root.to_string_lossy().to_string();
+                            session.project_root = Some(new_root_str.clone());
+                            session.shell_cwd = self
+                                .startup_shell_cwd
+                                .as_ref()
+                                .filter(|cwd| std::path::Path::new(cwd).starts_with(&new_root))
+                                .cloned()
+                                .or_else(|| Some(new_root_str.clone()));
                             let _ = session.save();
 
                             crate::core::pathjail::jail_path(&resolved, &new_root)?
@@ -610,6 +641,12 @@ impl LeanCtxServer {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct StartupContext {
+    project_root: Option<String>,
+    shell_cwd: Option<String>,
+}
+
 pub fn create_server() -> LeanCtxServer {
     LeanCtxServer::new()
 }
@@ -637,6 +674,43 @@ fn is_suspicious_root(dir: &std::path::Path) -> bool {
         || s.contains("/.codex")
         || s.contains("\\.claude")
         || s.contains("\\.codex")
+}
+
+fn canonicalize_path(path: &std::path::Path) -> String {
+    crate::core::pathutil::safe_canonicalize_or_self(path)
+        .to_string_lossy()
+        .to_string()
+}
+
+fn detect_startup_context(
+    explicit_project_root: Option<&str>,
+    startup_cwd: Option<&std::path::Path>,
+) -> StartupContext {
+    let shell_cwd = startup_cwd.map(canonicalize_path);
+    let project_root = explicit_project_root
+        .map(|root| canonicalize_path(std::path::Path::new(root)))
+        .or_else(|| {
+            startup_cwd
+                .and_then(maybe_derive_project_root_from_absolute)
+                .map(|p| canonicalize_path(&p))
+        });
+
+    let shell_cwd = match (shell_cwd, project_root.as_ref()) {
+        (Some(cwd), Some(root))
+            if std::path::Path::new(&cwd).starts_with(std::path::Path::new(root)) =>
+        {
+            Some(cwd)
+        }
+        (Some(_), Some(root)) => Some(root.clone()),
+        (Some(cwd), None) => Some(cwd),
+        (None, Some(root)) => Some(root.clone()),
+        (None, None) => None,
+    };
+
+    StartupContext {
+        project_root,
+        shell_cwd,
+    }
 }
 
 fn maybe_derive_project_root_from_absolute(abs: &std::path::Path) -> Option<std::path::PathBuf> {
@@ -716,18 +790,26 @@ fn auto_consolidate_knowledge(project_root: &str) {
 mod resolve_path_tests {
     use super::*;
 
+    fn create_git_root(path: &std::path::Path) -> String {
+        std::fs::create_dir_all(path.join(".git")).unwrap();
+        canonicalize_path(path)
+    }
+
     #[tokio::test]
-    async fn resolve_path_can_auto_update_stale_root_from_absolute_project_path() {
+    async fn resolve_path_can_reroot_to_trusted_startup_root_when_session_root_is_stale() {
         let tmp = tempfile::tempdir().unwrap();
         let stale = tmp.path().join("stale");
         let real = tmp.path().join("real");
         std::fs::create_dir_all(&stale).unwrap();
-        std::fs::create_dir_all(&real).unwrap();
-        std::fs::create_dir_all(real.join(".git")).unwrap();
+        let real_root = create_git_root(&real);
         std::fs::write(real.join("a.txt"), "ok").unwrap();
 
-        let server =
-            LeanCtxServer::new_with_project_root(Some(stale.to_string_lossy().to_string()));
+        let server = LeanCtxServer::new_with_startup(None, Some(real.clone()));
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(stale.to_string_lossy().to_string());
+            session.shell_cwd = Some(stale.to_string_lossy().to_string());
+        }
 
         let out = server
             .resolve_path(&real.join("a.txt").to_string_lossy())
@@ -737,10 +819,118 @@ mod resolve_path_tests {
         assert!(out.ends_with("/a.txt"));
 
         let session = server.session.read().await;
-        let expected = crate::core::pathutil::safe_canonicalize_or_self(&real)
-            .to_string_lossy()
-            .to_string();
-        assert_eq!(session.project_root.as_deref(), Some(expected.as_str()));
+        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
+        assert_eq!(session.shell_cwd.as_deref(), Some(real_root.as_str()));
+    }
+
+    #[tokio::test]
+    async fn resolve_path_rejects_absolute_path_outside_trusted_startup_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stale = tmp.path().join("stale");
+        let root = tmp.path().join("root");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&stale).unwrap();
+        create_git_root(&root);
+        let _other_value = create_git_root(&other);
+        std::fs::write(other.join("b.txt"), "no").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(None, Some(root.clone()));
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(stale.to_string_lossy().to_string());
+            session.shell_cwd = Some(stale.to_string_lossy().to_string());
+        }
+
+        let err = server
+            .resolve_path(&other.join("b.txt").to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(err.contains("path escapes project root"));
+
+        let session = server.session.read().await;
+        assert_eq!(
+            session.project_root.as_deref(),
+            Some(stale.to_string_lossy().as_ref())
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_prefers_workspace_scoped_session_over_global_latest() {
+        let _data = tempfile::tempdir().unwrap();
+        let _tmp = tempfile::tempdir().unwrap();
+
+        let (server, root_b) = {
+            let _lock = crate::core::data_dir::test_env_lock();
+            std::env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+
+            let repo_a = _tmp.path().join("repo-a");
+            let repo_b = _tmp.path().join("repo-b");
+            let root_a = create_git_root(&repo_a);
+            let root_b = create_git_root(&repo_b);
+
+            let mut session_b = SessionState::new();
+            session_b.project_root = Some(root_b.clone());
+            session_b.shell_cwd = Some(root_b.clone());
+            session_b.set_task("repo-b task", None);
+            session_b.save().unwrap();
+
+            let mut session_a = SessionState::new();
+            session_a.project_root = Some(root_a.clone());
+            session_a.shell_cwd = Some(root_a.clone());
+            session_a.set_task("repo-a latest task", None);
+            session_a.save().unwrap();
+
+            let server = LeanCtxServer::new_with_startup(None, Some(repo_b.clone()));
+            std::env::remove_var("LEAN_CTX_DATA_DIR");
+            (server, root_b)
+        };
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
+        assert_eq!(session.shell_cwd.as_deref(), Some(root_b.as_str()));
+        assert_eq!(
+            session.task.as_ref().map(|t| t.description.as_str()),
+            Some("repo-b task")
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_creates_fresh_session_for_new_workspace_and_preserves_subdir_cwd() {
+        let _data = tempfile::tempdir().unwrap();
+        let _tmp = tempfile::tempdir().unwrap();
+
+        let (server, root_b, repo_b_src_value, old_id) = {
+            let _lock = crate::core::data_dir::test_env_lock();
+            std::env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+
+            let repo_a = _tmp.path().join("repo-a");
+            let repo_b = _tmp.path().join("repo-b");
+            let repo_b_src = repo_b.join("src");
+            let root_a = create_git_root(&repo_a);
+            let root_b = create_git_root(&repo_b);
+            std::fs::create_dir_all(&repo_b_src).unwrap();
+            let repo_b_src_value = canonicalize_path(&repo_b_src);
+
+            let mut session_a = SessionState::new();
+            session_a.project_root = Some(root_a.clone());
+            session_a.shell_cwd = Some(root_a.clone());
+            session_a.set_task("repo-a latest task", None);
+            let old_id = session_a.id.clone();
+            session_a.save().unwrap();
+
+            let server = LeanCtxServer::new_with_startup(None, Some(repo_b_src.clone()));
+            std::env::remove_var("LEAN_CTX_DATA_DIR");
+            (server, root_b, repo_b_src_value, old_id)
+        };
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
+        assert_eq!(
+            session.shell_cwd.as_deref(),
+            Some(repo_b_src_value.as_str())
+        );
+        assert!(session.task.is_none());
+        assert_ne!(session.id, old_id);
     }
 
     #[tokio::test]
@@ -748,10 +938,8 @@ mod resolve_path_tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
         let other = tmp.path().join("other");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::create_dir_all(&other).unwrap();
-        std::fs::create_dir_all(root.join(".git")).unwrap();
-        std::fs::create_dir_all(other.join(".git")).unwrap();
+        let root_value = create_git_root(&root);
+        create_git_root(&other);
         std::fs::write(other.join("b.txt"), "no").unwrap();
 
         let server = LeanCtxServer::new_with_project_root(Some(root.to_string_lossy().to_string()));
@@ -761,5 +949,8 @@ mod resolve_path_tests {
             .await
             .unwrap_err();
         assert!(err.contains("path escapes project root"));
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(root_value.as_str()));
     }
 }
