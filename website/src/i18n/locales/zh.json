@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "Shell hook 每天节省数十万 token。git log、cargo test、npm run——一切自动压缩。零配置。",
   "testimonials.radmarRole": "开源贡献者",
   "testimonials.sebastian": "我安装了 lean-ctx，我的 Cursor 会话立刻感觉更流畅了。以前消耗 2K token 的文件现在只需 50。",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "高级功能",
+  "premium.heading": "企业级能力。<span class=\"gradient-text-green\">开源。</span>",
+  "premium.desc": "为专业 AI 开发团队打造的高级功能——Cache 优化、自动化代码审查、Ghost Token 检测和基于内容的分块。",
+  "premium.cacheSafeTitle": "Cache-Safe 保障",
+  "premium.cacheSafeDesc": "稳定的输出顺序最大化 Prompt Cache 命中率。导入和类型定义在函数体之前输出，使您的 LLM 提供商的 KV-Cache 保持活跃。API 调用成本最高降低 90%。",
+  "premium.ghostTitle": "Ghost Token 检测",
+  "premium.ghostDesc": "使用 <code>lean-ctx ghost</code> 发现隐藏的 Token 浪费。识别未优化的 Shell 命令、冗余的文件读取和过大的工具输出——并精确显示您可以节省多少。",
+  "premium.reviewTitle": "自动化代码审查",
+  "premium.reviewDesc": "ctx_review 将影响分析、调用者追踪和测试发现整合为一个结构化工作流。自动获取审查清单、查找受影响的下游文件并定位相关测试。",
+  "premium.chunkingTitle": "基于内容的分块",
+  "premium.chunkingDesc": "Rabin-Karp 滚动哈希创建稳定的分块边界，能够承受小幅编辑。未更改的块留在 Prompt Cache 中，只重新发送修改的部分。",
+  "premium.searchTitle": "离线向量搜索",
+  "premium.searchDesc": "本地 Embedding 引擎，实现隐私优先的语义代码搜索。BM25 + 稠密混合检索，无需外部 API。您的代码永远不会离开您的设备。",
+  "premium.skillsTitle": "通用智能体集成",
+  "premium.skillsDesc": "兼容 Claude Code、Cursor、Codex、Gemini CLI、Windsurf、Cline 等 24+ 种智能体。一键安装、自动 MCP 配置和跨智能体会话延续。"
 }

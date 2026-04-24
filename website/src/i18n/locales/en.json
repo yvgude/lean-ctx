@@ -3207,5 +3207,27 @@
   "power.installNpm": "Node.js binary distribution",
   "power.installBrew": "Homebrew (macOS/Linux)",
   "power.installCargo": "From source via crates.io",
-  "power.installAur": "Arch Linux (AUR)"
+  "power.installAur": "Arch Linux (AUR)",
+
+  "premium.eyebrow": "Premium Features",
+  "premium.heading": "Enterprise-grade capabilities. <span class=\"gradient-text-green\">Open source.</span>",
+  "premium.desc": "Advanced features for professional AI development teams — cache optimization, automated code review, ghost token detection, and content-defined chunking.",
+
+  "premium.cacheSafeTitle": "Cache-Safe Guarantee",
+  "premium.cacheSafeDesc": "Stable output ordering maximizes prompt cache hits. Imports and type definitions are emitted before function bodies, so your LLM provider's KV-cache stays warm. Up to 90% cheaper API calls.",
+
+  "premium.ghostTitle": "Ghost Token Detection",
+  "premium.ghostDesc": "Find hidden token waste with <code>lean-ctx ghost</code>. Identifies unoptimized shell commands, redundant file reads, and oversized tool results — then shows exactly how much you could save.",
+
+  "premium.reviewTitle": "Automated Code Review",
+  "premium.reviewDesc": "ctx_review combines impact analysis, caller tracking, and test discovery into one structured workflow. Get a review checklist, find affected downstream files, and locate related tests — automatically.",
+
+  "premium.chunkingTitle": "Content-Defined Chunking",
+  "premium.chunkingDesc": "Rabin-Karp rolling hash creates stable chunk boundaries that survive small edits. Unchanged chunks stay in the prompt cache while only modified portions are re-sent.",
+
+  "premium.searchTitle": "Offline Vector Search",
+  "premium.searchDesc": "Local embedding engine for privacy-first semantic code search. BM25 + dense hybrid retrieval, no external API needed. Your code never leaves your machine.",
+
+  "premium.skillsTitle": "Universal Agent Integration",
+  "premium.skillsDesc": "Works with Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline, and 24+ more agents. One-command setup, automatic MCP configuration, and cross-agent session continuity."
 }

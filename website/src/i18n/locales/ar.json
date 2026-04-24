@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "Shell Hook يوفر مئات الآلاف من الرموز يومياً. git log، cargo test، npm run — كل شيء يُضغط تلقائياً. صفر إعدادات.",
   "testimonials.radmarRole": "مساهم في المصادر المفتوحة",
   "testimonials.sebastian": "ثبّتُ lean-ctx وشعرت فوراً أن جلسات Cursor أصبحت أسرع. الملفات التي كانت تستهلك 2000 رمز أصبحت تكلف 50 فقط.",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "ميزات متقدمة",
+  "premium.heading": "إمكانيات بمستوى المؤسسات. <span class=\"gradient-text-green\">مفتوح المصدر.</span>",
+  "premium.desc": "ميزات متقدمة لفرق تطوير الذكاء الاصطناعي المحترفة — تحسين Cache، مراجعة أكواد آلية، اكتشاف Ghost Token، وتقسيم المحتوى الذكي.",
+  "premium.cacheSafeTitle": "ضمان Cache-Safe",
+  "premium.cacheSafeDesc": "ترتيب إخراج مستقر يزيد من نسبة إصابة Prompt Cache. يتم إصدار الاستيرادات وتعريفات الأنواع قبل أجسام الدوال، مما يبقي KV-Cache الخاص بمزود LLM نشطاً. مكالمات API أرخص بنسبة تصل إلى 90%.",
+  "premium.ghostTitle": "اكتشاف Ghost Token",
+  "premium.ghostDesc": "اكتشف هدر Token المخفي باستخدام <code>lean-ctx ghost</code>. يحدد أوامر Shell غير المحسّنة، وقراءات الملفات المكررة، ونتائج الأدوات الكبيرة — ثم يوضح بدقة كم يمكنك توفيره.",
+  "premium.reviewTitle": "مراجعة أكواد آلية",
+  "premium.reviewDesc": "يجمع ctx_review بين تحليل التأثير وتتبع المستدعين واكتشاف الاختبارات في سير عمل منظم واحد. احصل على قائمة مراجعة، واعثر على الملفات المتأثرة، وحدد الاختبارات ذات الصلة — تلقائياً.",
+  "premium.chunkingTitle": "تقسيم محتوى ذكي",
+  "premium.chunkingDesc": "يُنشئ Rabin-Karp rolling hash حدود أجزاء مستقرة تصمد أمام التعديلات الصغيرة. تبقى الأجزاء غير المتغيرة في Prompt Cache بينما يُعاد إرسال الأجزاء المعدلة فقط.",
+  "premium.searchTitle": "بحث متجهي بدون اتصال",
+  "premium.searchDesc": "محرك Embedding محلي للبحث الدلالي في الأكواد مع أولوية الخصوصية. BM25 + استرجاع هجين كثيف، بدون حاجة لـ API خارجي. أكوادك لا تغادر جهازك أبداً.",
+  "premium.skillsTitle": "تكامل شامل مع الوكلاء",
+  "premium.skillsDesc": "يعمل مع Claude Code و Cursor و Codex و Gemini CLI و Windsurf و Cline وأكثر من 24 وكيلاً آخر. إعداد بأمر واحد، تهيئة MCP تلقائية، واستمرارية الجلسات عبر الوكلاء."
 }

@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "Der Shell-Hook spart Hunderttausende Tokens pro Tag. git log, cargo test, npm run — alles wird automatisch komprimiert. Null Konfiguration.",
   "testimonials.radmarRole": "Open-Source-Contributor",
   "testimonials.sebastian": "Ich habe lean-ctx installiert und meine Cursor-Sitzungen fühlten sich sofort flüssiger an. Dateien, die vorher 2K Tokens kosteten, brauchen jetzt nur noch 50.",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "Premium-Funktionen",
+  "premium.heading": "Unternehmenstaugliche Fähigkeiten. <span class=\"gradient-text-green\">Open Source.</span>",
+  "premium.desc": "Fortgeschrittene Funktionen für professionelle KI-Entwicklungsteams — Cache-Optimierung, automatisierte Code-Reviews, Ghost-Token-Erkennung und inhaltsbasiertes Chunking.",
+  "premium.cacheSafeTitle": "Cache-Safe-Garantie",
+  "premium.cacheSafeDesc": "Stabile Ausgabereihenfolge maximiert Prompt-Cache-Treffer. Imports und Typdefinitionen werden vor Funktionskörpern ausgegeben, damit der KV-Cache Ihres LLM-Anbieters warm bleibt. Bis zu 90 % günstigere API-Aufrufe.",
+  "premium.ghostTitle": "Ghost-Token-Erkennung",
+  "premium.ghostDesc": "Finden Sie versteckten Token-Verbrauch mit <code>lean-ctx ghost</code>. Identifiziert nicht optimierte Shell-Befehle, redundante Dateilesevorgänge und übergroße Tool-Ergebnisse — und zeigt genau, wie viel Sie sparen könnten.",
+  "premium.reviewTitle": "Automatisierte Code-Reviews",
+  "premium.reviewDesc": "ctx_review kombiniert Impact-Analyse, Caller-Tracking und Test-Erkennung in einem strukturierten Workflow. Erhalten Sie eine Review-Checkliste, finden Sie betroffene nachgelagerte Dateien und lokalisieren Sie zugehörige Tests — automatisch.",
+  "premium.chunkingTitle": "Inhaltsbasiertes Chunking",
+  "premium.chunkingDesc": "Rabin-Karp-Rolling-Hash erzeugt stabile Chunk-Grenzen, die kleine Änderungen überstehen. Unveränderte Chunks bleiben im Prompt-Cache, während nur geänderte Abschnitte erneut gesendet werden.",
+  "premium.searchTitle": "Offline-Vektorsuche",
+  "premium.searchDesc": "Lokale Embedding-Engine für datenschutzorientierte semantische Code-Suche. BM25 + Dense-Hybrid-Retrieval, keine externe API erforderlich. Ihr Code verlässt nie Ihren Rechner.",
+  "premium.skillsTitle": "Universelle Agenten-Integration",
+  "premium.skillsDesc": "Funktioniert mit Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline und über 24 weiteren Agenten. Ein-Befehl-Setup, automatische MCP-Konfiguration und agentenübergreifende Sitzungskontinuität."
 }

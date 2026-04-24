@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "El shell hook ahorra cientos de miles de tokens por día. git log, cargo test, npm run — todo comprimido automáticamente. Cero configuración.",
   "testimonials.radmarRole": "Colaborador open source",
   "testimonials.sebastian": "Instalé lean-ctx y mis sesiones de Cursor se sintieron más ágiles inmediatamente. Archivos que consumían 2K tokens ahora cuestan 50.",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "Funciones Premium",
+  "premium.heading": "Capacidades de nivel empresarial. <span class=\"gradient-text-green\">Código abierto.</span>",
+  "premium.desc": "Funciones avanzadas para equipos profesionales de desarrollo con IA — optimización de cache, revisión de código automatizada, detección de ghost tokens y chunking basado en contenido.",
+  "premium.cacheSafeTitle": "Garantía Cache-Safe",
+  "premium.cacheSafeDesc": "El orden estable de la salida maximiza los aciertos del prompt cache. Las importaciones y definiciones de tipos se emiten antes que los cuerpos de función, manteniendo caliente el KV-cache de tu proveedor de LLM. Hasta un 90% menos en llamadas a la API.",
+  "premium.ghostTitle": "Detección de Ghost Tokens",
+  "premium.ghostDesc": "Encuentra desperdicio oculto de tokens con <code>lean-ctx ghost</code>. Identifica comandos de shell no optimizados, lecturas de archivos redundantes y resultados de herramientas sobredimensionados — y muestra exactamente cuánto podrías ahorrar.",
+  "premium.reviewTitle": "Revisión de Código Automatizada",
+  "premium.reviewDesc": "ctx_review combina análisis de impacto, seguimiento de llamadores y descubrimiento de tests en un flujo de trabajo estructurado. Obtén una lista de verificación, encuentra archivos afectados aguas abajo y localiza tests relacionados — automáticamente.",
+  "premium.chunkingTitle": "Chunking Basado en Contenido",
+  "premium.chunkingDesc": "El hash rodante Rabin-Karp crea límites de chunk estables que sobreviven a ediciones pequeñas. Los chunks sin cambios permanecen en el prompt cache mientras solo las partes modificadas se reenvían.",
+  "premium.searchTitle": "Búsqueda Vectorial Offline",
+  "premium.searchDesc": "Motor de embeddings local para búsqueda semántica de código con privacidad primero. Recuperación híbrida BM25 + densa, sin necesidad de API externa. Tu código nunca sale de tu máquina.",
+  "premium.skillsTitle": "Integración Universal con Agentes",
+  "premium.skillsDesc": "Compatible con Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline y más de 24 agentes adicionales. Configuración con un solo comando, configuración MCP automática y continuidad de sesión entre agentes."
 }

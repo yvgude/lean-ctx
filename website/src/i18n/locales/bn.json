@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "Shell hook প্রতিদিন লক্ষ লক্ষ token সাশ্রয় করে। git log, cargo test, npm run — সবকিছু স্বয়ংক্রিয়ভাবে কম্প্রেসড। জিরো কনফিগ।",
   "testimonials.radmarRole": "ওপেন সোর্স কন্ট্রিবিউটর",
   "testimonials.sebastian": "আমি lean-ctx ইনস্টল করলাম এবং আমার Cursor সেশনগুলো সাথে সাথে দ্রুততর অনুভব হলো। যে ফাইলগুলো 2K token খেত সেগুলো এখন 50-তে হয়।",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "প্রিমিয়াম ফিচার",
+  "premium.heading": "এন্টারপ্রাইজ-গ্রেড সক্ষমতা। <span class=\"gradient-text-green\">ওপেন সোর্স।</span>",
+  "premium.desc": "পেশাদার AI ডেভেলপমেন্ট টিমের জন্য উন্নত ফিচার — cache অপ্টিমাইজেশন, স্বয়ংক্রিয় কোড রিভিউ, ghost token শনাক্তকরণ এবং কন্টেন্ট-ভিত্তিক chunking।",
+  "premium.cacheSafeTitle": "Cache-Safe গ্যারান্টি",
+  "premium.cacheSafeDesc": "স্থিতিশীল আউটপুট ক্রম prompt cache হিট সর্বাধিক করে। import এবং টাইপ ডেফিনিশন ফাংশন বডির আগে নির্গত হয়, ফলে আপনার LLM প্রোভাইডারের KV-cache উষ্ণ থাকে। API কলে ৯০% পর্যন্ত সাশ্রয়।",
+  "premium.ghostTitle": "Ghost Token শনাক্তকরণ",
+  "premium.ghostDesc": "<code>lean-ctx ghost</code> দিয়ে লুকানো token অপচয় খুঁজুন। অপ্টিমাইজ না হওয়া shell কমান্ড, অপ্রয়োজনীয় ফাইল রিড এবং অতিরিক্ত বড় টুল ফলাফল চিহ্নিত করে — এবং ঠিক কতটা সাশ্রয় সম্ভব তা দেখায়।",
+  "premium.reviewTitle": "স্বয়ংক্রিয় কোড রিভিউ",
+  "premium.reviewDesc": "ctx_review প্রভাব বিশ্লেষণ, কলার ট্র্যাকিং এবং টেস্ট আবিষ্কারকে একটি কাঠামোবদ্ধ ওয়ার্কফ্লোতে একত্রিত করে। রিভিউ চেকলিস্ট পান, প্রভাবিত ডাউনস্ট্রিম ফাইল খুঁজুন এবং সম্পর্কিত টেস্ট সনাক্ত করুন — স্বয়ংক্রিয়ভাবে।",
+  "premium.chunkingTitle": "কন্টেন্ট-ভিত্তিক Chunking",
+  "premium.chunkingDesc": "Rabin-Karp রোলিং hash স্থিতিশীল chunk সীমানা তৈরি করে যা ছোট সম্পাদনায় টিকে থাকে। অপরিবর্তিত chunk গুলো prompt cache-এ থাকে এবং শুধুমাত্র পরিবর্তিত অংশ পুনরায় পাঠানো হয়।",
+  "premium.searchTitle": "অফলাইন ভেক্টর সার্চ",
+  "premium.searchDesc": "গোপনীয়তা-প্রথম সেমান্টিক কোড সার্চের জন্য স্থানীয় embedding ইঞ্জিন। BM25 + dense হাইব্রিড রিট্রিভাল, কোনো বাহ্যিক API প্রয়োজন নেই। আপনার কোড কখনো আপনার মেশিন ছেড়ে যায় না।",
+  "premium.skillsTitle": "ইউনিভার্সাল এজেন্ট ইন্টিগ্রেশন",
+  "premium.skillsDesc": "Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline এবং আরো ২৪+ এজেন্টের সাথে কাজ করে। একটি কমান্ডে সেটআপ, স্বয়ংক্রিয় MCP কনফিগারেশন এবং ক্রস-এজেন্ট সেশন ধারাবাহিকতা।"
 }

@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "Shell Hookは1日に数十万tokenを節約します。git log、cargo test、npm run — すべてが自動的に圧縮されます。設定不要。",
   "testimonials.radmarRole": "オープンソースコントリビューター",
   "testimonials.sebastian": "lean-ctxをインストールしたら、Cursorセッションが即座にキビキビと感じるようになりました。以前2K tokenを消費していたファイルが、今は50で済みます。",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "プレミアム機能",
+  "premium.heading": "エンタープライズグレードの機能。<span class=\"gradient-text-green\">オープンソース。</span>",
+  "premium.desc": "プロフェッショナルなAI開発チームのための高度な機能 — cache最適化、自動コードレビュー、ghost token検出、コンテンツ定義型chunking。",
+  "premium.cacheSafeTitle": "Cache-Safe保証",
+  "premium.cacheSafeDesc": "安定した出力順序がprompt cacheヒットを最大化。importとtype定義が関数本体より先に出力されるため、LLMプロバイダーのKV-cacheがウォーム状態を維持します。API呼び出しコストを最大90%削減。",
+  "premium.ghostTitle": "Ghost Token検出",
+  "premium.ghostDesc": "<code>lean-ctx ghost</code>で隠れたtoken浪費を発見。最適化されていないshellコマンド、冗長なファイル読み取り、肥大化したツール結果を特定し、どれだけ節約できるかを正確に表示します。",
+  "premium.reviewTitle": "自動コードレビュー",
+  "premium.reviewDesc": "ctx_reviewは影響分析、呼び出し元追跡、テスト発見を一つの構造化されたワークフローに統合。レビューチェックリストの取得、影響を受けるダウンストリームファイルの発見、関連テストの特定を自動で行います。",
+  "premium.chunkingTitle": "コンテンツ定義型Chunking",
+  "premium.chunkingDesc": "Rabin-Karpローリングhashが、小さな編集にも耐える安定したchunk境界を作成。変更のないchunkはprompt cacheに残り、変更された部分のみが再送信されます。",
+  "premium.searchTitle": "オフラインベクトル検索",
+  "premium.searchDesc": "プライバシー優先のセマンティックコード検索のためのローカルembeddingエンジン。BM25 + denseハイブリッド検索、外部APIは不要。コードがマシンの外に出ることはありません。",
+  "premium.skillsTitle": "ユニバーサルエージェント統合",
+  "premium.skillsDesc": "Claude Code、Cursor、Codex、Gemini CLI、Windsurf、Clineなど24以上のエージェントに対応。ワンコマンドセットアップ、自動MCP設定、クロスエージェントセッション継続性。"
 }

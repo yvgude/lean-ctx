@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "O shell hook economiza centenas de milhares de tokens por dia. git log, cargo test, npm run — tudo comprimido automaticamente. Zero configuração.",
   "testimonials.radmarRole": "Contribuidor Open Source",
   "testimonials.sebastian": "Instalei lean-ctx e minhas sessões do Cursor ficaram instantaneamente mais ágeis. Arquivos que costumavam consumir 2K tokens agora custam 50.",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "Recursos Premium",
+  "premium.heading": "Capacidades de nível empresarial. <span class=\"gradient-text-green\">Código aberto.</span>",
+  "premium.desc": "Recursos avançados para equipes profissionais de desenvolvimento com IA — otimização de cache, revisão de código automatizada, detecção de ghost tokens e chunking definido por conteúdo.",
+  "premium.cacheSafeTitle": "Garantia Cache-Safe",
+  "premium.cacheSafeDesc": "A ordenação estável da saída maximiza os acertos do prompt cache. Imports e definições de tipo são emitidos antes dos corpos de função, mantendo o KV-cache do seu provedor de LLM aquecido. Até 90% de economia em chamadas de API.",
+  "premium.ghostTitle": "Detecção de Ghost Tokens",
+  "premium.ghostDesc": "Encontre desperdício oculto de tokens com <code>lean-ctx ghost</code>. Identifica comandos shell não otimizados, leituras de arquivo redundantes e resultados de ferramentas superdimensionados — e mostra exatamente quanto você poderia economizar.",
+  "premium.reviewTitle": "Revisão de Código Automatizada",
+  "premium.reviewDesc": "ctx_review combina análise de impacto, rastreamento de chamadores e descoberta de testes em um workflow estruturado. Obtenha uma checklist de revisão, encontre arquivos downstream afetados e localize testes relacionados — automaticamente.",
+  "premium.chunkingTitle": "Chunking Definido por Conteúdo",
+  "premium.chunkingDesc": "O hash rolante Rabin-Karp cria limites de chunk estáveis que sobrevivem a pequenas edições. Chunks inalterados permanecem no prompt cache enquanto apenas as partes modificadas são reenviadas.",
+  "premium.searchTitle": "Busca Vetorial Offline",
+  "premium.searchDesc": "Motor de embeddings local para busca semântica de código com foco em privacidade. Recuperação híbrida BM25 + densa, sem necessidade de API externa. Seu código nunca sai da sua máquina.",
+  "premium.skillsTitle": "Integração Universal com Agentes",
+  "premium.skillsDesc": "Funciona com Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline e mais de 24 agentes. Configuração com um único comando, configuração MCP automática e continuidade de sessão entre agentes."
 }

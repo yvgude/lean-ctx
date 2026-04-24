@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "शेल हुक प्रतिदिन लाखों टोकन बचाता है। git log, cargo test, npm run — सब कुछ स्वचालित रूप से कम्प्रेस। शून्य कॉन्फ़िग।",
   "testimonials.radmarRole": "ओपन सोर्स योगदानकर्ता",
   "testimonials.sebastian": "मैंने lean-ctx इंस्टॉल किया और मेरे Cursor सत्र तुरंत तेज़ महसूस हुए। जो फ़ाइलें 2K टोकन खाती थीं अब 50 में आती हैं।",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "प्रीमियम सुविधाएँ",
+  "premium.heading": "एंटरप्राइज़-ग्रेड क्षमताएँ। <span class=\"gradient-text-green\">ओपन सोर्स।</span>",
+  "premium.desc": "पेशेवर AI विकास टीमों के लिए उन्नत सुविधाएँ — Cache अनुकूलन, स्वचालित कोड समीक्षा, Ghost Token पहचान, और कंटेंट-आधारित चंकिंग।",
+  "premium.cacheSafeTitle": "Cache-Safe गारंटी",
+  "premium.cacheSafeDesc": "स्थिर आउटपुट क्रम Prompt Cache हिट को अधिकतम करता है। Import और टाइप डेफ़िनिशन फ़ंक्शन बॉडी से पहले भेजे जाते हैं, जिससे आपके LLM प्रदाता का KV-Cache सक्रिय रहता है। API कॉल 90% तक सस्ती।",
+  "premium.ghostTitle": "Ghost Token पहचान",
+  "premium.ghostDesc": "<code>lean-ctx ghost</code> से छिपी Token बर्बादी खोजें। अनुकूलित न किए गए Shell कमांड, अनावश्यक फ़ाइल रीड, और बड़े Tool परिणामों की पहचान करता है — फिर सटीक रूप से दिखाता है कि आप कितना बचा सकते हैं।",
+  "premium.reviewTitle": "स्वचालित कोड समीक्षा",
+  "premium.reviewDesc": "ctx_review प्रभाव विश्लेषण, कॉलर ट्रैकिंग, और टेस्ट खोज को एक संरचित वर्कफ़्लो में जोड़ता है। समीक्षा चेकलिस्ट प्राप्त करें, प्रभावित डाउनस्ट्रीम फ़ाइलें खोजें, और संबंधित टेस्ट ढूँढें — स्वचालित रूप से।",
+  "premium.chunkingTitle": "कंटेंट-आधारित चंकिंग",
+  "premium.chunkingDesc": "Rabin-Karp रोलिंग हैश स्थिर चंक सीमाएँ बनाता है जो छोटे बदलावों को सहन करती हैं। अपरिवर्तित चंक Prompt Cache में रहते हैं जबकि केवल संशोधित भाग दोबारा भेजे जाते हैं।",
+  "premium.searchTitle": "ऑफ़लाइन वेक्टर सर्च",
+  "premium.searchDesc": "गोपनीयता-प्रथम सिमैंटिक कोड सर्च के लिए लोकल Embedding इंजन। BM25 + डेंस हाइब्रिड रिट्रीवल, कोई बाहरी API आवश्यक नहीं। आपका कोड कभी आपकी मशीन से बाहर नहीं जाता।",
+  "premium.skillsTitle": "सार्वभौमिक एजेंट एकीकरण",
+  "premium.skillsDesc": "Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline, और 24+ अन्य एजेंट के साथ काम करता है। एक-कमांड सेटअप, स्वचालित MCP कॉन्फ़िगरेशन, और क्रॉस-एजेंट सत्र निरंतरता।"
 }

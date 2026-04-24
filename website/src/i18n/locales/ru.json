@@ -3196,5 +3196,20 @@
   "testimonials.radmar": "Shell hook экономит сотни тысяч токенов в день. git log, cargo test, npm run — всё сжимается автоматически. Без конфигурации.",
   "testimonials.radmarRole": "Контрибьютор Open Source",
   "testimonials.sebastian": "Я установил lean-ctx, и мои сессии в Cursor сразу стали ощутимо быстрее. Файлы, которые раньше съедали 2 000 токенов, теперь стоят 50.",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "premium.eyebrow": "Премиум-функции",
+  "premium.heading": "Возможности корпоративного уровня. <span class=\"gradient-text-green\">Открытый код.</span>",
+  "premium.desc": "Продвинутые возможности для профессиональных команд AI-разработки — оптимизация cache, автоматическое ревью кода, обнаружение ghost tokens и content-defined chunking.",
+  "premium.cacheSafeTitle": "Гарантия Cache-Safe",
+  "premium.cacheSafeDesc": "Стабильный порядок вывода максимизирует попадания в prompt cache. Импорты и определения типов генерируются перед телами функций, поддерживая KV-cache вашего LLM-провайдера в горячем состоянии. До 90% экономии на вызовах API.",
+  "premium.ghostTitle": "Обнаружение Ghost Tokens",
+  "premium.ghostDesc": "Найдите скрытые потери токенов с помощью <code>lean-ctx ghost</code>. Выявляет неоптимизированные shell-команды, избыточные чтения файлов и раздутые результаты инструментов — и показывает, сколько именно вы можете сэкономить.",
+  "premium.reviewTitle": "Автоматическое Ревью Кода",
+  "premium.reviewDesc": "ctx_review объединяет анализ воздействия, отслеживание вызывающих функций и поиск тестов в единый структурированный процесс. Получите чеклист ревью, найдите затронутые файлы и связанные тесты — автоматически.",
+  "premium.chunkingTitle": "Content-Defined Chunking",
+  "premium.chunkingDesc": "Скользящий хеш Rabin-Karp создаёт стабильные границы chunk-ов, которые выдерживают небольшие правки. Неизменённые chunk-и остаются в prompt cache, а повторно отправляются только изменённые фрагменты.",
+  "premium.searchTitle": "Офлайн-векторный Поиск",
+  "premium.searchDesc": "Локальный движок эмбеддингов для семантического поиска по коду с приоритетом приватности. Гибридный поиск BM25 + dense, внешний API не нужен. Ваш код никогда не покидает вашу машину.",
+  "premium.skillsTitle": "Универсальная Интеграция с Агентами",
+  "premium.skillsDesc": "Работает с Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline и ещё 24+ агентами. Настройка одной командой, автоматическая конфигурация MCP и непрерывность сессий между агентами."
 }
