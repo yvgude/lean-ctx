@@ -3,6 +3,22 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.3.6] — 2026-04-23
+
+### Security Hardening
+- **GitHub Actions pinned to SHA**: All 10 Actions across CI, Release, and CodeQL workflows are now pinned to immutable commit SHAs instead of mutable version tags, preventing supply-chain attacks. (CodeQL #24-#36)
+- **File system race condition fixed**: TOCTOU vulnerability in VS Code extension's MCP config writer eliminated. (CodeQL #37)
+- **CodeQL Python false positive resolved**: Stale `language:python` scan configuration removed; explicit CodeQL workflow now covers only Rust, JavaScript/TypeScript, and Actions.
+- **Email masking in CLI**: `lean-ctx login/register/forgot-password` now mask email addresses in console output. (CodeQL #21-#23)
+
+### Bug Fixes
+- **TypeScript `.js` import resolution** (GitHub Issue #146): The graph builder now correctly resolves relative `.js` specifiers to `.ts` source files per the TypeScript module resolution spec. Covers `.js→.ts/.tsx`, `.jsx→.tsx/.ts`, `.mjs→.mts`, `.cjs→.cts`.
+- **Graceful client disconnect**: When an IDE cancels the MCP connection before initialization completes, lean-ctx now exits silently instead of printing a confusing `expect initialized request` error.
+- **Session ID uniqueness**: Session IDs now include an atomic counter suffix, preventing collisions when two sessions are created within the same millisecond.
+
+### Improvements
+- **Environment variable forwarding** (PR #144 by @glemsom): `pi-lean-ctx` now forwards the parent process environment to the lean-ctx subprocess, so config env vars (`LEAN_CTX_TERSE_AGENT`, `LEAN_CTX_ALLOW_PATH`, etc.) work correctly.
+
 ## [3.3.5] — 2026-04-23
 
 ### Multi-Project Workspace Support (GitHub Issue #141)
