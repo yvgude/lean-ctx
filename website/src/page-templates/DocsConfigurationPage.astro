@@ -127,6 +127,12 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>Glob patterns for files that should bypass the hook redirect and go straight to the native Read tool. Useful for config files or files you don't want compressed. Example: <code>[".wolf/**", ".claude/**", "*.json", "CLAUDE.md"]</code>. Also configurable via <code>LEAN_CTX_HOOK_EXCLUDE</code>.</td>
       </tr>
       <tr>
+        <td><code>content_defined_chunking</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Enable Rabin-Karp content-defined chunking for <code>ctx_read</code>. Creates stable chunk boundaries based on content hashes, improving LLM prompt cache hit rates across edits. Opt-in: enable when working with large files that change frequently.</td>
+      </tr>
+      <tr>
         <td><code>disabled_tools</code></td>
         <td>list</td>
         <td><code>[]</code></td>
