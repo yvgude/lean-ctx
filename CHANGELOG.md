@@ -3,6 +3,14 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.3.8] — 2026-04-24
+
+### Bug Fixes
+- **Windows TOML path quoting** (GitHub Issue #147): `lean-ctx update` and `lean-ctx setup` now write Windows paths in Codex `config.toml` using TOML single-quoted literal strings (`'C:\...'`) instead of double-quoted strings. Double-quoted TOML strings treat backslashes as escape sequences, causing Codex to fail with "too few unicode value digits". Affects all Windows users with backslash paths in Codex MCP config.
+
+### Improvements
+- **Leaner `ls` output** (PR #148 by @glemsom): `lean-ctx ls` now runs plain `ls` instead of `ls -la` by default, reducing token overhead. The agent can add `-la` flags when needed.
+
 ## [3.3.7] — 2026-04-23
 
 ### New Features

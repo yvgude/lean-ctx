@@ -2,6 +2,14 @@ use serde_json::Value;
 
 use super::types::{ConfigType, EditorTarget};
 
+fn toml_quote(value: &str) -> String {
+    if value.contains('\\') {
+        format!("'{}'", value)
+    } else {
+        format!("\"{}\"", value)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteAction {
     Created,
@@ -321,8 +329,8 @@ fn write_codex_config(target: &EditorTarget, binary: &str) -> Result<WriteResult
     }
 
     let content = format!(
-        "[mcp_servers.lean-ctx]\ncommand = \"{}\"\nargs = []\n",
-        binary
+        "[mcp_servers.lean-ctx]\ncommand = {}\nargs = []\n",
+        toml_quote(binary)
     );
     crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
     Ok(WriteResult {
@@ -734,7 +742,7 @@ fn upsert_codex_toml(existing: &str, binary: &str) -> String {
         }
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             if in_section && !wrote_command {
-                out.push_str(&format!("command = \"{}\"\n", binary));
+                out.push_str(&format!("command = {}\n", toml_quote(binary)));
                 wrote_command = true;
             }
             if in_section && !wrote_args {
@@ -752,7 +760,7 @@ fn upsert_codex_toml(existing: &str, binary: &str) -> String {
 
         if in_section {
             if trimmed.starts_with("command") && trimmed.contains('=') {
-                out.push_str(&format!("command = \"{}\"\n", binary));
+                out.push_str(&format!("command = {}\n", toml_quote(binary)));
                 wrote_command = true;
                 continue;
             }
@@ -769,7 +777,7 @@ fn upsert_codex_toml(existing: &str, binary: &str) -> String {
 
     if saw_section {
         if in_section && !wrote_command {
-            out.push_str(&format!("command = \"{}\"\n", binary));
+            out.push_str(&format!("command = {}\n", toml_quote(binary)));
         }
         if in_section && !wrote_args {
             out.push_str("args = []\n");
@@ -781,7 +789,7 @@ fn upsert_codex_toml(existing: &str, binary: &str) -> String {
         out.push('\n');
     }
     out.push_str("\n[mcp_servers.lean-ctx]\n");
-    out.push_str(&format!("command = \"{}\"\n", binary));
+    out.push_str(&format!("command = {}\n", toml_quote(binary)));
     out.push_str("args = []\n");
     out
 }
@@ -1060,6 +1068,28 @@ args = ["x"]
         assert!(updated.contains("[mcp_servers.lean-ctx]"));
         assert!(updated.contains("command = \"lean-ctx\""));
         assert!(updated.contains("args = []"));
+    }
+
+    #[test]
+    fn codex_toml_uses_single_quotes_for_backslash_paths() {
+        let win_path = r"C:\Users\Foo\AppData\Roaming\npm\lean-ctx.cmd";
+        let updated = upsert_codex_toml("", win_path);
+        assert!(
+            updated.contains(&format!("command = '{}'", win_path)),
+            "Windows paths must use TOML single quotes to avoid backslash escapes: {}",
+            updated
+        );
+    }
+
+    #[test]
+    fn codex_toml_uses_double_quotes_for_unix_paths() {
+        let unix_path = "/usr/local/bin/lean-ctx";
+        let updated = upsert_codex_toml("", unix_path);
+        assert!(
+            updated.contains(&format!("command = \"{}\"", unix_path)),
+            "Unix paths should use double quotes: {}",
+            updated
+        );
     }
 
     #[test]
