@@ -60,12 +60,10 @@ export async function configureMcp(): Promise<void> {
   }
 
   let config: McpConfig = { servers: {} };
-  if (fs.existsSync(configPath)) {
-    try {
-      config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    } catch {
-      config = { servers: {} };
-    }
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  } catch {
+    // File doesn't exist or contains invalid JSON — start fresh
   }
 
   if (!config.servers) {

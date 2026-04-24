@@ -117,7 +117,7 @@ fn resolve_ts(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opti
         let resolved = dir.join(source);
         let normalized = normalize_path(&resolved);
 
-        if let Some(found) = try_ts_extensions(&normalized, ctx) {
+        if let Some(found) = try_ts_with_js_remap(&normalized, ctx) {
             return (Some(found), false);
         }
         return (None, false);
@@ -128,6 +128,31 @@ fn resolve_ts(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opti
     }
 
     (None, true)
+}
+
+/// Resolve a TS/JS import path, handling the TypeScript convention where
+/// `.js` specifiers in `.ts` files resolve to `.ts` sources.
+/// See: https://www.typescriptlang.org/docs/handbook/modules/reference.html#relative-file-path-resolution
+fn try_ts_with_js_remap(base: &str, ctx: &ResolverContext) -> Option<String> {
+    const JS_TO_TS: &[(&str, &[&str])] = &[
+        (".js", &[".ts", ".tsx"]),
+        (".jsx", &[".tsx", ".ts"]),
+        (".mjs", &[".mts"]),
+        (".cjs", &[".cts"]),
+    ];
+
+    for &(js_ext, ts_exts) in JS_TO_TS {
+        if let Some(stem) = base.strip_suffix(js_ext) {
+            for ts_ext in ts_exts {
+                let candidate = format!("{stem}{ts_ext}");
+                if ctx.file_exists(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    try_ts_extensions(base, ctx)
 }
 
 fn try_ts_extensions(base: &str, ctx: &ResolverContext) -> Option<String> {
@@ -161,7 +186,7 @@ fn resolve_tsconfig_path(source: &str, ctx: &ResolverContext) -> Option<String> 
         if let Some(remainder) = source.strip_prefix(prefix) {
             let target_base = target.trim_end_matches('*');
             let candidate = format!("{target_base}{remainder}");
-            if let Some(found) = try_ts_extensions(&candidate, ctx) {
+            if let Some(found) = try_ts_with_js_remap(&candidate, ctx) {
                 return Some(found);
             }
         }
@@ -989,6 +1014,39 @@ mod tests {
             results[0].resolved_path.as_deref(),
             Some("src/components/index.ts")
         );
+    }
+
+    #[test]
+    fn ts_relative_js_specifier_resolves_to_ts_source() {
+        let ctx = make_ctx(&["src/b.ts", "src/a.ts"]);
+        let imp = make_import("./b.js");
+        let results = resolve_imports(&[imp], "src/a.ts", "ts", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/b.ts"));
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn ts_relative_jsx_specifier_resolves_to_tsx_source() {
+        let ctx = make_ctx(&["src/Button.tsx", "src/App.tsx"]);
+        let imp = make_import("./Button.jsx");
+        let results = resolve_imports(&[imp], "src/App.tsx", "tsx", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/Button.tsx"));
+    }
+
+    #[test]
+    fn ts_relative_mjs_specifier_resolves_to_mts_source() {
+        let ctx = make_ctx(&["src/utils.mts", "src/main.mts"]);
+        let imp = make_import("./utils.mjs");
+        let results = resolve_imports(&[imp], "src/main.mts", "ts", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/utils.mts"));
+    }
+
+    #[test]
+    fn ts_relative_js_specifier_falls_back_to_js_file() {
+        let ctx = make_ctx(&["src/legacy.js", "src/app.ts"]);
+        let imp = make_import("./legacy.js");
+        let results = resolve_imports(&[imp], "src/app.ts", "ts", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/legacy.js"));
     }
 
     #[test]
