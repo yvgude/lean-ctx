@@ -83,6 +83,20 @@ const sidebar = [
         <td>v3.0</td>
       </tr>
       <tr>
+        <td><code>LEAN_CTX_MINIMAL</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Enable minimal overhead mode. Disables auto-checkpoints, meta-strings (savings notes, stale notes, shell hints), and session/knowledge blocks in MCP instructions. Equivalent to <code>minimal_overhead = true</code> in config. See <a href="/docs/configuration#minimal-overhead">Minimal Overhead</a>.</td>
+        <td>v3.4.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_NO_CHECKPOINT</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Disable auto-checkpoint injection without affecting other features. More targeted than <code>LEAN_CTX_MINIMAL</code>.</td>
+        <td>v3.4.1</td>
+      </tr>
+      <tr>
         <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
         <td>number</td>
         <td><code>15</code></td>

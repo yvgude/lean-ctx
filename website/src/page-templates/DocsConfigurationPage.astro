@@ -91,6 +91,12 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>Controls <strong>tool response</strong> compression (input tokens). <code>"normal"</code> = full output, <code>"terse"</code> = moderate compression, <code>"ultra"</code> = maximum compression. This controls what the agent <em>reads</em>. Compare with <a href="#terse-agent"><code>terse_agent</code></a> which controls what the agent <em>writes</em>. See <a href="#output-density">Output Density</a>.</td>
       </tr>
       <tr>
+        <td><code>minimal_overhead</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Reduce per-call token overhead to the absolute minimum. Disables auto-checkpoints, meta-strings (savings notes, stale notes, shell hints), and session/knowledge blocks in MCP instructions. Recommended for Codex, CI pipelines, and cost-sensitive environments. Also available via <code>LEAN_CTX_MINIMAL=1</code>. See <a href="#minimal-overhead">Minimal Overhead</a>.</td>
+      </tr>
+      <tr>
         <td><code>tee_mode</code></td>
         <td>string</td>
         <td><code>"failures"</code></td>
@@ -207,6 +213,16 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td><code>LEAN_CTX_OUTPUT_DENSITY</code></td>
         <td>normal (default), terse, ultra</td>
         <td set:html={t('docsConfiguration.outputDensityEnvDesc')} />
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_MINIMAL</code></td>
+        <td>1 / unset</td>
+        <td>Enable <a href="#minimal-overhead">minimal overhead mode</a>. Disables auto-checkpoints, meta-strings, and session blocks in instructions. Equivalent to <code>minimal_overhead = true</code> in config.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_NO_CHECKPOINT</code></td>
+        <td>1 / unset</td>
+        <td>Disable auto-checkpoint injection without affecting other meta-strings. More targeted than <code>LEAN_CTX_MINIMAL</code> which disables everything.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
@@ -765,6 +781,54 @@ output_density = "terse"
 
 # Or via environment variable (takes precedence)
 # export LEAN_CTX_OUTPUT_DENSITY=ultra</code></pre>
+
+  <hr />
+
+  <h2 id="minimal-overhead">Minimal Overhead <span class="text-xs font-normal text-muted ml-2">v3.4.1</span></h2>
+  <p>
+    <code>minimal_overhead</code> reduces lean-ctx's per-call token footprint to the absolute minimum.
+    It's designed for environments where every token counts — Codex, CI pipelines, or any
+    cost-sensitive workflow.
+  </p>
+
+  <h3>What it disables</h3>
+  <table>
+    <thead>
+      <tr><th>Feature</th><th>Normal Mode</th><th>Minimal Mode</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Auto-checkpoint injection</td><td>Injected every N calls with session cache</td><td>Skipped entirely</td></tr>
+      <tr><td>Savings notes</td><td><code>[saved 142 tokens vs native Grep]</code></td><td>Suppressed</td></tr>
+      <tr><td>Stale notes</td><td><code>[cache stale, full→signatures]</code></td><td>Suppressed</td></tr>
+      <tr><td>Shell efficiency hints</td><td><code>[hint: ctx_search is more token-efficient]</code></td><td>Suppressed</td></tr>
+      <tr><td>Archive hints</td><td><code>[result archived as A1, use ctx_expand]</code></td><td>Suppressed</td></tr>
+      <tr><td>Session block in instructions</td><td>Active session stats block</td><td>Removed</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+minimal_overhead = true
+
+# Or via environment variable
+# export LEAN_CTX_MINIMAL=1
+
+# To only disable checkpoints (keep other meta-strings):
+# export LEAN_CTX_NO_CHECKPOINT=1</code></pre>
+
+  <h3>When to use</h3>
+  <ul>
+    <li><strong>Codex / Claude Code CLI</strong> — these environments benefit most from reduced overhead since every token in the conversation counts against the context window</li>
+    <li><strong>CI/CD pipelines</strong> — automated tasks where meta-strings add noise without value</li>
+    <li><strong>High-frequency tool calls</strong> — sessions with many short tool calls where per-call overhead accumulates</li>
+    <li><strong>Cost optimization</strong> — when you want to minimize API costs without changing compression settings</li>
+  </ul>
+
+  <h3>Measured impact</h3>
+  <p>
+    Combined with lazy tools (default), minimal overhead reduces per-session token overhead
+    from ~6,600 tokens (full tools + verbose) to ~2,400 tokens (lazy + minimal) — a <strong>64% reduction</strong>.
+  </p>
 
   <hr />
 

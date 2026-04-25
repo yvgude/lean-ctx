@@ -10,7 +10,9 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.3.3 (Current)', href: lp('/docs/changelog') + '#v3.3.3' },
+      { label: '3.4.1 (Current)', href: lp('/docs/changelog') + '#v3.4.1' },
+      { label: '3.4.0', href: lp('/docs/changelog') + '#v3.4.0' },
+      { label: '3.3.3', href: lp('/docs/changelog') + '#v3.3.3' },
       { label: '3.3.2', href: lp('/docs/changelog') + '#v3.3.2' },
       { label: '3.3.1', href: lp('/docs/changelog') + '#v3.3.1' },
       { label: '3.3.0', href: lp('/docs/changelog') + '#v3.3.0' },
@@ -42,9 +44,57 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
+  <!-- 3.4.1 -->
+  <h2 id="v3.4.1">3.4.1 <span class="text-xs text-muted">(April 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release — performance &amp; token optimization.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Up to 64% lower per-session token overhead</strong> — best-case overhead reduced from ~6,600 to ~2,400 tokens through lazy tools + <code>minimal_overhead</code> mode</li>
+    <li><strong>Async I/O on hot paths</strong> — session saves and cost attribution no longer block tool responses, reducing latency for every tool call</li>
+    <li><strong>New <code>minimal_overhead</code> mode</strong> — set <code>minimal_overhead = true</code> or <code>LEAN_CTX_MINIMAL=1</code> to suppress auto-checkpoints, meta-strings, and session blocks in instructions. Ideal for Codex and cost-sensitive environments</li>
+  </ul>
+
+  <h3>Performance</h3>
+  <ul>
+    <li><code>Session.save()</code> split into <code>prepare_save()</code> (CPU under lock) + <code>write_to_disk()</code> (background thread) — serialization stays fast, disk I/O no longer blocks responses</li>
+    <li><code>CostStore</code> writes deferred to background via <code>tokio::task::spawn_blocking</code></li>
+    <li><code>mcp-live.json</code> writes debounced to every 5th tool call (80% fewer disk writes)</li>
+    <li><code>count_tokens</code> called once per tool response instead of up to 4 times — cached result reused for hints, cost attribution, and logging</li>
+    <li><code>compress_output</code> skipped entirely for <code>Normal</code> density (no string copy)</li>
+    <li><code>md5_hex_fast</code> — 8x faster fingerprinting for large outputs (&gt;16 KB) by hashing prefix + suffix + length</li>
+  </ul>
+
+  <h3>Token Savings</h3>
+  <ul>
+    <li>Auto-checkpoint injection disabled under <code>minimal_overhead</code> — eliminates the largest per-call token overhead source</li>
+    <li>Meta-strings (<code>stale_note</code>, <code>savings_note</code>, shell efficiency hints, archive hints) suppressed under <code>minimal_overhead</code></li>
+    <li>Session/knowledge/gotcha blocks removed from MCP instructions under <code>minimal_overhead</code></li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed integer overflow crash in <code>shell_efficiency_hint</code> when output tokens exceeded input tokens (e.g. shell commands that expand output) — now uses <code>saturating_sub</code></li>
+    <li>Synchronous <code>save()</code> restores retry counter on disk write failure, preserving auto-save retry behavior</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.4.0 -->
+  <h2 id="v3.4.0">3.4.0 <span class="text-xs text-muted">(April 2026)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Lazy tools now the default</strong> — only 9 core tools exposed by default instead of 46, reducing per-turn input overhead by ~80%. Use <code>LEAN_CTX_FULL_TOOLS=1</code> to opt back in. <code>ctx_discover_tools</code> lets agents load additional tools on demand</li>
+    <li><strong>XDG Base Directory compliance</strong> — new installs use <code>$XDG_CONFIG_HOME/lean-ctx</code>. Existing <code>~/.lean-ctx</code> directories auto-detected</li>
+    <li><strong>JSONC comment support</strong> — config writers now parse JSON with <code>//</code> and <code>/* */</code> comments</li>
+    <li><strong>Shell hook disable</strong> — <code>--no-shell-hook</code> flag, <code>shell_hook_disabled = true</code> config, <code>LEAN_CTX_NO_HOOK=1</code> env var</li>
+  </ul>
+
+  <hr />
+
   <!-- 3.3.3 -->
   <h2 id="v3.3.3">3.3.3 <span class="text-xs text-muted">(April 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release.</p>
 
   <h3>Highlights</h3>
   <ul>
