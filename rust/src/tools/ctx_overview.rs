@@ -148,7 +148,8 @@ pub fn handle(
 
         for (dir, files) in &by_dir {
             let dir_display = if dir.len() > 50 {
-                format!("...{}", &dir[dir.len() - 47..])
+                let start = truncate_start_char_boundary(dir, 47);
+                format!("...{}", &dir[start..])
             } else {
                 dir.clone()
             };
@@ -258,8 +259,63 @@ fn short_path(path: &str) -> String {
     parts[parts.len() - 2..].join("/")
 }
 
+/// Find a byte offset at most `max_tail_bytes` from the end of `s`
+/// that falls on a valid UTF-8 char boundary.
+fn truncate_start_char_boundary(s: &str, max_tail_bytes: usize) -> usize {
+    if max_tail_bytes >= s.len() {
+        return 0;
+    }
+    let mut start = s.len() - max_tail_bytes;
+    while start < s.len() && !s.is_char_boundary(start) {
+        start += 1;
+    }
+    start
+}
+
 fn file_line_count(path: &str) -> usize {
     std::fs::read_to_string(path)
         .map(|c| c.lines().count())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_start_ascii() {
+        let s = "abcdefghij"; // 10 bytes
+        assert_eq!(truncate_start_char_boundary(s, 5), 5);
+        assert_eq!(&s[5..], "fghij");
+    }
+
+    #[test]
+    fn truncate_start_multibyte_chinese() {
+        // "文档/examples/extensions/custom-provider-anthropic" = multi-byte prefix
+        let s = "文档/examples/extensions/custom-provider-anthropic";
+        let start = truncate_start_char_boundary(s, 47);
+        assert!(s.is_char_boundary(start));
+        let tail = &s[start..];
+        assert!(tail.len() <= 47);
+    }
+
+    #[test]
+    fn truncate_start_all_multibyte() {
+        let s = "这是一个很长的中文目录路径用于测试字符边界处理";
+        let start = truncate_start_char_boundary(s, 20);
+        assert!(s.is_char_boundary(start));
+    }
+
+    #[test]
+    fn truncate_start_larger_than_string() {
+        let s = "short";
+        assert_eq!(truncate_start_char_boundary(s, 100), 0);
+    }
+
+    #[test]
+    fn truncate_start_emoji() {
+        let s = "/home/user/🎉🎉🎉/src/components/deeply/nested";
+        let start = truncate_start_char_boundary(s, 30);
+        assert!(s.is_char_boundary(start));
+    }
 }

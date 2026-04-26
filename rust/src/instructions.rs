@@ -21,7 +21,8 @@ fn is_claude_code_client(client_name: &str) -> bool {
 }
 
 fn build_claude_code_instructions() -> String {
-    let instr = "\
+    let shell_hint = build_shell_hint();
+    let instr = format!("\
 ALWAYS use lean-ctx MCP tools instead of native equivalents.
 
 Tool mapping (MANDATORY):
@@ -43,18 +44,20 @@ ctx_knowledge: remember|recall|timeline|rooms|search|wakeup.
 ctx_shell raw=true for uncompressed.
 
 CEP: 1.ACT FIRST 2.DELTA ONLY 3.STRUCTURED(+/-/~) 4.ONE LINE 5.QUALITY
-
+{shell_hint}\
 Prefer: ctx_read>Read | ctx_shell>Shell | ctx_search>Grep | ctx_tree>ls
 Edit: native Edit/StrReplace preferred, ctx_edit if Edit unavailable.
 Never echo tool output. Never narrate. Show only changed code.
-Full instructions at ~/.claude/CLAUDE.md (imports rules/lean-ctx.md)";
+Full instructions at ~/.claude/CLAUDE.md (imports rules/lean-ctx.md)");
 
-    debug_assert!(
-        instr.len() <= CLAUDE_CODE_INSTRUCTION_CAP,
-        "Claude Code instructions exceed {CLAUDE_CODE_INSTRUCTION_CAP} chars: {} chars",
-        instr.len()
-    );
-    instr.to_string()
+    if shell_hint.is_empty() {
+        debug_assert!(
+            instr.len() <= CLAUDE_CODE_INSTRUCTION_CAP,
+            "Claude Code instructions exceed {CLAUDE_CODE_INSTRUCTION_CAP} chars: {} chars",
+            instr.len()
+        );
+    }
+    instr
 }
 
 fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
@@ -132,6 +135,8 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
         None => String::new(),
     };
 
+    let shell_hint = build_shell_hint();
+
     let mut base = format!("\
 CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token savings.\n\
 \n\
@@ -145,6 +150,7 @@ lean-ctx MCP — MANDATORY tool mapping:\n\
 \n\
 COMPATIBILITY: lean-ctx replaces READ operations only. Edit/Write/StrReplace stay native.\n\
 FILE EDITING: Native Edit/StrReplace preferred. If Edit fails, use ctx_edit immediately.\n\
+{shell_hint}\
 \n\
 ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M. Auto-selects. Re-reads ~13 tok. Fn refs F1,F2.. persist.\n\
 Cached? Use fresh=true, start_line=N, or lines:N-M.\n\
@@ -259,6 +265,24 @@ OUTPUT EFFICIENCY:\n\
 • Never echo tool output code. Never add narration comments. Show only changed code.\n\
 • [TASK:type] and SCOPE hints included. Architecture=thorough, generate=code."
         .to_string()
+}
+
+fn build_shell_hint() -> String {
+    if !cfg!(windows) {
+        return String::new();
+    }
+    let name = crate::shell::shell_name();
+    let is_posix = matches!(name.as_str(), "bash" | "sh" | "zsh" | "fish");
+    if is_posix {
+        format!(
+            "\nSHELL: {name} (POSIX). Use POSIX commands (cat, head, grep, find, ls). \
+             Do NOT use PowerShell cmdlets (Get-Content, Select-Object, Get-ChildItem).\n"
+        )
+    } else if name.contains("powershell") || name.contains("pwsh") {
+        format!("\nSHELL: {name}. Use PowerShell cmdlets.\n")
+    } else {
+        format!("\nSHELL: {name}.\n")
+    }
 }
 
 fn should_use_unified(client_name: &str) -> bool {

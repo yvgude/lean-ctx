@@ -3,6 +3,19 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.4.2] — 2026-04-26
+
+### Fixed
+
+- **Unicode SIGABRT in `ctx_overview`** — directory path truncation used byte-index slicing (`&dir[len-47..]`) which panicked on multi-byte UTF-8 characters (Chinese, Japanese, Korean, emoji paths). Replaced with `truncate_start_char_boundary()` that respects char boundaries. Fixes #154.
+- **Windows shell detection in Git Bash / MSYS2** — `find_real_shell()` now checks `MSYSTEM`/`MINGW_PREFIX` env vars before `PSModulePath`, preventing incorrect PowerShell detection when running inside Git Bash. Fixes #156.
+
+### Added
+
+- **Shell hint in MCP instructions (Windows)** — on Windows, instructions now include detected shell type with explicit guidance (e.g. "SHELL: bash (POSIX). Use POSIX commands, not PowerShell cmdlets"), helping LLMs generate correct commands for the active shell environment.
+- **Shell mismatch hint in `ctx_shell` responses (Windows)** — when a command fails and contains PowerShell cmdlets while the detected shell is POSIX, a correction hint is appended to the response.
+- **`shell_name()` public API** — returns the short shell basename (e.g. "bash", "powershell", "cmd") for use in instructions and hints.
+
 ## [3.4.1] — 2026-04-25
 
 Performance and token optimization release. Reduces per-session overhead by up to 64%.

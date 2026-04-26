@@ -358,7 +358,13 @@ impl LeanCtxServer {
                     String::new()
                 };
 
-                format!("{result_out}{savings_note}{tee_hint}")
+                let shell_mismatch_hint = if cfg!(windows) {
+                    shell_mismatch_hint(&command, &result_out)
+                } else {
+                    String::new()
+                };
+
+                format!("{result_out}{savings_note}{tee_hint}{shell_mismatch_hint}")
             }
             "ctx_search" => {
                 let pattern = get_str(args, "pattern")
@@ -1681,5 +1687,41 @@ impl LeanCtxServer {
                 ));
             }
         })
+    }
+}
+
+/// On Windows, detect when a command uses the wrong shell syntax and hint the LLM.
+fn shell_mismatch_hint(command: &str, output: &str) -> String {
+    let shell = crate::shell::shell_name();
+    let is_posix = matches!(shell.as_str(), "bash" | "sh" | "zsh" | "fish");
+    let has_error = output.contains("is not recognized")
+        || output.contains("not found")
+        || output.contains("command not found");
+
+    if !has_error {
+        return String::new();
+    }
+
+    let powershell_cmds = [
+        "Get-Content",
+        "Select-Object",
+        "Get-ChildItem",
+        "Set-Location",
+        "Where-Object",
+        "ForEach-Object",
+        "Select-String",
+        "Invoke-Expression",
+        "Write-Output",
+    ];
+    let uses_powershell = powershell_cmds
+        .iter()
+        .any(|c| command.contains(c) || command.contains(&c.to_lowercase()));
+
+    if is_posix && uses_powershell {
+        format!(
+            "\n[shell: {shell} — use POSIX commands (cat, head, grep, find, ls) not PowerShell cmdlets]"
+        )
+    } else {
+        String::new()
     }
 }

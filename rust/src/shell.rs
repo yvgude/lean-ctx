@@ -869,6 +869,20 @@ pub fn shell_and_flag() -> (String, String) {
     (shell, flag)
 }
 
+/// Returns a short, human-readable shell name (e.g. "bash", "zsh", "powershell", "cmd").
+pub fn shell_name() -> String {
+    let shell = detect_shell();
+    let basename = std::path::Path::new(&shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("sh")
+        .to_ascii_lowercase();
+    basename
+        .strip_suffix(".exe")
+        .unwrap_or(&basename)
+        .to_string()
+}
+
 fn detect_shell() -> String {
     if let Ok(shell) = std::env::var("LEAN_CTX_SHELL") {
         return shell;
@@ -901,6 +915,22 @@ fn find_real_shell() -> String {
 
 #[cfg(windows)]
 fn find_real_shell() -> String {
+    if is_running_in_msys_or_gitbash() {
+        for candidate in &["bash.exe", "sh.exe"] {
+            if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
+                if output.status.success() {
+                    if let Ok(path) = String::from_utf8(output.stdout) {
+                        if let Some(first_line) = path.lines().next() {
+                            let trimmed = first_line.trim();
+                            if !trimmed.is_empty() {
+                                return trimmed.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     if is_running_in_powershell() {
         if let Ok(pwsh) = which_powershell() {
             return pwsh;
@@ -913,7 +943,15 @@ fn find_real_shell() -> String {
 }
 
 #[cfg(windows)]
+fn is_running_in_msys_or_gitbash() -> bool {
+    std::env::var("MSYSTEM").is_ok() || std::env::var("MINGW_PREFIX").is_ok()
+}
+
+#[cfg(windows)]
 fn is_running_in_powershell() -> bool {
+    if is_running_in_msys_or_gitbash() {
+        return false;
+    }
     std::env::var("PSModulePath").is_ok()
 }
 
