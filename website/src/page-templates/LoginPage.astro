@@ -5,6 +5,22 @@ import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/uti
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
+
+const authMessages = {
+  enterEmail: t('dash.errEnterEmail'),
+  passwordMinLen: t('dash.errPasswordMinLen'),
+  passwordsNoMatch: t('dash.errPasswordsNoMatch'),
+  registrationFailed: t('dash.errRegistrationFailed'),
+  enterEmailAndPassword: t('dash.errEnterEmailAndPassword'),
+  loginFailed: t('dash.errLoginFailed'),
+  verifyEmailFirst: t('dash.infoVerifyEmailFirst'),
+  invalidEmailOrPassword: t('dash.errInvalidEmailOrPassword'),
+  requestResetSent: t('dash.infoResetRequested'),
+  requestFailed: t('dash.errRequestFailed'),
+  invalidResetToken: t('dash.errInvalidResetToken'),
+  resetOk: t('dash.infoResetOk'),
+  emailVerified: t('dash.infoEmailVerified'),
+};
 ---
 
 <BaseLayout title={t('dash.loginTitle') + ' — LeanCTX'} description={t('dash.loginSubtitle')}>
@@ -117,23 +133,11 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   .hidden { display: none !important; }
 </style>
 
-<script type="module">
+<script id="auth-messages" type="application/json" set:html={JSON.stringify(authMessages)} />
+
+<script>
   const API = 'https://api.leanctx.com';
-  const M = {
-    enterEmail: {JSON.stringify(t('dash.errEnterEmail'))},
-    passwordMinLen: {JSON.stringify(t('dash.errPasswordMinLen'))},
-    passwordsNoMatch: {JSON.stringify(t('dash.errPasswordsNoMatch'))},
-    registrationFailed: {JSON.stringify(t('dash.errRegistrationFailed'))},
-    enterEmailAndPassword: {JSON.stringify(t('dash.errEnterEmailAndPassword'))},
-    loginFailed: {JSON.stringify(t('dash.errLoginFailed'))},
-    verifyEmailFirst: {JSON.stringify(t('dash.infoVerifyEmailFirst'))},
-    invalidEmailOrPassword: {JSON.stringify(t('dash.errInvalidEmailOrPassword'))},
-    requestResetSent: {JSON.stringify(t('dash.infoResetRequested'))},
-    requestFailed: {JSON.stringify(t('dash.errRequestFailed'))},
-    invalidResetToken: {JSON.stringify(t('dash.errInvalidResetToken'))},
-    resetOk: {JSON.stringify(t('dash.infoResetOk'))},
-    emailVerified: {JSON.stringify(t('dash.infoEmailVerified'))},
-  };
+  const M = JSON.parse(document.getElementById('auth-messages')!.textContent!);
   const $ = (id) => document.getElementById(id);
   function show(el, txt) { if (!el) return; el.classList.remove('hidden'); el.textContent = txt; }
   function hide(el) { if (!el) return; el.classList.add('hidden'); el.textContent = ''; }

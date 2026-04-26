@@ -7,8 +7,10 @@ const t = useTranslations(locale);
 const dashPath = getLocalizedPath('/dashboard/overview', locale);
 ---
 <BaseLayout title={t('cloudAuth.redirectTitle')} description={t('cloudAuth.redirectDesc')}>
-<script type="module">
-  window.location.replace({JSON.stringify(dashPath)});
+<script id="cloud-redirect" type="application/json" set:html={JSON.stringify({ path: dashPath })} />
+<script>
+  const rd = JSON.parse(document.getElementById('cloud-redirect')!.textContent!);
+  window.location.replace(rd.path);
 </script>
 <p style="text-align:center;padding:4rem 1rem;color:var(--color-muted)">{t('cloudAuth.redirectBody')}</p>
 </BaseLayout>
