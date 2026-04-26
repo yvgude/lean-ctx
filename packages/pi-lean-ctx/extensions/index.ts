@@ -277,7 +277,7 @@ export default function (pi: ExtensionAPI) {
       "Execute a bash command through lean-ctx compression.",
     promptSnippet: "Run shell commands (compressed output)",
     promptGuidelines: [
-      "Use for any shell command—output auto-compressed (60-90% savings).",
+      "Use for any shell command—output (auto-compressed)",
       "Avoid for interactive prompts; lean-ctx buffers output.",
     ],
     async execute(toolCallId, params, signal, onUpdate, ctx) {
