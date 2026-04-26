@@ -12,8 +12,13 @@ use uuid::Uuid;
 
 use super::config::Config;
 
-pub async fn health() -> impl IntoResponse {
-    (StatusCode::OK, "ok")
+pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    let smtp = if state.mailer.is_some() {
+        "configured"
+    } else {
+        "NOT_CONFIGURED"
+    };
+    (StatusCode::OK, format!("ok smtp={smtp}"))
 }
 
 #[derive(Clone)]
@@ -63,6 +68,23 @@ impl Mailer {
         let transport = builder.build();
 
         Ok(Self { transport, from })
+    }
+
+    pub async fn test_connection(&self) -> bool {
+        match self.transport.test_connection().await {
+            Ok(true) => {
+                eprintln!("[cloud-smtp] SMTP connection test: OK");
+                true
+            }
+            Ok(false) => {
+                eprintln!("[cloud-smtp] SMTP connection test: FAILED (server rejected)");
+                false
+            }
+            Err(e) => {
+                eprintln!("[cloud-smtp] SMTP connection test: ERROR — {e}");
+                false
+            }
+        }
     }
 
     pub async fn send_verification(&self, to_email: &str, link: &str) -> anyhow::Result<()> {
@@ -264,7 +286,9 @@ pub async fn login(
                 state.cfg.api_base_url.trim_end_matches('/'),
                 token
             );
-            let _ = mailer.send_verification(&email, &link).await;
+            if let Err(e) = mailer.send_verification(&email, &link).await {
+                eprintln!("[cloud-auth] SMTP send_verification failed for {email}: {e}");
+            }
         }
         return Err((
             StatusCode::FORBIDDEN,
@@ -320,7 +344,11 @@ pub async fn forgot_password(
                 state.cfg.public_base_url.trim_end_matches('/'),
                 token
             );
-            let _ = mailer.send_password_reset(&email, &link).await;
+            if let Err(e) = mailer.send_password_reset(&email, &link).await {
+                eprintln!("[cloud-auth] SMTP send_password_reset failed for {email}: {e}");
+            }
+        } else {
+            eprintln!("[cloud-auth] forgot_password: mailer not configured, cannot send reset email");
         }
     }
 
@@ -445,7 +473,9 @@ pub async fn resend_verification(
                     state.cfg.api_base_url.trim_end_matches('/'),
                     token
                 );
-                let _ = mailer.send_verification(&email, &link).await;
+                if let Err(e) = mailer.send_verification(&email, &link).await {
+                    eprintln!("[cloud-auth] SMTP resend_verification failed for {email}: {e}");
+                }
             }
         }
     }
@@ -644,7 +674,7 @@ async fn store_password_reset(
     let client = pool.get().await?;
     client
         .execute(
-            "INSERT INTO email_verifications (token_sha256, user_id, expires_at) VALUES ($1, $2, $3)",
+            "INSERT INTO password_resets (token_sha256, user_id, expires_at) VALUES ($1, $2, $3)",
             &[&token_sha, &user_id, &expires_at],
         )
         .await?;
@@ -686,7 +716,32 @@ async fn consume_email_verification(pool: &Pool, token_sha: &str) -> Result<Uuid
 }
 
 async fn consume_password_reset(pool: &Pool, token_sha: &str) -> Result<Uuid, ConsumeError> {
-    consume_email_verification(pool, token_sha).await
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| ConsumeError::Db(e.to_string()))?;
+    let row = client
+        .query_opt(
+            "SELECT user_id, expires_at, consumed_at FROM password_resets WHERE token_sha256=$1",
+            &[&token_sha],
+        )
+        .await
+        .map_err(|e| ConsumeError::Db(e.to_string()))?;
+    let row = row.ok_or(ConsumeError::NotFound)?;
+    let user_id: Uuid = row.get(0);
+    let expires_at: DateTime<Utc> = row.get(1);
+    let consumed_at: Option<DateTime<Utc>> = row.get(2);
+    if consumed_at.is_some() || expires_at < Utc::now() {
+        return Err(ConsumeError::NotFound);
+    }
+    client
+        .execute(
+            "UPDATE password_resets SET consumed_at=NOW() WHERE token_sha256=$1",
+            &[&token_sha],
+        )
+        .await
+        .map_err(|e| ConsumeError::Db(e.to_string()))?;
+    Ok(user_id)
 }
 
 // ─── Password hashing (salted SHA256) ─────────────────────────

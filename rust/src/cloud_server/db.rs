@@ -79,6 +79,13 @@ CREATE TABLE IF NOT EXISTS email_verifications (
   consumed_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_sha256 TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS models_snapshot (
   id UUID PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

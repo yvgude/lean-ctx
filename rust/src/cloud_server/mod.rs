@@ -21,8 +21,13 @@ pub async fn run() -> anyhow::Result<()> {
     db::init_schema(&pool).await?;
 
     let mailer = if cfg.smtp_enabled() {
-        Some(auth::Mailer::new(&cfg)?)
+        let m = auth::Mailer::new(&cfg)?;
+        eprintln!("[cloud] SMTP mailer configured (host: {})", cfg.smtp_host.as_deref().unwrap_or("?"));
+        m.test_connection().await;
+        Some(m)
     } else {
+        eprintln!("[cloud] WARNING: SMTP not configured — email verification and password reset will NOT work");
+        eprintln!("[cloud] Set LEANCTX_CLOUD_SMTP_HOST, _PORT, _USERNAME, _PASSWORD, _FROM to enable");
         None
     };
 
