@@ -1,6 +1,6 @@
 # Maintainer: Yves Gugger <yves@pounce.ch>
 pkgname=lean-ctx
-pkgver=3.4.1
+pkgver=3.4.2
 pkgrel=1
 pkgdesc="Context Engineering Layer for AI Coding — local-first MCP tools, compression/read modes, workflows+evidence, persistent knowledge, multi-agent orchestration. Zero telemetry."
 arch=('x86_64' 'aarch64')
@@ -9,7 +9,7 @@ license=('Apache-2.0')
 makedepends=('cargo' 'gcc')
 depends=('gcc-libs')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/yvgude/lean-ctx/releases/download/v$pkgver/lean-ctx-$pkgver-source.tar.gz")
-sha256sums=('f33edca3fc851f646b1f2010ffd5e224115a39dd580123363f1bee19405cbddd')
+sha256sums=('c833050b4d30d3eb94eef1316ead46e50de70d85d1d083457f6ec66a80859ccb')
 
 prepare() {
   cd "$pkgname-$pkgver/rust"

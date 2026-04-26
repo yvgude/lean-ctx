@@ -11,7 +11,7 @@
 <h3 align="center">Reduce Claude Code, Cursor & Copilot Token Costs by 99% — Open Source MCP Server</h3>
 
 <p align="center">
-  <strong>Shell Hook + Context Server · 42 tools · 10 read modes · 90+ patterns · Single Rust binary</strong>
+  <strong>Shell Hook + Context Server · 46 tools · 10 read modes · 90+ patterns · Single Rust binary</strong>
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
   <a href="https://leanctx.com">Website</a> ·
   <a href="#-get-started-60-seconds">Install</a> ·
   <a href="#-how-lean-ctx-reduces-ai-token-costs">How It Works</a> ·
-  <a href="#-42-intelligent-tools">Tools</a> ·
+  <a href="#-46-intelligent-tools">Tools</a> ·
   <a href="#-shell-hook-patterns-90">Patterns</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="https://discord.gg/pTHkG9Hew9">Discord</a>
@@ -96,7 +96,7 @@ AI coding tools like **Cursor**, **Claude Code**, **GitHub Copilot**, **Windsurf
 **Common questions lean-ctx solves:**
 - "How do I reduce Claude Code token costs?" → Shell hook + MCP server compress all context automatically
 - "Why is Cursor using so many tokens?" → Uncompressed file reads and CLI output waste 60-99% of tokens  
-- "How to optimize MCP server performance?" → lean-ctx IS an optimized MCP server with 42 intelligent tools
+- "How to optimize MCP server performance?" → lean-ctx IS an optimized MCP server with 46 intelligent tools
 - "Best way to reduce AI coding API costs?" → Context compression saves $30-100+/month for active developers
 
 <br>
@@ -221,13 +221,13 @@ Symbol shorthand (`λ` `§` `∂` `τ` `ε`) and ROI-based identifier mapping fo
 
 <br>
 
-## 🛠 42 Intelligent Tools
+## 🛠 46 Intelligent Tools
 
 ### Core
 
 | Tool | Purpose | Savings |
 |:---|:---|:---:|
-| `ctx_read` | File reads — 8 modes + `lines:N-M`, caching, `fresh=true` | 74-99% |
+| `ctx_read` | File reads — 10 modes (incl. `lines:N-M`), caching, `fresh=true` | 74-99% |
 | `ctx_multi_read` | Multiple file reads in one round trip | 74-99% |
 | `ctx_tree` | Directory listings (ls, find, Glob) | 34-60% |
 | `ctx_shell` | Shell commands with 90+ compression patterns, cwd tracking | 60-90% |
@@ -296,6 +296,7 @@ Symbol shorthand (`λ` `§` `∂` `τ` `ε`) and ROI-based identifier mapping fo
 | `aggressive` | Large files with boilerplate | ~30-50% |
 | `entropy` | Repetitive patterns (Shannon + Jaccard filtering) | ~20-40% |
 | `task` | Task-relevant content via Information Bottleneck + KG filtering | ~15-35% |
+| `reference` | Compact function references (F1, F2…) for delta-only follow-ups | ~5-10% |
 | `lines:N-M` | Specific ranges (e.g. `lines:10-50,80-90`) | proportional |
 
 <br>
@@ -435,7 +436,7 @@ $ lean-ctx gain
   ctx_read           103x  █▌                    59.1K  38%
     ... +33 more commands
 
-  lean-ctx v2.19.0  |  leanctx.com  |  lean-ctx dashboard
+  lean-ctx v3.4.2  |  leanctx.com  |  lean-ctx dashboard
 ```
 
 </details>
@@ -466,7 +467,7 @@ AST-based signature extraction for **18 languages**: TypeScript, JavaScript, Rus
 | Multi-line signatures | ✗ | ✓ |
 | Arrow functions | ✗ | ✓ |
 | Nested classes/methods | Heuristic | AST scope |
-| Languages | 4 | **14** |
+| Languages | 4 | **18** |
 
 Build without tree-sitter for a smaller binary (~5.7 MB vs ~17 MB):
 
@@ -815,7 +816,7 @@ When running inside Codex CLI (`CODEX_CLI_SESSION` set), `~/.codex` is automatic
 | Architecture | Shell hook only | **Shell hook + MCP server** |
 | Process model | Spawns per command | **Persistent server** (no EAGAIN) |
 | CLI patterns | ~50 | **90+** |
-| File reading | Signatures only | **8 modes** (full, map, signatures, diff, aggressive, entropy, task, lines) |
+| File reading | Signatures only | **10 modes** (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto) |
 | File caching | ✗ | ✓ (re-reads ≈ 13 tokens) |
 | Signature engine | Regex (4 langs) | **tree-sitter AST (18 langs)** |
 | Dependency maps | ✗ | ✓ |
@@ -899,7 +900,7 @@ lean-ctx has **zero telemetry** — no data collection, no analytics, no network
 <details>
 <summary><strong>What's the difference between lean-ctx and Rust Token Killer (RTK)?</strong></summary>
 
-lean-ctx is a hybrid architecture (shell hook + MCP server) while Rust Token Killer is shell-hook only. lean-ctx offers 42 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and — critically — zero telemetry (RTK has default-on telemetry with PII).
+lean-ctx is a hybrid architecture (shell hook + MCP server) while Rust Token Killer is shell-hook only. lean-ctx offers 46 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and — critically — zero telemetry (RTK has default-on telemetry with PII).
 
 </details>
 
