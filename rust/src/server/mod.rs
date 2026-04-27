@@ -3,7 +3,10 @@ mod execute;
 pub mod helpers;
 
 use rmcp::handler::server::ServerHandler;
-use rmcp::model::*;
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, Content, Implementation, InitializeRequestParams,
+    InitializeResult, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
+};
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::ErrorData;
 
@@ -134,7 +137,7 @@ impl ServerHandler for LeanCtxServer {
                 if let Some(state) = run.spec.state(&run.current) {
                     if let Some(allowed) = &state.allowed_tools {
                         let mut allow: std::collections::HashSet<&str> =
-                            allowed.iter().map(|s| s.as_str()).collect();
+                            allowed.iter().map(std::string::String::as_str).collect();
                         allow.insert("ctx");
                         allow.insert("ctx_workflow");
                         return Ok(ListToolsResult {
@@ -170,7 +173,7 @@ impl ServerHandler for LeanCtxServer {
                 .as_ref()
                 .and_then(|a| a.get("tool"))
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .ok_or_else(|| {
                     ErrorData::invalid_params("'tool' is required for ctx meta-tool", None)
                 })?;
@@ -186,7 +189,7 @@ impl ServerHandler for LeanCtxServer {
             (original_name, request.arguments)
         };
         let name = resolved_name.as_str();
-        let args = &resolved_args;
+        let args = resolved_args.as_ref();
 
         if name != "ctx_workflow" {
             let active = self.workflow.read().await.clone();
@@ -233,7 +236,6 @@ impl ServerHandler for LeanCtxServer {
 
         let throttle_result = {
             let fp = args
-                .as_ref()
                 .map(|a| {
                     crate::core::loop_detection::LoopDetector::fingerprint(
                         &serde_json::Value::Object(a.clone()),
@@ -253,14 +255,13 @@ impl ServerHandler for LeanCtxServer {
             };
 
             if is_search || is_search_shell {
-                let search_pattern = args.as_ref().and_then(|a| {
+                let search_pattern = args.and_then(|a| {
                     a.get("pattern")
                         .or_else(|| a.get("query"))
                         .and_then(|v| v.as_str())
                 });
                 let shell_pattern = if is_search_shell {
-                    args.as_ref()
-                        .and_then(|a| a.get("command"))
+                    args.and_then(|a| a.get("command"))
                         .and_then(|v| v.as_str())
                         .and_then(helpers::extract_search_pattern_from_command)
                 } else {
@@ -293,7 +294,9 @@ impl ServerHandler for LeanCtxServer {
 
         let mut result_text = result_text;
 
-        let archive_hint = if !minimal {
+        let archive_hint = if minimal {
+            None
+        } else {
             use crate::core::archive;
             let archivable = matches!(
                 name,
@@ -316,8 +319,6 @@ impl ServerHandler for LeanCtxServer {
             } else {
                 None
             }
-        } else {
-            None
         };
 
         let density = crate::core::config::OutputDensity::effective(&config.output_density);
@@ -338,7 +339,10 @@ impl ServerHandler for LeanCtxServer {
         }
 
         if name == "ctx_read" {
-            if !minimal {
+            if minimal {
+                let mut cache = self.cache.write().await;
+                crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache);
+            } else {
                 let read_path = self
                     .resolve_path_or_passthrough(
                         &helpers::get_str(args, "path").unwrap_or_default(),
@@ -359,9 +363,6 @@ impl ServerHandler for LeanCtxServer {
                     result_text = format!("{result_text}\n{hint}");
                 }
                 crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache);
-            } else {
-                let mut cache = self.cache.write().await;
-                crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache);
             }
         }
 
@@ -370,7 +371,7 @@ impl ServerHandler for LeanCtxServer {
         if !minimal && name == "ctx_shell" {
             let cmd = helpers::get_str(args, "command").unwrap_or_default();
             let calls = self.tool_calls.read().await;
-            let last_original = calls.last().map(|c| c.original_tokens).unwrap_or(0);
+            let last_original = calls.last().map_or(0, |c| c.original_tokens);
             drop(calls);
             if let Some(hint) = crate::tools::autonomy::shell_efficiency_hint(
                 &self.autonomy,
@@ -397,7 +398,7 @@ impl ServerHandler for LeanCtxServer {
 
             let pending_session_save = {
                 let empty_args = serde_json::Map::new();
-                let args_map = args.as_ref().unwrap_or(&empty_args);
+                let args_map = args.unwrap_or(&empty_args);
                 let mut session = self.session.write().await;
                 session.record_tool_receipt(
                     name,
@@ -662,7 +663,7 @@ pub fn tool_descriptions_for_test() -> Vec<(&'static str, &'static str)> {
 pub fn tool_schemas_json_for_test() -> String {
     crate::tool_defs::list_all_tool_defs()
         .iter()
-        .map(|(name, _, schema)| format!("{}: {}", name, schema))
+        .map(|(name, _, schema)| format!("{name}: {schema}"))
         .collect::<Vec<_>>()
         .join("\n")
 }

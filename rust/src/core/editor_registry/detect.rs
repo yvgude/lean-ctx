@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use super::paths::*;
+use super::paths::{
+    claude_mcp_json_path, cline_mcp_path, roo_mcp_path, vscode_mcp_path, zed_config_dir,
+    zed_settings_path,
+};
 use super::types::{ConfigType, EditorTarget};
 
 pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
@@ -68,7 +71,7 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
         },
         EditorTarget {
             name: "Zed",
-            agent_key: "".to_string(),
+            agent_key: String::new(),
             config_path: zed_settings_path(home),
             detect_path: zed_config_dir(home),
             config_type: ConfigType::Zed,

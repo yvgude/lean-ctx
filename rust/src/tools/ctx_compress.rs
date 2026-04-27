@@ -72,14 +72,16 @@ pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode)
     // Cross-file codebook deduplication
     let files_for_codebook: Vec<(String, String)> = entries
         .iter()
-        .map(|(p, e)| (p.to_string(), e.content.clone()))
+        .map(|(p, e)| ((*p).clone(), e.content.clone()))
         .collect();
     let mut codebook = crate::core::codebook::Codebook::new();
     codebook.build_from_files(&files_for_codebook);
 
     let output = sections.join("\n");
 
-    let (final_output, legend) = if !codebook.is_empty() {
+    let (final_output, legend) = if codebook.is_empty() {
+        (output, String::new())
+    } else {
         let (compressed, refs_used) = codebook.compress(&output);
         let legend = codebook.format_legend(&refs_used);
         if refs_used.is_empty() {
@@ -87,8 +89,6 @@ pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode)
         } else {
             (compressed, format!("\n{legend}"))
         }
-    } else {
-        (output, String::new())
     };
 
     // Apply filler removal to checkpoint output

@@ -68,8 +68,8 @@ pub async fn post_cep(
         if existing.is_none() {
             client
                 .execute(
-                    r#"INSERT INTO cep_scores (id, user_id, recorded_at, score, cache_hit_rate, mode_diversity, compression_rate, tool_calls, tokens_saved, complexity)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+                    r"INSERT INTO cep_scores (id, user_id, recorded_at, score, cache_hit_rate, mode_diversity, compression_rate, tool_calls, tokens_saved, complexity)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                     &[
                         &Uuid::new_v4(),
                         &user_id,
@@ -101,9 +101,9 @@ pub async fn get_cep(
 
     let rows = client
         .query(
-            r#"SELECT recorded_at, score, cache_hit_rate, mode_diversity, compression_rate, tool_calls, tokens_saved, complexity
+            r"SELECT recorded_at, score, cache_hit_rate, mode_diversity, compression_rate, tool_calls, tokens_saved, complexity
                FROM cep_scores WHERE user_id = $1
-               ORDER BY recorded_at DESC LIMIT 500"#,
+               ORDER BY recorded_at DESC LIMIT 500",
             &[&user_id],
         )
         .await

@@ -315,7 +315,7 @@ pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
         base.jaccard = base.jaccard * 0.5 + arm.jaccard_threshold * 0.5;
         LAST_BANDIT_ARM
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .replace((project_root, bandit_key, arm.name.clone()));
     }
 
@@ -325,7 +325,7 @@ pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
 pub fn report_bandit_outcome(success: bool) {
     let data = LAST_BANDIT_ARM
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take();
     if let Some((project_root, bandit_key, arm_name)) = data {
         let mut store = super::bandit::BanditStore::load(&project_root);
@@ -374,9 +374,11 @@ mod tests {
     #[test]
     fn adaptive_adjusts_for_compressibility() {
         let repetitive = "use std::io;\n".repeat(200);
-        let diverse: String = (0..200)
-            .map(|i| format!("let var_{i} = compute_{i}(arg_{i});\n"))
-            .collect();
+        let diverse = (0..200).fold(String::new(), |mut s, i| {
+            use std::fmt::Write;
+            let _ = writeln!(s, "let var_{i} = compute_{i}(arg_{i});");
+            s
+        });
 
         let base_rep = thresholds_for_path("main.rs");
         let base_div = thresholds_for_path("main.rs");
@@ -389,9 +391,7 @@ mod tests {
         let k_div = kolmogorov_proxy(&diverse);
         assert!(
             k_rep < k_div,
-            "repetitive content should have lower Kolmogorov proxy: {} vs {}",
-            k_rep,
-            k_div
+            "repetitive content should have lower Kolmogorov proxy: {k_rep} vs {k_div}"
         );
     }
 }

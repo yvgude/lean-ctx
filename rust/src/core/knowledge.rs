@@ -161,39 +161,37 @@ impl ProjectKnowledge {
             .iter_mut()
             .find(|f| f.category == category && f.key == key && f.is_current())
         {
-            if existing.value != value {
-                if existing.confidence >= 0.9 && existing.confirmation_count >= 2 {
-                    existing.valid_until = Some(Utc::now());
-                    let superseded_id = format!("{}/{}", existing.category, existing.key);
-                    let now = Utc::now();
-                    self.facts.push(KnowledgeFact {
-                        category: category.to_string(),
-                        key: key.to_string(),
-                        value: value.to_string(),
-                        source_session: session_id.to_string(),
-                        confidence,
-                        created_at: now,
-                        last_confirmed: now,
-                        retrieval_count: 0,
-                        last_retrieved: None,
-                        valid_from: Some(now),
-                        valid_until: None,
-                        supersedes: Some(superseded_id),
-                        confirmation_count: 1,
-                    });
-                } else {
-                    existing.value = value.to_string();
-                    existing.confidence = confidence;
-                    existing.last_confirmed = Utc::now();
-                    existing.source_session = session_id.to_string();
-                    existing.valid_from = existing.valid_from.or(Some(existing.created_at));
-                    existing.confirmation_count = 1;
-                }
-            } else {
+            if existing.value == value {
                 existing.last_confirmed = Utc::now();
                 existing.source_session = session_id.to_string();
-                existing.confidence = (existing.confidence + confidence) / 2.0;
+                existing.confidence = f32::midpoint(existing.confidence, confidence);
                 existing.confirmation_count += 1;
+            } else if existing.confidence >= 0.9 && existing.confirmation_count >= 2 {
+                existing.valid_until = Some(Utc::now());
+                let superseded_id = format!("{}/{}", existing.category, existing.key);
+                let now = Utc::now();
+                self.facts.push(KnowledgeFact {
+                    category: category.to_string(),
+                    key: key.to_string(),
+                    value: value.to_string(),
+                    source_session: session_id.to_string(),
+                    confidence,
+                    created_at: now,
+                    last_confirmed: now,
+                    retrieval_count: 0,
+                    last_retrieved: None,
+                    valid_from: Some(now),
+                    valid_until: None,
+                    supersedes: Some(superseded_id),
+                    confirmation_count: 1,
+                });
+            } else {
+                existing.value = value.to_string();
+                existing.confidence = confidence;
+                existing.last_confirmed = Utc::now();
+                existing.source_session = session_id.to_string();
+                existing.valid_from = existing.valid_from.or(Some(existing.created_at));
+                existing.confirmation_count = 1;
             }
         } else {
             let now = Utc::now();
@@ -605,9 +603,8 @@ impl ProjectKnowledge {
             return Ok(false);
         }
 
-        let legacy = match Self::load("") {
-            Some(k) => k,
-            None => return Ok(false),
+        let Some(legacy) = Self::load("") else {
+            return Ok(false);
         };
 
         if !legacy.project_root.trim().is_empty() {
@@ -867,8 +864,7 @@ fn salience_score(f: &KnowledgeFact) -> u32 {
         "gotcha" => 75,
         "architecture" | "arch" => 60,
         "security" => 65,
-        "testing" | "tests" => 55,
-        "deployment" | "deploy" => 55,
+        "testing" | "tests" | "deployment" | "deploy" => 55,
         "conventions" | "convention" => 45,
         "finding" => 40,
         _ => 30,
@@ -878,19 +874,16 @@ fn salience_score(f: &KnowledgeFact) -> u32 {
     let confirmation_bonus = f.confirmation_count.min(15);
     let retrieval_bonus = ((f.retrieval_count as f32).ln_1p() * 8.0).min(20.0) as u32;
 
-    let recency_bonus = f
-        .last_retrieved
-        .map(|t| {
-            let days = Utc::now().signed_duration_since(t).num_days();
-            if days <= 7 {
-                10u32
-            } else if days <= 30 {
-                5u32
-            } else {
-                0u32
-            }
-        })
-        .unwrap_or(0u32);
+    let recency_bonus = f.last_retrieved.map_or(0u32, |t| {
+        let days = Utc::now().signed_duration_since(t).num_days();
+        if days <= 7 {
+            10u32
+        } else if days <= 30 {
+            5u32
+        } else {
+            0u32
+        }
+    });
 
     base + confidence_bonus + confirmation_bonus + retrieval_bonus + recency_bonus
 }

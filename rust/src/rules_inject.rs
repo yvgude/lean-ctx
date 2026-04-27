@@ -45,7 +45,7 @@ Fallback only if a lean-ctx tool is unavailable: use native equivalents.
 // LITM-optimized with critical mapping at start and end.
 // Used for: Windsurf, Zed, Cline, Roo Code, OpenCode, Continue, Aider
 // ---------------------------------------------------------------------------
-const RULES_DEDICATED: &str = r#"# lean-ctx — Context Engineering Layer
+const RULES_DEDICATED: &str = r"# lean-ctx — Context Engineering Layer
 <!-- lean-ctx-rules-v9 -->
 
 PREFER lean-ctx MCP tools over native equivalents for token savings:
@@ -78,7 +78,7 @@ Write, Delete, Glob → use normally. NEVER loop on Edit failures — switch to 
 ## Proactive (use without being asked):
 - `ctx_overview(task)` at session start
 - `ctx_compress` when context grows large
-<!-- /lean-ctx -->"#;
+<!-- /lean-ctx -->";
 
 // ---------------------------------------------------------------------------
 // Rules for Cursor MDC format (dedicated file with frontmatter).

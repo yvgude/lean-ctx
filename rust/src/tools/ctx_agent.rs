@@ -55,10 +55,7 @@ pub fn handle(
         }
 
         "post" => {
-            let msg = match message {
-                Some(m) => m,
-                None => return "Error: message is required for post".to_string(),
-            };
+            let Some(msg) = message else { return "Error: message is required for post".to_string() };
             let cat = category.unwrap_or("status");
             let from = current_agent_id.unwrap_or("anonymous");
             let mut registry = AgentRegistry::load_or_create();
@@ -73,13 +70,10 @@ pub fn handle(
         }
 
         "read" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => {
+            let Some(agent_id) = current_agent_id else {
                     return "Error: agent must be registered first (use action=register)"
                         .to_string()
-                }
-            };
+                };
             let mut registry = AgentRegistry::load_or_create();
             let messages = registry.read_unread(agent_id);
 
@@ -101,10 +95,7 @@ pub fn handle(
         }
 
         "status" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => return "Error: agent must be registered first".to_string(),
-            };
+            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
             let new_status = match status {
                 Some("active") => AgentStatus::Active,
                 Some("idle") => AgentStatus::Idle,
@@ -145,14 +136,8 @@ pub fn handle(
         }
 
         "handoff" => {
-            let from = match current_agent_id {
-                Some(id) => id,
-                None => return "Error: agent must be registered first".to_string(),
-            };
-            let target = match to_agent {
-                Some(id) => id,
-                None => return "Error: to_agent is required for handoff".to_string(),
-            };
+            let Some(from) = current_agent_id else { return "Error: agent must be registered first".to_string() };
+            let Some(target) = to_agent else { return "Error: to_agent is required for handoff".to_string() };
             let summary = message.unwrap_or("(no summary provided)");
 
             let mut registry = AgentRegistry::load_or_create();
@@ -201,7 +186,7 @@ pub fn handle(
 
             let shared_count = if shared_dir.exists() {
                 std::fs::read_dir(&shared_dir)
-                    .map(|rd| rd.count())
+                    .map(std::iter::Iterator::count)
                     .unwrap_or(0)
             } else {
                 0
@@ -223,14 +208,8 @@ pub fn handle(
         }
 
         "diary" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => return "Error: agent must be registered first".to_string(),
-            };
-            let content = match message {
-                Some(m) => m,
-                None => return "Error: message is required for diary entry".to_string(),
-            };
+            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
+            let Some(content) = message else { return "Error: message is required for diary entry".to_string() };
             let entry_type = match category.unwrap_or("progress") {
                 "discovery" | "found" => DiaryEntryType::Discovery,
                 "decision" | "decided" => DiaryEntryType::Decision,
@@ -250,20 +229,17 @@ pub fn handle(
         }
 
         "recall_diary" | "diary_recall" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => {
-                    let diaries = AgentDiary::list_all();
-                    if diaries.is_empty() {
-                        return "No agent diaries found.".to_string();
-                    }
-                    let mut out = format!("Agent Diaries ({}):\n", diaries.len());
-                    for (id, count, updated) in &diaries {
-                        let age = (chrono::Utc::now() - *updated).num_minutes();
-                        out.push_str(&format!("  {id}: {count} entries ({age}m ago)\n"));
-                    }
-                    return out;
+            let Some(agent_id) = current_agent_id else {
+                let diaries = AgentDiary::list_all();
+                if diaries.is_empty() {
+                    return "No agent diaries found.".to_string();
                 }
+                let mut out = format!("Agent Diaries ({}):\n", diaries.len());
+                for (id, count, updated) in &diaries {
+                    let age = (chrono::Utc::now() - *updated).num_minutes();
+                    out.push_str(&format!("  {id}: {count} entries ({age}m ago)\n"));
+                }
+                return out;
             };
             match AgentDiary::load(agent_id) {
                 Some(diary) => diary.format_summary(),
@@ -286,10 +262,7 @@ pub fn handle(
 
         "share_knowledge" => {
             let cat = category.unwrap_or("general");
-            let msg_text = match message {
-                Some(m) => m,
-                None => return "Error: message required (format: key1=value1;key2=value2)".to_string(),
-            };
+            let Some(msg_text) = message else { return "Error: message required (format: key1=value1;key2=value2)".to_string() };
             let facts: Vec<(String, String)> = msg_text
                 .split(';')
                 .filter_map(|kv| {
@@ -310,10 +283,7 @@ pub fn handle(
         }
 
         "receive_knowledge" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => return "Error: agent must be registered first".to_string(),
-            };
+            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
             let mut registry = AgentRegistry::load_or_create();
             let facts = registry.receive_shared_knowledge(agent_id);
             let _ = registry.save();

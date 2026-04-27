@@ -129,7 +129,7 @@ async fn fallback_router(State(state): State<ProxyState>, req: Request<Body>) ->
             Err(status) => Response::builder()
                 .status(status)
                 .body(Body::from("proxy error"))
-                .unwrap(),
+                .expect("BUG: building error response with valid status should never fail"),
         }
     } else {
         let method = req.method().to_string();
@@ -139,6 +139,6 @@ async fn fallback_router(State(state): State<ProxyState>, req: Request<Body>) ->
             .body(Body::from(format!(
                 "lean-ctx proxy: no handler for {method} {path}"
             )))
-            .unwrap()
+            .expect("BUG: building 404 response should never fail")
     }
 }

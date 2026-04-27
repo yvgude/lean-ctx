@@ -62,7 +62,7 @@ pub fn decide_for_candidates(
                 module: m.clone(),
                 candidate_files: *count,
                 max_relevance: *max,
-                reason: format!("not mentioned by task, max_relevance={:.2} (<0.25)", max),
+                reason: format!("not mentioned by task, max_relevance={max:.2} (<0.25)"),
             });
         }
     }

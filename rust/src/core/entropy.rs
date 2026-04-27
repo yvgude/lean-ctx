@@ -9,6 +9,7 @@ use super::tokens::{count_tokens, encode_tokens};
 
 const BPE_ENTROPY_THRESHOLD: f64 = 1.0;
 
+/// Result of entropy-based compression: output text, token counts, and techniques used.
 #[derive(Debug)]
 pub struct EntropyResult {
     pub output: String,
@@ -18,6 +19,7 @@ pub struct EntropyResult {
 }
 
 impl EntropyResult {
+    /// Returns the percentage of tokens saved by compression.
     pub fn savings_percent(&self) -> f64 {
         if self.original_tokens == 0 {
             return 0.0;
@@ -27,6 +29,7 @@ impl EntropyResult {
     }
 }
 
+/// Computes Shannon entropy (bits) over character frequencies in the text.
 pub fn shannon_entropy(text: &str) -> f64 {
     if text.is_empty() {
         return 0.0;
@@ -87,6 +90,7 @@ pub fn normalized_token_entropy(text: &str) -> f64 {
     h / h_max
 }
 
+/// Computes word-set Jaccard similarity between two strings (0.0–1.0).
 pub fn jaccard_similarity(a: &str, b: &str) -> f64 {
     let set_a: HashSet<&str> = a.split_whitespace().collect();
     let set_b: HashSet<&str> = b.split_whitespace().collect();
@@ -119,13 +123,13 @@ fn ngram_set(text: &str, n: usize) -> HashSet<Vec<String>> {
     if words.len() < n {
         let mut set = HashSet::new();
         if !words.is_empty() {
-            set.insert(words.iter().map(|w| w.to_string()).collect());
+            set.insert(words.iter().map(std::string::ToString::to_string).collect());
         }
         return set;
     }
     words
         .windows(n)
-        .map(|w| w.iter().map(|s| s.to_string()).collect())
+        .map(|w| w.iter().map(std::string::ToString::to_string).collect())
         .collect()
 }
 
@@ -180,6 +184,7 @@ pub fn kolmogorov_proxy(content: &str) -> f64 {
     compressed.len() as f64 / content.len() as f64
 }
 
+/// Classification of content compressibility based on Kolmogorov proxy (gzip ratio).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressibilityClass {
     High,
@@ -188,6 +193,7 @@ pub enum CompressibilityClass {
 }
 
 impl CompressibilityClass {
+    /// Returns a human-readable label with the Kolmogorov threshold range.
     pub fn label(&self) -> &'static str {
         match self {
             Self::High => "high (K<0.3)",
@@ -209,10 +215,12 @@ pub fn compressibility_class(content: &str) -> CompressibilityClass {
     }
 }
 
+/// Compresses content by removing low-entropy lines and deduplicating patterns.
 pub fn entropy_compress(content: &str) -> EntropyResult {
     entropy_compress_with_thresholds(content, BPE_ENTROPY_THRESHOLD, 0.7)
 }
 
+/// Entropy compression with file-type-adaptive thresholds and event emission.
 pub fn entropy_compress_adaptive(content: &str, path: &str) -> EntropyResult {
     let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
     let before_lines = content.lines().count() as u32;
@@ -307,6 +315,7 @@ fn entropy_compress_with_thresholds(
     }
 }
 
+/// Per-line entropy statistics for a block of content.
 #[derive(Debug)]
 pub struct EntropyAnalysis {
     pub avg_entropy: f64,
@@ -315,6 +324,7 @@ pub struct EntropyAnalysis {
     pub total_lines: usize,
 }
 
+/// Analyzes per-line BPE token entropy, counting low/high entropy lines.
 pub fn analyze_entropy(content: &str) -> EntropyAnalysis {
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
@@ -359,7 +369,7 @@ fn extract_blocks(lines: &[&str]) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut current = String::new();
 
-    for line in lines.iter() {
+    for line in lines {
         let trimmed = line.trim();
         if trimmed.is_empty() && !current.is_empty() {
             blocks.push(Block {
@@ -384,7 +394,7 @@ fn find_pattern_groups(blocks: &[Block], threshold: f64) -> Vec<Vec<usize>> {
     // rebuilding allocations per pair. Includes a size-ratio impossibility check
     // (max possible Jaccard is |A|/|B| for |A|<=|B|).
     let sets: Vec<HashSet<Vec<String>>> = blocks.iter().map(|b| ngram_set(&b.content, 2)).collect();
-    let sizes: Vec<usize> = sets.iter().map(|s| s.len()).collect();
+    let sizes: Vec<usize> = sets.iter().map(std::collections::HashSet::len).collect();
 
     let mut groups: Vec<Vec<usize>> = Vec::new();
     let mut assigned: HashSet<usize> = HashSet::new();

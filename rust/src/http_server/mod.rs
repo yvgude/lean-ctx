@@ -303,7 +303,7 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
         .context("invalid host/port")?;
 
     let project_root = cfg.project_root.to_string_lossy().to_string();
-    let base = LeanCtxServer::new_with_project_root(Some(project_root));
+    let base = LeanCtxServer::new_with_project_root(Some(&project_root));
     let engine = Arc::new(ContextEngine::from_server(base.clone()));
 
     let service_factory = move || Ok(base.clone());
@@ -374,8 +374,8 @@ mod tests {
     #[tokio::test]
     async fn auth_token_blocks_requests_without_bearer_header() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let base =
-            LeanCtxServer::new_with_project_root(Some(dir.path().to_string_lossy().to_string()));
+        let root_str = dir.path().to_string_lossy().to_string();
+        let base = LeanCtxServer::new_with_project_root(Some(&root_str));
         let service_factory = move || Ok(base.clone());
         let cfg = StreamableHttpServerConfig::default()
             .with_stateful_mode(false)
@@ -394,9 +394,7 @@ mod tests {
             concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
             rate: Arc::new(RateLimiter::new(50, 100)),
             engine: Arc::new(ContextEngine::from_server(
-                LeanCtxServer::new_with_project_root(Some(
-                    dir.path().to_string_lossy().to_string(),
-                )),
+                LeanCtxServer::new_with_project_root(Some(&root_str)),
             )),
             timeout: Duration::from_millis(30_000),
         };

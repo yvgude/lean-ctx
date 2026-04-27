@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -73,6 +73,7 @@ struct CepComputedStats {
     tool_call_count: u64,
 }
 
+/// Context Reduction Protocol mode controlling output verbosity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CrpMode {
     Off,
@@ -81,6 +82,7 @@ pub enum CrpMode {
 }
 
 impl CrpMode {
+    /// Reads the CRP mode from the `LEAN_CTX_CRP_MODE` environment variable.
     pub fn from_env() -> Self {
         match std::env::var("LEAN_CTX_CRP_MODE")
             .unwrap_or_default()
@@ -93,13 +95,16 @@ impl CrpMode {
         }
     }
 
+    /// Returns true if the mode is TDD (maximum compression).
     pub fn is_tdd(&self) -> bool {
         *self == Self::Tdd
     }
 }
 
+/// Thread-safe handle to the shared file content cache.
 pub type SharedCache = Arc<RwLock<SessionCache>>;
 
+/// Central MCP server state: cache, session, metrics, and autonomy runtime.
 #[derive(Clone)]
 pub struct LeanCtxServer {
     pub cache: SharedCache,
@@ -121,6 +126,7 @@ pub struct LeanCtxServer {
     startup_shell_cwd: Option<String>,
 }
 
+/// Recorded metrics for a single MCP tool invocation.
 #[derive(Clone, Debug)]
 pub struct ToolCallRecord {
     pub tool: String,
@@ -138,15 +144,17 @@ impl Default for LeanCtxServer {
 }
 
 impl LeanCtxServer {
+    /// Creates a new server with default settings, auto-detecting the project root.
     pub fn new() -> Self {
         Self::new_with_project_root(None)
     }
 
-    pub fn new_with_project_root(project_root: Option<String>) -> Self {
-        Self::new_with_startup(project_root, std::env::current_dir().ok())
+    /// Creates a new server rooted at the given project directory.
+    pub fn new_with_project_root(project_root: Option<&str>) -> Self {
+        Self::new_with_startup(project_root, std::env::current_dir().ok().as_deref())
     }
 
-    fn new_with_startup(project_root: Option<String>, startup_cwd: Option<PathBuf>) -> Self {
+    fn new_with_startup(project_root: Option<&str>, startup_cwd: Option<&Path>) -> Self {
         let config = crate::core::config::Config::load();
 
         let interval = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL")
@@ -161,7 +169,7 @@ impl LeanCtxServer {
 
         let crp_mode = CrpMode::from_env();
 
-        let startup = detect_startup_context(project_root.as_deref(), startup_cwd.as_deref());
+        let startup = detect_startup_context(project_root, startup_cwd);
         let mut session = if let Some(ref root) = startup.project_root {
             SessionState::load_latest_for_project_root(root).unwrap_or_default()
         } else {
@@ -250,15 +258,13 @@ impl LeanCtxServer {
                 if p.is_absolute() {
                     if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
                         let candidate_under_jail = resolved.starts_with(jail_root_path);
-                        let allow_reroot = if !candidate_under_jail {
-                            if let Some(ref trusted_root) = self.startup_project_root {
-                                std::path::Path::new(trusted_root) == new_root.as_path()
-                            } else {
-                                !has_project_marker(jail_root_path)
-                                    || is_suspicious_root(jail_root_path)
-                            }
-                        } else {
+                        let allow_reroot = if candidate_under_jail {
                             false
+                        } else if let Some(ref trusted_root) = self.startup_project_root {
+                            std::path::Path::new(trusted_root) == new_root.as_path()
+                        } else {
+                            !has_project_marker(jail_root_path)
+                                || is_suspicious_root(jail_root_path)
                         };
 
                         if allow_reroot {
@@ -291,12 +297,14 @@ impl LeanCtxServer {
         ))
     }
 
+    /// Like `resolve_path`, but returns the original path on failure instead of an error.
     pub async fn resolve_path_or_passthrough(&self, path: &str) -> String {
         self.resolve_path(path)
             .await
             .unwrap_or_else(|_| path.to_string())
     }
 
+    /// Clears the cache and saves the session if the TTL idle threshold has been exceeded.
     pub async fn check_idle_expiry(&self) {
         if self.cache_ttl_secs == 0 {
             return;
@@ -319,6 +327,7 @@ impl LeanCtxServer {
         *self.last_call.write().await = Instant::now();
     }
 
+    /// Records a tool call's token savings without timing information.
     pub async fn record_call(
         &self,
         tool: &str,
@@ -330,6 +339,7 @@ impl LeanCtxServer {
             .await;
     }
 
+    /// Records a tool call's token savings, duration, and emits events and stats.
     pub async fn record_call_with_timing(
         &self,
         tool: &str,
@@ -387,11 +397,13 @@ impl LeanCtxServer {
         self.write_mcp_live_stats().await;
     }
 
+    /// Returns true if over an hour has passed since the last tool call.
     pub async fn is_prompt_cache_stale(&self) -> bool {
         let last = *self.last_call.read().await;
         last.elapsed().as_secs() > 3600
     }
 
+    /// Promotes lightweight read modes to richer ones when the prompt cache is stale.
     pub fn upgrade_mode_if_stale(mode: &str, stale: bool) -> &str {
         if !stale {
             return mode;
@@ -403,11 +415,13 @@ impl LeanCtxServer {
         }
     }
 
+    /// Increments the call counter and returns true if a checkpoint is due.
     pub fn increment_and_check(&self) -> bool {
         let count = self.call_count.fetch_add(1, Ordering::Relaxed) + 1;
         self.checkpoint_interval > 0 && count.is_multiple_of(self.checkpoint_interval)
     }
 
+    /// Generates a compressed context checkpoint with session state and multi-agent sync.
     pub async fn auto_checkpoint(&self) -> Option<String> {
         let cache = self.cache.read().await;
         if cache.get_all_entries().is_empty() {
@@ -433,7 +447,9 @@ impl LeanCtxServer {
             }
         }
 
-        let multi_agent_block = self.auto_multi_agent_checkpoint(&project_root).await;
+        let multi_agent_block = self
+            .auto_multi_agent_checkpoint(project_root.as_ref())
+            .await;
 
         self.record_call("ctx_compress", 0, 0, Some("auto".to_string()))
             .await;
@@ -446,10 +462,9 @@ impl LeanCtxServer {
         ))
     }
 
-    async fn auto_multi_agent_checkpoint(&self, project_root: &Option<String>) -> String {
-        let root = match project_root {
-            Some(r) => r,
-            None => return String::new(),
+    async fn auto_multi_agent_checkpoint(&self, project_root: Option<&String>) -> String {
+        let Some(root) = project_root else {
+            return String::new();
         };
 
         let registry = crate::core::agents::AgentRegistry::load_or_create();
@@ -493,7 +508,7 @@ impl LeanCtxServer {
             .join("shared");
         let shared_count = if shared_dir.exists() {
             std::fs::read_dir(&shared_dir)
-                .map(|rd| rd.count())
+                .map(std::iter::Iterator::count)
                 .unwrap_or(0)
         } else {
             0
@@ -515,6 +530,7 @@ impl LeanCtxServer {
         )
     }
 
+    /// Appends a tool call entry to the rotating `tool-calls.log` file.
     pub fn append_tool_call_log(
         tool: &str,
         duration_ms: u64,
@@ -535,7 +551,7 @@ impl LeanCtxServer {
             let mut lines: Vec<String> = std::fs::read_to_string(&log_path)
                 .unwrap_or_default()
                 .lines()
-                .map(|l| l.to_string())
+                .map(std::string::ToString::to_string)
                 .collect();
 
             lines.push(line.trim_end().to_string());
@@ -584,7 +600,7 @@ impl LeanCtxServer {
             total_compressed,
             total_saved,
             mode_counts,
-            complexity: format!("{:?}", complexity),
+            complexity: format!("{complexity:?}"),
             cache_hits: stats.cache_hits,
             total_reads: stats.total_reads,
             tool_call_count: calls.len() as u64,
@@ -631,6 +647,7 @@ impl LeanCtxServer {
         }
     }
 
+    /// Persists a CEP (Context Efficiency Protocol) score snapshot for analytics.
     pub async fn record_cep_snapshot(&self) {
         let cache = self.cache.read().await;
         let calls = self.tool_calls.read().await;
@@ -661,6 +678,7 @@ struct StartupContext {
     shell_cwd: Option<String>,
 }
 
+/// Creates a new `LeanCtxServer` with default configuration.
 pub fn create_server() -> LeanCtxServer {
     LeanCtxServer::new()
 }
@@ -715,10 +733,8 @@ fn detect_startup_context(
         {
             Some(cwd)
         }
-        (Some(_), Some(root)) => Some(root.clone()),
-        (Some(cwd), None) => Some(cwd),
-        (None, Some(root)) => Some(root.clone()),
-        (None, None) => None,
+        (_, Some(root)) => Some(root.clone()),
+        (cwd, None) => cwd,
     };
 
     StartupContext {
@@ -748,9 +764,8 @@ fn auto_consolidate_knowledge(project_root: &str) {
     use crate::core::knowledge::ProjectKnowledge;
     use crate::core::session::SessionState;
 
-    let session = match SessionState::load_latest() {
-        Some(s) => s,
-        None => return,
+    let Some(session) = SessionState::load_latest() else {
+        return;
     };
 
     if session.findings.is_empty() && session.decisions.is_empty() {
@@ -818,7 +833,7 @@ mod resolve_path_tests {
         let real_root = create_git_root(&real);
         std::fs::write(real.join("a.txt"), "ok").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, Some(real.clone()));
+        let server = LeanCtxServer::new_with_startup(None, Some(real.as_path()));
         {
             let mut session = server.session.write().await;
             session.project_root = Some(stale.to_string_lossy().to_string());
@@ -848,7 +863,7 @@ mod resolve_path_tests {
         let _other_value = create_git_root(&other);
         std::fs::write(other.join("b.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, Some(root.clone()));
+        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
         {
             let mut session = server.session.write().await;
             session.project_root = Some(stale.to_string_lossy().to_string());
@@ -896,7 +911,7 @@ mod resolve_path_tests {
         session_a.set_task("repo-a latest task", None);
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, Some(repo_b.clone()));
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b.as_path()));
         std::env::remove_var("LEAN_CTX_DATA_DIR");
 
         let session = server.session.read().await;
@@ -932,7 +947,7 @@ mod resolve_path_tests {
         let old_id = session_a.id.clone();
         session_a.save().unwrap();
 
-        let server = LeanCtxServer::new_with_startup(None, Some(repo_b_src.clone()));
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b_src.as_path()));
         std::env::remove_var("LEAN_CTX_DATA_DIR");
 
         let session = server.session.read().await;
@@ -954,7 +969,8 @@ mod resolve_path_tests {
         create_git_root(&other);
         std::fs::write(other.join("b.txt"), "no").unwrap();
 
-        let server = LeanCtxServer::new_with_project_root(Some(root.to_string_lossy().to_string()));
+        let root_str = root.to_string_lossy().to_string();
+        let server = LeanCtxServer::new_with_project_root(Some(&root_str));
 
         let err = server
             .resolve_path(&other.join("b.txt").to_string_lossy())

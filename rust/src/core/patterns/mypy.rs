@@ -1,17 +1,18 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static MYPY_ERROR_RE: OnceLock<Regex> = OnceLock::new();
-static MYPY_SUMMARY_RE: OnceLock<Regex> = OnceLock::new();
-
-fn error_re() -> &'static Regex {
-    MYPY_ERROR_RE.get_or_init(|| {
-        Regex::new(r"^(.+?):(\d+):\s+(error|warning|note):\s+(.+?)(?:\s+\[(.+)\])?$").unwrap()
-    })
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
 
-fn summary_re() -> &'static Regex {
-    MYPY_SUMMARY_RE.get_or_init(|| Regex::new(r"Found (\d+) errors? in (\d+) files?").unwrap())
+fn error_re() -> &'static regex::Regex {
+    static_regex!(r"^(.+?):(\d+):\s+(error|warning|note):\s+(.+?)(?:\s+\[(.+)\])?$")
+}
+
+fn summary_re() -> &'static regex::Regex {
+    static_regex!(r"Found (\d+) errors? in (\d+) files?")
 }
 
 pub fn compress(_command: &str, output: &str) -> Option<String> {

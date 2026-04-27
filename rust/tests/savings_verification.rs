@@ -170,7 +170,7 @@ fn verify_overall_savings_estimation() {
         let (orig, comp, pct) = measure_compression(command, output);
         total_original += orig;
         total_compressed += comp;
-        eprintln!("  {:<25} {:>8} {:>8} {:>6.1}%", label, orig, comp, pct);
+        eprintln!("  {label:<25} {orig:>8} {comp:>8} {pct:>6.1}%");
     }
 
     let total_pct = if total_original > 0 {
@@ -253,7 +253,7 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
 }
 
 #[test]
-#[ignore] // Requires manual setup: git log -p -10 > /tmp/git_log_raw.txt
+#[ignore = "requires manual setup: git log -p -10 > /tmp/git_log_raw.txt"]
 fn e2e_real_git_log_compression() {
     let raw_path = "/tmp/git_log_raw.txt";
     if !std::path::Path::new(raw_path).exists() {
@@ -454,12 +454,12 @@ fn audit_full_savings_pipeline() {
         eprintln!("    file tokens:   {file_tokens}");
         eprintln!("    output tokens: {output2_tokens}");
         eprintln!("    is_cache_hit:  {is_cache_hit}");
-        eprintln!("    output: {:?}", output2);
+        eprintln!("    output: {output2:?}");
 
         assert!(is_cache_hit, "second read should be a cache hit");
         assert!(
             output2_tokens < 40,
-            "cache hit stub should be <40 tokens, got {output2_tokens}"
+            "cache hit stub should be <40 tokens, got {output2_tokens}",
         );
 
         let _ = std::fs::remove_file(&tmp);
@@ -577,14 +577,14 @@ fn audit_full_savings_pipeline() {
         for (text, expected_approx) in &test_cases {
             let actual = count_tokens(text);
             eprintln!(
-                "    {:20} → {actual:>3} tokens (expected ~{expected_approx})",
-                format!("{:?}", text)
+                "    {text:?}{:width$} → {actual:>3} tokens (expected ~{expected_approx})",
+                "",
+                width = 20_usize.saturating_sub(format!("{text:?}").len())
             );
             let diff = (actual as i64 - *expected_approx as i64).unsigned_abs();
             assert!(
                 diff <= 2,
-                "tokenizer off by >2 for {:?}: got {actual}, expected ~{expected_approx}",
-                text
+                "tokenizer off by >2 for {text:?}: got {actual}, expected ~{expected_approx}",
             );
         }
     }

@@ -66,7 +66,7 @@ fn compress_build(output: &str) -> String {
 
     for line in output.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("Compiling") || trimmed.contains("[") && trimmed.contains("]") {
+        if trimmed.starts_with("Compiling") || trimmed.contains('[') && trimmed.contains(']') {
             compiling += 1;
         }
         if trimmed.starts_with("Linking") || trimmed.contains("Linking") {

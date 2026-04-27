@@ -137,50 +137,51 @@ fn print_logo_plain() {
     println!();
 }
 
+#[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
 pub fn print_command_box() {
     use crate::core::theme;
     let cfg = crate::core::config::Config::load();
-    let t = theme::load_theme(&cfg.theme);
-    let d = theme::dim();
-    let b = theme::bold();
-    let r = theme::rst();
-    let cmd = t.accent.fg();
-    let ok = t.success.fg();
-    let m = t.muted.fg();
+    let theme = theme::load_theme(&cfg.theme);
+    let dim = theme::dim();
+    let bold = theme::bold();
+    let rst = theme::rst();
+    let cmd = theme.accent.fg();
+    let ok = theme.success.fg();
+    let m = theme.muted.fg();
 
-    println!("  {d}┌─────────────────────────────────────────────────────────┐{r}");
+    println!("  {dim}┌─────────────────────────────────────────────────────────┐{rst}");
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx gain{r}        {m}Token savings dashboard{r}         {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx gain{rst}        {m}Token savings dashboard{rst}         {dim}│{rst}"
     );
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx dashboard{r}   {m}Web analytics (browser){r}        {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx dashboard{rst}   {m}Web analytics (browser){rst}        {dim}│{rst}"
     );
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx heatmap{r}     {m}Project context heat map{r}        {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx heatmap{rst}     {m}Project context heat map{rst}        {dim}│{rst}"
     );
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx benchmark{r}   {m}Test compression quality{r}        {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx benchmark{rst}   {m}Test compression quality{rst}        {dim}│{rst}"
     );
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx config{r}      {m}Edit settings{r}                   {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx config{rst}      {m}Edit settings{rst}                   {dim}│{rst}"
     );
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx doctor{r}      {m}Verify installation{r}             {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx doctor{rst}      {m}Verify installation{rst}             {dim}│{rst}"
     );
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx update{r}      {m}Self-update to latest{r}           {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx update{rst}      {m}Self-update to latest{rst}           {dim}│{rst}"
     );
-    println!("  {d}│{r}  {cmd}{b}lean-ctx off{r} / {cmd}{b}on{r}    {m}Toggle compression{r}              {d}│{r}");
+    println!("  {dim}│{rst}  {cmd}{bold}lean-ctx off{rst} / {cmd}{bold}on{rst}    {m}Toggle compression{rst}              {dim}│{rst}");
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx report-issue{r} {m}Report a bug (auto-diagnostics){r} {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx report-issue{rst} {m}Report a bug (auto-diagnostics){rst} {dim}│{rst}"
     );
-    println!("  {d}│{r}  {cmd}{b}lean-ctx contribute{r}  {m}Share anonymized compression stats{r}{d}│{r}");
+    println!("  {dim}│{rst}  {cmd}{bold}lean-ctx contribute{rst}  {m}Share anonymized compression stats{rst}{dim}│{rst}");
     println!(
-        "  {d}│{r}  {cmd}{b}lean-ctx uninstall{r}   {m}Clean removal{r}                   {d}│{r}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx uninstall{rst}   {m}Clean removal{rst}                   {dim}│{rst}"
     );
-    println!("  {d}└─────────────────────────────────────────────────────────┘{r}");
-    println!("  {ok}Ready!{r} Your next AI command will be automatically optimized.");
-    println!("  {d}Docs: https://leanctx.com/docs{r}");
+    println!("  {dim}└─────────────────────────────────────────────────────────┘{rst}");
+    println!("  {ok}Ready!{rst} Your next AI command will be automatically optimized.");
+    println!("  {dim}Docs: https://leanctx.com/docs{rst}");
     println!();
 }
 

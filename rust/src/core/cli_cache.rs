@@ -62,9 +62,8 @@ fn normalize_key(path: &str) -> String {
 }
 
 fn load_store() -> CliCacheStore {
-    let path = match cache_file() {
-        Some(p) => p,
-        None => return CliCacheStore::default(),
+    let Some(path) = cache_file() else {
+        return CliCacheStore::default();
     };
     match std::fs::read_to_string(&path) {
         Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
@@ -73,10 +72,7 @@ fn load_store() -> CliCacheStore {
 }
 
 fn save_store(store: &CliCacheStore) {
-    let dir = match cache_dir() {
-        Some(d) => d,
-        None => return,
-    };
+    let Some(dir) = cache_dir() else { return };
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("cache.json");
     if let Ok(data) = serde_json::to_string(store) {
@@ -94,13 +90,10 @@ fn file_ref(key: &str, store: &CliCacheStore) -> String {
 }
 
 pub fn check_and_read(path: &str) -> CacheResult {
-    let content = match crate::tools::ctx_read::read_file_lossy(path) {
-        Ok(c) => c,
-        Err(_) => {
-            return CacheResult::Miss {
-                content: String::new(),
-            }
-        }
+    let Ok(content) = crate::tools::ctx_read::read_file_lossy(path) else {
+        return CacheResult::Miss {
+            content: String::new(),
+        };
     };
 
     let key = normalize_key(path);

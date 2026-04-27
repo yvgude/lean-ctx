@@ -20,9 +20,7 @@ pub fn handle(
         return "ERROR: ctx_preload requires a task description".to_string();
     }
 
-    let project_root = path
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| ".".to_string());
+    let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
     let index = crate::core::graph_index::load_or_build(&project_root);
 
@@ -128,9 +126,8 @@ pub fn handle(
             break;
         }
 
-        let content = match std::fs::read_to_string(&rel.path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(&rel.path) else {
+            continue;
         };
 
         let file_ref = cache.get_file_ref(&rel.path);
@@ -235,7 +232,7 @@ fn boltzmann_allocate(
     let log_weights: Vec<f64> = candidates.iter().map(|c| c.score / t).collect();
     let max_log = log_weights
         .iter()
-        .cloned()
+        .copied()
         .fold(f64::NEG_INFINITY, f64::max);
     let exp_weights: Vec<f64> = log_weights.iter().map(|&lw| (lw - max_log).exp()).collect();
     let z: f64 = exp_weights.iter().sum();

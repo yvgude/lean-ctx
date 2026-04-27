@@ -1,28 +1,26 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static COMPILING_RE: OnceLock<Regex> = OnceLock::new();
-static ERROR_RE: OnceLock<Regex> = OnceLock::new();
-static WARNING_RE: OnceLock<Regex> = OnceLock::new();
-static TEST_RESULT_RE: OnceLock<Regex> = OnceLock::new();
-static FINISHED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn compiling_re() -> &'static Regex {
-    COMPILING_RE.get_or_init(|| Regex::new(r"Compiling (\S+) v(\S+)").unwrap())
+fn compiling_re() -> &'static regex::Regex {
+    static_regex!(r"Compiling (\S+) v(\S+)")
 }
-fn error_re() -> &'static Regex {
-    ERROR_RE.get_or_init(|| Regex::new(r"error\[E(\d+)\]: (.+)").unwrap())
+fn error_re() -> &'static regex::Regex {
+    static_regex!(r"error\[E(\d+)\]: (.+)")
 }
-fn warning_re() -> &'static Regex {
-    WARNING_RE.get_or_init(|| Regex::new(r"warning: (.+)").unwrap())
+fn warning_re() -> &'static regex::Regex {
+    static_regex!(r"warning: (.+)")
 }
-fn test_result_re() -> &'static Regex {
-    TEST_RESULT_RE.get_or_init(|| {
-        Regex::new(r"test result: (\w+)\. (\d+) passed; (\d+) failed; (\d+) ignored").unwrap()
-    })
+fn test_result_re() -> &'static regex::Regex {
+    static_regex!(r"test result: (\w+)\. (\d+) passed; (\d+) failed; (\d+) ignored")
 }
-fn finished_re() -> &'static Regex {
-    FINISHED_RE.get_or_init(|| Regex::new(r"Finished .+ in (\d+\.?\d*s)").unwrap())
+fn finished_re() -> &'static regex::Regex {
+    static_regex!(r"Finished .+ in (\d+\.?\d*s)")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -300,19 +298,16 @@ fn compress_update(output: &str) -> String {
 
 fn compress_metadata(output: &str) -> String {
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(output);
-    let json = match parsed {
-        Ok(v) => v,
-        Err(_) => {
-            let lines: Vec<&str> = output.lines().collect();
-            if lines.len() <= 20 {
-                return output.to_string();
-            }
-            return format!(
-                "{}\n... ({} more lines, non-JSON metadata)",
-                lines[..10].join("\n"),
-                lines.len() - 10
-            );
+    let Ok(json) = parsed else {
+        let lines: Vec<&str> = output.lines().collect();
+        if lines.len() <= 20 {
+            return output.to_string();
         }
+        return format!(
+            "{}\n... ({} more lines, non-JSON metadata)",
+            lines[..10].join("\n"),
+            lines.len() - 10
+        );
     };
 
     let mut parts = Vec::new();
@@ -346,7 +341,7 @@ fn compress_metadata(output: &str) -> String {
             let features: Vec<&str> = pkg
                 .get("features")
                 .and_then(|v| v.as_object())
-                .map(|f| f.keys().map(|k| k.as_str()).collect())
+                .map(|f| f.keys().map(std::string::String::as_str).collect())
                 .unwrap_or_default();
             if features.is_empty() {
                 parts.push(format!("  {name} v{version}"));
@@ -369,8 +364,7 @@ fn compress_metadata(output: &str) -> String {
                 .map(|n| {
                     n.get("deps")
                         .and_then(|v| v.as_array())
-                        .map(|a| a.len())
-                        .unwrap_or(0)
+                        .map_or(0, std::vec::Vec::len)
                 })
                 .sum();
             parts.push(format!(

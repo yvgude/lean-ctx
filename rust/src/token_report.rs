@@ -91,11 +91,7 @@ pub fn run_cli(args: &[String]) -> i32 {
                 print_human(&report, &path);
             }
 
-            if report.errors.is_empty() {
-                0
-            } else {
-                1
-            }
+            i32::from(!report.errors.is_empty())
         }
         Err(e) => {
             eprintln!("{e}");
@@ -111,11 +107,11 @@ fn build_report(project_root_override: Option<&str>) -> Result<(TokenReport, Pat
     let data_dir = crate::core::data_dir::lean_ctx_data_dir()?;
 
     let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| ".".to_string());
-    let project_root = project_root_override
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| crate::core::protocol::detect_project_root_or_cwd(&cwd));
+        .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string());
+    let project_root = project_root_override.map_or_else(
+        || crate::core::protocol::detect_project_root_or_cwd(&cwd),
+        std::string::ToString::to_string,
+    );
 
     let mut warnings: Vec<String> = Vec::new();
     let errors: Vec<String> = Vec::new();

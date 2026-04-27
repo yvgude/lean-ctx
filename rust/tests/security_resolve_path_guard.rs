@@ -21,7 +21,13 @@ fn extract_arm_body<'a>(src: &'a str, tool: &str) -> Option<&'a str> {
 
 #[test]
 fn server_fs_tools_use_resolve_path_chokepoint() {
-    let src = include_str!("../src/server/dispatch.rs");
+    let sources = [
+        include_str!("../src/server/dispatch/read_tools.rs"),
+        include_str!("../src/server/dispatch/shell_tools.rs"),
+        include_str!("../src/server/dispatch/session_tools.rs"),
+        include_str!("../src/server/dispatch/utility_tools.rs"),
+    ];
+    let src = sources.join("\n");
     let tools = [
         "ctx_read",
         "ctx_multi_read",
@@ -43,7 +49,7 @@ fn server_fs_tools_use_resolve_path_chokepoint() {
         "ctx_execute",
     ];
     for t in tools {
-        let body = extract_arm_body(src, t).unwrap_or_else(|| panic!("missing tool arm: {t}"));
+        let body = extract_arm_body(&src, t).unwrap_or_else(|| panic!("missing tool arm: {t}"));
         assert!(
             body.contains("resolve_path("),
             "{t} arm must call resolve_path() for path arguments"

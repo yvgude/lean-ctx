@@ -45,6 +45,7 @@ fn ceil_char_boundary(s: &str, idx: usize) -> usize {
     i
 }
 
+/// Counts the number of BPE tokens (o200k_base) in the given text, with caching.
 pub fn count_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;
@@ -73,6 +74,7 @@ pub fn count_tokens(text: &str) -> usize {
     count
 }
 
+/// Encodes text into BPE token IDs (o200k_base).
 pub fn encode_tokens(text: &str) -> Vec<u32> {
     if text.is_empty() {
         return Vec::new();

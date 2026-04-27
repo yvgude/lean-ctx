@@ -67,8 +67,7 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         let days_since_confirmed = now.signed_duration_since(fact.last_confirmed).num_days() as f32;
         let days_since_retrieved = fact
             .last_retrieved
-            .map(|t| now.signed_duration_since(t).num_days() as f32)
-            .unwrap_or(3650.0);
+            .map_or(3650.0, |t| now.signed_duration_since(t).num_days() as f32);
         let retrieval_count = fact.retrieval_count as f32;
 
         if days_since_confirmed > 0.0 {
@@ -249,12 +248,7 @@ pub fn list_archives() -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|ext| ext == "json")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
         .map(|e| e.path())
         .collect();
 

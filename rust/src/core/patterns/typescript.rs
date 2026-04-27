@@ -1,14 +1,17 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static TSC_ERROR_RE: OnceLock<Regex> = OnceLock::new();
-static ERROR_COUNT_RE: OnceLock<Regex> = OnceLock::new();
-
-fn tsc_error_re() -> &'static Regex {
-    TSC_ERROR_RE.get_or_init(|| Regex::new(r"(\S+)\((\d+),\d+\): error (TS\d+): (.+)").unwrap())
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
-fn error_count_re() -> &'static Regex {
-    ERROR_COUNT_RE.get_or_init(|| Regex::new(r"Found (\d+) error").unwrap())
+
+fn tsc_error_re() -> &'static regex::Regex {
+    static_regex!(r"(\S+)\((\d+),\d+\): error (TS\d+): (.+)")
+}
+fn error_count_re() -> &'static regex::Regex {
+    static_regex!(r"Found (\d+) error")
 }
 
 pub fn compress(output: &str) -> Option<String> {

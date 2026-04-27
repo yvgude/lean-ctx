@@ -1,10 +1,14 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static LOG_TIMESTAMP_RE: OnceLock<Regex> = OnceLock::new();
-
-fn log_timestamp_re() -> &'static Regex {
-    LOG_TIMESTAMP_RE.get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap())
+fn log_timestamp_re() -> &'static regex::Regex {
+    static_regex!(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -116,10 +120,7 @@ fn compress_ps(output: &str) -> String {
         }
         if line.contains("Exited") && !status.contains("Exited") {
             if let Some(pos) = line.find("Exited") {
-                let end = line[pos..]
-                    .find(')')
-                    .map(|p| pos + p + 1)
-                    .unwrap_or(pos + 6);
+                let end = line[pos..].find(')').map_or(pos + 6, |p| pos + p + 1);
                 let exited_str = &line[pos..end.min(line.len())];
                 status = exited_str.to_string();
             }
@@ -162,7 +163,7 @@ fn parse_docker_columns(header: &str) -> Vec<(String, usize)> {
 fn extract_column(line: &str, cols: &[(String, usize)], name: &str) -> Option<String> {
     let idx = cols.iter().position(|(n, _)| n == name)?;
     let start = cols[idx].1;
-    let end = cols.get(idx + 1).map(|(_, p)| *p).unwrap_or(line.len());
+    let end = cols.get(idx + 1).map_or(line.len(), |(_, p)| *p);
     if start >= line.len() {
         return None;
     }
@@ -240,7 +241,7 @@ fn compress_logs(output: &str) -> String {
         .collect();
 
     if result.len() > 30 {
-        let result_strs: Vec<&str> = result.iter().map(|s| s.as_str()).collect();
+        let result_strs: Vec<&str> = result.iter().map(std::string::String::as_str).collect();
         let middle = &result_strs[..result_strs.len() - 15];
         let safety = crate::core::safety_needles::extract_safety_lines(middle, 20);
         let last_lines = &result[result.len() - 15..];
@@ -420,7 +421,6 @@ fn compress_system_df(output: &str) -> String {
         }
         if !current_type.is_empty() && trimmed.contains("RECLAIMABLE") {
             current_type.clear();
-            continue;
         }
     }
 
@@ -525,7 +525,7 @@ fn compress_json_value(val: &serde_json::Value, depth: usize) -> String {
     }
     match val {
         serde_json::Value::Object(map) => {
-            let keys: Vec<String> = map.keys().take(15).map(|k| k.to_string()).collect();
+            let keys: Vec<String> = map.keys().take(15).cloned().collect();
             let total = map.len();
             if total > 15 {
                 format!("{{{} ... +{} keys}}", keys.join(", "), total - 15)

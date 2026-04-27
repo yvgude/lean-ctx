@@ -29,10 +29,9 @@ impl ContextEngine {
     }
 
     pub fn with_project_root(project_root: impl Into<PathBuf>) -> Self {
+        let root = project_root.into().to_string_lossy().to_string();
         Self {
-            server: LeanCtxServer::new_with_project_root(Some(
-                project_root.into().to_string_lossy().to_string(),
-            )),
+            server: LeanCtxServer::new_with_project_root(Some(&root)),
             next_id: AtomicI64::new(1),
         }
     }
@@ -70,8 +69,7 @@ impl ContextEngine {
             Some(Value::Object(m)) => m,
             Some(other) => {
                 return Err(anyhow!(
-                    "tool arguments must be a JSON object (got {})",
-                    other
+                    "tool arguments must be a JSON object (got {other})"
                 ))
             }
         };
@@ -94,7 +92,7 @@ impl ContextEngine {
         match server_msg {
             ServerJsonRpcMessage::Response(r) => match r.result {
                 ServerResult::CallToolResult(result) => Ok(result),
-                other => Err(anyhow!("unexpected server result: {:?}", other)),
+                other => Err(anyhow!("unexpected server result: {other:?}")),
             },
             ServerJsonRpcMessage::Error(e) => Err(anyhow!("{e:?}")).context("tool call error"),
             ServerJsonRpcMessage::Notification(_) => Err(anyhow!("unexpected notification")),

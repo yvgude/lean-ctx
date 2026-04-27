@@ -5,7 +5,7 @@ async fn main() {
         .init();
 
     if let Err(e) = lean_ctx::cloud_server::run().await {
-        eprintln!("Cloud server error: {e}");
+        tracing::error!("Cloud server error: {e}");
         std::process::exit(1);
     }
 }

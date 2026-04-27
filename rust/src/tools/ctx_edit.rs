@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 
+/// Parameters for a file edit operation: path, old/new strings, and flags.
 pub struct EditParams {
     pub path: String,
     pub old_string: String,
@@ -21,7 +22,8 @@ struct ReplaceArgs<'a> {
     new_tokens: usize,
 }
 
-pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
+/// Performs a string replacement edit on a file with CRLF/LF and whitespace tolerance.
+pub fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
     let file_path = &params.path;
 
     if params.create {
@@ -57,10 +59,7 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
         }
     }
     if raw_bytes.len() > cap {
-        return format!(
-            "ERROR: file too large (cap {} via LCTX_MAX_READ_BYTES): {file_path}",
-            cap
-        );
+        return format!("ERROR: file too large (cap {cap} via LCTX_MAX_READ_BYTES): {file_path}");
     }
 
     let content = String::from_utf8_lossy(&raw_bytes).into_owned();
@@ -85,7 +84,7 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
             old_tokens: count_tokens(&params.old_string),
             new_tokens: count_tokens(&params.new_string),
         };
-        return do_replace(cache, &mut file, file_path, args);
+        return do_replace(cache, &mut file, file_path, &args);
     }
 
     // Direct match failed -- try CRLF/LF normalization
@@ -103,7 +102,7 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
                 old_tokens: count_tokens(&params.old_string),
                 new_tokens: count_tokens(&params.new_string),
             };
-            return do_replace(cache, &mut file, file_path, args);
+            return do_replace(cache, &mut file, file_path, &args);
         }
     } else if !uses_crlf && old_str.contains("\r\n") {
         let old_lf = old_str.replace("\r\n", "\n");
@@ -119,7 +118,7 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
                 old_tokens: count_tokens(&params.old_string),
                 new_tokens: count_tokens(&params.new_string),
             };
-            return do_replace(cache, &mut file, file_path, args);
+            return do_replace(cache, &mut file, file_path, &args);
         }
     }
 
@@ -141,7 +140,7 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
                 old_tokens: count_tokens(&params.old_string),
                 new_tokens: count_tokens(&params.new_string),
             };
-            return do_replace(cache, &mut file, file_path, args);
+            return do_replace(cache, &mut file, file_path, &args);
         }
     }
 
@@ -166,7 +165,7 @@ fn do_replace(
     cache: &mut SessionCache,
     file: &mut std::fs::File,
     file_path: &str,
-    args: ReplaceArgs<'_>,
+    args: &ReplaceArgs<'_>,
 ) -> String {
     if args.occurrences > 1 && !args.replace_all {
         return format!(
@@ -215,10 +214,10 @@ fn do_replace(
         "1 replacement".into()
     };
 
-    let short = Path::new(file_path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| file_path.to_string());
+    let short = Path::new(file_path).file_name().map_or_else(
+        || file_path.to_string(),
+        |f| f.to_string_lossy().to_string(),
+    );
 
     format!("✓ {short}: {replaced_str}, {delta_str} lines ({old_tokens}→{new_tokens} tok)")
 }
@@ -240,19 +239,16 @@ fn handle_create(cache: &mut SessionCache, file_path: &str, content: &str) -> St
 
     let lines = content.lines().count();
     let tokens = count_tokens(content);
-    let short = Path::new(file_path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| file_path.to_string());
+    let short = Path::new(file_path).file_name().map_or_else(
+        || file_path.to_string(),
+        |f| f.to_string_lossy().to_string(),
+    );
 
     format!("✓ created {short}: {lines} lines, {tokens} tok")
 }
 
 fn trim_trailing_per_line(s: &str) -> String {
-    s.lines()
-        .map(|l| l.trim_end())
-        .collect::<Vec<_>>()
-        .join("\n")
+    s.lines().map(str::trim_end).collect::<Vec<_>>().join("\n")
 }
 
 fn adapt_new_string_to_line_sep(s: &str, sep: &str) -> String {
@@ -311,7 +307,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "hello".into(),
                 new_string: "world".into(),
@@ -328,7 +324,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "aaa".into(),
                 new_string: "ccc".into(),
@@ -347,7 +343,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "nonexistent".into(),
                 new_string: "x".into(),
@@ -365,7 +361,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: path.to_str().unwrap().to_string(),
                 old_string: String::new(),
                 new_string: "line1\nline2\nline3\n".into(),
@@ -384,7 +380,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "let x = 42".into(),
                 new_string: "let x = 99".into(),
@@ -404,7 +400,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "line1\nline2".into(),
                 new_string: "changed1\nchanged2".into(),
@@ -430,7 +426,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "line1\r\nline2".into(),
                 new_string: "a\r\nb".into(),
@@ -452,7 +448,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "  let x = 1;\n  let y = 2;".into(),
                 new_string: "  let x = 10;\n  let y = 20;".into(),
@@ -475,7 +471,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "  const a = 1;\n  const b = 2;".into(),
                 new_string: "  const a = 10;\n  const b = 20;".into(),

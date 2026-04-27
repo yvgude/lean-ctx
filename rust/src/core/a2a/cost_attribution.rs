@@ -64,7 +64,9 @@ static COST_BUFFER: Mutex<Option<CostStore>> = Mutex::new(None);
 
 impl CostStore {
     pub fn load() -> Self {
-        let mut guard = COST_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = COST_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(ref store) = *guard {
             return store.clone();
         }
@@ -126,7 +128,9 @@ impl CostStore {
 
     pub fn save(&self) -> std::io::Result<()> {
         save_to_disk(self)?;
-        let mut guard = COST_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = COST_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(self.clone());
         Ok(())
     }
@@ -175,7 +179,7 @@ impl CostStore {
             .agents
             .get(agent_id)
             .and_then(|a| a.model_key.as_deref())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         let cost = estimate_cost(model_key.as_deref(), input, output, 0);
         self.sessions.push(SessionCostSnapshot {
             timestamp: Utc::now().to_rfc3339(),
@@ -201,9 +205,8 @@ fn cost_store_path() -> Option<PathBuf> {
 }
 
 fn load_from_disk() -> CostStore {
-    let path = match cost_store_path() {
-        Some(p) => p,
-        None => return CostStore::default(),
+    let Some(path) = cost_store_path() else {
+        return CostStore::default();
     };
     match std::fs::read_to_string(&path) {
         Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
@@ -212,14 +215,11 @@ fn load_from_disk() -> CostStore {
 }
 
 fn save_to_disk(store: &CostStore) -> std::io::Result<()> {
-    let path = match cost_store_path() {
-        Some(p) => p,
-        None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no home dir",
-            ))
-        }
+    let Some(path) = cost_store_path() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no home dir",
+        ));
     };
 
     if let Some(parent) = path.parent() {

@@ -84,13 +84,12 @@ impl ThresholdBandit {
             return &self.arms[idx];
         }
 
-        let samples: Vec<f64> = self.arms.iter().map(|a| a.sample()).collect();
+        let samples: Vec<f64> = self.arms.iter().map(BanditArm::sample).collect();
         let best_idx = samples
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i)
-            .unwrap_or(0);
+            .map_or(0, |(i, _)| i);
 
         &self.arms[best_idx]
     }
@@ -208,6 +207,7 @@ fn beta_sample(alpha: f64, beta: f64) -> f64 {
     x / (x + y)
 }
 
+#[allow(clippy::many_single_char_names)] // Marsaglia's algorithm uses standard math notation
 fn gamma_sample(shape: f64) -> f64 {
     if shape < 1.0 {
         let u = rng_f64().max(1e-10);

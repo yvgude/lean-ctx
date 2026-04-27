@@ -49,13 +49,12 @@ fn handle_push(
     message: Option<&str>,
     cache: &crate::core::cache::SessionCache,
 ) -> String {
-    let from = match from_agent {
-        Some(id) => id,
-        None => return "Error: from_agent is required (register first via ctx_agent)".to_string(),
+    let Some(from) = from_agent else {
+        return "Error: from_agent is required (register first via ctx_agent)".to_string();
     };
 
     let path_list: Vec<&str> = match paths {
-        Some(p) => p.split(',').map(|s| s.trim()).collect(),
+        Some(p) => p.split(',').map(str::trim).collect(),
         None => return "Error: paths is required (comma-separated file paths)".to_string(),
     };
 

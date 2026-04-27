@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+/// Identifies a stage in the compression pipeline (input → intent → compression → delivery).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LayerKind {
     Input,
@@ -11,6 +12,7 @@ pub enum LayerKind {
 }
 
 impl LayerKind {
+    /// Returns the string label for this pipeline layer kind.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Input => "input",
@@ -22,6 +24,7 @@ impl LayerKind {
         }
     }
 
+    /// Returns all layer kinds in pipeline execution order.
     pub fn all() -> &'static [LayerKind] {
         &[
             Self::Input,
@@ -40,6 +43,7 @@ impl std::fmt::Display for LayerKind {
     }
 }
 
+/// Content and metadata passed into a pipeline layer for processing.
 #[derive(Debug, Clone)]
 pub struct LayerInput {
     pub content: String,
@@ -47,6 +51,7 @@ pub struct LayerInput {
     pub metadata: HashMap<String, String>,
 }
 
+/// Result produced by a pipeline layer after processing.
 #[derive(Debug, Clone)]
 pub struct LayerOutput {
     pub content: String,
@@ -54,6 +59,7 @@ pub struct LayerOutput {
     pub metadata: HashMap<String, String>,
 }
 
+/// Performance metrics for a single layer execution: tokens in/out, timing, ratio.
 #[derive(Debug, Clone)]
 pub struct LayerMetrics {
     pub layer: LayerKind,
@@ -85,25 +91,30 @@ impl LayerMetrics {
     }
 }
 
+/// A single processing stage in the compression pipeline.
 pub trait Layer {
     fn kind(&self) -> LayerKind;
     fn process(&self, input: LayerInput) -> LayerOutput;
 }
 
+/// A chain of processing layers that content flows through sequentially.
 pub struct Pipeline {
     layers: Vec<Box<dyn Layer>>,
 }
 
 impl Pipeline {
+    /// Creates an empty pipeline with no layers.
     pub fn new() -> Self {
         Self { layers: Vec::new() }
     }
 
+    /// Appends a processing layer to the pipeline (builder pattern).
     pub fn add_layer(mut self, layer: Box<dyn Layer>) -> Self {
         self.layers.push(layer);
         self
     }
 
+    /// Runs all layers in sequence, collecting per-layer metrics.
     pub fn execute(&self, input: LayerInput) -> (LayerOutput, Vec<LayerMetrics>) {
         let mut current = input;
         let mut metrics = Vec::new();
@@ -137,6 +148,7 @@ impl Pipeline {
         (final_output, metrics)
     }
 
+    /// Formats pipeline metrics as a human-readable summary with per-layer and total stats.
     pub fn format_metrics(metrics: &[LayerMetrics]) -> String {
         let mut out = String::from("Pipeline Metrics:\n");
         let mut total_saved = 0usize;
@@ -170,12 +182,14 @@ impl Pipeline {
     }
 }
 
+/// Persistent aggregated statistics across all pipeline runs.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct PipelineStats {
     pub runs: usize,
     pub per_layer: HashMap<LayerKind, AggregatedMetrics>,
 }
 
+/// Cumulative token counts and timing for a single pipeline layer across all runs.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AggregatedMetrics {
     pub total_input_tokens: usize,
@@ -185,6 +199,7 @@ pub struct AggregatedMetrics {
 }
 
 impl AggregatedMetrics {
+    /// Returns the average compression ratio (output/input) across all runs.
     pub fn avg_ratio(&self) -> f64 {
         if self.total_input_tokens == 0 {
             return 1.0;
@@ -192,6 +207,7 @@ impl AggregatedMetrics {
         self.total_output_tokens as f64 / self.total_input_tokens as f64
     }
 
+    /// Returns the average duration per invocation in milliseconds.
     pub fn avg_duration_ms(&self) -> f64 {
         if self.count == 0 {
             return 0.0;
@@ -201,6 +217,7 @@ impl AggregatedMetrics {
 }
 
 impl PipelineStats {
+    /// Creates empty pipeline stats with zero runs.
     pub fn new() -> Self {
         Self {
             runs: 0,
@@ -208,6 +225,7 @@ impl PipelineStats {
         }
     }
 
+    /// Records a batch of layer metrics from a single pipeline execution.
     pub fn record(&mut self, metrics: &[LayerMetrics]) {
         self.runs += 1;
         for m in metrics {
@@ -219,6 +237,7 @@ impl PipelineStats {
         }
     }
 
+    /// Records metrics for a single layer execution.
     pub fn record_single(
         &mut self,
         layer: LayerKind,
@@ -234,6 +253,7 @@ impl PipelineStats {
         agg.count += 1;
     }
 
+    /// Returns the total tokens saved across all pipeline layers.
     pub fn total_tokens_saved(&self) -> usize {
         self.per_layer
             .values()
@@ -241,6 +261,7 @@ impl PipelineStats {
             .sum()
     }
 
+    /// Persists pipeline stats to `~/.lean-ctx/pipeline_stats.json`.
     pub fn save(&self) {
         if let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() {
             let path = dir.join("pipeline_stats.json");
@@ -250,6 +271,7 @@ impl PipelineStats {
         }
     }
 
+    /// Loads pipeline stats from disk, returning defaults if absent.
     pub fn load() -> Self {
         crate::core::data_dir::lean_ctx_data_dir()
             .ok()
@@ -259,6 +281,7 @@ impl PipelineStats {
             .unwrap_or_default()
     }
 
+    /// Formats a human-readable summary of per-layer stats and total savings.
     pub fn format_summary(&self) -> String {
         let mut out = format!("Pipeline Stats ({} runs):\n", self.runs);
         for kind in LayerKind::all() {

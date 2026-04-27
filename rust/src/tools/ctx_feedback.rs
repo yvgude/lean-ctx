@@ -1,10 +1,10 @@
 use crate::core::adaptive_mode_policy::AdaptiveModePolicyStore;
 use crate::core::llm_feedback::{LlmFeedbackEvent, LlmFeedbackStore};
 
-pub fn record(event: LlmFeedbackEvent) -> Result<String, String> {
+pub fn record(event: &LlmFeedbackEvent) -> Result<String, String> {
     LlmFeedbackStore::record(event.clone())?;
     let mut policy = AdaptiveModePolicyStore::load();
-    policy.update_from_feedback(&event);
+    policy.update_from_feedback(event);
     policy.save()?;
     Ok("feedback recorded".to_string())
 }
@@ -34,7 +34,7 @@ pub fn report(limit: usize) -> String {
         format!(" max_output_ratio: {:.2}", s.max_output_ratio),
     ];
     if let Some(ms) = s.avg_latency_ms {
-        lines.push(format!(" avg_latency_ms: {:.0}", ms));
+        lines.push(format!(" avg_latency_ms: {ms:.0}"));
     }
 
     if !s.by_model.is_empty() {
@@ -45,7 +45,7 @@ pub fn report(limit: usize) -> String {
                 m.events, m.avg_output_ratio, m.max_output_tokens
             );
             if let Some(ms) = m.avg_latency_ms {
-                row.push_str(&format!(" avg_ms={:.0}", ms));
+                row.push_str(&format!(" avg_ms={ms:.0}"));
             }
             lines.push(row);
         }

@@ -1,26 +1,26 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static ADDED_RE: OnceLock<Regex> = OnceLock::new();
-static TIME_RE: OnceLock<Regex> = OnceLock::new();
-static PKG_RE: OnceLock<Regex> = OnceLock::new();
-static VULN_RE: OnceLock<Regex> = OnceLock::new();
-static OUTDATED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn added_re() -> &'static Regex {
-    ADDED_RE.get_or_init(|| Regex::new(r"added (\d+) packages?").unwrap())
+fn added_re() -> &'static regex::Regex {
+    static_regex!(r"added (\d+) packages?")
 }
-fn time_re() -> &'static Regex {
-    TIME_RE.get_or_init(|| Regex::new(r"in (\d+\.?\d*\s*[ms]+)").unwrap())
+fn time_re() -> &'static regex::Regex {
+    static_regex!(r"in (\d+\.?\d*\s*[ms]+)")
 }
-fn pkg_re() -> &'static Regex {
-    PKG_RE.get_or_init(|| Regex::new(r"\+ (\S+)@(\S+)").unwrap())
+fn pkg_re() -> &'static regex::Regex {
+    static_regex!(r"\+ (\S+)@(\S+)")
 }
-fn vuln_re() -> &'static Regex {
-    VULN_RE.get_or_init(|| Regex::new(r"(\d+)\s+(critical|high|moderate|low)").unwrap())
+fn vuln_re() -> &'static regex::Regex {
+    static_regex!(r"(\d+)\s+(critical|high|moderate|low)")
 }
-fn outdated_re() -> &'static Regex {
-    OUTDATED_RE.get_or_init(|| Regex::new(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)").unwrap())
+fn outdated_re() -> &'static regex::Regex {
+    static_regex!(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -116,23 +116,14 @@ fn compress_run(output: &str) -> String {
 }
 
 fn compress_test(output: &str) -> String {
-    static JEST_SUMMARY_RE: OnceLock<Regex> = OnceLock::new();
-    static VITEST_SUMMARY_RE: OnceLock<Regex> = OnceLock::new();
-    static MOCHA_SUMMARY_RE: OnceLock<Regex> = OnceLock::new();
-    static TEST_LINE_RE: OnceLock<Regex> = OnceLock::new();
-
-    let jest_re = JEST_SUMMARY_RE
-        .get_or_init(|| Regex::new(r"Tests:\s+(?:(\d+)\s+failed,?\s*)?(?:(\d+)\s+skipped,?\s*)?(?:(\d+)\s+passed,?\s*)?(\d+)\s+total").unwrap());
-    let vitest_re = VITEST_SUMMARY_RE.get_or_init(|| {
-        Regex::new(
-            r"Test Files\s+(?:(\d+)\s+failed\s*\|?\s*)?(?:(\d+)\s+passed\s*\|?\s*)?(\d+)\s+total",
-        )
-        .unwrap()
-    });
-    let mocha_re = MOCHA_SUMMARY_RE
-        .get_or_init(|| Regex::new(r"(\d+)\s+passing.*\n\s*(?:(\d+)\s+failing)?").unwrap());
-    let test_line_re =
-        TEST_LINE_RE.get_or_init(|| Regex::new(r"^\s*(✓|✗|✘|×|PASS|FAIL|ok|not ok)\s").unwrap());
+    let jest_re = static_regex!(
+        r"Tests:\s+(?:(\d+)\s+failed,?\s*)?(?:(\d+)\s+skipped,?\s*)?(?:(\d+)\s+passed,?\s*)?(\d+)\s+total"
+    );
+    let vitest_re = static_regex!(
+        r"Test Files\s+(?:(\d+)\s+failed\s*\|?\s*)?(?:(\d+)\s+passed\s*\|?\s*)?(\d+)\s+total"
+    );
+    let mocha_re = static_regex!(r"(\d+)\s+passing.*\n\s*(?:(\d+)\s+failing)?");
+    let test_line_re = static_regex!(r"^\s*(✓|✗|✘|×|PASS|FAIL|ok|not ok)\s");
 
     for line in output.lines() {
         if let Some(caps) = jest_re.captures(line) {

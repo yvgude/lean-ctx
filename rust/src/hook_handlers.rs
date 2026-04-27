@@ -21,9 +21,8 @@ pub fn handle_rewrite() {
         return;
     }
 
-    let cmd = match extract_json_field(&input, "command") {
-        Some(c) => c,
-        None => return,
+    let Some(cmd) = extract_json_field(&input, "command") else {
+        return;
     };
 
     if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
@@ -110,9 +109,8 @@ pub fn handle_codex_pretooluse() {
         return;
     }
 
-    let cmd = match extract_json_field(&input, "command") {
-        Some(c) => c,
-        None => return,
+    let Some(cmd) = extract_json_field(&input, "command") else {
+        return;
     };
 
     if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
@@ -141,9 +139,8 @@ pub fn handle_copilot() {
     }
 
     let tool = extract_json_field(&input, "tool_name");
-    let tool_name = match tool.as_deref() {
-        Some(name) => name,
-        None => return,
+    let Some(tool_name) = tool.as_deref() else {
+        return;
     };
 
     let is_shell_tool = matches!(
@@ -154,9 +151,8 @@ pub fn handle_copilot() {
         return;
     }
 
-    let cmd = match extract_json_field(&input, "command") {
-        Some(c) => c,
-        None => return,
+    let Some(cmd) = extract_json_field(&input, "command") else {
+        return;
     };
 
     if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
@@ -198,7 +194,7 @@ fn resolve_binary() -> String {
 }
 
 fn extract_json_field(input: &str, field: &str) -> Option<String> {
-    let pattern = format!("\"{}\":\"", field);
+    let pattern = format!("\"{field}\":\"");
     let start = input.find(&pattern)? + pattern.len();
     let rest = &input[start..];
     let bytes = rest.as_bytes();

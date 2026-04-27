@@ -54,21 +54,18 @@ pub fn run_setup() {
             Ok(report) => {
                 if !report.warnings.is_empty() {
                     for w in &report.warnings {
-                        eprintln!("  warning: {w}");
+                        tracing::warn!("{w}");
                     }
                 }
             }
-            Err(e) => eprintln!("Setup error: {e}"),
+            Err(e) => tracing::error!("Setup error: {e}"),
         }
         return;
     }
 
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            eprintln!("Cannot determine home directory");
-            std::process::exit(1);
-        }
+    let Some(home) = dirs::home_dir() else {
+        tracing::error!("Cannot determine home directory");
+        std::process::exit(1);
     };
 
     let binary = resolve_portable_binary();
@@ -185,11 +182,11 @@ pub fn run_setup() {
     // Step 5: Data directory + diagnostics
     terminal_ui::print_step_header(5, 7, "Environment Check");
     let lean_dir = home.join(".lean-ctx");
-    if !lean_dir.exists() {
+    if lean_dir.exists() {
+        terminal_ui::print_status_ok("~/.lean-ctx/ ready");
+    } else {
         let _ = std::fs::create_dir_all(&lean_dir);
         terminal_ui::print_status_new("Created ~/.lean-ctx/");
-    } else {
-        terminal_ui::print_status_ok("~/.lean-ctx/ ready");
     }
     crate::doctor::run_compact();
 
@@ -244,7 +241,7 @@ pub fn run_setup() {
         println!(
             "  \x1b[33m⚠ {} error{}: {}\x1b[0m",
             errors.len(),
-            if errors.len() != 1 { "s" } else { "" },
+            if errors.len() == 1 { "" } else { "s" },
             errors.join(", ")
         );
     }
@@ -274,8 +271,10 @@ pub fn run_setup() {
     println!("     {bold}{source_cmd}{rst}");
     println!();
 
-    let mut tools_to_restart: Vec<String> =
-        newly_configured.iter().map(|s| s.to_string()).collect();
+    let mut tools_to_restart: Vec<String> = newly_configured
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     for name in rules_result
         .injected
         .iter()
@@ -677,8 +676,8 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             home.join(".verdent/mcp.json"),
             ConfigType::McpJson,
         ),
-        "jetbrains" => {
-            // JetBrains uses servers[] array format, handled by install_jetbrains_hook
+        "jetbrains" | "amp" => {
+            // Handled by dedicated install hooks (servers[] array / amp.mcpServers)
         }
         "qwen" => push(
             &mut targets,
@@ -722,9 +721,6 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             home.join(".aider/mcp.json"),
             ConfigType::McpJson,
         ),
-        "amp" => {
-            // Amp uses amp.mcpServers in ~/.config/amp/settings.json, handled by install_amp_hook
-        }
         "hermes" => push(
             &mut targets,
             "Hermes Agent",

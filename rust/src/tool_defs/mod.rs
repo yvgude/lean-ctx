@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rmcp::model::*;
+use rmcp::model::Tool;
 use serde_json::{json, Map, Value};
 
 mod granular;

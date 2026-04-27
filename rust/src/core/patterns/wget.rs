@@ -1,10 +1,14 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static PROGRESS_RE: OnceLock<Regex> = OnceLock::new();
-
-fn progress_re() -> &'static Regex {
-    PROGRESS_RE.get_or_init(|| Regex::new(r"^\s*\d+K\s+.*\d+%").unwrap())
+fn progress_re() -> &'static regex::Regex {
+    static_regex!(r"^\s*\d+K\s+.*\d+%")
 }
 
 pub fn compress(output: &str) -> Option<String> {

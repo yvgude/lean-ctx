@@ -1,34 +1,28 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static PLAN_SUMMARY_RE: OnceLock<Regex> = OnceLock::new();
-static APPLY_SUMMARY_RE: OnceLock<Regex> = OnceLock::new();
-static INSTALLED_PROVIDER_RE: OnceLock<Regex> = OnceLock::new();
-static PROVIDER_VERSION_RE: OnceLock<Regex> = OnceLock::new();
-
-fn plan_summary_re() -> &'static Regex {
-    PLAN_SUMMARY_RE.get_or_init(|| {
-        Regex::new(r"Plan:\s*(\d+)\s+to add,\s*(\d+)\s+to change,\s*(\d+)\s+to destroy").unwrap()
-    })
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
 
-fn apply_summary_re() -> &'static Regex {
-    APPLY_SUMMARY_RE.get_or_init(|| {
-        Regex::new(
-            r"Apply complete!\s*Resources:\s*(\d+)\s+added,\s*(\d+)\s+changed,\s*(\d+)\s+destroyed",
-        )
-        .unwrap()
-    })
+fn plan_summary_re() -> &'static regex::Regex {
+    static_regex!(r"Plan:\s*(\d+)\s+to add,\s*(\d+)\s+to change,\s*(\d+)\s+to destroy")
 }
 
-fn installed_provider_re() -> &'static Regex {
-    INSTALLED_PROVIDER_RE
-        .get_or_init(|| Regex::new(r"-\s*Installed\s+([^\s]+)\s+v([0-9][^\s]*)").unwrap())
+fn apply_summary_re() -> &'static regex::Regex {
+    static_regex!(
+        r"Apply complete!\s*Resources:\s*(\d+)\s+added,\s*(\d+)\s+changed,\s*(\d+)\s+destroyed"
+    )
 }
 
-fn provider_version_re() -> &'static Regex {
-    PROVIDER_VERSION_RE
-        .get_or_init(|| Regex::new(r"\*\s*provider\[([^\]]+)\]\s+([0-9][^\s]*)").unwrap())
+fn installed_provider_re() -> &'static regex::Regex {
+    static_regex!(r"-\s*Installed\s+([^\s]+)\s+v([0-9][^\s]*)")
+}
+
+fn provider_version_re() -> &'static regex::Regex {
+    static_regex!(r"\*\s*provider\[([^\]]+)\]\s+([0-9][^\s]*)")
 }
 
 fn is_provider_init_noise(line: &str) -> bool {
@@ -55,7 +49,7 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
     } else {
         return None;
     };
-    let sub = c.strip_prefix(prefix).map(str::trim_start).unwrap_or("");
+    let sub = c.strip_prefix(prefix).map_or("", str::trim_start);
     let sub_cmd = sub.split_whitespace().next().unwrap_or("");
 
     match sub_cmd {
@@ -80,9 +74,9 @@ fn compress_plan(output: &str) -> String {
         }
 
         if let Some(caps) = plan_summary_re().captures(line) {
-            let add = caps.get(1).map(|m| m.as_str()).unwrap_or("0");
-            let chg = caps.get(2).map(|m| m.as_str()).unwrap_or("0");
-            let des = caps.get(3).map(|m| m.as_str()).unwrap_or("0");
+            let add = caps.get(1).map_or("0", |m| m.as_str());
+            let chg = caps.get(2).map_or("0", |m| m.as_str());
+            let des = caps.get(3).map_or("0", |m| m.as_str());
             kept.push(format!("+ {add} added, ~ {chg} changed, - {des} destroyed"));
             continue;
         }
@@ -127,9 +121,9 @@ fn compress_apply(output: &str) -> String {
         }
 
         if let Some(caps) = apply_summary_re().captures(line) {
-            let a = caps.get(1).map(|m| m.as_str()).unwrap_or("0");
-            let c = caps.get(2).map(|m| m.as_str()).unwrap_or("0");
-            let d = caps.get(3).map(|m| m.as_str()).unwrap_or("0");
+            let a = caps.get(1).map_or("0", |m| m.as_str());
+            let c = caps.get(2).map_or("0", |m| m.as_str());
+            let d = caps.get(3).map_or("0", |m| m.as_str());
             results.push(format!(
                 "Apply complete: +{a} added, ~{c} changed, -{d} destroyed"
             ));
@@ -180,14 +174,14 @@ fn compress_init(output: &str) -> String {
             success = true;
         }
         if let Some(caps) = installed_provider_re().captures(tl) {
-            let name = caps.get(1).map(|m| m.as_str()).unwrap_or("?");
-            let ver = caps.get(2).map(|m| m.as_str()).unwrap_or("?");
+            let name = caps.get(1).map_or("?", |m| m.as_str());
+            let ver = caps.get(2).map_or("?", |m| m.as_str());
             providers.push(format!("{name} v{ver}"));
             continue;
         }
         if let Some(caps) = provider_version_re().captures(tl) {
-            let reg = caps.get(1).map(|m| m.as_str()).unwrap_or("?");
-            let ver = caps.get(2).map(|m| m.as_str()).unwrap_or("?");
+            let reg = caps.get(1).map_or("?", |m| m.as_str());
+            let ver = caps.get(2).map_or("?", |m| m.as_str());
             providers.push(format!("{reg} {ver}"));
         }
     }

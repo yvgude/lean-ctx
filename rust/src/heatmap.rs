@@ -47,7 +47,11 @@ pub fn cmd_heatmap(args: &[String]) {
 
     let mut sorted = entries;
     match sort_by {
-        SortBy::Heat => sorted.sort_by(|a, b| b.heat_score.partial_cmp(&a.heat_score).unwrap()),
+        SortBy::Heat => sorted.sort_by(|a, b| {
+            b.heat_score
+                .partial_cmp(&a.heat_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
         SortBy::Tokens => sorted.sort_by_key(|x| std::cmp::Reverse(x.token_count)),
         SortBy::Connections => sorted.sort_by_key(|x| std::cmp::Reverse(x.connections)),
     }
@@ -134,19 +138,15 @@ fn print_heatmap(project_root: &str, entries: &[HeatEntry], all: &[HeatEntry]) {
     let total_tokens: usize = all.iter().map(|e| e.token_count).sum();
     let total_connections: usize = all.iter().map(|e| e.connections).sum();
 
-    let project_name = std::path::Path::new(project_root)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| project_root.to_string());
+    let project_name = std::path::Path::new(project_root).file_name().map_or_else(
+        || project_root.to_string(),
+        |n| n.to_string_lossy().to_string(),
+    );
 
     println!();
+    println!("\x1b[1;37m  Context Heat Map\x1b[0m  \x1b[38;5;239m{project_name}\x1b[0m");
     println!(
-        "\x1b[1;37m  Context Heat Map\x1b[0m  \x1b[38;5;239m{}\x1b[0m",
-        project_name
-    );
-    println!(
-        "\x1b[38;5;239m  {} files · {} tokens · {} connections\x1b[0m",
-        total_files, total_tokens, total_connections
+        "\x1b[38;5;239m  {total_files} files · {total_tokens} tokens · {total_connections} connections\x1b[0m"
     );
     println!();
 

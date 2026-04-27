@@ -56,7 +56,7 @@ pub fn handle(
 
     let max_files = max_files.unwrap_or(DEFAULT_MAX_FILES).max(1);
     let mut picked: Vec<String> = Vec::new();
-    for (p, _s) in scored.into_iter() {
+    for (p, _s) in scored {
         picked.push(p);
         if picked.len() >= max_files {
             break;
@@ -67,9 +67,8 @@ pub fn handle(
     let mut prefetched: Vec<(String, String)> = Vec::new(); // (path, mode)
     for p in &picked {
         let full = to_fs_path(project_root, p);
-        let content = match std::fs::read_to_string(&full) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(&full) else {
+            continue;
         };
         let tokens = crate::core::tokens::count_tokens(&content);
         total = total.saturating_add(tokens);

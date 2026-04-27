@@ -10,7 +10,7 @@ pub fn install(port: u16, quiet: bool) {
     let binary = find_binary();
     if binary.is_empty() {
         if !quiet {
-            eprintln!("  Cannot find lean-ctx binary for autostart");
+            tracing::error!("Cannot find lean-ctx binary for autostart");
         }
         return;
     }
@@ -271,9 +271,10 @@ fn uninstall_systemd(quiet: bool) {
 }
 
 fn find_binary() -> String {
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| which_lean_ctx().unwrap_or_default())
+    std::env::current_exe().map_or_else(
+        |_| which_lean_ctx().unwrap_or_default(),
+        |p| p.to_string_lossy().to_string(),
+    )
 }
 
 fn which_lean_ctx() -> Option<String> {

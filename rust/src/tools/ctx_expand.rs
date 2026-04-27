@@ -13,9 +13,8 @@ pub fn handle(args: &serde_json::Value) -> String {
 }
 
 fn handle_retrieve(args: &serde_json::Value) -> String {
-    let id = match args.get("id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return "ERROR: 'id' parameter is required. Use ctx_expand(action=\"list\") to see available archives.".to_string(),
+    let Some(id) = args.get("id").and_then(|v| v.as_str()) else {
+        return "ERROR: 'id' parameter is required. Use ctx_expand(action=\"list\") to see available archives.".to_string();
     };
 
     if let Some(pattern) = args.get("search").and_then(|v| v.as_str()) {
@@ -27,11 +26,11 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
 
     let start = args
         .get("start_line")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
     let end = args
         .get("end_line")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     if let (Some(s), Some(e)) = (start, end) {

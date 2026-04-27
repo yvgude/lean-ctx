@@ -3,11 +3,10 @@ use std::path::Path;
 use crate::core::handoff_ledger::HandoffLedgerV1;
 
 pub fn format_created(path: &Path, ledger: &HandoffLedgerV1) -> String {
-    let wf = ledger
-        .workflow
-        .as_ref()
-        .map(|w| format!("{}@{}", w.spec.name, w.current))
-        .unwrap_or_else(|| "none".to_string());
+    let wf = ledger.workflow.as_ref().map_or_else(
+        || "none".to_string(),
+        |w| format!("{}@{}", w.spec.name, w.current),
+    );
     format!(
         "ctx_handoff create\n path: {}\n md5: {}\n manifest_md5: {}\n workflow: {}\n evidence_keys: {}\n curated_refs: {}\n knowledge_facts: {}",
         path.display(),

@@ -8,15 +8,12 @@ fn mcp_manifest_is_up_to_date() {
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
     let path = repo_root.join("website/generated/mcp-tools.json");
 
-    let content = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => {
-            eprintln!(
-                "skipping: {} not present (website/ excluded from repo)",
-                path.display()
-            );
-            return;
-        }
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        eprintln!(
+            "skipping: {} not present (website/ excluded from repo)",
+            path.display()
+        );
+        return;
     };
     let on_disk: Value = serde_json::from_str(&content)
         .unwrap_or_else(|e| panic!("invalid JSON at {}: {e}", path.display()));

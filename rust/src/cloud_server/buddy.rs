@@ -13,21 +13,25 @@ pub async fn post_buddy(
     let (user_id, _) = auth_user(&state, &headers).await?;
     let client = state.pool.get().await.map_err(internal_error)?;
 
-    let name = body["name"].as_str().map(|s| s.to_string());
-    let species = body["species"].as_str().map(|s| s.to_string());
+    let name = body["name"].as_str().map(std::string::ToString::to_string);
+    let species = body["species"]
+        .as_str()
+        .map(std::string::ToString::to_string);
     let level = body["level"].as_i64().unwrap_or(1) as i32;
     let xp = body["xp"].as_i64().unwrap_or(0);
-    let mood = body["mood"].as_str().map(|s| s.to_string());
+    let mood = body["mood"].as_str().map(std::string::ToString::to_string);
     let streak = body["streak"]
         .as_i64()
         .or_else(|| body["streak_days"].as_i64())
         .unwrap_or(0) as i32;
-    let rarity = body["rarity"].as_str().map(|s| s.to_string());
+    let rarity = body["rarity"]
+        .as_str()
+        .map(std::string::ToString::to_string);
     let state_json = serde_json::to_string(&body).unwrap_or_default();
 
     client
         .execute(
-            r#"INSERT INTO buddy_state (user_id, name, species, level, xp, mood, streak, rarity, state_json)
+            r"INSERT INTO buddy_state (user_id, name, species, level, xp, mood, streak, rarity, state_json)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                ON CONFLICT (user_id) DO UPDATE SET
                  name = EXCLUDED.name,
@@ -38,7 +42,7 @@ pub async fn post_buddy(
                  streak = EXCLUDED.streak,
                  rarity = EXCLUDED.rarity,
                  state_json = EXCLUDED.state_json,
-                 updated_at = NOW()"#,
+                 updated_at = NOW()",
             &[
                 &user_id, &name, &species, &level, &xp, &mood, &streak, &rarity, &state_json,
             ],

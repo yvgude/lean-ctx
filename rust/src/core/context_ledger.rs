@@ -214,8 +214,11 @@ impl ContextLedger {
         let tokens_to_free =
             self.total_tokens_sent - (self.window_size as f64 * target_utilization) as usize;
 
-        let target_set: std::collections::HashSet<&str> =
-            intent.targets.iter().map(|t| t.as_str()).collect();
+        let target_set: std::collections::HashSet<&str> = intent
+            .targets
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
 
         let mut candidates: Vec<(usize, &LedgerEntry)> = self
             .entries

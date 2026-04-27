@@ -163,10 +163,7 @@ fn scan_project(root: &str) -> Vec<PathBuf> {
             true
         })
     {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
 
         if entry.file_type().is_dir() {
             continue;
@@ -230,7 +227,7 @@ fn measure_mode(content: &str, ext: &str, mode: &str, raw_tokens: usize) -> Mode
             let key_sigs: Vec<String> = sigs
                 .iter()
                 .filter(|s| s.is_exported || s.indent == 0)
-                .map(|s| s.to_compact())
+                .map(super::signatures::Signature::to_compact)
                 .collect();
             if !key_sigs.is_empty() {
                 parts.push(key_sigs.join("\n"));
@@ -240,7 +237,7 @@ fn measure_mode(content: &str, ext: &str, mode: &str, raw_tokens: usize) -> Mode
         "signatures" => {
             let sigs = signatures::extract_signatures(content, ext);
             sigs.iter()
-                .map(|s| s.to_compact())
+                .map(super::signatures::Signature::to_compact)
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -408,8 +405,7 @@ fn simulate_session(files: &[FileMeasurement]) -> SessionSimResult {
             f.modes
                 .iter()
                 .find(|m| m.mode == mode)
-                .map(|m| m.tokens)
-                .unwrap_or(f.raw_tokens)
+                .map_or(f.raw_tokens, |m| m.tokens)
         })
         .sum();
 
@@ -431,8 +427,7 @@ fn simulate_session(files: &[FileMeasurement]) -> SessionSimResult {
             f.modes
                 .iter()
                 .find(|m| m.mode == "map")
-                .map(|m| m.tokens)
-                .unwrap_or(f.raw_tokens)
+                .map_or(f.raw_tokens, |m| m.tokens)
         })
         .sum();
     let resume_ccp = 400usize;
@@ -486,9 +481,9 @@ pub fn format_terminal(b: &ProjectBenchmark) -> String {
     let mut out = Vec::new();
     let sep = "\u{2550}".repeat(66);
 
-    out.push(sep.to_string());
+    out.push(sep.clone());
     out.push(format!("  lean-ctx Benchmark — {}", b.root));
-    out.push(sep.to_string());
+    out.push(sep.clone());
 
     let lang_summary: Vec<String> = b
         .languages
@@ -578,7 +573,7 @@ pub fn format_terminal(b: &ProjectBenchmark) -> String {
         ccp_pct,
     ));
 
-    out.push(sep.to_string());
+    out.push(sep.clone());
     out.join("\n")
 }
 

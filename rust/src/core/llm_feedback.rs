@@ -71,7 +71,7 @@ impl LlmFeedbackStore {
 
         let line = serde_json::to_string(&event).map_err(|e| format!("serialize: {e}"))?;
         f.write_all(line.as_bytes())
-            .and_then(|_| f.write_all(b"\n"))
+            .and_then(|()| f.write_all(b"\n"))
             .map_err(|e| format!("write {}: {e}", path.display()))?;
 
         maybe_compact(&path)?;
@@ -247,7 +247,7 @@ fn maybe_compact(path: &Path) -> Result<(), String> {
         let mut out = File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
         for line in keep {
             out.write_all(line.as_bytes())
-                .and_then(|_| out.write_all(b"\n"))
+                .and_then(|()| out.write_all(b"\n"))
                 .map_err(|e| format!("write {}: {e}", tmp.display()))?;
         }
         out.flush()

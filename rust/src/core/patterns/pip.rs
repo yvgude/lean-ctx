@@ -1,14 +1,17 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static PIP_INSTALLED_RE: OnceLock<Regex> = OnceLock::new();
-static PIP_OUTDATED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn pip_installed_re() -> &'static Regex {
-    PIP_INSTALLED_RE.get_or_init(|| Regex::new(r"Successfully installed\s+(.+)").unwrap())
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
-fn pip_outdated_re() -> &'static Regex {
-    PIP_OUTDATED_RE.get_or_init(|| Regex::new(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)").unwrap())
+
+fn pip_installed_re() -> &'static regex::Regex {
+    static_regex!(r"Successfully installed\s+(.+)")
+}
+fn pip_outdated_re() -> &'static regex::Regex {
+    static_regex!(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -82,11 +85,7 @@ fn compress_list(output: &str) -> String {
 
 fn compress_outdated(output: &str) -> String {
     let lines: Vec<&str> = output.lines().collect();
-    let skip = if lines
-        .first()
-        .map(|l| l.starts_with("Package"))
-        .unwrap_or(false)
-    {
+    let skip = if lines.first().is_some_and(|l| l.starts_with("Package")) {
         2
     } else {
         0

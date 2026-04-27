@@ -28,9 +28,9 @@ cargo fmt --check 2>&1
 ok "formatting clean"
 
 # -----------------------------------------------------------------------
-step "4/6  Hook E2E tests (Rust + Bash + Consistency)"
-cargo test --release --test hook_e2e_tests 2>&1 | tail -1
-ok "hook E2E tests"
+step "4/6  Shell & Agent tests"
+cargo test --release --test shell_and_agent_tests 2>&1 | tail -1
+ok "shell & agent tests"
 
 # -----------------------------------------------------------------------
 step "5/6  Release binary"

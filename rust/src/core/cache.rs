@@ -15,6 +15,7 @@ fn max_cache_tokens() -> usize {
         .unwrap_or(500_000)
 }
 
+/// A cached file read: content, hash, token count, and access metadata.
 #[derive(Clone, Debug)]
 pub struct CacheEntry {
     pub content: String,
@@ -26,6 +27,7 @@ pub struct CacheEntry {
     pub last_access: Instant,
 }
 
+/// Result of a cache store operation, indicating whether it was a hit or new entry.
 #[derive(Debug, Clone)]
 pub struct StoreResult {
     pub line_count: usize,
@@ -35,6 +37,7 @@ pub struct StoreResult {
 }
 
 impl CacheEntry {
+    /// Computes a legacy eviction score blending recency, frequency, and size.
     pub fn eviction_score_legacy(&self, now: Instant) -> f64 {
         let elapsed = now
             .checked_duration_since(self.last_access)
@@ -112,6 +115,7 @@ pub fn eviction_scores_rrf(entries: &[(&String, &CacheEntry)], now: Instant) -> 
         .collect()
 }
 
+/// Aggregated cache statistics: hits, reads, and token savings.
 #[derive(Debug)]
 pub struct CacheStats {
     pub total_reads: u64,
@@ -122,6 +126,7 @@ pub struct CacheStats {
 }
 
 impl CacheStats {
+    /// Returns the cache hit rate as a percentage (0–100).
     pub fn hit_rate(&self) -> f64 {
         if self.total_reads == 0 {
             return 0.0;
@@ -129,11 +134,13 @@ impl CacheStats {
         (self.cache_hits as f64 / self.total_reads as f64) * 100.0
     }
 
+    /// Returns the total number of tokens saved by cache hits.
     pub fn tokens_saved(&self) -> u64 {
         self.total_original_tokens
             .saturating_sub(self.total_sent_tokens)
     }
 
+    /// Returns the savings as a percentage of total original tokens.
     pub fn savings_percent(&self) -> f64 {
         if self.total_original_tokens == 0 {
             return 0.0;
@@ -152,6 +159,7 @@ pub struct SharedBlock {
     pub content: String,
 }
 
+/// In-memory file cache with RRF-based eviction, file references, and cross-file dedup.
 pub struct SessionCache {
     entries: HashMap<String, CacheEntry>,
     file_refs: HashMap<String, String>,
@@ -167,6 +175,7 @@ impl Default for SessionCache {
 }
 
 impl SessionCache {
+    /// Creates an empty session cache with default stats.
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
@@ -183,6 +192,7 @@ impl SessionCache {
         }
     }
 
+    /// Returns or assigns a short file reference label (F1, F2, ...) for the given path.
     pub fn get_file_ref(&mut self, path: &str) -> String {
         let key = normalize_key(path);
         if let Some(r) = self.file_refs.get(&key) {
@@ -194,14 +204,17 @@ impl SessionCache {
         r
     }
 
+    /// Returns the file reference label for a path without assigning a new one.
     pub fn get_file_ref_readonly(&self, path: &str) -> Option<String> {
         self.file_refs.get(&normalize_key(path)).cloned()
     }
 
+    /// Looks up a cached entry by file path.
     pub fn get(&self, path: &str) -> Option<&CacheEntry> {
         self.entries.get(&normalize_key(path))
     }
 
+    /// Records a cache hit, updates access stats, and emits a cache-hit event.
     pub fn record_cache_hit(&mut self, path: &str) -> Option<&CacheEntry> {
         let key = normalize_key(path);
         let ref_label = self
@@ -227,6 +240,7 @@ impl SessionCache {
         }
     }
 
+    /// Stores file content in the cache; returns a hit if content hash matches.
     pub fn store(&mut self, path: &str, content: String) -> StoreResult {
         let key = normalize_key(path);
         let hash = compute_md5(&content);
@@ -294,6 +308,7 @@ impl SessionCache {
         }
     }
 
+    /// Returns the sum of original token counts across all cached entries.
     pub fn total_cached_tokens(&self) -> usize {
         self.entries.values().map(|e| e.original_tokens).sum()
     }
@@ -324,22 +339,27 @@ impl SessionCache {
         }
     }
 
+    /// Returns all cached entries as (path, entry) pairs.
     pub fn get_all_entries(&self) -> Vec<(&String, &CacheEntry)> {
         self.entries.iter().collect()
     }
 
+    /// Returns a reference to the aggregated cache statistics.
     pub fn get_stats(&self) -> &CacheStats {
         &self.stats
     }
 
+    /// Returns the path-to-file-ref mapping (e.g. "/src/main.rs" → "F1").
     pub fn file_ref_map(&self) -> &HashMap<String, String> {
         &self.file_refs
     }
 
+    /// Replaces the cross-file shared blocks used for deduplication.
     pub fn set_shared_blocks(&mut self, blocks: Vec<SharedBlock>) {
         self.shared_blocks = blocks;
     }
 
+    /// Returns the current set of cross-file shared blocks.
     pub fn get_shared_blocks(&self) -> &[SharedBlock] {
         &self.shared_blocks
     }
@@ -371,10 +391,12 @@ impl SessionCache {
         Some(result)
     }
 
+    /// Removes a file from the cache, forcing a fresh read on next access.
     pub fn invalidate(&mut self, path: &str) -> bool {
         self.entries.remove(&normalize_key(path)).is_some()
     }
 
+    /// Clears all cached entries, file refs, and resets stats. Returns the number of entries removed.
     pub fn clear(&mut self) -> usize {
         let count = self.entries.len();
         self.entries.clear();

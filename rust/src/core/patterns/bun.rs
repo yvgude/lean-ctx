@@ -55,9 +55,9 @@ fn compress_test(output: &str) -> String {
             failures.push(plain.clone());
         }
         if (plain.contains("Ran") || plain.contains("Done"))
-            && (plain.contains("ms") || plain.contains("s"))
+            && (plain.contains("ms") || plain.contains('s'))
         {
-            time = plain.clone();
+            time.clone_from(&plain);
         }
     }
 
@@ -94,8 +94,8 @@ fn compress_install(output: &str) -> String {
         if plain.contains("removed") || plain.starts_with('-') {
             removed += 1;
         }
-        if plain.contains("done") && (plain.contains("ms") || plain.contains("s")) {
-            time = plain.clone();
+        if plain.contains("done") && (plain.contains("ms") || plain.contains('s')) {
+            time.clone_from(&plain);
         }
     }
 

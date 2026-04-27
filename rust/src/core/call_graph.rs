@@ -38,9 +38,8 @@ impl CallGraph {
 
         for rel_path in index.files.keys() {
             let abs_path = resolve_path(rel_path, project_root);
-            let content = match std::fs::read_to_string(&abs_path) {
-                Ok(c) => c,
-                Err(_) => continue,
+            let Ok(content) = std::fs::read_to_string(&abs_path) else {
+                continue;
             };
 
             let hash = simple_hash(&content);
@@ -75,17 +74,12 @@ impl CallGraph {
 
         for rel_path in index.files.keys() {
             let abs_path = resolve_path(rel_path, project_root);
-            let content = match std::fs::read_to_string(&abs_path) {
-                Ok(c) => c,
-                Err(_) => continue,
+            let Ok(content) = std::fs::read_to_string(&abs_path) else {
+                continue;
             };
 
             let hash = simple_hash(&content);
-            let changed = previous
-                .file_hashes
-                .get(rel_path)
-                .map(|old| old != &hash)
-                .unwrap_or(true);
+            let changed = previous.file_hashes.get(rel_path) != Some(&hash);
 
             graph.file_hashes.insert(rel_path.clone(), hash);
 
@@ -178,9 +172,8 @@ fn group_symbols_by_file(index: &ProjectIndex) -> HashMap<&str, Vec<&SymbolEntry
 }
 
 fn find_enclosing_symbol(file_symbols: Option<&Vec<&SymbolEntry>>, line: usize) -> String {
-    let syms = match file_symbols {
-        Some(s) => s,
-        None => return "<module>".to_string(),
+    let Some(syms) = file_symbols else {
+        return "<module>".to_string();
     };
 
     let mut best: Option<&SymbolEntry> = None;
@@ -199,8 +192,7 @@ fn find_enclosing_symbol(file_symbols: Option<&Vec<&SymbolEntry>>, line: usize) 
         }
     }
 
-    best.map(|s| s.name.clone())
-        .unwrap_or_else(|| "<module>".to_string())
+    best.map_or_else(|| "<module>".to_string(), |s| s.name.clone())
 }
 
 fn resolve_path(relative: &str, project_root: &str) -> String {

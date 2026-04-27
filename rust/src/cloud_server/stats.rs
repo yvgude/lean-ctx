@@ -91,7 +91,7 @@ async fn upsert_daily(
     let client = state.pool.get().await.map_err(internal_error)?;
     client
         .execute(
-            r#"
+            r"
 INSERT INTO stats_daily
   (user_id, date, tokens_original, tokens_compressed, tokens_saved, tool_calls, cache_hits, cache_misses, updated_at)
 VALUES
@@ -105,7 +105,7 @@ DO UPDATE SET
   cache_hits=EXCLUDED.cache_hits,
   cache_misses=EXCLUDED.cache_misses,
   updated_at=NOW()
-"#,
+",
             &[
                 &user_id,
                 &date,

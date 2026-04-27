@@ -136,9 +136,8 @@ pub fn semantic_recall<'a>(
     query: &str,
     top_k: usize,
 ) -> Vec<ScoredFact<'a>> {
-    let query_embedding = match engine.embed(query) {
-        Ok(e) => e,
-        Err(_) => return lexical_fallback(knowledge, query, top_k),
+    let Ok(query_embedding) = engine.embed(query) else {
+        return lexical_fallback(knowledge, query, top_k);
     };
 
     let semantic_hits = index.semantic_search(&query_embedding, top_k * 2);

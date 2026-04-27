@@ -6,6 +6,7 @@ use crate::core::embeddings::EmbeddingEngine;
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::session::SessionState;
 
+/// Dispatches knowledge base actions (remember, recall, pattern, timeline, etc.).
 #[allow(clippy::too_many_arguments)]
 pub fn handle(
     project_root: &str,
@@ -44,13 +45,12 @@ pub fn handle(
 fn embeddings_auto_download_allowed() -> bool {
     std::env::var("LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD")
         .ok()
-        .map(|v| {
+        .is_some_and(|v| {
             matches!(
                 v.trim().to_lowercase().as_str(),
                 "1" | "true" | "yes" | "on"
             )
         })
-        .unwrap_or(false)
 }
 
 #[cfg(feature = "embeddings")]
@@ -78,8 +78,7 @@ fn handle_embeddings_status(project_root: &str) -> String {
         let entries = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
             &knowledge.project_hash,
         )
-        .map(|i| i.entries.len())
-        .unwrap_or(0);
+        .map_or(0, |i| i.entries.len());
 
         let path = crate::core::data_dir::lean_ctx_data_dir()
             .ok()
@@ -88,8 +87,7 @@ fn handle_embeddings_status(project_root: &str) -> String {
                     .join(&knowledge.project_hash)
                     .join("embeddings.json")
             })
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "<unknown>".to_string());
+            .map_or_else(|| "<unknown>".to_string(), |p| p.display().to_string());
 
         format!(
             "Knowledge embeddings: model={}, auto_download={}, index_entries={}, path={path}",
@@ -128,17 +126,13 @@ fn handle_embeddings_reset(project_root: &str) -> String {
 fn handle_embeddings_reindex(project_root: &str) -> String {
     #[cfg(feature = "embeddings")]
     {
-        let knowledge = match ProjectKnowledge::load(project_root) {
-            Some(k) => k,
-            None => return "No knowledge stored for this project yet.".to_string(),
+        let Some(knowledge) = ProjectKnowledge::load(project_root) else {
+            return "No knowledge stored for this project yet.".to_string();
         };
 
-        let engine = match embedding_engine() {
-            Some(e) => e,
-            None => {
-                return "Embeddings model not available. Set LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD=1 to allow auto-download, then re-run."
-                    .to_string()
-            }
+        let Some(engine) = embedding_engine() else {
+            return "Embeddings model not available. Set LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD=1 to allow auto-download, then re-run."
+                    .to_string();
         };
 
         let mut idx =
@@ -192,17 +186,14 @@ fn handle_remember(
     session_id: &str,
     confidence: Option<f32>,
 ) -> String {
-    let cat = match category {
-        Some(c) => c,
-        None => return "Error: category is required for remember".to_string(),
+    let Some(cat) = category else {
+        return "Error: category is required for remember".to_string();
     };
-    let k = match key {
-        Some(k) => k,
-        None => return "Error: key is required for remember".to_string(),
+    let Some(k) = key else {
+        return "Error: key is required for remember".to_string();
     };
-    let v = match value {
-        Some(v) => v,
-        None => return "Error: value is required for remember".to_string(),
+    let Some(v) = value else {
+        return "Error: value is required for remember".to_string();
     };
     let conf = confidence.unwrap_or(0.8);
     let mut knowledge = ProjectKnowledge::load_or_create(project_root);
@@ -258,9 +249,8 @@ fn handle_recall(
     query: Option<&str>,
     session_id: &str,
 ) -> String {
-    let mut knowledge = match ProjectKnowledge::load(project_root) {
-        Some(k) => k,
-        None => return "No knowledge stored for this project yet.".to_string(),
+    let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
+        return "No knowledge stored for this project yet.".to_string();
     };
 
     if let Some(cat) = category {
@@ -380,7 +370,7 @@ fn rehydrate_from_archives(
         .to_lowercase()
         .split_whitespace()
         .filter(|t| !t.is_empty())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     #[derive(Clone)]
@@ -396,9 +386,8 @@ fn rehydrate_from_archives(
 
     for p in &archives {
         let p_str = p.to_string_lossy().to_string();
-        let facts = match crate::core::memory_lifecycle::restore_archive(&p_str) {
-            Ok(f) => f,
-            Err(_) => continue,
+        let Ok(facts) = crate::core::memory_lifecycle::restore_archive(&p_str) else {
+            continue;
         };
         for f in facts {
             if let Some(cat) = category {
@@ -406,7 +395,15 @@ fn rehydrate_from_archives(
                     continue;
                 }
             }
-            if !terms.is_empty() {
+            if terms.is_empty() {
+                cands.push(Cand {
+                    category: f.category,
+                    key: f.key,
+                    value: f.value,
+                    confidence: f.confidence,
+                    score: f.confidence,
+                });
+            } else {
                 let searchable = format!(
                     "{} {} {} {}",
                     f.category.to_lowercase(),
@@ -426,14 +423,6 @@ fn rehydrate_from_archives(
                     value: f.value,
                     confidence: f.confidence,
                     score,
-                });
-            } else {
-                cands.push(Cand {
-                    category: f.category,
-                    key: f.key,
-                    value: f.value,
-                    confidence: f.confidence,
-                    score: f.confidence,
                 });
             }
         }
@@ -482,13 +471,11 @@ fn handle_pattern(
     examples: Option<Vec<String>>,
     session_id: &str,
 ) -> String {
-    let pt = match pattern_type {
-        Some(p) => p,
-        None => return "Error: pattern_type is required".to_string(),
+    let Some(pt) = pattern_type else {
+        return "Error: pattern_type is required".to_string();
     };
-    let desc = match value {
-        Some(v) => v,
-        None => return "Error: value (description) is required for pattern".to_string(),
+    let Some(desc) = value else {
+        return "Error: value (description) is required for pattern".to_string();
     };
     let exs = examples.unwrap_or_default();
     let mut knowledge = ProjectKnowledge::load_or_create(project_root);
@@ -500,11 +487,8 @@ fn handle_pattern(
 }
 
 fn handle_status(project_root: &str) -> String {
-    let knowledge = match ProjectKnowledge::load(project_root) {
-        Some(k) => k,
-        None => {
-            return "No knowledge stored for this project yet. Use ctx_knowledge(action=\"remember\") to start.".to_string();
-        }
+    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
+        return "No knowledge stored for this project yet. Use ctx_knowledge(action=\"remember\") to start.".to_string();
     };
 
     let current_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
@@ -535,13 +519,11 @@ fn handle_status(project_root: &str) -> String {
 }
 
 fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) -> String {
-    let cat = match category {
-        Some(c) => c,
-        None => return "Error: category is required for remove".to_string(),
+    let Some(cat) = category else {
+        return "Error: category is required for remove".to_string();
     };
-    let k = match key {
-        Some(k) => k,
-        None => return "Error: key is required for remove".to_string(),
+    let Some(k) = key else {
+        return "Error: key is required for remove".to_string();
     };
     let mut knowledge = ProjectKnowledge::load_or_create(project_root);
     if knowledge.remove_fact(cat, k) {
@@ -568,9 +550,8 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
 }
 
 fn handle_export(project_root: &str) -> String {
-    let knowledge = match ProjectKnowledge::load(project_root) {
-        Some(k) => k,
-        None => return "No knowledge to export.".to_string(),
+    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
+        return "No knowledge to export.".to_string();
     };
     let data_dir = match crate::core::data_dir::lean_ctx_data_dir() {
         Ok(d) => d,
@@ -604,9 +585,8 @@ fn handle_export(project_root: &str) -> String {
 }
 
 fn handle_consolidate(project_root: &str) -> String {
-    let session = match SessionState::load_latest() {
-        Some(s) => s,
-        None => return "No active session to consolidate.".to_string(),
+    let Some(session) = SessionState::load_latest() else {
+        return "No active session to consolidate.".to_string();
     };
 
     let mut knowledge = ProjectKnowledge::load_or_create(project_root);
@@ -643,8 +623,7 @@ fn handle_consolidate(project_root: &str) -> String {
     let task_desc = session
         .task
         .as_ref()
-        .map(|t| t.description.clone())
-        .unwrap_or_else(|| "(no task)".into());
+        .map_or_else(|| "(no task)".into(), |t| t.description.clone());
 
     let summary = format!(
         "Session {}: {} — {} findings, {} decisions consolidated",
@@ -670,14 +649,12 @@ fn handle_consolidate(project_root: &str) -> String {
 }
 
 fn handle_timeline(project_root: &str, category: Option<&str>) -> String {
-    let knowledge = match ProjectKnowledge::load(project_root) {
-        Some(k) => k,
-        None => return "No knowledge stored yet.".to_string(),
+    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
+        return "No knowledge stored yet.".to_string();
     };
 
-    let cat = match category {
-        Some(c) => c,
-        None => return "Error: category is required for timeline".to_string(),
+    let Some(cat) = category else {
+        return "Error: category is required for timeline".to_string();
     };
 
     let facts = knowledge.timeline(cat);
@@ -734,9 +711,8 @@ fn handle_timeline(project_root: &str, category: Option<&str>) -> String {
 }
 
 fn handle_rooms(project_root: &str) -> String {
-    let knowledge = match ProjectKnowledge::load(project_root) {
-        Some(k) => k,
-        None => return "No knowledge stored yet.".to_string(),
+    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
+        return "No knowledge stored yet.".to_string();
     };
 
     let rooms = knowledge.list_rooms();
@@ -762,14 +738,12 @@ fn handle_rooms(project_root: &str) -> String {
 }
 
 fn handle_search(query: Option<&str>) -> String {
-    let q = match query {
-        Some(q) => q,
-        None => return "Error: query is required for search".to_string(),
+    let Some(q) = query else {
+        return "Error: query is required for search".to_string();
     };
 
-    let data_dir = match crate::core::data_dir::lean_ctx_data_dir() {
-        Ok(d) => d,
-        Err(_) => return "Cannot determine data directory.".to_string(),
+    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+        return "Cannot determine data directory.".to_string();
     };
 
     let sessions_dir = data_dir.join("sessions");
@@ -895,9 +869,8 @@ fn handle_search(query: Option<&str>) -> String {
 }
 
 fn handle_wakeup(project_root: &str) -> String {
-    let knowledge = match ProjectKnowledge::load(project_root) {
-        Some(k) => k,
-        None => return "No knowledge for wake-up briefing.".to_string(),
+    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
+        return "No knowledge for wake-up briefing.".to_string();
     };
     let aaak = knowledge.format_aaak();
     if aaak.is_empty() {
@@ -976,7 +949,7 @@ fn format_facts(
         ));
     }
     for f in facts {
-        let temporal = if !f.is_current() { " [archived]" } else { "" };
+        let temporal = if f.is_current() { "" } else { " [archived]" };
         out.push_str(&format!(
             "  [{}/{}]: {} (confidence: {:.0}%, confirmed: {} x{}){temporal}\n",
             f.category,
@@ -1033,8 +1006,7 @@ fn salience_score(f: &crate::core::knowledge::KnowledgeFact) -> u32 {
         "gotcha" => 75,
         "architecture" | "arch" => 60,
         "security" => 65,
-        "testing" | "tests" => 55,
-        "deployment" | "deploy" => 55,
+        "testing" | "tests" | "deployment" | "deploy" => 55,
         "conventions" | "convention" => 45,
         "finding" => 40,
         _ => 30,
@@ -1043,19 +1015,16 @@ fn salience_score(f: &crate::core::knowledge::KnowledgeFact) -> u32 {
     let confidence_bonus = (f.confidence.clamp(0.0, 1.0) * 30.0) as u32;
     let confirmation_bonus = f.confirmation_count.min(15);
     let retrieval_bonus = ((f.retrieval_count as f32).ln_1p() * 8.0).min(20.0) as u32;
-    let recency_bonus = f
-        .last_retrieved
-        .map(|t| {
-            let days = chrono::Utc::now().signed_duration_since(t).num_days();
-            if days <= 7 {
-                10u32
-            } else if days <= 30 {
-                5u32
-            } else {
-                0u32
-            }
-        })
-        .unwrap_or(0u32);
+    let recency_bonus = f.last_retrieved.map_or(0u32, |t| {
+        let days = chrono::Utc::now().signed_duration_since(t).num_days();
+        if days <= 7 {
+            10u32
+        } else if days <= 30 {
+            5u32
+        } else {
+            0u32
+        }
+    });
 
     base + confidence_bonus + confirmation_bonus + retrieval_bonus + recency_bonus
 }

@@ -3,7 +3,7 @@ use chrono::Utc;
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::session::SessionState;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ConsolidationBudgets {
     pub max_decisions: usize,
     pub max_findings: usize,
@@ -78,8 +78,7 @@ pub fn consolidate_latest(
     let task_desc = session
         .task
         .as_ref()
-        .map(|t| t.description.clone())
-        .unwrap_or_else(|| "(no task)".into());
+        .map_or_else(|| "(no task)".into(), |t| t.description.clone());
     let summary = format!(
         "consolidate@{} session={} task=\"{}\" decisions={} findings={}",
         Utc::now().format("%Y-%m-%d"),

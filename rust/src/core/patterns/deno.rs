@@ -82,7 +82,7 @@ fn compress_lint(output: &str) -> String {
     let mut issues = Vec::new();
     for line in output.lines() {
         let trimmed = line.trim();
-        if trimmed.contains("(") && (trimmed.contains("warning") || trimmed.contains("error")) {
+        if trimmed.contains('(') && (trimmed.contains("warning") || trimmed.contains("error")) {
             issues.push(trimmed.to_string());
         }
     }

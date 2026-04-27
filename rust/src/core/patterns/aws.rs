@@ -129,7 +129,10 @@ fn compress_lambda_list(output: &str) -> String {
                         .and_then(|v| v.as_str())
                         .unwrap_or("?");
                     let runtime = f.get("Runtime").and_then(|v| v.as_str()).unwrap_or("?");
-                    let mem = f.get("MemorySize").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let mem = f
+                        .get("MemorySize")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0);
                     format!("  {name} ({runtime}, {mem}MB)")
                 })
                 .collect();

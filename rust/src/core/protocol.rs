@@ -41,6 +41,7 @@ fn is_project_root_marker(dir: &Path) -> bool {
     MARKERS.iter().any(|m| dir.join(m).exists())
 }
 
+/// Returns the project root for `file_path`, falling back to cwd if none found.
 pub fn detect_project_root_or_cwd(file_path: &str) -> String {
     detect_project_root(file_path).unwrap_or_else(|| {
         let p = Path::new(file_path);
@@ -54,11 +55,11 @@ pub fn detect_project_root_or_cwd(file_path: &str) -> String {
             return file_path.to_string();
         }
         std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| ".".to_string())
+            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
     })
 }
 
+/// Returns the file name component of a path for compact display.
 pub fn shorten_path(path: &str) -> String {
     let p = Path::new(path);
     if let Some(name) = p.file_name() {
@@ -67,6 +68,7 @@ pub fn shorten_path(path: &str) -> String {
     path.to_string()
 }
 
+/// Formats a token savings summary like `[42 tok saved (30%)]`.
 pub fn format_savings(original: usize, compressed: usize) -> String {
     let saved = original.saturating_sub(compressed);
     if original == 0 {
@@ -157,6 +159,7 @@ fn is_banner_line(line: &str) -> bool {
     false
 }
 
+/// A terse instruction code and its human-readable expansion.
 pub struct InstructionTemplate {
     pub code: &'static str,
     pub full: &'static str,
@@ -225,6 +228,7 @@ const TEMPLATES: &[InstructionTemplate] = &[
     },
 ];
 
+/// Generates the INSTRUCTION CODES block for agent system prompts.
 pub fn instruction_decoder_block() -> String {
     let pairs: Vec<String> = TEMPLATES
         .iter()

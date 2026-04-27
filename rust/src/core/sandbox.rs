@@ -17,17 +17,14 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
     let timeout = timeout_secs.unwrap_or(TIMEOUT_SECS);
     let start = std::time::Instant::now();
 
-    let runtime = match resolve_runtime(language) {
-        Some(r) => r,
-        None => {
-            return SandboxResult {
+    let Some(runtime) = resolve_runtime(language) else {
+        return SandboxResult {
                 stdout: String::new(),
                 stderr: format!("Unsupported language: {language}. Supported: javascript, typescript, python, shell, ruby, go, rust, php, perl, r, elixir"),
                 exit_code: 1,
                 language: language.to_string(),
                 duration_ms: 0,
             };
-        }
     };
 
     let result = if runtime.needs_temp_file {
@@ -486,7 +483,7 @@ mod tests {
             None,
         );
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("1"));
+        assert!(result.stdout.contains('1'));
     }
 
     #[test]
@@ -498,7 +495,7 @@ mod tests {
         ];
         let results = batch_execute(&items);
         assert_eq!(results.len(), 2);
-        assert!(results[0].stdout.contains("2"));
+        assert!(results[0].stdout.contains('2'));
         assert!(results[1].stdout.contains("hello"));
     }
 }

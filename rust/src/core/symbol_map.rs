@@ -2,6 +2,15 @@ use std::collections::HashMap;
 
 use crate::core::tokens::count_tokens;
 
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
+
 const MIN_IDENT_LENGTH: usize = 6;
 const SHORT_ID_PREFIX: char = 'α';
 
@@ -110,7 +119,7 @@ pub fn should_register(identifier: &str, occurrences: usize, next_id: usize) -> 
 }
 
 pub fn extract_identifiers(content: &str, ext: &str) -> Vec<String> {
-    let ident_re = regex::Regex::new(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b").unwrap();
+    let ident_re = static_regex!(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b");
 
     let mut seen = HashMap::new();
     for mat in ident_re.find_iter(content) {

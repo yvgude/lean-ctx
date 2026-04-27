@@ -70,9 +70,9 @@ pub async fn post_gain(
         if existing.is_none() {
             client
                 .execute(
-                    r#"INSERT INTO gain_scores
+                    r"INSERT INTO gain_scores
                        (id, user_id, recorded_at, total, compression, cost_efficiency, quality, consistency, trend, avoided_usd, tool_spend_usd, model_key)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)"#,
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
                     &[
                         &Uuid::new_v4(),
                         &user_id,
@@ -106,11 +106,11 @@ pub async fn get_gain(
 
     let rows = client
         .query(
-            r#"SELECT recorded_at, total, compression, cost_efficiency, quality, consistency, trend, avoided_usd, tool_spend_usd, model_key
+            r"SELECT recorded_at, total, compression, cost_efficiency, quality, consistency, trend, avoided_usd, tool_spend_usd, model_key
                FROM gain_scores
                WHERE user_id = $1
                ORDER BY recorded_at DESC
-               LIMIT 500"#,
+               LIMIT 500",
             &[&user_id],
         )
         .await

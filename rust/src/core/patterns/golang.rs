@@ -1,24 +1,23 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static GO_TEST_RESULT_RE: OnceLock<Regex> = OnceLock::new();
-static GO_BENCH_RE: OnceLock<Regex> = OnceLock::new();
-static GOLINT_RE: OnceLock<Regex> = OnceLock::new();
-static GO_BUILD_ERROR_RE: OnceLock<Regex> = OnceLock::new();
-
-fn go_test_result_re() -> &'static Regex {
-    GO_TEST_RESULT_RE.get_or_init(|| Regex::new(r"^(ok|FAIL)\s+(\S+)\s+(\S+)").unwrap())
+fn go_test_result_re() -> &'static regex::Regex {
+    static_regex!(r"^(ok|FAIL)\s+(\S+)\s+(\S+)")
 }
-fn go_bench_re() -> &'static Regex {
-    GO_BENCH_RE.get_or_init(|| {
-        Regex::new(r"^Benchmark(\S+)\s+(\d+)\s+(\d+\.?\d*)\s*(ns|µs|ms)/op").unwrap()
-    })
+fn go_bench_re() -> &'static regex::Regex {
+    static_regex!(r"^Benchmark(\S+)\s+(\d+)\s+(\d+\.?\d*)\s*(ns|µs|ms)/op")
 }
-fn golint_re() -> &'static Regex {
-    GOLINT_RE.get_or_init(|| Regex::new(r"^(.+?):(\d+):(\d+):\s+(.+?)\s+\((.+?)\)$").unwrap())
+fn golint_re() -> &'static regex::Regex {
+    static_regex!(r"^(.+?):(\d+):(\d+):\s+(.+?)\s+\((.+?)\)$")
 }
-fn go_build_error_re() -> &'static Regex {
-    GO_BUILD_ERROR_RE.get_or_init(|| Regex::new(r"^(.+?):(\d+):(\d+):\s+(.+)$").unwrap())
+fn go_build_error_re() -> &'static regex::Regex {
+    static_regex!(r"^(.+?):(\d+):(\d+):\s+(.+)$")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {

@@ -75,8 +75,7 @@ fn lean_ctx_version_from_path() -> Outcome {
     let v = env!("CARGO_PKG_VERSION");
     let note = match std::env::current_exe() {
         Ok(exe) if exe == bin => format!("{DIM}(this binary){RST}"),
-        Ok(_) => format!("{DIM}(resolved: {}){RST}", bin.display()),
-        Err(_) => format!("{DIM}(resolved: {}){RST}", bin.display()),
+        Ok(_) | Err(_) => format!("{DIM}(resolved: {}){RST}", bin.display()),
     };
     Outcome {
         ok: true,
@@ -132,16 +131,11 @@ fn is_active_shell(rc_name: &str) -> bool {
 }
 
 fn shell_aliases_outcome() -> Outcome {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            return Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Shell aliases{RST}  {RED}could not resolve home directory{RST}"
-                ),
-            };
-        }
+    let Some(home) = dirs::home_dir() else {
+        return Outcome {
+            ok: false,
+            line: format!("{BOLD}Shell aliases{RST}  {RED}could not resolve home directory{RST}"),
+        };
     };
 
     let mut parts = Vec::new();
@@ -417,14 +411,11 @@ fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
 }
 
 fn mcp_config_outcome() -> Outcome {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            return Outcome {
-                ok: false,
-                line: format!("{BOLD}MCP config{RST}  {RED}could not resolve home directory{RST}"),
-            };
-        }
+    let Some(home) = dirs::home_dir() else {
+        return Outcome {
+            ok: false,
+            line: format!("{BOLD}MCP config{RST}  {RED}could not resolve home directory{RST}"),
+        };
     };
 
     let locations = mcp_config_locations(&home);
@@ -527,8 +518,7 @@ fn pi_outcome() -> Option<Outcome> {
             let has_mcp = dirs::home_dir()
                 .map(|h| h.join(".pi/agent/mcp.json"))
                 .and_then(|p| std::fs::read_to_string(p).ok())
-                .map(|c| c.contains("lean-ctx"))
-                .unwrap_or(false);
+                .is_some_and(|c| c.contains("lean-ctx"));
 
             if has_plugin && has_mcp {
                 Some(Outcome {
@@ -591,9 +581,10 @@ fn docker_env_outcomes() -> Vec<Outcome> {
     if !crate::shell::is_container() {
         return vec![];
     }
-    let env_sh = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.join("env.sh").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "/root/.lean-ctx/env.sh".to_string());
+    let env_sh = crate::core::data_dir::lean_ctx_data_dir().map_or_else(
+        |_| "/root/.lean-ctx/env.sh".to_string(),
+        |d| d.join("env.sh").to_string_lossy().to_string(),
+    );
 
     let mut outcomes = vec![];
 
@@ -716,21 +707,31 @@ pub fn run() {
         Some(m) if m.is_file() => {
             passed += 1;
             let size = m.len();
+            let path_display = if let Some(p) = stats_path.as_ref() {
+                p.display().to_string()
+            } else {
+                String::new()
+            };
             Outcome {
                 ok: true,
                 line: format!(
-                    "{BOLD}stats.json{RST}  {GREEN}exists{RST}  {WHITE}{size} bytes{RST}  {DIM}{}{RST}",
-                    stats_path.as_ref().unwrap().display()
+                    "{BOLD}stats.json{RST}  {GREEN}exists{RST}  {WHITE}{size} bytes{RST}  {DIM}{path_display}{RST}",
                 ),
             }
         }
-        Some(_m) => Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}stats.json{RST}  {RED}not a file{RST}  {DIM}{}{RST}",
-                stats_path.as_ref().unwrap().display()
-            ),
-        },
+        Some(_m) => {
+            let path_display = if let Some(p) = stats_path.as_ref() {
+                p.display().to_string()
+            } else {
+                String::new()
+            };
+            Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}stats.json{RST}  {RED}not a file{RST}  {DIM}{path_display}{RST}",
+                ),
+            }
+        }
         None => {
             passed += 1;
             Outcome {
@@ -1007,10 +1008,10 @@ pub fn run_cli(args: &[String]) -> i32 {
         return 0;
     }
 
-    match run_fix(DoctorFixOptions { json }) {
+    match run_fix(&DoctorFixOptions { json }) {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("{RED}doctor --fix failed:{RST} {e}");
+            tracing::error!("doctor --fix failed: {e}");
             2
         }
     }
@@ -1020,7 +1021,7 @@ struct DoctorFixOptions {
     json: bool,
 }
 
-fn run_fix(opts: DoctorFixOptions) -> Result<i32, String> {
+fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     use crate::core::setup_report::{
         doctor_report_path, PlatformInfo, SetupItem, SetupReport, SetupStepReport,
     };
@@ -1224,7 +1225,7 @@ fn run_fix(opts: DoctorFixOptions) -> Result<i32, String> {
         println!("  {DIM}report saved:{RST} {}", path.display());
     }
 
-    Ok(if report.success { 0 } else { 1 })
+    Ok(i32::from(!report.success))
 }
 
 pub fn compact_score() -> (u32, u32) {

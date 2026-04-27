@@ -8,7 +8,7 @@
              Context Runtime for AI Agents
 ```
 
-<h3 align="center">Reduce Claude Code, Cursor & Copilot Token Costs by 99% — Open Source MCP Server</h3>
+<h3 align="center">Reduce Claude Code, Cursor & Copilot Token Costs by 60-95% — Open Source MCP Server</h3>
 
 <p align="center">
   <strong>Shell Hook + Context Server · 46 tools · 10 read modes · 90+ patterns · Single Rust binary</strong>
@@ -42,7 +42,7 @@
 
 <br>
 
-> **lean-ctx** reduces LLM token consumption by **up to 99%** through three complementary strategies in a single binary — making AI coding faster, cheaper, and more effective.
+> **lean-ctx** reduces LLM token consumption by **60-95%** through three complementary strategies in a single binary — making AI coding faster, cheaper, and more effective. Cached re-reads drop to **~13 tokens (99% savings)**.
 
 <br>
 
@@ -72,18 +72,18 @@
 
 ## 🎯 Token Savings — Real Numbers
 
-| Operation | Freq | Without | With lean-ctx | Saved |
-|:---|:---:|---:|---:|:---:|
-| File reads (cached) | 15× | 30,000 | 195 | **99%** |
-| File reads (map mode) | 10× | 20,000 | 2,000 | **90%** |
-| ls / find | 8× | 6,400 | 1,280 | **80%** |
-| git status/log/diff | 10× | 8,000 | 2,400 | **70%** |
-| grep / rg | 5× | 8,000 | 2,400 | **70%** |
-| cargo/npm build | 5× | 5,000 | 1,000 | **80%** |
-| Test runners | 4× | 10,000 | 1,000 | **90%** |
-| curl (JSON) | 3× | 1,500 | 165 | **89%** |
-| docker ps/build | 3× | 900 | 180 | **80%** |
-| **Session total** | | **~89,800** | **~10,620** | **88%** |
+| Operation | Mode | Freq | Without | With lean-ctx | Saved |
+|:---|:---|:---:|---:|---:|:---:|
+| File reads (cached) | Cache hit | 15× | 30,000 | 195 | **99%** |
+| File reads (map mode) | MCP tool | 10× | 20,000 | 2,000 | **90%** |
+| ls / find | Shell hook | 8× | 6,400 | 1,280 | **80%** |
+| git status/log/diff | Shell hook | 10× | 8,000 | 2,400 | **70%** |
+| grep / rg | Shell hook | 5× | 8,000 | 2,400 | **70%** |
+| cargo/npm build | Shell hook | 5× | 5,000 | 1,000 | **80%** |
+| Test runners | Shell hook | 4× | 10,000 | 1,000 | **90%** |
+| curl (JSON) | Shell hook | 3× | 1,500 | 165 | **89%** |
+| docker ps/build | Shell hook | 3× | 900 | 180 | **80%** |
+| **Session total** | | | **~89,800** | **~10,620** | **88%** |
 
 > Based on typical Cursor/Claude Code sessions with medium TypeScript/Rust projects. Cached re-reads cost ~13 tokens.
 

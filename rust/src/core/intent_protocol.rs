@@ -175,8 +175,8 @@ pub fn infer_from_tool_call(
                     source: IntentSource::Inferred,
                     intent_type: IntentType::KnowledgeRecall,
                     subject: IntentSubject::KnowledgeQuery {
-                        category: get_str(args, "category").map(|s| s.to_string()),
-                        query: get_str(args, "query").map(|s| s.to_string()),
+                        category: get_str(args, "category").map(std::string::ToString::to_string),
+                        query: get_str(args, "query").map(std::string::ToString::to_string),
                     },
                     assertion: truncate_one_line(get_str(args, "query").unwrap_or(""), 180),
                     confidence: 0.7,
@@ -207,7 +207,7 @@ pub fn infer_from_tool_call(
                 source: IntentSource::Inferred,
                 intent_type: IntentType::Task,
                 subject: IntentSubject::Project {
-                    root: project_root.map(|s| s.to_string()),
+                    root: project_root.map(std::string::ToString::to_string),
                 },
                 assertion: truncate_one_line(&v, 220),
                 confidence: 0.8,
@@ -264,7 +264,7 @@ pub fn intent_from_query(query: &str, project_root: Option<&str>) -> IntentRecor
         source: IntentSource::Explicit,
         intent_type,
         subject: IntentSubject::Project {
-            root: project_root.map(|s| s.to_string()),
+            root: project_root.map(std::string::ToString::to_string),
         },
         assertion,
         confidence,
@@ -329,7 +329,7 @@ fn intent_from_json(
                 assertion,
                 confidence: obj
                     .get("confidence")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.8)
                     .clamp(0.0, 1.0) as f32,
                 evidence_keys: evidence_keys_for("ctx_intent", Some("knowledge_fact")),
@@ -351,12 +351,12 @@ fn intent_from_json(
                 source: IntentSource::Explicit,
                 intent_type: IntentType::Task,
                 subject: IntentSubject::Project {
-                    root: project_root.map(|s| s.to_string()),
+                    root: project_root.map(std::string::ToString::to_string),
                 },
                 assertion: truncate_one_line(&assertion, 220),
                 confidence: obj
                     .get("confidence")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.75)
                     .clamp(0.0, 1.0) as f32,
                 evidence_keys: evidence_keys_for("ctx_intent", Some("task")),

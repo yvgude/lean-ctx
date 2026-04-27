@@ -19,12 +19,9 @@ const AGENT_ALIASES: &[(&str, &str)] = &[
 ];
 
 pub fn install_all(quiet: bool) {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            eprintln!("Cannot resolve home directory");
-            return;
-        }
+    let Some(home) = dirs::home_dir() else {
+        tracing::error!("Cannot resolve home directory");
+        return;
     };
 
     install_zshenv(&home, quiet);
@@ -33,10 +30,7 @@ pub fn install_all(quiet: bool) {
 }
 
 pub fn uninstall_all(quiet: bool) {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return,
-    };
+    let Some(home) = dirs::home_dir() else { return };
 
     marked_block::remove_from_file(
         &home.join(".zshenv"),

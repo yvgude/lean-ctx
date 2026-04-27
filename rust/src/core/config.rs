@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+/// Controls when shell output is tee'd to disk for later retrieval.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TeeMode {
@@ -12,6 +13,7 @@ pub enum TeeMode {
     Always,
 }
 
+/// Controls agent output verbosity level injected into MCP instructions.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TerseAgent {
@@ -23,6 +25,7 @@ pub enum TerseAgent {
 }
 
 impl TerseAgent {
+    /// Reads the terse-agent level from the `LEAN_CTX_TERSE_AGENT` env var.
     pub fn from_env() -> Self {
         match std::env::var("LEAN_CTX_TERSE_AGENT")
             .unwrap_or_default()
@@ -32,11 +35,11 @@ impl TerseAgent {
             "lite" => Self::Lite,
             "full" => Self::Full,
             "ultra" => Self::Ultra,
-            "off" | "0" | "false" => Self::Off,
             _ => Self::Off,
         }
     }
 
+    /// Returns the effective terse level, preferring env var over config value.
     pub fn effective(config_val: &TerseAgent) -> Self {
         match std::env::var("LEAN_CTX_TERSE_AGENT") {
             Ok(val) if !val.is_empty() => match val.to_lowercase().as_str() {
@@ -49,11 +52,13 @@ impl TerseAgent {
         }
     }
 
+    /// Returns `true` if any terse level is enabled (not `Off`).
     pub fn is_active(&self) -> bool {
         !matches!(self, Self::Off)
     }
 }
 
+/// Controls how dense/compact MCP tool output is formatted.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputDensity {
@@ -64,6 +69,7 @@ pub enum OutputDensity {
 }
 
 impl OutputDensity {
+    /// Reads the output density from the `LEAN_CTX_OUTPUT_DENSITY` env var.
     pub fn from_env() -> Self {
         match std::env::var("LEAN_CTX_OUTPUT_DENSITY")
             .unwrap_or_default()
@@ -76,6 +82,7 @@ impl OutputDensity {
         }
     }
 
+    /// Returns the effective density, preferring env var over config value.
     pub fn effective(config_val: &OutputDensity) -> Self {
         let env_val = Self::from_env();
         if env_val != Self::Normal {
@@ -85,6 +92,7 @@ impl OutputDensity {
     }
 }
 
+/// Global lean-ctx configuration loaded from `config.toml`, merged with project-local overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -111,7 +119,7 @@ pub struct Config {
     #[serde(default)]
     pub redirect_exclude: Vec<String>,
     /// Tools to exclude from the MCP tool list returned by list_tools.
-    /// Accepts exact tool names (e.g. ["ctx_graph", "ctx_agent"]).
+    /// Accepts exact tool names (e.g. `["ctx_graph", "ctx_agent"]`).
     /// Empty by default — all tools listed, no behaviour change.
     #[serde(default)]
     pub disabled_tools: Vec<String>,
@@ -123,7 +131,7 @@ pub struct Config {
     #[serde(default)]
     pub rules_scope: Option<String>,
     /// Extra glob patterns to ignore in graph/overview/preload (repo-local).
-    /// Example: ["externals/**", "target/**", "temp/**"]
+    /// Example: `["externals/**", "target/**", "temp/**"]`
     #[serde(default)]
     pub extra_ignore_patterns: Vec<String>,
     /// Controls agent output verbosity via instructions injection.
@@ -157,6 +165,7 @@ pub struct Config {
     pub update_check_disabled: bool,
 }
 
+/// Settings for the zero-loss compression archive (large tool outputs saved to disk).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArchiveConfig {
@@ -204,6 +213,7 @@ fn default_theme() -> String {
     "default".to_string()
 }
 
+/// Controls autonomous background behaviors (preload, dedup, consolidation).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AutonomyConfig {
@@ -235,6 +245,7 @@ impl Default for AutonomyConfig {
 }
 
 impl AutonomyConfig {
+    /// Creates an autonomy config from env vars, falling back to defaults.
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         if let Ok(v) = std::env::var("LEAN_CTX_AUTONOMY") {
@@ -275,6 +286,7 @@ impl AutonomyConfig {
         cfg
     }
 
+    /// Loads autonomy config from disk, with env var overrides applied.
     pub fn load() -> Self {
         let file_cfg = Config::load().autonomy;
         let mut cfg = file_cfg;
@@ -304,6 +316,7 @@ impl AutonomyConfig {
     }
 }
 
+/// Cloud sync and contribution settings (pattern sharing, model pulls).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CloudConfig {
@@ -314,12 +327,14 @@ pub struct CloudConfig {
     pub last_model_pull: Option<String>,
 }
 
+/// A user-defined command alias mapping for shell compression patterns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AliasEntry {
     pub command: String,
     pub alias: String,
 }
 
+/// Thresholds for detecting and throttling repetitive agent tool call loops.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LoopDetectionConfig {
@@ -373,6 +388,7 @@ impl Default for Config {
     }
 }
 
+/// Where agent rule files are installed: global home dir, project-local, or both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RulesScope {
     Both,
@@ -381,6 +397,7 @@ pub enum RulesScope {
 }
 
 impl Config {
+    /// Returns the effective rules scope, preferring env var over config file.
     pub fn rules_scope_effective(&self) -> RulesScope {
         let raw = std::env::var("LEAN_CTX_RULES_SCOPE")
             .ok()
@@ -400,6 +417,7 @@ impl Config {
             .collect()
     }
 
+    /// Returns the effective disabled tools list, preferring env var over config file.
     pub fn disabled_tools_effective(&self) -> Vec<String> {
         if let Ok(val) = std::env::var("LEAN_CTX_DISABLED_TOOLS") {
             Self::parse_disabled_tools_env(&val)
@@ -408,14 +426,17 @@ impl Config {
         }
     }
 
+    /// Returns `true` if minimal overhead is enabled via env var or config.
     pub fn minimal_overhead_effective(&self) -> bool {
         std::env::var("LEAN_CTX_MINIMAL").is_ok() || self.minimal_overhead
     }
 
+    /// Returns `true` if shell hook injection is disabled via env var or config.
     pub fn shell_hook_disabled_effective(&self) -> bool {
         std::env::var("LEAN_CTX_NO_HOOK").is_ok() || self.shell_hook_disabled
     }
 
+    /// Returns `true` if the daily update check is disabled via env var or config.
     pub fn update_check_disabled_effective(&self) -> bool {
         std::env::var("LEAN_CTX_NO_UPDATE_CHECK").is_ok() || self.update_check_disabled
     }
@@ -560,14 +581,14 @@ mod loop_detection_config_tests {
     #[test]
     fn deserialization_from_toml() {
         let cfg: Config = toml::from_str(
-            r#"
+            r"
             [loop_detection]
             normal_threshold = 1
             reduced_threshold = 3
             blocked_threshold = 5
             window_secs = 120
             search_group_limit = 8
-            "#,
+            ",
         )
         .unwrap();
         assert_eq!(cfg.loop_detection.normal_threshold, 1);
@@ -580,10 +601,10 @@ mod loop_detection_config_tests {
     #[test]
     fn partial_override_keeps_defaults() {
         let cfg: Config = toml::from_str(
-            r#"
+            r"
             [loop_detection]
             blocked_threshold = 10
-            "#,
+            ",
         )
         .unwrap();
         assert_eq!(cfg.loop_detection.blocked_threshold, 10);
@@ -593,12 +614,14 @@ mod loop_detection_config_tests {
 }
 
 impl Config {
+    /// Returns the path to the global config file (`~/.lean-ctx/config.toml`).
     pub fn path() -> Option<PathBuf> {
         crate::core::data_dir::lean_ctx_data_dir()
             .ok()
             .map(|d| d.join("config.toml"))
     }
 
+    /// Returns the path to the project-local config override file.
     pub fn local_path(project_root: &str) -> PathBuf {
         PathBuf::from(project_root).join(".lean-ctx.toml")
     }
@@ -610,10 +633,7 @@ impl Config {
             crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
         {
             let root_path = std::path::Path::new(&root);
-            let cwd_is_under_root = cwd
-                .as_ref()
-                .map(|c| c.starts_with(root_path))
-                .unwrap_or(false);
+            let cwd_is_under_root = cwd.as_ref().is_some_and(|c| c.starts_with(root_path));
             let has_marker = root_path.join(".git").exists()
                 || root_path.join("Cargo.toml").exists()
                 || root_path.join("package.json").exists()
@@ -651,12 +671,12 @@ impl Config {
         None
     }
 
+    /// Loads config from disk with caching, merging global + project-local overrides.
     pub fn load() -> Self {
         static CACHE: Mutex<Option<(Config, SystemTime, Option<SystemTime>)>> = Mutex::new(None);
 
-        let path = match Self::path() {
-            Some(p) => p,
-            None => return Self::default(),
+        let Some(path) = Self::path() else {
+            return Self::default();
         };
 
         let local_path = Self::find_project_root().map(|r| Self::local_path(&r));
@@ -803,6 +823,7 @@ impl Config {
         }
     }
 
+    /// Persists the current config to the global config file.
     pub fn save(&self) -> std::result::Result<(), super::error::LeanCtxError> {
         let path = Self::path().ok_or_else(|| {
             super::error::LeanCtxError::Config("cannot determine home directory".into())
@@ -816,10 +837,12 @@ impl Config {
         Ok(())
     }
 
+    /// Formats the current config as a human-readable string with file paths.
     pub fn show(&self) -> String {
-        let global_path = Self::path()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "~/.lean-ctx/config.toml".to_string());
+        let global_path = Self::path().map_or_else(
+            || "~/.lean-ctx/config.toml".to_string(),
+            |p| p.to_string_lossy().to_string(),
+        );
         let content = toml::to_string_pretty(self).unwrap_or_default();
         let mut out = format!("Global config: {global_path}\n\n{content}");
 

@@ -34,21 +34,22 @@ pub async fn start(port: Option<u16>, host: Option<String>) {
         return;
     }
 
-    let token = if !is_local {
+    let token = if is_local {
+        None
+    } else {
         let t = generate_token();
         save_token(&t);
         Some(Arc::new(t))
-    } else {
-        None
     };
 
     if !is_local {
-        let t = token.as_ref().unwrap();
-        eprintln!(
-            "  \x1b[33m⚠\x1b[0m Binding to {host} — authentication enabled.\n  \
-             Bearer token: \x1b[1;32m{t}\x1b[0m\n  \
-             Browser URL:  http://<your-ip>:{port}/?token={t}"
-        );
+        if let Some(t) = token.as_ref() {
+            eprintln!(
+                "  \x1b[33m⚠\x1b[0m Binding to {host} — authentication enabled.\n  \
+                 Bearer token: \x1b[1;32m{t}\x1b[0m\n  \
+                 Browser URL:  http://<your-ip>:{port}/?token={t}"
+            );
+        }
     }
 
     let listener = match TcpListener::bind(&addr).await {
@@ -59,9 +60,10 @@ pub async fn start(port: Option<u16>, host: Option<String>) {
         }
     };
 
-    let stats_path = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.join("stats.json").display().to_string())
-        .unwrap_or_else(|_| "~/.lean-ctx/stats.json".to_string());
+    let stats_path = crate::core::data_dir::lean_ctx_data_dir().map_or_else(
+        |_| "~/.lean-ctx/stats.json".to_string(),
+        |d| d.join("stats.json").display().to_string(),
+    );
 
     if host == "0.0.0.0" {
         println!("\n  lean-ctx dashboard → http://0.0.0.0:{port} (all interfaces)");
@@ -178,13 +180,13 @@ async fn handle_request(mut stream: tokio::net::TcpStream, token: Option<Arc<Str
         let tok = qs
             .split('&')
             .find_map(|pair| pair.strip_prefix("token="))
-            .map(|t| t.to_string());
+            .map(std::string::ToString::to_string);
         (p.to_string(), tok)
     } else {
         (raw_path.to_string(), None)
     };
 
-    let query_str = raw_path.find('?').map(|i| &raw_path[i + 1..]).unwrap_or("");
+    let query_str = raw_path.find('?').map_or("", |i| &raw_path[i + 1..]);
 
     let is_api = path.starts_with("/api/");
 
@@ -192,8 +194,7 @@ async fn handle_request(mut stream: tokio::net::TcpStream, token: Option<Arc<Str
         let has_header_auth = check_auth(&request, expected);
         let has_query_auth = query_token
             .as_deref()
-            .map(|t| t == expected.as_str())
-            .unwrap_or(false);
+            .is_some_and(|t| t == expected.as_str());
 
         if is_api && !has_header_auth && !has_query_auth {
             let body = r#"{"error":"unauthorized"}"#;
@@ -214,8 +215,9 @@ async fn handle_request(mut stream: tokio::net::TcpStream, token: Option<Arc<Str
 
     let path = path.as_str();
 
-    let compute =
-        std::panic::catch_unwind(|| route_response(path, query_str, &query_token, &token));
+    let compute = std::panic::catch_unwind(|| {
+        route_response(path, query_str, query_token.as_ref(), token.as_ref())
+    });
     let (status, content_type, body) = match compute {
         Ok(v) => v,
         Err(_) => (
@@ -249,8 +251,8 @@ async fn handle_request(mut stream: tokio::net::TcpStream, token: Option<Arc<Str
 fn route_response(
     path: &str,
     query_str: &str,
-    query_token: &Option<String>,
-    token: &Option<Arc<String>>,
+    query_token: Option<&String>,
+    token: Option<&Arc<String>>,
 ) -> (&'static str, &'static str, String) {
     match path {
         "/api/stats" => {
@@ -310,12 +312,11 @@ fn route_response(
                 .map(|d| d.join("stats.json"))
                 .unwrap_or_default();
             let meta = std::fs::metadata(&stats_path).ok();
-            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let size = meta.as_ref().map_or(0, std::fs::Metadata::len);
             let mtime = meta
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+                .map_or(0, |d| d.as_secs());
             use md5::Digest;
             let hash = format!(
                 "{:x}",
@@ -387,10 +388,9 @@ fn route_response(
                     std::path::Path::new(p.as_str())
                         .extension()
                         .and_then(|e| e.to_str())
-                        .map(|e| {
+                        .is_some_and(|e| {
                             matches!(e, "js" | "ts" | "py" | "rs" | "java" | "rb" | "go" | "kt")
                         })
-                        .unwrap_or(false)
                 })
                 .count();
             let payload = serde_json::json!({
@@ -508,13 +508,13 @@ fn route_response(
         }
         "/" | "/index.html" => {
             let mut html = DASHBOARD_HTML.to_string();
-            if let Some(ref tok) = query_token {
+            if let Some(tok) = query_token {
                 let script = format!(
                     "<script>window.__LEAN_CTX_TOKEN__=\"{}\";</script>",
                     tok.replace('"', "")
                 );
                 html = html.replacen("<head>", &format!("<head>{script}"), 1);
-            } else if let Some(ref t) = token {
+            } else if let Some(t) = token {
                 let script = format!(
                     "<script>window.__LEAN_CTX_TOKEN__=\"{}\";</script>",
                     t.as_str()
@@ -610,9 +610,8 @@ fn check_auth(request: &str, expected_token: &str) -> bool {
 
 fn extract_query_param(qs: &str, key: &str) -> Option<String> {
     for pair in qs.split('&') {
-        let (k, v) = match pair.split_once('=') {
-            Some(kv) => kv,
-            None => continue,
+        let Some((k, v)) = pair.split_once('=') else {
+            continue;
         };
         if k == key {
             return Some(percent_decode_query_component(v));
@@ -705,7 +704,7 @@ fn compression_demo_modes_json(
     let map_out = crate::core::signatures::extract_file_map(path, content);
     let sig_out = crate::core::signatures::extract_signatures(content, ext)
         .iter()
-        .map(|s| s.to_compact())
+        .map(super::core::signatures::Signature::to_compact)
         .collect::<Vec<_>>()
         .join("\n");
     let aggressive_out = crate::core::filters::aggressive_filter(content);
@@ -730,7 +729,7 @@ fn compression_demo_modes_json(
         "reference": compression_mode_json(&reference_out, original_tokens),
         "aggressive": compression_mode_json(&aggressive_out, original_tokens),
         "entropy": compression_mode_json(&entropy_out, original_tokens),
-        "task": task_out.as_deref().map(|s| compression_mode_json(s, original_tokens)).unwrap_or(serde_json::Value::Null),
+        "task": task_out.as_deref().map_or(serde_json::Value::Null, |s| compression_mode_json(s, original_tokens)),
     })
 }
 
@@ -866,7 +865,7 @@ fn build_heatmap_json(index: &crate::core::graph_index::ProjectIndex) -> String 
             .as_f64()
             .unwrap_or(0.0)
             .partial_cmp(&a["heat"].as_f64().unwrap_or(0.0))
-            .unwrap()
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string())
@@ -900,7 +899,7 @@ fn build_agents_json() -> String {
         .join("shared");
     let shared_count = if shared_dir.exists() {
         std::fs::read_dir(&shared_dir)
-            .map(|rd| rd.count())
+            .map(std::iter::Iterator::count)
             .unwrap_or(0)
     } else {
         0
@@ -953,8 +952,7 @@ fn detect_project_root_for_dashboard() -> String {
     }
 
     let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| ".".to_string());
+        .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string());
     let r = crate::core::protocol::detect_project_root_or_cwd(&cwd);
     promote_to_git_root(&r)
 }

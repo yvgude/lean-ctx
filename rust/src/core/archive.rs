@@ -125,7 +125,7 @@ pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>)
         size_chars: content.len(),
         size_tokens: tokens,
         created_at: Utc::now(),
-        session_id: session_id.map(|s| s.to_string()),
+        session_id: session_id.map(std::string::ToString::to_string),
     };
 
     if let Ok(json) = serde_json::to_string_pretty(&entry) {

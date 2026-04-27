@@ -10,6 +10,7 @@ const MAX_FILES: usize = 50;
 const MAX_EVIDENCE: usize = 500;
 const BATCH_SAVE_INTERVAL: u32 = 5;
 
+/// Persistent session state tracking task, findings, files, decisions, and stats.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SessionState {
     pub id: String,
@@ -35,6 +36,7 @@ pub struct SessionState {
     pub stats: SessionStats,
 }
 
+/// Description of the current task being worked on, with optional progress tracking.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TaskInfo {
     pub description: String,
@@ -42,6 +44,7 @@ pub struct TaskInfo {
     pub progress_pct: Option<u8>,
 }
 
+/// A discovery or observation recorded during the session.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Finding {
     pub file: Option<String>,
@@ -50,6 +53,7 @@ pub struct Finding {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A design or implementation decision made during the session.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Decision {
     pub summary: String,
@@ -57,6 +61,7 @@ pub struct Decision {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A file that was read or modified during the session.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileTouched {
     pub path: String,
@@ -67,6 +72,7 @@ pub struct FileTouched {
     pub tokens: usize,
 }
 
+/// Snapshot of a test run with pass/fail counts.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TestSnapshot {
     pub command: String,
@@ -76,6 +82,7 @@ pub struct TestSnapshot {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A timestamped progress entry describing an action taken.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProgressEntry {
     pub action: String,
@@ -83,6 +90,7 @@ pub struct ProgressEntry {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Source of an evidence record: automatic tool call or manual agent entry.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceKind {
@@ -90,6 +98,7 @@ pub enum EvidenceKind {
     Manual,
 }
 
+/// An auditable record of a tool invocation or manual observation.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvidenceRecord {
     pub kind: EvidenceKind,
@@ -103,6 +112,7 @@ pub struct EvidenceRecord {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Aggregate counters for the session: tool calls, token savings, cache hits.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default)]
 pub struct SessionStats {
@@ -133,6 +143,7 @@ pub struct PreparedSave {
 }
 
 impl PreparedSave {
+    /// Writes the pre-serialized session data and latest pointer to disk atomically.
     pub fn write_to_disk(self) -> Result<(), String> {
         if !self.dir.exists() {
             std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
@@ -157,6 +168,7 @@ impl Default for SessionState {
 }
 
 impl SessionState {
+    /// Creates a new session with a unique ID and current timestamp.
     pub fn new() -> Self {
         let now = Utc::now();
         Self {
@@ -180,20 +192,23 @@ impl SessionState {
         }
     }
 
+    /// Bumps the version counter and marks the session as dirty.
     pub fn increment(&mut self) {
         self.version += 1;
         self.updated_at = Utc::now();
         self.stats.unsaved_changes += 1;
     }
 
+    /// Returns `true` if enough changes have accumulated to warrant a disk save.
     pub fn should_save(&self) -> bool {
         self.stats.unsaved_changes >= BATCH_SAVE_INTERVAL
     }
 
+    /// Sets the active task and infers a structured intent from the description.
     pub fn set_task(&mut self, description: &str, intent: Option<&str>) {
         self.task = Some(TaskInfo {
             description: description.to_string(),
-            intent: intent.map(|s| s.to_string()),
+            intent: intent.map(std::string::ToString::to_string),
             progress_pct: None,
         });
 
@@ -213,9 +228,10 @@ impl SessionState {
         self.increment();
     }
 
+    /// Records a finding (discovery or observation) in the session log.
     pub fn add_finding(&mut self, file: Option<&str>, line: Option<u32>, summary: &str) {
         self.findings.push(Finding {
-            file: file.map(|s| s.to_string()),
+            file: file.map(std::string::ToString::to_string),
             line,
             summary: summary.to_string(),
             timestamp: Utc::now(),
@@ -226,10 +242,11 @@ impl SessionState {
         self.increment();
     }
 
+    /// Records a design or implementation decision with optional rationale.
     pub fn add_decision(&mut self, summary: &str, rationale: Option<&str>) {
         self.decisions.push(Decision {
             summary: summary.to_string(),
-            rationale: rationale.map(|s| s.to_string()),
+            rationale: rationale.map(std::string::ToString::to_string),
             timestamp: Utc::now(),
         });
         while self.decisions.len() > MAX_DECISIONS {
@@ -238,6 +255,7 @@ impl SessionState {
         self.increment();
     }
 
+    /// Records a file read/access in the session, incrementing its read count.
     pub fn touch_file(&mut self, path: &str, file_ref: Option<&str>, mode: &str, tokens: usize) {
         if let Some(existing) = self.files_touched.iter_mut().find(|f| f.path == path) {
             existing.read_count += 1;
@@ -249,7 +267,7 @@ impl SessionState {
         } else {
             self.files_touched.push(FileTouched {
                 path: path.to_string(),
-                file_ref: file_ref.map(|s| s.to_string()),
+                file_ref: file_ref.map(std::string::ToString::to_string),
                 read_count: 1,
                 modified: false,
                 last_mode: mode.to_string(),
@@ -263,6 +281,7 @@ impl SessionState {
         self.increment();
     }
 
+    /// Marks a previously touched file as modified (written to).
     pub fn mark_modified(&mut self, path: &str) {
         if let Some(existing) = self.files_touched.iter_mut().find(|f| f.path == path) {
             existing.modified = true;
@@ -270,12 +289,14 @@ impl SessionState {
         self.increment();
     }
 
+    /// Increments the tool call counter and accumulates token savings.
     pub fn record_tool_call(&mut self, tokens_saved: u64, tokens_input: u64) {
         self.stats.total_tool_calls += 1;
         self.stats.total_tokens_saved += tokens_saved;
         self.stats.total_tokens_input += tokens_input;
     }
 
+    /// Records an inferred or explicit intent, coalescing consecutive duplicates.
     pub fn record_intent(&mut self, mut intent: IntentRecord) {
         if intent.occurrences == 0 {
             intent.occurrences = 1;
@@ -306,6 +327,7 @@ impl SessionState {
         self.increment();
     }
 
+    /// Appends an auditable evidence record for a tool invocation.
     pub fn record_tool_receipt(
         &mut self,
         tool: &str,
@@ -324,8 +346,8 @@ impl SessionState {
                 tool: Some(tool.to_string()),
                 input_md5: Some(input_md5.to_string()),
                 output_md5: Some(output_md5.to_string()),
-                agent_id: agent_id.map(|s| s.to_string()),
-                client_name: client_name.map(|s| s.to_string()),
+                agent_id: agent_id.map(std::string::ToString::to_string),
+                client_name: client_name.map(std::string::ToString::to_string),
                 timestamp: now,
             });
         };
@@ -340,11 +362,12 @@ impl SessionState {
         self.increment();
     }
 
+    /// Appends a manual (non-tool) evidence record to the audit log.
     pub fn record_manual_evidence(&mut self, key: &str, value: Option<&str>) {
         self.evidence.push(EvidenceRecord {
             kind: EvidenceKind::Manual,
             key: key.to_string(),
-            value: value.map(|s| s.to_string()),
+            value: value.map(std::string::ToString::to_string),
             tool: None,
             input_md5: None,
             output_md5: None,
@@ -358,14 +381,17 @@ impl SessionState {
         self.increment();
     }
 
+    /// Returns `true` if an evidence record with the given key exists.
     pub fn has_evidence_key(&self, key: &str) -> bool {
         self.evidence.iter().any(|e| e.key == key)
     }
 
+    /// Increments the session-level cache hit counter.
     pub fn record_cache_hit(&mut self) {
         self.stats.cache_hits += 1;
     }
 
+    /// Increments the session-level command counter.
     pub fn record_command(&mut self) {
         self.stats.commands_run += 1;
     }
@@ -385,8 +411,7 @@ impl SessionState {
             return root.clone();
         }
         std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| ".".to_string())
+            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
     }
 
     /// Updates shell_cwd by detecting `cd` in the command.
@@ -406,6 +431,7 @@ impl SessionState {
         }
     }
 
+    /// Formats the session state as a compact multi-line summary for agent context.
     pub fn format_compact(&self) -> String {
         let duration = self.updated_at - self.started_at;
         let hours = duration.num_hours();
@@ -503,6 +529,7 @@ impl SessionState {
         lines.join("\n")
     }
 
+    /// Builds a size-limited XML snapshot of session state for context compaction.
     pub fn build_compaction_snapshot(&self) -> String {
         const MAX_SNAPSHOT_BYTES: usize = 2048;
 
@@ -615,6 +642,7 @@ impl SessionState {
         snapshot
     }
 
+    /// Writes the compaction snapshot to disk and returns the snapshot string.
     pub fn save_compaction_snapshot(&self) -> Result<String, String> {
         let snapshot = self.build_compaction_snapshot();
         let dir = sessions_dir().ok_or("cannot determine home directory")?;
@@ -626,17 +654,19 @@ impl SessionState {
         Ok(snapshot)
     }
 
+    /// Loads a previously saved compaction snapshot by session ID.
     pub fn load_compaction_snapshot(session_id: &str) -> Option<String> {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{session_id}_snapshot.txt"));
         std::fs::read_to_string(&path).ok()
     }
 
+    /// Loads the most recently modified compaction snapshot from disk.
     pub fn load_latest_snapshot() -> Option<String> {
         let dir = sessions_dir()?;
         let mut snapshots: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&dir)
             .ok()?
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.path().to_string_lossy().ends_with("_snapshot.txt"))
             .filter_map(|e| {
                 let meta = e.metadata().ok()?;
@@ -693,7 +723,12 @@ impl SessionState {
         }
 
         if !self.next_steps.is_empty() {
-            let steps: Vec<&str> = self.next_steps.iter().take(3).map(|s| s.as_str()).collect();
+            let steps: Vec<&str> = self
+                .next_steps
+                .iter()
+                .take(3)
+                .map(std::string::String::as_str)
+                .collect();
             parts.push(format!("Next: {}", steps.join("; ")));
         }
 
@@ -718,6 +753,7 @@ impl SessionState {
         )
     }
 
+    /// Serializes and writes the session state to disk synchronously.
     pub fn save(&mut self) -> Result<(), String> {
         let prepared = self.prepare_save()?;
         match prepared.write_to_disk() {
@@ -748,6 +784,7 @@ impl SessionState {
         })
     }
 
+    /// Loads the most recent session from disk via the `latest.json` pointer.
     pub fn load_latest() -> Option<Self> {
         let dir = sessions_dir()?;
         let latest_path = dir.join("latest.json");
@@ -756,6 +793,7 @@ impl SessionState {
         Self::load_by_id(&pointer.id)
     }
 
+    /// Loads the most recent session matching a specific project root.
     pub fn load_latest_for_project_root(project_root: &str) -> Option<Self> {
         let dir = sessions_dir()?;
         let target_root =
@@ -793,6 +831,7 @@ impl SessionState {
         latest_match
     }
 
+    /// Loads a specific session from disk by its unique ID.
     pub fn load_by_id(id: &str) -> Option<Self> {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{id}.json"));
@@ -801,10 +840,10 @@ impl SessionState {
         Some(normalize_loaded_session(session))
     }
 
+    /// Lists all saved sessions as summaries, sorted by most recently updated.
     pub fn list_sessions() -> Vec<SessionSummary> {
-        let dir = match sessions_dir() {
-            Some(d) => d,
-            None => return Vec::new(),
+        let Some(dir) = sessions_dir() else {
+            return Vec::new();
         };
 
         let mut summaries = Vec::new();
@@ -837,11 +876,9 @@ impl SessionState {
         summaries
     }
 
+    /// Deletes sessions older than `max_age_days`, preserving the latest. Returns count removed.
     pub fn cleanup_old_sessions(max_age_days: i64) -> u32 {
-        let dir = match sessions_dir() {
-            Some(d) => d,
-            None => return 0,
-        };
+        let Some(dir) = sessions_dir() else { return 0 };
 
         let cutoff = Utc::now() - chrono::Duration::days(max_age_days);
         let latest = Self::load_latest().map(|s| s.id);
@@ -874,6 +911,7 @@ impl SessionState {
     }
 }
 
+/// Lightweight summary of a session for listing purposes.
 #[derive(Debug, Clone)]
 pub struct SessionSummary {
     pub id: String,

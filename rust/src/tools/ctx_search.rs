@@ -12,6 +12,7 @@ use crate::tools::CrpMode;
 const MAX_FILE_SIZE: u64 = 512_000;
 const MAX_WALK_DEPTH: usize = 20;
 
+/// Searches files for a regex pattern with compressed output and monorepo scope hints.
 pub fn handle(
     pattern: &str,
     dir: &str,
@@ -44,7 +45,7 @@ pub fn handle(
     let mut files_skipped_size = 0u32;
     let mut files_skipped_encoding = 0u32;
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker.filter_map(std::result::Result::ok) {
         if entry.file_type().is_none_or(|ft| ft.is_dir()) {
             continue;
         }
@@ -73,12 +74,9 @@ pub fn handle(
             }
         }
 
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => {
-                files_skipped_encoding += 1;
-                continue;
-            }
+        let Ok(content) = std::fs::read_to_string(path) else {
+            files_skipped_encoding += 1;
+            continue;
         };
 
         files_searched += 1;

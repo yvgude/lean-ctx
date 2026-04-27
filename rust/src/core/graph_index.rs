@@ -157,10 +157,10 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
     // Prefer stable absolute roots. Using "." as a cache key is fragile because
     // it depends on the process cwd and can accidentally load the wrong project.
     let root_abs = if project_root.trim().is_empty() || project_root == "." {
-        std::env::current_dir()
-            .ok()
-            .map(|p| normalize_project_root(&p.to_string_lossy()))
-            .unwrap_or_else(|| ".".to_string())
+        std::env::current_dir().ok().map_or_else(
+            || ".".to_string(),
+            |p| normalize_project_root(&p.to_string_lossy()),
+        )
     } else {
         normalize_project_root(project_root)
     };
@@ -177,7 +177,7 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
     if let Some(idx) = ProjectIndex::load(".") {
         if !idx.files.is_empty() {
             let mut migrated = idx;
-            migrated.project_root = root_abs.clone();
+            migrated.project_root.clone_from(&root_abs);
             let _ = migrated.save();
             return migrated;
         }
@@ -241,7 +241,7 @@ pub fn scan(project_root: &str) -> ProjectIndex {
     let mut reused = 0usize;
     let max_files = 2000;
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker.filter_map(std::result::Result::ok) {
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
@@ -264,9 +264,8 @@ pub fn scan(project_root: &str) -> ProjectIndex {
             break;
         }
 
-        let content = match std::fs::read_to_string(&file_path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(&file_path) else {
+            continue;
         };
 
         let hash = compute_hash(&content);
@@ -334,10 +333,10 @@ pub fn scan(project_root: &str) -> ProjectIndex {
     build_edges(&mut index);
 
     if let Err(e) = index.save() {
-        eprintln!("Warning: could not save graph index: {e}");
+        tracing::warn!("could not save graph index: {e}");
     }
 
-    eprintln!(
+    tracing::warn!(
         "[graph_index: {} files ({} scanned, {} reused), {} symbols, {} edges]",
         index.file_count(),
         scanned,
@@ -362,9 +361,8 @@ fn build_edges(index: &mut ProjectIndex) {
 
     for rel_path in &file_paths {
         let abs_path = root_path.join(rel_path.trim_start_matches(['/', '\\']));
-        let content = match std::fs::read_to_string(&abs_path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(&abs_path) else {
+            continue;
         };
 
         let ext = Path::new(rel_path)
@@ -470,8 +468,7 @@ fn find_symbol_range(content: &str, sig: &signatures::Signature) -> (usize, usiz
 
     let base_indent = lines
         .get(start - 1)
-        .map(|l| l.len() - l.trim_start().len())
-        .unwrap_or(0);
+        .map_or(0, |l| l.len() - l.trim_start().len());
 
     let mut end = start;
     let mut brace_depth: i32 = 0;

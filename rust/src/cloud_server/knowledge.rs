@@ -91,12 +91,12 @@ async fn upsert(
     let client = state.pool.get().await.map_err(internal_error)?;
     client
         .execute(
-            r#"
+            r"
 INSERT INTO knowledge_entries (user_id, category, key, value, updated_at)
 VALUES ($1,$2,$3,$4, NOW())
 ON CONFLICT (user_id, category, key)
 DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()
-"#,
+",
             &[&user_id, &category, &key, &value],
         )
         .await

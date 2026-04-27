@@ -134,7 +134,7 @@ mod tests {
                 line_count: 1,
                 token_count: 1,
                 exports: vec![],
-                summary: "".to_string(),
+                summary: String::new(),
             },
         );
         idx.save().expect("save index");

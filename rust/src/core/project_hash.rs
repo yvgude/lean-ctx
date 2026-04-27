@@ -80,9 +80,8 @@ pub(crate) fn migrate_if_needed(old_hash: &str, new_hash: &str, project_root: &s
         return;
     }
 
-    let data_dir = match crate::core::data_dir::lean_ctx_data_dir() {
-        Ok(d) => d,
-        Err(_) => return,
+    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+        return;
     };
 
     let old_dir = data_dir.join("knowledge").join(old_hash);
@@ -97,7 +96,7 @@ pub(crate) fn migrate_if_needed(old_hash: &str, new_hash: &str, project_root: &s
     }
 
     if let Err(e) = copy_dir_contents(&old_dir, &new_dir) {
-        eprintln!("lean-ctx: knowledge migration failed: {e}");
+        tracing::error!("lean-ctx: knowledge migration failed: {e}");
     }
 }
 
@@ -133,8 +132,7 @@ fn normalize_git_url(url: &str) -> String {
     let url = url.trim_end_matches(".git");
     let url = url
         .strip_prefix("git@")
-        .map(|s| s.replacen(':', "/", 1))
-        .unwrap_or_else(|| url.to_string());
+        .map_or_else(|| url.to_string(), |s| s.replacen(':', "/", 1));
     url.to_lowercase()
 }
 
@@ -260,9 +258,8 @@ fn extract_json_string_field(path: &Path, field: &str) -> Option<String> {
 
 fn verify_ownership(old_dir: &Path, project_root: &str) -> bool {
     let knowledge_path = old_dir.join("knowledge.json");
-    let content = match std::fs::read_to_string(&knowledge_path) {
-        Ok(c) => c,
-        Err(_) => return true, // No knowledge.json — safe to migrate gotchas etc.
+    let Ok(content) = std::fs::read_to_string(&knowledge_path) else {
+        return true;
     };
 
     let stored_root: Option<String> = serde_json::from_str::<serde_json::Value>(&content)

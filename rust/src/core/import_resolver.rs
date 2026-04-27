@@ -445,7 +445,10 @@ fn resolve_go(imp: &ImportInfo, ctx: &ResolverContext) -> (Option<String>, bool)
 
 fn try_go_package(pkg_path: &str, ctx: &ResolverContext) -> Option<String> {
     for file in &ctx.file_paths {
-        if file.ends_with(".go") {
+        if Path::new(file.as_str())
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("go"))
+        {
             let dir = Path::new(file).parent()?.to_string_lossy();
             if dir == pkg_path || dir.ends_with(pkg_path) {
                 return Some(dir.to_string());
@@ -564,7 +567,7 @@ fn resolve_c_like(
             }
         }
         for prefix in prefixes {
-            for c in candidates.iter() {
+            for c in &candidates {
                 let p = format!("{prefix}{c}");
                 if ctx.file_exists(&p) {
                     return Some(p);
@@ -577,7 +580,7 @@ fn resolve_c_like(
     if source.starts_with('.') {
         let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
         let dir_prefix = if dir.as_os_str().is_empty() {
-            "".to_string()
+            String::new()
         } else {
             format!("{}/", dir.to_string_lossy())
         };
@@ -615,11 +618,14 @@ fn resolve_ruby(
 
     let try_prefixes = |prefixes: &[&str]| -> Option<String> {
         let mut candidates: Vec<String> = vec![source_rel.to_string()];
-        if !source_rel.ends_with(".rb") {
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("rb"))
+        {
             candidates.push(format!("{source_rel}.rb"));
         }
         for prefix in prefixes {
-            for c in candidates.iter() {
+            for c in &candidates {
                 let p = format!("{prefix}{c}");
                 if ctx.file_exists(&p) {
                     return Some(p);
@@ -632,7 +638,7 @@ fn resolve_ruby(
     if source.starts_with('.') || source_rel.contains('/') {
         let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
         let dir_prefix = if dir.as_os_str().is_empty() {
-            "".to_string()
+            String::new()
         } else {
             format!("{}/", dir.to_string_lossy())
         };
@@ -664,11 +670,14 @@ fn resolve_php(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opt
 
     let try_prefixes = |prefixes: &[&str]| -> Option<String> {
         let mut candidates: Vec<String> = vec![source_rel.to_string()];
-        if !source_rel.ends_with(".php") {
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("php"))
+        {
             candidates.push(format!("{source_rel}.php"));
         }
         for prefix in prefixes {
-            for c in candidates.iter() {
+            for c in &candidates {
                 let p = format!("{prefix}{c}");
                 if ctx.file_exists(&p) {
                     return Some(p);
@@ -681,7 +690,7 @@ fn resolve_php(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opt
     if source.starts_with('.') || source.starts_with('/') || source_rel.contains('/') {
         let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
         let dir_prefix = if dir.as_os_str().is_empty() {
-            "".to_string()
+            String::new()
         } else {
             format!("{}/", dir.to_string_lossy())
         };
@@ -714,11 +723,14 @@ fn resolve_bash(
 
     let try_prefixes = |prefixes: &[&str]| -> Option<String> {
         let mut candidates: Vec<String> = vec![source_rel.to_string()];
-        if !source_rel.ends_with(".sh") {
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("sh"))
+        {
             candidates.push(format!("{source_rel}.sh"));
         }
         for prefix in prefixes {
-            for c in candidates.iter() {
+            for c in &candidates {
                 let p = format!("{prefix}{c}");
                 if ctx.file_exists(&p) {
                     return Some(p);
@@ -731,7 +743,7 @@ fn resolve_bash(
     if source.starts_with('.') || source.starts_with('/') || source_rel.contains('/') {
         let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
         let dir_prefix = if dir.as_os_str().is_empty() {
-            "".to_string()
+            String::new()
         } else {
             format!("{}/", dir.to_string_lossy())
         };
@@ -767,11 +779,14 @@ fn resolve_dart(
     let try_prefixes = |prefixes: &[&str], rel: &str| -> Option<String> {
         let rel = rel.trim_start_matches("./").trim_start_matches('/').trim();
         let mut candidates: Vec<String> = vec![rel.to_string()];
-        if !rel.ends_with(".dart") {
+        if !Path::new(rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("dart"))
+        {
             candidates.push(format!("{rel}.dart"));
         }
         for prefix in prefixes {
-            for c in candidates.iter() {
+            for c in &candidates {
                 let p = format!("{prefix}{c}");
                 if ctx.file_exists(&p) {
                     return Some(p);
@@ -797,7 +812,7 @@ fn resolve_dart(
     if source.starts_with('.') || source.starts_with('/') {
         let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
         let dir_prefix = if dir.as_os_str().is_empty() {
-            "".to_string()
+            String::new()
         } else {
             format!("{}/", dir.to_string_lossy())
         };
@@ -829,11 +844,14 @@ fn resolve_zig(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opt
 
     let try_prefixes = |prefixes: &[&str]| -> Option<String> {
         let mut candidates: Vec<String> = vec![source_rel.to_string()];
-        if !source_rel.ends_with(".zig") {
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("zig"))
+        {
             candidates.push(format!("{source_rel}.zig"));
         }
         for prefix in prefixes {
-            for c in candidates.iter() {
+            for c in &candidates {
                 let p = format!("{prefix}{c}");
                 if ctx.file_exists(&p) {
                     return Some(p);
@@ -843,10 +861,15 @@ fn resolve_zig(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opt
         None
     };
 
-    if source.starts_with('.') || source_rel.contains('/') || source_rel.ends_with(".zig") {
+    if source.starts_with('.')
+        || source_rel.contains('/')
+        || Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("zig"))
+    {
         let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
         let dir_prefix = if dir.as_os_str().is_empty() {
-            "".to_string()
+            String::new()
         } else {
             format!("{}/", dir.to_string_lossy())
         };
@@ -943,7 +966,6 @@ fn normalize_path(path: &Path) -> String {
             std::path::Component::ParentDir => {
                 parts.pop();
             }
-            std::path::Component::CurDir => {}
             std::path::Component::Normal(s) => {
                 parts.push(s.to_str().unwrap_or(""));
             }
@@ -965,11 +987,11 @@ mod tests {
     fn make_ctx(files: &[&str]) -> ResolverContext {
         ResolverContext {
             project_root: PathBuf::from("/project"),
-            file_paths: files.iter().map(|s| s.to_string()).collect(),
+            file_paths: files.iter().map(std::string::ToString::to_string).collect(),
             tsconfig_paths: HashMap::new(),
             go_module: None,
             dart_package: None,
-            file_set: files.iter().map(|s| s.to_string()).collect(),
+            file_set: files.iter().map(std::string::ToString::to_string).collect(),
         }
     }
 

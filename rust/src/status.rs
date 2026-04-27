@@ -44,11 +44,7 @@ pub fn run_cli(args: &[String]) -> i32 {
                 print_human(&report, &path);
             }
 
-            if report.errors.is_empty() {
-                0
-            } else {
-                1
-            }
+            i32::from(!report.errors.is_empty())
         }
         Err(e) => {
             eprintln!("{e}");

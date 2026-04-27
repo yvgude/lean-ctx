@@ -105,7 +105,7 @@ impl AgentRegistry {
         self.agents.push(AgentEntry {
             agent_id: agent_id.clone(),
             agent_type: agent_type.to_string(),
-            role: role.map(|r| r.to_string()),
+            role: role.map(std::string::ToString::to_string),
             project_root: project_root.to_string(),
             started_at: Utc::now(),
             last_active: Utc::now(),
@@ -128,7 +128,7 @@ impl AgentRegistry {
     pub fn set_status(&mut self, agent_id: &str, status: AgentStatus, message: Option<&str>) {
         if let Some(agent) = self.agents.iter_mut().find(|a| a.agent_id == agent_id) {
             agent.status = status;
-            agent.status_message = message.map(|s| s.to_string());
+            agent.status_message = message.map(std::string::ToString::to_string);
             agent.last_active = Utc::now();
         }
         self.updated_at = Utc::now();
@@ -162,7 +162,7 @@ impl AgentRegistry {
         self.scratchpad.push(ScratchpadEntry {
             id: id.clone(),
             from_agent: from_agent.to_string(),
-            to_agent: to_agent.map(|s| s.to_string()),
+            to_agent: to_agent.map(std::string::ToString::to_string),
             category: category.to_string(),
             message: message.to_string(),
             timestamp: Utc::now(),
@@ -297,7 +297,7 @@ impl AgentDiary {
         self.entries.push(DiaryEntry {
             entry_type,
             content: content.to_string(),
-            context: context.map(|s| s.to_string()),
+            context: context.map(std::string::ToString::to_string),
             timestamp: Utc::now(),
         });
         if self.entries.len() > MAX_DIARY_ENTRIES {
@@ -378,9 +378,8 @@ impl AgentDiary {
     }
 
     pub fn list_all() -> Vec<(String, usize, DateTime<Utc>)> {
-        let dir = match diary_dir() {
-            Ok(d) => d,
-            Err(_) => return Vec::new(),
+        let Ok(dir) = diary_dir() else {
+            return Vec::new();
         };
         if !dir.exists() {
             return Vec::new();
@@ -478,28 +477,25 @@ struct FileLock {
 impl FileLock {
     fn acquire(path: &std::path::Path) -> Result<Self, String> {
         for _ in 0..50 {
-            match std::fs::OpenOptions::new()
+            if std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(path)
+                .is_ok()
             {
-                Ok(_) => {
-                    return Ok(Self {
-                        path: path.to_path_buf(),
-                    })
-                }
-                Err(_) => {
-                    if let Ok(metadata) = std::fs::metadata(path) {
-                        if let Ok(modified) = metadata.modified() {
-                            if modified.elapsed().unwrap_or_default().as_secs() > 5 {
-                                let _ = std::fs::remove_file(path);
-                                continue;
-                            }
-                        }
+                return Ok(Self {
+                    path: path.to_path_buf(),
+                });
+            }
+            if let Ok(metadata) = std::fs::metadata(path) {
+                if let Ok(modified) = metadata.modified() {
+                    if modified.elapsed().unwrap_or_default().as_secs() > 5 {
+                        let _ = std::fs::remove_file(path);
+                        continue;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
         Err("Could not acquire lock after 5 seconds".to_string())
     }
@@ -821,7 +817,7 @@ mod tests {
             DiaryEntryType::Insight,
         ];
         for t in types {
-            assert!(!format!("{}", t).is_empty());
+            assert!(!format!("{t}").is_empty());
         }
     }
 

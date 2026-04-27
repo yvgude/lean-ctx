@@ -24,8 +24,7 @@ pub fn lean_ctx_data_dir() -> Result<PathBuf, String> {
     let xdg_config = std::env::var("XDG_CONFIG_HOME")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"));
+        .map_or_else(|| home.join(".config"), PathBuf::from);
 
     Ok(xdg_config.join("lean-ctx"))
 }
@@ -36,5 +35,5 @@ pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
     let mutex = LOCK.get_or_init(|| Mutex::new(()));
     mutex
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }

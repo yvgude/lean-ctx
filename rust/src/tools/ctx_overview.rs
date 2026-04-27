@@ -19,24 +19,18 @@ pub fn handle(
     path: Option<&str>,
     _crp_mode: CrpMode,
 ) -> String {
-    let project_root = path
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| ".".to_string());
+    let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
-    let index =
-        if let Some(idx) = crate::core::index_orchestrator::try_load_graph_index(&project_root) {
-            idx
-        } else {
-            crate::core::index_orchestrator::ensure_all_background(&project_root);
-            return format!(
-                "INDEXING IN PROGRESS\n\n\
+    let Some(index) = crate::core::index_orchestrator::try_load_graph_index(&project_root) else {
+        crate::core::index_orchestrator::ensure_all_background(&project_root);
+        return format!(
+            "INDEXING IN PROGRESS\n\n\
             The knowledge graph for this project is being built in the background.\n\
-            Project: {}\n\n\
+            Project: {project_root}\n\n\
             Because this is a large project, the initial scan may take a moment.\n\
-            Please try this command again in 1-2 minutes.",
-                project_root
-            );
-        };
+            Please try this command again in 1-2 minutes."
+        );
+    };
 
     let (task_files, task_keywords) = if let Some(task_desc) = task {
         parse_task_hints(task_desc)
@@ -138,8 +132,7 @@ pub fn handle(
         for file_entry in index.files.values() {
             let dir = std::path::Path::new(&file_entry.path)
                 .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string());
+                .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());
             by_dir
                 .entry(dir)
                 .or_default()

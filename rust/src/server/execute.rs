@@ -30,7 +30,7 @@ pub fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
         let mut truncated = false;
         loop {
             match r.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) | Err(_) => break,
                 Ok(n) => {
                     total = total.saturating_add(n);
                     if kept.len() < cap {
@@ -44,7 +44,6 @@ pub fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
                         truncated = true;
                     }
                 }
-                Err(_) => break,
             }
         }
         (kept, truncated, total)
@@ -59,17 +58,13 @@ pub fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
 
     let (out_tx, out_rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let result = stdout
-            .map(|s| read_bounded(s, cap))
-            .unwrap_or_else(|| (Vec::new(), false, 0));
+        let result = stdout.map_or_else(|| (Vec::new(), false, 0), |s| read_bounded(s, cap));
         let _ = out_tx.send(result);
     });
 
     let (err_tx, err_rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let result = stderr
-            .map(|s| read_bounded(s, cap))
-            .unwrap_or_else(|| (Vec::new(), false, 0));
+        let result = stderr.map_or_else(|| (Vec::new(), false, 0), |s| read_bounded(s, cap));
         let _ = err_tx.send(result);
     });
 
@@ -100,9 +95,9 @@ pub fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
     let stdout = crate::shell::decode_output(&out_bytes);
     let stderr = crate::shell::decode_output(&err_bytes);
     let mut text = if stdout.is_empty() {
-        stderr.to_string()
+        stderr.clone()
     } else if stderr.is_empty() {
-        stdout.to_string()
+        stdout.clone()
     } else {
         format!("{stdout}\n{stderr}")
     };
@@ -133,8 +128,7 @@ fn command_timeout() -> Duration {
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|millis| *millis > 0)
-        .map(Duration::from_millis)
-        .unwrap_or(DEFAULT_COMMAND_TIMEOUT)
+        .map_or(DEFAULT_COMMAND_TIMEOUT, Duration::from_millis)
 }
 
 #[cfg(test)]

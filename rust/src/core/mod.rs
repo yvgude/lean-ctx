@@ -50,6 +50,7 @@ pub mod language_capabilities;
 pub mod limits;
 pub mod litm;
 pub mod llm_feedback;
+pub mod logging;
 pub mod loop_detection;
 pub mod mcp_manifest;
 pub mod memory_lifecycle;

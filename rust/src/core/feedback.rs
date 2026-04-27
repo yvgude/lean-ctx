@@ -44,7 +44,9 @@ pub struct LearnedThresholds {
 
 impl FeedbackStore {
     pub fn load() -> Self {
-        let guard = FEEDBACK_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = FEEDBACK_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((ref store, _)) = *guard {
             return store.clone();
         }
@@ -76,7 +78,9 @@ impl FeedbackStore {
     }
 
     pub fn flush() {
-        let guard = FEEDBACK_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = FEEDBACK_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((ref store, _)) = *guard {
             store.save_to_disk();
         }
@@ -92,7 +96,9 @@ impl FeedbackStore {
 
         self.update_learned_thresholds(&lang);
 
-        let mut guard = FEEDBACK_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = FEEDBACK_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let should_flush = match *guard {
             Some((_, ref last)) => last.elapsed().as_secs() >= FEEDBACK_FLUSH_SECS,
             None => true,

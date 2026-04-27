@@ -22,9 +22,8 @@ fn open_graph(root: &str) -> Result<CodeGraph, String> {
 }
 
 fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'analyze' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'analyze' action".to_string();
     };
 
     let graph = match open_graph(root) {
@@ -90,11 +89,8 @@ fn format_impact(impact: &ImpactResult, target: &str) -> String {
 }
 
 fn handle_chain(path: Option<&str>, root: &str) -> String {
-    let spec = match path {
-        Some(p) => p,
-        None => {
-            return "path is required for 'chain' action (format: from_file->to_file)".to_string()
-        }
+    let Some(spec) = path else {
+        return "path is required for 'chain' action (format: from_file->to_file)".to_string();
     };
 
     let (from, to) = match spec.split_once("->") {
@@ -172,7 +168,7 @@ fn handle_build(root: &str) -> String {
     let mut file_contents: Vec<(String, String, String)> = Vec::new();
 
     for entry in walker.flatten() {
-        if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
 
@@ -203,9 +199,8 @@ fn handle_build(root: &str) -> String {
     let mut total_edges = 0usize;
 
     for (rel_path, content, ext) in &file_contents {
-        let file_node_id = match graph.upsert_node(&Node::file(rel_path)) {
-            Ok(id) => id,
-            Err(_) => continue,
+        let Ok(file_node_id) = graph.upsert_node(&Node::file(rel_path)) else {
+            continue;
         };
         total_nodes += 1;
 
@@ -236,9 +231,8 @@ fn handle_build(root: &str) -> String {
                     continue;
                 }
                 if let Some(ref target_path) = imp.resolved_path {
-                    let target_id = match graph.upsert_node(&Node::file(target_path)) {
-                        Ok(id) => id,
-                        Err(_) => continue,
+                    let Ok(target_id) = graph.upsert_node(&Node::file(target_path)) else {
+                        continue;
                     };
                     let _ =
                         graph.upsert_edge(&Edge::new(file_node_id, target_id, EdgeKind::Imports));

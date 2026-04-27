@@ -167,7 +167,7 @@ fn section_session() -> String {
                     ));
                 }
                 if let Some(stats) = val.get("stats") {
-                    out.push_str(&format!("- Stats: {}\n", stats));
+                    out.push_str(&format!("- Stats: {stats}\n"));
                 }
                 if let Some(files) = val.get("files_touched").and_then(|f| f.as_object()) {
                     out.push_str(&format!("- Files touched: {}\n", files.len()));
@@ -210,7 +210,9 @@ fn section_performance() -> String {
                     let mut top: Vec<_> = cmds
                         .iter()
                         .filter_map(|(k, v)| {
-                            v.get("count").and_then(|c| c.as_u64()).map(|c| (k, c))
+                            v.get("count")
+                                .and_then(serde_json::Value::as_u64)
+                                .map(|c| (k, c))
                         })
                         .collect();
                     top.sort_by_key(|x| std::cmp::Reverse(x.1));
@@ -254,7 +256,7 @@ fn section_tee_logs(include_content: bool) -> String {
             let mut entries: Vec<_> = std::fs::read_dir(&tee_dir)
                 .into_iter()
                 .flatten()
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| {
                     e.metadata()
                         .ok()
@@ -301,12 +303,11 @@ fn section_tee_logs(include_content: bool) -> String {
 fn section_project_context() -> String {
     let mut out = String::from("## Project Context\n\n");
     let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "unknown".into());
+        .map_or_else(|_| "unknown".into(), |p| p.to_string_lossy().to_string());
     out.push_str(&format!("- Working directory: {cwd}\n"));
 
     if let Ok(entries) = std::fs::read_dir(".") {
-        let count = entries.filter_map(|e| e.ok()).count();
+        let count = entries.filter_map(std::result::Result::ok).count();
         out.push_str(&format!("- Files in root: {count}\n"));
     }
     out
@@ -384,9 +385,8 @@ fn find_gh_binary() -> Option<std::path::PathBuf> {
 }
 
 fn try_gh_cli(title: &str, body: &str) -> bool {
-    let gh = match find_gh_binary() {
-        Some(p) => p,
-        None => return false,
+    let Some(gh) = find_gh_binary() else {
+        return false;
     };
 
     let tmp = std::env::temp_dir().join("lean-ctx-report.md");
@@ -535,9 +535,8 @@ fn which_lean_ctx() -> Option<PathBuf> {
 }
 
 fn check_shell_hooks() -> String {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return "unknown".into(),
+    let Some(home) = dirs::home_dir() else {
+        return "unknown".into();
     };
 
     let mut found = Vec::new();
@@ -563,9 +562,8 @@ fn check_shell_hooks() -> String {
 }
 
 fn check_mcp_configs() -> String {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return "unknown".into(),
+    let Some(home) = dirs::home_dir() else {
+        return "unknown".into();
     };
 
     let mut found = Vec::new();

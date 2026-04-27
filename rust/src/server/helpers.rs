@@ -1,10 +1,10 @@
 use serde_json::Value;
 
 pub fn get_str_array(
-    args: &Option<serde_json::Map<String, Value>>,
+    args: Option<&serde_json::Map<String, Value>>,
     key: &str,
 ) -> Option<Vec<String>> {
-    let arr = args.as_ref()?.get(key)?.as_array()?;
+    let arr = args?.get(key)?.as_array()?;
     let mut out = Vec::with_capacity(arr.len());
     for v in arr {
         let s = v.as_str()?.to_string();
@@ -13,16 +13,19 @@ pub fn get_str_array(
     Some(out)
 }
 
-pub fn get_str(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<String> {
-    args.as_ref()?.get(key)?.as_str().map(|s| s.to_string())
+pub fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<String> {
+    args?
+        .get(key)?
+        .as_str()
+        .map(std::string::ToString::to_string)
 }
 
-pub fn get_int(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<i64> {
-    args.as_ref()?.get(key)?.as_i64()
+pub fn get_int(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<i64> {
+    args?.get(key)?.as_i64()
 }
 
-pub fn get_bool(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<bool> {
-    args.as_ref()?.get(key)?.as_bool()
+pub fn get_bool(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<bool> {
+    args?.get(key)?.as_bool()
 }
 
 pub fn md5_hex(s: &str) -> String {
@@ -67,11 +70,8 @@ pub fn canonicalize_json(v: &Value) -> Value {
     }
 }
 
-pub fn canonical_args_string(args: &Option<serde_json::Map<String, Value>>) -> String {
-    let v = args
-        .as_ref()
-        .map(|m| Value::Object(m.clone()))
-        .unwrap_or(Value::Null);
+pub fn canonical_args_string(args: Option<&serde_json::Map<String, Value>>) -> String {
+    let v = args.map_or(Value::Null, |m| Value::Object(m.clone()));
     let canon = canonicalize_json(&v);
     serde_json::to_string(&canon).unwrap_or_default()
 }

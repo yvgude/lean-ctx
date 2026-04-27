@@ -196,7 +196,7 @@ mod tests {
         if order.len() >= 2 {
             let first_is_unchanged = old
                 .iter()
-                .any(|o| new.get(order[0]).map(|n| n.hash == o.hash).unwrap_or(false));
+                .any(|o| new.get(order[0]).is_some_and(|n| n.hash == o.hash));
             assert!(
                 first_is_unchanged || order[0] == 0,
                 "First element should be unchanged"

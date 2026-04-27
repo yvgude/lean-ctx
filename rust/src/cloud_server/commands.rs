@@ -56,7 +56,7 @@ pub async fn post_commands(
         };
         client
             .execute(
-                r#"INSERT INTO command_stats (user_id, command, source, count, input_tokens, output_tokens, tokens_saved)
+                r"INSERT INTO command_stats (user_id, command, source, count, input_tokens, output_tokens, tokens_saved)
                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                    ON CONFLICT (user_id, command) DO UPDATE SET
                      source = EXCLUDED.source,
@@ -64,7 +64,7 @@ pub async fn post_commands(
                      input_tokens = EXCLUDED.input_tokens,
                      output_tokens = EXCLUDED.output_tokens,
                      tokens_saved = EXCLUDED.tokens_saved,
-                     updated_at = NOW()"#,
+                     updated_at = NOW()",
                 &[
                     &user_id,
                     &command,
@@ -91,9 +91,9 @@ pub async fn get_commands(
 
     let rows = client
         .query(
-            r#"SELECT command, source, count, input_tokens, output_tokens, tokens_saved
+            r"SELECT command, source, count, input_tokens, output_tokens, tokens_saved
                FROM command_stats WHERE user_id = $1
-               ORDER BY tokens_saved DESC LIMIT 200"#,
+               ORDER BY tokens_saved DESC LIMIT 200",
             &[&user_id],
         )
         .await

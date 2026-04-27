@@ -75,16 +75,12 @@ fn handle_build(root: &str) -> String {
 }
 
 fn handle_related(path: Option<&str>, root: &str) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'related' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'related' action".to_string();
     };
 
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => {
-            return "No graph index found. Run ctx_graph with action='build' first.".to_string()
-        }
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
     let rel_target = graph_index::graph_relative_key(target, root);
@@ -116,47 +112,36 @@ fn handle_symbol(
     cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
 ) -> String {
-    let spec = match path {
-        Some(p) => p,
-        None => {
-            return "path is required for 'symbol' action (format: file.rs::function_name)"
-                .to_string()
-        }
+    let Some(spec) = path else {
+        return "path is required for 'symbol' action (format: file.rs::function_name)".to_string();
     };
 
-    let (file_part, symbol_name) = match spec.split_once("::") {
-        Some((f, s)) => (f, s),
-        None => return format!("Invalid symbol spec '{spec}'. Use format: file.rs::function_name"),
+    let Some((file_part, symbol_name)) = spec.split_once("::") else {
+        return format!("Invalid symbol spec '{spec}'. Use format: file.rs::function_name");
     };
 
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => {
-            return "No graph index found. Run ctx_graph with action='build' first.".to_string()
-        }
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
     let rel_file = graph_index::graph_relative_key(file_part, root);
 
     let key = format!("{rel_file}::{symbol_name}");
-    let symbol = match index.get_symbol(&key) {
-        Some(s) => s,
-        None => {
-            let available: Vec<&str> = index
-                .symbols
-                .keys()
-                .filter(|k| k.starts_with(&rel_file))
-                .map(|k| k.as_str())
-                .take(10)
-                .collect();
-            if available.is_empty() {
-                return format!("Symbol '{symbol_name}' not found in {rel_file}. Run ctx_graph action='build' to update the index.");
-            }
-            return format!(
-                "Symbol '{symbol_name}' not found in {rel_file}.\nAvailable symbols:\n  {}",
-                available.join("\n  ")
-            );
+    let Some(symbol) = index.get_symbol(&key) else {
+        let available: Vec<&str> = index
+            .symbols
+            .keys()
+            .filter(|k| k.starts_with(&rel_file))
+            .map(std::string::String::as_str)
+            .take(10)
+            .collect();
+        if available.is_empty() {
+            return format!("Symbol '{symbol_name}' not found in {rel_file}. Run ctx_graph action='build' to update the index.");
         }
+        return format!(
+            "Symbol '{symbol_name}' not found in {rel_file}.\nAvailable symbols:\n  {}",
+            available.join("\n  ")
+        );
     };
 
     let abs_path = if Path::new(file_part).is_absolute() {
@@ -294,16 +279,12 @@ fn edge_matches_file(edge_to: &str, module_prefixes: &[String]) -> bool {
 }
 
 fn handle_impact(path: Option<&str>, root: &str) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'impact' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'impact' action".to_string();
     };
 
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => {
-            return "No graph index found. Run ctx_graph with action='build' first.".to_string()
-        }
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
     let rel_target = graph_index::graph_relative_key(target, root);
@@ -317,7 +298,10 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
         .map(|e| e.from.as_str())
         .collect();
 
-    let mut all_dependents: Vec<String> = direct.iter().map(|s| s.to_string()).collect();
+    let mut all_dependents: Vec<String> = direct
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     for d in &direct {
         for dep in index.get_reverse_deps(d, 1) {
             if !all_dependents.contains(&dep) && dep != rel_target {
@@ -362,9 +346,8 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
 }
 
 fn handle_status(root: &str) -> String {
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => return "No graph index. Run ctx_graph action='build' to create one.".to_string(),
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index. Run ctx_graph action='build' to create one.".to_string();
     };
 
     let mut by_lang: HashMap<&str, usize> = HashMap::new();

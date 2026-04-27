@@ -51,10 +51,8 @@ fn filter_routes<'a>(
     routes
         .iter()
         .filter(|r| {
-            let method_match = method
-                .map(|m| r.method.eq_ignore_ascii_case(m))
-                .unwrap_or(true);
-            let path_match = path_prefix.map(|p| r.path.starts_with(p)).unwrap_or(true);
+            let method_match = method.is_none_or(|m| r.method.eq_ignore_ascii_case(m));
+            let path_match = path_prefix.is_none_or(|p| r.path.starts_with(p));
             method_match && path_match
         })
         .collect()

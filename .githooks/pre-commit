@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)/rust"
+
+if ! cargo fmt --check 2>/dev/null; then
+    echo "pre-commit: formatting check failed. Run 'cargo fmt' first."
+    exit 1
+fi
+
+if ! cargo clippy --all-targets -- -D warnings 2>/dev/null; then
+    echo "pre-commit: clippy check failed. Fix warnings before committing."
+    exit 1
+fi

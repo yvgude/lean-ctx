@@ -126,11 +126,15 @@ jobs:
           fi
 
       - name: Dependency audit
+        shell: bash
         run: |
+          set -o pipefail
           cargo install cargo-audit
           cd rust && cargo audit 2>&1 | tee audit-output.txt
+          AUDIT_EXIT=${PIPESTATUS[0]}
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Dependency Audit" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat audit-output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          exit $AUDIT_EXIT

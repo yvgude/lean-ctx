@@ -287,8 +287,8 @@ impl ModelPricing {
         };
         for (k, vv) in models {
             let Some(obj) = vv.as_object() else { continue };
-            let input_per_m = obj.get("input_per_m").and_then(|x| x.as_f64());
-            let output_per_m = obj.get("output_per_m").and_then(|x| x.as_f64());
+            let input_per_m = obj.get("input_per_m").and_then(serde_json::Value::as_f64);
+            let output_per_m = obj.get("output_per_m").and_then(serde_json::Value::as_f64);
             if input_per_m.is_none() && output_per_m.is_none() {
                 continue;
             }
@@ -311,11 +311,11 @@ impl ModelPricing {
                 output_per_m: output_per_m.unwrap_or(base.output_per_m),
                 cache_write_per_m: obj
                     .get("cache_write_per_m")
-                    .and_then(|x| x.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(base.cache_write_per_m),
                 cache_read_per_m: obj
                     .get("cache_read_per_m")
-                    .and_then(|x| x.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(base.cache_read_per_m),
             };
             self.models.insert(key_norm, merged);

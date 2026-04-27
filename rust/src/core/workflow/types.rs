@@ -172,7 +172,7 @@ impl WorkflowRun {
     pub fn add_manual_evidence(&mut self, key: &str, value: Option<&str>) {
         self.evidence.push(EvidenceItem {
             key: key.to_string(),
-            value: value.map(|v| v.to_string()),
+            value: value.map(std::string::ToString::to_string),
             timestamp: Utc::now(),
         });
         self.updated_at = Utc::now();

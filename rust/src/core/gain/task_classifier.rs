@@ -44,10 +44,8 @@ impl TaskClassifier {
         let t = normalize(tool_name);
         match t.as_str() {
             "ctx_edit" | "ctx_fill" => TaskCategory::Refactoring,
-            "ctx_read" | "ctx_multi_read" | "ctx_smart_read" | "ctx_delta" => {
-                TaskCategory::Exploration
-            }
-            "ctx_tree" | "ctx_search" | "ctx_outline" | "ctx_graph" | "ctx_graph_diagram" => {
+            "ctx_read" | "ctx_multi_read" | "ctx_smart_read" | "ctx_delta" | "ctx_tree"
+            | "ctx_search" | "ctx_outline" | "ctx_graph" | "ctx_graph_diagram" => {
                 TaskCategory::Exploration
             }
             "ctx_semantic_search" | "ctx_architecture" | "ctx_impact" => TaskCategory::Architecture,

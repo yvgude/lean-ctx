@@ -13,17 +13,16 @@ pub fn run(args: &[String]) {
     let release = match fetch_latest_release() {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("Error fetching release info: {e}");
+            tracing::error!("Error fetching release info: {e}");
             std::process::exit(1);
         }
     };
 
-    let latest_tag = match release["tag_name"].as_str() {
-        Some(t) => t.trim_start_matches('v').to_string(),
-        None => {
-            eprintln!("Could not parse release tag from GitHub API.");
-            std::process::exit(1);
-        }
+    let latest_tag = if let Some(t) = release["tag_name"].as_str() {
+        t.trim_start_matches('v').to_string()
+    } else {
+        tracing::error!("Could not parse release tag from GitHub API.");
+        std::process::exit(1);
     };
 
     if latest_tag == CURRENT_VERSION {
@@ -48,19 +47,16 @@ pub fn run(args: &[String]) {
     let asset_name = platform_asset_name();
     println!("  \x1b[2mDownloading {asset_name} …\x1b[0m");
 
-    let download_url = match find_asset_url(&release, &asset_name) {
-        Some(u) => u,
-        None => {
-            eprintln!("No binary found for this platform ({asset_name}).");
-            eprintln!("Download manually: https://github.com/yvgude/lean-ctx/releases/latest");
-            std::process::exit(1);
-        }
+    let Some(download_url) = find_asset_url(&release, &asset_name) else {
+        tracing::error!("No binary found for this platform ({asset_name}).");
+        eprintln!("Download manually: https://github.com/yvgude/lean-ctx/releases/latest");
+        std::process::exit(1);
     };
 
     let bytes = match download_bytes(&download_url) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("Download failed: {e}");
+            tracing::error!("Download failed: {e}");
             std::process::exit(1);
         }
     };
@@ -68,13 +64,13 @@ pub fn run(args: &[String]) {
     let current_exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Cannot locate current executable: {e}");
+            tracing::error!("Cannot locate current executable: {e}");
             std::process::exit(1);
         }
     };
 
     if let Err(e) = replace_binary(&bytes, &asset_name, &current_exe) {
-        eprintln!("Failed to replace binary: {e}");
+        tracing::error!("Failed to replace binary: {e}");
         eprintln!();
         eprintln!("Continuing with a setup refresh so your wiring stays correct.");
         post_update_rewire();
@@ -109,7 +105,7 @@ fn post_update_rewire() {
         json: false,
     };
     if let Err(e) = crate::setup::run_setup_with_options(opts) {
-        eprintln!("  Setup refresh error: {e}");
+        tracing::error!("Setup refresh error: {e}");
     }
 }
 
@@ -133,7 +129,7 @@ fn find_asset_url(release: &serde_json::Value, asset_name: &str) -> Option<Strin
         .iter()
         .find(|a| a["name"].as_str() == Some(asset_name))
         .and_then(|a| a["browser_download_url"].as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
@@ -156,7 +152,10 @@ fn replace_binary(
     asset_name: &str,
     current_exe: &std::path::Path,
 ) -> Result<(), String> {
-    let binary_bytes = if asset_name.ends_with(".zip") {
+    let binary_bytes = if std::path::Path::new(asset_name)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    {
         extract_from_zip(archive_bytes)?
     } else {
         extract_from_tar_gz(archive_bytes)?
@@ -355,7 +354,7 @@ fn platform_asset_name() -> String {
         ("linux", "aarch64") => format!("aarch64-unknown-linux-{}", detect_linux_libc()),
         ("windows", "x86_64") => "x86_64-pc-windows-msvc".to_string(),
         _ => {
-            eprintln!(
+            tracing::error!(
                 "Unsupported platform: {os}/{arch}. Download manually from \
                 https://github.com/yvgude/lean-ctx/releases/latest"
             );

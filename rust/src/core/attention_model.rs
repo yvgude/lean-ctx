@@ -77,9 +77,9 @@ pub fn structural_importance(line: &str) -> f64 {
 
     // Lab finding: comments are semantic anchors — 3x more attention than logic.
     if trimmed.starts_with("//")
-        || trimmed.starts_with("#")
+        || trimmed.starts_with('#')
         || trimmed.starts_with("/*")
-        || trimmed.starts_with("*")
+        || trimmed.starts_with('*')
     {
         return 1.2;
     }
@@ -126,7 +126,7 @@ pub fn combined_attention(line: &str, position: f64, alpha: f64, beta: f64, gamm
 /// Places high-attention lines at begin and end positions.
 pub fn attention_optimize(lines: &[&str], _alpha: f64, _beta: f64, _gamma: f64) -> Vec<String> {
     if lines.len() <= 3 {
-        return lines.iter().map(|l| l.to_string()).collect();
+        return lines.iter().map(std::string::ToString::to_string).collect();
     }
 
     let mut scored: Vec<(usize, f64)> = lines
@@ -162,7 +162,7 @@ pub fn attention_optimize(lines: &[&str], _alpha: f64, _beta: f64, _gamma: f64) 
     }
 
     // Fill any remaining empty slots with original order
-    let mut remaining: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    let mut remaining: Vec<String> = lines.iter().map(std::string::ToString::to_string).collect();
     for slot in &mut result {
         if slot.is_empty() {
             if let Some(line) = remaining.pop() {

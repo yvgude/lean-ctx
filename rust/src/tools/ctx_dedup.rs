@@ -32,7 +32,7 @@ fn apply_dedup(cache: &mut SessionCache) -> String {
                     block_occurrences
                         .entry(trimmed)
                         .or_default()
-                        .push((path.to_string(), idx * 5 + 1));
+                        .push(((*path).clone(), idx * 5 + 1));
                 }
             }
         }
@@ -62,13 +62,10 @@ fn apply_dedup(cache: &mut SessionCache) -> String {
     let savings: usize = shared
         .iter()
         .map(|b| {
-            let occurrences = block_occurrences
-                .get(&b.content)
-                .map(|o| {
-                    let unique: HashSet<&str> = o.iter().map(|(p, _)| p.as_str()).collect();
-                    unique.len() - 1
-                })
-                .unwrap_or(0);
+            let occurrences = block_occurrences.get(&b.content).map_or(0, |o| {
+                let unique: HashSet<&str> = o.iter().map(|(p, _)| p.as_str()).collect();
+                unique.len() - 1
+            });
             count_tokens(&b.content) * occurrences
         })
         .sum();
@@ -110,7 +107,7 @@ fn analyze(cache: &SessionCache) -> String {
             import_patterns
                 .entry(key)
                 .or_default()
-                .push(path.to_string());
+                .push((*path).clone());
         }
 
         for chunk in lines.chunks(5) {
@@ -121,7 +118,7 @@ fn analyze(cache: &SessionCache) -> String {
                     boilerplate_blocks
                         .entry(block_trimmed)
                         .or_default()
-                        .push(path.to_string());
+                        .push((*path).clone());
                 }
             }
         }
@@ -192,7 +189,7 @@ fn analyze(cache: &SessionCache) -> String {
     // TF-IDF cosine similarity analysis for semantic duplicates
     let file_pairs: Vec<(String, String)> = entries
         .iter()
-        .map(|(path, entry)| (path.to_string(), entry.content.clone()))
+        .map(|(path, entry)| ((*path).clone(), entry.content.clone()))
         .collect();
     let semantic_dups = codebook::find_semantic_duplicates(&file_pairs, 0.75);
     if !semantic_dups.is_empty() {

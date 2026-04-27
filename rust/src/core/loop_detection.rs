@@ -7,6 +7,7 @@ const SEARCH_TOOLS: &[&str] = &["ctx_search", "ctx_semantic_search"];
 
 const SEARCH_SHELL_PREFIXES: &[&str] = &["grep ", "rg ", "find ", "fd ", "ag ", "ack "];
 
+/// Tracks repeated tool calls within a time window to detect and throttle agent loops.
 #[derive(Debug, Clone)]
 pub struct LoopDetector {
     call_history: HashMap<String, Vec<Instant>>,
@@ -20,6 +21,7 @@ pub struct LoopDetector {
     search_group_limit: u32,
 }
 
+/// Severity of throttling applied to a repeated call: normal, reduced, or blocked.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThrottleLevel {
     Normal,
@@ -27,6 +29,7 @@ pub enum ThrottleLevel {
     Blocked,
 }
 
+/// Outcome of a loop detection check: throttle level, count, and optional warning.
 #[derive(Debug, Clone)]
 pub struct ThrottleResult {
     pub level: ThrottleLevel,
@@ -41,10 +44,12 @@ impl Default for LoopDetector {
 }
 
 impl LoopDetector {
+    /// Creates a loop detector with default thresholds.
     pub fn new() -> Self {
         Self::with_config(&LoopDetectionConfig::default())
     }
 
+    /// Creates a loop detector with custom thresholds from config.
     pub fn with_config(cfg: &LoopDetectionConfig) -> Self {
         Self {
             call_history: HashMap::new(),
@@ -59,6 +64,7 @@ impl LoopDetector {
         }
     }
 
+    /// Records a tool call and returns the throttle result based on repetition count.
     pub fn record_call(&mut self, tool: &str, args_fingerprint: &str) -> ThrottleResult {
         let now = Instant::now();
         self.prune_window(now);
@@ -174,15 +180,18 @@ impl LoopDetector {
         self.record_call(tool, args_fingerprint)
     }
 
+    /// Returns `true` if the tool name is a known search tool (ctx_search, etc.).
     pub fn is_search_tool(tool: &str) -> bool {
         SEARCH_TOOLS.contains(&tool)
     }
 
+    /// Returns `true` if the shell command starts with a search tool (grep, rg, find, etc.).
     pub fn is_search_shell_command(command: &str) -> bool {
         let cmd = command.trim_start();
         SEARCH_SHELL_PREFIXES.iter().any(|p| cmd.starts_with(p))
     }
 
+    /// Computes a deterministic hash fingerprint of JSON tool arguments.
     pub fn fingerprint(args: &serde_json::Value) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -193,6 +202,7 @@ impl LoopDetector {
         format!("{:016x}", hasher.finish())
     }
 
+    /// Returns duplicate call entries sorted by count (descending), filtered to count > 1.
     pub fn stats(&self) -> Vec<(String, u32)> {
         let mut entries: Vec<(String, u32)> = self
             .duplicate_counts
@@ -204,6 +214,7 @@ impl LoopDetector {
         entries
     }
 
+    /// Clears all tracking state (call history, search patterns, counters).
     pub fn reset(&mut self) {
         self.call_history.clear();
         self.duplicate_counts.clear();
@@ -252,6 +263,7 @@ impl LoopDetector {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn search_block_message(&self, count: u32) -> String {
         format!(
             "LOOP DETECTED: You've searched {count}x with similar patterns. STOP searching and change strategy. \

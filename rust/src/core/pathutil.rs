@@ -34,7 +34,9 @@ pub fn strip_verbatim_str(path: &str) -> Option<String> {
     if let Some(rest) = normalized.strip_prefix("//?/UNC/") {
         Some(format!("//{rest}"))
     } else {
-        normalized.strip_prefix("//?/").map(|rest| rest.to_string())
+        normalized
+            .strip_prefix("//?/")
+            .map(std::string::ToString::to_string)
     }
 }
 

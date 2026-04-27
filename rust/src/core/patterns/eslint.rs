@@ -1,26 +1,23 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static ESLINT_FILE_RE: OnceLock<Regex> = OnceLock::new();
-static ESLINT_ERROR_RE: OnceLock<Regex> = OnceLock::new();
-static ESLINT_SUMMARY_RE: OnceLock<Regex> = OnceLock::new();
-static BIOME_DIAG_RE: OnceLock<Regex> = OnceLock::new();
-
-fn eslint_file_re() -> &'static Regex {
-    ESLINT_FILE_RE.get_or_init(|| Regex::new(r"^(/\S+|[A-Z]:\\\S+|\S+\.\w+)$").unwrap())
+fn eslint_file_re() -> &'static regex::Regex {
+    static_regex!(r"^(/\S+|[A-Z]:\\\S+|\S+\.\w+)$")
 }
-fn eslint_error_re() -> &'static Regex {
-    ESLINT_ERROR_RE.get_or_init(|| {
-        Regex::new(r"^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)$").unwrap()
-    })
+fn eslint_error_re() -> &'static regex::Regex {
+    static_regex!(r"^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)$")
 }
-fn eslint_summary_re() -> &'static Regex {
-    ESLINT_SUMMARY_RE.get_or_init(|| {
-        Regex::new(r"(\d+)\s+problems?\s*\((\d+)\s+errors?,\s*(\d+)\s+warnings?\)").unwrap()
-    })
+fn eslint_summary_re() -> &'static regex::Regex {
+    static_regex!(r"(\d+)\s+problems?\s*\((\d+)\s+errors?,\s*(\d+)\s+warnings?\)")
 }
-fn biome_diag_re() -> &'static Regex {
-    BIOME_DIAG_RE.get_or_init(|| Regex::new(r"^([\w/.-]+):(\d+):(\d+)\s+(\w+)\s+(.+)$").unwrap())
+fn biome_diag_re() -> &'static regex::Regex {
+    static_regex!(r"^([\w/.-]+):(\d+):(\d+)\s+(\w+)\s+(.+)$")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {

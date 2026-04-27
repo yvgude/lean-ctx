@@ -79,15 +79,15 @@ pub fn reorder_for_lcurve(content: &str, task_keywords: &[String]) -> String {
         .iter()
         .map(|cl| {
             let base = category_priority(cl.category);
-            let kw_boost: f64 = if !kw_lower.is_empty() {
+            let kw_boost: f64 = if kw_lower.is_empty() {
+                0.0
+            } else {
                 let line_lower = cl.line.to_lowercase();
                 kw_lower
                     .iter()
                     .filter(|kw| line_lower.contains(kw.as_str()))
                     .count() as f64
                     * 0.5
-            } else {
-                0.0
             };
             let n = lines.len().max(1) as f64;
             let orig_pos = cl.original_index as f64 / n;

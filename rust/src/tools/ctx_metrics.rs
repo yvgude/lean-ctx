@@ -75,8 +75,7 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
         let cost_without = total_original as f64 / 1_000_000.0 * quote.cost.input_per_m;
         let cost_with = total_sent as f64 / 1_000_000.0 * quote.cost.input_per_m;
         out.push(format!(
-            "Cost estimate: ${:.4} without → ${:.4} with lean-ctx | ${:.4} saved",
-            cost_without, cost_with, cost_saved
+            "Cost estimate: ${cost_without:.4} without → ${cost_with:.4} with lean-ctx | ${cost_saved:.4} saved"
         ));
     }
 
@@ -209,13 +208,11 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
         out.push(String::new());
         if crp_mode.is_tdd() {
             out.push(format!(
-                "∴ session savings (incl. thinking): ${:.3}",
-                projected_session
+                "∴ session savings (incl. thinking): ${projected_session:.3}"
             ));
         } else {
             out.push(format!(
-                "Projected session savings (incl. thinking): ${:.3}",
-                projected_session
+                "Projected session savings (incl. thinking): ${projected_session:.3}"
             ));
         }
     }
@@ -245,7 +242,7 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
     ));
 
     let complexity = crate::core::adaptive::classify_from_context(cache);
-    out.push(format!("  Task complexity:   {:?}", complexity));
+    out.push(format!("  Task complexity:   {complexity:?}"));
 
     out.join("\n")
 }

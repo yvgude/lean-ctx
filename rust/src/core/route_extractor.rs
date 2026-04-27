@@ -1,7 +1,15 @@
 use std::path::Path;
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteEntry {
@@ -42,9 +50,8 @@ pub fn extract_routes_from_project(
             continue;
         }
         let abs_path = Path::new(project_root).join(rel_path);
-        let content = match std::fs::read_to_string(&abs_path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(&abs_path) else {
+            continue;
         };
         all_routes.extend(extract_routes_from_file(rel_path, &content));
     }
@@ -69,10 +76,9 @@ fn extract_express(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
         return Vec::new();
     }
 
-    let re = Regex::new(
-        r#"(?:app|router|server)\s*\.\s*(get|post|put|patch|delete|all|use|options|head)\s*\(\s*['"`]([^'"`]+)['"`]"#,
-    )
-    .unwrap();
+    let re = static_regex!(
+        r#"(?:app|router|server)\s*\.\s*(get|post|put|patch|delete|all|use|options|head)\s*\(\s*['"`]([^'"`]+)['"`]"#
+    );
 
     content
         .lines()
@@ -99,31 +105,29 @@ fn extract_flask(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
         return Vec::new();
     }
 
-    let route_re = Regex::new(
-        r#"@(?:app|blueprint|bp)\s*\.\s*route\s*\(\s*['"]([^'"]+)['"](?:.*methods\s*=\s*\[([^\]]+)\])?"#,
-    )
-    .unwrap();
+    let route_re = static_regex!(
+        r#"@(?:app|blueprint|bp)\s*\.\s*route\s*\(\s*['"]([^'"]+)['"](?:.*methods\s*=\s*\[([^\]]+)\])?"#
+    );
 
-    let method_re = Regex::new(
-        r#"@(?:app|blueprint|bp)\s*\.\s*(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]"#,
-    )
-    .unwrap();
+    let method_re = static_regex!(
+        r#"@(?:app|blueprint|bp)\s*\.\s*(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]"#
+    );
 
     let mut routes = Vec::new();
 
     for (i, line) in content.lines().enumerate() {
         if let Some(caps) = route_re.captures(line) {
             let path = caps[1].to_string();
-            let methods = caps
-                .get(2)
-                .map(|m| {
+            let methods = caps.get(2).map_or_else(
+                || vec!["GET".to_string()],
+                |m| {
                     m.as_str()
                         .replace(['\'', '"'], "")
                         .split(',')
                         .map(|s| s.trim().to_uppercase())
                         .collect::<Vec<_>>()
-                })
-                .unwrap_or_else(|| vec!["GET".to_string()]);
+                },
+            );
 
             let handler = find_next_def(content, i);
             for method in methods {
@@ -159,9 +163,9 @@ fn extract_fastapi(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
         return Vec::new();
     }
 
-    let re =
-        Regex::new(r#"@(?:app|router)\s*\.\s*(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]"#)
-            .unwrap();
+    let re = static_regex!(
+        r#"@(?:app|router)\s*\.\s*(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]"#
+    );
 
     content
         .lines()
@@ -188,10 +192,11 @@ fn extract_actix(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
         return Vec::new();
     }
 
-    let attr_re = Regex::new(r#"#\[(get|post|put|patch|delete)\s*\(\s*"([^"]+)""#).unwrap();
+    let attr_re = static_regex!(r#"#\[(get|post|put|patch|delete)\s*\(\s*"([^"]+)""#);
 
-    let resource_re =
-        Regex::new(r#"web::resource\s*\(\s*"([^"]+)"\s*\)\s*\.route\s*\(.*Method::(GET|POST|PUT|PATCH|DELETE)"#).unwrap();
+    let resource_re = static_regex!(
+        r#"web::resource\s*\(\s*"([^"]+)"\s*\)\s*\.route\s*\(.*Method::(GET|POST|PUT|PATCH|DELETE)"#
+    );
 
     let mut routes = Vec::new();
 
@@ -230,10 +235,9 @@ fn extract_spring(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
         return Vec::new();
     }
 
-    let re = Regex::new(
-        r#"@(GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping|RequestMapping)\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']"#,
-    )
-    .unwrap();
+    let re = static_regex!(
+        r#"@(GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping|RequestMapping)\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']"#
+    );
 
     content
         .lines()
@@ -269,10 +273,9 @@ fn extract_rails(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
         return Vec::new();
     }
 
-    let re = Regex::new(
-        r#"(get|post|put|patch|delete)\s+['"]([^'"]+)['"](?:\s*,\s*to:\s*['"]([^'"]+)['"])?"#,
-    )
-    .unwrap();
+    let re = static_regex!(
+        r#"(get|post|put|patch|delete)\s+['"]([^'"]+)['"](?:\s*,\s*to:\s*['"]([^'"]+)['"])?"#
+    );
 
     content
         .lines()
@@ -306,10 +309,9 @@ fn extract_nextjs(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
         return Vec::new();
     }
 
-    let re = Regex::new(
-        r#"export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\("#,
-    )
-    .unwrap();
+    let re = static_regex!(
+        r"export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\("
+    );
 
     content
         .lines()
@@ -338,7 +340,7 @@ fn file_to_nextjs_route(file: &str) -> String {
         if route.ends_with("/route.ts") || route.ends_with("/route.js") {
             route = route.replace("/route.ts", "").replace("/route.js", "");
         }
-        route = route.replace("[", ":").replace("]", "");
+        route = route.replace('[', ":").replace(']', "");
         return route;
     }
     format!("/{file}")
@@ -360,7 +362,7 @@ fn extract_handler_name(line: &str) -> String {
 }
 
 fn find_next_def(content: &str, after_line: usize) -> String {
-    let def_re = Regex::new(r"def\s+(\w+)").unwrap();
+    let def_re = static_regex!(r"def\s+(\w+)");
     for line in content.lines().skip(after_line + 1).take(5) {
         if let Some(caps) = def_re.captures(line) {
             return caps[1].to_string();
@@ -370,7 +372,7 @@ fn find_next_def(content: &str, after_line: usize) -> String {
 }
 
 fn find_next_fn_rust(content: &str, after_line: usize) -> String {
-    let fn_re = Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)").unwrap();
+    let fn_re = static_regex!(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)");
     for line in content.lines().skip(after_line + 1).take(5) {
         if let Some(caps) = fn_re.captures(line) {
             return caps[1].to_string();
@@ -380,7 +382,7 @@ fn find_next_fn_rust(content: &str, after_line: usize) -> String {
 }
 
 fn find_next_method_java(content: &str, after_line: usize) -> String {
-    let method_re = Regex::new(r"(?:public|private|protected)\s+\S+\s+(\w+)\s*\(").unwrap();
+    let method_re = static_regex!(r"(?:public|private|protected)\s+\S+\s+(\w+)\s*\(");
     for line in content.lines().skip(after_line + 1).take(5) {
         if let Some(caps) = method_re.captures(line) {
             return caps[1].to_string();
@@ -395,7 +397,7 @@ mod tests {
 
     #[test]
     fn express_get_route() {
-        let code = r#"app.get('/api/users', getUsers);"#;
+        let code = r"app.get('/api/users', getUsers);";
         let routes = extract_express("routes.js", code, "js");
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].method, "GET");

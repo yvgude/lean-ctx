@@ -77,8 +77,7 @@ fn normalized_entropy_in_unit_interval() {
         let h = normalized_token_entropy(text);
         assert!(
             (0.0..=1.0).contains(&h),
-            "normalized entropy must be in [0,1], got {h:.4} for {:?}",
-            text
+            "normalized entropy must be in [0,1], got {h:.4} for {text:?}",
         );
     }
 }
@@ -431,9 +430,11 @@ fn ib_filter_reduces_more_for_repetitive_content() {
     use lean_ctx::core::task_relevance::{adaptive_ib_budget, information_bottleneck_filter};
 
     let repetitive = "let x = compute(a);\n".repeat(100);
-    let diverse: String = (0..100)
-        .map(|i| format!("let var_{i} = func_{i}(arg_{i});\n"))
-        .collect();
+    let diverse = (0..100).fold(String::new(), |mut s, i| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "let var_{i} = func_{i}(arg_{i});");
+        s
+    });
 
     let budget_rep = adaptive_ib_budget(&repetitive, 0.5);
     let budget_div = adaptive_ib_budget(&diverse, 0.5);
@@ -545,12 +546,11 @@ fn full_scientific_audit() {
     check!(
         "Kolmogorov K(redundant) < K(diverse)",
         kolmogorov_proxy(&"abc".repeat(200))
-            < kolmogorov_proxy(
-                &(0..200)
-                    .map(|i| format!("x{i}"))
-                    .collect::<Vec<_>>()
-                    .join("")
-            )
+            < kolmogorov_proxy(&(0..200).fold(String::new(), |mut s, i| {
+                use std::fmt::Write;
+                let _ = write!(s, "x{i}");
+                s
+            }))
     );
 
     check!(

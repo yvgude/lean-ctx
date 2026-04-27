@@ -217,12 +217,12 @@ fn try_vitest(output: &str) -> Option<String> {
         let trimmed = line.trim();
         let plain = strip_ansi(trimmed);
         if plain.contains("Test Files") {
-            test_files_line = plain.clone();
+            test_files_line.clone_from(&plain);
         } else if plain.starts_with("Tests") && plain.contains("passed") {
-            tests_line = plain.clone();
+            tests_line.clone_from(&plain);
         } else if plain.contains("Duration") || plain.contains("Time") {
-            if plain.contains("ms") || plain.contains("s") {
-                duration_line = plain.clone();
+            if plain.contains("ms") || plain.contains('s') {
+                duration_line.clone_from(&plain);
             }
         } else if plain.contains("FAIL")
             && (plain.contains(".test.") || plain.contains(".spec.") || plain.contains("_test."))

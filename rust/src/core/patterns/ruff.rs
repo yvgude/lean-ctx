@@ -1,14 +1,17 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static RUFF_LINE_RE: OnceLock<Regex> = OnceLock::new();
-static RUFF_FIXED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn ruff_line_re() -> &'static Regex {
-    RUFF_LINE_RE.get_or_init(|| Regex::new(r"^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$").unwrap())
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
-fn ruff_fixed_re() -> &'static Regex {
-    RUFF_FIXED_RE.get_or_init(|| Regex::new(r"Found (\d+) errors?.*?(\d+) fixable").unwrap())
+
+fn ruff_line_re() -> &'static regex::Regex {
+    static_regex!(r"^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$")
+}
+fn ruff_fixed_re() -> &'static regex::Regex {
+    static_regex!(r"Found (\d+) errors?.*?(\d+) fixable")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {

@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::core::property_graph::CodeGraph;
 use crate::core::tokens::count_tokens;
 
+/// Dispatches architecture analysis actions (overview, clusters, layers, cycles, entrypoints, module).
 pub fn handle(action: &str, path: Option<&str>, root: &str) -> String {
     match action {
         "overview" => handle_overview(root),
@@ -33,9 +34,8 @@ struct GraphData {
 }
 
 fn ensure_graph_built(root: &str) {
-    let graph = match CodeGraph::open(Path::new(root)) {
-        Ok(g) => g,
-        Err(_) => return,
+    let Ok(graph) = CodeGraph::open(Path::new(root)) else {
+        return;
     };
     if graph.node_count().unwrap_or(0) == 0 {
         drop(graph);
@@ -124,7 +124,7 @@ fn handle_overview(root: &str) -> String {
     let mut result = format!(
         "Architecture Overview ({} files, {} import edges)\n",
         data.all_files.len(),
-        data.forward.values().map(|v| v.len()).sum::<usize>()
+        data.forward.values().map(std::vec::Vec::len).sum::<usize>()
     );
 
     result.push_str(&format!("\nClusters: {}\n", clusters.len()));
@@ -274,7 +274,7 @@ fn handle_entrypoints(root: &str) -> String {
         entrypoints.len()
     );
     for ep in &entrypoints {
-        let dep_count = data.forward.get(ep).map(|v| v.len()).unwrap_or(0);
+        let dep_count = data.forward.get(ep).map_or(0, std::vec::Vec::len);
         result.push_str(&format!("  {ep} (imports {dep_count} files)\n"));
     }
 
@@ -283,9 +283,8 @@ fn handle_entrypoints(root: &str) -> String {
 }
 
 fn handle_module(path: Option<&str>, root: &str) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'module' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'module' action".to_string();
     };
 
     ensure_graph_built(root);
@@ -300,11 +299,9 @@ fn handle_module(path: Option<&str>, root: &str) -> String {
     };
 
     let canon_root = crate::core::pathutil::safe_canonicalize(std::path::Path::new(root))
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| root.to_string());
+        .map_or_else(|_| root.to_string(), |p| p.to_string_lossy().to_string());
     let canon_target = crate::core::pathutil::safe_canonicalize(std::path::Path::new(target))
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| target.to_string());
+        .map_or_else(|_| target.to_string(), |p| p.to_string_lossy().to_string());
     let root_slash = if canon_root.ends_with('/') {
         canon_root.clone()
     } else {
@@ -414,7 +411,7 @@ fn compute_clusters(data: &GraphData) -> Vec<Cluster> {
         if files.len() < 2 {
             continue;
         }
-        let file_set: HashSet<&str> = files.iter().map(|f| f.as_str()).collect();
+        let file_set: HashSet<&str> = files.iter().map(std::string::String::as_str).collect();
         let mut internal = 0;
         for file in files {
             if let Some(deps) = data.forward.get(file) {
@@ -447,12 +444,7 @@ fn compute_layers(data: &GraphData) -> Vec<Layer> {
     let leaf_files: HashSet<&String> = data
         .all_files
         .iter()
-        .filter(|f| {
-            data.forward
-                .get(*f)
-                .map(|deps| deps.is_empty())
-                .unwrap_or(true)
-        })
+        .filter(|f| data.forward.get(*f).is_none_or(std::vec::Vec::is_empty))
         .collect();
 
     let mut depth_map: HashMap<String, usize> = HashMap::new();
@@ -512,7 +504,7 @@ fn find_cycles(data: &GraphData) -> Vec<Vec<String>> {
     let mut cycles: Vec<Vec<String>> = Vec::new();
     let mut visited: HashSet<String> = HashSet::new();
 
-    for start in data.all_files.iter() {
+    for start in &data.all_files {
         if visited.contains(start) {
             continue;
         }
@@ -529,7 +521,7 @@ fn find_cycles(data: &GraphData) -> Vec<Vec<String>> {
         );
     }
 
-    cycles.sort_by_key(|c| c.len());
+    cycles.sort_by_key(std::vec::Vec::len);
     cycles.truncate(20);
     cycles
 }
@@ -581,7 +573,7 @@ fn common_prefix(files: &[String]) -> String {
     }
 
     let parts: Vec<Vec<&str>> = files.iter().map(|f| f.split('/').collect()).collect();
-    let min_len = parts.iter().map(|p| p.len()).min().unwrap_or(0);
+    let min_len = parts.iter().map(std::vec::Vec::len).min().unwrap_or(0);
 
     let mut common = Vec::new();
     for i in 0..min_len {
@@ -636,7 +628,7 @@ mod tests {
 
         let all_files: HashSet<String> = ["main.rs", "lib.rs"]
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect();
 
         let data = GraphData {
@@ -665,7 +657,7 @@ mod tests {
 
         let all_files: HashSet<String> = ["a.rs", "b.rs", "c.rs"]
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect();
 
         let data = GraphData {
@@ -690,7 +682,10 @@ mod tests {
         forward.insert("a.rs".to_string(), vec!["b.rs".to_string()]);
         forward.insert("b.rs".to_string(), vec!["a.rs".to_string()]);
 
-        let all_files: HashSet<String> = ["a.rs", "b.rs"].iter().map(|s| s.to_string()).collect();
+        let all_files: HashSet<String> = ["a.rs", "b.rs"]
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
 
         let data = GraphData {
             forward,

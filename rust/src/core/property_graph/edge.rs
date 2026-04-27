@@ -90,7 +90,7 @@ pub fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
                 metadata: row.get(4)?,
             })
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
     Ok(edges)
 }
@@ -110,7 +110,7 @@ pub fn to_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
                 metadata: row.get(4)?,
             })
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
     Ok(edges)
 }

@@ -16,6 +16,7 @@ fn append_compressed_hint(output: &str, file_path: &str) -> String {
     format!("{output}\n{COMPRESSED_HINT}\n  ctx_read(\"{file_path}\", mode=\"full\")")
 }
 
+/// Reads a file as UTF-8 with lossy fallback, enforcing the max read size limit.
 pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
     let cap = crate::core::limits::max_read_bytes();
     if let Ok(meta) = std::fs::metadata(path) {
@@ -34,14 +35,17 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
     }
 }
 
+/// Reads a file through the cache and applies the requested compression mode.
 pub fn handle(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
     handle_with_options(cache, path, mode, false, crp_mode, None)
 }
 
+/// Like `handle`, but invalidates the cache first to force a fresh disk read.
 pub fn handle_fresh(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
     handle_with_options(cache, path, mode, true, crp_mode, None)
 }
 
+/// Reads a file with task-aware filtering to prioritize task-relevant content.
 pub fn handle_with_task(
     cache: &mut SessionCache,
     path: &str,
@@ -52,6 +56,7 @@ pub fn handle_with_task(
     handle_with_options(cache, path, mode, false, crp_mode, task)
 }
 
+/// Like `handle_with_task`, also returns the resolved mode name.
 pub fn handle_with_task_resolved(
     cache: &mut SessionCache,
     path: &str,
@@ -62,6 +67,7 @@ pub fn handle_with_task_resolved(
     handle_with_options_resolved(cache, path, mode, false, crp_mode, task)
 }
 
+/// Fresh read with task-aware filtering (invalidates cache first).
 pub fn handle_fresh_with_task(
     cache: &mut SessionCache,
     path: &str,
@@ -72,6 +78,7 @@ pub fn handle_fresh_with_task(
     handle_with_options(cache, path, mode, true, crp_mode, task)
 }
 
+/// Fresh read with task-aware filtering, also returns the resolved mode name.
 pub fn handle_fresh_with_task_resolved(
     cache: &mut SessionCache,
     path: &str,
@@ -278,19 +285,22 @@ fn handle_full_with_auto_delta(
     short: &str,
     ext: &str,
 ) -> String {
-    let disk_content = match read_file_lossy(path) {
-        Ok(c) => c,
-        Err(_) => {
-            cache.record_cache_hit(path);
-            let existing = cache.get(path).unwrap();
-            return format!(
+    let Ok(disk_content) = read_file_lossy(path) else {
+        cache.record_cache_hit(path);
+        return if let Some(existing) = cache.get(path) {
+            format!(
                 "[using cached version — file read failed]\n{file_ref}={short} cached {}t {}L",
                 existing.read_count, existing.line_count
-            );
-        }
+            )
+        } else {
+            format!("[file read failed and no cached version available] {file_ref}={short}")
+        };
     };
 
-    let old_content = cache.get(path).unwrap().content.clone();
+    let old_content = cache
+        .get(path)
+        .map(|e| e.content.clone())
+        .unwrap_or_default();
     let store_result = cache.store(path, disk_content.clone());
 
     if store_result.was_hit {
@@ -382,7 +392,7 @@ fn build_header(
                 .imports
                 .iter()
                 .take(8)
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .collect();
             header.push_str(&format!("\n deps {}", imports_str.join(",")));
         }
@@ -391,7 +401,7 @@ fn build_header(
                 .exports
                 .iter()
                 .take(8)
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .collect();
             header.push_str(&format!("\n exports {}", exports_str.join(",")));
         }
@@ -439,7 +449,7 @@ fn process_mode(
                     .imports
                     .iter()
                     .take(8)
-                    .map(|s| s.as_str())
+                    .map(std::string::String::as_str)
                     .collect();
                 output.push_str(&format!("\n deps {}", imports_str.join(",")));
             }

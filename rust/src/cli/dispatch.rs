@@ -12,7 +12,7 @@ pub fn run() {
 
         match args[1].as_str() {
             "-c" | "exec" => {
-                let raw = rest.first().map(|a| a == "--raw").unwrap_or(false);
+                let raw = rest.first().is_some_and(|a| a == "--raw");
                 let cmd_args = if raw { &args[3..] } else { &args[2..] };
                 let command = if cmd_args.len() == 1 {
                     cmd_args[0].clone()
@@ -35,17 +35,17 @@ pub fn run() {
             }
             "-t" | "--track" => {
                 let cmd_args = &args[2..];
-                let command = if cmd_args.len() == 1 {
-                    cmd_args[0].clone()
+                let code = if cmd_args.len() > 1 {
+                    shell::exec_argv(cmd_args)
                 } else {
-                    shell::join_command(cmd_args)
+                    let command = cmd_args[0].clone();
+                    if std::env::var("LEAN_CTX_ACTIVE").is_ok()
+                        || std::env::var("LEAN_CTX_DISABLED").is_ok()
+                    {
+                        passthrough(&command);
+                    }
+                    shell::exec(&command)
                 };
-                if std::env::var("LEAN_CTX_ACTIVE").is_ok()
-                    || std::env::var("LEAN_CTX_DISABLED").is_ok()
-                {
-                    passthrough(&command);
-                }
-                let code = shell::exec(&command);
                 core::stats::flush();
                 std::process::exit(code);
             }
@@ -220,7 +220,7 @@ pub fn run() {
                             "--host" | "-H" => {
                                 i += 1;
                                 if i < rest.len() {
-                                    cfg.host = rest[i].clone();
+                                    cfg.host.clone_from(&rest[i]);
                                 }
                             }
                             arg if arg.starts_with("--host=") => {
@@ -373,7 +373,7 @@ pub fn run() {
                     }
 
                     if let Err(e) = run_async(crate::http_server::serve(cfg)) {
-                        eprintln!("HTTP server error: {e}");
+                        tracing::error!("HTTP server error: {e}");
                         std::process::exit(1);
                     }
                     return;
@@ -386,7 +386,7 @@ pub fn run() {
             }
             "watch" => {
                 if let Err(e) = tui::run() {
-                    eprintln!("TUI error: {e}");
+                    tracing::error!("TUI error: {e}");
                     std::process::exit(1);
                 }
                 return;
@@ -394,7 +394,7 @@ pub fn run() {
             "proxy" => {
                 #[cfg(feature = "http-server")]
                 {
-                    let sub = rest.first().map(|s| s.as_str()).unwrap_or("help");
+                    let sub = rest.first().map_or("help", std::string::String::as_str);
                     match sub {
                         "start" => {
                             let port: u16 = rest
@@ -410,7 +410,7 @@ pub fn run() {
                                 return;
                             }
                             if let Err(e) = run_async(crate::proxy::start_proxy(port)) {
-                                eprintln!("Proxy error: {e}");
+                                tracing::error!("Proxy error: {e}");
                                 std::process::exit(1);
                             }
                         }
@@ -438,28 +438,25 @@ pub fn run() {
                                 .find_map(|p| p.strip_prefix("--port="))
                                 .and_then(|p| p.parse().ok())
                                 .unwrap_or(4444);
-                            match ureq::get(&format!("http://127.0.0.1:{port}/status")).call() {
-                                Ok(resp) => {
-                                    let body =
-                                        resp.into_body().read_to_string().unwrap_or_default();
-                                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body)
-                                    {
-                                        println!("lean-ctx proxy status:");
-                                        println!("  Requests:    {}", v["requests_total"]);
-                                        println!("  Compressed:  {}", v["requests_compressed"]);
-                                        println!("  Tokens saved: {}", v["tokens_saved"]);
-                                        println!(
-                                            "  Compression: {}%",
-                                            v["compression_ratio_pct"].as_str().unwrap_or("0.0")
-                                        );
-                                    } else {
-                                        println!("{body}");
-                                    }
+                            if let Ok(resp) =
+                                ureq::get(&format!("http://127.0.0.1:{port}/status")).call()
+                            {
+                                let body = resp.into_body().read_to_string().unwrap_or_default();
+                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                                    println!("lean-ctx proxy status:");
+                                    println!("  Requests:    {}", v["requests_total"]);
+                                    println!("  Compressed:  {}", v["requests_compressed"]);
+                                    println!("  Tokens saved: {}", v["tokens_saved"]);
+                                    println!(
+                                        "  Compression: {}%",
+                                        v["compression_ratio_pct"].as_str().unwrap_or("0.0")
+                                    );
+                                } else {
+                                    println!("{body}");
                                 }
-                                Err(_) => {
-                                    println!("No proxy running on port {port}.");
-                                    println!("Start with: lean-ctx proxy start");
-                                }
+                            } else {
+                                println!("No proxy running on port {port}.");
+                                println!("Start with: lean-ctx proxy start");
                             }
                         }
                         _ => {
@@ -686,7 +683,7 @@ pub fn run() {
                 return;
             }
             "hook" => {
-                let action = rest.first().map(|s| s.as_str()).unwrap_or("help");
+                let action = rest.first().map_or("help", std::string::String::as_str);
                 match action {
                     "rewrite" => hook_handlers::handle_rewrite(),
                     "redirect" => hook_handlers::handle_redirect(),
@@ -707,7 +704,27 @@ pub fn run() {
                 return;
             }
             "uninstall" => {
-                uninstall::run();
+                let dry_run = rest.iter().any(|a| a == "--dry-run");
+                uninstall::run(dry_run);
+                return;
+            }
+            "bypass" => {
+                if rest.is_empty() {
+                    eprintln!("Usage: lean-ctx bypass \"command\"");
+                    eprintln!("Runs the command with zero compression (raw passthrough).");
+                    std::process::exit(1);
+                }
+                let command = if rest.len() == 1 {
+                    rest[0].clone()
+                } else {
+                    shell::join_command(&args[2..])
+                };
+                std::env::set_var("LEAN_CTX_RAW", "1");
+                let code = shell::exec(&command);
+                std::process::exit(code);
+            }
+            "safety-levels" | "safety" => {
+                println!("{}", core::compression_safety::format_safety_table());
                 return;
             }
             "cheat" | "cheatsheet" | "cheat-sheet" => {
@@ -752,7 +769,7 @@ pub fn run() {
             }
             "mcp" => {}
             _ => {
-                eprintln!("lean-ctx: unknown command '{}'\n", args[1]);
+                tracing::error!("lean-ctx: unknown command '{}'", args[1]);
                 print_help();
                 std::process::exit(1);
             }
@@ -760,7 +777,7 @@ pub fn run() {
     }
 
     if let Err(e) = run_mcp_server() {
-        eprintln!("lean-ctx: {e}");
+        tracing::error!("lean-ctx: {e}");
         std::process::exit(1);
     }
 }
@@ -804,7 +821,20 @@ fn run_mcp_server() -> Result<()> {
         let server = tools::create_server();
         let transport =
             mcp_stdio::HybridStdioTransport::new_server(tokio::io::stdin(), tokio::io::stdout());
-        let service = server.serve(transport).await?;
+        let service = match server.serve(transport).await {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("expect initialized")
+                    || msg.contains("context canceled")
+                    || msg.contains("broken pipe")
+                {
+                    tracing::debug!("Client disconnected before init: {msg}");
+                    return Ok(());
+                }
+                return Err(e.into());
+            }
+        };
         service.waiting().await?;
 
         core::stats::flush();

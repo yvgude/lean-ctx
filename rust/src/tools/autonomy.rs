@@ -8,6 +8,7 @@ use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
+/// Tracks autonomous action state: session init, dedup, and consolidation timing.
 pub struct AutonomyState {
     pub session_initialized: AtomicBool,
     pub dedup_applied: AtomicBool,
@@ -22,6 +23,7 @@ impl Default for AutonomyState {
 }
 
 impl AutonomyState {
+    /// Creates a new autonomy state with config loaded from disk.
     pub fn new() -> Self {
         Self {
             session_initialized: AtomicBool::new(false),
@@ -31,11 +33,13 @@ impl AutonomyState {
         }
     }
 
+    /// Returns true if autonomous actions are enabled in configuration.
     pub fn is_enabled(&self) -> bool {
         self.config.enabled
     }
 }
 
+/// Auto-preloads project context on the first tool call of a session.
 pub fn session_lifecycle_pre_hook(
     state: &AutonomyState,
     tool_name: &str,
@@ -81,6 +85,7 @@ pub fn session_lifecycle_pre_hook(
     ))
 }
 
+/// Appends related-file hints and silently preloads imports after a file read.
 pub fn enrich_after_read(
     state: &AutonomyState,
     cache: &mut SessionCache,
@@ -114,6 +119,7 @@ pub fn enrich_after_read(
     result
 }
 
+/// Output from post-read enrichment: optional related-file hints.
 #[derive(Default)]
 pub struct EnrichResult {
     pub related_hint: Option<String>,
@@ -167,6 +173,7 @@ fn silent_preload_imports(
     }
 }
 
+/// Runs cache deduplication once the entry count exceeds the configured threshold.
 pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     if !state.is_enabled() || !state.config.auto_dedup {
         return;
@@ -189,6 +196,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     crate::tools::ctx_dedup::handle_action(cache, "apply");
 }
 
+/// Returns true if enough tool calls have elapsed to trigger auto-consolidation.
 pub fn should_auto_consolidate(state: &AutonomyState, tool_calls: u32) -> bool {
     if !state.is_enabled() || !state.config.auto_consolidate {
         return false;
@@ -210,6 +218,7 @@ pub fn should_auto_consolidate(state: &AutonomyState, tool_calls: u32) -> bool {
     true
 }
 
+/// Suggests a more token-efficient lean-ctx tool when shell compression is low.
 pub fn shell_efficiency_hint(
     state: &AutonomyState,
     command: &str,

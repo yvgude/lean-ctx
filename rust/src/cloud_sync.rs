@@ -8,26 +8,22 @@ pub fn cloud_background_tasks() {
         .cloud
         .last_contribute
         .as_deref()
-        .map(|d| d == today)
-        .unwrap_or(false);
+        .is_some_and(|d| d == today);
     let already_synced = config
         .cloud
         .last_sync
         .as_deref()
-        .map(|d| d == today)
-        .unwrap_or(false);
+        .is_some_and(|d| d == today);
     let already_gain_synced = config
         .cloud
         .last_gain_sync
         .as_deref()
-        .map(|d| d == today)
-        .unwrap_or(false);
+        .is_some_and(|d| d == today);
     let already_pulled = config
         .cloud
         .last_model_pull
         .as_deref()
-        .map(|d| d == today)
-        .unwrap_or(false);
+        .is_some_and(|d| d == today);
 
     if config.cloud.contribute_enabled && !already_contributed {
         let entries = collect_contribute_entries();

@@ -31,12 +31,7 @@ jobs:
           workspaces: rust -> target
       - name: Run tests
         working-directory: rust
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cargo test --lib --all-features -- --test-threads=1
-          else
-            cargo test --all-features -- --test-threads=1
-          fi
+        run: cargo test --all-features -- --test-threads=1
         shell: bash
 
   clippy:
@@ -70,6 +65,38 @@ jobs:
         working-directory: rust
         run: cargo fmt --check
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: rust -> target
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Generate coverage
+        working-directory: rust
+        run: cargo tarpaulin --out xml --skip-clean --all-features -- --test-threads=1
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: false
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: rust/Cargo.toml
+
   adversarial:
     name: Adversarial Safety
     runs-on: ubuntu-latest
@@ -84,5 +111,20 @@ jobs:
       - name: Run adversarial compression tests
         working-directory: rust
         run: cargo test --test adversarial_compression -- --nocapture
+
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: rust -> target
+      - name: Compile benchmarks
+        working-directory: rust
+        run: cargo bench --no-run
 
   # Security audit runs in security-check.yml workflow

@@ -43,7 +43,7 @@ pub fn extract_safety_lines(lines: &[&str], max: usize) -> Vec<String> {
         .iter()
         .filter(|l| is_safety_relevant(l))
         .take(max)
-        .map(|l| l.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 

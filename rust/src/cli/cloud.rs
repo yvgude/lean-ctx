@@ -40,7 +40,7 @@ fn require_email_and_password(args: &[String], usage: &str) -> (String, String) 
         std::process::exit(1);
     }
     if !email.contains('@') || !email.contains('.') {
-        eprintln!("Invalid email address: {email}");
+        tracing::error!("Invalid email address: {email}");
         std::process::exit(1);
     }
 
@@ -49,13 +49,13 @@ fn require_email_and_password(args: &[String], usage: &str) -> (String, String) 
         None => match rpassword::prompt_password("Password: ") {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("Could not read password: {e}");
+                tracing::error!("Could not read password: {e}");
                 std::process::exit(1);
             }
         },
     };
     if pw.len() < 8 {
-        eprintln!("Password must be at least 8 characters.");
+        tracing::error!("Password must be at least 8 characters.");
         std::process::exit(1);
     }
     (email, pw)
@@ -63,7 +63,7 @@ fn require_email_and_password(args: &[String], usage: &str) -> (String, String) 
 
 fn save_and_report(r: &cloud_client::RegisterResult, email: &str) {
     if let Err(e) = cloud_client::save_credentials(&r.api_key, &r.user_id, email) {
-        eprintln!("Warning: Could not save credentials: {e}");
+        tracing::warn!("Could not save credentials: {e}");
         eprintln!("Please try again.");
         return;
     }
@@ -90,17 +90,17 @@ pub fn cmd_login(args: &[String]) {
             println!("Logged in as {}", mask_email(&email));
         }
         Err(e) if e.contains("403") => {
-            eprintln!("Please verify your email first. Check your inbox.");
+            tracing::error!("Please verify your email first. Check your inbox.");
             std::process::exit(1);
         }
         Err(e) if e.contains("Invalid email or password") => {
-            eprintln!("Invalid email or password.");
+            tracing::error!("Invalid email or password.");
             eprintln!("Forgot your password? Run: lean-ctx forgot-password <email>");
             eprintln!("No account yet? Run: lean-ctx register <email>");
             std::process::exit(1);
         }
         Err(e) => {
-            eprintln!("Login failed: {e}");
+            tracing::error!("Login failed: {e}");
             eprintln!("If you don't have an account yet, run: lean-ctx register <email>");
             std::process::exit(1);
         }
@@ -123,7 +123,7 @@ pub fn cmd_forgot_password(args: &[String]) {
             println!("Check your inbox and follow the reset link.");
         }
         Err(e) => {
-            eprintln!("Failed: {e}");
+            tracing::error!("Failed: {e}");
             std::process::exit(1);
         }
     }
@@ -141,12 +141,12 @@ pub fn cmd_register(args: &[String]) {
             println!("Account created for {}", mask_email(&email));
         }
         Err(e) if e.contains("409") || e.contains("already exists") => {
-            eprintln!("An account with this email already exists.");
+            tracing::error!("An account with this email already exists.");
             eprintln!("Run: lean-ctx login <email>");
             std::process::exit(1);
         }
         Err(e) => {
-            eprintln!("Registration failed: {e}");
+            tracing::error!("Registration failed: {e}");
             std::process::exit(1);
         }
     }
@@ -154,7 +154,7 @@ pub fn cmd_register(args: &[String]) {
 
 pub fn cmd_sync() {
     if !cloud_client::is_logged_in() {
-        eprintln!("Not logged in. Run: lean-ctx login <email>");
+        tracing::error!("Not logged in. Run: lean-ctx login <email>");
         std::process::exit(1);
     }
 
@@ -166,7 +166,7 @@ pub fn cmd_sync() {
     } else {
         match cloud_client::sync_stats(&entries) {
             Ok(_) => println!("  Stats: synced"),
-            Err(e) => eprintln!("  Stats sync failed: {e}"),
+            Err(e) => tracing::error!("Stats sync failed: {e}"),
         }
     }
 
@@ -177,7 +177,7 @@ pub fn cmd_sync() {
     } else {
         match cloud_client::push_commands(&command_entries) {
             Ok(_) => println!("  Commands: synced"),
-            Err(e) => eprintln!("  Commands sync failed: {e}"),
+            Err(e) => tracing::error!("Commands sync failed: {e}"),
         }
     }
 
@@ -188,7 +188,7 @@ pub fn cmd_sync() {
     } else {
         match cloud_client::push_cep(&cep_entries) {
             Ok(_) => println!("  CEP: synced"),
-            Err(e) => eprintln!("  CEP sync failed: {e}"),
+            Err(e) => tracing::error!("CEP sync failed: {e}"),
         }
     }
 
@@ -199,7 +199,7 @@ pub fn cmd_sync() {
     } else {
         match cloud_client::push_knowledge(&knowledge_entries) {
             Ok(_) => println!("  Knowledge: synced"),
-            Err(e) => eprintln!("  Knowledge sync failed: {e}"),
+            Err(e) => tracing::error!("Knowledge sync failed: {e}"),
         }
     }
 
@@ -210,7 +210,7 @@ pub fn cmd_sync() {
     } else {
         match cloud_client::push_gotchas(&gotcha_entries) {
             Ok(_) => println!("  Gotchas: synced"),
-            Err(e) => eprintln!("  Gotchas sync failed: {e}"),
+            Err(e) => tracing::error!("Gotchas sync failed: {e}"),
         }
     }
 
@@ -219,7 +219,7 @@ pub fn cmd_sync() {
     let buddy_data = serde_json::to_value(&buddy).unwrap_or_default();
     match cloud_client::push_buddy(&buddy_data) {
         Ok(_) => println!("  Buddy: synced"),
-        Err(e) => eprintln!("  Buddy sync failed: {e}"),
+        Err(e) => tracing::error!("Buddy sync failed: {e}"),
     }
 
     println!("Syncing feedback thresholds...");
@@ -229,7 +229,7 @@ pub fn cmd_sync() {
     } else {
         match cloud_client::push_feedback(&feedback_entries) {
             Ok(_) => println!("  Feedback: synced"),
-            Err(e) => eprintln!("  Feedback sync failed: {e}"),
+            Err(e) => tracing::error!("Feedback sync failed: {e}"),
         }
     }
 
@@ -245,9 +245,8 @@ fn build_sync_entries(store: &core::stats::StatsStore) -> Vec<serde_json::Value>
 }
 
 fn collect_knowledge_entries() -> Vec<serde_json::Value> {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return Vec::new(),
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
     };
     let knowledge_dir = home.join(".lean-ctx").join("knowledge");
     if !knowledge_dir.is_dir() {
@@ -257,9 +256,8 @@ fn collect_knowledge_entries() -> Vec<serde_json::Value> {
     let mut entries = Vec::new();
 
     for project_entry in std::fs::read_dir(&knowledge_dir).into_iter().flatten() {
-        let project_entry = match project_entry {
-            Ok(e) => e,
-            Err(_) => continue,
+        let Ok(project_entry) = project_entry else {
+            continue;
         };
         let project_path = project_entry.path();
         if !project_path.is_dir() {
@@ -267,17 +265,13 @@ fn collect_knowledge_entries() -> Vec<serde_json::Value> {
         }
 
         for file_entry in std::fs::read_dir(&project_path).into_iter().flatten() {
-            let file_entry = match file_entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
+            let Ok(file_entry) = file_entry else { continue };
             let file_path = file_entry.path();
             if file_path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            let data = match std::fs::read_to_string(&file_path) {
-                Ok(d) => d,
-                Err(_) => continue,
+            let Ok(data) = std::fs::read_to_string(&file_path) else {
+                continue;
             };
             let parsed: serde_json::Value = match serde_json::from_str(&data) {
                 Ok(v) => v,
@@ -516,14 +510,14 @@ pub fn cmd_contribute() {
     match cloud_client::contribute(&entries) {
         Ok(msg) => println!("{msg}"),
         Err(e) => {
-            eprintln!("Contribute failed: {e}");
+            tracing::error!("Contribute failed: {e}");
             std::process::exit(1);
         }
     }
 }
 
 pub fn cmd_cloud(args: &[String]) {
-    let action = args.first().map(|s| s.as_str()).unwrap_or("help");
+    let action = args.first().map_or("help", std::string::String::as_str);
 
     match action {
         "pull-models" => {
@@ -533,20 +527,22 @@ pub fn cmd_cloud(args: &[String]) {
                     let count = data
                         .get("models")
                         .and_then(|v| v.as_array())
-                        .map(|a| a.len())
-                        .unwrap_or(0);
+                        .map_or(0, std::vec::Vec::len);
 
                     if let Err(e) = cloud_client::save_cloud_models(&data) {
-                        eprintln!("Warning: Could not save models: {e}");
+                        tracing::warn!("Could not save models: {e}");
                         return;
                     }
                     println!("{count} adaptive models updated.");
-                    if let Some(est) = data.get("improvement_estimate").and_then(|v| v.as_f64()) {
+                    if let Some(est) = data
+                        .get("improvement_estimate")
+                        .and_then(serde_json::Value::as_f64)
+                    {
                         println!("Estimated compression improvement: +{:.0}%", est * 100.0);
                     }
                 }
                 Err(e) => {
-                    eprintln!("{e}");
+                    tracing::error!("{e}");
                     std::process::exit(1);
                 }
             }
@@ -568,10 +564,9 @@ pub fn cmd_cloud(args: &[String]) {
 }
 
 pub fn cmd_gotchas(args: &[String]) {
-    let action = args.first().map(|s| s.as_str()).unwrap_or("list");
+    let action = args.first().map_or("list", std::string::String::as_str);
     let project_root = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| ".".to_string());
+        .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string());
 
     match action {
         "list" | "ls" => {
@@ -589,7 +584,7 @@ pub fn cmd_gotchas(args: &[String]) {
             let store = core::gotcha_tracker::GotchaStore::load(&project_root);
             match serde_json::to_string_pretty(&store.gotchas) {
                 Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("Export failed: {e}"),
+                Err(e) => tracing::error!("Export failed: {e}"),
             }
         }
         "stats" => {
@@ -622,15 +617,12 @@ pub fn cmd_buddy(args: &[String]) {
         return;
     }
 
-    let action = args.first().map(|s| s.as_str()).unwrap_or("show");
+    let action = args.first().map_or("show", std::string::String::as_str);
     let buddy = core::buddy::BuddyState::compute();
     let theme = core::theme::load_theme(&cfg.theme);
 
     match action {
-        "show" | "status" => {
-            println!("{}", core::buddy::format_buddy_full(&buddy, &theme));
-        }
-        "stats" => {
+        "show" | "status" | "stats" => {
             println!("{}", core::buddy::format_buddy_full(&buddy, &theme));
         }
         "ascii" => {
@@ -640,7 +632,7 @@ pub fn cmd_buddy(args: &[String]) {
         }
         "json" => match serde_json::to_string_pretty(&buddy) {
             Ok(json) => println!("{json}"),
-            Err(e) => eprintln!("JSON error: {e}"),
+            Err(e) => tracing::error!("JSON error: {e}"),
         },
         _ => {
             println!("Usage: lean-ctx buddy [show|stats|ascii|json]");

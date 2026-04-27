@@ -10,10 +10,7 @@ fn slow_log_path() -> Option<PathBuf> {
 }
 
 pub fn record(command: &str, duration_ms: u128, exit_code: i32) {
-    let path = match slow_log_path() {
-        Some(p) => p,
-        None => return,
-    };
+    let Some(path) = slow_log_path() else { return };
 
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -41,9 +38,8 @@ pub fn record(command: &str, duration_ms: u128, exit_code: i32) {
 }
 
 pub fn list() -> String {
-    let path = match slow_log_path() {
-        Some(p) => p,
-        None => return "Cannot determine data directory.".to_string(),
+    let Some(path) = slow_log_path() else {
+        return "Cannot determine data directory.".to_string();
     };
 
     match std::fs::read_to_string(&path) {
@@ -78,9 +74,8 @@ pub fn list() -> String {
 }
 
 pub fn clear() -> String {
-    let path = match slow_log_path() {
-        Some(p) => p,
-        None => return "Cannot determine data directory.".to_string(),
+    let Some(path) = slow_log_path() else {
+        return "Cannot determine data directory.".to_string();
     };
 
     if !path.exists() {

@@ -493,7 +493,7 @@ pub async fn auth_user(
 ) -> Result<(Uuid, String), (StatusCode, String)> {
     if let Some(v) = headers.get(axum::http::header::AUTHORIZATION) {
         if let Ok(s) = v.to_str() {
-            if let Some(key) = s.strip_prefix("Bearer ").map(|x| x.trim()) {
+            if let Some(key) = s.strip_prefix("Bearer ").map(str::trim) {
                 let sha = sha256_hex(key);
                 if let Some((user_id, email)) = lookup_api_key(&state.pool, &sha)
                     .await

@@ -26,7 +26,7 @@ pub(super) fn install_named_json_server(
     if write_named_json_server_root(config_path, root_key, entry) {
         print_named_json_server_success(name, display_path);
     } else {
-        eprintln!("  \x1b[31m✗\x1b[0m Failed to configure {name}");
+        tracing::error!("Failed to configure {name}");
     }
 }
 
@@ -103,7 +103,7 @@ pub(super) fn install_codex_instruction_docs(codex_dir: &Path) -> bool {
 fn codex_instruction_doc_content() -> String {
     let binary = super::resolve_binary_path();
     format!(
-        r#"# lean-ctx — Token Optimization
+        r"# lean-ctx — Token Optimization
 
 Prefix all shell commands with `{binary} -c` for compressed output:
 
@@ -115,7 +115,7 @@ Prefix all shell commands with `{binary} -c` for compressed output:
 
 This saves 60-90% tokens per command. Works with: git, cargo, npm, pnpm, docker, kubectl, pip, ruff, go, curl, grep, find, ls, aws, helm, and 90+ more commands.
 Use `{binary} -c --raw <cmd>` to skip compression and get full output.
-"#
+"
     )
 }
 
@@ -153,7 +153,7 @@ fn config_newline(config_content: &str) -> &'static str {
 fn config_lines(config_content: &str) -> Vec<String> {
     config_content
         .lines()
-        .map(|line| line.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 

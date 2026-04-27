@@ -32,17 +32,17 @@ fn md5_hex(s: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn normalize_tool_entry(tool_json: Value) -> Value {
-    let name = extract_field(&tool_json, &["name"])
+fn normalize_tool_entry(tool_json: &Value) -> Value {
+    let name = extract_field(tool_json, &["name"])
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let description = extract_field(&tool_json, &["description"])
+    let description = extract_field(tool_json, &["description"])
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
-    let schema = extract_field(&tool_json, &["inputSchema", "input_schema"])
+    let schema = extract_field(tool_json, &["inputSchema", "input_schema"])
         .cloned()
         .unwrap_or(Value::Null);
     let schema_str = serde_json::to_string(&schema).unwrap_or_default();
@@ -72,13 +72,13 @@ pub fn manifest_value() -> Value {
     let granular: Vec<Value> = granular_tools
         .into_iter()
         .filter_map(|t| serde_json::to_value(t).ok())
-        .map(normalize_tool_entry)
+        .map(|v| normalize_tool_entry(&v))
         .collect();
 
     let unified: Vec<Value> = unified_tools
         .into_iter()
         .filter_map(|t| serde_json::to_value(t).ok())
-        .map(normalize_tool_entry)
+        .map(|v| normalize_tool_entry(&v))
         .collect();
 
     json!({

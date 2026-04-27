@@ -25,11 +25,13 @@ struct CompiledRule {
     keep_lines: Vec<String>,
 }
 
+/// Regex-based output filter engine loaded from user-defined TOML rules.
 pub struct FilterEngine {
     rules: Vec<CompiledRule>,
 }
 
 impl FilterEngine {
+    /// Loads and compiles all filter rules from `~/.lean-ctx/filters/*.toml`.
     pub fn load() -> Option<Self> {
         let dir = crate::core::data_dir::lean_ctx_data_dir()
             .ok()?
@@ -49,13 +51,11 @@ impl FilterEngine {
                 match toml::from_str::<FilterFile>(&content) {
                     Ok(file) => {
                         for raw in file.rules {
-                            if let Some(compiled) = compile_rule(raw, &path) {
-                                rules.push(compiled);
-                            }
+                            rules.push(compile_rule(raw, &path));
                         }
                     }
                     Err(e) => {
-                        eprintln!("lean-ctx: filter parse error in {}: {e}", path.display());
+                        tracing::warn!("lean-ctx: filter parse error in {}: {e}", path.display());
                     }
                 }
             }
@@ -68,6 +68,7 @@ impl FilterEngine {
         }
     }
 
+    /// Applies the first matching filter rule to the command output.
     pub fn apply(&self, command: &str, output: &str) -> Option<String> {
         let cmd_lower = command.to_ascii_lowercase();
 
@@ -103,6 +104,7 @@ impl FilterEngine {
         None
     }
 
+    /// Returns a human-readable summary of each loaded filter rule.
     pub fn list_rules(&self) -> Vec<String> {
         self.rules
             .iter()
@@ -110,8 +112,7 @@ impl FilterEngine {
                 let cmd = r
                     .command_re
                     .as_ref()
-                    .map(|re| re.as_str().to_string())
-                    .unwrap_or_else(|| "*".to_string());
+                    .map_or_else(|| "*".to_string(), |re| re.as_str().to_string());
                 if !r.keep_lines.is_empty() {
                     format!("  {cmd} -> keep lines: {:?}", r.keep_lines)
                 } else if let Some(ref pat) = r.pattern_re {
@@ -125,11 +126,11 @@ impl FilterEngine {
     }
 }
 
-fn compile_rule(raw: RawFilterRule, path: &Path) -> Option<CompiledRule> {
+fn compile_rule(raw: RawFilterRule, path: &Path) -> CompiledRule {
     let command_re = raw.command.as_ref().and_then(|s| {
         Regex::new(s)
             .map_err(|e| {
-                eprintln!("lean-ctx: invalid command regex in {}: {e}", path.display());
+                tracing::warn!("lean-ctx: invalid command regex in {}: {e}", path.display());
             })
             .ok()
     });
@@ -137,19 +138,20 @@ fn compile_rule(raw: RawFilterRule, path: &Path) -> Option<CompiledRule> {
     let pattern_re = raw.pattern.as_ref().and_then(|s| {
         Regex::new(s)
             .map_err(|e| {
-                eprintln!("lean-ctx: invalid pattern regex in {}: {e}", path.display());
+                tracing::warn!("lean-ctx: invalid pattern regex in {}: {e}", path.display());
             })
             .ok()
     });
 
-    Some(CompiledRule {
+    CompiledRule {
         command_re,
         pattern_re,
         replace: raw.replace,
         keep_lines: raw.keep_lines,
-    })
+    }
 }
 
+/// Validates a filter TOML file, returning the number of valid rules or an error.
 pub fn validate_filter_file(path: &str) -> Result<usize, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("Cannot read {path}: {e}"))?;
     let file: FilterFile =
@@ -168,6 +170,7 @@ pub fn validate_filter_file(path: &str) -> Result<usize, String> {
     Ok(valid)
 }
 
+/// Creates an example filter TOML file in the filters directory.
 pub fn create_example_filter() -> Result<String, String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()?.join("filters");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -197,6 +200,7 @@ pub fn create_example_filter() -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Applies aggressive compression (strips comments, blank lines, normalizes indent).
 pub fn aggressive_filter(content: &str) -> String {
     crate::core::compressor::aggressive_compress(content, None)
 }

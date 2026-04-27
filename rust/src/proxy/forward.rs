@@ -54,8 +54,7 @@ fn build_upstream_url(parts: &Parts, base: &str, default_path: &str) -> String {
         parts
             .uri
             .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or(default_path)
+            .map_or(default_path, axum::http::uri::PathAndQuery::as_str)
     )
 }
 
@@ -77,7 +76,7 @@ async fn send_upstream(
     }
 
     req.body(body).send().await.map_err(|e| {
-        eprintln!("lean-ctx proxy: {provider_label} upstream error: {e}");
+        tracing::error!("lean-ctx proxy: {provider_label} upstream error: {e}");
         StatusCode::BAD_GATEWAY
     })
 }

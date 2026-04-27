@@ -90,10 +90,7 @@ fn bench_system_instructions_token_count() {
     let claude_code_instr = lean_ctx::server::build_claude_code_instructions_for_test();
     let claude_chars = claude_code_instr.len();
     let claude_tokens = count_tokens(&claude_code_instr);
-    eprintln!(
-        "  Claude Code: {:>6} tokens ({:>5} chars)",
-        claude_tokens, claude_chars
-    );
+    eprintln!("  Claude Code: {claude_tokens:>6} tokens ({claude_chars:>5} chars)");
     assert!(
         claude_chars <= 2048,
         "Claude Code instructions MUST be <=2048 chars, got {claude_chars}"
@@ -158,11 +155,11 @@ fn bench_total_input_overhead() {
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  TOTAL INPUT OVERHEAD (per session start)");
     eprintln!("{}", "=".repeat(70));
-    eprintln!("  System instructions: {:>6} tokens", instr_tokens);
-    eprintln!("  Tool descriptions:   {:>6} tokens", desc_tokens);
-    eprintln!("  Tool schemas (JSON): {:>6} tokens", schema_tokens);
+    eprintln!("  System instructions: {instr_tokens:>6} tokens");
+    eprintln!("  Tool descriptions:   {desc_tokens:>6} tokens");
+    eprintln!("  Tool schemas (JSON): {schema_tokens:>6} tokens");
     eprintln!("  {}", "-".repeat(40));
-    eprintln!("  TOTAL overhead:      {:>6} tokens", total);
+    eprintln!("  TOTAL overhead:      {total:>6} tokens");
     eprintln!(
         "  Estimated cost @$3/1M input: ${:.4}",
         total as f64 * 3.0 / 1_000_000.0
@@ -186,8 +183,7 @@ fn bench_lazy_default_vs_full_overhead() {
             .map(|t| {
                 t.description
                     .as_ref()
-                    .map(|d| count_tokens(d.as_ref()))
-                    .unwrap_or(0)
+                    .map_or(0, |d| count_tokens(d.as_ref()))
             })
             .sum();
         let schema: usize = tools
@@ -224,17 +220,11 @@ fn bench_lazy_default_vs_full_overhead() {
         full_tools.len(),
         full_total
     );
-    eprintln!("  Instructions:          {:>5} tokens", instr_tokens);
+    eprintln!("  Instructions:          {instr_tokens:>5} tokens");
     eprintln!("  {}", "-".repeat(50));
-    eprintln!(
-        "  User overhead (LAZY DEFAULT):  {:>5} tokens",
-        lazy_user_overhead
-    );
-    eprintln!(
-        "  User overhead (FULL opt-in):   {:>5} tokens",
-        full_user_overhead
-    );
-    eprintln!("  Tool token reduction:          {:>5.1}%", reduction_pct);
+    eprintln!("  User overhead (LAZY DEFAULT):  {lazy_user_overhead:>5} tokens");
+    eprintln!("  User overhead (FULL opt-in):   {full_user_overhead:>5} tokens");
+    eprintln!("  Tool token reduction:          {reduction_pct:>5.1}%");
     eprintln!("{}", "=".repeat(70));
 
     assert!(
@@ -385,7 +375,7 @@ fn bench_pattern_coverage_comprehensive() {
         let (orig, comp, pct) = measure_pattern(cmd, output);
         total_orig += orig;
         total_comp += comp;
-        eprintln!("  {:<40} {:>8} {:>8} {:>6.1}%", cmd, orig, comp, pct);
+        eprintln!("  {cmd:<40} {orig:>8} {comp:>8} {pct:>6.1}%");
     }
 
     let total_pct = compression_ratio(total_orig, total_comp);
@@ -461,10 +451,11 @@ fn bench_signatures_mode_rust() {
     let content = generate_rust_file(200);
     let sigs = extract_signatures(&content, "rs");
 
-    let sig_output: String = sigs
-        .iter()
-        .map(|s| format!("{}\n", s.to_compact()))
-        .collect();
+    let sig_output = sigs.iter().fold(String::new(), |mut s, sig| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "{}", sig.to_compact());
+        s
+    });
     let (orig, comp, pct) = measure_text(&content, &sig_output);
 
     eprintln!(
@@ -487,10 +478,11 @@ fn bench_signatures_mode_typescript() {
     let content = generate_typescript_file(200);
     let sigs = extract_signatures(&content, "ts");
 
-    let sig_output: String = sigs
-        .iter()
-        .map(|s| format!("{}\n", s.to_compact()))
-        .collect();
+    let sig_output = sigs.iter().fold(String::new(), |mut s, sig| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "{}", sig.to_compact());
+        s
+    });
     let (orig, comp, pct) = measure_text(&content, &sig_output);
 
     eprintln!(
@@ -544,10 +536,11 @@ fn bench_all_modes_comparison() {
     let aggressive = aggressive_compress(&content, Some("rs"));
     let entropy = entropy_compress(&content);
     let sigs = extract_signatures(&content, "rs");
-    let sig_text: String = sigs
-        .iter()
-        .map(|s| format!("{}\n", s.to_compact()))
-        .collect();
+    let sig_text = sigs.iter().fold(String::new(), |mut s, sig| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "{}", sig.to_compact());
+        s
+    });
     let cleaned = lightweight_cleanup(&content);
 
     let modes = vec![
@@ -566,7 +559,7 @@ fn bench_all_modes_comparison() {
 
     for (name, tokens) in &modes {
         let pct = compression_ratio(orig_tokens, *tokens);
-        eprintln!("  {:<20} {:>8} {:>6.1}%", name, tokens, pct);
+        eprintln!("  {name:<20} {tokens:>8} {pct:>6.1}%");
     }
     eprintln!("{}", "=".repeat(70));
 }
@@ -589,7 +582,7 @@ fn bench_rrf_eviction_vs_legacy() {
             original_tokens: (i + 1) * 100,
             read_count: (10 - i) as u32,
             path: format!("/file_{i}.rs"),
-            last_access: now - Duration::from_secs(i as u64 * 60),
+            last_access: now.checked_sub(Duration::from_secs(i as u64 * 60)).unwrap(),
         })
         .collect();
 
@@ -736,15 +729,9 @@ Don't hesitate to reach out if you need further assistance with this or any othe
     let tdd_savings = compression_ratio(orig_tokens, tdd_tokens);
 
     eprintln!("\n  [filler removal in context]");
-    eprintln!("    Original:    {} tokens", orig_tokens);
-    eprintln!(
-        "    CRP Off:     {} tokens ({:.1}% saved)",
-        off_tokens, off_savings
-    );
-    eprintln!(
-        "    CRP TDD:     {} tokens ({:.1}% saved)",
-        tdd_tokens, tdd_savings
-    );
+    eprintln!("    Original:    {orig_tokens} tokens");
+    eprintln!("    CRP Off:     {off_tokens} tokens ({off_savings:.1}% saved)");
+    eprintln!("    CRP TDD:     {tdd_tokens} tokens ({tdd_savings:.1}% saved)");
 
     assert!(
         off_savings > 5.0,
@@ -840,8 +827,7 @@ fn bench_tdd_symbols_token_efficiency() {
     let savings_pct = compression_ratio(prose_tokens, tdd_tokens);
 
     eprintln!(
-        "\n  [TDD symbols] Prose: {} tokens → TDD: {} tokens ({:.1}% saved)",
-        prose_tokens, tdd_tokens, savings_pct
+        "\n  [TDD symbols] Prose: {prose_tokens} tokens → TDD: {tdd_tokens} tokens ({savings_pct:.1}% saved)"
     );
     eprintln!(
         "  Semantic density: {:.1}x more meaning per token",
@@ -987,10 +973,7 @@ fn print_compression_report(title: &str, scenarios: &[(&str, String, f64)]) {
         total_orig += orig;
         total_comp += comp;
         let status = if pct >= *min_savings { "✓" } else { "✗" };
-        eprintln!(
-            "  {:<35} {:>8} {:>8} {:>6.1}% {status}",
-            cmd, orig, comp, pct
-        );
+        eprintln!("  {cmd:<35} {orig:>8} {comp:>8} {pct:>6.1}% {status}");
         assert!(
             pct >= *min_savings,
             "'{cmd}' should save ≥{min_savings}%, got {pct:.1}%"
@@ -1016,8 +999,8 @@ fn generate_rust_file(lines: usize) -> String {
     while line < lines {
         let fn_idx = line / 15;
         s.push_str(&format!(
-            "/// Process item {} with validation and error handling\n\
-             pub fn process_item_{}(input: &str, config: &Config) -> Result<Output, Error> {{\n\
+            "/// Process item {fn_idx} with validation and error handling\n\
+             pub fn process_item_{fn_idx}(input: &str, config: &Config) -> Result<Output, Error> {{\n\
              \tlet validated = validate_input(input)?;\n\
              \tlet transformed = transform_data(&validated, config);\n\
              \t// Apply business rules\n\
@@ -1026,8 +1009,7 @@ fn generate_rust_file(lines: usize) -> String {
              \t}}\n\
              \tlet result = compute_result(&transformed)?;\n\
              \tOk(Output::new(result))\n\
-             }}\n\n",
-            fn_idx, fn_idx
+             }}\n\n"
         ));
         line += 13;
     }
@@ -1360,9 +1342,7 @@ fn generate_kubectl_pods(count: usize) -> String {
         String::from("NAME                              READY   STATUS    RESTARTS   AGE\n");
     for i in 0..count {
         let status = match i % 5 {
-            0 => "Running",
-            1 => "Running",
-            2 => "Running",
+            0..=2 => "Running",
             3 => "Pending",
             _ => "CrashLoopBackOff",
         };
@@ -1500,7 +1480,7 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  MINIMAL OVERHEAD: Instructions Token Count");
     eprintln!("{}", "=".repeat(70));
-    eprintln!("  Instructions (minimal):  {:>5} tokens", instr_tokens);
+    eprintln!("  Instructions (minimal):  {instr_tokens:>5} tokens");
 
     assert!(
         !instructions.contains("--- ACTIVE SESSION"),
@@ -1512,9 +1492,9 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
     let full_instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
     let full_tokens = count_tokens(&full_instructions);
 
-    eprintln!("  Instructions (full):     {:>5} tokens", full_tokens);
+    eprintln!("  Instructions (full):     {full_tokens:>5} tokens");
     let saved = full_tokens.saturating_sub(instr_tokens);
-    eprintln!("  Tokens saved by minimal: {:>5}", saved);
+    eprintln!("  Tokens saved by minimal: {saved:>5}");
     eprintln!("{}", "=".repeat(70));
 
     assert!(
@@ -1566,9 +1546,9 @@ fn bench_md5_fast_vs_full_correctness() {
     let fast_us = start_fast.elapsed().as_micros();
 
     let speedup = full_us as f64 / fast_us.max(1) as f64;
-    eprintln!("  100x md5_hex(100KB):      {:>6} us", full_us);
-    eprintln!("  100x md5_hex_fast(100KB):  {:>6} us", fast_us);
-    eprintln!("  Speedup:                  {:>6.1}x", speedup);
+    eprintln!("  100x md5_hex(100KB):      {full_us:>6} us");
+    eprintln!("  100x md5_hex_fast(100KB):  {fast_us:>6} us");
+    eprintln!("  Speedup:                  {speedup:>6.1}x");
     eprintln!("{}", "=".repeat(70));
 
     assert!(
@@ -1600,8 +1580,8 @@ fn bench_compress_output_normal_is_noop() {
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  COMPRESS_OUTPUT DENSITY BENCHMARK (100 iters, ~20KB input)");
     eprintln!("{}", "=".repeat(70));
-    eprintln!("  Normal (to_string copy): {:>6} us", normal_us);
-    eprintln!("  Terse (filter+join):     {:>6} us", terse_us);
+    eprintln!("  Normal (to_string copy): {normal_us:>6} us");
+    eprintln!("  Terse (filter+join):     {terse_us:>6} us");
     eprintln!("  Note: In production, Normal is skipped entirely (no copy).");
     eprintln!("{}", "=".repeat(70));
 }
@@ -1628,15 +1608,12 @@ fn bench_count_tokens_cache_effectiveness() {
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  COUNT_TOKENS CACHE BENCHMARK (~9KB input)");
     eprintln!("{}", "=".repeat(70));
-    eprintln!("  Cold (first call):  {:>6} us  -> {} tokens", cold_us, t1);
-    eprintln!(
-        "  Cached (same text): {:>6} us  -> {} tokens",
-        cached_us, t2
-    );
-    eprintln!("  Miss (diff text):   {:>6} us  -> {} tokens", miss_us, t3);
+    eprintln!("  Cold (first call):  {cold_us:>6} us  -> {t1} tokens");
+    eprintln!("  Cached (same text): {cached_us:>6} us  -> {t2} tokens");
+    eprintln!("  Miss (diff text):   {miss_us:>6} us  -> {t3} tokens");
     if cold_us > 0 {
         let speedup = cold_us as f64 / cached_us.max(1) as f64;
-        eprintln!("  Cache speedup:      {:>6.0}x", speedup);
+        eprintln!("  Cache speedup:      {speedup:>6.0}x");
     }
     eprintln!("{}", "=".repeat(70));
 
@@ -1669,7 +1646,7 @@ fn bench_session_prepare_save_is_cpu_only() {
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  SESSION PREPARE_SAVE BENCHMARK (100 iters)");
     eprintln!("{}", "=".repeat(70));
-    eprintln!("  100x prepare_save (serialize only): {:>6} us", prepare_us);
+    eprintln!("  100x prepare_save (serialize only): {prepare_us:>6} us");
     eprintln!(
         "  Per call:                           {:>6} us",
         prepare_us / 100
@@ -1748,11 +1725,7 @@ fn bench_full_per_call_overhead_budget() {
     let lazy_tool_tokens: usize = lazy_tools
         .iter()
         .map(|t| {
-            let desc = t
-                .description
-                .as_ref()
-                .map(|d| d.as_ref().len())
-                .unwrap_or(0);
+            let desc = t.description.as_ref().map_or(0, |d| d.as_ref().len());
             let schema = serde_json::to_string(&t.input_schema)
                 .unwrap_or_default()
                 .len();
@@ -1763,11 +1736,7 @@ fn bench_full_per_call_overhead_budget() {
     let full_tool_tokens: usize = full_tools
         .iter()
         .map(|t| {
-            let desc = t
-                .description
-                .as_ref()
-                .map(|d| d.as_ref().len())
-                .unwrap_or(0);
+            let desc = t.description.as_ref().map_or(0, |d| d.as_ref().len());
             let schema = serde_json::to_string(&t.input_schema)
                 .unwrap_or_default()
                 .len();
@@ -1785,15 +1754,13 @@ fn bench_full_per_call_overhead_budget() {
     eprintln!("  TOTAL PER-SESSION OVERHEAD BUDGET");
     eprintln!("{}", "=".repeat(70));
     eprintln!(
-        "  Best case  (lazy+minimal):  {:>5} tok  ({} instr + {} tools)",
-        best_case, minimal_instr_tokens, lazy_tool_tokens
+        "  Best case  (lazy+minimal):  {best_case:>5} tok  ({minimal_instr_tokens} instr + {lazy_tool_tokens} tools)"
     );
     eprintln!(
-        "  Worst case (full+verbose):  {:>5} tok  ({} instr + {} tools)",
-        worst_case, full_instr_tokens, full_tool_tokens
+        "  Worst case (full+verbose):  {worst_case:>5} tok  ({full_instr_tokens} instr + {full_tool_tokens} tools)"
     );
     let reduction = (worst_case - best_case) as f64 / worst_case as f64 * 100.0;
-    eprintln!("  Total reduction potential:   {:>5.1}%", reduction);
+    eprintln!("  Total reduction potential:   {reduction:>5.1}%");
     eprintln!("{}", "=".repeat(70));
 
     assert!(

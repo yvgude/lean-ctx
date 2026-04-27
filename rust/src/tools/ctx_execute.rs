@@ -1,11 +1,13 @@
 use crate::core::sandbox::{self, SandboxResult};
 use crate::core::tokens::count_tokens;
 
+/// Executes a code snippet in a sandboxed environment and returns formatted output.
 pub fn handle(language: &str, code: &str, intent: Option<&str>, timeout: Option<u64>) -> String {
     let result = sandbox::execute(language, code, timeout);
     format_result(&result, intent)
 }
 
+/// Reads a file from disk, detects its language, and executes a processing script.
 pub fn handle_file(path: &str, intent: Option<&str>) -> String {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
@@ -18,6 +20,7 @@ pub fn handle_file(path: &str, intent: Option<&str>) -> String {
     format_result(&result, intent)
 }
 
+/// Executes multiple (language, code) pairs in parallel and returns aggregated results.
 pub fn handle_batch(items: &[(String, String)]) -> String {
     let results = sandbox::batch_execute(items);
     let mut output = Vec::new();
@@ -82,8 +85,7 @@ fn detect_language_from_extension(path: &str) -> String {
     match ext {
         "js" | "mjs" | "cjs" => "javascript",
         "ts" | "mts" | "cts" => "typescript",
-        "py" => "python",
-        "sh" | "bash" => "shell",
+        "py" | "json" | "csv" | "log" | "txt" | "xml" | "yaml" | "yml" | "md" | "html" => "python",
         "rb" => "ruby",
         "go" => "go",
         "rs" => "rust",
@@ -91,7 +93,6 @@ fn detect_language_from_extension(path: &str) -> String {
         "pl" => "perl",
         "r" | "R" => "r",
         "ex" | "exs" => "elixir",
-        "json" | "csv" | "log" | "txt" | "xml" | "yaml" | "yml" | "md" | "html" => "python",
         _ => "shell",
     }
     .to_string()
@@ -149,7 +150,7 @@ mod tests {
     #[test]
     fn handle_simple_python() {
         let result = handle("python", "print(2 + 2)", None, None);
-        assert!(result.contains("4"));
+        assert!(result.contains('4'));
         assert!(result.contains("python"));
     }
 

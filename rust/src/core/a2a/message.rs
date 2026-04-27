@@ -51,8 +51,7 @@ impl PrivacyLevel {
 
     pub fn allows_access(&self, requester_is_sender: bool, requester_is_recipient: bool) -> bool {
         match self {
-            Self::Public => true,
-            Self::Team => true,
+            Self::Public | Self::Team => true,
             Self::Private => requester_is_sender || requester_is_recipient,
         }
     }
@@ -121,7 +120,7 @@ impl A2AMessage {
         Self {
             id: generate_msg_id(),
             from_agent: from.to_string(),
-            to_agent: to.map(|s| s.to_string()),
+            to_agent: to.map(std::string::ToString::to_string),
             task_id: None,
             category,
             priority: MessagePriority::Normal,
@@ -155,7 +154,7 @@ impl A2AMessage {
     }
 
     pub fn is_expired(&self) -> bool {
-        self.expires_at.map(|exp| Utc::now() > exp).unwrap_or(false)
+        self.expires_at.is_some_and(|exp| Utc::now() > exp)
     }
 
     pub fn is_visible_to(&self, agent_id: &str) -> bool {
@@ -163,11 +162,7 @@ impl A2AMessage {
             return false;
         }
         let is_sender = self.from_agent == agent_id;
-        let is_recipient = self
-            .to_agent
-            .as_ref()
-            .map(|t| t == agent_id)
-            .unwrap_or(true);
+        let is_recipient = self.to_agent.as_ref().is_none_or(|t| t == agent_id);
         self.privacy.allows_access(is_sender, is_recipient)
     }
 

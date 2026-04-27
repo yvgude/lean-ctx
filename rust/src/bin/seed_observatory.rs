@@ -5,9 +5,8 @@ use lean_ctx::core::gotcha_tracker::{
 use lean_ctx::core::knowledge::ProjectKnowledge;
 
 fn main() {
-    let project_root = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| ".".to_string());
+    let project_root =
+        std::env::current_dir().map_or_else(|_| ".".to_string(), |p| p.display().to_string());
 
     println!("Seeding Observatory data for: {project_root}");
 
@@ -155,7 +154,7 @@ fn seed_events() {
         emit(EventKind::AgentAction {
             agent_id: id.to_string(),
             action: action.to_string(),
-            tool: tool.map(|t| t.to_string()),
+            tool: tool.map(std::string::ToString::to_string),
         });
     }
     println!("  {} AgentAction events", agent_actions.len());

@@ -34,9 +34,8 @@ pub fn upsert(path: &Path, start: &str, end: &str, block: &str, quiet: bool, lab
 }
 
 pub fn remove_from_file(path: &Path, start: &str, end: &str, quiet: bool, label: &str) {
-    let existing = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return,
+    let Ok(existing) = std::fs::read_to_string(path) else {
+        return;
     };
     if !existing.contains(start) {
         return;

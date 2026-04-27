@@ -8,9 +8,8 @@ pub fn select_mode(cache: &SessionCache, path: &str) -> String {
 }
 
 pub fn select_mode_with_task(cache: &SessionCache, path: &str, _task: Option<&str>) -> String {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return "full".to_string(),
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return "full".to_string();
     };
 
     let token_count = count_tokens(&content);

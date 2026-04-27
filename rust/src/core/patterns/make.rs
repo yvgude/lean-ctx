@@ -1,16 +1,18 @@
-use regex::Regex;
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
-static COMPILER_INVOCATION_RE: OnceLock<Regex> = OnceLock::new();
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-fn compiler_invocation_re() -> &'static Regex {
-    COMPILER_INVOCATION_RE.get_or_init(|| {
-        Regex::new(
-            r"(?i)^(/[^\s]+/)?(gcc|g\+\+|c\+\+|cc|clang\+\+|clang|ld\.bfd|ld\.gold|ld|ar|rustc|javac|zig|nvcc|emcc|icc|icpc)\s",
-        )
-        .unwrap()
-    })
+fn compiler_invocation_re() -> &'static regex::Regex {
+    static_regex!(
+        r"(?i)^(/[^\s]+/)?(gcc|g\+\+|c\+\+|cc|clang\+\+|clang|ld\.bfd|ld\.gold|ld|ar|rustc|javac|zig|nvcc|emcc|icc|icpc)\s"
+    )
 }
 
 fn is_compiler_echo_line(line: &str) -> bool {

@@ -33,9 +33,15 @@ pub async fn run() -> anyhow::Result<()> {
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list([
-            "https://leanctx.com".parse().unwrap(),
-            "https://www.leanctx.com".parse().unwrap(),
-            "http://localhost:4321".parse().unwrap(),
+            "https://leanctx.com"
+                .parse()
+                .expect("BUG: invalid hardcoded URL"),
+            "https://www.leanctx.com"
+                .parse()
+                .expect("BUG: invalid hardcoded URL"),
+            "http://localhost:4321"
+                .parse()
+                .expect("BUG: invalid hardcoded URL"),
         ]))
         .allow_methods([
             axum::http::Method::GET,

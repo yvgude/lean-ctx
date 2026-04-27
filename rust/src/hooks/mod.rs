@@ -2,7 +2,14 @@ use std::path::PathBuf;
 
 pub mod agents;
 mod support;
-use agents::*;
+use agents::{
+    install_amp_hook, install_claude_hook, install_claude_hook_config, install_claude_hook_scripts,
+    install_claude_project_hooks, install_cline_rules, install_codex_hook, install_copilot_hook,
+    install_crush_hook, install_cursor_hook, install_cursor_hook_config,
+    install_cursor_hook_scripts, install_gemini_hook, install_gemini_hook_config,
+    install_gemini_hook_scripts, install_hermes_hook, install_jetbrains_hook, install_kiro_hook,
+    install_opencode_hook, install_pi_hook, install_windsurf_rules,
+};
 use support::{
     ensure_codex_hooks_enabled, install_codex_instruction_docs, install_named_json_server,
     upsert_lean_ctx_codex_hook_entries,
@@ -16,10 +23,7 @@ fn mcp_server_quiet_mode() -> bool {
 /// Silently refresh all hook scripts for agents that are already configured.
 /// Called after updates and on MCP server start to ensure hooks match the current binary version.
 pub fn refresh_installed_hooks() {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return,
-    };
+    let Some(home) = dirs::home_dir() else { return };
 
     let claude_dir = crate::setup::claude_config_dir(&home);
     let claude_hooks = claude_dir.join("hooks/lean-ctx-rewrite.sh").exists()
@@ -190,17 +194,17 @@ esac
     )
 }
 
-const REDIRECT_SCRIPT_CLAUDE: &str = r#"#!/usr/bin/env bash
+const REDIRECT_SCRIPT_CLAUDE: &str = r"#!/usr/bin/env bash
 # lean-ctx PreToolUse hook — all native tools pass through
 # Read/Grep/ListFiles are allowed so Edit (which requires native Read) works.
 # The MCP instructions guide the AI to prefer ctx_read/ctx_search/ctx_tree.
 exit 0
-"#;
+";
 
-const REDIRECT_SCRIPT_GENERIC: &str = r#"#!/usr/bin/env bash
+const REDIRECT_SCRIPT_GENERIC: &str = r"#!/usr/bin/env bash
 # lean-ctx hook — all native tools pass through
 exit 0
-"#;
+";
 
 pub fn install_project_rules() {
     if crate::core::config::Config::load().rules_scope_effective()
@@ -482,7 +486,7 @@ pub fn install_agent_hook(agent: &str, global: bool) {
 
 fn write_file(path: &std::path::Path, content: &str) {
     if let Err(e) = crate::config_io::write_atomic_with_backup(path, content) {
-        eprintln!("Error writing {}: {e}", path.display());
+        tracing::error!("Error writing {}: {e}", path.display());
     }
 }
 

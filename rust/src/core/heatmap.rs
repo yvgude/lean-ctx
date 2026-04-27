@@ -29,7 +29,9 @@ pub struct HeatMap {
 
 impl HeatMap {
     pub fn load() -> Self {
-        let mut guard = HEATMAP_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = HEATMAP_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(ref hm) = *guard {
             return hm.clone();
         }
@@ -68,7 +70,9 @@ impl HeatMap {
             return Ok(());
         }
         save_to_disk(self)?;
-        let mut guard = HEATMAP_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = HEATMAP_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(self.clone());
         Ok(())
     }
@@ -85,8 +89,7 @@ impl HeatMap {
         for entry in self.entries.values() {
             let dir = std::path::Path::new(&entry.path)
                 .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string());
+                .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());
             let stat = dirs.entry(dir).or_insert((0, 0));
             stat.0 += entry.access_count;
             stat.1 += entry.total_tokens_saved;
@@ -100,8 +103,11 @@ impl HeatMap {
     }
 
     pub fn cold_files(&self, all_files: &[String], limit: usize) -> Vec<String> {
-        let hot: std::collections::HashSet<&str> =
-            self.entries.keys().map(|k| k.as_str()).collect();
+        let hot: std::collections::HashSet<&str> = self
+            .entries
+            .keys()
+            .map(std::string::String::as_str)
+            .collect();
         let mut cold: Vec<String> = all_files
             .iter()
             .filter(|f| !hot.contains(f.as_str()))
@@ -136,7 +142,9 @@ fn save_to_disk(hm: &HeatMap) -> std::io::Result<()> {
 }
 
 pub fn record_file_access(file_path: &str, original_tokens: usize, saved_tokens: usize) {
-    let mut guard = HEATMAP_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = HEATMAP_BUFFER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let hm = guard.get_or_insert_with(load_from_disk);
     hm.record_access(file_path, original_tokens, saved_tokens);
 

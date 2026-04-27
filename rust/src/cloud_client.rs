@@ -58,7 +58,7 @@ pub fn register(email: &str, password: Option<&str>) -> Result<RegisterResult, S
 
     let resp = ureq::post(&url)
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Request failed: {e}"))?;
 
     let resp_body = resp
@@ -89,7 +89,7 @@ pub fn forgot_password(email: &str) -> Result<String, String> {
 
     let resp = ureq::post(&url)
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Request failed: {e}"))?;
 
     let resp_body = resp
@@ -112,7 +112,7 @@ pub fn login(email: &str, password: &str) -> Result<RegisterResult, String> {
 
     let resp = ureq::post(&url)
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| {
             let msg = e.to_string();
             if msg.contains("401") {
@@ -153,7 +153,7 @@ pub fn sync_stats(stats: &[serde_json::Value]) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Sync failed: {e}"))?;
 
     let resp_body = resp
@@ -174,7 +174,7 @@ pub fn contribute(entries: &[serde_json::Value]) -> Result<String, String> {
 
     let resp = ureq::post(&url)
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Contribute failed: {e}"))?;
 
     let resp_body = resp
@@ -200,7 +200,7 @@ pub fn push_knowledge(entries: &[serde_json::Value]) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Push failed: {e}"))?;
 
     let resp_body = resp
@@ -294,7 +294,7 @@ pub fn push_commands(entries: &[serde_json::Value]) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Push failed: {e}"))?;
     let resp_body = resp
         .into_body()
@@ -315,7 +315,7 @@ pub fn push_cep(entries: &[serde_json::Value]) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Push failed: {e}"))?;
     let resp_body = resp
         .into_body()
@@ -336,7 +336,7 @@ pub fn push_gain(entries: &[serde_json::Value]) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Push failed: {e}"))?;
     let resp_body = resp
         .into_body()
@@ -357,7 +357,7 @@ pub fn push_gotchas(entries: &[serde_json::Value]) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(&body).unwrap().as_slice())
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Push failed: {e}"))?;
     let resp_body = resp
         .into_body()
@@ -377,7 +377,7 @@ pub fn push_buddy(data: &serde_json::Value) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(data).unwrap().as_slice())
+        .send(&serde_json::to_vec(data).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Push failed: {e}"))?;
     let resp_body = resp
         .into_body()
@@ -394,7 +394,7 @@ pub fn push_feedback(entries: &[serde_json::Value]) -> Result<String, String> {
     let resp = ureq::post(&url)
         .header("Authorization", &format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
-        .send(serde_json::to_vec(entries).unwrap().as_slice())
+        .send(&serde_json::to_vec(entries).map_err(|e| format!("JSON error: {e}"))?)
         .map_err(|e| format!("Push failed: {e}"))?;
     let resp_body = resp
         .into_body()

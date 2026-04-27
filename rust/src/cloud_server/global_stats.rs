@@ -8,10 +8,14 @@ use super::helpers::internal_error;
 
 #[derive(Serialize)]
 pub struct GlobalStatsResponse {
-    pub total_tokens_saved: i64,
-    pub total_users: i64,
-    pub total_contributions: i64,
-    pub total_teams: i64,
+    #[serde(rename = "total_tokens_saved")]
+    pub tokens_saved: i64,
+    #[serde(rename = "total_users")]
+    pub users: i64,
+    #[serde(rename = "total_contributions")]
+    pub contributions: i64,
+    #[serde(rename = "total_teams")]
+    pub teams: i64,
 }
 
 pub async fn get_global_stats(
@@ -28,22 +32,22 @@ pub async fn get_global_stats(
         .map_err(internal_error)?
         .get(0);
 
-    let total_users: i64 = client
+    let users: i64 = client
         .query_one("SELECT COUNT(*) FROM users", &[])
         .await
         .map_err(internal_error)?
         .get(0);
 
-    let total_contributions: i64 = client
+    let contributions: i64 = client
         .query_one("SELECT COUNT(*) FROM contribute_entries", &[])
         .await
         .map_err(internal_error)?
         .get(0);
 
     Ok(Json(GlobalStatsResponse {
-        total_tokens_saved: tokens_saved,
-        total_users,
-        total_contributions,
-        total_teams: 0,
+        tokens_saved,
+        users,
+        contributions,
+        teams: 0,
     }))
 }

@@ -1,12 +1,14 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static TIMESTAMP_RE: OnceLock<Regex> = OnceLock::new();
-
-fn timestamp_re() -> &'static Regex {
-    TIMESTAMP_RE.get_or_init(|| {
-        Regex::new(r"^\[?\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]\s]*\]?\s*").unwrap()
-    })
+fn timestamp_re() -> &'static regex::Regex {
+    static_regex!(r"^\[?\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]\s]*\]?\s*")
 }
 
 pub fn compress(output: &str) -> Option<String> {

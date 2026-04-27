@@ -191,6 +191,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)] // graph test nodes: a, b, c, d, e
     fn impact_analysis_depth() {
         let g = test_graph();
 

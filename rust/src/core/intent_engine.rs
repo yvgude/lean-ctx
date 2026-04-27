@@ -28,29 +28,20 @@ impl TaskType {
 
     pub fn thinking_budget(&self) -> ThinkingBudget {
         match self {
-            Self::Generate => ThinkingBudget::Minimal,
-            Self::FixBug => ThinkingBudget::Minimal,
-            Self::Refactor => ThinkingBudget::Medium,
-            Self::Explore => ThinkingBudget::Medium,
-            Self::Test => ThinkingBudget::Minimal,
-            Self::Debug => ThinkingBudget::Medium,
-            Self::Config => ThinkingBudget::Minimal,
-            Self::Deploy => ThinkingBudget::Minimal,
-            Self::Review => ThinkingBudget::Medium,
+            Self::Generate | Self::FixBug | Self::Test | Self::Config | Self::Deploy => {
+                ThinkingBudget::Minimal
+            }
+            Self::Refactor | Self::Explore | Self::Debug | Self::Review => ThinkingBudget::Medium,
         }
     }
 
     pub fn output_format(&self) -> OutputFormat {
         match self {
-            Self::Generate => OutputFormat::CodeOnly,
-            Self::FixBug => OutputFormat::DiffOnly,
-            Self::Refactor => OutputFormat::DiffOnly,
-            Self::Explore => OutputFormat::ExplainConcise,
-            Self::Test => OutputFormat::CodeOnly,
+            Self::Generate | Self::Test | Self::Config => OutputFormat::CodeOnly,
+            Self::FixBug | Self::Refactor => OutputFormat::DiffOnly,
+            Self::Explore | Self::Review => OutputFormat::ExplainConcise,
             Self::Debug => OutputFormat::Trace,
-            Self::Config => OutputFormat::CodeOnly,
             Self::Deploy => OutputFormat::StepList,
-            Self::Review => OutputFormat::ExplainConcise,
         }
     }
 }
@@ -298,7 +289,7 @@ fn extract_targets(query: &str) -> Vec<String> {
         if w.contains('_') && w.len() > 3 && !targets.contains(&w.to_string()) {
             targets.push(w.to_string());
         }
-        if w.chars().any(|c| c.is_uppercase())
+        if w.chars().any(char::is_uppercase)
             && w.len() > 2
             && !is_stop_word(w)
             && !targets.contains(&w.to_string())
@@ -525,13 +516,14 @@ impl StructuredIntent {
             .iter()
             .any(|f| f.contains("test") || f.contains("spec"));
         let has_config = touched_files.iter().any(|f| {
-            let lower = f.to_lowercase();
-            lower.ends_with(".toml")
-                || lower.ends_with(".yaml")
-                || lower.ends_with(".yml")
-                || lower.ends_with(".json")
-                || lower.contains("config")
-                || lower.contains(".env")
+            let p = std::path::Path::new(f.as_str());
+            let is_config_ext = p.extension().is_some_and(|e| {
+                e.eq_ignore_ascii_case("toml")
+                    || e.eq_ignore_ascii_case("yaml")
+                    || e.eq_ignore_ascii_case("yml")
+                    || e.eq_ignore_ascii_case("json")
+            });
+            is_config_ext || f.contains("config") || f.contains(".env")
         });
 
         let dirs: std::collections::HashSet<&str> = touched_files

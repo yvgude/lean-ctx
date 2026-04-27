@@ -16,22 +16,19 @@ pub fn handle(action: &str, agent_id: Option<&str>, limit: Option<usize>) -> Str
 }
 
 fn handle_agent_detail(store: &CostStore, agent_id: Option<&str>) -> String {
-    let aid = match agent_id {
-        Some(id) => id,
-        None => {
-            let agents = store.top_agents(20);
-            if agents.is_empty() {
-                return "No agent cost data recorded yet.".to_string();
-            }
-            let mut lines = vec![format!("All agents ({}):", agents.len())];
-            for a in &agents {
-                lines.push(format!(
-                    "  {} ({}) — {} calls, ${:.4}",
-                    a.agent_id, a.agent_type, a.total_calls, a.cost_usd
-                ));
-            }
-            return lines.join("\n");
+    let Some(aid) = agent_id else {
+        let agents = store.top_agents(20);
+        if agents.is_empty() {
+            return "No agent cost data recorded yet.".to_string();
         }
+        let mut lines = vec![format!("All agents ({}):", agents.len())];
+        for a in &agents {
+            lines.push(format!(
+                "  {} ({}) — {} calls, ${:.4}",
+                a.agent_id, a.agent_type, a.total_calls, a.cost_usd
+            ));
+        }
+        return lines.join("\n");
     };
 
     match store.agents.get(aid) {

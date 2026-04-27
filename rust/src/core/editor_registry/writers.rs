@@ -4,9 +4,9 @@ use super::types::{ConfigType, EditorTarget};
 
 fn toml_quote(value: &str) -> String {
     if value.contains('\\') {
-        format!("'{}'", value)
+        format!("'{value}'")
     } else {
-        format!("\"{}\"", value)
+        format!("\"{value}\"")
     }
 }
 
@@ -150,7 +150,7 @@ fn write_mcp_json(
                 backup_invalid_file(&target.config_path)?;
                 return write_mcp_json_fresh(
                     &target.config_path,
-                    desired,
+                    &desired,
                     Some("overwrote invalid JSON".to_string()),
                 );
             }
@@ -183,7 +183,7 @@ fn write_mcp_json(
         });
     }
 
-    write_mcp_json_fresh(&target.config_path, desired, None)
+    write_mcp_json_fresh(&target.config_path, &desired, None)
 }
 
 fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String> {
@@ -234,7 +234,7 @@ fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String> {
 
 fn write_mcp_json_fresh(
     path: &std::path::Path,
-    desired: Value,
+    desired: &Value,
     note: Option<String>,
 ) -> Result<WriteResult, String> {
     let content = serde_json::to_string_pretty(&serde_json::json!({
@@ -275,7 +275,7 @@ fn write_zed_config(
                 backup_invalid_file(&target.config_path)?;
                 return write_zed_config_fresh(
                     &target.config_path,
-                    desired,
+                    &desired,
                     Some("overwrote invalid JSON".to_string()),
                 );
             }
@@ -308,7 +308,7 @@ fn write_zed_config(
         });
     }
 
-    write_zed_config_fresh(&target.config_path, desired, None)
+    write_zed_config_fresh(&target.config_path, &desired, None)
 }
 
 fn write_codex_config(target: &EditorTarget, binary: &str) -> Result<WriteResult, String> {
@@ -341,7 +341,7 @@ fn write_codex_config(target: &EditorTarget, binary: &str) -> Result<WriteResult
 
 fn write_zed_config_fresh(
     path: &std::path::Path,
-    desired: Value,
+    desired: &Value,
     note: Option<String>,
 ) -> Result<WriteResult, String> {
     let content = serde_json::to_string_pretty(&serde_json::json!({
@@ -675,7 +675,7 @@ fn write_crush_config(
                 backup_invalid_file(&target.config_path)?;
                 return write_crush_fresh(
                     &target.config_path,
-                    desired,
+                    &desired,
                     Some("overwrote invalid JSON".to_string()),
                 );
             }
@@ -705,12 +705,12 @@ fn write_crush_config(
         });
     }
 
-    write_crush_fresh(&target.config_path, desired, None)
+    write_crush_fresh(&target.config_path, &desired, None)
 }
 
 fn write_crush_fresh(
     path: &std::path::Path,
-    desired: Value,
+    desired: &Value,
     note: Option<String>,
 ) -> Result<WriteResult, String> {
     let content = serde_json::to_string_pretty(&serde_json::json!({
@@ -1075,9 +1075,8 @@ args = ["x"]
         let win_path = r"C:\Users\Foo\AppData\Roaming\npm\lean-ctx.cmd";
         let updated = upsert_codex_toml("", win_path);
         assert!(
-            updated.contains(&format!("command = '{}'", win_path)),
-            "Windows paths must use TOML single quotes to avoid backslash escapes: {}",
-            updated
+            updated.contains(&format!("command = '{win_path}'")),
+            "Windows paths must use TOML single quotes to avoid backslash escapes: {updated}"
         );
     }
 
@@ -1086,9 +1085,8 @@ args = ["x"]
         let unix_path = "/usr/local/bin/lean-ctx";
         let updated = upsert_codex_toml("", unix_path);
         assert!(
-            updated.contains(&format!("command = \"{}\"", unix_path)),
-            "Unix paths should use double quotes: {}",
-            updated
+            updated.contains(&format!("command = \"{unix_path}\"")),
+            "Unix paths should use double quotes: {updated}"
         );
     }
 

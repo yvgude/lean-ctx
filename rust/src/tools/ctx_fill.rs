@@ -27,9 +27,8 @@ pub fn handle(
     let mut candidates: Vec<FileCandidate> = Vec::new();
 
     for path in paths {
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
         };
 
         let ext = Path::new(path)
@@ -40,7 +39,7 @@ pub fn handle(
         let sigs = signatures::extract_signatures(&content, ext);
         let sig_text: String = sigs
             .iter()
-            .map(|s| s.to_compact())
+            .map(super::super::core::signatures::Signature::to_compact)
             .collect::<Vec<_>>()
             .join("\n");
         let tokens_sig = count_tokens(&sig_text);

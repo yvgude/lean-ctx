@@ -57,9 +57,8 @@ fn compress_table(output: &str) -> String {
         .iter()
         .rev()
         .find(|l| l.trim().starts_with('(') && l.contains("row"));
-    let count_str = row_count_line
-        .map(|l| l.trim().to_string())
-        .unwrap_or_else(|| format!("({data_rows} rows)"));
+    let count_str =
+        row_count_line.map_or_else(|| format!("({data_rows} rows)"), |l| l.trim().to_string());
 
     if data_rows <= 20 {
         return output.to_string();

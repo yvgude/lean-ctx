@@ -1,6 +1,7 @@
 use crate::core::tokens::count_tokens;
 use std::path::Path;
 
+/// Dispatches code review actions (review, diff-review, checklist).
 pub fn handle(action: &str, path: Option<&str>, root: &str, depth: Option<usize>) -> String {
     match action {
         "review" => handle_review(path, root, depth.unwrap_or(3)),
@@ -11,9 +12,8 @@ pub fn handle(action: &str, path: Option<&str>, root: &str, depth: Option<usize>
 }
 
 fn handle_review(path: Option<&str>, root: &str, depth: usize) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'review' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'review' action".to_string();
     };
 
     let mut sections = Vec::new();
@@ -40,14 +40,14 @@ fn handle_review(path: Option<&str>, root: &str, depth: usize) -> String {
     }
 
     let tests = find_related_tests(target, root);
-    if !tests.is_empty() {
+    if tests.is_empty() {
+        sections.push("### Related Tests".to_string());
+        sections.push("  (no test files found)".to_string());
+    } else {
         sections.push("### Related Tests".to_string());
         for t in &tests {
             sections.push(format!("  - {t}"));
         }
-    } else {
-        sections.push("### Related Tests".to_string());
-        sections.push("  (no test files found)".to_string());
     }
 
     let output = sections.join("\n");
@@ -56,9 +56,8 @@ fn handle_review(path: Option<&str>, root: &str, depth: usize) -> String {
 }
 
 fn handle_diff_review(diff_input: Option<&str>, root: &str) -> String {
-    let diff_text = match diff_input {
-        Some(d) => d,
-        None => return "path (git diff output) is required for 'diff-review'".to_string(),
+    let Some(diff_text) = diff_input else {
+        return "path (git diff output) is required for 'diff-review'".to_string();
     };
 
     let changed_files = extract_changed_files(diff_text);
@@ -84,9 +83,8 @@ fn handle_diff_review(diff_input: Option<&str>, root: &str) -> String {
 }
 
 fn handle_checklist(path: Option<&str>, root: &str, depth: usize) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'checklist' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'checklist' action".to_string();
     };
 
     let mut questions = Vec::new();
@@ -147,11 +145,11 @@ fn extract_changed_files(diff_text: &str) -> Vec<String> {
     files
 }
 
+/// Finds test files related to the given source file by naming conventions.
 pub fn find_related_tests(file_path: &str, root: &str) -> Vec<String> {
     let p = Path::new(file_path);
-    let stem = match p.file_stem().and_then(|s| s.to_str()) {
-        Some(s) => s,
-        None => return vec![],
+    let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+        return vec![];
     };
 
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -186,9 +184,8 @@ pub fn find_related_tests(file_path: &str, root: &str) -> Vec<String> {
         if max_depth == 0 {
             return;
         }
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
         };
         for entry in entries.flatten() {
             let path = entry.path();

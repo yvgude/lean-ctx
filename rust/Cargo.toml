@@ -126,6 +126,51 @@ rpassword = "7.4.0"
 getrandom = "0.3"
 reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream", "json"], optional = true }
 
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+# --- Style preferences (not quality issues) ---
+too_many_lines = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+similar_names = "allow"
+unreadable_literal = "allow"
+
+# --- Documentation: covered by separate doc-coverage tooling ---
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+
+# --- Casts: intentional numeric conversions for token counting, stats, sizing ---
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_lossless = "allow"
+
+# --- Performance: format_push_string would require 276 refactors for minimal gain ---
+format_push_string = "allow"
+
+# --- Struct design: Config/StatsStore legitimately use many bools ---
+struct_excessive_bools = "allow"
+
+# --- Float: intentional comparisons in stats/benchmarks ---
+float_cmp = "allow"
+
+# --- Style: constants placed near usage for readability ---
+items_after_statements = "allow"
+
+# --- Underscore bindings: intentionally named for clarity then used ---
+used_underscore_binding = "allow"
+no_effect_underscore_binding = "allow"
+
+# --- Micro-optimization: &bool vs bool, readability preferred ---
+trivially_copy_pass_by_ref = "allow"
+
+# --- HashMap: we always use default hasher ---
+implicit_hasher = "allow"
+
 [profile.release]
 opt-level = "z"
 lto = true
@@ -134,5 +179,10 @@ strip = true
 panic = "abort"
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.27.0"
 tower = "0.5"
+
+[[bench]]
+name = "compression"
+harness = false

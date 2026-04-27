@@ -154,7 +154,7 @@ impl Task {
             from: self.state.clone(),
             to: new_state.clone(),
             timestamp: Utc::now(),
-            reason: reason.map(|s| s.to_string()),
+            reason: reason.map(std::string::ToString::to_string),
         });
 
         self.state = new_state;
@@ -185,9 +185,8 @@ pub struct TaskStore {
 
 impl TaskStore {
     pub fn load() -> Self {
-        let path = match task_store_path() {
-            Some(p) => p,
-            None => return Self::default(),
+        let Some(path) = task_store_path() else {
+            return Self::default();
         };
         match std::fs::read_to_string(&path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
@@ -196,14 +195,11 @@ impl TaskStore {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        let path = match task_store_path() {
-            Some(p) => p,
-            None => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "no home dir",
-                ))
-            }
+        let Some(path) = task_store_path() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no home dir",
+            ));
         };
 
         if let Some(parent) = path.parent() {

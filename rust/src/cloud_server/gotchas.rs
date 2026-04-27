@@ -53,7 +53,7 @@ pub async fn post_gotchas(
         }
         client
             .execute(
-                r#"INSERT INTO gotchas (user_id, pattern, fix, severity, category, occurrences, prevented_count, confidence)
+                r"INSERT INTO gotchas (user_id, pattern, fix, severity, category, occurrences, prevented_count, confidence)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                    ON CONFLICT (user_id, pattern) DO UPDATE SET
                      fix = EXCLUDED.fix,
@@ -62,7 +62,7 @@ pub async fn post_gotchas(
                      occurrences = EXCLUDED.occurrences,
                      prevented_count = EXCLUDED.prevented_count,
                      confidence = EXCLUDED.confidence,
-                     updated_at = NOW()"#,
+                     updated_at = NOW()",
                 &[
                     &user_id,
                     &pattern,
@@ -90,9 +90,9 @@ pub async fn get_gotchas(
 
     let rows = client
         .query(
-            r#"SELECT pattern, fix, severity, category, occurrences, prevented_count, confidence
+            r"SELECT pattern, fix, severity, category, occurrences, prevented_count, confidence
                FROM gotchas WHERE user_id = $1
-               ORDER BY prevented_count DESC, occurrences DESC LIMIT 200"#,
+               ORDER BY prevented_count DESC, occurrences DESC LIMIT 200",
             &[&user_id],
         )
         .await

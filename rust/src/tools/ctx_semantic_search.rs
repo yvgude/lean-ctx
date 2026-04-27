@@ -15,12 +15,13 @@ use crate::core::{
 };
 use crate::tools::CrpMode;
 
+/// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
 pub fn handle(
     query: &str,
     path: &str,
     top_k: usize,
     crp_mode: CrpMode,
-    languages: Option<Vec<String>>,
+    languages: Option<&[String]>,
     path_glob: Option<&str>,
     mode: Option<&str>,
 ) -> String {
@@ -40,7 +41,7 @@ pub fn handle(
         return "No code files found to index.".to_string();
     }
 
-    let filter = match SearchFilter::new(languages.as_deref(), path_glob) {
+    let filter = match SearchFilter::new(languages, path_glob) {
         Ok(f) => f,
         Err(e) => return format!("ERR: invalid filter: {e}"),
     };
@@ -77,6 +78,7 @@ pub fn handle(
     }
 }
 
+/// Rebuilds the BM25 search index for the given directory from scratch.
 pub fn handle_reindex(path: &str) -> String {
     let root = Path::new(path);
     if !root.exists() {
@@ -120,9 +122,8 @@ fn load_or_refresh_bm25(root: &Path) -> BM25Index {
 
 fn index_is_stale(root: &Path) -> bool {
     let index_path = BM25Index::index_file_path(root);
-    let index_mtime = match std::fs::metadata(&index_path).and_then(|m| m.modified()) {
-        Ok(t) => t,
-        Err(_) => return true,
+    let Ok(index_mtime) = std::fs::metadata(&index_path).and_then(|m| m.modified()) else {
+        return true;
     };
 
     let mut newest: Option<SystemTime> = None;
@@ -145,9 +146,8 @@ fn index_is_stale(root: &Path) -> bool {
             continue;
         }
         file_count += 1;
-        let mtime = match path.metadata().and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => continue,
+        let Ok(mtime) = path.metadata().and_then(|m| m.modified()) else {
+            continue;
         };
         newest = Some(match newest {
             Some(cur) if cur > mtime => cur,
@@ -272,8 +272,7 @@ fn dense_search_mode(
                 index
                     .chunks
                     .get(*i)
-                    .map(|c| filter.matches(&c.file_path))
-                    .unwrap_or(false)
+                    .is_some_and(|c| filter.matches(&c.file_path))
             })
             .map(|(i, emb)| (i, cosine_similarity(&query_embedding, emb)))
             .collect();
@@ -368,7 +367,7 @@ fn ensure_embeddings(
 
     if !changed.is_empty() {
         let changed_set: std::collections::HashSet<&str> =
-            changed.iter().map(|s| s.as_str()).collect();
+            changed.iter().map(std::string::String::as_str).collect();
         let mut new_embeddings: Vec<(usize, Vec<f32>)> = Vec::new();
         for (i, c) in index.chunks.iter().enumerate() {
             if !changed_set.contains(c.file_path.as_str()) {

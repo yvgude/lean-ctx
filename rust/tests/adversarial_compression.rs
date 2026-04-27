@@ -26,7 +26,7 @@ fn adversarial_git_diff_preserves_code_content() {
         "diff must preserve code content: {compressed}"
     );
     assert!(
-        compressed.contains("+"),
+        compressed.contains('+'),
         "diff must preserve +/- markers: {compressed}"
     );
 }
@@ -282,7 +282,7 @@ fn adversarial_middle_truncation_preserves_errors() {
     let output = lines.join("\n");
 
     let compressed = lean_ctx::shell::compress_if_beneficial_pub("unknown-command", &output);
-    if compressed.contains("[") && compressed.contains("omitted") {
+    if compressed.contains('[') && compressed.contains("omitted") {
         assert!(
             compressed.contains("ERROR") || compressed.contains("critical failure"),
             "truncation must preserve error lines: {compressed}"
@@ -341,7 +341,7 @@ fn regression_pip_list_all_packages() {
     }
     let output = lines.join("\n");
     let compressed = compress_output("pip list", &output);
-    let text = compressed.unwrap_or_else(|| output.to_string());
+    let text = compressed.unwrap_or_else(|| output.clone());
     assert!(
         text.contains("package-0") && text.contains("package-49"),
         "pip list must show all packages: first and last must be present"
@@ -624,7 +624,7 @@ Time Elapsed 00:00:01.82";
         "dotnet build must preserve error codes: {compressed}"
     );
     assert!(
-        compressed.contains("FAILED") || compressed.contains("2"),
+        compressed.contains("FAILED") || compressed.contains('2'),
         "dotnet build must preserve build result: {compressed}"
     );
 }
@@ -646,7 +646,7 @@ Package operations: 5 installs, 0 updates, 0 removals";
 
     let compressed = compress_output("composer install", output).unwrap();
     assert!(
-        compressed.contains("5") || compressed.contains("install"),
+        compressed.contains('5') || compressed.contains("install"),
         "composer install must preserve package count: {compressed}"
     );
 }

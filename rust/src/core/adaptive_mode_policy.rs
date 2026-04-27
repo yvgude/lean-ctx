@@ -70,7 +70,7 @@ impl AdaptiveModePolicyStore {
             return;
         }
 
-        let modes = ev.ctx_read_modes.as_ref().cloned().unwrap_or_default();
+        let modes = ev.ctx_read_modes.clone().unwrap_or_default();
         if modes.is_empty() {
             if let Some(m) = ev.ctx_read_last_mode.as_ref() {
                 if let Some(key) = normalize_mode_key(m) {
@@ -124,8 +124,7 @@ impl AdaptiveModePolicyStore {
         self.global
             .modes
             .get(key)
-            .map(|p| p.ema_badness.clamp(0.0, 1.0))
-            .unwrap_or(0.0)
+            .map_or(0.0, |p| p.ema_badness.clamp(0.0, 1.0))
     }
 
     pub fn choose_auto_mode(&self, intent: Option<&str>, predicted: &str) -> String {

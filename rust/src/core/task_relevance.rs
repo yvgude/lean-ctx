@@ -88,8 +88,8 @@ pub fn compute_relevance(
 
     // Combine: heat (primary) + pagerank centrality (gateway bonus)
     let mut scores: HashMap<String, f64> = HashMap::new();
-    let heat_max = heat.iter().cloned().fold(0.0_f64, f64::max).max(1e-10);
-    let pr_max = pagerank.iter().cloned().fold(0.0_f64, f64::max).max(1e-10);
+    let heat_max = heat.iter().copied().fold(0.0_f64, f64::max).max(1e-10);
+    let pr_max = pagerank.iter().copied().fold(0.0_f64, f64::max).max(1e-10);
 
     for (i, node) in all_nodes.iter().enumerate() {
         let h = heat[i] / heat_max;
@@ -291,7 +291,11 @@ fn build_adjacency_resolved(index: &ProjectIndex) -> HashMap<String, Vec<String>
 /// Map module/import paths to file paths using heuristics.
 /// e.g. `crate::core::tokens::count_tokens` → `rust/src/core/tokens.rs`
 fn build_module_map(index: &ProjectIndex) -> HashMap<String, String> {
-    let file_paths: Vec<&str> = index.files.keys().map(|s| s.as_str()).collect();
+    let file_paths: Vec<&str> = index
+        .files
+        .keys()
+        .map(std::string::String::as_str)
+        .collect();
     let mut mapping: HashMap<String, String> = HashMap::new();
 
     let edge_targets: HashSet<String> = index.edges.iter().map(|e| e.to.clone()).collect();
@@ -360,14 +364,17 @@ pub fn parse_task_hints(task_description: &str) -> (Vec<String>, Vec<String>) {
         let clean = word.trim_matches(|c: char| {
             !c.is_alphanumeric() && c != '.' && c != '/' && c != '_' && c != '-'
         });
-        if clean.contains('.')
-            && (clean.contains('/')
-                || clean.ends_with(".rs")
-                || clean.ends_with(".ts")
-                || clean.ends_with(".py")
-                || clean.ends_with(".go")
-                || clean.ends_with(".js"))
-        {
+        if clean.contains('.') && {
+            let p = std::path::Path::new(clean);
+            clean.contains('/')
+                || p.extension().is_some_and(|e| {
+                    e.eq_ignore_ascii_case("rs")
+                        || e.eq_ignore_ascii_case("ts")
+                        || e.eq_ignore_ascii_case("py")
+                        || e.eq_ignore_ascii_case("go")
+                        || e.eq_ignore_ascii_case("js")
+                })
+        } {
             files.push(clean.to_string());
         } else if clean.len() >= 3 && !STOP_WORDS.contains(&clean.to_lowercase().as_str()) {
             keywords.push(clean.to_string());
@@ -448,8 +455,7 @@ impl StructuralWeights {
                 closing_brace: 0.15,
                 other: 0.3,
             },
-            Some(TaskType::Explore) | None => Self::DEFAULT,
-            Some(_) => Self::DEFAULT,
+            None | Some(TaskType::Explore | _) => Self::DEFAULT,
         }
     }
 }
@@ -503,10 +509,10 @@ pub fn information_bottleneck_filter_typed(
         .filter(|t| t.len() >= 2)
         .collect();
 
-    let effective_ratio = if !task_token_set.is_empty() {
-        adaptive_ib_budget(content, budget_ratio)
-    } else {
+    let effective_ratio = if task_token_set.is_empty() {
         budget_ratio
+    } else {
+        adaptive_ib_budget(content, budget_ratio)
     };
 
     let weights = StructuralWeights::for_task_type(task_type);

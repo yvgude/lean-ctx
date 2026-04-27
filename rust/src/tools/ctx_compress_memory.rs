@@ -86,7 +86,7 @@ fn compress_memory_file(content: &str) -> String {
         }
 
         if trimmed.is_empty() {
-            if output.last().map(|l| l.trim().is_empty()).unwrap_or(false) {
+            if output.last().is_some_and(|l| l.trim().is_empty()) {
                 continue;
             }
             output.push(String::new());

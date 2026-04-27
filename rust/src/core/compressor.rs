@@ -1,5 +1,15 @@
 use similar::{ChangeTag, TextDiff};
 
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
+
+/// Removes ANSI escape codes from a string, returning clean text.
 pub fn strip_ansi(s: &str) -> String {
     if !s.contains('\x1b') {
         return s.to_string();
@@ -22,6 +32,7 @@ pub fn strip_ansi(s: &str) -> String {
     result
 }
 
+/// Returns the ratio of ANSI escape characters to total string length.
 pub fn ansi_density(s: &str) -> f64 {
     if s.is_empty() {
         return 0.0;
@@ -30,6 +41,7 @@ pub fn ansi_density(s: &str) -> f64 {
     escape_bytes as f64 / s.len() as f64
 }
 
+/// Strips comments, blank lines, and normalizes indentation for maximum token savings.
 pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     let mut result: Vec<String> = Vec::new();
     let is_python = matches!(ext, Some("py"));
@@ -175,6 +187,7 @@ fn normalize_indentation(line: &str) -> String {
     format!("{}{}", " ".repeat(reduced), content)
 }
 
+/// Produces a compact unified diff between old and new content with line numbers.
 pub fn diff_content(old_content: &str, new_content: &str) -> String {
     if old_content == new_content {
         return "(no changes)".to_string();
@@ -213,6 +226,7 @@ pub fn diff_content(old_content: &str, new_content: &str) -> String {
     changes.join("\n")
 }
 
+/// Deduplicates repeated lines, strips boilerplate, and normalizes timestamps/hashes.
 pub fn verbatim_compact(text: &str) -> String {
     let mut lines: Vec<String> = Vec::new();
     let mut blank_count = 0u32;
@@ -256,6 +270,7 @@ pub fn verbatim_compact(text: &str) -> String {
     lines.join("\n")
 }
 
+/// Compresses content using the active task intent to preserve task-relevant sections.
 pub fn task_aware_compress(
     content: &str,
     ext: Option<&str>,
@@ -294,11 +309,7 @@ pub fn task_aware_compress(
             let compressed = aggressive_compress(content, ext);
             safeguard_ratio(content, &compressed)
         }
-        TaskType::Explore => {
-            let cleaned = lightweight_cleanup(content);
-            safeguard_ratio(content, &cleaned)
-        }
-        TaskType::Config | TaskType::Deploy => {
+        TaskType::Explore | TaskType::Config | TaskType::Deploy => {
             let cleaned = lightweight_cleanup(content);
             safeguard_ratio(content, &cleaned)
         }
@@ -310,7 +321,7 @@ fn flush_repeats(lines: &mut [String], prev_line: &mut Option<String>, count: &m
         if let Some(ref prev) = prev_line {
             let last_idx = lines.len().saturating_sub(1);
             if last_idx < lines.len() {
-                lines[last_idx] = format!("[{}x] {}", count, prev);
+                lines[last_idx] = format!("[{count}x] {prev}");
             }
         }
     }
@@ -336,17 +347,9 @@ fn normalize_whitespace(line: &str) -> String {
 }
 
 fn strip_timestamps_hashes(line: &str) -> String {
-    use regex::Regex;
-    use std::sync::OnceLock;
-
-    static TS_RE: OnceLock<Regex> = OnceLock::new();
-    static HASH_RE: OnceLock<Regex> = OnceLock::new();
-
-    let ts_re = TS_RE.get_or_init(|| {
-        Regex::new(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
-            .unwrap()
-    });
-    let hash_re = HASH_RE.get_or_init(|| Regex::new(r"\b[0-9a-f]{32,64}\b").unwrap());
+    let ts_re =
+        static_regex!(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?");
+    let hash_re = static_regex!(r"\b[0-9a-f]{32,64}\b");
 
     let s = ts_re.replace_all(line, "[TS]");
     let s = hash_re.replace_all(&s, "[HASH]");
@@ -387,7 +390,7 @@ mod tests {
         let old = "line1\nline2\nline3";
         let new = "line1\nline2\nnew_line\nline3";
         let result = diff_content(old, new);
-        assert!(result.contains("+"), "should show additions");
+        assert!(result.contains('+'), "should show additions");
         assert!(result.contains("new_line"));
     }
 
@@ -396,7 +399,7 @@ mod tests {
         let old = "line1\nline2\nline3";
         let new = "line1\nline3";
         let result = diff_content(old, new);
-        assert!(result.contains("-"), "should show deletions");
+        assert!(result.contains('-'), "should show deletions");
         assert!(result.contains("line2"));
     }
 
@@ -412,7 +415,7 @@ mod tests {
         lines.extend(
             ["}", "}", "}", "}", "}", "}", "}", "}"]
                 .iter()
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
         );
         lines.push("fn next() {}".to_string());
         let input = lines.join("\n");

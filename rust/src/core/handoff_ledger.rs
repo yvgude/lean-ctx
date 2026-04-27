@@ -162,7 +162,7 @@ pub fn create_ledger(input: CreateLedgerInput) -> Result<(HandoffLedgerV1, PathB
     };
 
     let md5 = ledger_content_md5(&ledger);
-    ledger.content_md5 = md5.clone();
+    ledger.content_md5.clone_from(&md5);
 
     let path = ledger_path(&ledger.created_at, &md5)?;
     let json = serde_json::to_string_pretty(&ledger).map_err(|e| format!("serialize: {e}"))?;
@@ -244,7 +244,7 @@ fn ledger_path(created_at: &str, md5: &str) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all {}: {e}", dir.display()))?;
     let ts = created_at
         .chars()
-        .filter(|c| c.is_ascii_digit())
+        .filter(char::is_ascii_digit)
         .take(14)
         .collect::<String>();
     let name = format!("{ts}-{md5}.json");
@@ -253,7 +253,7 @@ fn ledger_path(created_at: &str, md5: &str) -> Result<PathBuf, String> {
 
 fn handoffs_dir() -> Result<PathBuf, String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.clone())?
         .join("handoffs");
     Ok(dir)
 }

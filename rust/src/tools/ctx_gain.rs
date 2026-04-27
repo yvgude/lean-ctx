@@ -41,8 +41,7 @@ fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
     let spend = format_usd(s.tool_spend_usd);
     let roi = s
         .roi
-        .map(|r| format!("{r:.2}x"))
-        .unwrap_or_else(|| "n/a".to_string());
+        .map_or_else(|| "n/a".to_string(), |r| format!("{r:.2}x"));
     let trend = match s.score.trend {
         crate::core::gain::gain_score::Trend::Rising => "rising",
         crate::core::gain::gain_score::Trend::Stable => "stable",

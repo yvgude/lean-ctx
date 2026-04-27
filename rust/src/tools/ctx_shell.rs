@@ -143,6 +143,7 @@ pub fn normalize_command_for_shell(command: &str) -> String {
     String::from_utf8(result).unwrap_or_else(|_| command.to_string())
 }
 
+/// Compresses shell command output using pattern matching, dedup, and symbol mapping.
 pub fn handle(command: &str, output: &str, crp_mode: CrpMode) -> String {
     let original_tokens = count_tokens(output);
 
@@ -157,7 +158,7 @@ pub fn handle(command: &str, output: &str, crp_mode: CrpMode) -> String {
         Some(c) => crate::core::compressor::safeguard_ratio(output, &c),
         None if is_search_command(command) => {
             let stripped = crate::core::compressor::strip_ansi(output);
-            stripped.to_string()
+            stripped.clone()
         }
         None => generic_compress(output),
     };

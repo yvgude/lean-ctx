@@ -1,24 +1,23 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static ROUTE_RE: OnceLock<Regex> = OnceLock::new();
-static SIZE_RE: OnceLock<Regex> = OnceLock::new();
-static BUILD_TIME_RE: OnceLock<Regex> = OnceLock::new();
-static VITE_CHUNK_RE: OnceLock<Regex> = OnceLock::new();
-
-fn route_re() -> &'static Regex {
-    ROUTE_RE.get_or_init(|| Regex::new(r"^[○●λƒ◐]\s+(/\S*)").unwrap())
+fn route_re() -> &'static regex::Regex {
+    static_regex!(r"^[○●λƒ◐]\s+(/\S*)")
 }
-fn size_re() -> &'static Regex {
-    SIZE_RE.get_or_init(|| Regex::new(r"(\d+\.?\d*)\s*(kB|MB|B)\b").unwrap())
+fn size_re() -> &'static regex::Regex {
+    static_regex!(r"(\d+\.?\d*)\s*(kB|MB|B)\b")
 }
-fn build_time_re() -> &'static Regex {
-    BUILD_TIME_RE.get_or_init(|| {
-        Regex::new(r"(?:compiled|built|done)\s+(?:in\s+)?(\d+\.?\d*\s*[ms]+)").unwrap()
-    })
+fn build_time_re() -> &'static regex::Regex {
+    static_regex!(r"(?:compiled|built|done)\s+(?:in\s+)?(\d+\.?\d*\s*[ms]+)")
 }
-fn vite_chunk_re() -> &'static Regex {
-    VITE_CHUNK_RE.get_or_init(|| Regex::new(r"dist/(\S+)\s+(\d+\.?\d*\s*[kKMm]?B)").unwrap())
+fn vite_chunk_re() -> &'static regex::Regex {
+    static_regex!(r"dist/(\S+)\s+(\d+\.?\d*\s*[kKMm]?B)")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -67,10 +66,10 @@ fn compress_next(output: &str) -> String {
     }
 
     let mut parts = Vec::new();
-    if !build_time.is_empty() {
-        parts.push(format!("built ({build_time})"));
-    } else {
+    if build_time.is_empty() {
         parts.push("built".to_string());
+    } else {
+        parts.push(format!("built ({build_time})"));
     }
 
     if !routes.is_empty() {
@@ -87,7 +86,7 @@ fn compress_next(output: &str) -> String {
         if total_size > 1024.0 {
             parts.push(format!("total: {:.1} MB", total_size / 1024.0));
         } else {
-            parts.push(format!("total: {:.0} kB", total_size));
+            parts.push(format!("total: {total_size:.0} kB"));
         }
     }
 
@@ -117,10 +116,10 @@ fn compress_vite(output: &str) -> String {
     }
 
     let mut parts = Vec::new();
-    if !build_time.is_empty() {
-        parts.push(format!("built ({build_time})"));
-    } else {
+    if build_time.is_empty() {
         parts.push("built".to_string());
+    } else {
+        parts.push(format!("built ({build_time})"));
     }
 
     if !chunks.is_empty() {

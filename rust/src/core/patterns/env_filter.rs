@@ -52,7 +52,7 @@ pub fn compress(output: &str) -> Option<String> {
         }
     }
 
-    let total: usize = groups.values().map(|v| v.len()).sum();
+    let total: usize = groups.values().map(std::vec::Vec::len).sum();
 
     let mut parts = Vec::new();
     parts.push(format!("{total} variables:"));

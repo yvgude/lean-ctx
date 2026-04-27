@@ -29,11 +29,11 @@ pub async fn get_models(
     let client = state.pool.get().await.map_err(internal_error)?;
     let rows = client
         .query(
-            r#"
+            r"
 SELECT file_ext, size_bucket, best_mode, COUNT(*)::BIGINT AS c
 FROM contribute_entries
 GROUP BY file_ext, size_bucket, best_mode
-"#,
+",
             &[],
         )
         .await
@@ -60,7 +60,7 @@ GROUP BY file_ext, size_bucket, best_mode
         }
         let mut best: Option<(String, i64)> = None;
         for (m, c) in modes {
-            if best.as_ref().map(|(_, bc)| c > *bc).unwrap_or(true) {
+            if best.as_ref().is_none_or(|(_, bc)| c > *bc) {
                 best = Some((m, c));
             }
         }

@@ -115,7 +115,9 @@ fn is_proxy_reachable(port: u16) -> bool {
     use std::net::TcpStream;
     use std::time::Duration;
     TcpStream::connect_timeout(
-        &format!("127.0.0.1:{port}").parse().unwrap(),
+        &format!("127.0.0.1:{port}")
+            .parse()
+            .expect("BUG: invalid hardcoded socket address"),
         Duration::from_millis(200),
     )
     .is_ok()

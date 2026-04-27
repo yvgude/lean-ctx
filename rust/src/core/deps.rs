@@ -1,38 +1,32 @@
 use regex::Regex;
 use std::collections::HashSet;
-use std::sync::OnceLock;
 
 #[cfg(feature = "tree-sitter")]
 use super::deep_queries::{self, ImportKind};
 
-static IMPORT_RE: OnceLock<Regex> = OnceLock::new();
-static REQUIRE_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_USE_RE: OnceLock<Regex> = OnceLock::new();
-static PY_IMPORT_RE: OnceLock<Regex> = OnceLock::new();
-static GO_IMPORT_RE: OnceLock<Regex> = OnceLock::new();
-static C_INCLUDE_RE: OnceLock<Regex> = OnceLock::new();
-static RUBY_REQUIRE_RE: OnceLock<Regex> = OnceLock::new();
-static PHP_INCLUDE_RE: OnceLock<Regex> = OnceLock::new();
-static BASH_SOURCE_RE: OnceLock<Regex> = OnceLock::new();
-static DART_IMPORT_RE: OnceLock<Regex> = OnceLock::new();
-static ZIG_IMPORT_RE: OnceLock<Regex> = OnceLock::new();
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
 fn import_re() -> &'static Regex {
-    IMPORT_RE.get_or_init(|| {
-        Regex::new(r#"import\s+(?:\{[^}]*\}\s+from\s+|.*from\s+)['"]([^'"]+)['"]"#).unwrap()
-    })
+    static_regex!(r#"import\s+(?:\{[^}]*\}\s+from\s+|.*from\s+)['"]([^'"]+)['"]"#)
 }
 fn require_re() -> &'static Regex {
-    REQUIRE_RE.get_or_init(|| Regex::new(r#"require\(['"]([^'"]+)['"]\)"#).unwrap())
+    static_regex!(r#"require\(['"]([^'"]+)['"]\)"#)
 }
 fn rust_use_re() -> &'static Regex {
-    RUST_USE_RE.get_or_init(|| Regex::new(r"^use\s+([\w:]+)").unwrap())
+    static_regex!(r"^use\s+([\w:]+)")
 }
 fn py_import_re() -> &'static Regex {
-    PY_IMPORT_RE.get_or_init(|| Regex::new(r"^(?:from\s+(\S+)\s+import|import\s+(\S+))").unwrap())
+    static_regex!(r"^(?:from\s+(\S+)\s+import|import\s+(\S+))")
 }
 fn go_import_re() -> &'static Regex {
-    GO_IMPORT_RE.get_or_init(|| Regex::new(r#""([^"]+)""#).unwrap())
+    static_regex!(r#""([^"]+)""#)
 }
 
 #[derive(Debug, Clone)]
@@ -44,17 +38,21 @@ pub struct DepInfo {
 pub fn extract_deps(content: &str, ext: &str) -> DepInfo {
     let lang = crate::core::language_capabilities::language_for_ext(ext);
     match lang {
-        Some(crate::core::language_capabilities::LanguageId::TypeScript)
-        | Some(crate::core::language_capabilities::LanguageId::JavaScript)
-        | Some(crate::core::language_capabilities::LanguageId::Vue)
-        | Some(crate::core::language_capabilities::LanguageId::Svelte) => extract_ts_deps(content),
+        Some(
+            crate::core::language_capabilities::LanguageId::TypeScript
+            | crate::core::language_capabilities::LanguageId::JavaScript
+            | crate::core::language_capabilities::LanguageId::Vue
+            | crate::core::language_capabilities::LanguageId::Svelte,
+        ) => extract_ts_deps(content),
         Some(crate::core::language_capabilities::LanguageId::Rust) => extract_rust_deps(content),
         Some(crate::core::language_capabilities::LanguageId::Python) => {
             extract_python_deps(content)
         }
         Some(crate::core::language_capabilities::LanguageId::Go) => extract_go_deps(content),
-        Some(crate::core::language_capabilities::LanguageId::C)
-        | Some(crate::core::language_capabilities::LanguageId::Cpp) => extract_c_like_deps(content),
+        Some(
+            crate::core::language_capabilities::LanguageId::C
+            | crate::core::language_capabilities::LanguageId::Cpp,
+        ) => extract_c_like_deps(content),
         Some(crate::core::language_capabilities::LanguageId::Ruby) => extract_ruby_deps(content),
         Some(crate::core::language_capabilities::LanguageId::Php) => extract_php_deps(content),
         Some(crate::core::language_capabilities::LanguageId::Bash) => extract_bash_deps(content),
@@ -63,9 +61,7 @@ pub fn extract_deps(content: &str, ext: &str) -> DepInfo {
         }
         Some(crate::core::language_capabilities::LanguageId::Dart) => {
             let mut imports = HashSet::new();
-            let re = DART_IMPORT_RE.get_or_init(|| {
-                Regex::new(r#"^\s*(?:import|export|part)\s+['"]([^'"]+)['"]"#).unwrap()
-            });
+            let re = static_regex!(r#"^\s*(?:import|export|part)\s+['"]([^'"]+)['"]"#);
             for line in content.lines() {
                 let trimmed = line.trim();
                 if let Some(caps) = re.captures(trimmed) {
@@ -82,13 +78,17 @@ pub fn extract_deps(content: &str, ext: &str) -> DepInfo {
         }
         Some(crate::core::language_capabilities::LanguageId::Zig) => {
             let mut imports = HashSet::new();
-            let re =
-                ZIG_IMPORT_RE.get_or_init(|| Regex::new(r#"@import\(\s*"([^"]+)"\s*\)"#).unwrap());
+            let re = static_regex!(r#"@import\(\s*"([^"]+)"\s*\)"#);
             for line in content.lines() {
                 let trimmed = line.trim();
                 if let Some(caps) = re.captures(trimmed) {
                     let p = caps[1].trim();
-                    if p.starts_with('.') || p.contains('/') || p.ends_with(".zig") {
+                    if p.starts_with('.')
+                        || p.contains('/')
+                        || std::path::Path::new(p)
+                            .extension()
+                            .is_some_and(|e| e.eq_ignore_ascii_case("zig"))
+                    {
                         imports.insert(clean_path_like(p));
                     }
                 }
@@ -196,7 +196,7 @@ fn extract_python_deps(content: &str) -> DepInfo {
             }
         }
 
-        if trimmed.starts_with("def ") && !trimmed.contains("_") {
+        if trimmed.starts_with("def ") && !trimmed.contains('_') {
             if let Some(name) = trimmed
                 .strip_prefix("def ")
                 .and_then(|s| s.split('(').next())
@@ -317,8 +317,7 @@ fn clean_path_like(path: &str) -> String {
 
 fn extract_c_like_deps(content: &str) -> DepInfo {
     let mut imports = HashSet::new();
-    let re =
-        C_INCLUDE_RE.get_or_init(|| Regex::new(r#"^\s*#\s*include\s*[<"]([^">]+)[">]"#).unwrap());
+    let re = static_regex!(r#"^\s*#\s*include\s*[<"]([^">]+)[">]"#);
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(caps) = re.captures(trimmed) {
@@ -336,8 +335,7 @@ fn extract_c_like_deps(content: &str) -> DepInfo {
 
 fn extract_ruby_deps(content: &str) -> DepInfo {
     let mut imports = HashSet::new();
-    let re = RUBY_REQUIRE_RE
-        .get_or_init(|| Regex::new(r#"^\s*require(?:_relative)?\s+['"]([^'"]+)['"]"#).unwrap());
+    let re = static_regex!(r#"^\s*require(?:_relative)?\s+['"]([^'"]+)['"]"#);
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(caps) = re.captures(trimmed) {
@@ -355,10 +353,9 @@ fn extract_ruby_deps(content: &str) -> DepInfo {
 
 fn extract_php_deps(content: &str) -> DepInfo {
     let mut imports = HashSet::new();
-    let re = PHP_INCLUDE_RE.get_or_init(|| {
-        Regex::new(r#"\b(?:require|require_once|include|include_once)\s*\(?\s*['"]([^'"]+)['"]"#)
-            .unwrap()
-    });
+    let re = static_regex!(
+        r#"\b(?:require|require_once|include|include_once)\s*\(?\s*['"]([^'"]+)['"]"#
+    );
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(caps) = re.captures(trimmed) {
@@ -376,8 +373,7 @@ fn extract_php_deps(content: &str) -> DepInfo {
 
 fn extract_bash_deps(content: &str) -> DepInfo {
     let mut imports = HashSet::new();
-    let re = BASH_SOURCE_RE
-        .get_or_init(|| Regex::new(r#"^\s*(?:source|\.)\s+['"]?([^'"\s;]+)['"]?"#).unwrap());
+    let re = static_regex!(r#"^\s*(?:source|\.)\s+['"]?([^'"\s;]+)['"]?"#);
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(caps) = re.captures(trimmed) {
@@ -502,7 +498,7 @@ const std = @import("std");
 
     #[test]
     fn kotlin_deps_are_extracted_from_ast() {
-        let content = r#"
+        let content = r"
 package com.example.app
 
 import com.example.services.UserService
@@ -510,7 +506,7 @@ import com.example.shared.*
 
 class Feature
 fun build(): Feature = Feature()
-"#;
+";
         let deps = extract_deps(content, "kt");
         assert!(deps
             .imports

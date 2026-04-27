@@ -46,7 +46,7 @@ fn compress_status(output: &str) -> String {
         {
             parts.push(trimmed.to_string());
         }
-        if trimmed.contains(".service") && trimmed.contains("-") && parts.is_empty() {
+        if trimmed.contains(".service") && trimmed.contains('-') && parts.is_empty() {
             parts.insert(0, trimmed.to_string());
         }
     }

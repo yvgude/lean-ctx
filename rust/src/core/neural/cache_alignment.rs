@@ -193,7 +193,7 @@ pub fn compute_delta(previous: &str, current: &str) -> DeltaResult {
     let changed_lines: Vec<String> = curr_lines
         [common_prefix..curr_lines.len().saturating_sub(common_suffix)]
         .iter()
-        .map(|l| l.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     let prefix_tokens = estimate_tokens(&prev_lines[..common_prefix].to_vec().join("\n"));

@@ -1,5 +1,6 @@
 use std::fmt;
 
+/// How aggressively a command's output may be compressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SafetyLevel {
     Verbatim,
@@ -19,12 +20,14 @@ impl fmt::Display for SafetyLevel {
     }
 }
 
+/// Maps a CLI command to its compression safety level and rationale.
 pub struct CommandSafety {
     pub command: &'static str,
     pub level: SafetyLevel,
     pub description: &'static str,
 }
 
+/// Static lookup table of per-command compression safety levels.
 pub const COMMAND_SAFETY_TABLE: &[CommandSafety] = &[
     // --- Verbatim: output passes through unchanged ---
     CommandSafety {
@@ -187,6 +190,7 @@ pub const COMMAND_SAFETY_TABLE: &[CommandSafety] = &[
     },
 ];
 
+/// Renders the full safety table as a human-readable report.
 pub fn format_safety_table() -> String {
     let mut out = String::new();
     out.push_str("Command Compression Safety Levels\n");

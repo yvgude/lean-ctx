@@ -17,7 +17,7 @@ pub async fn init_schema(pool: &DbPool) -> anyhow::Result<()> {
 
     client
         .batch_execute(
-            r#"
+            r"
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
@@ -172,7 +172,7 @@ DO $$ BEGIN
   ALTER TABLE buddy_state ADD COLUMN IF NOT EXISTS state_json TEXT;
 EXCEPTION WHEN others THEN NULL;
 END $$;
-"#,
+",
         )
         .await?;
 

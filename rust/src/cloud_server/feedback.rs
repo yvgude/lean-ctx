@@ -38,14 +38,14 @@ pub async fn post_feedback(
     for entry in &body {
         client
             .execute(
-                r#"INSERT INTO feedback_thresholds (user_id, language, entropy, jaccard, sample_count, avg_efficiency)
+                r"INSERT INTO feedback_thresholds (user_id, language, entropy, jaccard, sample_count, avg_efficiency)
                    VALUES ($1, $2, $3, $4, $5, $6)
                    ON CONFLICT (user_id, language) DO UPDATE SET
                      entropy = EXCLUDED.entropy,
                      jaccard = EXCLUDED.jaccard,
                      sample_count = EXCLUDED.sample_count,
                      avg_efficiency = EXCLUDED.avg_efficiency,
-                     updated_at = NOW()"#,
+                     updated_at = NOW()",
                 &[
                     &user_id,
                     &entry.language,

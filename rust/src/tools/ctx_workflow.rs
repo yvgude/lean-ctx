@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde_json::Value;
 
 pub fn handle_with_session(
-    args: &Option<serde_json::Map<String, Value>>,
+    args: Option<&serde_json::Map<String, Value>>,
     session: &mut SessionState,
 ) -> String {
     let action = get_str(args, "action").unwrap_or_else(|| "status".to_string());
@@ -21,7 +21,7 @@ pub fn handle_with_session(
     }
 }
 
-fn handle_start(args: &Option<serde_json::Map<String, Value>>) -> String {
+fn handle_start(args: Option<&serde_json::Map<String, Value>>) -> String {
     let spec_json = get_str(args, "spec");
     let name_override = get_str(args, "name");
 
@@ -109,12 +109,11 @@ fn handle_stop() -> String {
 }
 
 fn handle_transition(
-    args: &Option<serde_json::Map<String, Value>>,
+    args: Option<&serde_json::Map<String, Value>>,
     session: &SessionState,
 ) -> String {
-    let to = match get_str(args, "to") {
-        Some(t) => t,
-        None => return "Error: 'to' is required for transition".to_string(),
+    let Some(to) = get_str(args, "to") else {
+        return "Error: 'to' is required for transition".to_string();
     };
     let note = get_str(args, "value");
 
@@ -132,7 +131,7 @@ fn handle_transition(
     }
 
     let from = run.current.clone();
-    run.current = to.clone();
+    run.current.clone_from(&to);
     run.updated_at = Utc::now();
     run.transitions
         .push(crate::core::workflow::TransitionRecord {
@@ -150,7 +149,7 @@ fn handle_transition(
 }
 
 fn handle_complete(
-    args: &Option<serde_json::Map<String, Value>>,
+    args: Option<&serde_json::Map<String, Value>>,
     session: &SessionState,
 ) -> String {
     let Ok(active) = workflow::load_active() else {
@@ -173,7 +172,7 @@ fn handle_complete(
     }
 
     let from = run.current.clone();
-    run.current = done.clone();
+    run.current.clone_from(&done);
     run.updated_at = Utc::now();
     run.transitions
         .push(crate::core::workflow::TransitionRecord {
@@ -191,12 +190,11 @@ fn handle_complete(
 }
 
 fn handle_evidence_add(
-    args: &Option<serde_json::Map<String, Value>>,
+    args: Option<&serde_json::Map<String, Value>>,
     session: &mut SessionState,
 ) -> String {
-    let key = match get_str(args, "key") {
-        Some(k) => k,
-        None => return "Error: key is required".to_string(),
+    let Some(key) = get_str(args, "key") else {
+        return "Error: key is required".to_string();
     };
     let value = get_str(args, "value");
 
@@ -249,6 +247,9 @@ fn handle_evidence_list(session: &SessionState) -> String {
     lines.join("\n")
 }
 
-fn get_str(args: &Option<serde_json::Map<String, Value>>, key: &str) -> Option<String> {
-    args.as_ref()?.get(key)?.as_str().map(|s| s.to_string())
+fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<String> {
+    args?
+        .get(key)?
+        .as_str()
+        .map(std::string::ToString::to_string)
 }

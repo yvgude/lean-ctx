@@ -11,12 +11,11 @@ pub fn print_hook_stdout(shell: &str) {
     let binary = crate::hooks::to_bash_compatible_path(&binary);
 
     let code = match shell {
-        "bash" => generate_hook_posix(&binary),
-        "zsh" => generate_hook_posix(&binary),
+        "bash" | "zsh" => generate_hook_posix(&binary),
         "fish" => generate_hook_fish(&binary),
         "powershell" | "pwsh" => generate_hook_powershell(&binary),
         _ => {
-            eprintln!("lean-ctx: unsupported shell '{shell}'");
+            tracing::error!("lean-ctx: unsupported shell '{shell}'");
             eprintln!("Supported: bash, zsh, fish, powershell");
             std::process::exit(1);
         }
@@ -32,9 +31,10 @@ fn backup_shell_config(path: &std::path::Path) {
     if std::fs::copy(path, &bak).is_ok() {
         qprintln!(
             "  Backup: {}",
-            bak.file_name()
-                .map(|n| format!("~/{}", n.to_string_lossy()))
-                .unwrap_or_else(|| bak.display().to_string())
+            bak.file_name().map_or_else(
+                || bak.display().to_string(),
+                |n| format!("~/{}", n.to_string_lossy())
+            )
         );
     }
 }
@@ -50,16 +50,17 @@ fn write_hook_file(filename: &str, content: &str) -> Option<std::path::PathBuf> 
     match std::fs::write(&path, content) {
         Ok(()) => Some(path),
         Err(e) => {
-            eprintln!("Error writing {}: {e}", path.display());
+            tracing::error!("Error writing {}: {e}", path.display());
             None
         }
     }
 }
 
 fn resolved_hook_dir_display() -> String {
-    lean_ctx_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "$HOME/.lean-ctx".to_string())
+    lean_ctx_dir().map_or_else(
+        || "$HOME/.lean-ctx".to_string(),
+        |p| p.to_string_lossy().to_string(),
+    )
 }
 
 fn source_line_posix(shell_ext: &str) -> String {
@@ -109,7 +110,7 @@ fn upsert_source_line(rc_path: &std::path::Path, source_line: &str) {
                 qprintln!("Updated lean-ctx hook in {}", rc_path.display());
             }
             Err(e) => {
-                eprintln!("Error updating {}: {e}", rc_path.display());
+                tracing::error!("Error updating {}: {e}", rc_path.display());
             }
         }
         return;
@@ -125,7 +126,7 @@ fn upsert_source_line(rc_path: &std::path::Path, source_line: &str) {
             let _ = f.write_all(source_line.as_bytes());
             qprintln!("Added lean-ctx hook to {}", rc_path.display());
         }
-        Err(e) => eprintln!("Error writing {}: {e}", rc_path.display()),
+        Err(e) => tracing::error!("Error writing {}: {e}", rc_path.display()),
     }
 }
 
@@ -168,15 +169,12 @@ if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LE
 
 pub fn init_powershell(binary: &str) {
     let profile_dir = dirs::home_dir().map(|h| h.join("Documents").join("PowerShell"));
-    let profile_path = match profile_dir {
-        Some(dir) => {
-            let _ = std::fs::create_dir_all(&dir);
-            dir.join("Microsoft.PowerShell_profile.ps1")
-        }
-        None => {
-            eprintln!("Could not resolve PowerShell profile directory");
-            return;
-        }
+    let profile_path = if let Some(dir) = profile_dir {
+        let _ = std::fs::create_dir_all(&dir);
+        dir.join("Microsoft.PowerShell_profile.ps1")
+    } else {
+        tracing::error!("Could not resolve PowerShell profile directory");
+        return;
     };
 
     let hook_content = generate_hook_powershell(binary);
@@ -472,7 +470,7 @@ fi
     );
     match std::fs::write(&env_sh, content) {
         Ok(()) => qprintln!("  env.sh: {}", env_sh.display()),
-        Err(e) => eprintln!("  Warning: could not write {}: {e}", env_sh.display()),
+        Err(e) => tracing::warn!("could not write {}: {e}", env_sh.display()),
     }
 }
 
@@ -480,9 +478,10 @@ fn print_docker_env_hints(is_zsh: bool) {
     if is_zsh || !crate::shell::is_container() {
         return;
     }
-    let env_sh = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.join("env.sh").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "/root/.lean-ctx/env.sh".to_string());
+    let env_sh = crate::core::data_dir::lean_ctx_data_dir().map_or_else(
+        |_| "/root/.lean-ctx/env.sh".to_string(),
+        |d| d.join("env.sh").to_string_lossy().to_string(),
+    );
 
     let has_bash_env = std::env::var("BASH_ENV").is_ok();
     let has_claude_env = std::env::var("CLAUDE_ENV_FILE").is_ok();

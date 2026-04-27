@@ -79,7 +79,10 @@ impl EventBus {
         };
 
         {
-            let mut ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ring = self
+                .ring
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if ring.len() >= RING_CAPACITY {
                 ring.pop_front();
             }
@@ -91,12 +94,18 @@ impl EventBus {
     }
 
     fn events_since(&self, after_id: u64) -> Vec<LeanCtxEvent> {
-        let ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
+        let ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ring.iter().filter(|e| e.id > after_id).cloned().collect()
     }
 
     fn latest_events(&self, n: usize) -> Vec<LeanCtxEvent> {
-        let ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
+        let ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let len = ring.len();
         let start = len.saturating_sub(n);
         ring.iter().skip(start).cloned().collect()
@@ -201,7 +210,7 @@ pub fn emit_agent_action(agent_id: &str, action: &str, tool: Option<&str>) {
     emit(EventKind::AgentAction {
         agent_id: agent_id.to_string(),
         action: action.to_string(),
-        tool: tool.map(|t| t.to_string()),
+        tool: tool.map(std::string::ToString::to_string),
     });
 }
 

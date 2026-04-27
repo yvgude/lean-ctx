@@ -226,25 +226,17 @@ fn draw_header(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         "${:.3}",
         state.total_saved as f64 * quote.cost.input_per_m / 1_000_000.0
     );
-    let gain_score = state.gain_score.as_ref().map(|s| s.total).unwrap_or(0);
-    let trend_icon = state
-        .gain_score
-        .as_ref()
-        .map(|s| match s.trend {
-            crate::core::gain::gain_score::Trend::Rising => "▲",
-            crate::core::gain::gain_score::Trend::Stable => "─",
-            crate::core::gain::gain_score::Trend::Declining => "▼",
-        })
-        .unwrap_or("─");
-    let trend_color = state
-        .gain_score
-        .as_ref()
-        .map(|s| match s.trend {
-            crate::core::gain::gain_score::Trend::Rising => GREEN,
-            crate::core::gain::gain_score::Trend::Stable => MUTED,
-            crate::core::gain::gain_score::Trend::Declining => YELLOW,
-        })
-        .unwrap_or(MUTED);
+    let gain_score = state.gain_score.as_ref().map_or(0, |s| s.total);
+    let trend_icon = state.gain_score.as_ref().map_or("─", |s| match s.trend {
+        crate::core::gain::gain_score::Trend::Rising => "▲",
+        crate::core::gain::gain_score::Trend::Stable => "─",
+        crate::core::gain::gain_score::Trend::Declining => "▼",
+    });
+    let trend_color = state.gain_score.as_ref().map_or(MUTED, |s| match s.trend {
+        crate::core::gain::gain_score::Trend::Rising => GREEN,
+        crate::core::gain::gain_score::Trend::Stable => MUTED,
+        crate::core::gain::gain_score::Trend::Declining => YELLOW,
+    });
 
     let spans = vec![
         Span::styled(
@@ -316,7 +308,7 @@ fn draw_task_activity(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
                         format!("{:<14}", cat.label()),
                         Style::default().fg(Color::Rgb(220, 220, 240)),
                     ),
-                    Span::styled(format!("{:>4}", n), Style::default().fg(MUTED)),
+                    Span::styled(format!("{n:>4}"), Style::default().fg(MUTED)),
                 ]))
             })
             .collect()
@@ -455,7 +447,7 @@ fn draw_heatmap(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
 
     let mut files: Vec<_> = state.files.iter().collect();
     files.sort_by_key(|x| std::cmp::Reverse(x.1.access_count));
-    let max_access = files.first().map(|f| f.1.access_count).unwrap_or(1).max(1);
+    let max_access = files.first().map_or(1, |f| f.1.access_count).max(1);
 
     let visible = (area.height.saturating_sub(2)) as usize;
     let rows: Vec<Row> = files
@@ -532,7 +524,7 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
                 format!(" {} saved ", format_tokens(state.total_saved)),
                 Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("({:.0}%)", pct), Style::default().fg(MUTED)),
+            Span::styled(format!("({pct:.0}%)"), Style::default().fg(MUTED)),
         ])),
         chunks[0],
     );
@@ -542,7 +534,7 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Gauge::default()
             .ratio(ratio)
             .gauge_style(Style::default().fg(GREEN).bg(BG))
-            .label(format!("{:.0}%", pct)),
+            .label(format!("{pct:.0}%")),
         chunks[1],
     );
 
@@ -552,7 +544,7 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(" Cache Hit Rate ", Style::default().fg(PURPLE)),
-            Span::styled(format!("{:.0}%", cache_pct), Style::default().fg(MUTED)),
+            Span::styled(format!("{cache_pct:.0}%"), Style::default().fg(MUTED)),
         ])),
         chunks[3],
     );
@@ -562,7 +554,7 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Gauge::default()
             .ratio(cache_ratio)
             .gauge_style(Style::default().fg(PURPLE).bg(BG))
-            .label(format!("{:.0}%", cache_pct)),
+            .label(format!("{cache_pct:.0}%")),
         chunks[4],
     );
 }

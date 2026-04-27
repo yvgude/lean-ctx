@@ -1,5 +1,13 @@
 use regex::Regex;
-use std::sync::OnceLock;
+
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
 #[derive(Debug, Clone)]
 pub struct Signature {
@@ -98,63 +106,48 @@ impl Signature {
     }
 }
 
-static FN_RE: OnceLock<Regex> = OnceLock::new();
-static CLASS_RE: OnceLock<Regex> = OnceLock::new();
-static IFACE_RE: OnceLock<Regex> = OnceLock::new();
-static TYPE_RE: OnceLock<Regex> = OnceLock::new();
-static CONST_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_FN_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_STRUCT_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_ENUM_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_TRAIT_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_IMPL_RE: OnceLock<Regex> = OnceLock::new();
-
 fn fn_re() -> &'static Regex {
-    FN_RE.get_or_init(|| {
-        Regex::new(r"^(\s*)(export\s+)?(async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^\{]+))?\s*\{?")
-            .unwrap()
-    })
+    static_regex!(
+        r"^(\s*)(export\s+)?(async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^\{]+))?\s*\{?"
+    )
 }
 
 fn class_re() -> &'static Regex {
-    CLASS_RE.get_or_init(|| Regex::new(r"^(\s*)(export\s+)?(abstract\s+)?class\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(export\s+)?(abstract\s+)?class\s+(\w+)")
 }
 
 fn iface_re() -> &'static Regex {
-    IFACE_RE.get_or_init(|| Regex::new(r"^(\s*)(export\s+)?interface\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(export\s+)?interface\s+(\w+)")
 }
 
 fn type_re() -> &'static Regex {
-    TYPE_RE.get_or_init(|| Regex::new(r"^(\s*)(export\s+)?type\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(export\s+)?type\s+(\w+)")
 }
 
 fn const_re() -> &'static Regex {
-    CONST_RE.get_or_init(|| {
-        Regex::new(r"^(\s*)(export\s+)?(const|let|var)\s+(\w+)(?:\s*:\s*(\w+))?").unwrap()
-    })
+    static_regex!(r"^(\s*)(export\s+)?(const|let|var)\s+(\w+)(?:\s*:\s*(\w+))?")
 }
 
 fn rust_fn_re() -> &'static Regex {
-    RUST_FN_RE.get_or_init(|| {
-        Regex::new(r"^(\s*)(pub\s+)?(async\s+)?fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*->\s*([^\{]+))?\s*\{?")
-            .unwrap()
-    })
+    static_regex!(
+        r"^(\s*)(pub\s+)?(async\s+)?fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*->\s*([^\{]+))?\s*\{?"
+    )
 }
 
 fn rust_struct_re() -> &'static Regex {
-    RUST_STRUCT_RE.get_or_init(|| Regex::new(r"^(\s*)(pub\s+)?struct\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(pub\s+)?struct\s+(\w+)")
 }
 
 fn rust_enum_re() -> &'static Regex {
-    RUST_ENUM_RE.get_or_init(|| Regex::new(r"^(\s*)(pub\s+)?enum\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(pub\s+)?enum\s+(\w+)")
 }
 
 fn rust_trait_re() -> &'static Regex {
-    RUST_TRAIT_RE.get_or_init(|| Regex::new(r"^(\s*)(pub\s+)?trait\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(pub\s+)?trait\s+(\w+)")
 }
 
 fn rust_impl_re() -> &'static Regex {
-    RUST_IMPL_RE.get_or_init(|| Regex::new(r"^(\s*)impl\s+(?:(\w+)\s+for\s+)?(\w+)").unwrap())
+    static_regex!(r"^(\s*)impl\s+(?:(\w+)\s+for\s+)?(\w+)")
 }
 
 pub fn extract_signatures(content: &str, file_ext: &str) -> Vec<Signature> {
@@ -188,7 +181,7 @@ pub fn extract_file_map(path: &str, content: &str) -> String {
     let key_sigs: Vec<String> = sigs
         .iter()
         .filter(|s| s.is_exported || s.indent == 0)
-        .map(|s| s.to_compact())
+        .map(Signature::to_compact)
         .collect();
     if !key_sigs.is_empty() {
         parts.push(key_sigs.join("\n"));
@@ -354,15 +347,9 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
 }
 
 fn extract_python_signatures(content: &str) -> Vec<Signature> {
-    use std::sync::OnceLock;
-    static PY_FN: OnceLock<Regex> = OnceLock::new();
-    static PY_CLASS: OnceLock<Regex> = OnceLock::new();
-
     let mut sigs = Vec::new();
-    let py_fn = PY_FN.get_or_init(|| {
-        Regex::new(r"^(\s*)(async\s+)?def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*(\w+))?").unwrap()
-    });
-    let py_class = PY_CLASS.get_or_init(|| Regex::new(r"^(\s*)class\s+(\w+)").unwrap());
+    let py_fn = static_regex!(r"^(\s*)(async\s+)?def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*(\w+))?");
+    let py_class = static_regex!(r"^(\s*)class\s+(\w+)");
 
     for line in content.lines() {
         if let Some(caps) = py_fn.captures(line) {
@@ -397,14 +384,11 @@ fn extract_python_signatures(content: &str) -> Vec<Signature> {
 }
 
 fn extract_go_signatures(content: &str) -> Vec<Signature> {
-    use std::sync::OnceLock;
-    static GO_FN: OnceLock<Regex> = OnceLock::new();
-    static GO_TYPE: OnceLock<Regex> = OnceLock::new();
-
     let mut sigs = Vec::new();
-    let go_fn = GO_FN.get_or_init(|| Regex::new(r"^func\s+(?:\((\w+)\s+\*?(\w+)\)\s+)?(\w+)\s*\(([^)]*)\)(?:\s*(?:\(([^)]*)\)|(\w+)))?\s*\{").unwrap());
-    let go_type =
-        GO_TYPE.get_or_init(|| Regex::new(r"^type\s+(\w+)\s+(struct|interface)").unwrap());
+    let go_fn = static_regex!(
+        r"^func\s+(?:\((\w+)\s+\*?(\w+)\)\s+)?(\w+)\s*\(([^)]*)\)(?:\s*(?:\(([^)]*)\)|(\w+)))?\s*\{"
+    );
+    let go_type = static_regex!(r"^type\s+(\w+)\s+(struct|interface)");
 
     for line in content.lines() {
         if let Some(caps) = go_fn.captures(line) {
@@ -527,15 +511,12 @@ fn tdd_params(params: &str) -> String {
 }
 
 fn extract_generic_signatures(content: &str) -> Vec<Signature> {
-    static RE_FUNC: OnceLock<Regex> = OnceLock::new();
-    static RE_CLASS: OnceLock<Regex> = OnceLock::new();
-
-    let re_func = RE_FUNC.get_or_init(|| {
-        Regex::new(r"^\s*(?:(?:public|private|protected|static|async|abstract|virtual|override|final|def|func|fun|fn)\s+)+(\w+)\s*\(").unwrap()
-    });
-    let re_class = RE_CLASS.get_or_init(|| {
-        Regex::new(r"^\s*(?:(?:public|private|protected|abstract|final|sealed|partial)\s+)*(?:class|struct|enum|interface|trait|module|object|record)\s+(\w+)").unwrap()
-    });
+    let re_func = static_regex!(
+        r"^\s*(?:(?:public|private|protected|static|async|abstract|virtual|override|final|def|func|fun|fn)\s+)+(\w+)\s*\("
+    );
+    let re_class = static_regex!(
+        r"^\s*(?:(?:public|private|protected|abstract|final|sealed|partial)\s+)*(?:class|struct|enum|interface|trait|module|object|record)\s+(\w+)"
+    );
 
     let mut sigs = Vec::new();
     for line in content.lines() {

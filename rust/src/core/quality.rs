@@ -1,6 +1,15 @@
 use crate::core::preservation;
 use crate::core::tokens::count_tokens;
 
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
+
 const QUALITY_THRESHOLD: f64 = 0.95;
 const MIN_DENSITY: f64 = 0.15;
 
@@ -72,7 +81,7 @@ pub fn information_density(original: &str, compressed: &str, ext: &str) -> f64 {
 
     let pres = preservation::measure(original, compressed, ext);
     let semantic_items = pres.functions_preserved + pres.exports_preserved + pres.imports_preserved;
-    let ident_re = regex::Regex::new(r"\b[a-zA-Z_][a-zA-Z0-9_]{3,}\b").unwrap();
+    let ident_re = static_regex!(r"\b[a-zA-Z_][a-zA-Z0-9_]{3,}\b");
     let unique_idents: std::collections::HashSet<&str> =
         ident_re.find_iter(compressed).map(|m| m.as_str()).collect();
     let semantic_token_estimate = semantic_items + unique_idents.len();
@@ -91,7 +100,7 @@ pub fn guard(original: &str, compressed: &str, ext: &str) -> (String, QualitySco
 }
 
 fn measure_identifier_preservation(original: &str, compressed: &str) -> f64 {
-    let ident_re = regex::Regex::new(r"\b[a-zA-Z_][a-zA-Z0-9_]{3,}\b").unwrap();
+    let ident_re = static_regex!(r"\b[a-zA-Z_][a-zA-Z0-9_]{3,}\b");
 
     let original_idents: std::collections::HashSet<&str> =
         ident_re.find_iter(original).map(|m| m.as_str()).collect();

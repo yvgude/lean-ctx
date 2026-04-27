@@ -5,7 +5,6 @@ pub fn handle(action: &str, _path: Option<&str>) -> String {
     let engine = GainEngine::load();
 
     match action {
-        "status" => heatmap::format_heatmap_status(&engine.heatmap, 20),
         "directory" | "dirs" => heatmap::format_directory_summary(&engine.heatmap),
         "cold" => {
             let all = collect_project_files(_path);

@@ -29,14 +29,14 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
     let sigs = signatures::extract_signatures(&content, ext);
     let sig_compact: String = sigs
         .iter()
-        .map(|s| s.to_compact())
+        .map(super::super::core::signatures::Signature::to_compact)
         .collect::<Vec<_>>()
         .join("\n");
     let sig_tokens = count_tokens(&sig_compact);
 
     let sig_tdd: String = sigs
         .iter()
-        .map(|s| s.to_tdd())
+        .map(super::super::core::signatures::Signature::to_tdd)
         .collect::<Vec<_>>()
         .join("\n");
     let sig_tdd_tokens = count_tokens(&sig_tdd);
@@ -142,8 +142,7 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
             0
         };
         rows.push(format!(
-            "TDD bonus (signatures): {} extra tokens saved ({}%)",
-            tdd_extra, tdd_pct
+            "TDD bonus (signatures): {tdd_extra} extra tokens saved ({tdd_pct}%)"
         ));
     } else {
         rows.push(format!(

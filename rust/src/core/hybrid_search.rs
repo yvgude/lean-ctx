@@ -160,9 +160,8 @@ fn dense_search(
     embeddings: &[Vec<f32>],
     top_k: usize,
 ) -> Vec<DenseSearchResult> {
-    let query_embedding = match engine.embed(query) {
-        Ok(e) => e,
-        Err(_) => return Vec::new(),
+    let Ok(query_embedding) = engine.embed(query) else {
+        return Vec::new();
     };
 
     let mut scored: Vec<(usize, f32)> = embeddings
@@ -194,7 +193,7 @@ fn dense_search(
 }
 
 fn result_key(file_path: &str, start_line: usize) -> String {
-    format!("{}:{}", file_path, start_line)
+    format!("{file_path}:{start_line}")
 }
 
 /// Result from dense (embedding-based) search.

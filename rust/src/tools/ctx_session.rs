@@ -16,16 +16,13 @@ pub fn handle(
                 SessionState::load_latest()
             };
 
-            match loaded {
-                Some(prev) => {
-                    let summary = prev.format_compact();
-                    *session = prev;
-                    format!("Session loaded.\n{summary}")
-                }
-                None => {
-                    let id_str = session_id.unwrap_or("latest");
-                    format!("No session found (id: {id_str}). Starting fresh.")
-                }
+            if let Some(prev) = loaded {
+                let summary = prev.format_compact();
+                *session = prev;
+                format!("Session loaded.\n{summary}")
+            } else {
+                let id_str = session_id.unwrap_or("latest");
+                format!("No session found (id: {id_str}). Starting fresh.")
             }
         }
 
