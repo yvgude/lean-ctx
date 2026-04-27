@@ -276,7 +276,7 @@ export default function (pi: ExtensionAPI) {
     description: "Execute a bash command. Use `timeout` (seconds) to prevent hanging commands.",
     promptSnippet: "Run shell commands",
     promptGuidelines: [
-      "Use `bash` to run shell commands, scripts, or system tasks.",
+      "Use bash to run shell commands, scripts, or system tasks.",
     ],
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
@@ -306,7 +306,7 @@ export default function (pi: ExtensionAPI) {
     description: "Read file contents. Use `offset` and `limit` to read specific line ranges",
     promptSnippet: "Read file contents",
     promptGuidelines: [
-      "Use `read` to inspect file contents instead of cat or less.",
+      "Use read to inspect file contents instead of cat or less.",
     ],
     parameters: readSchema,
     renderCall(args, theme, context) {
