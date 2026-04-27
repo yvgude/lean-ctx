@@ -273,11 +273,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     ...baseBashTool,
-    description:
-      "Execute a bash command through lean-ctx compression.",
-    promptSnippet: "Run shell commands (compressed output)",
+    description: "Execute a bash command.",
+    promptSnippet: "Run shell commands",
     promptGuidelines: [
-      "Avoid interactive prompts with bash; it cannot handle interactive input.",
+      "Tool: `bash`. Args: `command` (required), `timeout` (optional, seconds). No interactive prompts.",
     ],
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
@@ -304,12 +303,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "read",
     label: "Read",
-    description:
-      "Read file contents through lean-ctx with automatic mode selection (full/map/signatures) based on file type and size.",
+    description: "Read file contents with automatic mode selection.",
     promptSnippet: "Smart file read",
     promptGuidelines: [
-      "Auto-selects mode: full (<8KB), map (8-96KB), signatures (>96KB) for code.",
-      "Text/configs always full-read; images passthrough.",
+      "Tool: `read`. Args: `path` (required), `offset` (optional, 1-indexed line), `limit` (optional max lines). Auto-selects mode by file size/type.",
     ],
     parameters: readSchema,
     renderCall(args, theme, context) {
@@ -409,10 +406,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ls",
     label: "ls",
-    description: "List directory contents through lean-ctx compression.",
-    promptSnippet: "Directory listing (Compressed)",
+    description: "List directory contents.",
+    promptSnippet: "Directory listing",
     promptGuidelines: [
-      "Use ls with limit param to truncate long directory listings.",
+      "Tool: `ls`. Args: `path` (optional, default: cwd), `limit` (optional, default: 500).",
     ],
     parameters: lsSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -430,10 +427,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "find",
     label: "find",
-    description: "Find files by glob pattern through lean-ctx compression.",
-    promptSnippet: "File search (Compressed)",
+    description: "Find files by glob pattern.",
+    promptSnippet: "File search",
     promptGuidelines: [
-      "Use find with limit param to cap large result sets.",
+      "Tool: `find`. Args: `pattern` (required, glob), `path` (optional, default: cwd), `limit` (optional, default: 1000).",
     ],
     parameters: findSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -451,10 +448,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "grep",
     label: "grep",
-    description: "Search file contents through ripgrep + lean-ctx compression.",
-    promptSnippet: "Compressed code search (grouped results)",
+    description: "Search file contents using regex or literal patterns.",
+    promptSnippet: "Code search",
     promptGuidelines: [
-      "Use grep with ripgrep flags: -i, -F, -C, -m, --glob. Output includes line numbers.",
+      "Tool: `grep`. Args: `pattern` (required). Optional: `path`, `glob`, `ignoreCase`, `literal`, `context` (lines), `limit` (max matches). Returns line numbers.",
     ],
     parameters: grepSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
