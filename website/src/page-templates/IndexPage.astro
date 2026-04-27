@@ -11,11 +11,18 @@ const manifest = getMcpManifest();
 async function fetchGitHubReleaseDownloads(): Promise<number> {
   let total = 0;
   let page = 1;
-  const headers = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'leanctx-website' };
+  const perPage = 5;
+  const headers: Record<string, string> = {
+    'Accept': 'application/vnd.github+json',
+    'User-Agent': 'leanctx-website-build',
+  };
+  if (import.meta.env.GITHUB_TOKEN) {
+    headers['Authorization'] = `Bearer ${import.meta.env.GITHUB_TOKEN}`;
+  }
   try {
-    while (true) {
+    while (page <= 50) {
       const res = await fetch(
-        `https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=100&page=${page}`,
+        `https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=${perPage}&page=${page}`,
         { headers }
       );
       if (!res.ok) break;
@@ -26,7 +33,7 @@ async function fetchGitHubReleaseDownloads(): Promise<number> {
           total += a.download_count || 0;
         }
       }
-      if (releases.length < 100) break;
+      if (releases.length < perPage) break;
       page++;
     }
   } catch { /* fallback to 0 — client-side sources still counted */ }
