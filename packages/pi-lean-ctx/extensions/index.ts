@@ -408,9 +408,6 @@ export default function (pi: ExtensionAPI) {
     label: "ls",
     description: "List directory contents. Use `limit` to reduce output size.",
     promptSnippet: "List directory contents",
-    promptGuidelines: [
-      "Use `ls` to explore directory structure and list files.",
-    ],
     parameters: lsSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");
