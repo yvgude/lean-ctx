@@ -273,10 +273,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     ...baseBashTool,
-    description: "Execute a bash command.",
+    description: "Execute a bash command. Use `timeout` (seconds) to prevent hanging commands.",
     promptSnippet: "Run shell commands",
     promptGuidelines: [
-      "Tool: `bash`. Args: `command` (required), `timeout` (optional, seconds). No interactive prompts.",
+      "Use `bash` to run shell commands, scripts, or system tasks.",
     ],
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
@@ -303,10 +303,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "read",
     label: "Read",
-    description: "Read file contents with automatic mode selection.",
-    promptSnippet: "Smart file read",
+    description: "Read file contents. Use `offset` and `limit` to read specific line ranges",
+    promptSnippet: "Read file contents",
     promptGuidelines: [
-      "Tool: `read`. Args: `path` (required), `offset` (optional, 1-indexed line), `limit` (optional max lines). Auto-selects mode by file size/type.",
+      "Use `read` to inspect file contents instead of cat or less.",
     ],
     parameters: readSchema,
     renderCall(args, theme, context) {
@@ -406,10 +406,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ls",
     label: "ls",
-    description: "List directory contents.",
-    promptSnippet: "Directory listing",
+    description: "List directory contents. Use `limit` to reduce output size.",
+    promptSnippet: "List directory contents",
     promptGuidelines: [
-      "Tool: `ls`. Args: `path` (optional, default: cwd), `limit` (optional, default: 500).",
+      "Use `ls` to explore directory structure and list files.",
     ],
     parameters: lsSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -427,11 +427,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "find",
     label: "find",
-    description: "Find files by glob pattern.",
-    promptSnippet: "File search",
-    promptGuidelines: [
-      "Tool: `find`. Args: `pattern` (required, glob), `path` (optional, default: cwd), `limit` (optional, default: 1000).",
-    ],
+    description: "Find files by glob pattern. Use `limit` to reduce output size.",
+    promptSnippet: "Find files by glob pattern (respects .gitignore)",
     parameters: findSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");
@@ -448,11 +445,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "grep",
     label: "grep",
-    description: "Search file contents using regex or literal patterns.",
-    promptSnippet: "Code search",
-    promptGuidelines: [
-      "Tool: `grep`. Args: `pattern` (required). Optional: `path`, `glob`, `ignoreCase`, `literal`, `context` (lines), `limit` (max matches). Returns line numbers.",
-    ],
+    description: "Search file contents. Use `limit` to cap matches and `context` for surrounding lines to reduce token usage.",
+    promptSnippet: "Search file contents for patterns (respects .gitignore)",
     parameters: grepSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");
