@@ -151,6 +151,10 @@ pub struct Config {
     /// Override via LEAN_CTX_NO_HOOK env var.
     #[serde(default)]
     pub shell_hook_disabled: bool,
+    /// Disable the daily version check against leanctx.com/version.txt.
+    /// Override via LEAN_CTX_NO_UPDATE_CHECK env var.
+    #[serde(default)]
+    pub update_check_disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -364,6 +368,7 @@ impl Default for Config {
             content_defined_chunking: false,
             minimal_overhead: false,
             shell_hook_disabled: false,
+            update_check_disabled: false,
         }
     }
 }
@@ -409,6 +414,10 @@ impl Config {
 
     pub fn shell_hook_disabled_effective(&self) -> bool {
         std::env::var("LEAN_CTX_NO_HOOK").is_ok() || self.shell_hook_disabled
+    }
+
+    pub fn update_check_disabled_effective(&self) -> bool {
+        std::env::var("LEAN_CTX_NO_UPDATE_CHECK").is_ok() || self.update_check_disabled
     }
 }
 

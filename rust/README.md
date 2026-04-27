@@ -735,7 +735,7 @@ Contributions welcome! Please open an issue or PR on [GitHub](https://github.com
 
 ## Security
 
-lean-ctx is a **local-only** tool — zero network requests, zero telemetry. See [SECURITY.md](SECURITY.md) for:
+lean-ctx is a **privacy-first** tool — no tracking, no analytics, no PII collection. Optional network activity (daily version check, opt-in anonymous stats) is fully disableable. See [SECURITY.md](SECURITY.md) for:
 
 - Vulnerability reporting process
 - Automated CI security checks (cargo audit, clippy, dangerous pattern scans)

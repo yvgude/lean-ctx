@@ -26,9 +26,12 @@ lean-ctx is a **local-only CLI tool and MCP server**. Understanding its scope he
 - Store statistics in `~/.lean-ctx/stats.json` (command counts, token savings)
 - Store session state in `~/.lean-ctx/sessions/` (task context, findings)
 
+**Optional network activity (fully disableable):**
+- **Update check**: a lightweight daily GET to `leanctx.com/version.txt` to notify you of new versions. Sends only the current version as User-Agent. Disable with `update_check_disabled = true` in `~/.lean-ctx/config.toml` or `LEAN_CTX_NO_UPDATE_CHECK=1`.
+- **Anonymous stats sharing** (opt-in, off by default): if you enable `contribute_enabled` in setup, anonymized compression statistics (token counts, compression ratios — no file names, no code, no PII) are periodically sent to `api.leanctx.com`.
+
 **Does NOT:**
-- Make any network requests or phone home
-- Collect telemetry or usage analytics
+- Collect tracking analytics, fingerprints, or PII
 - Access files outside of requested paths
 - Store or transmit credentials, API keys, or secrets
 - Require elevated privileges (runs as your user)
@@ -73,7 +76,7 @@ All dependencies in `Cargo.toml` meet these criteria:
 - **Established crates**: All 29 dependencies are well-known, widely-used Rust crates
 - **License**: MIT or Apache-2.0 compatible
 - **Active maintenance**: Recent commits within 6 months
-- **No network crates**: lean-ctx has zero HTTP/networking dependencies
+- **Minimal network**: `ureq` (lightweight HTTP client) used only for version check and opt-in cloud sync
 
 Key dependencies and their purpose:
 
@@ -150,4 +153,4 @@ Critical vulnerabilities (RCE, data exfiltration) are fast-tracked.
 
 ---
 
-**Last updated**: 2026-03-25
+**Last updated**: 2026-04-27

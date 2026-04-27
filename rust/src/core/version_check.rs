@@ -78,7 +78,13 @@ fn is_newer(latest: &str, current: &str) -> bool {
 /// Spawn a background thread to fetch latest version from leanctx.com/version.txt
 /// and write the result to ~/.lean-ctx/latest-version.json.
 /// Non-blocking, fire-and-forget. Skips if cache is fresh (<24h).
+/// Respects `update_check_disabled` config and `LEAN_CTX_NO_UPDATE_CHECK` env var.
 pub fn check_background() {
+    let cfg = super::config::Config::load();
+    if cfg.update_check_disabled_effective() {
+        return;
+    }
+
     let cache = read_cache();
     if let Some(ref c) = cache {
         if !is_cache_stale(c) {

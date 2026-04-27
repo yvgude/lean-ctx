@@ -25,7 +25,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://discord.gg/pTHkG9Hew9"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://x.com/leanctx"><img src="https://img.shields.io/badge/𝕏-Follow-000000?logo=x&logoColor=white" alt="X/Twitter"></a>
-  <img src="https://img.shields.io/badge/Telemetry-Zero-brightgreen?logo=shield&logoColor=white" alt="Zero Telemetry">
+  <img src="https://img.shields.io/badge/Telemetry-Opt--in%20Only-brightgreen?logo=shield&logoColor=white" alt="Opt-in Telemetry">
 </p>
 
 <p align="center">
@@ -837,7 +837,7 @@ When running inside Codex CLI (`CODEX_CLI_SESSION` set), `~/.codex` is automatic
 | Full output recovery | `tee` | ✓ (`tee_mode: always/failures/never`) |
 | Truncation warnings | ✗ | ✓ (transparent markers) |
 | ANSI auto-strip | ✗ | ✓ (pre-compression) |
-| Telemetry | **Default ON (PII)** | **Zero. None. Ever.** |
+| Telemetry | **Default ON (PII)** | **Opt-in only, no PII, no tracking** |
 | Editor support | 3 editors | **24 editors/tools** |
 
 <br>
@@ -846,9 +846,9 @@ When running inside Codex CLI (`CODEX_CLI_SESSION` set), `~/.codex` is automatic
 
 lean-ctx is **privacy-first by design**:
 
-- **Zero telemetry** — no data collection, no analytics, no phone-home, ever
-- **Zero network requests** — everything runs locally on your machine
-- **No PII exposure** — no hostnames, usernames, or project paths leave your system
+- **No tracking, no analytics** — no PII, no hostnames, no project paths leave your system
+- **Opt-in data sharing** — anonymous compression stats are only sent if you explicitly enable it during setup (default: off)
+- **Update check** — a lightweight daily version check against `leanctx.com/version.txt` runs in the background (disable with `update_check_disabled = true` in config or `LEAN_CTX_NO_UPDATE_CHECK=1`)
 - **Fully auditable** — Apache 2.0 licensed, single Rust binary, no hidden dependencies
 
 See [SECURITY.md](SECURITY.md).
@@ -893,14 +893,14 @@ No. lean-ctx adds <1ms overhead per operation. The MCP server runs as a persiste
 <details>
 <summary><strong>Is it safe? Does it send data anywhere?</strong></summary>
 
-lean-ctx has **zero telemetry** — no data collection, no analytics, no network requests, ever. Everything runs 100% locally. The code is Apache 2.0 licensed and fully auditable. See [SECURITY.md](SECURITY.md).
+lean-ctx has **no tracking and no analytics**. All compression runs 100% locally. The only network activity is an optional daily version check (disable with `LEAN_CTX_NO_UPDATE_CHECK=1`) and opt-in anonymous compression stats sharing (off by default). No PII, hostnames, or project paths are ever transmitted. The code is Apache 2.0 licensed and fully auditable. See [SECURITY.md](SECURITY.md).
 
 </details>
 
 <details>
 <summary><strong>What's the difference between lean-ctx and Rust Token Killer (RTK)?</strong></summary>
 
-lean-ctx is a hybrid architecture (shell hook + MCP server) while Rust Token Killer is shell-hook only. lean-ctx offers 46 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and — critically — zero telemetry (RTK has default-on telemetry with PII).
+lean-ctx is a hybrid architecture (shell hook + MCP server) while Rust Token Killer is shell-hook only. lean-ctx offers 46 tools vs RTK's basic compression, supports 24 editors vs 3, has tree-sitter AST parsing for 18 languages, cross-session memory, multi-agent coordination, and no tracking or analytics (RTK has default-on telemetry with PII). lean-ctx's optional data sharing is fully opt-in and anonymized.
 
 </details>
 

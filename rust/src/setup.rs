@@ -198,14 +198,14 @@ pub fn run_setup() {
     println!("  Share anonymous compression stats to make lean-ctx better.");
     println!("  \x1b[1mNo code, no file names, no personal data — ever.\x1b[0m");
     println!();
-    print!("  Enable anonymous data sharing? \x1b[1m[Y/n]\x1b[0m ");
+    print!("  Enable anonymous data sharing? \x1b[1m[y/N]\x1b[0m ");
     use std::io::Write;
     std::io::stdout().flush().ok();
 
     let mut input = String::new();
     let contribute = if std::io::stdin().read_line(&mut input).is_ok() {
         let answer = input.trim().to_lowercase();
-        answer.is_empty() || answer == "y" || answer == "yes"
+        answer == "y" || answer == "yes"
     } else {
         false
     };
