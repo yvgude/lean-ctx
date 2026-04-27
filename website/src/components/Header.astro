@@ -593,12 +593,12 @@ const docsColumns = [
     }
   });
 
-  fetch('https://api.github.com/repos/yvgude/lean-ctx')
+  fetch('/api/stats')
     .then(r => r.json())
     .then(data => {
       const el = document.getElementById('gh-stars');
-      if (el && data.stargazers_count != null) {
-        const count = data.stargazers_count;
+      if (el && data.stars > 0) {
+        const count = data.stars;
         el.textContent = count >= 1000 ? (count / 1000).toFixed(1) + 'k' : String(count);
       }
     })
