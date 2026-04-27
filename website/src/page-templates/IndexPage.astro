@@ -8,6 +8,8 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
 
+const GH_RELEASE_BASELINE = 7460;
+
 async function fetchGitHubReleaseDownloads(): Promise<number> {
   let total = 0;
   let page = 1;
@@ -36,8 +38,8 @@ async function fetchGitHubReleaseDownloads(): Promise<number> {
       if (releases.length < perPage) break;
       page++;
     }
-  } catch { /* fallback to 0 — client-side sources still counted */ }
-  return total;
+  } catch { /* fallback to baseline */ }
+  return Math.max(total, GH_RELEASE_BASELINE);
 }
 
 const githubReleaseDownloads = await fetchGitHubReleaseDownloads();
