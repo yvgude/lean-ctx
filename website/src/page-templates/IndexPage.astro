@@ -977,10 +977,6 @@ const manifest = getMcpManifest();
 (function() {
   var installEl = document.getElementById('install-count');
   var starsEl = document.getElementById('github-stars-hero');
-  var installs = 0;
-  var installsDone = 0;
-  var installsTotal = 4;
-  var ghHeaders = {'Accept': 'application/vnd.github+json'};
 
   function countUp(el, target, duration) {
     var start = 0;
@@ -996,59 +992,13 @@ const manifest = getMcpManifest();
     requestAnimationFrame(step);
   }
 
-  function updateInstalls() {
-    installsDone++;
-    if (installsDone >= installsTotal && installs > 0 && installEl) {
-      countUp(installEl, installs, 1200);
-    }
-  }
-
-  fetch('https://crates.io/api/v1/crates/lean-ctx')
+  fetch('/api/stats')
     .then(function(r) { return r.json(); })
-    .then(function(d) { installs += d.crate.downloads || 0; updateInstalls(); })
-    .catch(updateInstalls);
-
-  fetch('https://api.npmjs.org/downloads/point/2000-01-01:2099-01-01/lean-ctx-bin')
-    .then(function(r) { return r.json(); })
-    .then(function(d) { installs += d.downloads || 0; updateInstalls(); })
-    .catch(updateInstalls);
-
-  fetch('https://api.npmjs.org/downloads/point/2000-01-01:2099-01-01/pi-lean-ctx')
-    .then(function(r) { return r.json(); })
-    .then(function(d) { installs += d.downloads || 0; updateInstalls(); })
-    .catch(updateInstalls);
-
-  function fetchGHReleases(page, acc) {
-    fetch('https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=5&page=' + page, {headers: ghHeaders})
-      .then(function(r) { return r.json(); })
-      .then(function(releases) {
-        if (Array.isArray(releases) && releases.length > 0) {
-          for (var i = 0; i < releases.length; i++) {
-            var assets = releases[i].assets || [];
-            for (var j = 0; j < assets.length; j++) {
-              acc.total += assets[j].download_count || 0;
-            }
-          }
-          if (releases.length >= 5 && page < 30) {
-            fetchGHReleases(page + 1, acc);
-            return;
-          }
-        }
-        installs += acc.total;
-        updateInstalls();
-      })
-      .catch(updateInstalls);
-  }
-  fetchGHReleases(1, {total: 0});
-
-  if (starsEl) {
-    fetch('https://api.github.com/repos/yvgude/lean-ctx', {headers: ghHeaders})
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d.stargazers_count) countUp(starsEl, d.stargazers_count, 1000);
-      })
-      .catch(function() {});
-  }
+    .then(function(d) {
+      if (d.installs > 0 && installEl) countUp(installEl, d.installs, 1200);
+      if (d.stars > 0 && starsEl) countUp(starsEl, d.stars, 1000);
+    })
+    .catch(function() {});
 })();
 </script>
 
