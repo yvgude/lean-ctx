@@ -27,7 +27,7 @@ const GH_HEADERS = {
 const GH_PER_PAGE = GH_TOKEN ? 100 : 5;
 
 let cached = null;
-let highwater = { crates: 0, npm_bin: 0, npm_pi: 0, gh_releases: 0, stars: 0 };
+let highwater = { crates: 0, npm_bin: 0, npm_pi: 0, npm_leanctl: 0, npm_iflow: 0, gh_releases: 0, stars: 0 };
 let lastDbWrite = { installs: 0, stars: 0 };
 
 
@@ -109,15 +109,19 @@ async function fetchGitHubReleaseDownloads() {
 // ── Refresh loops ────────────────────────────────────────────────────────
 
 async function refreshFastSources() {
-  const [crates, npmBin, npmPi] = await Promise.all([
+  const [crates, npmBin, npmPi, npmLeanctl, npmIflow] = await Promise.all([
     fetchCratesDownloads(),
     fetchNpmDownloads('lean-ctx-bin'),
     fetchNpmDownloads('pi-lean-ctx'),
+    fetchNpmDownloads('leanctl-bin'),
+    fetchNpmDownloads('@iflow-mcp/yvgude-lean-ctx'),
   ]);
 
   if (crates > 0) highwater.crates = Math.max(highwater.crates, crates);
   if (npmBin > 0) highwater.npm_bin = Math.max(highwater.npm_bin, npmBin);
   if (npmPi > 0) highwater.npm_pi = Math.max(highwater.npm_pi, npmPi);
+  if (npmLeanctl > 0) highwater.npm_leanctl = Math.max(highwater.npm_leanctl, npmLeanctl);
+  if (npmIflow > 0) highwater.npm_iflow = Math.max(highwater.npm_iflow, npmIflow);
 
   updateCache('fast');
 }
@@ -135,7 +139,7 @@ async function refreshGitHubSources() {
 }
 
 function updateCache(source) {
-  const totalInstalls = highwater.crates + highwater.npm_bin + highwater.npm_pi + highwater.gh_releases;
+  const totalInstalls = highwater.crates + highwater.npm_bin + highwater.npm_pi + highwater.npm_leanctl + highwater.npm_iflow + highwater.gh_releases;
 
   cached = {
     installs: totalInstalls,
@@ -158,8 +162,8 @@ async function writeSnapshot() {
 
   try {
     await pool.query(
-      'INSERT INTO stats_snapshots (installs, stars, crates, npm_bin, npm_pi, gh_releases) VALUES ($1, $2, $3, $4, $5, $6)',
-      [installs, stars, crates, npm_bin, npm_pi, gh_releases]
+      'INSERT INTO stats_snapshots (installs, stars, crates, npm_bin, npm_pi, npm_leanctl, npm_iflow, gh_releases) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [installs, stars, crates, npm_bin, npm_pi, highwater.npm_leanctl, highwater.npm_iflow, gh_releases]
     );
     lastDbWrite = { installs, stars };
     console.log(`[db] snapshot saved: ${installs.toLocaleString()} installs, ${stars} stars`);
@@ -171,13 +175,15 @@ async function writeSnapshot() {
 async function loadLastSnapshot() {
   try {
     const { rows } = await pool.query(
-      'SELECT installs, stars, crates, npm_bin, npm_pi, gh_releases FROM stats_snapshots ORDER BY recorded_at DESC LIMIT 1'
+      'SELECT installs, stars, crates, npm_bin, npm_pi, npm_leanctl, npm_iflow, gh_releases FROM stats_snapshots ORDER BY recorded_at DESC LIMIT 1'
     );
     if (rows.length > 0) {
       const row = rows[0];
       highwater.crates = row.crates;
       highwater.npm_bin = row.npm_bin;
       highwater.npm_pi = row.npm_pi;
+      highwater.npm_leanctl = row.npm_leanctl || 0;
+      highwater.npm_iflow = row.npm_iflow || 0;
       highwater.gh_releases = row.gh_releases;
       highwater.stars = row.stars;
       updateCache('db-restore');
