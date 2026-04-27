@@ -1017,7 +1017,7 @@ const manifest = getMcpManifest();
     .catch(updateInstalls);
 
   function fetchAllGitHubDownloads(page, acc) {
-    fetch('https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=100&page=' + page)
+    fetch('https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=100&page=' + page, {headers: {'Accept': 'application/vnd.github+json'}})
       .then(function(r) { return r.json(); })
       .then(function(releases) {
         if (Array.isArray(releases) && releases.length > 0) {
