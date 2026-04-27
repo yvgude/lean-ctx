@@ -271,19 +271,37 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  const rawBash = createBashToolDefinition(process.cwd());
+
+  const bashSchemaWithRaw = Type.Object({
+    command: Type.String({ description: "Bash command to execute" }),
+    timeout: Type.Optional(Type.Number({ description: "Timeout in seconds to prevent hanging commands" })),
+    raw: Type.Optional(Type.Boolean({ description: "Skip compression, return full uncompressed output" })),
+  });
+
   pi.registerTool({
     ...baseBashTool,
+    parameters: bashSchemaWithRaw,
     description:
-      "Execute a bash command through lean-ctx compression.",
-    promptSnippet: "Run shell commands (compressed output)",
+      "Execute a bash command. Output is auto-compressed by lean-ctx. "
+      + "IMPORTANT: Do NOT use bash to read files (cat/head/tail) — use the read tool instead. "
+      + "Do NOT use bash for grep/find/ls — use the dedicated tools. "
+      + "Set raw=true to skip compression when exact output matters. "
+      + "Use timeout (seconds) to prevent hanging commands.",
+    promptSnippet: "Run shell commands (not for file reading — use read tool)",
     promptGuidelines: [
-      "Use for any shell command—output (auto-compressed)",
-      "Avoid for interactive prompts; lean-ctx buffers output.",
+      "Use bash only for commands with side effects: build, test, install, git, run scripts.",
     ],
     async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const isRaw = !!params.raw;
+      const toolParams = { command: params.command, timeout: params.timeout };
+      const tool = isRaw ? rawBash : baseBashTool;
       try {
-        const result = await baseBashTool.execute(toolCallId, params, signal, onUpdate, ctx);
+        const result = await tool.execute(toolCallId, toolParams, signal, onUpdate, ctx);
         const text = result.content?.[0]?.type === "text" ? result.content[0].text : "";
+        if (isRaw) {
+          return { ...result, content: [{ type: "text", text }], details: { raw: true } };
+        }
         const decorated = withFooter(text, { always: true });
         return {
           ...result,
@@ -292,6 +310,7 @@ export default function (pi: ExtensionAPI) {
         };
       } catch (error) {
         if (error instanceof Error) {
+          if (isRaw) throw error;
           const decorated = withFooter(error.message, { always: true });
           throw new Error(decorated.text);
         }
@@ -306,11 +325,13 @@ export default function (pi: ExtensionAPI) {
     name: "read",
     label: "Read",
     description:
-      "Read file contents through lean-ctx with automatic mode selection (full/map/signatures) based on file type and size.",
-    promptSnippet: "Smart file read",
+      "Read file contents. ALWAYS use this instead of cat/head/tail via bash. "
+      + "Auto-selects mode: configs (.yaml/.json/.toml/.env) are always full-read. "
+      + "Code files: full (<8KB), map (8-96KB), signatures (>96KB). "
+      + "Use offset and limit to read specific line ranges.",
+    promptSnippet: "Read file contents (always use instead of cat)",
     promptGuidelines: [
-      "Auto-selects mode: full (<8KB), map (8-96KB), signatures (>96KB) for code.",
-      "Text/configs always full-read; images passthrough.",
+      "Use read to inspect file contents instead of cat or less.",
     ],
     parameters: readSchema,
     renderCall(args, theme, context) {
@@ -410,12 +431,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ls",
     label: "ls",
-    description: "List directory contents through lean-ctx compression.",
-    promptSnippet: "Directory listing (Compressed)",
-    promptGuidelines: [
-      "ls → compressed output (respects .gitignore).",
-      "Use limit param to truncate long lists.",
-    ],
+    description: "List directory contents. Use limit to reduce output size.",
+    promptSnippet: "List directory contents",
     parameters: lsSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");
@@ -432,12 +449,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "find",
     label: "find",
-    description: "Find files by glob pattern through lean-ctx compression.",
-    promptSnippet: "File search (Compressed)",
-    promptGuidelines: [
-      "find [pattern] → lean-ctx compressed results.",
-      "Combines with .gitignore; use limit to cap results.",
-    ],
+    description: "Find files by glob pattern (respects .gitignore). Use limit to reduce output size.",
+    promptSnippet: "Find files by glob pattern",
     parameters: findSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");
@@ -454,12 +467,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "grep",
     label: "grep",
-    description: "Search file contents through ripgrep + lean-ctx compression.",
-    promptSnippet: "Compressed code search (grouped results)",
-    promptGuidelines: [
-      "rg → lean-ctx compressed output (line numbers, no color).",
-      "Supports standard rg flags: -i, -F, -C, -m, --glob.",
-    ],
+    description: "Search file contents with ripgrep. Use limit to cap matches and context for surrounding lines.",
+    promptSnippet: "Search file contents for patterns",
     parameters: grepSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");

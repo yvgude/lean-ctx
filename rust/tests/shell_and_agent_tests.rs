@@ -47,6 +47,40 @@ fn run_with_env(
     (stdout, stderr, code)
 }
 
+fn run_hook_test(
+    args: &[&str],
+    env_vars: &[(&str, &str)],
+    stdin_data: Option<&str>,
+) -> (String, String, i32) {
+    let mut cmd = Command::new(lean_ctx_bin());
+    cmd.args(args)
+        .env_remove("LEAN_CTX_DISABLED")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    for (k, v) in env_vars {
+        cmd.env(k, v);
+    }
+
+    let mut child = cmd.spawn().expect("failed to spawn lean-ctx");
+
+    if let Some(data) = stdin_data {
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(data.as_bytes())
+            .unwrap();
+    }
+
+    let output = child.wait_with_output().expect("failed to wait");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let code = output.status.code().unwrap_or(1);
+    (stdout, stderr, code)
+}
+
 fn assert_hook_command_suffix(actual: Option<&str>, expected_suffix: &str) {
     let actual = actual.expect("hook command should exist");
     assert!(
@@ -234,7 +268,7 @@ fn agent_init_unknown_agent_fails() {
 fn codex_pretooluse_blocks_rewritable_bash_with_reroute_message() {
     let input =
         r#"{"tool_name":"Bash","tool_input":{"command":"git status"},"command":"git status"}"#;
-    let (stdout, stderr, code) = run_with_env(&["hook", "codex-pretooluse"], &[], Some(input));
+    let (stdout, stderr, code) = run_hook_test(&["hook", "codex-pretooluse"], &[], Some(input));
     assert_eq!(code, 2, "hook should block and reroute: {stderr}");
     assert!(
         stdout.trim().is_empty(),
@@ -411,7 +445,7 @@ fn agent_init_lists_antigravity_in_supported() {
 #[test]
 fn hook_rewrite_works_with_shell_override() {
     let input = r#"{"tool_name":"Bash","command":"git status"}"#;
-    let (stdout, _stderr, _code) = run_with_env(
+    let (stdout, _stderr, _code) = run_hook_test(
         &["hook", "rewrite"],
         &[("LEAN_CTX_SHELL", "/bin/sh")],
         Some(input),
@@ -426,6 +460,37 @@ fn hook_rewrite_works_with_shell_override() {
             "should have command field"
         );
     }
+}
+
+#[test]
+fn hook_rewrite_disabled_produces_no_output() {
+    let input = r#"{"tool_name":"Bash","command":"git status"}"#;
+    let (stdout, _stderr, code) = run_hook_test(
+        &["hook", "rewrite"],
+        &[("LEAN_CTX_DISABLED", "1")],
+        Some(input),
+    );
+    assert!(
+        stdout.trim().is_empty(),
+        "disabled hook should produce no output, got: {stdout}"
+    );
+    assert_eq!(code, 0, "disabled hook should exit cleanly");
+}
+
+#[test]
+fn codex_pretooluse_disabled_exits_cleanly() {
+    let input =
+        r#"{"tool_name":"Bash","tool_input":{"command":"git status"},"command":"git status"}"#;
+    let (stdout, _stderr, code) = run_hook_test(
+        &["hook", "codex-pretooluse"],
+        &[("LEAN_CTX_DISABLED", "1")],
+        Some(input),
+    );
+    assert_eq!(code, 0, "disabled codex hook should not exit(2)");
+    assert!(
+        stdout.trim().is_empty(),
+        "disabled codex hook should produce no output"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -44,7 +44,7 @@ step "6/6  Live hook JSON validation"
 validate_rewrite() {
     local label="$1" input="$2" expect="$3"
     local result
-    result=$(echo "$input" | LEAN_CTX_DISABLED=1 "$BIN" hook rewrite 2>/dev/null)
+    result=$(echo "$input" | "$BIN" hook rewrite 2>/dev/null)
 
     if [ "$expect" = "passthrough" ]; then
         if [ -z "$result" ]; then ok "$label"; else fail "$label (expected passthrough)"; fi
