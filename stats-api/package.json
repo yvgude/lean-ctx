@@ -1,0 +1,7 @@
+{
+  "name": "leanctx-stats-api",
+  "private": true,
+  "dependencies": {
+    "pg": "^8.16.0"
+  }
+}
