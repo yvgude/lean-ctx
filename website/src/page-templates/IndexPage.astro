@@ -8,33 +8,6 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
 
-const GH_RELEASE_DOWNLOADS_BASELINE = 7460;
-const GH_STARS_BASELINE = 890;
-
-async function fetchGitHubData(): Promise<{ downloads: number; stars: number }> {
-  const headers: Record<string, string> = {
-    'Accept': 'application/vnd.github+json',
-    'User-Agent': 'leanctx-website-build',
-  };
-  if (import.meta.env.GITHUB_TOKEN) {
-    headers['Authorization'] = `Bearer ${import.meta.env.GITHUB_TOKEN}`;
-  }
-
-  let stars = GH_STARS_BASELINE;
-  try {
-    const res = await fetch('https://api.github.com/repos/yvgude/lean-ctx', { headers });
-    if (res.ok) {
-      const repo = await res.json();
-      if (repo.stargazers_count) stars = Math.max(repo.stargazers_count, GH_STARS_BASELINE);
-    }
-  } catch { /* use baseline */ }
-
-  return { downloads: GH_RELEASE_DOWNLOADS_BASELINE, stars };
-}
-
-const ghData = await fetchGitHubData();
-const githubReleaseDownloads = ghData.downloads;
-const githubStars = ghData.stars;
 ---
 
 <BaseLayout title={t('index.title')} description={t('index.metaDesc')}>
@@ -1000,13 +973,14 @@ const githubStars = ghData.stars;
   }
 </style>
 
-<script is:inline define:vars={{ githubReleaseDownloads, githubStars }}>
+<script is:inline>
 (function() {
   var installEl = document.getElementById('install-count');
   var starsEl = document.getElementById('github-stars-hero');
-  var installs = githubReleaseDownloads || 0;
+  var installs = 0;
   var installsDone = 0;
-  var installsTotal = 3;
+  var installsTotal = 4;
+  var ghHeaders = {'Accept': 'application/vnd.github+json'};
 
   function countUp(el, target, duration) {
     var start = 0;
@@ -1044,8 +1018,36 @@ const githubStars = ghData.stars;
     .then(function(d) { installs += d.downloads || 0; updateInstalls(); })
     .catch(updateInstalls);
 
-  if (starsEl && githubStars > 0) {
-    countUp(starsEl, githubStars, 1000);
+  function fetchGHReleases(page, acc) {
+    fetch('https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=5&page=' + page, {headers: ghHeaders})
+      .then(function(r) { return r.json(); })
+      .then(function(releases) {
+        if (Array.isArray(releases) && releases.length > 0) {
+          for (var i = 0; i < releases.length; i++) {
+            var assets = releases[i].assets || [];
+            for (var j = 0; j < assets.length; j++) {
+              acc.total += assets[j].download_count || 0;
+            }
+          }
+          if (releases.length >= 5 && page < 30) {
+            fetchGHReleases(page + 1, acc);
+            return;
+          }
+        }
+        installs += acc.total;
+        updateInstalls();
+      })
+      .catch(updateInstalls);
+  }
+  fetchGHReleases(1, {total: 0});
+
+  if (starsEl) {
+    fetch('https://api.github.com/repos/yvgude/lean-ctx', {headers: ghHeaders})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.stargazers_count) countUp(starsEl, d.stargazers_count, 1000);
+      })
+      .catch(function() {});
   }
 })();
 </script>
