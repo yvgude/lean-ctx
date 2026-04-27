@@ -277,8 +277,7 @@ export default function (pi: ExtensionAPI) {
       "Execute a bash command through lean-ctx compression.",
     promptSnippet: "Run shell commands (compressed output)",
     promptGuidelines: [
-      "Use for any shell command—output (auto-compressed)",
-      "Avoid for interactive prompts; lean-ctx buffers output.",
+      "Avoid interactive prompts with bash; it cannot handle interactive input.",
     ],
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
@@ -413,8 +412,7 @@ export default function (pi: ExtensionAPI) {
     description: "List directory contents through lean-ctx compression.",
     promptSnippet: "Directory listing (Compressed)",
     promptGuidelines: [
-      "ls → compressed output (respects .gitignore).",
-      "Use limit param to truncate long lists.",
+      "Use ls with limit param to truncate long directory listings.",
     ],
     parameters: lsSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -435,8 +433,7 @@ export default function (pi: ExtensionAPI) {
     description: "Find files by glob pattern through lean-ctx compression.",
     promptSnippet: "File search (Compressed)",
     promptGuidelines: [
-      "find [pattern] → lean-ctx compressed results.",
-      "Combines with .gitignore; use limit to cap results.",
+      "Use find with limit param to cap large result sets.",
     ],
     parameters: findSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -457,8 +454,7 @@ export default function (pi: ExtensionAPI) {
     description: "Search file contents through ripgrep + lean-ctx compression.",
     promptSnippet: "Compressed code search (grouped results)",
     promptGuidelines: [
-      "rg → lean-ctx compressed output (line numbers, no color).",
-      "Supports standard rg flags: -i, -F, -C, -m, --glob.",
+      "Use grep with ripgrep flags: -i, -F, -C, -m, --glob. Output includes line numbers.",
     ],
     parameters: grepSchema,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
