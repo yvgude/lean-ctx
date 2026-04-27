@@ -55,19 +55,43 @@ const lastUpdated = 'April 2026';
 
       <h2>2. lean-ctx CLI &amp; MCP Server</h2>
       <p>
-        The lean-ctx binary and MCP server run entirely on your local machine. They do not make any outbound network requests unless you explicitly use a cloud feature (see Section 5).
+        The lean-ctx binary and MCP server run entirely on your local machine. All compression, caching, and AI tool orchestration happens locally. There are two optional network features:
       </p>
+
+      <h3>2a. Version Check (on by default, disableable)</h3>
+      <p>
+        Once per day, lean-ctx fetches <code>leanctx.com/version.txt</code> in a background thread to check if a newer version is available. This request sends only the current version as a <code>User-Agent</code> header — no identifying information, no telemetry, no project data. The result is cached locally in <code>~/.lean-ctx/latest-version.json</code> for 24 hours.
+      </p>
+      <p>
+        <strong>To disable:</strong> Set <code>update_check_disabled = true</code> in <code>~/.lean-ctx/config.toml</code> or set the environment variable <code>LEAN_CTX_NO_UPDATE_CHECK=1</code>.
+      </p>
+
+      <h3>2b. Anonymous Compression Stats (opt-in, off by default)</h3>
+      <p>
+        During <code>lean-ctx setup</code>, you are asked whether you want to share anonymous compression statistics. The default is <strong>No</strong> — you must explicitly type <code>y</code> to enable this.
+      </p>
+      <p>If enabled, lean-ctx periodically sends anonymized compression stats to <code>api.leanctx.com</code>:</p>
+      <ul>
+        <li>File type (e.g. <code>.rs</code>, <code>.tsx</code>) and size bucket (e.g. <code>2k–10k</code>)</li>
+        <li>Compression mode used and compression ratio achieved</li>
+        <li>Token counts (input/output)</li>
+      </ul>
+      <p><strong>Never sent:</strong> file names, file contents, code, prompts, project names, hostnames, usernames, or any personally identifiable information.</p>
+      <p>
+        <strong>To disable after enabling:</strong> Remove or set <code>contribute_enabled = false</code> under <code>[cloud]</code> in <code>~/.lean-ctx/config.toml</code>.
+      </p>
+
+      <h3>2c. Local Data</h3>
       <p>Data stored locally in <code>~/.lean-ctx/</code>:</p>
       <ul>
         <li><strong>Session state</strong> — current project root, recent tool calls. Stored in <code>sessions/</code>. Never transmitted.</li>
         <li><strong>Knowledge store</strong> — facts you explicitly save via <code>ctx_knowledge remember</code>. Stored in <code>knowledge/</code>. Never transmitted unless you use <code>lean-ctx team push</code>.</li>
-        <li><strong>Compression statistics</strong> — aggregated counts of tokens saved. Stored in <code>stats.json</code>. Never transmitted unless you use <code>lean-ctx sync</code>.</li>
+        <li><strong>Compression statistics</strong> — aggregated counts of tokens saved. Stored in <code>stats.json</code>. Only transmitted if you opt in (see 2b).</li>
         <li><strong>Cache</strong> — file content cache for faster reads. Stored in <code>cache/</code>. Auto-expires. Never transmitted.</li>
         <li><strong>Index files</strong> — code search indices (BM25, graph). Stored in <code>index/</code>. Never transmitted.</li>
       </ul>
       <p>
-        No telemetry, no crash reporting, no usage analytics. The tool checks for updates by fetching only the latest version number from
-        <code>github.com/yvgude/lean-ctx/releases/latest</code> — no identifying information is sent.
+        No crash reporting, no usage analytics, no tracking. The two network features described above are the only outbound requests lean-ctx ever makes.
       </p>
 
       <h2>3. Chrome Extension</h2>
