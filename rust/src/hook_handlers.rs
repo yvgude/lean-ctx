@@ -2,7 +2,14 @@ use crate::compound_lexer;
 use crate::rewrite_registry;
 use std::io::Read;
 
+fn is_disabled() -> bool {
+    std::env::var("LEAN_CTX_DISABLED").is_ok()
+}
+
 pub fn handle_rewrite() {
+    if is_disabled() {
+        return;
+    }
     let binary = resolve_binary();
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
@@ -76,6 +83,11 @@ fn emit_rewrite(rewritten: &str) {
 }
 
 pub fn handle_redirect() {
+    // Already a no-op, but guard for consistency so the process exits
+    // before any future logic is added.
+    if is_disabled() {
+        return;
+    }
     // Allow all native tools (Read, Grep, ListFiles) to pass through.
     // Blocking them breaks Edit (which requires native Read) and causes
     // unnecessary friction. The MCP instructions already guide the AI
@@ -89,6 +101,9 @@ fn codex_reroute_message(rewritten: &str) -> String {
 }
 
 pub fn handle_codex_pretooluse() {
+    if is_disabled() {
+        return;
+    }
     let binary = resolve_binary();
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
@@ -121,6 +136,9 @@ pub fn handle_codex_session_start() {
 /// VS Code Copilot Chat uses the same hook format as Claude Code.
 /// Tool names differ: "runInTerminal" / "editFile" instead of "Bash" / "Read".
 pub fn handle_copilot() {
+    if is_disabled() {
+        return;
+    }
     let binary = resolve_binary();
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
@@ -155,6 +173,9 @@ pub fn handle_copilot() {
 /// Used by the OpenCode TS plugin where the command is passed as an argument,
 /// not via stdin JSON.
 pub fn handle_rewrite_inline() {
+    if is_disabled() {
+        return;
+    }
     let binary = resolve_binary();
     let args: Vec<String> = std::env::args().collect();
     // args: [binary, "hook", "rewrite-inline", ...command parts]
