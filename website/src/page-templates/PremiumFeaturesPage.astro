@@ -1,0 +1,106 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const features = [
+  {
+    title: t('premium.cacheSafeTitle'),
+    desc: t('premium.cacheSafeDesc'),
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>`,
+    color: 'rgba(52, 211, 153, 0.25)',
+    bg: 'rgba(52, 211, 153, 0.08)',
+  },
+  {
+    title: t('premium.ghostTitle'),
+    desc: t('premium.ghostDesc'),
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>`,
+    color: 'rgba(251, 191, 36, 0.25)',
+    bg: 'rgba(251, 191, 36, 0.08)',
+  },
+  {
+    title: t('premium.reviewTitle'),
+    desc: t('premium.reviewDesc'),
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>`,
+    color: 'rgba(129, 140, 248, 0.25)',
+    bg: 'rgba(129, 140, 248, 0.08)',
+  },
+  {
+    title: t('premium.chunkingTitle'),
+    desc: t('premium.chunkingDesc'),
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>`,
+    color: 'rgba(192, 132, 252, 0.25)',
+    bg: 'rgba(192, 132, 252, 0.08)',
+  },
+  {
+    title: t('premium.searchTitle'),
+    desc: t('premium.searchDesc'),
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>`,
+    color: 'rgba(244, 114, 182, 0.25)',
+    bg: 'rgba(244, 114, 182, 0.08)',
+  },
+  {
+    title: t('premium.skillsTitle'),
+    desc: t('premium.skillsDesc'),
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>`,
+    color: 'rgba(96, 165, 250, 0.25)',
+    bg: 'rgba(96, 165, 250, 0.08)',
+  },
+];
+---
+
+<BaseLayout title={t('premium.eyebrow')} description={t('premium.desc')} breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('premium.eyebrow'), url: lp('/premium/') }]}>
+
+<section class="section-hero">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">{t('premium.eyebrow')}</p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      <Fragment set:html={t('premium.heading')} />
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      {t('premium.desc')}
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {features.map((f, i) => (
+        <div class={`card-surface rounded-xl p-6 animate-entrance stagger-${i + 1}`}>
+          <div class="flex items-start gap-4 mb-4">
+            <div class="flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center" style={`border: 1px solid ${f.color}; background: ${f.bg};`}>
+              <Fragment set:html={f.icon} />
+            </div>
+            <div>
+              <h3 class="fluid-h3 font-semibold text-text-bright font-display mb-2">{f.title}</h3>
+              <p class="fluid-sm text-muted"><Fragment set:html={f.desc} /></p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<section class="relative section-y">
+  <div class="content-grid text-center">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: 1.5rem;">
+      Get Started
+    </h2>
+    <div class="flex flex-wrap justify-center gap-3 animate-entrance stagger-1">
+      <a href={lp('/docs/getting-started/')} class="btn-primary">Documentation</a>
+      <a href="https://github.com/yvgude/lean-ctx" class="btn-secondary" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
