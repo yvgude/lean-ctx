@@ -8,12 +8,10 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
 
-const GH_RELEASE_BASELINE = 7460;
+const GH_RELEASE_DOWNLOADS_BASELINE = 7460;
+const GH_STARS_BASELINE = 890;
 
-async function fetchGitHubReleaseDownloads(): Promise<number> {
-  let total = 0;
-  let page = 1;
-  const perPage = 5;
+async function fetchGitHubData(): Promise<{ downloads: number; stars: number }> {
   const headers: Record<string, string> = {
     'Accept': 'application/vnd.github+json',
     'User-Agent': 'leanctx-website-build',
@@ -21,28 +19,22 @@ async function fetchGitHubReleaseDownloads(): Promise<number> {
   if (import.meta.env.GITHUB_TOKEN) {
     headers['Authorization'] = `Bearer ${import.meta.env.GITHUB_TOKEN}`;
   }
+
+  let stars = GH_STARS_BASELINE;
   try {
-    while (page <= 50) {
-      const res = await fetch(
-        `https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=${perPage}&page=${page}`,
-        { headers }
-      );
-      if (!res.ok) break;
-      const releases = await res.json();
-      if (!Array.isArray(releases) || releases.length === 0) break;
-      for (const r of releases) {
-        for (const a of r.assets || []) {
-          total += a.download_count || 0;
-        }
-      }
-      if (releases.length < perPage) break;
-      page++;
+    const res = await fetch('https://api.github.com/repos/yvgude/lean-ctx', { headers });
+    if (res.ok) {
+      const repo = await res.json();
+      if (repo.stargazers_count) stars = Math.max(repo.stargazers_count, GH_STARS_BASELINE);
     }
-  } catch { /* fallback to baseline */ }
-  return Math.max(total, GH_RELEASE_BASELINE);
+  } catch { /* use baseline */ }
+
+  return { downloads: GH_RELEASE_DOWNLOADS_BASELINE, stars };
 }
 
-const githubReleaseDownloads = await fetchGitHubReleaseDownloads();
+const ghData = await fetchGitHubData();
+const githubReleaseDownloads = ghData.downloads;
+const githubStars = ghData.stars;
 ---
 
 <BaseLayout title={t('index.title')} description={t('index.metaDesc')}>
@@ -1008,7 +1000,7 @@ const githubReleaseDownloads = await fetchGitHubReleaseDownloads();
   }
 </style>
 
-<script is:inline define:vars={{ githubReleaseDownloads }}>
+<script is:inline define:vars={{ githubReleaseDownloads, githubStars }}>
 (function() {
   var installEl = document.getElementById('install-count');
   var starsEl = document.getElementById('github-stars-hero');
@@ -1052,13 +1044,8 @@ const githubReleaseDownloads = await fetchGitHubReleaseDownloads();
     .then(function(d) { installs += d.downloads || 0; updateInstalls(); })
     .catch(updateInstalls);
 
-  if (starsEl) {
-    fetch('https://api.github.com/repos/yvgude/lean-ctx', {headers: {'Accept': 'application/vnd.github+json'}})
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d.stargazers_count) countUp(starsEl, d.stargazers_count, 1000);
-      })
-      .catch(function() {});
+  if (starsEl && githubStars > 0) {
+    countUp(starsEl, githubStars, 1000);
   }
 })();
 </script>
