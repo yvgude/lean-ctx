@@ -181,7 +181,7 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+panic = "unwind"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

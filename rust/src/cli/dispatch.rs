@@ -838,7 +838,22 @@ fn run_mcp_server() -> Result<()> {
                 return Err(e.into());
             }
         };
-        service.waiting().await?;
+        match service.waiting().await {
+            Ok(reason) => {
+                tracing::info!("MCP server stopped: {reason:?}");
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("broken pipe")
+                    || msg.contains("connection reset")
+                    || msg.contains("context canceled")
+                {
+                    tracing::info!("MCP server: transport closed ({msg})");
+                } else {
+                    tracing::error!("MCP server error: {msg}");
+                }
+            }
+        }
 
         core::stats::flush();
         core::mode_predictor::ModePredictor::flush();
