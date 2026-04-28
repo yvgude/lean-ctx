@@ -865,8 +865,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(tarpaulin, ignore)]
     fn benchmark_task_conditioned_compression() {
-        let content = generate_benchmark_code(500);
+        // Keep this reasonably small so CI coverage instrumentation stays fast.
+        let content = generate_benchmark_code(200);
         let full_tokens = count_tokens(&content);
         let task = Some("fix authentication in validate_token");
 
@@ -921,7 +923,7 @@ mod tests {
         let ref_tok = count_tokens(&ref_output);
 
         eprintln!("\n=== Task-Conditioned Compression Benchmark ===");
-        eprintln!("Source: 500-line Rust file, task='fix authentication in validate_token'");
+        eprintln!("Source: 200-line Rust file, task='fix authentication in validate_token'");
         eprintln!("  full:       {full_tok:>6} tokens (baseline)");
         eprintln!(
             "  task:       {task_tok:>6} tokens ({:.0}% savings)",

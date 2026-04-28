@@ -582,7 +582,11 @@ fn bench_rrf_eviction_vs_legacy() {
             original_tokens: (i + 1) * 100,
             read_count: (10 - i) as u32,
             path: format!("/file_{i}.rs"),
-            last_access: now.checked_sub(Duration::from_secs(i as u64 * 60)).unwrap(),
+            // Instant::checked_sub can underflow early in process lifetime on some platforms.
+            // Use a small duration and fall back to `now` to keep this benchmark deterministic.
+            last_access: now
+                .checked_sub(Duration::from_secs(i as u64))
+                .unwrap_or(now),
             stored_mtime: None,
         })
         .collect();

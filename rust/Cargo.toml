@@ -126,6 +126,11 @@ rpassword = "7.4.0"
 getrandom = "0.3"
 reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream", "json"], optional = true }
 
+[lints.rust]
+# CI coverage (cargo-tarpaulin) injects `--cfg tarpaulin`; declare it to avoid
+# `-D unexpected_cfgs` failures when using `cfg_attr(tarpaulin, ...)`.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin)"] }
+
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 
