@@ -1,6 +1,6 @@
 # lean-ctx — Token Optimization for Pi
 
-lean-ctx is installed as a Pi Package with first-class MCP support. All bash, read, grep, find, and ls calls are automatically routed through lean-ctx for 60-90% token savings. Additionally, 46 MCP tools are available for advanced operations.
+lean-ctx is installed as a Pi Package with first-class MCP support. All bash, read, grep, find, and ls calls are automatically routed through lean-ctx for 60-90% token savings. Additionally, 48 MCP tools are available for advanced operations.
 
 ## How it works
 

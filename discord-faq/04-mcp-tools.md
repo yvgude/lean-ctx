@@ -2,7 +2,7 @@
 
 ---
 
-**Q: Where can I find docs for all 46 tools?**
+**Q: Where can I find docs for all 48 tools?**
 - Tool overview: <https://leanctx.com/docs/tools/>
 - Intelligence tools: <https://leanctx.com/docs/tools/intelligence/>
 - Session & memory: <https://leanctx.com/docs/tools/session/>
@@ -27,7 +27,7 @@ This happens when the MCP server's project root is stuck from a previous session
 - Run `lean-ctx doctor` to verify the root
 
 **Q: How do I use Unified mode vs Full Tools?**
-- **Full (default)**: All 46 tools available as separate `ctx_*` tools
+- **Full (default)**: All 48 tools available as separate `ctx_*` tools
 - **Unified** (`LEAN_CTX_UNIFIED=1`): 5 meta-tools only — `ctx`, `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_tree`
 - **Lazy** (`LEAN_CTX_LAZY_TOOLS=1`): Reduced set + `ctx_discover_tools` for on-demand loading
 

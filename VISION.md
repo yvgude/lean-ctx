@@ -32,7 +32,7 @@ Not every query needs a $15/1M token model. The future is tiered:
 - **Tiered Routing** — Simple lookups go to fast models. Complex architectural shifts go to the "Big Brain."
 - **Mode Selection** — `map` mode for understanding, `signatures` for API surface, `full` for editing, `entropy` for noisy files.
 
-LeanCTX already implements this at the file level: 6 read modes + optional line ranges let the model — or the user — choose the right fidelity for each task.
+LeanCTX already implements this at the file level: 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto) + optional line ranges let the model — or the user — choose the right fidelity for each task. An adaptive `ModePredictor` learns optimal modes per file type from past sessions.
 
 ### 3. Context Manager (Memory Architecture)
 
@@ -69,23 +69,58 @@ LeanCTX is a **Lossless Minifier for Human Thought**.
 | **Cost** | Linear (expensive) | Logarithmic (high ROI) |
 | **Context Lifespan** | Burns through window fast | Extends effective session length |
 
-## Where We're Going
+## Where We Are (v3.4.4)
 
-LeanCTX v3.1 delivers Dimension 1 (Compression) and Dimension 3 (Context Management) with:
-- 90+ CLI patterns, 18 tree-sitter languages, 46 MCP tools (10 read modes)
-- Session cache with TTL, subagent isolation, delta reads
-- **Context Continuity Protocol (CCP)** — cross-session memory that persists across chat sessions and context compactions (~400 tokens vs ~50K cold start)
-- **LITM-Aware Positioning** — places critical information at attention-optimal positions (begin α=0.9, end γ=0.85) based on Liu et al., 2023
-- Persistent stats with USD tracking, visual dashboards, and shareable "Wrapped" reports
-- **Project Benchmark Engine** — real token measurements with tiktoken, latency tracking, AST-based preservation scoring, session simulation
-- Works with every MCP editor: Cursor, Copilot, Claude Code, Windsurf, Codex, Crush, Antigravity, OpenCode, OpenClaw
+LeanCTX delivers strong coverage of Dimensions 1 and 3, with foundations for 2 and 4:
 
-Future directions:
-- **Semantic Routing** — Automatic mode selection based on query intent
-- **Multi-Agent Memory** — Shared context graphs across parallel agents
+### Dimension 1 — Compression Layer (Production-Ready)
+- 90+ CLI compression patterns for git, npm, docker, kubectl, cargo, and more
+- 18 tree-sitter languages for AST-based signatures and outlines
+- 48 MCP tools with 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto)
+- Session caching with mtime-validation — re-reads cost ~13 tokens
+- Cross-file codebook compression and archive system (`ctx_expand`)
+
+### Dimension 2 — Semantic Router (Foundations)
+- `ModePredictor` learns optimal read modes per file type from session history
+- `IntentEngine` classifies query complexity for mode selection
+- LITM-aware positioning per model family (Claude α=0.9, GPT, Gemini profiles)
+- Thompson Sampling bandits for exploration vs. exploitation
+
+### Dimension 3 — Context Manager (Production-Ready)
+- **Context Continuity Protocol (CCP)** — cross-session memory (~400 tokens vs ~50K cold start)
+- **Context Ledger** — 128K window tracking with pressure signals
+- **Multi-Agent Coordination** — `ctx_agent`, `ctx_share`, handoff packages, agent diaries
+- **Knowledge System** — temporal facts, contradiction detection, memory lifecycle, consolidation
+- **Property Graph** — SQLite-backed code graph with call/impact/architecture analysis
+
+### Dimension 4 — Quality Guardrail (Planned)
+- Compression safety levels per command (verbatim/minimal/standard/aggressive)
+- Deterministic anchoring preserves paths, symbols, and error locations
+- Full output verification layer planned for Phase 5
+
+### Platform Coverage
+- Works with 24+ AI tools: Cursor, Claude Code, Copilot, Windsurf, Codex, Gemini, Kiro, Cline, JetBrains, Amp, Crush, Antigravity, OpenCode, OpenClaw, Hermes, and more
+- Single Rust binary, zero telemetry, local-first
+
+## Where We're Going — Context OS
+
+LeanCTX is evolving from a Context Layer into a **Context OS for AI Development** — a lightweight operating system for everything between code/infrastructure and LLMs.
+
+### Strategic Leaps
+
+1. **Context as Code** — Declarative pipelines, profiles, and policies in TOML. Teams version-control their context strategies like infrastructure.
+2. **Unified Context Graph** — Code, tests, commits, CI runs, and knowledge entries in a single semantic graph. Agents query the graph, not individual files.
+3. **Agent Harness** — Roles, budgets, and policies for multi-agent governance. Token limits, cost caps, and tool permissions per agent role.
+4. **Context Observability** — SLOs on context consumption, anomaly detection, session diffing, OpenTelemetry/Prometheus export.
+
+### Remaining Future Directions
+
+- **Full Semantic Routing** — Intent-based model tier recommendations (What/How/Do classification)
 - **Output Verification** — Post-processing layer for accuracy guarantees
-- **Adaptive Compression** — ML-driven entropy thresholds per language and project
+- **Adaptive ML Compression** — ML-driven entropy thresholds per language and project
+- **IDE Extensions** — Context HUD, profile switcher, context issues panel
+- **Context Provider Framework** — Structured providers for Jira, GitHub Issues, CI/CD, logs
 
-The end state: an AI that sees only what matters, remembers what's relevant, and reasons at maximum capacity.
+The end state: an AI that sees only what matters, remembers what's relevant, and reasons at maximum capacity — governed by policies you define.
 
-**Tokens are the new gold. Spend them wisely.**
+**Tokens are the new gold. Context is the new infrastructure. Spend both wisely.**

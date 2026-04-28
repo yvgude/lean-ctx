@@ -1,6 +1,6 @@
 # **FAQ — Installation & Setup**
 
-> **Latest version: 3.2.7** — 46 MCP tools · 10 read modes · 90+ shell patterns
+> **Latest version: 3.2.7** — 48 MCP tools · 10 read modes · 90+ shell patterns
 > Docs: <https://leanctx.com/docs/getting-started>
 
 ---

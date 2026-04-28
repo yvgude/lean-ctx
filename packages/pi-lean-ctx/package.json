@@ -1,7 +1,7 @@
 {
   "name": "pi-lean-ctx",
   "version": "3.4.4",
-  "description": "Pi Coding Agent extension with first-class MCP support \u2014 routes bash, read, grep, find, and ls through lean-ctx CLI, and exposes all 46 lean-ctx MCP tools (ctx_session, ctx_knowledge, ctx_semantic_search, ctx_impact, ctx_architecture, ctx_workflow, ctx_gain, etc.) natively in Pi",
+  "description": "Pi Coding Agent extension with first-class MCP support \u2014 routes bash, read, grep, find, and ls through lean-ctx CLI, and exposes all 48 lean-ctx MCP tools (ctx_session, ctx_knowledge, ctx_semantic_search, ctx_impact, ctx_architecture, ctx_workflow, ctx_gain, etc.) natively in Pi",
   "keywords": [
     "pi-package",
     "lean-ctx",

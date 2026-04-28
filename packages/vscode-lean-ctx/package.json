@@ -1,7 +1,7 @@
 {
   "name": "lean-ctx",
   "displayName": "lean-ctx — Token Intelligence",
-  "description": "Context Runtime for AI Agents. Live token savings, one-click setup, 46 MCP tools, 10 read modes. Reduces LLM token consumption by up to 99%.",
+  "description": "Context Runtime for AI Agents. Live token savings, one-click setup, 48 MCP tools, 10 read modes. Reduces LLM token consumption by up to 99%.",
   "version": "0.1.0",
   "publisher": "yvgude",
   "license": "Apache-2.0",

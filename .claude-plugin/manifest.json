@@ -1,7 +1,7 @@
 {
   "name": "lean-ctx",
   "version": "3.3.6",
-  "description": "Context Runtime for AI Agents — compress LLM context by up to 99%. 46 MCP tools, 10 read modes, 90+ shell patterns.",
+  "description": "Context Runtime for AI Agents — compress LLM context by up to 99%. 48 MCP tools, 10 read modes, 90+ shell patterns.",
   "homepage": "https://leanctx.com",
   "repository": "https://github.com/yvgude/lean-ctx",
   "license": "Apache-2.0",

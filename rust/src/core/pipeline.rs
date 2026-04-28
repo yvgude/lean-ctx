@@ -1,6 +1,30 @@
+//! # Context Pipeline
+//!
+//! The pipeline defines the processing stages that content flows through
+//! between raw input and the compressed output delivered to the LLM.
+//!
+//! ## Pipeline Flow
+//!
+//! ```text
+//! Input → Intent → Relevance → Compression → Translation → Delivery
+//! ```
+//!
+//! - **Input**: Raw file content / shell output enters the pipeline
+//! - **Intent**: Task-conditioned filtering — what is relevant to the current goal?
+//! - **Relevance**: Graph/heatmap-based prioritization of content sections
+//! - **Compression**: AST signatures, entropy filtering, delta encoding
+//! - **Translation**: Token shorthand (TDD), symbol replacement
+//! - **Delivery**: LITM positioning, CRP formatting, final output assembly
+//!
+//! Each layer can be enabled/disabled per profile (see `core::profiles`).
+//! `PipelineStats` aggregates per-layer metrics across all runs for observability.
+
 use std::collections::HashMap;
 
-/// Identifies a stage in the compression pipeline (input → intent → compression → delivery).
+/// Identifies a stage in the compression pipeline.
+///
+/// Layers execute in the order defined by [`LayerKind::all`]:
+/// Input → Intent → Relevance → Compression → Translation → Delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LayerKind {
     Input,
@@ -12,7 +36,7 @@ pub enum LayerKind {
 }
 
 impl LayerKind {
-    /// Returns the string label for this pipeline layer kind.
+    /// Returns the canonical string label for this layer.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Input => "input",
@@ -40,6 +64,24 @@ impl LayerKind {
 impl std::fmt::Display for LayerKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::str::FromStr for LayerKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "input" => Ok(Self::Input),
+            "intent" => Ok(Self::Intent),
+            "relevance" => Ok(Self::Relevance),
+            "compression" => Ok(Self::Compression),
+            "translation" => Ok(Self::Translation),
+            "delivery" => Ok(Self::Delivery),
+            _ => Err(format!(
+                "unknown pipeline layer '{s}'; expected one of: input, intent, relevance, compression, translation, delivery"
+            )),
+        }
     }
 }
 
@@ -478,5 +520,95 @@ mod tests {
         };
         assert!((agg.avg_ratio() - 0.5).abs() < f64::EPSILON);
         assert!((agg.avg_duration_ms() - 5.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn layer_kind_from_str_valid() {
+        assert_eq!("input".parse::<LayerKind>().unwrap(), LayerKind::Input);
+        assert_eq!("Intent".parse::<LayerKind>().unwrap(), LayerKind::Intent);
+        assert_eq!(
+            "COMPRESSION".parse::<LayerKind>().unwrap(),
+            LayerKind::Compression
+        );
+        assert_eq!(
+            "delivery".parse::<LayerKind>().unwrap(),
+            LayerKind::Delivery
+        );
+    }
+
+    #[test]
+    fn layer_kind_from_str_invalid() {
+        let err = "unknown".parse::<LayerKind>().unwrap_err();
+        assert!(err.contains("unknown pipeline layer"));
+        assert!(err.contains("input, intent, relevance"));
+    }
+
+    #[test]
+    fn layer_kind_roundtrip_str() {
+        for kind in LayerKind::all() {
+            let s = kind.as_str();
+            let parsed: LayerKind = s.parse().unwrap();
+            assert_eq!(*kind, parsed);
+        }
+    }
+
+    #[test]
+    fn pipeline_stats_record_single() {
+        let mut stats = PipelineStats::new();
+        stats.record_single(
+            LayerKind::Compression,
+            1000,
+            300,
+            std::time::Duration::from_millis(5),
+        );
+        assert_eq!(stats.runs, 1);
+        let agg = stats.per_layer.get(&LayerKind::Compression).unwrap();
+        assert_eq!(agg.total_input_tokens, 1000);
+        assert_eq!(agg.total_output_tokens, 300);
+        assert_eq!(agg.count, 1);
+    }
+
+    #[test]
+    fn pipeline_full_flow_integration() {
+        let pipeline = Pipeline::new()
+            .add_layer(Box::new(PassthroughLayer {
+                kind: LayerKind::Input,
+            }))
+            .add_layer(Box::new(PassthroughLayer {
+                kind: LayerKind::Intent,
+            }))
+            .add_layer(Box::new(PassthroughLayer {
+                kind: LayerKind::Relevance,
+            }))
+            .add_layer(Box::new(CompressionLayer { ratio: 0.3 }))
+            .add_layer(Box::new(PassthroughLayer {
+                kind: LayerKind::Translation,
+            }))
+            .add_layer(Box::new(PassthroughLayer {
+                kind: LayerKind::Delivery,
+            }));
+
+        let input = LayerInput {
+            content: "x ".repeat(500),
+            tokens: 500,
+            metadata: HashMap::new(),
+        };
+        let (output, metrics) = pipeline.execute(input);
+
+        assert_eq!(metrics.len(), 6, "all 6 layers should produce metrics");
+        assert_eq!(output.tokens, 150, "compression at 0.3 ratio");
+
+        for (i, kind) in LayerKind::all().iter().enumerate() {
+            assert_eq!(metrics[i].layer, *kind, "layer order must match");
+        }
+
+        let mut stats = PipelineStats::new();
+        stats.record(&metrics);
+        assert_eq!(stats.runs, 1);
+        assert_eq!(stats.total_tokens_saved(), 350);
+
+        let formatted = Pipeline::format_metrics(&metrics);
+        assert!(formatted.contains("TOTAL"));
+        assert!(formatted.contains("500"));
     }
 }

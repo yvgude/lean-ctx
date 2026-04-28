@@ -14,7 +14,7 @@ flowchart TD
 
     subgraph processing [Processing Layer]
         PatternEngine["Pattern Engine (90+ patterns)"]
-        ContextServer["Context Server (46 tools)"]
+        ContextServer["Context Server (48 tools)"]
         CliRouter["CLI Router"]
     end
 
@@ -72,7 +72,7 @@ flowchart TD
 | `server/execute.rs` | Shell command execution within MCP context |
 | `server/helpers.rs` | Shared server utilities |
 | `tool_defs/` | Tool metadata, JSON schemas, granular vs unified mode |
-| `tools/` | 46 tool handlers (`ctx_read`, `ctx_shell`, `ctx_search`, ...) |
+| `tools/` | 48 tool handlers (`ctx_read`, `ctx_shell`, `ctx_search`, ...) |
 
 ### Shell Layer
 
