@@ -267,6 +267,67 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <div class="section-divider content-grid"></div>
 
 
+<!-- ═══════ OUTPUT VERIFICATION ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.verifyLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.verifyTitle')} <span class="gradient-text">{t('safety.verifyTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('safety.verifyDesc')}
+    </p>
+
+    <div class="animate-entrance">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-muted text-[11px] ml-2 font-mono">{t('safety.verifyTerminalLabel')}</span>
+        </div>
+        <div class="px-4 sm:px-6 py-4 sm:py-5">
+          <pre class="text-[11px] sm:text-[13px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">ctx_read</span> <span class="text-text-bright">src/auth.rs</span>
+
+<span class="text-accent font-bold">✓ VERIFY PASS</span>
+  <span class="text-muted/40">├─ Paths checked:       12/12 preserved</span>
+  <span class="text-muted/40">├─ Identifiers:         8/8 preserved</span>
+  <span class="text-muted/40">├─ Structure:           balanced</span>
+  <span class="text-muted/40">└─ Info loss score:     0.0%</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.verifyPathsTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.verifyPathsDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.verifyIdsTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.verifyIdsDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.verifyStructTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.verifyStructDesc')}</p>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <a href={lp('/docs/verification')} class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium">
+        {t('safety.verifyLink')}
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">

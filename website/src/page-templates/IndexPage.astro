@@ -236,6 +236,90 @@ const manifest = getMcpManifest();
 <div class="section-divider content-grid"></div>
 
 <!-- ═══════════════════════════════════════════════════════
+     WHAT IS LEANCTX (NEW)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('index.whatLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 5rem);">
+      {t('index.whatTitle')} <span class="gradient-text">{t('index.whatTitleHighlight')}</span>
+    </h2>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-2" style="gap: clamp(1.5rem, 1rem + 1vw, 2rem);">
+      <div class="what-card">
+        <div class="what-icon" style="color: var(--color-accent);">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1rem 0 0.5rem;">{t('index.whatCard1Title')}</h3>
+        <p class="fluid-sm text-muted leading-relaxed">{t('index.whatCard1Desc')}</p>
+      </div>
+
+      <div class="what-card">
+        <div class="what-icon" style="color: var(--color-accent-2);">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1rem 0 0.5rem;">{t('index.whatCard2Title')}</h3>
+        <p class="fluid-sm text-muted leading-relaxed">{t('index.whatCard2Desc')}</p>
+      </div>
+
+      <div class="what-card">
+        <div class="what-icon" style="color: var(--color-accent-3);">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1rem 0 0.5rem;">{t('index.whatCard3Title')}</h3>
+        <p class="fluid-sm text-muted leading-relaxed">{t('index.whatCard3Desc')}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FOUR DIMENSIONS (NEW)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('index.dimensionsLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 5rem);">
+      {t('index.dimensionsTitle')} <span class="gradient-text">{t('index.dimensionsTitleHighlight')}</span>
+    </h2>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-2" style="gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      <div class="dimension-card">
+        <div class="dimension-number">1</div>
+        <h3 class="font-display fluid-body font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('index.dim1Title')}</h3>
+        <p class="text-muted" style="font-size: 0.8125rem; line-height: 1.6;">{t('index.dim1Desc')}</p>
+      </div>
+
+      <div class="dimension-card">
+        <div class="dimension-number">2</div>
+        <h3 class="font-display fluid-body font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('index.dim2Title')}</h3>
+        <p class="text-muted" style="font-size: 0.8125rem; line-height: 1.6;">{t('index.dim2Desc')}</p>
+      </div>
+
+      <div class="dimension-card">
+        <div class="dimension-number">3</div>
+        <h3 class="font-display fluid-body font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('index.dim3Title')}</h3>
+        <p class="text-muted" style="font-size: 0.8125rem; line-height: 1.6;">{t('index.dim3Desc')}</p>
+      </div>
+
+      <div class="dimension-card">
+        <div class="dimension-number">4</div>
+        <h3 class="font-display fluid-body font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('index.dim4Title')}</h3>
+        <p class="text-muted" style="font-size: 0.8125rem; line-height: 1.6;">{t('index.dim4Desc')}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
      NUMBERS (now with context)
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y-sm">
@@ -329,6 +413,95 @@ const manifest = getMcpManifest();
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
         </span>
       </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CONTEXT AS CODE (NEW)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-2 animate-entrance" style="gap: clamp(3rem, 2rem + 3vw, 5rem); align-items: center;">
+      <div>
+        <p class="fluid-label text-accent" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          {t('index.profilesLabel')}
+        </p>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          {t('index.profilesTitle')} <span class="gradient-text">{t('index.profilesTitleHighlight')}</span>
+        </h2>
+        <p class="text-muted fluid-body" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+          {t('index.profilesDesc')}
+        </p>
+        <a href={lp('/docs/profiles')} class="inline-flex items-center gap-2 text-accent hover:text-accent-2 transition-colors font-medium">
+          {t('index.profilesCta')}
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+      </div>
+      <div class="profile-demo">
+        <div class="profile-demo-header">.lean-ctx/profiles/review.toml</div>
+        <pre class="profile-demo-code"><code class="text-muted"><span class="text-accent">[profile]</span>
+name = <span class="text-accent-2">"review"</span>
+description = <span class="text-accent-2">"Code review with broad context"</span>
+
+<span class="text-accent">[read]</span>
+default_mode = <span class="text-accent-2">"map"</span>
+max_tokens_per_file = <span class="text-accent-3">80000</span>
+
+<span class="text-accent">[budget]</span>
+max_context_tokens = <span class="text-accent-3">150000</span>
+max_cost_usd = <span class="text-accent-3">2.0</span>
+
+<span class="text-accent">[verification]</span>
+strict_mode = <span class="text-accent-3">true</span></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     AGENT GOVERNANCE (NEW)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-2 animate-entrance" style="gap: clamp(3rem, 2rem + 3vw, 5rem); align-items: center;">
+      <div class="governance-features lg:order-2">
+        <div class="governance-feature">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
+          {t('index.governanceFeature1')}
+        </div>
+        <div class="governance-feature">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"/></svg>
+          {t('index.governanceFeature2')}
+        </div>
+        <div class="governance-feature">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+          {t('index.governanceFeature3')}
+        </div>
+        <div class="governance-feature">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          {t('index.governanceFeature4')}
+        </div>
+      </div>
+      <div class="lg:order-1">
+        <p class="fluid-label text-accent-2" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          {t('index.governanceLabel')}
+        </p>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          {t('index.governanceTitle')} <span class="gradient-text">{t('index.governanceTitleHighlight')}</span>
+        </h2>
+        <p class="text-muted fluid-body" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+          {t('index.governanceDesc')}
+        </p>
+        <a href={lp('/docs/agent-harness')} class="inline-flex items-center gap-2 text-accent-2 hover:text-accent transition-colors font-medium">
+          {t('index.governanceCta')}
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+      </div>
     </div>
   </div>
 </section>
@@ -970,6 +1143,99 @@ const manifest = getMcpManifest();
   .testimonial-dash {
     color: var(--color-accent);
     font-weight: 500;
+  }
+
+  /* What is LeanCTX cards */
+  .what-card {
+    padding: clamp(1.5rem, 1.25rem + 0.75vw, 2rem);
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.03) 0%, transparent 100%);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    transition: border-color 0.25s ease, transform 0.25s ease;
+  }
+  .what-card:hover {
+    border-color: var(--color-accent);
+    transform: translateY(-2px);
+  }
+  .what-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(52, 211, 153, 0.1);
+    border-radius: 12px;
+  }
+
+  /* Four Dimensions cards */
+  .dimension-card {
+    padding: clamp(1.25rem, 1rem + 0.5vw, 1.5rem);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    position: relative;
+    transition: border-color 0.25s ease;
+  }
+  .dimension-card:hover {
+    border-color: var(--color-accent);
+  }
+  .dimension-number {
+    position: absolute;
+    top: -12px;
+    left: 16px;
+    width: 24px;
+    height: 24px;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  /* Context as Code section */
+  .profile-demo {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .profile-demo-header {
+    padding: 0.75rem 1rem;
+    background: rgba(52, 211, 153, 0.05);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+  }
+  .profile-demo-code {
+    padding: 1rem;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    overflow-x: auto;
+  }
+
+  /* Governance features */
+  .governance-features {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .governance-feature {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: var(--color-text);
+  }
+  .governance-feature svg {
+    color: var(--color-accent);
+    flex-shrink: 0;
   }
 </style>
 
