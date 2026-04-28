@@ -28,6 +28,7 @@ const sidebar = [
       { label: t('docsToolsCore.sidebarTitle'), href: lp('/docs/tools/core') },
       { label: t('docsToolsCore.sidebarIntelligence'), href: lp('/docs/tools/intelligence') },
       { label: t('docsToolsCore.sidebarMemory'), href: lp('/docs/tools/memory') },
+      { label: t('docsProfiles.sidebarProfiles'), href: lp('/docs/profiles') },
     ],
   },
 ];
@@ -44,8 +45,8 @@ const sidebar = [
 
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (required) — one of: <code>status</code>, <code>load</code>, <code>save</code>, <code>task</code>, <code>finding</code>, <code>decision</code>, <code>list</code>, <code>snapshot</code>, <code>restore</code></li>
-    <li><code>value</code> (optional) — value for <code>task</code>, <code>finding</code>, or <code>decision</code> actions</li>
+    <li><code>action</code> (required) — one of: <code>status</code>, <code>load</code>, <code>save</code>, <code>task</code>, <code>finding</code>, <code>decision</code>, <code>list</code>, <code>cleanup</code>, <code>snapshot</code>, <code>restore</code>, <code>resume</code>, <code>profile</code></li>
+    <li><code>value</code> (optional) — value for <code>task</code>, <code>finding</code>, <code>decision</code>, or <code>profile</code> actions</li>
     <li><code>session_id</code> (optional) — specific session ID to load</li>
   </ul>
 
@@ -62,8 +63,11 @@ const sidebar = [
       <tr><td><code>finding</code></td><td>Record a key finding (e.g. <code>"auth.ts:45 — JWT expiry not checked"</code>)</td></tr>
       <tr><td><code>decision</code></td><td>Record an architectural decision</td></tr>
       <tr><td><code>list</code></td><td>List all saved sessions</td></tr>
+      <tr><td><code>cleanup</code></td><td>Remove old sessions (keeps recent ones)</td></tr>
       <tr><td><code>snapshot</code></td><td>Build a priority-tiered 2KB XML snapshot for context window recovery</td></tr>
       <tr><td><code>restore</code></td><td>Load the most recent compaction snapshot</td></tr>
+      <tr><td><code>resume</code></td><td>Build a compact resume block for a fresh chat</td></tr>
+      <tr><td><code>profile</code></td><td>Show or switch the active Context Profile at runtime</td></tr>
     </tbody>
   </table>
 
