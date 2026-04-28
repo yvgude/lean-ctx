@@ -1,0 +1,177 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title={`${t('limitations.title')} — LeanCTX`}
+  description={t('limitations.metaDescription')}
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('limitations.title'), url: lp('/limitations/') }]}>
+
+<section class="section-hero">
+  <div class="content-grid" style="max-width: 52rem;">
+    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: 1rem;">{t('limitations.labelTransparency')}</p>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1rem;">
+      {t('limitations.title')}
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2">
+      {t('limitations.heroSubtitle')}
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<section class="section-y">
+  <div class="content-grid limitations-content">
+
+    <!-- Compression Limits -->
+    <div class="limitations-section animate-entrance">
+      <h2>{t('limitations.compressionTitle')}</h2>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.compressionVariance')}</h3>
+        <p>{t('limitations.compressionVarianceDesc')}</p>
+      </div>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.compressionBinary')}</h3>
+        <p>{t('limitations.compressionBinaryDesc')}</p>
+      </div>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.compressionNovelOutput')}</h3>
+        <p>{t('limitations.compressionNovelOutputDesc')}</p>
+      </div>
+    </div>
+
+    <div class="section-divider content-grid" style="margin: 2rem 0;"></div>
+
+    <!-- Language Support -->
+    <div class="limitations-section animate-entrance stagger-1">
+      <h2>{t('limitations.languageTitle')}</h2>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.languageTreeSitter')}</h3>
+        <p>{t('limitations.languageTreeSitterDesc')}</p>
+      </div>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.languageShellPatterns')}</h3>
+        <p>{t('limitations.languageShellPatternsDesc')}</p>
+      </div>
+    </div>
+
+    <div class="section-divider content-grid" style="margin: 2rem 0;"></div>
+
+    <!-- Architecture Constraints -->
+    <div class="limitations-section animate-entrance stagger-2">
+      <h2>{t('limitations.architectureTitle')}</h2>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.architectureMcp')}</h3>
+        <p>{t('limitations.architectureMcpDesc')}</p>
+      </div>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.architectureScope')}</h3>
+        <p>{t('limitations.architectureScopeDesc')}</p>
+      </div>
+
+      <div class="limitation-card">
+        <h3>{t('limitations.architectureMemory')}</h3>
+        <p>{t('limitations.architectureMemoryDesc')}</p>
+      </div>
+    </div>
+
+    <div class="section-divider content-grid" style="margin: 2rem 0;"></div>
+
+    <!-- Not a Replacement For -->
+    <div class="limitations-section animate-entrance stagger-3">
+      <h2>{t('limitations.notReplacementTitle')}</h2>
+      <p class="not-replacement-intro">{t('limitations.notReplacementDesc')}</p>
+      <ul class="not-replacement-list">
+        <li>{t('limitations.notReplacement1')}</li>
+        <li>{t('limitations.notReplacement2')}</li>
+        <li>{t('limitations.notReplacement3')}</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  .limitations-content {
+    max-width: 52rem;
+  }
+
+  .limitations-section h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .limitation-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
+    margin-bottom: 0.75rem;
+  }
+
+  .limitation-card h3 {
+    font-family: var(--font-display);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    margin-bottom: 0.5rem;
+  }
+
+  .limitation-card p {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    line-height: 1.75;
+    margin: 0;
+  }
+
+  .not-replacement-intro {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    line-height: 1.75;
+    margin-bottom: 1rem;
+  }
+
+  .not-replacement-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .not-replacement-list li {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    padding-inline-start: 1.5rem;
+    position: relative;
+    line-height: 1.65;
+  }
+
+  .not-replacement-list li::before {
+    content: '–';
+    position: absolute;
+    left: 0;
+    color: var(--color-accent);
+  }
+</style>

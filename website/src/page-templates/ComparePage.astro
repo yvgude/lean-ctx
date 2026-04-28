@@ -1,0 +1,212 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const rows = [
+  { label: t('compare.rowTokenSavings'), noTool: t('compare.rowTokenNoTool'), manual: t('compare.rowTokenManual'), leanCtx: t('compare.rowTokenLeanCtx'), highlight: true },
+  { label: t('compare.rowSetup'),        noTool: t('compare.rowSetupNoTool'), manual: t('compare.rowSetupManual'), leanCtx: t('compare.rowSetupLeanCtx'), highlight: false },
+  { label: t('compare.rowAgents'),       noTool: t('compare.rowAgentsNoTool'), manual: t('compare.rowAgentsManual'), leanCtx: t('compare.rowAgentsLeanCtx'), highlight: true },
+  { label: t('compare.rowCaching'),      noTool: t('compare.rowCachingNoTool'), manual: t('compare.rowCachingManual'), leanCtx: t('compare.rowCachingLeanCtx'), highlight: false },
+  { label: t('compare.rowShell'),        noTool: t('compare.rowShellNoTool'), manual: t('compare.rowShellManual'), leanCtx: t('compare.rowShellLeanCtx'), highlight: true },
+  { label: t('compare.rowAnalysis'),     noTool: t('compare.rowAnalysisNoTool'), manual: t('compare.rowAnalysisManual'), leanCtx: t('compare.rowAnalysisLeanCtx'), highlight: false },
+  { label: t('compare.rowMaintenance'),  noTool: t('compare.rowMaintenanceNoTool'), manual: t('compare.rowMaintenanceManual'), leanCtx: t('compare.rowMaintenanceLeanCtx'), highlight: true },
+];
+---
+
+<BaseLayout
+  title={`${t('compare.title')} — LeanCTX`}
+  description={t('compare.metaDescription')}
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('compare.title'), url: lp('/compare/') }]}>
+
+<!-- ═══════ 1. HERO ═══════ -->
+<section class="section-hero">
+  <div class="content-grid" style="max-width: 52rem;">
+    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: 1rem;">{t('compare.labelCompare')}</p>
+    <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1rem;">
+      {t('compare.title')}
+    </h1>
+    <p class="fluid-body text-muted animate-entrance stagger-2">
+      {t('compare.heroSubtitle')}
+    </p>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 2. COMPARISON TABLE ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      {t('compare.tableTitle')}
+    </h2>
+
+    <div class="compare-table-wrap animate-entrance stagger-1">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>{t('compare.colFeature')}</th>
+            <th class="col-no-tool">{t('compare.colNoTool')}</th>
+            <th class="col-manual">{t('compare.colManual')}</th>
+            <th class="col-lean-ctx">{t('compare.colLeanCtx')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr class={row.highlight ? 'row-highlight' : ''}>
+              <td class="cell-feature">{row.label}</td>
+              <td class="cell-no-tool">{row.noTool}</td>
+              <td class="cell-manual">{row.manual}</td>
+              <td class="cell-lean-ctx">{row.leanCtx}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 3. HONEST LIMITATIONS ═══════ -->
+<section class="section-y">
+  <div class="content-grid" style="max-width: 52rem;">
+    <div class="limitations-card animate-entrance">
+      <div class="limitations-icon">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+        </svg>
+      </div>
+      <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: 0.75rem;">
+        {t('compare.whenNotTitle')}
+      </h2>
+      <p class="fluid-body text-muted" style="margin-bottom: 1.25rem;">
+        {t('compare.whenNotDesc')}
+      </p>
+      <ul class="limitations-list">
+        <li>{t('compare.whenNot1')}</li>
+        <li>{t('compare.whenNot2')}</li>
+        <li>{t('compare.whenNot3')}</li>
+      </ul>
+      <p class="fluid-sm text-muted" style="margin-top: 1.25rem;">
+        {t('compare.whenNotConclusion')}
+      </p>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  /* ── Comparison Table ─────────────────────── */
+  .compare-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
+    min-width: 600px;
+  }
+
+  .compare-table thead th {
+    text-align: left;
+    padding: 1rem 1.25rem;
+    border-bottom: 2px solid var(--color-border);
+    font-family: var(--font-display);
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--color-text-bright);
+  }
+
+  .compare-table thead th.col-lean-ctx {
+    color: var(--color-accent);
+  }
+
+  .compare-table tbody td {
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: middle;
+    color: var(--color-muted);
+  }
+
+  .compare-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .compare-table tbody tr.row-highlight {
+    background: var(--color-surface);
+  }
+
+  .cell-feature {
+    font-weight: 500;
+    color: var(--color-text-bright) !important;
+    white-space: nowrap;
+  }
+
+  .cell-no-tool {
+    opacity: 0.5;
+  }
+
+  .cell-manual {
+    color: var(--color-muted);
+  }
+
+  .cell-lean-ctx {
+    color: var(--color-accent) !important;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+
+  /* ── Limitations Card ─────────────────────── */
+  .limitations-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-accent-3);
+    border-radius: 0.75rem;
+    padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem);
+  }
+
+  .limitations-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(var(--rgb-accent-3, 251, 191, 36), 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+    color: var(--color-accent-3);
+  }
+
+  .limitations-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .limitations-list li {
+    font-size: 0.9375rem;
+    color: var(--color-text);
+    padding-inline-start: 1.5rem;
+    position: relative;
+    line-height: 1.6;
+  }
+
+  .limitations-list li::before {
+    content: '–';
+    position: absolute;
+    left: 0;
+    color: var(--color-accent-3);
+    font-weight: 600;
+  }
+</style>
