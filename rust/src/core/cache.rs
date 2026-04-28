@@ -1,6 +1,6 @@
 use md5::{Digest, Md5};
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use super::tokens::count_tokens;
 
@@ -25,6 +25,7 @@ pub struct CacheEntry {
     pub read_count: u32,
     pub path: String,
     pub last_access: Instant,
+    pub stored_mtime: Option<SystemTime>,
 }
 
 /// Result of a cache store operation, indicating whether it was a hit or new entry.
@@ -246,6 +247,7 @@ impl SessionCache {
         let hash = compute_md5(&content);
         let line_count = content.lines().count();
         let original_tokens = count_tokens(&content);
+        let stored_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         let now = Instant::now();
 
         self.stats.total_reads += 1;
@@ -253,6 +255,9 @@ impl SessionCache {
 
         if let Some(existing) = self.entries.get_mut(&key) {
             existing.last_access = now;
+            if stored_mtime.is_some() {
+                existing.stored_mtime = stored_mtime;
+            }
             if existing.hash == hash {
                 existing.read_count += 1;
                 self.stats.cache_hits += 1;
@@ -275,6 +280,9 @@ impl SessionCache {
             existing.line_count = line_count;
             existing.original_tokens = original_tokens;
             existing.read_count += 1;
+            if stored_mtime.is_some() {
+                existing.stored_mtime = stored_mtime;
+            }
             self.stats.total_sent_tokens += original_tokens as u64;
             return StoreResult {
                 line_count,
@@ -295,6 +303,7 @@ impl SessionCache {
             read_count: 1,
             path: key.clone(),
             last_access: now,
+            stored_mtime,
         };
 
         self.entries.insert(key, entry);
@@ -414,6 +423,19 @@ impl SessionCache {
     }
 }
 
+pub fn file_mtime(path: &str) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> bool {
+    let current = file_mtime(path);
+    match (cached_mtime, current) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(cached), Some(current)) => current > cached,
+    }
+}
+
 fn compute_md5(content: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(content.as_bytes());
@@ -423,6 +445,7 @@ fn compute_md5(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn cache_stores_and_retrieves() {
@@ -510,6 +533,7 @@ mod tests {
             read_count: 1,
             path: "/a.rs".to_string(),
             last_access: now,
+            stored_mtime: None,
         };
         let old = CacheEntry {
             content: "b".to_string(),
@@ -519,6 +543,7 @@ mod tests {
             read_count: 1,
             path: "/b.rs".to_string(),
             last_access: base,
+            stored_mtime: None,
         };
         let entries: Vec<(&String, &CacheEntry)> = vec![(&key_a, &recent), (&key_b, &old)];
         let scores = eviction_scores_rrf(&entries, now);
@@ -543,6 +568,7 @@ mod tests {
             read_count: 20,
             path: "/a.rs".to_string(),
             last_access: now,
+            stored_mtime: None,
         };
         let rare = CacheEntry {
             content: "b".to_string(),
@@ -552,6 +578,7 @@ mod tests {
             read_count: 1,
             path: "/b.rs".to_string(),
             last_access: now,
+            stored_mtime: None,
         };
         let entries: Vec<(&String, &CacheEntry)> = vec![(&key_a, &frequent), (&key_b, &rare)];
         let scores = eviction_scores_rrf(&entries, now);
@@ -582,5 +609,26 @@ mod tests {
             "eviction should have kicked in"
         );
         std::env::remove_var("LEAN_CTX_CACHE_MAX_TOKENS");
+    }
+
+    #[test]
+    fn stale_detection_flags_newer_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stale.txt");
+        let p = path.to_string_lossy().to_string();
+
+        std::fs::write(&path, "one").unwrap();
+        let mut cache = SessionCache::new();
+        cache.store(&p, "one".to_string());
+
+        let entry = cache.get(&p).unwrap();
+        assert!(!is_cache_entry_stale(&p, entry.stored_mtime));
+
+        // Ensure mtime granularity differences don't make this flaky.
+        std::thread::sleep(Duration::from_secs(1));
+        std::fs::write(&path, "two").unwrap();
+
+        let entry = cache.get(&p).unwrap();
+        assert!(is_cache_entry_stale(&p, entry.stored_mtime));
     }
 }

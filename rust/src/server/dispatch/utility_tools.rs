@@ -22,7 +22,8 @@ impl LeanCtxServer {
                 let (result, original) = crate::tools::ctx_tree::handle(&path, depth, show_hidden);
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
-                self.record_call("ctx_tree", original, saved, None).await;
+                self.record_call_with_path("ctx_tree", original, saved, None, Some(&path))
+                    .await;
                 let savings_note = if !minimal && saved > 0 {
                     format!("\n[saved {saved} tokens vs native ls]")
                 } else {
@@ -86,7 +87,8 @@ impl LeanCtxServer {
                     None => return Err(ErrorData::invalid_params("path is required", None)),
                 };
                 let result = crate::tools::ctx_analyze::handle(&path, self.crp_mode);
-                self.record_call("ctx_analyze", 0, 0, None).await;
+                self.record_call_with_path("ctx_analyze", 0, 0, None, Some(&path))
+                    .await;
                 result
             }
             "ctx_discover" => {
@@ -443,7 +445,8 @@ impl LeanCtxServer {
                 );
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
-                self.record_call("ctx_symbol", original, saved, kind).await;
+                self.record_call_with_path("ctx_symbol", original, saved, kind, file.as_deref())
+                    .await;
                 result
             }
             "ctx_graph_diagram" => {
@@ -564,7 +567,8 @@ impl LeanCtxServer {
                 let (result, original) = crate::tools::ctx_outline::handle(&path, kind.as_deref());
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
-                self.record_call("ctx_outline", original, saved, kind).await;
+                self.record_call_with_path("ctx_outline", original, saved, kind, Some(&path))
+                    .await;
                 result
             }
             "ctx_cost" => {

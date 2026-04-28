@@ -35,7 +35,7 @@ Tool mapping (MANDATORY):
 
 ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M
 Auto-selects mode. Re-reads ~13 tok. File refs F1,F2.. persist.
-Cached? fresh=true or lines:N-M.
+Cache auto-validates via file mtime. Use fresh=true (or start_line / lines:N-M) to force a disk re-read.
 
 Auto: ctx_overview, ctx_preload, ctx_dedup, ctx_compress behind the scenes.
 Multi-agent: ctx_agent(action=handoff|sync|diary).
@@ -152,8 +152,8 @@ COMPATIBILITY: lean-ctx replaces READ operations only. Edit/Write/StrReplace sta
 FILE EDITING: Native Edit/StrReplace preferred. If Edit fails, use ctx_edit immediately.\n\
 {shell_hint}\
 \n\
-ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M. Auto-selects. Re-reads ~13 tok. Fn refs F1,F2.. persist.\n\
-Cached? Use fresh=true, start_line=N, or lines:N-M.\n\
+ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M. Auto-selects. Cached re-reads can be ~13 tok when unchanged. Fn refs F1,F2.. persist.\n\
+Cache auto-validates via file mtime. Use fresh=true (or start_line / lines:N-M) to force a disk re-read.\n\
 \n\
 Auto: ctx_overview, ctx_preload, ctx_dedup, ctx_compress run behind the scenes. Checkpoint every 15 calls.\n\
 Multi-agent: ctx_agent(action=handoff|sync). Diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight).\n\

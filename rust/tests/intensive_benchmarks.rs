@@ -583,6 +583,7 @@ fn bench_rrf_eviction_vs_legacy() {
             read_count: (10 - i) as u32,
             path: format!("/file_{i}.rs"),
             last_access: now.checked_sub(Duration::from_secs(i as u64 * 60)).unwrap(),
+            stored_mtime: None,
         })
         .collect();
 
@@ -642,6 +643,7 @@ fn bench_rrf_eviction_handles_single_entry() {
         read_count: 1,
         path: "/solo.rs".to_string(),
         last_access: now,
+        stored_mtime: None,
     };
 
     let refs: Vec<(&String, &lean_ctx::core::cache::CacheEntry)> = vec![(&key, &entry)];

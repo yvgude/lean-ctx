@@ -31,14 +31,21 @@ impl LeanCtxServer {
                     let cache = self.cache.read().await;
                     crate::tools::ctx_smart_read::select_mode_with_task(&cache, &path, task_ref)
                 };
-                let fresh = get_bool(args, "fresh").unwrap_or(false);
+                let mut fresh = get_bool(args, "fresh").unwrap_or(false);
                 let start_line = get_int(args, "start_line");
                 if let Some(sl) = start_line {
                     let sl = sl.max(1_i64);
                     mode = format!("lines:{sl}-999999");
+                    fresh = true;
                 }
                 let stale = self.is_prompt_cache_stale().await;
                 let effective_mode = LeanCtxServer::upgrade_mode_if_stale(&mode, stale).to_string();
+                if mode.starts_with("lines:") {
+                    fresh = true;
+                }
+                if stale && effective_mode == "full" && !fresh {
+                    fresh = true;
+                }
                 let read_start = std::time::Instant::now();
                 let mut cache = self.cache.write().await;
                 let (output, resolved_mode) = if fresh {
@@ -117,8 +124,14 @@ impl LeanCtxServer {
                 if let Some(root) = ensured_root.as_deref() {
                     crate::core::index_orchestrator::ensure_all_background(root);
                 }
-                self.record_call("ctx_read", original, saved, Some(resolved_mode.clone()))
-                    .await;
+                self.record_call_with_path(
+                    "ctx_read",
+                    original,
+                    saved,
+                    Some(resolved_mode.clone()),
+                    Some(&path),
+                )
+                .await;
                 crate::core::heatmap::record_file_access(&path, original, saved);
                 {
                     let mut ledger = self.ledger.write().await;
@@ -233,11 +246,12 @@ impl LeanCtxServer {
                 let original = cache.get(&path).map_or(0, |e| e.original_tokens);
                 let tokens = crate::core::tokens::count_tokens(&output);
                 drop(cache);
-                self.record_call(
+                self.record_call_with_path(
                     "ctx_smart_read",
                     original,
                     original.saturating_sub(tokens),
                     Some("auto".to_string()),
+                    Some(&path),
                 )
                 .await;
                 output
@@ -259,11 +273,12 @@ impl LeanCtxServer {
                     let mut session = self.session.write().await;
                     session.mark_modified(&path);
                 }
-                self.record_call(
+                self.record_call_with_path(
                     "ctx_delta",
                     original,
                     original.saturating_sub(tokens),
                     Some("delta".to_string()),
+                    Some(&path),
                 )
                 .await;
                 output
@@ -307,7 +322,8 @@ impl LeanCtxServer {
                     let mut session = self.session.write().await;
                     session.mark_modified(&path);
                 }
-                self.record_call("ctx_edit", 0, 0, None).await;
+                self.record_call_with_path("ctx_edit", 0, 0, None, Some(&path))
+                    .await;
                 output
             }
             "ctx_fill" => {

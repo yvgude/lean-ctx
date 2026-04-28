@@ -64,6 +64,8 @@ Konkrete Stellen (haben alle bereits eine `path` Variable):
 - [rust/src/server/dispatch/read_tools.rs](rust/src/server/dispatch/read_tools.rs): `ctx_read`, `ctx_multi_read`, `ctx_smart_read`, `ctx_delta`, `ctx_edit`
 - [rust/src/server/dispatch/utility_tools.rs](rust/src/server/dispatch/utility_tools.rs): `ctx_tree`, `ctx_outline`, `ctx_symbol`, `ctx_analyze`
 
+Hinweis: `ctx_multi_read` emittiert aktuell (noch) keinen per-file `path` im ToolCall-Event, weil das eine saubere Aufteilung der Token-Savings pro Datei erfordert. Fuer Issue #166 war entscheidend, dass `ctx_read`/`ctx_edit` etc. `path` liefern.
+
 ### B2) EventTail nutzt `lean_ctx_data_dir()`
 
 Datei: [rust/src/tui/event_reader.rs](rust/src/tui/event_reader.rs)

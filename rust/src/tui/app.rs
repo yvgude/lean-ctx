@@ -93,6 +93,13 @@ impl AppState {
                     entry.access_count += 1;
                     entry.tokens_saved += saved_tokens;
                 }
+                EventKind::Compression { path, .. } => {
+                    let entry = self.files.entry(path.clone()).or_insert(FileHeat {
+                        access_count: 0,
+                        tokens_saved: 0,
+                    });
+                    entry.access_count += 1;
+                }
                 _ => {}
             }
         }
@@ -447,6 +454,13 @@ fn draw_heatmap(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
 
     let mut files: Vec<_> = state.files.iter().collect();
     files.sort_by_key(|x| std::cmp::Reverse(x.1.access_count));
+    if files.is_empty() {
+        let msg = Paragraph::new("Waiting for file activity...")
+            .style(Style::default().fg(MUTED))
+            .block(block);
+        f.render_widget(msg, area);
+        return;
+    }
     let max_access = files.first().map_or(1, |f| f.1.access_count).max(1);
 
     let visible = (area.height.saturating_sub(2)) as usize;
@@ -626,5 +640,67 @@ fn format_tokens(n: u64) -> String {
         format!("{:.1}K", n as f64 / 1_000.0)
     } else {
         format!("{n}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_state() -> AppState {
+        AppState {
+            events: Vec::new(),
+            total_saved: 0,
+            total_original: 0,
+            cache_hits: 0,
+            total_calls: 0,
+            files: std::collections::HashMap::new(),
+            gain_score: None,
+            last_gain_refresh: Instant::now(),
+            quit: false,
+            focus: 0,
+        }
+    }
+
+    #[test]
+    fn ingest_toolcall_with_path_populates_heatmap() {
+        let mut s = mk_state();
+        s.ingest(vec![LeanCtxEvent {
+            id: 1,
+            timestamp: "t".to_string(),
+            kind: EventKind::ToolCall {
+                tool: "ctx_read".to_string(),
+                tokens_original: 100,
+                tokens_saved: 80,
+                mode: Some("full".to_string()),
+                duration_ms: 1,
+                path: Some("src/main.rs".to_string()),
+            },
+        }]);
+
+        let entry = s.files.get("src/main.rs").expect("file entry missing");
+        assert_eq!(entry.access_count, 1);
+        assert_eq!(entry.tokens_saved, 80);
+    }
+
+    #[test]
+    fn ingest_compression_counts_access_without_fake_tokens() {
+        let mut s = mk_state();
+        s.ingest(vec![LeanCtxEvent {
+            id: 1,
+            timestamp: "t".to_string(),
+            kind: EventKind::Compression {
+                path: "src/lib.rs".to_string(),
+                before_lines: 100,
+                after_lines: 10,
+                strategy: "entropy".to_string(),
+                kept_line_count: 10,
+                removed_line_count: 90,
+            },
+        }]);
+
+        let entry = s.files.get("src/lib.rs").expect("file entry missing");
+        assert_eq!(entry.access_count, 1);
+        assert_eq!(entry.tokens_saved, 0);
     }
 }
