@@ -1024,11 +1024,10 @@ Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fre
         ("ctx_context", "Session context overview — cached files, seen files, session state.", json!({"type": "object", "properties": {}})),
         ("ctx_graph", "Code dependency graph. Actions: build (index project), related (find files connected to path), \
 symbol (lookup definition/usages as file::name), impact (blast radius of changes to path), status (index stats).", json!({"type": "object", "properties": {"action": {"type": "string"}, "path": {"type": "string"}, "project_root": {"type": "string"}}, "required": ["action"]})),
-        ("ctx_session", "Cross-session memory (CCP). Actions: load (restore previous session ~400 tok), \
-save, status, task (set current task), finding (record discovery), decision (record choice), \
-reset, list (show sessions), cleanup, snapshot (build compaction snapshot ~2KB), \
-restore (rebuild state from snapshot after context compaction), resume, profile (show/switch context profile), \
-role (list/switch agent roles — governance), budget (show budget status vs role limits).", json!({"type": "object", "properties": {"action": {"type": "string"}, "value": {"type": "string"}, "session_id": {"type": "string"}}, "required": ["action"]})),
+        ("ctx_session", "Cross-session memory (CCP). Actions: load (restore ~400 tok), save, status, \
+task, finding, decision, reset, list, cleanup, snapshot (~2KB), restore, resume, \
+profile (context profiles), role (governance), budget (limits), slo (observability), \
+diff (compare sessions: value=\"id_a id_b [json]\").", json!({"type": "object", "properties": {"action": {"type": "string"}, "value": {"type": "string"}, "session_id": {"type": "string"}}, "required": ["action"]})),
         ("ctx_knowledge", "Persistent project knowledge with temporal facts + contradiction detection. Actions: remember (auto-tracks validity + detects contradictions), recall, pattern, consolidate, \
 gotcha (record a bug to never repeat — trigger+resolution), timeline (fact version history), rooms (list knowledge categories), \
 search (cross-session/cross-project), wakeup (compact AAAK briefing), status, remove, export, embeddings_status|embeddings_reset|embeddings_reindex.", json!({"type": "object", "properties": {"action": {"type": "string"}, "category": {"type": "string"}, "key": {"type": "string"}, "value": {"type": "string"}, "query": {"type": "string"}, "trigger": {"type": "string"}, "resolution": {"type": "string"}, "severity": {"type": "string"}}, "required": ["action"]})),

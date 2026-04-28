@@ -323,6 +323,106 @@ impl ToolCallTimer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Prometheus text format export (Zero-PII)
+// ---------------------------------------------------------------------------
+
+impl Metrics {
+    pub fn to_prometheus(&self) -> String {
+        let snap = self.snapshot();
+        let budget = crate::core::budget_tracker::BudgetTracker::global().check();
+        let slo_snap = crate::core::slo::evaluate_quiet();
+        let slo_violations = slo_snap.violations.len();
+
+        let mut lines = Vec::with_capacity(32);
+
+        lines.push("# HELP lean_ctx_tokens_saved_total Total tokens saved by compression".into());
+        lines.push("# TYPE lean_ctx_tokens_saved_total counter".into());
+        lines.push(format!("lean_ctx_tokens_saved_total {}", snap.tokens_saved));
+
+        lines.push("# HELP lean_ctx_tokens_input_total Total input tokens processed".into());
+        lines.push("# TYPE lean_ctx_tokens_input_total counter".into());
+        lines.push(format!("lean_ctx_tokens_input_total {}", snap.tokens_input));
+
+        lines.push("# HELP lean_ctx_tokens_output_total Total output tokens generated".into());
+        lines.push("# TYPE lean_ctx_tokens_output_total counter".into());
+        lines.push(format!(
+            "lean_ctx_tokens_output_total {}",
+            snap.tokens_output
+        ));
+
+        lines.push("# HELP lean_ctx_compression_ratio Current compression ratio".into());
+        lines.push("# TYPE lean_ctx_compression_ratio gauge".into());
+        lines.push(format!(
+            "lean_ctx_compression_ratio {:.4}",
+            snap.compression_ratio
+        ));
+
+        lines.push("# HELP lean_ctx_tool_calls_total Total tool calls".into());
+        lines.push("# TYPE lean_ctx_tool_calls_total counter".into());
+        lines.push(format!(
+            "lean_ctx_tool_calls_total {}",
+            snap.tool_calls_total
+        ));
+
+        lines.push("# HELP lean_ctx_tool_calls_error_total Total failed tool calls".into());
+        lines.push("# TYPE lean_ctx_tool_calls_error_total counter".into());
+        lines.push(format!(
+            "lean_ctx_tool_calls_error_total {}",
+            snap.tool_calls_error
+        ));
+
+        lines.push("# HELP lean_ctx_session_cost_usd Estimated session cost in USD".into());
+        lines.push("# TYPE lean_ctx_session_cost_usd gauge".into());
+        lines.push(format!(
+            "lean_ctx_session_cost_usd {:.4}",
+            budget.cost.used_usd
+        ));
+
+        lines.push("# HELP lean_ctx_session_context_tokens Current context token count".into());
+        lines.push("# TYPE lean_ctx_session_context_tokens gauge".into());
+        lines.push(format!(
+            "lean_ctx_session_context_tokens {}",
+            budget.tokens.used
+        ));
+
+        lines.push("# HELP lean_ctx_shell_invocations_total Total shell invocations".into());
+        lines.push("# TYPE lean_ctx_shell_invocations_total counter".into());
+        lines.push(format!(
+            "lean_ctx_shell_invocations_total {}",
+            budget.shell.used
+        ));
+
+        lines.push("# HELP lean_ctx_slo_violations_total Total active SLO violations".into());
+        lines.push("# TYPE lean_ctx_slo_violations_total gauge".into());
+        lines.push(format!("lean_ctx_slo_violations_total {slo_violations}"));
+
+        lines.push("# HELP lean_ctx_cache_hit_rate Cache hit rate (0-1)".into());
+        lines.push("# TYPE lean_ctx_cache_hit_rate gauge".into());
+        lines.push(format!(
+            "lean_ctx_cache_hit_rate {:.4}",
+            snap.cache_hit_rate
+        ));
+
+        lines.push("# HELP lean_ctx_anomalies_total Total anomaly detections".into());
+        lines.push("# TYPE lean_ctx_anomalies_total gauge".into());
+        let anomaly_count = crate::core::anomaly::summary()
+            .iter()
+            .filter(|m| m.count > 0)
+            .count();
+        lines.push(format!("lean_ctx_anomalies_total {anomaly_count}"));
+
+        lines.push("# HELP lean_ctx_session_uptime_seconds Session uptime in seconds".into());
+        lines.push("# TYPE lean_ctx_session_uptime_seconds gauge".into());
+        lines.push(format!(
+            "lean_ctx_session_uptime_seconds {}",
+            snap.session_uptime_secs
+        ));
+
+        lines.join("\n") + "\n"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

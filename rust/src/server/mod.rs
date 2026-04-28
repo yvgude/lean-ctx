@@ -377,10 +377,13 @@ impl ServerHandler for LeanCtxServer {
             }
         };
 
-        {
+        let output_tokens = {
             let tokens = crate::core::tokens::count_tokens(&result_text) as u64;
             crate::core::budget_tracker::BudgetTracker::global().record_tokens(tokens);
-        }
+            tokens
+        };
+
+        crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
 
         let budget_warning = {
             use crate::core::budget_tracker::{BudgetLevel, BudgetTracker};
@@ -467,6 +470,14 @@ impl ServerHandler for LeanCtxServer {
 
         if let Some(bw) = budget_warning {
             result_text = format!("{result_text}\n\n{bw}");
+        }
+
+        {
+            let slo_snap = crate::core::slo::evaluate();
+            if !slo_snap.violations.is_empty() {
+                let slo_msg = format!("[SLO] {}", slo_snap.format_compact());
+                result_text = format!("{result_text}\n\n{slo_msg}");
+            }
         }
 
         if name == "ctx_read" {

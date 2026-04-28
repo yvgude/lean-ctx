@@ -58,6 +58,8 @@ NEVER loop trying to make Edit work. If it fails, switch to ctx_edit immediately
 - `ctx_session load` — on new chat, restore previous session
 - `ctx_session role` — list/switch agent roles (governance)
 - `ctx_session budget` — show budget status vs role limits
+- `ctx_session slo` — show SLO status/violations (value=reload|history|clear)
+- `ctx_session diff` — compare two sessions (value="<id_a> <id_b> [json]")
 - `ctx_workflow` — state machine + evidence + tool gating
 
 ## Proactive Tools

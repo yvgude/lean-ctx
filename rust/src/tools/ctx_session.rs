@@ -219,7 +219,67 @@ pub fn handle(
             }
         }
 
-        _ => format!("Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, profile, role, budget"),
+        "diff" => {
+            let parts: Vec<&str> = value.unwrap_or("").split_whitespace().collect();
+            if parts.len() < 2 {
+                return "Usage: ctx_session diff <session_id_a> <session_id_b> [format]\n\
+                        Formats: summary (default), json\n\
+                        Example: ctx_session diff abc123 def456 json"
+                    .to_string();
+            }
+            let id_a = parts[0];
+            let id_b = parts[1];
+            let format = parts.get(2).copied().unwrap_or("summary");
+
+            let sess_a = SessionState::load_by_id(id_a);
+            let sess_b = SessionState::load_by_id(id_b);
+
+            match (sess_a, sess_b) {
+                (Some(a), Some(b)) => {
+                    let d = crate::core::session_diff::diff_sessions(&a, &b);
+                    match format {
+                        "json" => d.format_json(),
+                        _ => d.format_summary(),
+                    }
+                }
+                (None, _) => format!("Session not found: {id_a}"),
+                (_, None) => format!("Session not found: {id_b}"),
+            }
+        }
+
+        "slo" => {
+            match value {
+                Some("reload") => {
+                    crate::core::slo::reload();
+                    "SLO definitions reloaded from disk.".to_string()
+                }
+                Some("history") => {
+                    let hist = crate::core::slo::violation_history(20);
+                    if hist.is_empty() {
+                        "No SLO violations recorded.".to_string()
+                    } else {
+                        let mut out = format!("SLO violations (last {}):\n", hist.len());
+                        for v in &hist {
+                            out.push_str(&format!(
+                                "  {} {} ({}) {:.2} vs {:.2} → {}\n",
+                                v.timestamp, v.slo_name, v.metric, v.actual, v.threshold, v.action
+                            ));
+                        }
+                        out
+                    }
+                }
+                Some("clear") => {
+                    crate::core::slo::clear_violations();
+                    "SLO violation history cleared.".to_string()
+                }
+                _ => {
+                    let snap = crate::core::slo::evaluate_quiet();
+                    snap.format_compact()
+                }
+            }
+        }
+
+        _ => format!("Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, profile, role, budget, slo, diff"),
     }
 }
 

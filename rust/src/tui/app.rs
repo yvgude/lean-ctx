@@ -458,6 +458,19 @@ fn draw_live_feed(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
                 EventKind::RoleChanged { from, to } => {
                     ("->", "role", format!("{from} -> {to}"), BLUE)
                 }
+                EventKind::SloViolation {
+                    slo_name, action, ..
+                } => ("!!", "slo", format!("{slo_name} violated → {action}"), RED),
+                EventKind::Anomaly {
+                    metric,
+                    deviation_factor,
+                    ..
+                } => (
+                    "??",
+                    "anomaly",
+                    format!("{metric} {deviation_factor:.1}x StdDev"),
+                    YELLOW,
+                ),
             };
             let ts = &ev.timestamp[11..19.min(ev.timestamp.len())];
             ListItem::new(Line::from(vec![

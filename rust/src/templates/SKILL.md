@@ -130,6 +130,8 @@ MCP tools for CCP:
 - `ctx_session save` — force persist session to disk
 - `ctx_session role` — list/switch agent roles (governance)
 - `ctx_session budget` — show budget status vs role limits
+- `ctx_session slo` — show SLO status/violations (value=reload|history|clear)
+- `ctx_session diff` — compare two sessions (value="<id_a> <id_b> [json]")
 - `ctx_wrapped` — generate savings report card in chat
 
 ## Analytics

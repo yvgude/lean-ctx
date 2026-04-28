@@ -331,6 +331,25 @@ fn route_response(
             let entries = build_heatmap_json(&index);
             ("200 OK", "application/json", entries)
         }
+        "/metrics" => {
+            let prom = crate::core::telemetry::global_metrics().to_prometheus();
+            ("200 OK", "text/plain; version=0.0.4; charset=utf-8", prom)
+        }
+        "/api/anomaly" => {
+            let s = crate::core::anomaly::summary();
+            let json = serde_json::to_string(&s).unwrap_or_else(|_| "[]".to_string());
+            ("200 OK", "application/json", json)
+        }
+        "/api/slos" => {
+            let snap = crate::core::slo::evaluate_quiet();
+            let history = crate::core::slo::violation_history(100);
+            let payload = serde_json::json!({
+                "snapshot": snap,
+                "history": history,
+            });
+            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+            ("200 OK", "application/json", json)
+        }
         "/api/events" => {
             let evs = crate::core::events::load_events_from_file(200);
             let json = serde_json::to_string(&evs).unwrap_or_else(|_| "[]".to_string());
