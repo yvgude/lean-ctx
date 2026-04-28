@@ -3,7 +3,7 @@ use std::process::Stdio;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_mins(2);
 const READER_RESULT_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {

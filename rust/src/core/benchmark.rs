@@ -176,7 +176,7 @@ fn scan_project(root: &str) -> Vec<PathBuf> {
             continue;
         }
 
-        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let size = entry.metadata().map_or(0, |m| m.len());
         if size == 0 || size > MAX_FILE_SIZE {
             continue;
         }

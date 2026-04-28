@@ -208,8 +208,7 @@ pub fn should_auto_consolidate(state: &AutonomyState, tool_calls: u32) -> bool {
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_secs());
     let last = state.last_consolidation_unix.load(Ordering::SeqCst);
     if now.saturating_sub(last) < state.config.consolidate_cooldown_secs {
         return false;

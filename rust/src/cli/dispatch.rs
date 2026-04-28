@@ -789,8 +789,7 @@ fn passthrough(command: &str) -> ! {
         .arg(command)
         .env("LEAN_CTX_ACTIVE", "1")
         .status()
-        .map(|s| s.code().unwrap_or(1))
-        .unwrap_or(127);
+        .map_or(127, |s| s.code().unwrap_or(1));
     std::process::exit(status);
 }
 

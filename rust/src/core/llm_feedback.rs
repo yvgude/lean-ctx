@@ -80,7 +80,7 @@ impl LlmFeedbackStore {
 
     pub fn status() -> LlmFeedbackStatus {
         let path = feedback_path();
-        let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
         LlmFeedbackStatus {
             path,
             bytes,

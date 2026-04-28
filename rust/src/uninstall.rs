@@ -1067,11 +1067,7 @@ fn remove_lean_ctx_from_json_textual(content: &str) -> Option<String> {
 
     // Repeatedly find and remove "lean-ctx" entries until none remain.
     // Each iteration rescans because positions shift after removal.
-    loop {
-        let Some(key_start) = find_json_key_position(result.as_bytes(), "lean-ctx") else {
-            break;
-        };
-
+    while let Some(key_start) = find_json_key_position(result.as_bytes(), "lean-ctx") {
         let Some(new_result) = remove_json_entry_at(&result, key_start) else {
             break;
         };

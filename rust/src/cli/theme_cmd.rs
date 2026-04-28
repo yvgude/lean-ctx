@@ -45,7 +45,7 @@ pub fn cmd_theme(args: &[String]) {
                     } else {
                         ""
                     };
-                    println!("  {preview}  {b}{:<12}{r}{d}{marker}{r}", custom.name,);
+                    println!("  {preview}  {b}{:<12}{r}{d}{marker}{r}", custom.name);
                 }
             }
             println!();
@@ -70,7 +70,7 @@ pub fn cmd_theme(args: &[String]) {
             match cfg.save() {
                 Ok(()) => {
                     let t = theme::load_theme(name);
-                    println!("  {sc}✓{r} Theme set to {b}{name}{r}", sc = t.success.fg(),);
+                    println!("  {sc}✓{r} Theme set to {b}{name}{r}", sc = t.success.fg());
                     let preview = t.gradient_bar(0.75, 30);
                     println!("  {preview}");
                 }

@@ -30,7 +30,7 @@ pub fn cmd_tee(args: &[String]) {
 
             println!("Tee logs ({}):\n", entries.len());
             for entry in &entries {
-                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                let size = entry.metadata().map_or(0, |m| m.len());
                 let name = entry.file_name();
                 let size_str = if size > 1024 {
                     format!("{}K", size / 1024)

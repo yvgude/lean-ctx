@@ -336,7 +336,7 @@ fn which_exists(name: &str) -> bool {
         .stderr(std::process::Stdio::null())
         .status();
 
-    check_cmd.map(|s| s.success()).unwrap_or(false)
+    check_cmd.is_ok_and(|s| s.success())
 }
 
 fn truncate_output(output: &str) -> String {

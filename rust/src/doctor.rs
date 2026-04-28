@@ -512,8 +512,9 @@ fn pi_outcome() -> Option<Outcome> {
             let has_plugin = std::process::Command::new("pi")
                 .args(["list"])
                 .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).contains("pi-lean-ctx"))
-                .unwrap_or(false);
+                .is_ok_and(|o| {
+                    o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pi-lean-ctx")
+                });
 
             let has_mcp = dirs::home_dir()
                 .map(|h| h.join(".pi/agent/mcp.json"))
@@ -933,16 +934,14 @@ fn claude_binary_exists() -> bool {
         std::process::Command::new("which")
             .arg("claude")
             .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|o| o.status.success())
     }
     #[cfg(windows)]
     {
         std::process::Command::new("where")
             .arg("claude")
             .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|o| o.status.success())
     }
 }
 

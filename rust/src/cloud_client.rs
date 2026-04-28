@@ -256,9 +256,7 @@ pub fn load_cloud_models() -> Option<serde_json::Value> {
 
 pub fn is_cloud_user() -> bool {
     let path = config_dir().join("plan.txt");
-    std::fs::read_to_string(path)
-        .map(|p| matches!(p.trim(), "cloud" | "pro"))
-        .unwrap_or(false)
+    std::fs::read_to_string(path).is_ok_and(|p| matches!(p.trim(), "cloud" | "pro"))
 }
 
 pub fn save_plan(plan: &str) -> std::io::Result<()> {

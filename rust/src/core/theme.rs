@@ -224,7 +224,7 @@ impl Theme {
         if no_color() {
             return format!(" {value:<12}");
         }
-        format!("{bg}{BOLD} {value} {RST}", bg = color.bg(),)
+        format!("{bg}{BOLD} {value} {RST}", bg = color.bg())
     }
 
     pub fn border_line(&self, width: usize) -> String {

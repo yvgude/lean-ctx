@@ -200,7 +200,7 @@ fn install_systemd(binary: &str, port: u16, quiet: bool) {
     let service_path = service_dir.join(format!("{SYSTEMD_SERVICE}.service"));
 
     let unit = format!(
-        r#"[Unit]
+        r"[Unit]
 Description=lean-ctx API Proxy
 After=network.target
 
@@ -213,7 +213,7 @@ Environment=RUST_LOG=info
 
 [Install]
 WantedBy=default.target
-"#
+"
     );
 
     let _ = std::fs::write(&service_path, &unit);

@@ -396,15 +396,13 @@ fn command_exists(name: &str) -> bool {
     let result = std::process::Command::new("where")
         .arg(name)
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
 
     #[cfg(not(target_os = "windows"))]
     let result = std::process::Command::new("which")
         .arg(name)
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
 
     result
 }

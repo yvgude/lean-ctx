@@ -252,7 +252,7 @@ fn section_tee_logs(include_content: bool) -> String {
     if let Some(dir) = lean_ctx_dir() {
         let tee_dir = dir.join("tee");
         if tee_dir.is_dir() {
-            let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(24 * 3600);
+            let cutoff = std::time::SystemTime::now() - std::time::Duration::from_hours(24);
             let mut entries: Vec<_> = std::fs::read_dir(&tee_dir)
                 .into_iter()
                 .flatten()
@@ -278,7 +278,7 @@ fn section_tee_logs(include_content: bool) -> String {
             } else {
                 for entry in entries.iter().take(10) {
                     let name = entry.file_name();
-                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    let size = entry.metadata().map_or(0, |m| m.len());
                     out.push_str(&format!("- `{}` ({size} bytes)\n", name.to_string_lossy()));
                 }
                 if include_content {

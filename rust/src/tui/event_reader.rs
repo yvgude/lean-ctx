@@ -12,7 +12,7 @@ impl EventTail {
         let base = crate::core::data_dir::lean_ctx_data_dir()
             .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"));
         let path = base.join("events.jsonl");
-        let offset = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let offset = std::fs::metadata(&path).map_or(0, |m| m.len());
         Self { path, offset }
     }
 
@@ -20,7 +20,7 @@ impl EventTail {
         let Ok(mut file) = std::fs::File::open(&self.path) else {
             return Vec::new();
         };
-        let meta_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let meta_len = file.metadata().map_or(0, |m| m.len());
         if meta_len < self.offset {
             self.offset = 0;
         }

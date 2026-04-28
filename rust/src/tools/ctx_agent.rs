@@ -186,8 +186,7 @@ pub fn handle(
 
             let shared_count = if shared_dir.exists() {
                 std::fs::read_dir(&shared_dir)
-                    .map(std::iter::Iterator::count)
-                    .unwrap_or(0)
+                    .map_or(0, std::iter::Iterator::count)
             } else {
                 0
             };

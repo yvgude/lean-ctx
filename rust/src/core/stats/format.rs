@@ -382,7 +382,7 @@ pub fn format_cep_report() -> String {
         for (mode, count) in &sorted_modes {
             let ratio = **count as f64 / max_mode as f64;
             let bar = theme::pad_right(&theme.gradient_bar(ratio, 20), 20);
-            out.push(format!("  {sec}{mode:<14}{rst} {count:>4}x  {bar}",));
+            out.push(format!("  {sec}{mode:<14}{rst} {count:>4}x  {bar}"));
         }
 
         let total_mode_calls: u64 = sorted_modes.iter().map(|(_, c)| **c).sum();

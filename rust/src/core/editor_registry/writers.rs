@@ -969,8 +969,7 @@ fn backup_invalid_file(path: &std::path::Path) -> Result<(), String> {
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_nanos());
     let bak = parent.join(format!("{filename}.lean-ctx.invalid.{pid}.{nanos}.bak"));
     std::fs::rename(path, bak).map_err(|e| e.to_string())?;
     Ok(())

@@ -77,6 +77,5 @@ pub fn discover_tools(query: &str) -> String {
 pub fn is_full_mode() -> bool {
     std::env::var("LEAN_CTX_FULL_TOOLS").is_ok()
         || std::env::var("LEAN_CTX_LAZY_TOOLS")
-            .map(|v| v == "0" || v.eq_ignore_ascii_case("false"))
-            .unwrap_or(false)
+            .is_ok_and(|v| v == "0" || v.eq_ignore_ascii_case("false"))
 }

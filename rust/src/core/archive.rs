@@ -264,7 +264,7 @@ pub fn disk_usage_bytes() -> u64 {
         for dir_entry in dirs.flatten() {
             if let Ok(files) = std::fs::read_dir(dir_entry.path()) {
                 for file in files.flatten() {
-                    total += file.metadata().map(|m| m.len()).unwrap_or(0);
+                    total += file.metadata().map_or(0, |m| m.len());
                 }
             }
         }

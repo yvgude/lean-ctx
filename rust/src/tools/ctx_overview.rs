@@ -266,9 +266,7 @@ fn truncate_start_char_boundary(s: &str, max_tail_bytes: usize) -> usize {
 }
 
 fn file_line_count(path: &str) -> usize {
-    std::fs::read_to_string(path)
-        .map(|c| c.lines().count())
-        .unwrap_or(0)
+    std::fs::read_to_string(path).map_or(0, |c| c.lines().count())
 }
 
 #[cfg(test)]

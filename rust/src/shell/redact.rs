@@ -84,8 +84,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
 }
 
 fn cleanup_old_tee_logs(tee_dir: &std::path::Path) {
-    let cutoff =
-        std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(24 * 60 * 60));
+    let cutoff = std::time::SystemTime::now().checked_sub(std::time::Duration::from_hours(24));
     let Some(cutoff) = cutoff else { return };
 
     if let Ok(entries) = std::fs::read_dir(tee_dir) {
