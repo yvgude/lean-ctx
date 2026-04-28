@@ -291,8 +291,8 @@ impl ServerHandler for LeanCtxServer {
 
         let tool_start = std::time::Instant::now();
         let mut result_text = {
-            use std::panic::AssertUnwindSafe;
             use futures::FutureExt;
+            use std::panic::AssertUnwindSafe;
             match AssertUnwindSafe(self.dispatch_tool(name, args, minimal))
                 .catch_unwind()
                 .await
