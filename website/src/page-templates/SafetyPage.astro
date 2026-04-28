@@ -5,102 +5,6 @@ import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/uti
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
-
-const architectureCards = [
-  {
-    title: t('safety.architectureLocal'),
-    desc: t('safety.architectureLocalDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25A2.25 2.25 0 015.25 3h13.5A2.25 2.25 0 0121 5.25z"/></svg>`,
-    color: 'rgba(52, 211, 153, 0.25)',
-    bg: 'rgba(52, 211, 153, 0.08)',
-  },
-  {
-    title: t('safety.architectureFallback'),
-    desc: t('safety.architectureFallbackDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>`,
-    color: 'rgba(96, 165, 250, 0.25)',
-    bg: 'rgba(96, 165, 250, 0.08)',
-  },
-  {
-    title: t('safety.architectureReadonly'),
-    desc: t('safety.architectureReadonlyDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`,
-    color: 'rgba(192, 132, 252, 0.25)',
-    bg: 'rgba(192, 132, 252, 0.08)',
-  },
-];
-
-const securityCards = [
-  {
-    title: t('safety.securityPathGuard'),
-    desc: t('safety.securityPathGuardDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>`,
-    color: 'rgba(251, 191, 36, 0.25)',
-    bg: 'rgba(251, 191, 36, 0.08)',
-  },
-  {
-    title: t('safety.securitySandbox'),
-    desc: t('safety.securitySandboxDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>`,
-    color: 'rgba(244, 114, 182, 0.25)',
-    bg: 'rgba(244, 114, 182, 0.08)',
-  },
-  {
-    title: t('safety.securityNoNetwork'),
-    desc: t('safety.securityNoNetworkDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418"/></svg>`,
-    color: 'rgba(129, 140, 248, 0.25)',
-    bg: 'rgba(129, 140, 248, 0.08)',
-  },
-];
-
-const testingCards = [
-  {
-    title: t('safety.testingTests'),
-    desc: t('safety.testingTestsDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
-    color: 'rgba(52, 211, 153, 0.25)',
-    bg: 'rgba(52, 211, 153, 0.08)',
-  },
-  {
-    title: t('safety.testingClippy'),
-    desc: t('safety.testingClippyDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>`,
-    color: 'rgba(251, 191, 36, 0.25)',
-    bg: 'rgba(251, 191, 36, 0.08)',
-  },
-  {
-    title: t('safety.testingCi'),
-    desc: t('safety.testingCiDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3"/></svg>`,
-    color: 'rgba(96, 165, 250, 0.25)',
-    bg: 'rgba(96, 165, 250, 0.08)',
-  },
-];
-
-const transparencyCards = [
-  {
-    title: t('safety.transparencyOpenSource'),
-    desc: t('safety.transparencyOpenSourceDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5"/></svg>`,
-    color: 'rgba(192, 132, 252, 0.25)',
-    bg: 'rgba(192, 132, 252, 0.08)',
-  },
-  {
-    title: t('safety.transparencyNoTelemetry'),
-    desc: t('safety.transparencyNoTelemetryDesc'),
-    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>`,
-    color: 'rgba(244, 114, 182, 0.25)',
-    bg: 'rgba(244, 114, 182, 0.08)',
-  },
-];
-
-const sections = [
-  { title: t('safety.architectureTitle'), cards: architectureCards },
-  { title: t('safety.securityTitle'), cards: securityCards },
-  { title: t('safety.testingTitle'), cards: testingCards },
-  { title: t('safety.transparencyTitle'), cards: transparencyCards },
-];
 ---
 
 <BaseLayout
@@ -108,13 +12,17 @@ const sections = [
   description={t('safety.metaDescription')}
   breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('safety.title'), url: lp('/safety/') }]}>
 
+<!-- ═══════ HERO ═══════ -->
 <section class="section-hero">
   <div class="content-grid">
     <div class="animate-entrance">
-      <p class="fluid-label text-accent" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">{t('safety.labelSafety')}</p>
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        {t('safety.heroLabel')}
+      </p>
     </div>
-    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1rem;">
-      {t('safety.title')}
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      {t('safety.heroTitlePre')}<br/>
+      <span class="gradient-text">{t('safety.heroTitleHighlight')}</span>
     </h1>
     <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
       {t('safety.heroSubtitle')}
@@ -122,30 +30,278 @@ const sections = [
   </div>
 </section>
 
-{sections.map((section, si) => (
-  <Fragment>
-    <div class="section-divider content-grid"></div>
-    <section class="relative section-y">
-      <div class="content-grid">
-        <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
-          {section.title}
-        </h2>
-        <div class={`grid grid-cols-1 ${section.cards.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-6`}>
-          {section.cards.map((card, ci) => (
-            <div class={`card-surface rounded-xl p-6 animate-entrance stagger-${ci + 1}`}>
-              <div class="flex items-start gap-4 mb-4">
-                <div class="flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center" style={`border: 1px solid ${card.color}; background: ${card.bg};`}>
-                  <Fragment set:html={card.icon} />
-                </div>
-              </div>
-              <h3 class="fluid-h3 font-semibold text-text-bright font-display mb-2">{card.title}</h3>
-              <p class="fluid-sm text-muted">{card.desc}</p>
-            </div>
-          ))}
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ ARCHITECTURE GUARANTEES ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.archLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.archTitle')} <span class="gradient-text">{t('safety.archTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('safety.archDesc')}
+    </p>
+
+    <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent">{t('safety.stat1Value')}</span>
+        <span class="stat-desc">{t('safety.stat1Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-2">{t('safety.stat2Value')}</span>
+        <span class="stat-desc">{t('safety.stat2Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-3">{t('safety.stat3Value')}</span>
+        <span class="stat-desc">{t('safety.stat3Desc')}</span>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.architectureLocal')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.architectureLocalDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.architectureFallback')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.architectureFallbackDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.architectureReadonly')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.architectureReadonlyDesc')}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ SECURITY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.secLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.secTitle')} <span class="gradient-text">{t('safety.secTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('safety.secDesc')}
+    </p>
+
+    <div class="animate-entrance">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-muted text-[11px] ml-2 font-mono">{t('safety.secTerminalLabel')}</span>
+        </div>
+        <div class="px-4 sm:px-6 py-4 sm:py-5">
+          <pre class="text-[11px] sm:text-[13px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">$</span> <span class="text-text-bright">ctx_read</span>(<span class="text-accent">"../../etc/passwd"</span>)
+
+<span class="text-red-400 font-bold">ERROR: Path traversal blocked</span>
+  <span class="text-muted/40">├─ Requested: ../../etc/passwd</span>
+  <span class="text-muted/40">├─ Resolved:  /etc/passwd</span>
+  <span class="text-muted/40">└─ Allowed:   /home/user/project/**</span>
+
+<span class="text-muted/60">$</span> <span class="text-text-bright">ctx_read</span>(<span class="text-accent">"src/main.rs"</span>)
+
+<span class="text-accent font-bold">✓ Reading src/main.rs</span> <span class="text-muted">(mode: auto)</span>
+  <span class="text-muted/40">→ 42 lines, 1.2 KB → compressed to 18 tokens</span></pre>
         </div>
       </div>
-    </section>
-  </Fragment>
-))}
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.securityPathGuard')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.securityPathGuardDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.securitySandbox')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.securitySandboxDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.securityNoNetwork')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.securityNoNetworkDesc')}</p>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <a href={lp('/docs/getting-started')} class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium">
+        {t('safety.secLink')}
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ TESTING & QUALITY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.testLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.testTitle')} <span class="gradient-text">{t('safety.testTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('safety.testDesc')}
+    </p>
+
+    <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent">{t('safety.testStat1Value')}</span>
+        <span class="stat-desc">{t('safety.testStat1Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-2">{t('safety.testStat2Value')}</span>
+        <span class="stat-desc">{t('safety.testStat2Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-3">{t('safety.testStat3Value')}</span>
+        <span class="stat-desc">{t('safety.testStat3Desc')}</span>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.testingTests')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.testingTestsDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.testingClippy')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.testingClippyDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.testingCi')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.testingCiDesc')}</p>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="compare-card">
+        <div class="compare-header compare-header--good">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+          {t('safety.compareTitle')}
+        </div>
+        <div class="compare-body" style="padding: 1.25rem;">
+          <p class="fluid-sm text-muted">{t('safety.compareDesc')}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ TRANSPARENCY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.transLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.transTitle')} <span class="gradient-text">{t('safety.transTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('safety.transDesc')}
+    </p>
+
+    <div class="animate-entrance">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-muted text-[11px] ml-2 font-mono">{t('safety.transTerminalLabel')}</span>
+        </div>
+        <div class="px-4 sm:px-6 py-4 sm:py-5">
+          <pre class="text-[11px] sm:text-[13px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">$</span> <span class="text-text-bright">lean-ctx</span> --version
+
+<span class="text-accent font-bold">lean-ctx 3.4.3</span>
+  <span class="text-muted/40">├─ License:         MIT</span>
+  <span class="text-muted/40">├─ Source:          github.com/yvgude/lean-ctx</span>
+  <span class="text-muted/40">├─ Network calls:   0 (default)</span>
+  <span class="text-muted/40">├─ Telemetry:       disabled</span>
+  <span class="text-muted/40">└─ Data collection: none</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.transparencyOpenSource')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.transparencyOpenSourceDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.transparencyNoTelemetry')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.transparencyNoTelemetryDesc')}</p>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <a href="https://github.com/yvgude/lean-ctx" class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium" target="_blank" rel="noopener">
+        {t('safety.transLink')}
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CTA ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.ctaLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('safety.ctaTitle')} <span class="gradient-text">{t('safety.ctaTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      {t('safety.ctaDesc')}
+    </p>
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('safety.ctaGetStarted')}
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href={lp('/compare')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('safety.ctaCompare')}
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
+  .stat-item { display: flex; flex-direction: column; padding: clamp(1.25rem, 1rem + 1vw, 2rem); background: var(--color-bg); }
+  .stat-number { font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin-bottom: 0.625rem; }
+  .stat-desc { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); color: var(--color-muted); line-height: 1.5; }
+  @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
+  .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
+  .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
+  .compare-header--good { background: rgba(52, 211, 153, 0.04); color: var(--color-accent); }
+  .compare-body { padding: 1.25rem; background: var(--color-surface); }
+</style>
 
 </BaseLayout>

@@ -7,206 +7,251 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
 const rows = [
-  { label: t('compare.rowTokenSavings'), noTool: t('compare.rowTokenNoTool'), manual: t('compare.rowTokenManual'), leanCtx: t('compare.rowTokenLeanCtx'), highlight: true },
-  { label: t('compare.rowSetup'),        noTool: t('compare.rowSetupNoTool'), manual: t('compare.rowSetupManual'), leanCtx: t('compare.rowSetupLeanCtx'), highlight: false },
-  { label: t('compare.rowAgents'),       noTool: t('compare.rowAgentsNoTool'), manual: t('compare.rowAgentsManual'), leanCtx: t('compare.rowAgentsLeanCtx'), highlight: true },
-  { label: t('compare.rowCaching'),      noTool: t('compare.rowCachingNoTool'), manual: t('compare.rowCachingManual'), leanCtx: t('compare.rowCachingLeanCtx'), highlight: false },
-  { label: t('compare.rowShell'),        noTool: t('compare.rowShellNoTool'), manual: t('compare.rowShellManual'), leanCtx: t('compare.rowShellLeanCtx'), highlight: true },
-  { label: t('compare.rowAnalysis'),     noTool: t('compare.rowAnalysisNoTool'), manual: t('compare.rowAnalysisManual'), leanCtx: t('compare.rowAnalysisLeanCtx'), highlight: false },
-  { label: t('compare.rowMaintenance'),  noTool: t('compare.rowMaintenanceNoTool'), manual: t('compare.rowMaintenanceManual'), leanCtx: t('compare.rowMaintenanceLeanCtx'), highlight: true },
+  { label: t('compare.rowTokenSavings'), noTool: t('compare.rowTokenNoTool'), manual: t('compare.rowTokenManual'), leanCtx: t('compare.rowTokenLeanCtx'), leanIcon: 'check' },
+  { label: t('compare.rowSetup'),        noTool: t('compare.rowSetupNoTool'), manual: t('compare.rowSetupManual'), leanCtx: t('compare.rowSetupLeanCtx'), leanIcon: 'check' },
+  { label: t('compare.rowAgents'),       noTool: t('compare.rowAgentsNoTool'), manual: t('compare.rowAgentsManual'), leanCtx: t('compare.rowAgentsLeanCtx'), leanIcon: 'check' },
+  { label: t('compare.rowCaching'),      noTool: t('compare.rowCachingNoTool'), manual: t('compare.rowCachingManual'), leanCtx: t('compare.rowCachingLeanCtx'), leanIcon: 'check' },
+  { label: t('compare.rowShell'),        noTool: t('compare.rowShellNoTool'), manual: t('compare.rowShellManual'), leanCtx: t('compare.rowShellLeanCtx'), leanIcon: 'check' },
+  { label: t('compare.rowAnalysis'),     noTool: t('compare.rowAnalysisNoTool'), manual: t('compare.rowAnalysisManual'), leanCtx: t('compare.rowAnalysisLeanCtx'), leanIcon: 'check' },
+  { label: t('compare.rowMaintenance'),  noTool: t('compare.rowMaintenanceNoTool'), manual: t('compare.rowMaintenanceManual'), leanCtx: t('compare.rowMaintenanceLeanCtx'), leanIcon: 'check' },
 ];
 ---
 
 <BaseLayout
-  title={`${t('compare.title')} — LeanCTX`}
+  title={t('compare.title')}
   description={t('compare.metaDescription')}
-  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('compare.title'), url: lp('/compare/') }]}>
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('compare.breadcrumb'), url: lp('/compare/') }]}>
 
-<!-- ═══════ 1. HERO ═══════ -->
+<!-- ═══════ HERO ═══════ -->
 <section class="section-hero">
-  <div class="content-grid" style="max-width: 52rem;">
-    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: 1rem;">{t('compare.labelCompare')}</p>
-    <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1rem;">
-      {t('compare.title')}
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+        {t('compare.heroLabel')}
+      </p>
+    </div>
+    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
+      {t('compare.heroTitle')}<br/>
+      <span class="gradient-text">{t('compare.heroTitleHighlight')}</span>
     </h1>
-    <p class="fluid-body text-muted animate-entrance stagger-2">
-      {t('compare.heroSubtitle')}
+    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      {t('compare.heroDesc')}
     </p>
   </div>
 </section>
 
+
 <div class="section-divider content-grid"></div>
 
-<!-- ═══════ 2. COMPARISON TABLE ═══════ -->
+
+<!-- ═══════ COMPARISON TABLE ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.tableLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.tableTitle')} <span class="gradient-text">{t('compare.tableTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('compare.tableDesc')}
+    </p>
+
+    <div class="animate-entrance stagger-3" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+      <div class="rounded-lg border border-border overflow-hidden" style="min-width: 640px;">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-surface-2">
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('compare.colFeature')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('compare.colNoTool')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('compare.colManual')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label font-display cmp-col-accent">{t('compare.colLeanCtx')}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/30">
+            {rows.map((row) => (
+              <tr>
+                <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{row.label}</td>
+                <td class="px-4 sm:px-5 py-3 text-muted/50 fluid-sm">
+                  <span class="cmp-cell-dim">{row.noTool}</span>
+                </td>
+                <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{row.manual}</td>
+                <td class="px-4 sm:px-5 py-3 fluid-sm">
+                  <span class="cmp-cell-accent">
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                    {row.leanCtx}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ WHEN LEAN-CTX SHINES ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.shinesLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.shinesTitle')} <span class="gradient-text">{t('compare.shinesTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('compare.shinesDesc')}
+    </p>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <div class="cmp-shine-icon">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
+        </div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('compare.shine1Title')}</h3>
+        <p class="fluid-sm text-muted">{t('compare.shine1Desc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <div class="cmp-shine-icon">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
+        </div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('compare.shine2Title')}</h3>
+        <p class="fluid-sm text-muted">{t('compare.shine2Desc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <div class="cmp-shine-icon">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M21.015 4.356v4.992"/></svg>
+        </div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('compare.shine3Title')}</h3>
+        <p class="fluid-sm text-muted">{t('compare.shine3Desc')}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ WHEN YOU DON'T NEED IT ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.whenNotLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.whenNotTitle')} <span class="gradient-text">{t('compare.whenNotTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('compare.whenNotDesc')}
+    </p>
+
+    <div class="animate-entrance stagger-3" style="max-width: 48rem;">
+      <div class="compare-card">
+        <div class="compare-header compare-header--warn">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+          {t('compare.whenNotCardTitle')}
+        </div>
+        <div class="compare-body" style="padding: 1.25rem;">
+          <ul class="cmp-limit-list">
+            <li>{t('compare.whenNot1')}</li>
+            <li>{t('compare.whenNot2')}</li>
+            <li>{t('compare.whenNot3')}</li>
+          </ul>
+          <p class="fluid-sm text-muted" style="margin-top: 1rem;">
+            {t('compare.whenNotConclusion')}
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ REAL NUMBERS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.statsLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.statsTitle')} <span class="gradient-text">{t('compare.statsTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
+      {t('compare.statsDesc')}
+    </p>
+
+    <div class="stats-grid animate-entrance stagger-3">
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent">{t('compare.stat1Value')}</span>
+        <span class="stat-desc">{t('compare.stat1Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-2">{t('compare.stat2Value')}</span>
+        <span class="stat-desc">{t('compare.stat2Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-3">{t('compare.stat3Value')}</span>
+        <span class="stat-desc">{t('compare.stat3Desc')}</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
-      {t('compare.tableTitle')}
+    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.ctaLabel')}
+    </p>
+    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      {t('compare.ctaTitle')} <span class="gradient-text">{t('compare.ctaTitleHighlight')}</span>
     </h2>
-
-    <div class="compare-table-wrap animate-entrance stagger-1">
-      <table class="compare-table">
-        <thead>
-          <tr>
-            <th>{t('compare.colFeature')}</th>
-            <th class="col-no-tool">{t('compare.colNoTool')}</th>
-            <th class="col-manual">{t('compare.colManual')}</th>
-            <th class="col-lean-ctx">{t('compare.colLeanCtx')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr class={row.highlight ? 'row-highlight' : ''}>
-              <td class="cell-feature">{row.label}</td>
-              <td class="cell-no-tool">{row.noTool}</td>
-              <td class="cell-manual">{row.manual}</td>
-              <td class="cell-lean-ctx">{row.leanCtx}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
+      {t('compare.ctaDesc')}
+    </p>
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('compare.ctaGetStarted')}
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href={lp('/safety')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('compare.ctaSafety')}
+      </a>
     </div>
   </div>
 </section>
 
-<div class="section-divider content-grid"></div>
-
-<!-- ═══════ 3. HONEST LIMITATIONS ═══════ -->
-<section class="section-y">
-  <div class="content-grid" style="max-width: 52rem;">
-    <div class="limitations-card animate-entrance">
-      <div class="limitations-icon">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
-        </svg>
-      </div>
-      <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: 0.75rem;">
-        {t('compare.whenNotTitle')}
-      </h2>
-      <p class="fluid-body text-muted" style="margin-bottom: 1.25rem;">
-        {t('compare.whenNotDesc')}
-      </p>
-      <ul class="limitations-list">
-        <li>{t('compare.whenNot1')}</li>
-        <li>{t('compare.whenNot2')}</li>
-        <li>{t('compare.whenNot3')}</li>
-      </ul>
-      <p class="fluid-sm text-muted" style="margin-top: 1.25rem;">
-        {t('compare.whenNotConclusion')}
-      </p>
-    </div>
-  </div>
-</section>
-
-</BaseLayout>
 
 <style>
-  /* ── Comparison Table ─────────────────────── */
-  .compare-table-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .compare-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
-    min-width: 600px;
-  }
-
-  .compare-table thead th {
-    text-align: left;
-    padding: 1rem 1.25rem;
-    border-bottom: 2px solid var(--color-border);
-    font-family: var(--font-display);
-    font-weight: 600;
-    white-space: nowrap;
-    color: var(--color-text-bright);
-  }
-
-  .compare-table thead th.col-lean-ctx {
-    color: var(--color-accent);
-  }
-
-  .compare-table tbody td {
-    padding: 0.875rem 1.25rem;
-    border-bottom: 1px solid var(--color-border);
-    vertical-align: middle;
-    color: var(--color-muted);
-  }
-
-  .compare-table tbody tr:last-child td {
-    border-bottom: none;
-  }
-
-  .compare-table tbody tr.row-highlight {
-    background: var(--color-surface);
-  }
-
-  .cell-feature {
-    font-weight: 500;
-    color: var(--color-text-bright) !important;
-    white-space: nowrap;
-  }
-
-  .cell-no-tool {
-    opacity: 0.5;
-  }
-
-  .cell-manual {
-    color: var(--color-muted);
-  }
-
-  .cell-lean-ctx {
-    color: var(--color-accent) !important;
-    font-weight: 600;
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-  }
-
-  /* ── Limitations Card ─────────────────────── */
-  .limitations-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-left: 3px solid var(--color-accent-3);
-    border-radius: 0.75rem;
-    padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem);
-  }
-
-  .limitations-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: rgba(var(--rgb-accent-3, 251, 191, 36), 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1.25rem;
-    color: var(--color-accent-3);
-  }
-
-  .limitations-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  .limitations-list li {
-    font-size: 0.9375rem;
-    color: var(--color-text);
-    padding-inline-start: 1.5rem;
-    position: relative;
-    line-height: 1.6;
-  }
-
-  .limitations-list li::before {
-    content: '–';
-    position: absolute;
-    left: 0;
-    color: var(--color-accent-3);
-    font-weight: 600;
-  }
+  .cmp-col-accent { color: var(--color-accent); font-weight: 600; }
+  .cmp-cell-dim { opacity: 0.5; }
+  .cmp-cell-accent { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--color-accent); font-weight: 600; font-family: var(--font-mono); font-size: 0.8125rem; }
+  .cmp-shine-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--color-accent); margin-bottom: 0.75rem; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
+  .stat-item { display: flex; flex-direction: column; padding: clamp(1.25rem, 1rem + 1vw, 2rem); background: var(--color-bg); }
+  .stat-number { font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin-bottom: 0.625rem; }
+  .stat-desc { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); color: var(--color-muted); line-height: 1.5; }
+  @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
+  .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
+  .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
+  .compare-header--warn { background: rgba(251, 191, 36, 0.04); color: var(--color-accent-3); }
+  .compare-body { background: var(--color-surface); }
+  .cmp-limit-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.625rem; }
+  .cmp-limit-list li { font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem); color: var(--color-text); padding-inline-start: 1.5rem; position: relative; line-height: 1.6; }
+  .cmp-limit-list li::before { content: '–'; position: absolute; left: 0; color: var(--color-accent-3); font-weight: 600; }
 </style>
+
+</BaseLayout>
