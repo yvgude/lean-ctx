@@ -2,7 +2,7 @@ use super::super::resolve_binary_path;
 
 pub(crate) fn install_jetbrains_hook() {
     let binary = resolve_binary_path();
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     let config_path = home.join(".jb-mcp.json");
     let display_path = "~/.jb-mcp.json";
 

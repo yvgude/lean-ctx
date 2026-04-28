@@ -23,7 +23,9 @@ fn mcp_server_quiet_mode() -> bool {
 /// Silently refresh all hook scripts for agents that are already configured.
 /// Called after updates and on MCP server start to ensure hooks match the current binary version.
 pub fn refresh_installed_hooks() {
-    let Some(home) = dirs::home_dir() else { return };
+    let Some(home) = crate::core::home::resolve_home_dir() else {
+        return;
+    };
 
     let claude_dir = crate::setup::claude_config_dir(&home);
     let claude_hooks = claude_dir.join("hooks/lean-ctx-rewrite.sh").exists()
@@ -222,7 +224,7 @@ pub fn install_project_rules() {
         return;
     }
 
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     if cwd == home {
         eprintln!(
             "  Skipping project files: current directory is your home folder.\n  \
@@ -431,6 +433,7 @@ The workspace has the `lean-ctx` MCP server installed. You MUST prefer lean-ctx 
 ";
 
 pub fn install_agent_hook(agent: &str, global: bool) {
+    let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     match agent {
         "claude" | "claude-code" => install_claude_hook(global),
         "cursor" => install_cursor_hook(global),
@@ -443,35 +446,25 @@ pub fn install_agent_hook(agent: &str, global: bool) {
         "qwen" => install_mcp_json_agent(
             "Qwen Code",
             "~/.qwen/mcp.json",
-            &dirs::home_dir().unwrap_or_default().join(".qwen/mcp.json"),
+            &home.join(".qwen/mcp.json"),
         ),
-        "trae" => install_mcp_json_agent(
-            "Trae",
-            "~/.trae/mcp.json",
-            &dirs::home_dir().unwrap_or_default().join(".trae/mcp.json"),
-        ),
+        "trae" => install_mcp_json_agent("Trae", "~/.trae/mcp.json", &home.join(".trae/mcp.json")),
         "amazonq" => install_mcp_json_agent(
             "Amazon Q Developer",
             "~/.aws/amazonq/mcp.json",
-            &dirs::home_dir()
-                .unwrap_or_default()
-                .join(".aws/amazonq/mcp.json"),
+            &home.join(".aws/amazonq/mcp.json"),
         ),
         "jetbrains" => install_jetbrains_hook(),
         "kiro" => install_kiro_hook(),
         "verdent" => install_mcp_json_agent(
             "Verdent",
             "~/.verdent/mcp.json",
-            &dirs::home_dir()
-                .unwrap_or_default()
-                .join(".verdent/mcp.json"),
+            &home.join(".verdent/mcp.json"),
         ),
         "opencode" => install_opencode_hook(),
-        "aider" => install_mcp_json_agent(
-            "Aider",
-            "~/.aider/mcp.json",
-            &dirs::home_dir().unwrap_or_default().join(".aider/mcp.json"),
-        ),
+        "aider" => {
+            install_mcp_json_agent("Aider", "~/.aider/mcp.json", &home.join(".aider/mcp.json"));
+        }
         "amp" => install_amp_hook(),
         "crush" => install_crush_hook(),
         "hermes" => install_hermes_hook(global),

@@ -33,7 +33,8 @@ pub(super) fn prepare_project_rules_path(global: bool, file_name: &str) -> Optio
     }
 
     let cwd = std::env::current_dir().unwrap_or_default();
-    if !is_inside_git_repo(&cwd) || cwd == dirs::home_dir().unwrap_or_default() {
+    if !is_inside_git_repo(&cwd) || cwd == crate::core::home::resolve_home_dir().unwrap_or_default()
+    {
         eprintln!("  Skipping {file_name}: not inside a git repository or in home directory.");
         return None;
     }

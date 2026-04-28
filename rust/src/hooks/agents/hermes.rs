@@ -23,7 +23,7 @@ Multi-agent: ctx_agent(action=handoff|sync). Diary: ctx_agent(action=diary, cate
 ";
 
 pub(crate) fn install_hermes_hook(global: bool) {
-    let Some(home) = dirs::home_dir() else {
+    let Some(home) = crate::core::home::resolve_home_dir() else {
         tracing::error!("Cannot resolve home directory");
         return;
     };

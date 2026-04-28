@@ -2,7 +2,7 @@ use super::super::{mcp_server_quiet_mode, resolve_binary_path, write_file};
 use super::shared::install_standard_hook_scripts;
 
 pub(crate) fn install_gemini_hook() {
-    let Some(home) = dirs::home_dir() else {
+    let Some(home) = crate::core::home::resolve_home_dir() else {
         tracing::error!("Cannot resolve home directory");
         return;
     };

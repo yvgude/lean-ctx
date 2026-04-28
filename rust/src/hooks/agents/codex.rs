@@ -5,7 +5,7 @@ use super::super::{
 };
 
 pub fn install_codex_hook() {
-    let Some(home) = dirs::home_dir() else {
+    let Some(home) = crate::core::home::resolve_home_dir() else {
         tracing::error!("Cannot resolve home directory");
         return;
     };

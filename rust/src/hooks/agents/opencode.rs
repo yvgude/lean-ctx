@@ -2,7 +2,7 @@ use super::super::{mcp_server_quiet_mode, resolve_binary_path};
 
 pub(crate) fn install_opencode_hook() {
     let binary = resolve_binary_path();
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     let config_path = home.join(".config/opencode/opencode.json");
     let display_path = "~/.config/opencode/opencode.json";
 

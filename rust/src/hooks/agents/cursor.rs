@@ -4,7 +4,7 @@ use super::super::{make_executable, mcp_server_quiet_mode, resolve_binary_path, 
 use super::shared::install_standard_hook_scripts;
 
 pub fn install_cursor_hook(global: bool) {
-    let Some(home) = dirs::home_dir() else {
+    let Some(home) = crate::core::home::resolve_home_dir() else {
         tracing::error!("Cannot resolve home directory");
         return;
     };

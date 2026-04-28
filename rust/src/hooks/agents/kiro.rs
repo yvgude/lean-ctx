@@ -1,7 +1,7 @@
 use super::super::{install_mcp_json_agent, write_file, KIRO_STEERING_TEMPLATE};
 
 pub(crate) fn install_kiro_hook() {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::core::home::resolve_home_dir().unwrap_or_default();
 
     install_mcp_json_agent(
         "AWS Kiro",

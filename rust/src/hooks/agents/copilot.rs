@@ -46,7 +46,9 @@ fn install_copilot_pretooluse_hook(global: bool) {
     });
 
     let hook_path = if global {
-        let Some(home) = dirs::home_dir() else { return };
+        let Some(home) = crate::core::home::resolve_home_dir() else {
+            return;
+        };
         let dir = home.join(".github").join("hooks");
         let _ = std::fs::create_dir_all(&dir);
         dir.join("hooks.json")

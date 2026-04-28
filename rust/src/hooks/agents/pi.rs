@@ -63,7 +63,9 @@ pub(crate) fn install_pi_hook(global: bool) {
 }
 
 fn write_pi_mcp_config() {
-    let Some(home) = dirs::home_dir() else { return };
+    let Some(home) = crate::core::home::resolve_home_dir() else {
+        return;
+    };
 
     let mcp_config_path = home.join(".pi/agent/mcp.json");
 

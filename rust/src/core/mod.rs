@@ -37,6 +37,7 @@ pub mod graph_index;
 pub mod graph_provider;
 pub mod handoff_ledger;
 pub mod heatmap;
+pub mod home;
 pub mod hybrid_search;
 pub mod import_resolver;
 pub mod index_orchestrator;
