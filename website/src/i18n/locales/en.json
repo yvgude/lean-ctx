@@ -3007,7 +3007,6 @@
   "dash.onboardDismiss": "Got it, let's go!",
   "cloud.step1OptionWeb": "→ Register at leanctx.com/dashboard",
   "cloud.heroDashboardCta": "Open Dashboard",
-
   "index.ecoPricingNote": "Free. Optional cloud login for sync and dashboard.",
   "index.testimonial1Text": "“I installed lean-ctx and my Cursor sessions immediately felt snappier. Files that used to eat 2K tokens now cost 50.”",
   "index.testimonial2Text": "“lean-ctx gain shows I’ve saved $48 in one week. That’s real money. And the AI responses are actually better because it gets cleaner context.”",
@@ -3024,19 +3023,16 @@
   "index.demoMetricRereadCost": "Re-read cost",
   "index.demoMetricEstCostSaved": "Est. cost saved",
   "index.demoAskAnythingPlaceholder": "Ask anything…",
-
   "mcpServer.autoReturn": "Best mode for context",
   "mcpServer.autoWhen": "Default — lean-ctx picks optimal strategy based on file type, size, and task",
   "mcpServer.referenceReturn": "Cross-reference context",
   "mcpServer.referenceWhen": "Related types, callers, and dependencies for the target symbol",
-
   "docs.cliReference.modeAutoOutput": "Best mode for context",
   "docs.cliReference.modeAutoUse": "Default when no mode specified — lean-ctx picks optimal strategy",
   "docs.cliReference.modeTaskOutput": "Task-filtered content",
   "docs.cliReference.modeTaskUse": "IB-scored extraction based on current intent — only relevant code for the active task",
   "docs.cliReference.modeReferenceOutput": "Cross-reference context",
   "docs.cliReference.modeReferenceUse": "Related types, callers, and dependencies for the target symbol or function",
-
   "docs.cliReference.gainEngineDesc": "Powered by the <strong>GainEngine</strong> — a unified observability API that consolidates compression metrics, cost tracking, and session analytics into a single <strong>GainScore</strong> (0–100). Uses embedded <strong>ModelPricing</strong> (no network required) and a <strong>TaskClassifier</strong> with 13 categories.",
   "docs.cliReference.gainScoreFlagDesc": "GainScore (0–100) combining compression ratio, cost efficiency, quality, and consistency",
   "docs.cliReference.gainCostFlagDesc": "Cost breakdown per model with embedded pricing (supports <code>--model=&lt;name&gt;</code> filter)",
@@ -3051,7 +3047,6 @@
   "docs.cliReference.gainModifierLimitDesc": "Max rows in ranked tables (default: 10)",
   "docs.cliReference.gainModifierResetDesc": "Clear all stats data and start fresh",
   "docs.cliReference.ctxGainToolDesc": "The <code>ctx_gain</code> MCP tool provides the same analytics programmatically — AI agents can query token savings, cost breakdowns, and GainScore directly during a session. See <a href=\"{toolsPath}\">MCP Tools Reference</a>.",
-
   "dash.emailLabel": "Email",
   "dash.togglePasswordVisibility": "Toggle password visibility",
   "dash.errEnterEmail": "Please enter your email.",
@@ -3067,11 +3062,9 @@
   "dash.errInvalidResetToken": "Invalid reset token.",
   "dash.infoResetOk": "Password reset! You can now sign in.",
   "dash.infoEmailVerified": "Email verified! You can now sign in.",
-
   "cloudAuth.redirectTitle": "Redirecting…",
   "cloudAuth.redirectDesc": "Redirecting to dashboard",
   "cloudAuth.redirectBody": "Redirecting to dashboard…",
-
   "privacy.title": "Privacy Policy",
   "privacy.metaDescription": "LeanCTX Privacy Policy. Learn what data lean-ctx collects, how it is used, and your rights.",
   "privacy.labelLegal": "Legal",
@@ -3083,7 +3076,6 @@
   "privacy.tldrBullet4": "<strong>leanctx.com website</strong> — standard web server logs (IP, browser). No tracking pixels, no third-party analytics.",
   "privacy.englishOnlyTitle": "Full policy text",
   "privacy.englishOnlyNote": "The full privacy policy text is currently available in English: <a href=\"/privacy\">Open English privacy policy</a>.",
-
   "dash.kpiTokensSaved": "Tokens Saved",
   "dash.kpiCostSaved": "Cost Saved",
   "dash.kpiToolCalls": "Tool Calls",
@@ -3163,7 +3155,6 @@
   "dash.modelsAggressiveBest": "Verbose configs (YAML, XML)",
   "dash.modelsEntropyDesc": "Shannon + Jaccard filtering",
   "dash.modelsEntropyBest": "Data-heavy files, logs",
-
   "docs.sidebarGettingStarted": "Getting Started",
   "docs.sidebarReference": "Reference",
   "docs.sidebarOverview": "Overview",
@@ -3172,7 +3163,6 @@
   "docs.sidebarToolApi": "Tool API Reference",
   "docs.sidebarTreeSitter": "Tree-sitter Engine",
   "docs.sidebarTokenGuide": "Token Cost Guide",
-
   "features.eyebrow": "Your Token Budget, Optimized",
   "features.heading": "{count} tools that <span class=\"gradient-text-green\">cut your token spend.</span>",
   "features.desc": "Every tool reduces what gets sent to the LLM. Fewer tokens billed, more messages in your quota, lower API costs.",
@@ -3192,7 +3182,6 @@
   "features.lctxDesc": "Multi-agent launcher. Auto-detects Cursor, Claude, Codex, Gemini, Windsurf, Cline and configures lean-ctx.",
   "features.gainDesc": "Visual terminal dashboard with lifetime savings and USD cost tracking.",
   "features.initDesc": "23 shell aliases installed globally with --global. macOS, Linux, Windows.",
-
   "power.beyondCompression": "Beyond Compression",
   "power.heading": "Not just smaller. <span class=\"gradient-text-green\">Sharper.</span>",
   "power.desc": "lean-ctx goes beyond token compression. It understands your project structure, launches any AI agent with one command, and installs without friction.",
@@ -3219,29 +3208,21 @@
   "power.installBrew": "Homebrew (macOS/Linux)",
   "power.installCargo": "From source via crates.io",
   "power.installAur": "Arch Linux (AUR)",
-
   "premium.eyebrow": "Premium Features",
   "premium.heading": "Enterprise-grade capabilities. <span class=\"gradient-text-green\">Open source.</span>",
   "premium.desc": "Advanced features for professional AI development teams — cache optimization, automated code review, ghost token detection, and content-defined chunking.",
-
   "premium.cacheSafeTitle": "Cache-Safe Guarantee",
   "premium.cacheSafeDesc": "Stable output ordering maximizes prompt cache hits. Imports and type definitions are emitted before function bodies, so your LLM provider's KV-cache stays warm. Up to 90% cheaper API calls.",
-
   "premium.ghostTitle": "Ghost Token Detection",
   "premium.ghostDesc": "Find hidden token waste with <code>lean-ctx ghost</code>. Identifies unoptimized shell commands, redundant file reads, and oversized tool results — then shows exactly how much you could save.",
-
   "premium.reviewTitle": "Automated Code Review",
   "premium.reviewDesc": "ctx_review combines impact analysis, caller tracking, and test discovery into one structured workflow. Get a review checklist, find affected downstream files, and locate related tests — automatically.",
-
   "premium.chunkingTitle": "Content-Defined Chunking",
   "premium.chunkingDesc": "Rabin-Karp rolling hash creates stable chunk boundaries that survive small edits. Unchanged chunks stay in the prompt cache while only modified portions are re-sent.",
-
   "premium.searchTitle": "Offline Vector Search",
   "premium.searchDesc": "Local embedding engine for privacy-first semantic code search. BM25 + dense hybrid retrieval, no external API needed. Your code never leaves your machine.",
-
   "premium.skillsTitle": "Universal Agent Integration",
   "premium.skillsDesc": "Works with Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline, and 24+ more agents. One-command setup, automatic MCP configuration, and cross-agent session continuity.",
-
   "compare.title": "How lean-ctx Compares",
   "compare.breadcrumb": "Compare",
   "compare.metaDescription": "Honest comparison of lean-ctx with manual context management and no-tool approaches. See where lean-ctx shines and where it's not needed.",
@@ -3320,7 +3301,6 @@
   "compare.ctaDesc": "Install lean-ctx in under a minute and see the difference in your next coding session.",
   "compare.ctaGetStarted": "Get Started",
   "compare.ctaSafety": "Safety & Reliability",
-
   "safety.title": "Safety & Reliability",
   "safety.metaDescription": "How lean-ctx ensures your code stays safe. Local-only processing, graceful degradation, 1400+ tests, and zero data collection.",
   "safety.labelSafety": "Safety",
@@ -3394,7 +3374,6 @@
   "safety.ctaDesc": "Install lean-ctx in under a minute and see how it protects your workflow while dramatically reducing token usage.",
   "safety.ctaGetStarted": "Get Started",
   "safety.ctaCompare": "Compare Alternatives",
-
   "limitations.metaTitle": "Known Limitations — lean-ctx",
   "limitations.metaDescription": "What lean-ctx can and cannot do. Honest documentation of compression limits, language support, and architecture constraints.",
   "limitations.breadcrumb": "Limitations",
@@ -3402,7 +3381,6 @@
   "limitations.heroTitle": "Known",
   "limitations.heroTitleHighlight": "Limitations",
   "limitations.heroDesc": "We believe in honest documentation. Here's what lean-ctx does well — and where its boundaries are.",
-
   "limitations.compressionLabel": "Compression",
   "limitations.compressionTitle": "Compression",
   "limitations.compressionTitleHighlight": "Limits",
@@ -3424,7 +3402,6 @@
   "limitations.compressionCard1Desc": "Actual savings depend on code density, comment ratio, and repetition. Well-structured code with clear signatures compresses better than dense, uncommented one-liners.",
   "limitations.compressionCard2Title": "Cached Re-reads",
   "limitations.compressionCard2Desc": "When lean-ctx has already seen a file and it hasn't changed, re-reads cost roughly 13 tokens regardless of file size. This is the source of the 99% figure.",
-
   "limitations.languageLabel": "Languages",
   "limitations.languageTitle": "Language",
   "limitations.languageTitleHighlight": "Support",
@@ -3443,7 +3420,6 @@
   "limitations.languageRow2Languages": "All other languages",
   "limitations.languageRow2Compression": "Line-based compression",
   "limitations.languageBasicExplain": "Basic tier still delivers meaningful compression — it just can't extract function signatures or prune AST nodes. Most files still see 40–70% savings through deduplication and entropy filtering.",
-
   "limitations.archLabel": "Architecture",
   "limitations.archTitle": "Architecture",
   "limitations.archTitleHighlight": "Constraints",
@@ -3457,7 +3433,6 @@
   "limitations.archCard3Title": "Memory Scaling",
   "limitations.archCard3Desc": "The in-memory cache grows with your project. Very large monorepos (100k+ files) may benefit from tuning cache limits.",
   "limitations.archCard3Context": "Configurable via lean-ctx settings.",
-
   "limitations.notReplaceLabel": "Honest Context",
   "limitations.notReplaceTitle": "Not a",
   "limitations.notReplaceTitleHighlight": "Replacement",
@@ -3467,11 +3442,68 @@
   "limitations.notReplaceItem2": "Proper code organization — well-structured code compresses better",
   "limitations.notReplaceItem3": "Version control — lean-ctx doesn't manage code changes or history",
   "limitations.notReplaceSummary": "lean-ctx optimizes delivery, not replaces fundamentals.",
-
   "limitations.ctaLabel": "The full picture",
   "limitations.ctaTitle": "See what lean-ctx",
   "limitations.ctaTitleHighlight": "can do",
   "limitations.ctaDesc": "Now that you know the boundaries, explore what lean-ctx delivers within them — security guarantees, performance benchmarks, and competitive comparisons.",
   "limitations.ctaSafety": "Safety & Security",
-  "limitations.ctaCompare": "Compare Approaches"
+  "limitations.ctaCompare": "Compare Approaches",
+  "docsProfiles.title": "Context Profiles",
+  "docsProfiles.description": "Declarative, version-controlled context strategies for lean-ctx",
+  "docsProfiles.intro": "Context Profiles let you configure how lean-ctx processes content for different scenarios: exploration, debugging, hotfixes, CI, code review, and more. Think of it as <strong>\"Context as Code\"</strong> — version-controlled strategies your team can share.",
+  "docsProfiles.whatTitle": "What Are Profiles?",
+  "docsProfiles.whatDesc": "A profile is a TOML file that controls read modes, compression settings, token budgets, pipeline layers, and autonomy behavior. Profiles can inherit from other profiles and override specific fields.",
+  "docsProfiles.builtinTitle": "Built-in Profiles",
+  "docsProfiles.builtinDesc": "lean-ctx ships with 5 built-in profiles optimized for common workflows:",
+  "docsProfiles.explorationName": "exploration",
+  "docsProfiles.explorationDesc": "Broad context for understanding codebases. Map mode, 200K token budget, cache preferred.",
+  "docsProfiles.bugfixName": "bugfix",
+  "docsProfiles.bugfixDesc": "Focused debugging with auto mode. Terse output, 100K token budget, 10-call checkpoints.",
+  "docsProfiles.hotfixName": "hotfix",
+  "docsProfiles.hotfixDesc": "Minimal context for urgent fixes. Signatures mode, ultra-compact output, 30K tokens, $1 cost cap.",
+  "docsProfiles.ciDebugName": "ci-debug",
+  "docsProfiles.ciDebugDesc": "CI/CD debugging with 200 shell invocations. Terse output, 150K token budget.",
+  "docsProfiles.reviewName": "review",
+  "docsProfiles.reviewDesc": "Code review with broad read-only context. Map mode, compact CRP, 150K token budget.",
+  "docsProfiles.activateTitle": "Activating a Profile",
+  "docsProfiles.activateEnv": "Set the <code>LEAN_CTX_PROFILE</code> environment variable:",
+  "docsProfiles.activateCli": "Or use the CLI:",
+  "docsProfiles.activateMcp": "Or switch at runtime via MCP:",
+  "docsProfiles.customTitle": "Creating Custom Profiles",
+  "docsProfiles.customDesc": "Create a profile TOML file in <code>.lean-ctx/profiles/</code> (project-local) or <code>~/.lean-ctx/profiles/</code> (global):",
+  "docsProfiles.customCli": "Or use the CLI to scaffold a profile:",
+  "docsProfiles.inheritTitle": "Profile Inheritance",
+  "docsProfiles.inheritDesc": "Profiles can inherit from any other profile using the <code>inherits</code> field. Child values override parent values; unset fields fall through to the parent.",
+  "docsProfiles.schemaTitle": "Profile Schema",
+  "docsProfiles.schemaDesc": "A complete profile has these sections:",
+  "docsProfiles.schemaMeta": "<strong>[profile]</strong> — name, inherits, description",
+  "docsProfiles.schemaRead": "<strong>[read]</strong> — default_mode, max_tokens_per_file, prefer_cache",
+  "docsProfiles.schemaCompression": "<strong>[compression]</strong> — crp_mode, output_density, entropy_threshold",
+  "docsProfiles.schemaBudget": "<strong>[budget]</strong> — max_context_tokens, max_shell_invocations, max_cost_usd",
+  "docsProfiles.schemaPipeline": "<strong>[pipeline]</strong> — intent, relevance, compression, translation (boolean toggles)",
+  "docsProfiles.schemaAutonomy": "<strong>[autonomy]</strong> — auto_dedup, checkpoint_interval",
+  "docsProfiles.cliTitle": "CLI Reference",
+  "docsProfiles.cliList": "<code>lean-ctx profile list</code> — Show all available profiles",
+  "docsProfiles.cliShow": "<code>lean-ctx profile show &lt;name&gt;</code> — Display profile details",
+  "docsProfiles.cliDiff": "<code>lean-ctx profile diff &lt;a&gt; &lt;b&gt;</code> — Compare two profiles",
+  "docsProfiles.cliCreate": "<code>lean-ctx profile create &lt;name&gt;</code> — Create a new profile",
+  "docsProfiles.cliSet": "<code>lean-ctx profile set &lt;name&gt;</code> — Show activation instructions",
+  "docsProfiles.resolutionTitle": "Resolution Order",
+  "docsProfiles.resolutionDesc": "Profiles are resolved in this order:",
+  "docsProfiles.resolution1": "<code>LEAN_CTX_PROFILE</code> environment variable",
+  "docsProfiles.resolution2": "Project-local <code>.lean-ctx/profiles/&lt;name&gt;.toml</code>",
+  "docsProfiles.resolution3": "Global <code>~/.lean-ctx/profiles/&lt;name&gt;.toml</code>",
+  "docsProfiles.resolution4": "Built-in defaults",
+  "docsProfiles.sidebarProfiles": "Context Profiles",
+  "docsProfiles.sidebarOverview": "Overview",
+  "docsProfiles.sidebarBuiltin": "Built-in Profiles",
+  "docsProfiles.sidebarActivation": "Activation",
+  "docsProfiles.sidebarCustom": "Custom Profiles",
+  "docsProfiles.sidebarInheritance": "Inheritance",
+  "docsProfiles.sidebarSchema": "Profile Schema",
+  "docsProfiles.sidebarCli": "CLI Reference",
+  "docsProfiles.sidebarResolution": "Resolution Order",
+  "docsProfiles.sidebarRelated": "Related",
+  "docsProfiles.sidebarConfiguration": "Configuration",
+  "docsProfiles.sidebarTools": "MCP Tools"
 }

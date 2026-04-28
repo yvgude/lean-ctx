@@ -7,7 +7,6 @@
   "badges.saver10m": "Token Saver 10M",
   "badges.saver1m": "Token Saver 1M",
   "badges.teamBuilder": "Team Builder",
-
   "benchmark.advAstEffect": "Language-aware pruning via Tree-sitter — removes function bodies, comments, and boilerplate while preserving API signatures",
   "benchmark.advCumulative": "These stages are <strong>cumulative</strong> — applied in sequence, they can reduce a 1000-line file to under 50 tokens while preserving all task-relevant information. The pipeline is fully automatic and requires no configuration.",
   "benchmark.advEffect": "Effect",
@@ -139,7 +138,6 @@
   "benchmark.whyLabel": "তথ্য ঘনত্বের নীতি",
   "benchmark.whyTitle": "কম Token কেন =",
   "benchmark.whyTitleHighlight": "উচ্চতর সিগন্যাল ঘনত্ব",
-
   "blog.mcpOverhead.broaderLi1": "<strong>সংকুচিত টুল উপস্থাপনা</strong> যা কম token-এ অর্থ প্রকাশ করে",
   "blog.mcpOverhead.broaderLi2": "<strong>টুল একত্রীকরণ</strong> যা সংজ্ঞার সংখ্যা কমায়",
   "blog.mcpOverhead.broaderLi3": "<strong>কনটেক্সট-সচেতন লোডিং</strong> যা প্রতি অনুরোধে শুধু প্রাসঙ্গিক টুল পাঠায়",
@@ -172,7 +170,6 @@
   "blog.mcpOverhead.whyExpensiveP1": "MCP নমনীয়তার জন্য ডিজাইন করা হয়েছিল, দক্ষতার জন্য নয়। প্রতিটি টুল সংজ্ঞায় থাকে:",
   "blog.mcpOverhead.whyExpensiveP2": "তুলনার জন্য, Cloudflare-এর \"Code Mode\" গবেষণায় একই ধরনের প্যাটার্ন পাওয়া গেছে: AI টুলগুলো তাদের কনটেক্সট বাজেটের বেশিরভাগ প্রকৃত কোড বোঝার পরিবর্তে প্রোটোকল ওভারহেডে ব্যয় করে।",
   "blog.mcpOverhead.whyExpensiveTitle": "কেন MCP টুল সংজ্ঞা এত ব্যয়বহুল",
-
   "cli.benchmarkRunDesc": "tiktoken (o200k_base) ব্যবহার করে আপনার কোডবেসে প্রকৃত token সাশ্রয় পরিমাপ করে। সঠিক সংখ্যা, কোনো অনুমান নয়।",
   "cli.cacheTableDesc": "CLI ফাইল ক্যাশ পরিচালনা করুন — পরিসংখ্যান দেখুন, এন্ট্রি সাফ করুন, বা নির্দিষ্ট পাথ অবৈধ করুন",
   "cli.compressTableDesc": "lean-ctx-এর মাধ্যমে যেকোনো শেল কমান্ড আউটপুট কম্প্রেস করুন",
@@ -220,7 +217,6 @@
   "cli.tableDescription": "বিবরণ",
   "cli.title": "CLI কমান্ড — LeanCTX",
   "cli.wrappedDesc": "আপনার token সাশ্রয়ের \"Spotify Wrapped\"। আপনার লাইফটাইম পরিসংখ্যান, শীর্ষ কমান্ড এবং ব্যক্তিগত কম্প্রেশন অর্জনসহ সুন্দর, শেয়ারযোগ্য রিপোর্ট।",
-
   "cloud.breadcrumb": "Cloud",
   "cloud.collect1": "File extension (.rs, .tsx, ...)",
   "cloud.collect2": "File size bucket (2k-10k, ...)",
@@ -297,15 +293,12 @@
   "cloud.step3Title": "Track & improve",
   "cloud.weCollect": "We collect",
   "cloud.weNeverCollect": "We never collect",
-
   "cloudAuth.redirectBody": "ড্যাশবোর্ডে রিডাইরেক্ট হচ্ছে…",
   "cloudAuth.redirectDesc": "ড্যাশবোর্ডে রিডাইরেক্ট",
   "cloudAuth.redirectTitle": "রিডাইরেক্ট হচ্ছে…",
-
   "common.getStarted": "শুরু করুন",
   "common.home": "হোম",
   "common.starOnGithub": "GitHub-এ Star দিন",
-
   "community.activeUsers": "active users",
   "community.contributions": "contributions",
   "community.joinCloud": "Join Cloud",
@@ -317,7 +310,6 @@
   "community.titleHighlight": "Together",
   "community.tokensSaved": "tokens saved globally",
   "community.viewLeaderboard": "View Leaderboard",
-
   "compatibility.ctaDesc": "একটি ইনস্টল, একটি <code>lean-ctx setup</code>, এবং আপনার ব্যবহৃত প্রতিটি AI টুল token সাশ্রয় শুরু করে। প্রতি-টুল কনফিগারেশনের প্রয়োজন নেই।",
   "compatibility.ctaTitle": "আপনার",
   "compatibility.ctaTitleHighlight": "টুলগুলোতে কাজ করে। আজই।",
@@ -359,7 +351,6 @@
   "compatibility.sublimeName": "Sublime Text",
   "compatibility.sublimeSetup": "lean-ctx init --agent sublime",
   "compatibility.title": "সামঞ্জস্যতা — LeanCTX",
-
   "dash.backToLogin": "Back to sign in",
   "dash.breadcrumb": "Dashboard",
   "dash.bugMemory": "বাগ মেমোরি",
@@ -509,7 +500,6 @@
   "dash.viewPerformance": "কর্মক্ষমতা",
   "dash.viewSettings": "Settings",
   "dash.viewStats": "Stats",
-
   "docs.analytics.activeAgentsContent": "<code>ctx_agent</code>-এর মাধ্যমে বর্তমানে নিবন্ধিত AI এজেন্ট। এজেন্টের নাম, ভূমিকা, স্ট্যাটাস এবং হার্টবিট দেখায়।",
   "docs.analytics.agentsEndpointData": "সক্রিয় এজেন্ট রেজিস্ট্রি",
   "docs.analytics.apiDesc": "ড্যাশবোর্ড একটি JSON API সরবরাহ করে যা আপনি সরাসরি কুয়েরি করতে পারেন:",
@@ -1535,7 +1525,6 @@
   "docs.treeSitter.thTreeSitter": "tree-sitter (নতুন)",
   "docs.treeSitter.title": "Tree-sitter ইঞ্জিন",
   "docs.treeSitter.whyTreeSitter": "কেন tree-sitter?",
-
   "docsAnalytics.activeAgentsContent": "<code>ctx_agent</code>-এর মাধ্যমে বর্তমানে নিবন্ধিত AI এজেন্ট। এজেন্টের নাম, ভূমিকা, স্ট্যাটাস এবং হার্টবিট দেখায়।",
   "docsAnalytics.agentsEndpointData": "সক্রিয় এজেন্ট রেজিস্ট্রি",
   "docsAnalytics.apiEndpointsDesc": "ড্যাশবোর্ড একটি JSON API পরিবেশন করে যা আপনি সরাসরি কোয়েরি করতে পারেন:",
@@ -1622,7 +1611,6 @@
   "docsAnalytics.whatNumbersMeanTitle": "সংখ্যাগুলোর অর্থ কী",
   "docsAnalytics.wrappedDesc": "আপনার token সাশ্রয়ের জন্য \"Spotify Wrapped\"। আপনার ব্যক্তিগত পরিসংখ্যান, শীর্ষ কমান্ড এবং কম্প্রেশন অর্জনসহ একটি শেয়ারযোগ্য রিপোর্ট কার্ড তৈরি করে।",
   "docsAnalytics.wrappedTitle": "র‍্যাপড রিপোর্ট — <code>lean-ctx wrapped</code>",
-
   "docsCliReference.aggressiveOutput": "সিনট্যাক্স-বিযুক্ত বিষয়বস্তু",
   "docsCliReference.aggressiveSavings": "60-80%",
   "docsCliReference.aggressiveUseCase": "লজিক সংরক্ষণ করে সর্বোচ্চ কম্প্রেশন।",
@@ -1776,7 +1764,6 @@
   "docsCliReference.wrappedMonth": "চলতি মাস",
   "docsCliReference.wrappedNone": "চলতি সপ্তাহ",
   "docsCliReference.wrappedWeek": "চলতি সপ্তাহ (স্পষ্ট)",
-
   "docsConfiguration.activeDesc": "রিকার্সন গার্ড। সেট করা থাকলে, lean-ctx কম্প্রেশন ছাড়াই কমান্ড পাস করে। শেল হুক দ্বারা স্বয়ংক্রিয়ভাবে সেট হয়।",
   "docsConfiguration.autonomyConfigDesc": "স্বায়ত্তশাসিত বুদ্ধিমত্তা স্তর স্বয়ংক্রিয়ভাবে অপ্টিমাইজেশন পাইপলাইন চালায়। <code>~/.lean-ctx/config.toml</code>-এ কনফিগার করুন:",
   "docsConfiguration.autonomyConfigOverride": "পরিবেশ দিয়ে ওভাররাইড করুন: <code>LEAN_CTX_AUTONOMY=false</code> সব নিষ্ক্রিয় করে।",
@@ -1842,7 +1829,6 @@
   "docsConfiguration.userTomlFiltersManage": "CLI-এর মাধ্যমে পরিচালনা করুন: <code>lean-ctx filter list</code>, <code>lean-ctx filter validate</code>, <code>lean-ctx filter init</code> (উদাহরণ তৈরি করে)।",
   "docsConfiguration.userTomlFiltersTitle": "ব্যবহারকারী TOML ফিল্টার",
   "docsConfiguration.viewCurrentConfig": "বর্তমান কনফিগারেশন দেখুন",
-
   "docsGettingStarted.afterSetup": "সেটআপের পর, আপনার শেল রিস্টার্ট করুন:",
   "docsGettingStarted.agentRulesIntro": "MCP কনফিগার করার পরও, কিছু AI এজেন্ট <strong>স্বয়ংক্রিয়ভাবে lean-ctx-এর টুল ব্যবহার নাও করতে পারে</strong>। তারা দেখতে পায় টুলগুলো পাওয়া যায় কিন্তু তাদের নেটিভ সমতুল্যে (Read, Shell, Grep) ডিফল্ট করে। এটি ঠিক করতে, lean-ctx প্রতিটি টুলের গ্লোবাল কনফিগারেশনে স্পষ্ট ব্যবহার নিয়ম ইনজেক্ট করে।",
   "docsGettingStarted.agentRulesTitle": "এজেন্ট নিয়ম",
@@ -2118,7 +2104,6 @@
   "docsGettingStarted.windowsTitle": "Windows",
   "docsGettingStarted.windowsWsl": "<strong>Windows + WSL:</strong> আপনি Windows Subsystem for Linux ব্যবহার করলে, আপনার WSL ডিস্ট্রিবিউশনের ভিতরে <a href=\"#linux\">Linux নির্দেশাবলী</a> অনুসরণ করুন। Shell hook এবং MCP সার্ভার WSL-এ একইভাবে কাজ করে।",
   "docsGettingStarted.zshDefault": "Zsh (macOS ডিফল্ট)",
-
   "docsIdeSetup.description": "IDEs ও AI coding টুলে lean-ctx নির্ভরযোগ্যভাবে চালান।",
   "docsIdeSetup.intro": "lean-ctx <strong>দুটি লেয়ার</strong> দিয়ে ইন্টিগ্রেট হয়: (1) CLI কম্প্রেশনের জন্য shell hook (<code>lean-ctx init</code>) এবং (2) আপনার IDE/agent-এর জন্য MCP server কনফিগ (<code>lean-ctx setup</code> বা <code>lean-ctx init --agent ...</code>)। এই পেজটি আপডেটের পরে সবচেয়ে সাধারণ ভাঙাগুলো দ্রুত ঠিক করতে সাহায্য করে।",
   "docsIdeSetup.matrixDesc": "কমন MCP কনফিগ লোকেশন এবং দ্রুততম ফিক্স কমান্ড:",
@@ -2149,7 +2134,6 @@
   "docsIdeSetup.troubleZeroSavedDesc": "সাধারণত মানে AI ক্লায়েন্ট এখনও MCP টুল ব্যবহার করছে না (কনফিগ আছে কিন্তু adopt হয়নি), অথবা শেষ reset-এর পরে আপনি যথেষ্ট কমান্ড চালাননি। ডায়াগনস ও রিসেট:",
   "docsIdeSetup.troubleZeroSavedTitle": "0 tokens saved দেখায়",
   "docsIdeSetup.troubleshootingTitle": "ট্রাবলশুটিং",
-
   "docsQuickReference.benchmarkRunDesc": "প্রকৃত token সাশ্রয় পরিমাপ",
   "docsQuickReference.cliCommandsLink": "সম্পূর্ণ CLI রেফারেন্স →",
   "docsQuickReference.cliCommandsTitle": "CLI কমান্ড (আপনি যা টাইপ করেন)",
@@ -2203,7 +2187,6 @@
   "docsQuickReference.tableTypicalSavings": "সাধারণ সাশ্রয়",
   "docsQuickReference.tableWhatItDoes": "এটি কী করে",
   "docsQuickReference.title": "দ্রুত রেফারেন্স",
-
   "docsRemoteSetup.description": "SSH টানেল ব্যবহার করে রিমোট সার্ভার, কনটেইনার ও হেডলেস পরিবেশে lean-ctx চালান।",
   "docsRemoteSetup.dockerComposeDesc": "Docker Compose এর জন্য সার্ভিসে ভলিউম যোগ করুন:",
   "docsRemoteSetup.dockerDesc": "কনটেইনারাইজড ডেভেলপমেন্টের জন্য lean-ctx বাইনারি এবং এর ডেটা ডিরেক্টরি কনটেইনারে মাউন্ট করুন:",
@@ -2244,7 +2227,6 @@
   "docsRemoteSetup.troubleshootingTitle": "সমস্যা সমাধান",
   "docsRemoteSetup.vscodeSshDesc": "VS Code এর <strong>Remote - SSH</strong> এক্সটেনশন ব্যবহার করলে lean-ctx স্বয়ংক্রিয়ভাবে কাজ করে — MCP সার্ভার রিমোট মেশিনে সাধারণ টার্মিনাল কমান্ডের মতো চলে। রিমোটে lean-ctx ইনস্টল করুন, <code>lean-ctx setup</code> চালান, এবং এটি রিমোট এনভায়রনমেন্টের জন্য নিজে কনফিগার হবে।",
   "docsRemoteSetup.vscodeSshTitle": "VS Code Remote SSH",
-
   "docsToolsCore.description": "ctx_read, ctx_multi_read, ctx_tree, ctx_shell, ctx_search, ctx_execute — ফাইল পড়া, ডিরেক্টরি অন্বেষণ, কমান্ড এক্সিকিউশন, কোড সার্চ এবং স্যান্ডবক্স কোড এক্সিকিউশনের ভিত্তি টুল।",
   "docsToolsCore.intro": "ভিত্তি টুলগুলো। এগুলো ফাইল পড়া, ডিরেক্টরি অন্বেষণ, কমান্ড এক্সিকিউশন, কোড সার্চ এবং স্যান্ডবক্স কোড এক্সিকিউশন পরিচালনা করে — যে অপারেশনগুলো AI কোডিং ইন্টারঅ্যাকশনের ৯০% তৈরি করে।",
   "docsToolsCore.parameters": "প্যারামিটার",
@@ -2265,7 +2247,6 @@
   "docsToolsCore.thTokens": "Token",
   "docsToolsCore.thType": "ধরন",
   "docsToolsCore.title": "কোর টুল — ফাইল ও কোড",
-
   "docsToolsIntelligence.ctxCalleesDesc": "পার্সিস্টেন্ট কল গ্রাফ (ইনক্রিমেন্টালভাবে নির্মিত) ব্যবহার করে একটি সিম্বল কোন ফাংশন/মেথড কল করে তা তালিকাভুক্ত করে।",
   "docsToolsIntelligence.ctxCallersDesc": "পার্সিস্টেন্ট কল গ্রাফ (ইনক্রিমেন্টালভাবে নির্মিত) ব্যবহার করে কোন সিম্বল একটি ফাংশন/মেথড কল করে তা খুঁজে।",
   "docsToolsIntelligence.ctxCompressMemoryDesc": "মেমরি/কনফিগ Markdown কম্প্রেস করে (কোড ব্লক, URL, পাথ বজায়) এবং <code>.original.md</code> ব্যাকআপ তৈরি করে।",
@@ -2278,17 +2259,14 @@
   "docsToolsIntelligence.semanticSearchUpdatedDesc": "BM25 + dense embeddings সহ হাইব্রিড সিমান্টিক সার্চ এবং স্বয়ংক্রিয় ইনক্রিমেন্টাল ইনডেক্সিং। embeddings না থাকলে BM25-এ ফিরে যায়।",
   "docsToolsIntelligence.sidebarTitle": "ইন্টেলিজেন্স টুল",
   "docsToolsIntelligence.title": "স্বায়ত্তশাসিত ইন্টেলিজেন্স লেয়ার",
-
   "docsToolsMemory.description": "ctx_knowledge, ctx_agent, ctx_overview — টেম্পোরাল ফ্যাক্ট + বিরোধ সনাক্তকরণ সহ স্থায়ী প্রকল্প জ্ঞান, স্থায়ী ডায়েরি সহ মাল্টি-এজেন্ট সমন্বয়, এবং স্বয়ংক্রিয় ওয়েক-আপ ব্রিফিং সহ টাস্ক-সচেতন প্রকল্প দিকনির্দেশনা।",
   "docsToolsMemory.intro": "ক্রস-সেশন মেমরি, মাল্টি-এজেন্ট সমন্বয় এবং টাস্ক-সচেতন প্রকল্প দিকনির্দেশনার জন্য চারটি টুল। ctx_knowledge-এ এখন টেম্পোরাল ফ্যাক্ট ট্র্যাকিং, স্বয়ংক্রিয় বিরোধ সনাক্তকরণ, ক্রস-সেশন অনুসন্ধান এবং AAAK কম্প্যাক্ট ফরম্যাট অন্তর্ভুক্ত। ctx_agent স্থায়ী এজেন্ট ডায়েরি সমর্থন করে। ctx_overview স্বয়ংক্রিয় ওয়েক-আপ ব্রিফিং প্রদান করে।",
   "docsToolsMemory.sidebarTitle": "মেমরি টুল",
   "docsToolsMemory.title": "মেমরি ও মাল্টি-এজেন্ট",
-
   "docsToolsSession.description": "ctx_session, ctx_metrics, ctx_cache, ctx_compress, ctx_analyze, ctx_benchmark, ctx_wrapped — সেশন ব্যবস্থাপনা, পর্যবেক্ষণ এবং কম্প্রেশন বিশ্লেষণ টুল।",
   "docsToolsSession.intro": "এই টুলগুলো সেশন পার্সিস্টেন্স, পারফরম্যান্স পর্যবেক্ষণ, কম্প্রেশন বিশ্লেষণ এবং বেঞ্চমার্কিং পরিচালনা করে — আপনার token সাশ্রয় পরিমাপ ও অপ্টিমাইজ করতে যা প্রয়োজন সবকিছু।",
   "docsToolsSession.sidebarTitle": "সেশন টুল",
   "docsToolsSession.title": "সেশন ও পর্যবেক্ষণ",
-
   "features.cepEngineDesc": "Cognitive Efficiency Protocol — অভিযোজিত জটিলতা, মান স্কোরিং, স্বয়ংক্রিয় যাচাই, এবং CEP সম্মতি মেট্রিক্স।",
   "features.ctxBenchmarkDesc": "বাস্তব প্রজেক্ট বেঞ্চমার্ক। টোকেন পরিমাপ, লেটেন্সি, এবং AST সংরক্ষণ স্কোর।",
   "features.ctxCompressDesc": "সব ক্যাশড ফাইলকে আল্ট্রা-কম্প্যাক্ট সিগনেচার ম্যাপে চেকপয়েন্ট করুন।",
@@ -2308,7 +2286,6 @@
   "features.heading": "{count}টি টুল যা <span class=\"gradient-text-green\">আপনার টোকেন খরচ কমায়।</span>",
   "features.initDesc": "23টি শেল এলিয়াস --global দিয়ে গ্লোবালি ইনস্টল। macOS, Linux, Windows।",
   "features.lctxDesc": "মাল্টি-এজেন্ট লঞ্চার। Cursor, Claude, Codex, Gemini, Windsurf, Cline স্বয়ংক্রিয় শনাক্ত করে lean-ctx কনফিগার করে।",
-
   "footer.buyMeACoffee": "কফি কিনে দিন",
   "footer.community": "কমিউনিটি",
   "footer.copyright": "© {year} LeanCTX · Apache-2.0 লাইসেন্স · Rust দিয়ে তৈরি",
@@ -2325,7 +2302,6 @@
   "footer.safety": "নিরাপত্তা",
   "footer.compare": "তুলনা",
   "footer.limitations": "সীমাবদ্ধতা",
-
   "howItWorks.advIbFilter": "Task-aware filtering — uses the Information Bottleneck principle to keep only content relevant to the current task context",
   "howItWorks.advIdf": "Cross-file deduplication — identifies and removes content already seen in the session using inverse document frequency weighting",
   "howItWorks.advPipelineComponent": "Component",
@@ -2447,7 +2423,6 @@
   "howItWorks.yourPartTitleHighlight": "আপনি",
   "howItWorks.yourPartTitlePost": "আসলে কী করেন?",
   "howItWorks.yourPartTitlePre": "আপনি",
-
   "index.archDesc": "প্রতিটি লেয়ার স্বাধীনভাবে কাজ করে। একসাথে, তারা একটি কনটেক্সট পাইপলাইন গঠন করে যা LLM-এ পৌঁছানোর আগে তথ্য ফিল্টার, কমপ্রেস, অগ্রাধিকার এবং অনুবাদ করে — কাঁচা ডেটাকে কাঠামোগত বুদ্ধিমত্তায় রূপান্তরিত করে।",
   "index.archHookDesc": "শেল আউটপুট ইন্টারসেপ্ট করে এবং ৯০+ কমান্ড প্যাটার্ন চিনতে পারে — git, npm, cargo, docker, kubectl — সবকিছু স্বয়ংক্রিয়ভাবে কম্প্রেস করে।",
   "index.archHookLink": "প্যাটার্ন দেখুন",
@@ -2543,7 +2518,6 @@
   "index.without3": "কমেন্ট, হোয়াইটস্পেস, ইম্পোর্ট অন্তর্ভুক্ত",
   "index.without4": "→ ধীর, ব্যয়বহুল, কনটেক্সট সীমায় আঘাত করে",
   "index.withoutLeanCtx": "lean-ctx ছাড়া",
-
   "leaderboard.badges": "Badges",
   "leaderboard.description": "Real token savings from real developers. Every number is calculated from actual usage data.",
   "leaderboard.empty": "No entries yet. Be the first to sync your stats!",
@@ -2568,7 +2542,6 @@
   "leaderboard.totalTeams": "teams",
   "leaderboard.totalUsers": "active users",
   "leaderboard.user": "User",
-
   "manifest.abstractP1": "২০২৬ সালে, AI কোডিং টুল সম্পূর্ণ ফাইল, কাঁচা CLI আউটপুট এবং অসংকুচিত প্রজেক্ট স্ক্যান কনটেক্সট উইন্ডোতে পাঠায় — প্রতিবার। সিগন্যাল-টু-নয়েজ অনুপাত অত্যন্ত খারাপ। মাল্টি-স্টেপ কোডিং সেশনে টুল-কল বিশ্লেষণের ভিত্তিতে, ~৬৫% ফাইল রিড হলো পুনঃপড়া। মডেল শূন্য তথ্য এনট্রপি বহন করে এমন বয়লারপ্লেটে অ্যাটেনশন নষ্ট করে।",
   "manifest.abstractP2": "এই পেপার যুক্তি দেয় যে একটি <strong>ইন্টেলিজেন্স লেয়ার</strong> — ডেভেলপার এবং LLM-এর মধ্যে একটি স্বচ্ছ কম্প্রেশন লেয়ার — হলো AI ইঞ্জিনিয়ারিং স্ট্যাকের অনুপস্থিত অংশ। আমরা LeanCTX উপস্থাপন করছি: একটি একক Rust বাইনারি যা প্রতি-অপারেশনে ৯৯% পর্যন্ত token হ্রাস (cache পুনঃপড়া) অর্জন করে এবং মডেলের সঠিকভাবে রিজন করার জন্য প্রয়োজনীয় সমস্ত তথ্য সংরক্ষণ করে।",
   "manifest.abstractQuote": "LLM-এর সাথে উচ্চ কর্মক্ষমতা বড় কনটেক্সট উইন্ডো সম্পর্কে নয়। এটি প্রতি token-এ তথ্য এনট্রপি সর্বাধিক করা সম্পর্কে। LeanCTX হলো সেই ইন্টেলিজেন্স বাফার যা নিশ্চিত করে যে প্রতিটি token সর্বোচ্চ সিগন্যাল বহন করে।",
@@ -2680,7 +2653,6 @@
   "manifest.tableRow7b": "দ্রুত শেষ হয়",
   "manifest.tableRow7d": "সেশন দৈর্ঘ্য",
   "manifest.title": "ম্যানিফেস্টো — LeanCTX",
-
   "mcpServer.aggReturn": "সিনট্যাক্স মুছে ফেলা, সর্বোচ্চ কম্প্রেশন",
   "mcpServer.aggWhen": "বড় ফাইল যেখানে আপনার সারমর্ম প্রয়োজন",
   "mcpServer.apiReference": "সম্পূর্ণ API রেফারেন্স",
@@ -2756,7 +2728,6 @@
   "mcpServer.taskWhen": "একটি নির্দিষ্ট কাজের জন্য প্রাসঙ্গিক ফাইল পড়া — প্রকল্প গ্রাফ + IB ফিল্টার ব্যবহার করে",
   "mcpServer.title": "{mcpToolCount} MCP টুল — LeanCTX",
   "mcpServer.whenHeader": "কখন ব্যবহার করবেন",
-
   "nav.cloud": "Cloud",
   "nav.docs": "ডকুমেন্টেশন",
   "nav.docs.analytics": "অ্যানালিটিক্স ও ড্যাশবোর্ড",
@@ -2822,13 +2793,11 @@
   "nav.searchLabel": "ডকুমেন্টেশন অনুসন্ধান (⌘K)",
   "nav.skipToContent": "কন্টেন্টে যান",
   "nav.star": "স্টার",
-
   "notFound.backToHome": "হোমে ফিরে যান",
   "notFound.description": "এই পৃষ্ঠাটি বিদ্যমান নেই — অথবা এটি চেনার অতীত পর্যন্ত কম্প্রেস করা হয়েছে।",
   "notFound.heading": "সিগন্যাল হারিয়ে গেছে।",
   "notFound.readTheDocs": "ডকুমেন্টেশন পড়ুন",
   "notFound.title": "সিগন্যাল হারানো — LeanCTX",
-
   "power.beyondCompression": "কমপ্রেশনের বাইরে",
   "power.desc": "lean-ctx টোকেন কমপ্রেশনের বাইরে যায়। এটি আপনার প্রজেক্টের কাঠামো বোঝে, এক কমান্ডে যেকোনো AI এজেন্ট লঞ্চ করে, এবং ঝামেলা ছাড়া ইনস্টল হয়।",
   "power.graphBuild": "প্রজেক্ট কাঠামো স্ক্যান ও সংরক্ষণ",
@@ -2855,7 +2824,6 @@
   "power.launcherSpecific": "নির্দিষ্ট এজেন্ট লঞ্চ করুন",
   "power.launcherTitle": "এক কমান্ড। যেকোনো AI এজেন্ট।",
   "power.learnMore": "আরও জানুন",
-
   "privacy.englishOnlyNote": "এই মুহূর্তে সম্পূর্ণ নীতিটি ইংরেজিতে উপলব্ধ: <a href=\"/privacy\">ইংরেজি সংস্করণ খুলুন</a>।",
   "privacy.englishOnlyTitle": "পূর্ণ টেক্সট (ইংরেজি)",
   "privacy.labelLegal": "আইনি",
@@ -2867,7 +2835,6 @@
   "privacy.tldrBullet3": "<strong>lean-ctx Cloud (ঐচ্ছিক)</strong> — opt-in হলে শুধু অ্যানোনিমাস কমপ্রেশন স্ট্যাটস শেয়ার হয়। কখনও কোড, ফাইল নাম বা ব্যক্তিগত কনটেন্ট নয়।",
   "privacy.tldrBullet4": "<strong>leanctx.com ওয়েবসাইট</strong> — স্ট্যান্ডার্ড সার্ভার লগ (IP, ব্রাউজার)। কোন ট্র্যাকিং পিক্সেল নেই, থার্ড-পার্টি অ্যানালিটিক্স নেই।",
   "privacy.tldrTitle": "সংক্ষেপে",
-
   "profile.badges": "Badges",
   "profile.copyLink": "Copy Invite Link",
   "profile.inviteCode": "Invite Code",
@@ -2882,7 +2849,6 @@
   "profile.teamSaved": "Team Saved",
   "profile.title": "Your Profile",
   "profile.tokensSaved": "Tokens Saved",
-
   "protocolsCcp.allProtocols": "সমস্ত প্রোটোকল",
   "protocolsCcp.beginDesc": "সর্বোচ্চ অ্যাটেনশন ওয়েট। CCP এখানে টাস্ক বিবরণ, আর্কিটেকচারাল সিদ্ধান্ত, প্রজেক্ট টপোলজি এবং ফাইল রেফারেন্স ম্যাপ রাখে।",
   "protocolsCcp.beginPosition": "শুরুর অবস্থান",
@@ -2965,7 +2931,6 @@
   "protocolsCcp.withCcp": "CCP সহ",
   "protocolsCcp.zeroIntervention": "শূন্য ব্যবহারকারী হস্তক্ষেপ",
   "protocolsCcp.zeroInterventionDesc": "চেকপয়েন্ট স্বচ্ছভাবে ঘটে। AI থামে না, অনুমতি চায় না এবং আপনার ওয়ার্কফ্লো ব্যাহত করে না। কম্প্রেসড স্টেট স্বয়ংক্রিয়ভাবে রেসপন্সে যুক্ত হয়।",
-
   "protocolsCep.allProtocols": "সমস্ত প্রোটোকল",
   "protocolsCep.architecturalDesc": "ডিজাইন সিদ্ধান্ত, সম্পূর্ণ বিশ্লেষণ। এজ কেস এবং ট্রেড-অফ বিবেচনা করতে হবে।",
   "protocolsCep.architecturalTitle": "আর্কিটেকচারাল",
@@ -3046,7 +3011,6 @@
   "protocolsCep.whatDesc": "CEP সিস্টেম প্রম্পটের মাধ্যমে ইনজেক্ট হয়। এটি AI-তে প্রবাহিত ডেটা স্পর্শ করে না — সেটি MCP সার্ভারের কাজ। পরিবর্তে, CEP AI-এর আউটপুট token অপটিমাইজ করে: কিভাবে এটি ফিরে যোগাযোগ করে। চারটি স্কোরিং মাত্রা স্বাধীনভাবে মূল্যায়ন করা হয় এবং একটি একক 0–100 স্কোরে একত্রিত হয়।",
   "protocolsCep.whatLabel": "এটি কী করে",
   "protocolsCep.whatTitle": "একটি নির্দেশনা প্রোটোকল যা AI আউটপুট অপটিমাইজ করে।",
-
   "protocolsIndex.autoActive": "সক্রিয়",
   "protocolsIndex.autoDesc": "তিনটি প্রোটোকলই ডিফল্টভাবে জিরো কনফিগারেশনে সক্রিয়। lean-ctx সিস্টেম প্রম্পট নির্দেশনার মাধ্যমে এগুলো ইনজেক্ট করে — AI স্বয়ংক্রিয়ভাবে এগুলো অনুসরণ করে। কোনো ফ্ল্যাগ নেই, কোনো env vars নেই, কোনো কনফিগ ফাইল নেই।",
   "protocolsIndex.autoTitle": "সবই স্বয়ংক্রিয়",
@@ -3080,7 +3044,6 @@
   "protocolsIndex.tddLink": "সম্পূর্ণ TDD ডকুমেন্টেশন",
   "protocolsIndex.tddTitle": "Token Dense Dialect",
   "protocolsIndex.title": "প্রোটোকল — LeanCTX",
-
   "protocolsTdd.actions": "অ্যাকশন",
   "protocolsTdd.allProtocols": "সমস্ত প্রোটোকল",
   "protocolsTdd.comparisonDesc": "একই তথ্য, স্ট্যান্ডার্ড গদ্যে বনাম TDD-তে প্রকাশিত। ঘন ভার্সন 71% কম token-এ অভিন্ন অর্থ প্রকাশ করে।",
@@ -3138,7 +3101,6 @@
   "protocolsTdd.symbolLabel": "রেফারেন্স",
   "protocolsTdd.symbolTitle": "প্রতীক টেবিল।",
   "protocolsTdd.title": "Token Dense Dialect (TDD) — LeanCTX",
-
   "search.ariaLabel": "ডকুমেন্টেশন অনুসন্ধান",
   "search.close": "বন্ধ",
   "search.navigate": "নেভিগেট",
@@ -3146,7 +3108,6 @@
   "search.open": "খুলুন",
   "search.placeholder": "ডকুমেন্টেশন, কমান্ড, টুল অনুসন্ধান…",
   "search.searchDocs": "ডকুমেন্টেশন অনুসন্ধান করুন",
-
   "shellHook.beforeAfterLabel": "আগে ও পরে",
   "shellHook.beforeAfterTitle": "দেখুন",
   "shellHook.beforeAfterTitleHighlight": "পার্থক্য।",
@@ -3209,7 +3170,6 @@
   "shellHook.withoutHook": "Shell hook ছাড়া",
   "shellHook.worksIndependentlyDesc": "Shell hook কনটেক্সট সার্ভার থেকে স্বাধীনভাবে কাজ করে। যে AI টুলগুলো এখনো কনফিগার করা হয়নি সেগুলোও কম্প্রেসড শেল আউটপুট থেকে উপকৃত হয়। হুক শেল স্তরে ইন্টারসেপ্ট করে, তাই কমান্ড চালানো প্রতিটি টুল সাশ্রয় পায়।",
   "shellHook.worksIndependentlyTitle": "স্বাধীনভাবে কাজ করে",
-
   "terminal.after": "পরে",
   "terminal.aiCalls": "AI কল",
   "terminal.aiToolDetected": "AI টুল সনাক্ত হয়েছে",
@@ -3236,7 +3196,6 @@
   "terminal.toolsConfigured": "AI টুল কনফিগার হয়েছে, shell hook সক্রিয়",
   "terminal.with": "সহ",
   "terminal.without": "ছাড়া",
-
   "testimonials.daniel": "99%-এর দাবি নিয়ে আমি সন্দেহপ্রবণ ছিলাম। তারপর আমি একটি 400-লাইনের সার্ভিস ফাইলে map মোডে ctx_read চালালাম এবং 30 token ফিরে পেলাম। এটা মার্কেটিং নয় — এটা গণিত।",
   "testimonials.danielRole": "Go / Rust ডেভেলপার",
   "testimonials.erik": "অবশেষে কেউ তৈরি করেছে যা Cursor-এ বিল্ট-ইন থাকা উচিত ছিল। শুধু সেশন ক্যাশিং — রি-রিডে হাজারের পরিবর্তে 13 token খরচ।",
@@ -3249,7 +3208,6 @@
   "testimonials.radmarRole": "ওপেন সোর্স কন্ট্রিবিউটর",
   "testimonials.sebastian": "আমি lean-ctx ইনস্টল করলাম এবং আমার Cursor সেশনগুলো সাথে সাথে দ্রুততর অনুভব হলো। যে ফাইলগুলো 2K token খেত সেগুলো এখন 50-তে হয়।",
   "testimonials.sebastianRole": "TypeScript / React",
-
   "premium.eyebrow": "প্রিমিয়াম ফিচার",
   "premium.heading": "এন্টারপ্রাইজ-গ্রেড সক্ষমতা। <span class=\"gradient-text-green\">ওপেন সোর্স।</span>",
   "premium.desc": "পেশাদার AI ডেভেলপমেন্ট টিমের জন্য উন্নত ফিচার — cache অপ্টিমাইজেশন, স্বয়ংক্রিয় কোড রিভিউ, ghost token শনাক্তকরণ এবং কন্টেন্ট-ভিত্তিক chunking।",
@@ -3265,7 +3223,6 @@
   "premium.searchDesc": "গোপনীয়তা-প্রথম সেমান্টিক কোড সার্চের জন্য স্থানীয় embedding ইঞ্জিন। BM25 + dense হাইব্রিড রিট্রিভাল, কোনো বাহ্যিক API প্রয়োজন নেই। আপনার কোড কখনো আপনার মেশিন ছেড়ে যায় না।",
   "premium.skillsTitle": "ইউনিভার্সাল এজেন্ট ইন্টিগ্রেশন",
   "premium.skillsDesc": "Claude Code, Cursor, Codex, Gemini CLI, Windsurf, Cline এবং আরো ২৪+ এজেন্টের সাথে কাজ করে। একটি কমান্ডে সেটআপ, স্বয়ংক্রিয় MCP কনফিগারেশন এবং ক্রস-এজেন্ট সেশন ধারাবাহিকতা।",
-
   "compare.title": "lean-ctx কীভাবে তুলনা করে",
   "compare.breadcrumb": "তুলনা",
   "compare.metaDescription": "ম্যানুয়াল কনটেক্সট ম্যানেজমেন্ট এবং টুল-বিহীন পদ্ধতির সাথে lean-ctx-এর সৎ তুলনা। দেখুন lean-ctx কোথায় উজ্জ্বল এবং কোথায় এটি প্রয়োজন নেই।",
@@ -3344,7 +3301,6 @@
   "compare.ctaDesc": "এক মিনিটেরও কম সময়ে lean-ctx ইনস্টল করুন এবং আপনার পরবর্তী কোডিং সেশনে পার্থক্য দেখুন।",
   "compare.ctaGetStarted": "শুরু করুন",
   "compare.ctaSafety": "নিরাপত্তা ও নির্ভরযোগ্যতা",
-
   "limitations.metaDescription": "lean-ctx কী করতে পারে এবং কী পারে না। কম্প্রেশন সীমা, ভাষা সমর্থন এবং আর্কিটেকচার সীমাবদ্ধতার সৎ ডকুমেন্টেশন।",
   "limitations.compressionTitle": "কম্প্রেশন সীমা",
   "limitations.languageTitle": "ভাষা সমর্থন",
@@ -3419,7 +3375,6 @@
   "limitations.ctaDesc": "এখন যখন আপনি সীমানা জানেন, এর মধ্যে lean-ctx কী সরবরাহ করে তা অন্বেষণ করুন — নিরাপত্তা গ্যারান্টি, পারফরম্যান্স বেঞ্চমার্ক এবং প্রতিযোগী তুলনা।",
   "limitations.ctaSafety": "নিরাপত্তা এবং সুরক্ষা",
   "limitations.ctaCompare": "পদ্ধতি তুলনা করুন",
-
   "safety.title": "নিরাপত্তা এবং নির্ভরযোগ্যতা",
   "safety.metaDescription": "lean-ctx কীভাবে আপনার কোডের নিরাপত্তা নিশ্চিত করে। শুধুমাত্র স্থানীয় প্রক্রিয়াকরণ, graceful degradation, ১,৪০০+ টেস্ট, এবং শূন্য ডেটা সংগ্রহ।",
   "safety.labelSafety": "নিরাপত্তা",
@@ -3492,5 +3447,63 @@
   "safety.ctaTitleHighlight": "চেষ্টা করতে?",
   "safety.ctaDesc": "এক মিনিটেরও কম সময়ে lean-ctx ইনস্টল করুন এবং দেখুন কীভাবে এটি টোকেন ব্যবহার নাটকীয়ভাবে কমানোর সাথে সাথে আপনার ওয়ার্কফ্লো রক্ষা করে।",
   "safety.ctaGetStarted": "শুরু করুন",
-  "safety.ctaCompare": "বিকল্প তুলনা করুন"
+  "safety.ctaCompare": "বিকল্প তুলনা করুন",
+  "docsProfiles.title": "কনটেক্সট প্রোফাইল",
+  "docsProfiles.description": "lean-ctx-এর জন্য ঘোষণামূলক, সংস্করণ-নিয়ন্ত্রিত কনটেক্সট কৌশল",
+  "docsProfiles.intro": "Context Profiles let you configure how lean-ctx processes content for different scenarios: exploration, debugging, hotfixes, CI, code review, and more. Think of it as <strong>\"Context as Code\"</strong> — version-controlled strategies your team can share.",
+  "docsProfiles.whatTitle": "What Are Profiles?",
+  "docsProfiles.whatDesc": "A profile is a TOML file that controls read modes, compression settings, token budgets, pipeline layers, and autonomy behavior. Profiles can inherit from other profiles and override specific fields.",
+  "docsProfiles.builtinTitle": "Built-in Profiles",
+  "docsProfiles.builtinDesc": "lean-ctx ships with 5 built-in profiles optimized for common workflows:",
+  "docsProfiles.explorationName": "exploration",
+  "docsProfiles.explorationDesc": "Broad context for understanding codebases. Map mode, 200K token budget, cache preferred.",
+  "docsProfiles.bugfixName": "bugfix",
+  "docsProfiles.bugfixDesc": "Focused debugging with auto mode. Terse output, 100K token budget, 10-call checkpoints.",
+  "docsProfiles.hotfixName": "hotfix",
+  "docsProfiles.hotfixDesc": "Minimal context for urgent fixes. Signatures mode, ultra-compact output, 30K tokens, $1 cost cap.",
+  "docsProfiles.ciDebugName": "ci-debug",
+  "docsProfiles.ciDebugDesc": "CI/CD debugging with 200 shell invocations. Terse output, 150K token budget.",
+  "docsProfiles.reviewName": "review",
+  "docsProfiles.reviewDesc": "Code review with broad read-only context. Map mode, compact CRP, 150K token budget.",
+  "docsProfiles.activateTitle": "Activating a Profile",
+  "docsProfiles.activateEnv": "Set the <code>LEAN_CTX_PROFILE</code> environment variable:",
+  "docsProfiles.activateCli": "Or use the CLI:",
+  "docsProfiles.activateMcp": "Or switch at runtime via MCP:",
+  "docsProfiles.customTitle": "Creating Custom Profiles",
+  "docsProfiles.customDesc": "Create a profile TOML file in <code>.lean-ctx/profiles/</code> (project-local) or <code>~/.lean-ctx/profiles/</code> (global):",
+  "docsProfiles.customCli": "Or use the CLI to scaffold a profile:",
+  "docsProfiles.inheritTitle": "Profile Inheritance",
+  "docsProfiles.inheritDesc": "Profiles can inherit from any other profile using the <code>inherits</code> field. Child values override parent values; unset fields fall through to the parent.",
+  "docsProfiles.schemaTitle": "Profile Schema",
+  "docsProfiles.schemaDesc": "A complete profile has these sections:",
+  "docsProfiles.schemaMeta": "<strong>[profile]</strong> — name, inherits, description",
+  "docsProfiles.schemaRead": "<strong>[read]</strong> — default_mode, max_tokens_per_file, prefer_cache",
+  "docsProfiles.schemaCompression": "<strong>[compression]</strong> — crp_mode, output_density, entropy_threshold",
+  "docsProfiles.schemaBudget": "<strong>[budget]</strong> — max_context_tokens, max_shell_invocations, max_cost_usd",
+  "docsProfiles.schemaPipeline": "<strong>[pipeline]</strong> — intent, relevance, compression, translation (boolean toggles)",
+  "docsProfiles.schemaAutonomy": "<strong>[autonomy]</strong> — auto_dedup, checkpoint_interval",
+  "docsProfiles.cliTitle": "CLI Reference",
+  "docsProfiles.cliList": "<code>lean-ctx profile list</code> — Show all available profiles",
+  "docsProfiles.cliShow": "<code>lean-ctx profile show &lt;name&gt;</code> — Display profile details",
+  "docsProfiles.cliDiff": "<code>lean-ctx profile diff &lt;a&gt; &lt;b&gt;</code> — Compare two profiles",
+  "docsProfiles.cliCreate": "<code>lean-ctx profile create &lt;name&gt;</code> — Create a new profile",
+  "docsProfiles.cliSet": "<code>lean-ctx profile set &lt;name&gt;</code> — Show activation instructions",
+  "docsProfiles.resolutionTitle": "Resolution Order",
+  "docsProfiles.resolutionDesc": "Profiles are resolved in this order:",
+  "docsProfiles.resolution1": "<code>LEAN_CTX_PROFILE</code> environment variable",
+  "docsProfiles.resolution2": "Project-local <code>.lean-ctx/profiles/&lt;name&gt;.toml</code>",
+  "docsProfiles.resolution3": "Global <code>~/.lean-ctx/profiles/&lt;name&gt;.toml</code>",
+  "docsProfiles.resolution4": "Built-in defaults",
+  "docsProfiles.sidebarProfiles": "কনটেক্সট প্রোফাইল",
+  "docsProfiles.sidebarOverview": "সংক্ষিপ্ত বিবরণ",
+  "docsProfiles.sidebarBuiltin": "Built-in Profiles",
+  "docsProfiles.sidebarActivation": "Activation",
+  "docsProfiles.sidebarCustom": "Custom Profiles",
+  "docsProfiles.sidebarInheritance": "Inheritance",
+  "docsProfiles.sidebarSchema": "Profile Schema",
+  "docsProfiles.sidebarCli": "CLI Reference",
+  "docsProfiles.sidebarResolution": "Resolution Order",
+  "docsProfiles.sidebarRelated": "সম্পর্কিত",
+  "docsProfiles.sidebarConfiguration": "Configuration",
+  "docsProfiles.sidebarTools": "MCP Tools"
 }
