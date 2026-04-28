@@ -1,9 +1,9 @@
 [package]
 name = "lean-ctx"
-version = "3.1.0"
+version = "3.4.5"
 edition = "2021"
-description = "Context Intelligence Engine with CCP. 34 MCP tools, 8 read modes, 90+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing + diaries, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24 AI tools. Reduces LLM token consumption by up to 99%."
-license = "MIT"
+description = "Context Runtime for AI Agents with CCP. 48 MCP tools, 10 read modes, 90+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing + diaries, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24 AI tools. Reduces LLM token consumption by up to 99%."
+license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
 readme = "README.md"
@@ -25,12 +25,12 @@ path = "src/cloud_server_main.rs"
 required-features = ["cloud-server"]
 
 [features]
-default = ["tree-sitter", "embeddings"]
+default = ["tree-sitter", "embeddings", "http-server"]
 neural = ["dep:rten", "dep:rten-tensor"]
 embeddings = ["dep:rten", "dep:rten-tensor"]
+http-server = ["dep:axum", "dep:tower-http", "dep:reqwest"]
 cloud-server = [
-  "dep:axum",
-  "dep:tower-http",
+  "http-server",
   "dep:deadpool-postgres",
   "dep:tokio-postgres",
   "dep:lettre",
@@ -63,9 +63,9 @@ tree-sitter = [
 ]
 
 [dependencies]
-rmcp = { version = "1", features = ["server", "transport-io"] }
+rmcp = { version = "1", features = ["server", "transport-io", "transport-streamable-http-server"] }
 tiktoken-rs = "0.6"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 md-5 = "0.10"
@@ -83,6 +83,7 @@ chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8"
 similar = "2"
 flate2 = "1"
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 tree-sitter = { version = "0.26", optional = true }
 tree-sitter-rust = { version = "0.24", optional = true }
 tree-sitter-typescript = { version = "0.23", optional = true }
@@ -109,7 +110,7 @@ tree-sitter-dart = { version = "0.1", optional = true }
 rten = { version = "0.24", optional = true }
 rten-tensor = { version = "0.24", optional = true }
 axum = { version = "0.8", optional = true }
-tower-http = { version = "0.6", features = ["cors"], optional = true }
+tower-http = { version = "0.6", features = ["cors", "auth"], optional = true }
 deadpool-postgres = { version = "0.14", optional = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"], optional = true }
@@ -121,13 +122,72 @@ rand = { version = "0.9.3", optional = true }
 glob = "0.3.3"
 ratatui = "0.30"
 crossterm = "0.28"
+rpassword = "7.4.0"
+getrandom = "0.3"
+reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream", "json"], optional = true }
+
+[lints.rust]
+# CI coverage (cargo-tarpaulin) injects `--cfg tarpaulin`; declare it to avoid
+# `-D unexpected_cfgs` failures when using `cfg_attr(tarpaulin, ...)`.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin)"] }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+# --- Style preferences (not quality issues) ---
+too_many_lines = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+similar_names = "allow"
+unreadable_literal = "allow"
+
+# --- Documentation: covered by separate doc-coverage tooling ---
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+
+# --- Casts: intentional numeric conversions for token counting, stats, sizing ---
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_lossless = "allow"
+
+# --- Performance: format_push_string would require 276 refactors for minimal gain ---
+format_push_string = "allow"
+
+# --- Struct design: Config/StatsStore legitimately use many bools ---
+struct_excessive_bools = "allow"
+
+# --- Float: intentional comparisons in stats/benchmarks ---
+float_cmp = "allow"
+
+# --- Style: constants placed near usage for readability ---
+items_after_statements = "allow"
+
+# --- Underscore bindings: intentionally named for clarity then used ---
+used_underscore_binding = "allow"
+no_effect_underscore_binding = "allow"
+
+# --- Micro-optimization: &bool vs bool, readability preferred ---
+trivially_copy_pass_by_ref = "allow"
+
+# --- HashMap: we always use default hasher ---
+implicit_hasher = "allow"
 
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+panic = "unwind"
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.27.0"
+tower = "0.5"
+
+[[bench]]
+name = "compression"
+harness = false

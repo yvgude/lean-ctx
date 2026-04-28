@@ -1,9 +1,15 @@
 {
   "name": "pi-lean-ctx",
-  "version": "3.0.1",
-  "description": "Pi Coding Agent extension with first-class MCP support — routes bash, read, grep, find, and ls through lean-ctx CLI, and exposes all 34 lean-ctx MCP tools (ctx_session, ctx_knowledge, ctx_semantic_search, ctx_impact, ctx_architecture, etc.) natively in Pi",
-  "keywords": ["pi-package", "lean-ctx", "token-optimization", "compression", "mcp"],
-  "license": "MIT",
+  "version": "3.4.5",
+  "description": "Pi Coding Agent extension with first-class MCP support \u2014 routes bash, read, grep, find, and ls through lean-ctx CLI, and exposes all 48 lean-ctx MCP tools (ctx_session, ctx_knowledge, ctx_semantic_search, ctx_impact, ctx_architecture, ctx_workflow, ctx_gain, etc.) natively in Pi",
+  "keywords": [
+    "pi-package",
+    "lean-ctx",
+    "token-optimization",
+    "compression",
+    "mcp"
+  ],
+  "license": "Apache-2.0",
   "author": "Yves Gugger",
   "repository": {
     "type": "git",
@@ -22,7 +28,9 @@
     "@mariozechner/pi-tui": "*"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions/index.ts"
+    ]
   },
   "files": [
     "extensions/",
