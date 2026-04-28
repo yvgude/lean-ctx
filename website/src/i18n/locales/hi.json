@@ -2858,7 +2858,7 @@
   "index.heroProofTokensSaved": "उपयोगकर्ताओं द्वारा बचाए गए टोकन",
   "index.heroProofTools": "समर्थित AI टूल्स",
   "index.heroTitle": "Your AI sees everything.",
-  "index.heroTitleHighlight": "LeanCTX makes it see what matters.",
+  "index.heroTitleHighlight": "Make it see what matters.",
   "index.joinDiscord": "Discord में शामिल हों",
   "index.metaDesc": "Make your AI smarter, not just faster. Intelligent compression, persistent memory, smart routing, and verified outputs. Works with Cursor, Claude Code, Copilot, and 24+ tools. Open source, local-first.",
   "index.previewDesc": "lean-ctx पर्दे के पीछे चुपचाप काम करता है। जब आपका AI कोई फ़ाइल पढ़ता है, यह पारदर्शी रूप से आउटपुट कम्प्रेस करता है। यहाँ एक वास्तविक ctx_read कॉल और मेट्रिक्स डैशबोर्ड है।",

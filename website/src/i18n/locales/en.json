@@ -2110,7 +2110,7 @@
   "index.heroProofTokensSaved": "tokens saved by users",
   "index.heroProofTools": "AI tools supported",
   "index.heroTitle": "Your AI sees everything.",
-  "index.heroTitleHighlight": "LeanCTX makes it see what matters.",
+  "index.heroTitleHighlight": "Make it see what matters.",
   "index.joinDiscord": "Join Discord",
   "index.previewDesc": "lean-ctx works silently behind the scenes. When your AI reads a file, the context layer transparently compresses, routes, and optimizes the output. Here's a real ctx_read call and the metrics dashboard.",
   "index.previewLabel": "See It In Action",
