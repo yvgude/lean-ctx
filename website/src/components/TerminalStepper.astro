@@ -88,7 +88,7 @@ const stepperId = `stepper-${Math.random().toString(36).slice(2)}`;
 <script is:inline>
 (function() {
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  var root = document.getElementById({JSON.stringify(stepperId)});
+  var root = document.querySelector('[data-stepper]');
   if (!root) return;
 
   var btns = Array.prototype.slice.call(root.querySelectorAll('[data-step-btn]'));

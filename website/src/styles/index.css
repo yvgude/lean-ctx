@@ -4,6 +4,30 @@
   --heroP: 0;
   --rx: 0deg;
   --ry: 0deg;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-split::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/images/hero-bg.png') center / cover no-repeat;
+  opacity: 0.18;
+  filter: brightness(0.35) saturate(0.6);
+  pointer-events: none;
+  z-index: -2;
+}
+
+.hero-split::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(5, 5, 7, 0.7) 0%, rgba(5, 5, 7, 0.55) 40%, rgba(5, 5, 7, 0.85) 100%);
+  backdrop-filter: blur(1.5px);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .hero-copy {
@@ -23,13 +47,10 @@
   inset: -16px;
   border-radius: var(--card-radius-lg);
   background:
-    radial-gradient(1200px 700px at 30% 20%, rgba(52, 211, 153, 0.14), transparent 60%),
-    radial-gradient(900px 600px at 80% 70%, rgba(129, 140, 248, 0.12), transparent 60%),
-    linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-  background-size: auto, auto, 28px 28px, 28px 28px;
-  opacity: 0.55;
-  filter: blur(0.2px);
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 28px 28px, 28px 28px;
+  opacity: 0.4;
   pointer-events: none;
 }
 
