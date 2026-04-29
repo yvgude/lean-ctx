@@ -75,53 +75,101 @@ const stepperSteps = [
      HERO
      ═══════════════════════════════════════════════════════ -->
 <section class="section-hero hero-split" data-hero>
-  <div class="content-grid">
-    <div class="hero-copy" style="text-align: center; margin: 0 auto;">
-      <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-        <span class="kicker-pill">{t('index.heroLabel')}</span>
-      </div>
-      <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance" style="max-width: 56rem; margin: 0 auto;">
-        {t('index.heroTitle')}<br/>
-        <span class="italic-accent">{t('index.heroTitleHighlight')}</span>
-      </h1>
-
-      <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-top: clamp(1.25rem, 1rem + 1vw, 2rem); max-width: 46rem; margin-left: auto; margin-right: auto;">
-        {t('index.heroDescription')}
-      </p>
-
-      <div class="flex flex-wrap items-center justify-center animate-entrance stagger-2" style="margin-top: clamp(1.75rem, 1.25rem + 1.5vw, 3rem); gap: clamp(0.75rem, 0.5rem + 0.75vw, 1.25rem);">
-        <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2.5" style="padding: 0.875rem 1.25rem; font-size: 0.9375rem;">
-          {t('nav.getStarted')}
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </a>
-        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2.5" style="padding: 0.875rem 1.25rem; font-size: 0.9375rem;">
-          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
-          {t('index.starOnGithub')}
-        </a>
-        <a href={`${lp('/docs/quick-reference')}#cookbook`} class="btn-outline inline-flex items-center gap-2.5" style="padding: 0.875rem 1.25rem; font-size: 0.9375rem;">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-          {t('index.cookbookCta')}
-        </a>
-      </div>
-
-      <div class="hero-install animate-entrance stagger-3">
-        <code class="hero-install-code">curl -fsSL https://leanctx.com/install | sh</code>
-      </div>
-
-      <div class="hero-proof animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem); justify-content: center;">
-        <div class="hero-proof-item">
-          <span class="hero-proof-number font-display" id="install-count">—</span>
-          <span class="hero-proof-label">{t('index.heroProofInstalls')}</span>
+  <div class="content-grid-wide">
+    <div class="split split--visual-wide">
+      <div class="hero-copy">
+        <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          <span class="kicker-pill">{t('index.heroLabel')}</span>
         </div>
-        <div class="hero-proof-divider"></div>
-        <div class="hero-proof-item">
-          <span class="hero-proof-number font-display" id="github-stars-hero">—</span>
-          <span class="hero-proof-label">{t('index.heroProofStars')}</span>
+        <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance">
+          {t('index.heroTitle')}<br/>
+          <span class="italic-accent">{t('index.heroTitleHighlight')}</span>
+        </h1>
+
+        <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-top: clamp(1.25rem, 1rem + 1vw, 2rem); max-width: 46rem;">
+          {t('index.heroDescription')}
+        </p>
+
+        <div class="flex flex-wrap items-center animate-entrance stagger-2" style="margin-top: clamp(1.75rem, 1.25rem + 1.5vw, 3rem); gap: clamp(0.75rem, 0.5rem + 0.75vw, 1.25rem);">
+          <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2.5" style="padding: 0.875rem 1.25rem; font-size: 0.9375rem;">
+            {t('nav.getStarted')}
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+          <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2.5" style="padding: 0.875rem 1.25rem; font-size: 0.9375rem;">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+            {t('index.starOnGithub')}
+          </a>
+          <a href={`${lp('/docs/quick-reference')}#cookbook`} class="btn-outline inline-flex items-center gap-2.5" style="padding: 0.875rem 1.25rem; font-size: 0.9375rem;">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+            {t('index.cookbookCta')}
+          </a>
         </div>
-        <div class="hero-proof-divider"></div>
-        <div class="hero-proof-item">
-          <span class="hero-proof-number font-display">{manifest.counts.granular}</span>
-          <span class="hero-proof-label">{t('index.heroProofTools')}</span>
+
+        <div class="hero-proof animate-entrance stagger-3" style="margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+          <div class="hero-proof-item">
+            <span class="hero-proof-number font-display" id="install-count">—</span>
+            <span class="hero-proof-label">{t('index.heroProofInstalls')}</span>
+          </div>
+          <div class="hero-proof-divider"></div>
+          <div class="hero-proof-item">
+            <span class="hero-proof-number font-display" id="github-stars-hero">—</span>
+            <span class="hero-proof-label">{t('index.heroProofStars')}</span>
+          </div>
+          <div class="hero-proof-divider"></div>
+          <div class="hero-proof-item">
+            <span class="hero-proof-number font-display">{manifest.counts.granular}</span>
+            <span class="hero-proof-label">{t('index.heroProofTools')}</span>
+          </div>
+        </div>
+
+        <div class="hero-install animate-entrance stagger-4">
+          <code class="hero-install-code">curl -fsSL https://leanctx.com/install | sh</code>
+        </div>
+      </div>
+
+      <div class="hero-terminal-wrap animate-entrance stagger-2">
+        <div class="hero-terminal" data-hero-terminal>
+          <div class="terminal-header flex items-center gap-2 px-5 py-3">
+            <span class="terminal-dot bg-[#ff5f57]"></span>
+            <span class="terminal-dot bg-[#febc2e]"></span>
+            <span class="terminal-dot bg-[#28c840]"></span>
+            <span class="ml-3 text-xs text-muted font-mono">lean-ctx session</span>
+          </div>
+          <div class="terminal-body px-5 py-5 font-mono" style="font-size: clamp(0.72rem, 0.68rem + 0.12vw, 0.8125rem); line-height: 1.8; min-height: 320px;">
+            <div class="hero-term-line" data-term-line="0">
+              <span class="text-muted">$</span> <span class="text-accent">{tRead}</span>(<span class="text-text-bright">{{ path: "src/lib/mcpManifest.ts", mode: "map" }}</span>)
+            </div>
+            <div class="hero-term-line hero-term-result" data-term-line="1">
+              <span class="text-muted">→</span> <span class="text-text">exports: getMcpManifest(), getGranularTools()</span>
+            </div>
+            <div class="hero-term-line hero-term-result" data-term-line="2">
+              <span class="text-muted">→</span> <span class="text-text">tools.granular: <span class="text-accent font-semibold">{manifest.counts.granular}</span></span>
+            </div>
+            <div class="hero-term-line hero-term-result" data-term-line="3">
+              <span class="text-muted">→</span> <span class="text-text">cached — <span class="text-accent">13 tokens</span> on re-read</span>
+            </div>
+            <div class="hero-term-spacer" data-term-line="4"></div>
+            <div class="hero-term-line" data-term-line="5">
+              <span class="text-muted">$</span> <span class="text-accent">{tSearch}</span>(<span class="text-text-bright">{{ pattern: "getMcpManifest", path: "src" }}</span>)
+            </div>
+            <div class="hero-term-line hero-term-result" data-term-line="6">
+              <span class="text-muted">→</span> <span class="text-text">2 matches in <span class="text-accent">0.8ms</span></span>
+            </div>
+            <div class="hero-term-line hero-term-result" data-term-line="7">
+              <span class="text-muted">→</span> <span class="text-text">mcpManifest.ts:14, IndexPage.astro:12</span>
+            </div>
+            <div class="hero-term-spacer" data-term-line="8"></div>
+            <div class="hero-term-line" data-term-line="9">
+              <span class="text-muted">$</span> <span class="text-accent">{tShell}</span>(<span class="text-text-bright">{{ command: "npx astro build" }}</span>)
+            </div>
+            <div class="hero-term-line hero-term-result" data-term-line="10">
+              <span class="text-muted">→</span> <span class="text-text">1294 pages built in <span class="text-accent">3.6s</span></span>
+            </div>
+            <div class="hero-term-line hero-term-result" data-term-line="11">
+              <span class="text-muted">→</span> <span class="text-text">compressed output: <span class="text-accent">847 → 42 tokens</span></span>
+            </div>
+            <div class="hero-term-cursor" data-term-line="12"></div>
+          </div>
         </div>
       </div>
     </div>

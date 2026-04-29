@@ -10,8 +10,8 @@
   position: absolute;
   inset: 0;
   background: url('/images/hero-bg.png') center / cover no-repeat;
-  opacity: 0.18;
-  filter: brightness(0.35) saturate(0.6);
+  opacity: 0.35;
+  filter: brightness(0.55) saturate(0.7);
   pointer-events: none;
   z-index: -2;
 }
@@ -21,14 +21,82 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(5, 5, 7, 0.7) 0%, rgba(5, 5, 7, 0.55) 40%, rgba(5, 5, 7, 0.85) 100%);
-  backdrop-filter: blur(1.5px);
+    linear-gradient(180deg, rgba(5, 5, 7, 0.5) 0%, rgba(5, 5, 7, 0.35) 40%, rgba(5, 5, 7, 0.7) 100%);
+  backdrop-filter: blur(0.8px);
   pointer-events: none;
   z-index: -1;
 }
 
 .hero-copy {
   max-width: 56rem;
+}
+
+.hero-terminal-wrap {
+  position: relative;
+}
+
+.hero-terminal {
+  border-radius: var(--card-radius);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 8, 12, 0.75);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  overflow: hidden;
+}
+
+.hero-term-line {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: hero-line-in 0.4s ease forwards;
+}
+
+.hero-term-result {
+  padding-left: 1rem;
+}
+
+.hero-term-spacer {
+  height: 0.75rem;
+  opacity: 0;
+  animation: hero-line-in 0.1s ease forwards;
+}
+
+.hero-term-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background: var(--color-accent);
+  opacity: 0;
+  animation:
+    hero-line-in 0.3s ease forwards,
+    hero-blink 1s step-end infinite;
+}
+
+.hero-term-line[data-term-line="0"]  { animation-delay: 0.3s; }
+.hero-term-line[data-term-line="1"]  { animation-delay: 0.9s; }
+.hero-term-line[data-term-line="2"]  { animation-delay: 1.15s; }
+.hero-term-line[data-term-line="3"]  { animation-delay: 1.4s; }
+.hero-term-spacer[data-term-line="4"]{ animation-delay: 1.7s; }
+.hero-term-line[data-term-line="5"]  { animation-delay: 2.0s; }
+.hero-term-line[data-term-line="6"]  { animation-delay: 2.7s; }
+.hero-term-line[data-term-line="7"]  { animation-delay: 2.95s; }
+.hero-term-spacer[data-term-line="8"]{ animation-delay: 3.3s; }
+.hero-term-line[data-term-line="9"]  { animation-delay: 3.6s; }
+.hero-term-line[data-term-line="10"] { animation-delay: 4.3s; }
+.hero-term-line[data-term-line="11"] { animation-delay: 4.55s; }
+.hero-term-cursor[data-term-line="12"]{ animation-delay: 4.9s; }
+
+@keyframes hero-line-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .split {
