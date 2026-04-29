@@ -84,8 +84,46 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <meta name="keywords" content={keywords} />
   <meta name="author" content="Yves Gugger" />
   <meta name="generator" content={Astro.generator} />
-  <meta name="theme-color" content="#050507" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#f7f8fb" />
+  <meta name="color-scheme" content="light dark" />
+  <script is:inline>
+  (function() {
+    var root = document.documentElement;
+    var STORAGE_KEY = 'leanctx-theme';
+    var DARK = 'dark';
+    var LIGHT = 'light';
+    function safeGet() { try { return localStorage.getItem(STORAGE_KEY); } catch(_) { return null; } }
+    var stored = safeGet();
+    var mql = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function systemTheme() { return mql && mql.matches ? DARK : LIGHT; }
+    function resolveTheme() {
+      if (stored === DARK || stored === LIGHT) return stored;
+      return systemTheme();
+    }
+    function updateMeta(theme) {
+      var themeColor = document.querySelector('meta[name="theme-color"]');
+      var colorScheme = document.querySelector('meta[name="color-scheme"]');
+      if (themeColor) themeColor.setAttribute('content', theme === DARK ? '#050507' : '#f7f8fb');
+      if (colorScheme) colorScheme.setAttribute('content', theme === DARK ? 'dark light' : 'light dark');
+    }
+    function applyTheme(theme, persist) {
+      var normalized = theme === DARK ? DARK : LIGHT;
+      root.setAttribute('data-theme', normalized);
+      root.style.colorScheme = normalized;
+      updateMeta(normalized);
+      if (persist) { try { localStorage.setItem(STORAGE_KEY, normalized); } catch(_) {} }
+      window.dispatchEvent(new CustomEvent('leanctx-theme-change', { detail: { theme: normalized } }));
+    }
+    applyTheme(resolveTheme(), false);
+    window.__leanctxSetTheme = function(theme) { applyTheme(theme, true); };
+    window.__leanctxGetTheme = function() { return root.getAttribute('data-theme') === DARK ? DARK : LIGHT; };
+    if (mql) {
+      var onSystemThemeChange = function() { if (!safeGet()) applyTheme(systemTheme(), false); };
+      if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onSystemThemeChange);
+      else if (typeof mql.addListener === 'function') mql.addListener(onSystemThemeChange);
+    }
+  })();
+  </script>
   <meta name="application-name" content="LeanCTX" />
   {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
   {noindex && <meta name="robots" content="noindex, nofollow" />}

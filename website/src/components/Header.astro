@@ -191,6 +191,20 @@ const docsColumns = [
           <svg class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </a>
 
+        <button type="button" class="header-theme-toggle" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false" title="Switch to dark mode">
+          <span class="header-theme-toggle-track" aria-hidden="true">
+            <svg class="header-theme-icon header-theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <svg class="header-theme-icon header-theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+          </span>
+        </button>
+
         <LanguageSwitcher />
 
         <button id="mobile-menu-btn" class="header-mobile-btn" aria-label={t('nav.menu')}>
@@ -237,7 +251,20 @@ const docsColumns = [
         <a href={lp('/login')} class="mobile-nav-link">{t('nav.login')}</a>
       </div>
 
-      <div class="mobile-lang-area">
+      <div class="mobile-lang-area" style="display: flex; align-items: center; gap: 0.5rem;">
+        <button type="button" class="header-theme-toggle header-theme-toggle-mobile" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false" title="Switch to dark mode">
+          <span class="header-theme-toggle-track" aria-hidden="true">
+            <svg class="header-theme-icon header-theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <svg class="header-theme-icon header-theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+          </span>
+        </button>
         <LanguageSwitcher />
       </div>
 
@@ -533,6 +560,62 @@ const docsColumns = [
   .mobile-get-started:hover {
     box-shadow: 0 0 20px rgba(52, 211, 153, 0.15);
   }
+  .header-theme-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-border-light);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    color: var(--color-muted);
+  }
+  .header-theme-toggle:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .header-theme-toggle:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .header-theme-toggle-track {
+    width: 18px;
+    height: 18px;
+    position: relative;
+  }
+  .header-theme-icon {
+    width: 18px;
+    height: 18px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .header-theme-icon-sun {
+    opacity: 0;
+    transform: rotate(-30deg) scale(0.8);
+  }
+  .header-theme-icon-moon {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+  .header-theme-toggle[data-theme='light'] .header-theme-icon-sun {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+  .header-theme-toggle[data-theme='light'] .header-theme-icon-moon {
+    opacity: 0;
+    transform: rotate(30deg) scale(0.8);
+  }
+  @media (min-width: 640px) {
+    .header-theme-toggle { display: inline-flex; }
+  }
+  .header-theme-toggle-mobile { display: inline-flex; }
+  @media (min-width: 640px) {
+    .header-theme-toggle-mobile { display: none; }
+  }
 </style>
 
 <script>
@@ -630,4 +713,52 @@ const docsColumns = [
       }
     })
     .catch(() => {});
+
+  function getTheme(): string {
+    if (typeof (window as any).__leanctxGetTheme === 'function') return (window as any).__leanctxGetTheme();
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  function setThemeButtonState(btn: Element, theme: string) {
+    const isDark = theme === 'dark';
+    (btn as HTMLElement).dataset.theme = isDark ? 'dark' : 'light';
+    btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+    btn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+    btn.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+  }
+
+  function applyTheme(theme: string) {
+    if (typeof (window as any).__leanctxSetTheme === 'function') {
+      (window as any).__leanctxSetTheme(theme);
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.style.colorScheme = theme;
+      try { localStorage.setItem('leanctx-theme', theme); } catch (_) {}
+    }
+    window.dispatchEvent(new CustomEvent('leanctx-theme-change', { detail: { theme } }));
+  }
+
+  function bindThemeToggles() {
+    document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
+      if ((btn as HTMLElement).dataset.boundThemeToggle === 'true') return;
+      (btn as HTMLElement).dataset.boundThemeToggle = 'true';
+      setThemeButtonState(btn, getTheme());
+      btn.addEventListener('click', () => {
+        const next = getTheme() === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        document.querySelectorAll('[data-theme-toggle]').forEach((b) => setThemeButtonState(b, next));
+      });
+    });
+  }
+
+  bindThemeToggles();
+  document.addEventListener('astro:page-load', bindThemeToggles);
+
+  if (!(window as any).__leanctxThemeToggleListenerBound) {
+    (window as any).__leanctxThemeToggleListenerBound = true;
+    window.addEventListener('leanctx-theme-change', ((event: CustomEvent) => {
+      const theme = event?.detail?.theme === 'dark' ? 'dark' : 'light';
+      document.querySelectorAll('[data-theme-toggle]').forEach((btn) => setThemeButtonState(btn, theme));
+    }) as EventListener);
+  }
 </script>

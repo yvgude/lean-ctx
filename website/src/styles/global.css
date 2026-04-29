@@ -41,6 +41,76 @@
 }
 
 
+/* ── Light Theme ──────────────────────────────────────── */
+
+:root:not([data-theme='dark']) {
+  color-scheme: light;
+  --color-bg: #f7f8fb;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0f1f5;
+  --color-surface-3: #e8e9ef;
+  --color-surface-elevated: #ffffff;
+  --color-border: #d5d8e0;
+  --color-border-light: #c5cfde;
+  --color-text: #4a4d5e;
+  --color-text-bright: #111827;
+  --color-muted: #6b7280;
+  --color-accent: #059669;
+  --color-accent-bright: #10b981;
+  --color-accent-2: #6366f1;
+  --color-accent-2-bright: #818cf8;
+  --color-accent-3: #a855f7;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --theme-color-meta: #f7f8fb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --color-bg: #050507;
+    --color-surface: #0a0a0f;
+    --color-surface-2: #111118;
+    --color-surface-3: #18181f;
+    --color-surface-elevated: #0d0d14;
+    --color-border: #1a1a24;
+    --color-border-light: #2a2a38;
+    --color-text: #a8a8be;
+    --color-text-bright: #eeeef5;
+    --color-muted: #5e5e78;
+    --color-accent: #34d399;
+    --color-accent-bright: #6ee7b7;
+    --color-accent-2: #818cf8;
+    --color-accent-2-bright: #a5b4fc;
+    --color-accent-3: #c084fc;
+    --color-danger: #f87171;
+    --color-warning: #fbbf24;
+    --theme-color-meta: #050507;
+  }
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --color-bg: #050507;
+  --color-surface: #0a0a0f;
+  --color-surface-2: #111118;
+  --color-surface-3: #18181f;
+  --color-surface-elevated: #0d0d14;
+  --color-border: #1a1a24;
+  --color-border-light: #2a2a38;
+  --color-text: #a8a8be;
+  --color-text-bright: #eeeef5;
+  --color-muted: #5e5e78;
+  --color-accent: #34d399;
+  --color-accent-bright: #6ee7b7;
+  --color-accent-2: #818cf8;
+  --color-accent-2-bright: #a5b4fc;
+  --color-accent-3: #c084fc;
+  --color-danger: #f87171;
+  --color-warning: #fbbf24;
+  --theme-color-meta: #050507;
+}
+
 /* ── Base ─────────────────────────────────────────────── */
 
 html {
