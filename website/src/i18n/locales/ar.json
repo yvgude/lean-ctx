@@ -3771,5 +3771,8 @@
   "testimonials.radmar": "Shell Hook يوفر مئات الآلاف من الرموز يومياً. git log، cargo test، npm run — كل شيء يُضغط تلقائياً. صفر إعدادات.",
   "testimonials.radmarRole": "مساهم في المصادر المفتوحة",
   "testimonials.sebastian": "ثبّتُ lean-ctx وشعرت فوراً أن جلسات Cursor أصبحت أسرع. الملفات التي كانت تستهلك 2000 رمز أصبحت تكلف 50 فقط.",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "docs.quickReference.cookbookTitle": "Cookbook & SDK",
+  "docs.quickReference.cookbookDesc": "Prefer copy-pasteable, real integrations? The <strong>LeanCTX Cookbook</strong> ships a small <code>@leanctx/sdk</code> HTTP client (for <code>/v1/tools/call</code>) plus three example apps: Quickstart CLI, Memory Policy Playground, and a Knowledge Graph Explorer.",
+  "index.cookbookCta": "Cookbook"
 }

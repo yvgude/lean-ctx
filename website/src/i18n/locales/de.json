@@ -3771,5 +3771,8 @@
   "safety.verifyStructDesc": "Klammer-Balance wird überprüft, um abgeschnittene Codeblöcke zu erkennen.",
   "safety.verifyLink": "Mehr über Output-Verifizierung erfahren",
   "nav.docs.verification": "Verifizierung & Routing",
-  "nav.docs.verificationDesc": "Quality Guardrail + Semantic Router"
+  "nav.docs.verificationDesc": "Quality Guardrail + Semantic Router",
+  "docs.quickReference.cookbookTitle": "Cookbook & SDK",
+  "docs.quickReference.cookbookDesc": "Du willst copy-pastebare, echte Integrationen (ohne Mock-Daten)? Das <strong>LeanCTX Cookbook</strong> liefert einen kleinen <code>@leanctx/sdk</code> HTTP Client (für <code>/v1/tools/call</code>) plus drei Example Apps: Quickstart CLI, Memory Policy Playground und einen Knowledge Graph Explorer.",
+  "index.cookbookCta": "Cookbook"
 }

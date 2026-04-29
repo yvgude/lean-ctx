@@ -3771,5 +3771,8 @@
   "testimonials.radmar": "Shell hook 每天节省数十万 token。git log、cargo test、npm run——一切自动压缩。零配置。",
   "testimonials.radmarRole": "开源贡献者",
   "testimonials.sebastian": "我安装了 lean-ctx，我的 Cursor 会话立刻感觉更流畅了。以前消耗 2K token 的文件现在只需 50。",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "docs.quickReference.cookbookTitle": "Cookbook & SDK",
+  "docs.quickReference.cookbookDesc": "Prefer copy-pasteable, real integrations? The <strong>LeanCTX Cookbook</strong> ships a small <code>@leanctx/sdk</code> HTTP client (for <code>/v1/tools/call</code>) plus three example apps: Quickstart CLI, Memory Policy Playground, and a Knowledge Graph Explorer.",
+  "index.cookbookCta": "Cookbook"
 }

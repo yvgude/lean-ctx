@@ -3771,5 +3771,8 @@
   "testimonials.radmar": "Shell Hookは1日に数十万tokenを節約します。git log、cargo test、npm run — すべてが自動的に圧縮されます。設定不要。",
   "testimonials.radmarRole": "オープンソースコントリビューター",
   "testimonials.sebastian": "lean-ctxをインストールしたら、Cursorセッションが即座にキビキビと感じるようになりました。以前2K tokenを消費していたファイルが、今は50で済みます。",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "docs.quickReference.cookbookTitle": "Cookbook & SDK",
+  "docs.quickReference.cookbookDesc": "Prefer copy-pasteable, real integrations? The <strong>LeanCTX Cookbook</strong> ships a small <code>@leanctx/sdk</code> HTTP client (for <code>/v1/tools/call</code>) plus three example apps: Quickstart CLI, Memory Policy Playground, and a Knowledge Graph Explorer.",
+  "index.cookbookCta": "Cookbook"
 }

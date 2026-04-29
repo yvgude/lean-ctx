@@ -1,0 +1,145 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docsVerify.sidebarVerification'),
+    items: [
+      { label: t('docsVerify.sidebarOverview'), href: lp('/docs/verification') },
+      { label: t('docsVerify.sidebarChecks'), href: lp('/docs/verification') + '#checks' },
+      { label: t('docsVerify.sidebarConfig'), href: lp('/docs/verification') + '#config' },
+      { label: t('docsVerify.sidebarRouting'), href: lp('/docs/verification') + '#routing' },
+      { label: t('docsVerify.sidebarAdaptive'), href: lp('/docs/verification') + '#adaptive' },
+    ],
+  },
+  {
+    title: t('docsVerify.sidebarRelated'),
+    items: [
+      { label: t('docsVerify.sidebarObservability'), href: lp('/docs/observability') },
+      { label: t('docsVerify.sidebarSafety'), href: lp('/safety') },
+      { label: t('docsVerify.sidebarProfiles'), href: lp('/docs/profiles') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docsVerify.title')} sidebar={sidebar}>
+  <div class="docs-content">
+    <h1>{t('docsVerify.heading')}</h1>
+    <p class="lead">{t('docsVerify.intro')}</p>
+
+    <!-- Verification Checks -->
+    <section id="checks">
+      <h2>{t('docsVerify.checksTitle')}</h2>
+      <p>{t('docsVerify.checksDesc')}</p>
+
+      <h3>{t('docsVerify.pathAnchoringTitle')}</h3>
+      <p>{t('docsVerify.pathAnchoringDesc')}</p>
+
+      <h3>{t('docsVerify.identifierCheckTitle')}</h3>
+      <p>{t('docsVerify.identifierCheckDesc')}</p>
+
+      <h3>{t('docsVerify.lineNumberTitle')}</h3>
+      <p>{t('docsVerify.lineNumberDesc')}</p>
+
+      <h3>{t('docsVerify.structuralTitle')}</h3>
+      <p>{t('docsVerify.structuralDesc')}</p>
+    </section>
+
+    <!-- Configuration -->
+    <section id="config">
+      <h2>{t('docsVerify.configTitle')}</h2>
+      <p>{t('docsVerify.configDesc')}</p>
+
+      <pre><code class="language-toml">{`# Profile-specific verification settings
+[verification]
+enabled = true
+check_paths = true
+check_identifiers = true
+check_line_numbers = false  # opt-in
+check_structure = true`}</code></pre>
+
+      <h3>{t('docsVerify.resultFormatTitle')}</h3>
+      <p>{t('docsVerify.resultFormatDesc')}</p>
+
+      <pre><code class="language-text">{`[VERIFY] WARN(missing_path=1, mangled_identifier=2) loss=15.0%`}</code></pre>
+    </section>
+
+    <!-- Model Routing -->
+    <section id="routing">
+      <h2>{t('docsVerify.routingTitle')}</h2>
+      <p>{t('docsVerify.routingDesc')}</p>
+
+      <h3>{t('docsVerify.dimensionsTitle')}</h3>
+      <div class="routing-table">
+        <table>
+          <thead>
+            <tr>
+              <th>{t('docsVerify.colDimension')}</th>
+              <th>{t('docsVerify.colTaskTypes')}</th>
+              <th>{t('docsVerify.colModelTier')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>What</strong></td>
+              <td>Explore, Debug</td>
+              <td>Fast</td>
+            </tr>
+            <tr>
+              <td><strong>How</strong></td>
+              <td>Review, FixBug, Test</td>
+              <td>Standard</td>
+            </tr>
+            <tr>
+              <td><strong>Do</strong></td>
+              <td>Generate, Refactor, Deploy</td>
+              <td>Premium</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>{t('docsVerify.ctxIntentTitle')}</h3>
+      <p>{t('docsVerify.ctxIntentDesc')}</p>
+
+      <pre><code class="language-text">{`INTENT_OK id=42 type=fix_bug source=heuristic conf=90% subj=file(auth.rs)
+| route: dimension=how model_tier=standard reason=fix_bug(how) + complexity -> standard`}</code></pre>
+    </section>
+
+    <!-- Adaptive Compression -->
+    <section id="adaptive">
+      <h2>{t('docsVerify.adaptiveTitle')}</h2>
+      <p>{t('docsVerify.adaptiveDesc')}</p>
+
+      <h3>{t('docsVerify.thompsonTitle')}</h3>
+      <p>{t('docsVerify.thompsonDesc')}</p>
+
+      <pre><code class="language-text">{`Threshold Bandits (Thompson Sampling):
+  rs_feedback (pulls: 120):
+    conservative: α=15.2 β=8.1 mean=65% entropy=1.20 jaccard=0.80
+    balanced:     α=22.3 β=5.2 mean=81% entropy=0.90 jaccard=0.70
+    aggressive:   α=8.4 β=12.0 mean=41% entropy=0.60 jaccard=0.55`}</code></pre>
+
+      <h3>{t('docsVerify.feedbackLoopTitle')}</h3>
+      <p>{t('docsVerify.feedbackLoopDesc')}</p>
+    </section>
+
+    <!-- Dashboard API -->
+    <section id="api">
+      <h2>{t('docsVerify.apiTitle')}</h2>
+      <p>{t('docsVerify.apiDesc')}</p>
+
+      <pre><code class="language-bash">{`# Verification stats
+curl http://localhost:3179/api/verification
+
+# Prometheus metrics (includes verification counters)
+curl http://localhost:3179/metrics | grep verification`}</code></pre>
+    </section>
+  </div>
+</DocsLayout>

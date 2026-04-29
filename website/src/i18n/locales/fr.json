@@ -3771,5 +3771,8 @@
   "testimonials.radmar": "Le shell hook économise des centaines de milliers de tokens par jour. git log, cargo test, npm run — tout compressé automatiquement. Zéro configuration.",
   "testimonials.radmarRole": "Contributeur open source",
   "testimonials.sebastian": "J'ai installé lean-ctx et mes sessions Cursor sont immédiatement devenues plus réactives. Les fichiers qui consommaient 2K tokens ne coûtent plus que 50.",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "docs.quickReference.cookbookTitle": "Cookbook & SDK",
+  "docs.quickReference.cookbookDesc": "Prefer copy-pasteable, real integrations? The <strong>LeanCTX Cookbook</strong> ships a small <code>@leanctx/sdk</code> HTTP client (for <code>/v1/tools/call</code>) plus three example apps: Quickstart CLI, Memory Policy Playground, and a Knowledge Graph Explorer.",
+  "index.cookbookCta": "Cookbook"
 }

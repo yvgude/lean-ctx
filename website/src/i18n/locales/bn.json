@@ -3771,5 +3771,8 @@
   "testimonials.radmar": "Shell hook প্রতিদিন লক্ষ লক্ষ token সাশ্রয় করে। git log, cargo test, npm run — সবকিছু স্বয়ংক্রিয়ভাবে কম্প্রেসড। জিরো কনফিগ।",
   "testimonials.radmarRole": "ওপেন সোর্স কন্ট্রিবিউটর",
   "testimonials.sebastian": "আমি lean-ctx ইনস্টল করলাম এবং আমার Cursor সেশনগুলো সাথে সাথে দ্রুততর অনুভব হলো। যে ফাইলগুলো 2K token খেত সেগুলো এখন 50-তে হয়।",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "docs.quickReference.cookbookTitle": "Cookbook & SDK",
+  "docs.quickReference.cookbookDesc": "Prefer copy-pasteable, real integrations? The <strong>LeanCTX Cookbook</strong> ships a small <code>@leanctx/sdk</code> HTTP client (for <code>/v1/tools/call</code>) plus three example apps: Quickstart CLI, Memory Policy Playground, and a Knowledge Graph Explorer.",
+  "index.cookbookCta": "Cookbook"
 }

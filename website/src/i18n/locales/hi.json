@@ -3771,5 +3771,8 @@
   "testimonials.radmar": "शेल हुक प्रतिदिन लाखों टोकन बचाता है। git log, cargo test, npm run — सब कुछ स्वचालित रूप से कम्प्रेस। शून्य कॉन्फ़िग।",
   "testimonials.radmarRole": "ओपन सोर्स योगदानकर्ता",
   "testimonials.sebastian": "मैंने lean-ctx इंस्टॉल किया और मेरे Cursor सत्र तुरंत तेज़ महसूस हुए। जो फ़ाइलें 2K टोकन खाती थीं अब 50 में आती हैं।",
-  "testimonials.sebastianRole": "TypeScript / React"
+  "testimonials.sebastianRole": "TypeScript / React",
+  "docs.quickReference.cookbookTitle": "Cookbook & SDK",
+  "docs.quickReference.cookbookDesc": "Prefer copy-pasteable, real integrations? The <strong>LeanCTX Cookbook</strong> ships a small <code>@leanctx/sdk</code> HTTP client (for <code>/v1/tools/call</code>) plus three example apps: Quickstart CLI, Memory Policy Playground, and a Knowledge Graph Explorer.",
+  "index.cookbookCta": "Cookbook"
 }
