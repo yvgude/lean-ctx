@@ -366,7 +366,7 @@ fn handle_status(root: &str) -> String {
     }
 
     let mut langs: Vec<_> = by_lang.iter().collect();
-    langs.sort_by(|a, b| b.1.cmp(a.1));
+    langs.sort_by_key(|item| std::cmp::Reverse(*item.1));
     let lang_summary: String = langs
         .iter()
         .take(5)

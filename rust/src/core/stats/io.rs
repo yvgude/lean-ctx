@@ -176,7 +176,7 @@ pub(super) fn merge_daily(merged: &mut Vec<DayStats>, current: &[DayStats], base
     }
 
     if merged.len() > 90 {
-        merged.sort_by(|a, b| a.date.cmp(&b.date));
+        merged.sort_by_key(|item| item.date.clone());
         merged.drain(..merged.len() - 90);
     }
 }

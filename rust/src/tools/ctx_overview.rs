@@ -167,7 +167,7 @@ pub fn handle(
             *connection_counts.entry(&edge.to).or_insert(0) += 1;
         }
         let mut hubs: Vec<(&&str, &usize)> = connection_counts.iter().collect();
-        hubs.sort_by(|a, b| b.1.cmp(a.1));
+        hubs.sort_by_key(|item| std::cmp::Reverse(*item.1));
 
         if !hubs.is_empty() {
             output.push("HUB FILES (most connected):".to_string());

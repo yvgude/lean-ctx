@@ -518,7 +518,7 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
     }
 
     let mut result: Vec<ProfileInfo> = profiles.into_values().collect();
-    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result.sort_by_key(|p| p.name.clone());
     result
 }
 

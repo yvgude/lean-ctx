@@ -456,7 +456,7 @@ pub fn list_roles() -> Vec<RoleInfo> {
         }
     }
 
-    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result.sort_by_key(|r| r.name.clone());
     result
 }
 

@@ -375,7 +375,7 @@ pub fn format_cep_report() -> String {
         out.push(format!("  {ln}", ln = theme.border_line(56)));
 
         let mut sorted_modes: Vec<_> = cep.modes.iter().collect();
-        sorted_modes.sort_by(|a, b2| b2.1.cmp(a.1));
+        sorted_modes.sort_by_key(|item| std::cmp::Reverse(*item.1));
         let max_mode = *sorted_modes.first().map_or(&1, |(_, c)| *c);
         let max_mode = max_mode.max(1);
 

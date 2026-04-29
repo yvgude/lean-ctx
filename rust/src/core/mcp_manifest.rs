@@ -64,10 +64,10 @@ pub fn default_manifest_path() -> PathBuf {
 
 pub fn manifest_value() -> Value {
     let mut granular_tools: Vec<Tool> = crate::tool_defs::granular_tool_defs();
-    granular_tools.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
+    granular_tools.sort_by_key(|t| t.name.clone());
 
     let mut unified_tools: Vec<Tool> = crate::tool_defs::unified_tool_defs();
-    unified_tools.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
+    unified_tools.sort_by_key(|t| t.name.clone());
 
     let granular: Vec<Value> = granular_tools
         .into_iter()

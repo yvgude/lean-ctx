@@ -298,7 +298,7 @@ fn count_tools(actions: &[Action]) -> Vec<(String, usize)> {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|item| std::cmp::Reverse(item.1));
     sorted
 }
 

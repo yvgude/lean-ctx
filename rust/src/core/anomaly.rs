@@ -183,7 +183,7 @@ impl AnomalyDetector {
                 last_value: state.window_values.last().copied().unwrap_or(0.0),
             })
             .collect();
-        out.sort_by(|a, b| a.metric.cmp(&b.metric));
+        out.sort_by_key(|s| s.metric.clone());
         out
     }
 
