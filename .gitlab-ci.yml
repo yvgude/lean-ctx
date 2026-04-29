@@ -1,85 +1,36 @@
-# GitLab CI/CD — lean-ctx website deployment
-# Triggered on the `deploy` branch → builds website (Node 22) and deploys to server (nginx container)
-#
-# Required GitLab CI/CD Variables (Settings → CI/CD → Variables):
-#   LEANCTX_SSH_KEY   — private SSH key content (type: File, protected: yes)
-#   LEANCTX_SSH_HOST  — server IP (e.g. 185.142.213.170)
-#   LEANCTX_SSH_USER  — SSH username (e.g. administrator)
-
 stages:
-  - build
-  - deploy
+  - test
 
-build-website:
-  stage: build
-  image: node:22.12.0-bullseye
-  only:
-    - deploy
-  script:
-    - cd website
-    - mkdir -p public/generated
-    - cp generated/mcp-tools.json public/generated/
-    - npm ci --silent
-    - node scripts/validate-manifest.mjs
-    - node scripts/validate-i18n.mjs
-    - node scripts/validate-docs-coverage.mjs
-    - node scripts/validate-tool-docs.mjs
-    - node scripts/validate-i18n-duplicates.mjs
-    - npm run -s build
-  artifacts:
+rust_test:
+  stage: test
+  image: rust:latest
+  variables:
+    CARGO_TERM_COLOR: always
+    RUSTFLAGS: "-Dwarnings"
+  cache:
+    key: "cargo-${CI_COMMIT_REF_SLUG}"
     paths:
-      - website/dist
-      - website/nginx.conf
-      - website/Dockerfile
-    expire_in: 1 week
-
-deploy-website:
-  stage: deploy
-  image: alpine:latest
-  only:
-    - deploy
-  dependencies:
-    - build-website
-  before_script:
-    - apk add --no-cache openssh-client rsync
-    - eval $(ssh-agent -s)
-    - chmod 600 "$LEANCTX_SSH_KEY"
-    - ssh-add "$LEANCTX_SSH_KEY"
-    - mkdir -p ~/.ssh
-    - ssh-keyscan -H "$LEANCTX_SSH_HOST" >> ~/.ssh/known_hosts
+      - rust/target/
+      - /root/.cargo/registry/
+      - /root/.cargo/git/
   script:
-    # Sync built dist + nginx.conf + Dockerfile to server
-    - |
-      ssh "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST" "mkdir -p /home/$LEANCTX_SSH_USER/lean-ctx-web/dist"
-      rsync -avz --delete website/dist/ \
-        "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST:/home/$LEANCTX_SSH_USER/lean-ctx-web/dist/"
-      rsync -avz website/nginx.conf website/Dockerfile \
-        "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST:/home/$LEANCTX_SSH_USER/lean-ctx-web/"
-    # Rebuild image and restart container on server
-    # Note: Traefik routing is handled by file-based config (leanctx-com.yml),
-    # so no Docker labels needed. Container name must be "leanctx-web" to match.
-    - |
-      ssh "$LEANCTX_SSH_USER@$LEANCTX_SSH_HOST" '
-        set -e
-        cd /home/'"$LEANCTX_SSH_USER"'/lean-ctx-web
+    - cd rust
+    - cargo test --all-features -- --test-threads=1
 
-        echo "[1/4] Building Docker image..."
-        docker build -t lean-ctx-web .
+cookbook:
+  stage: test
+  image: node:20
+  variables:
+    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/cookbook/.npm"
+  cache:
+    key: "cookbook-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - cookbook/.npm/
+  script:
+    - cd cookbook
+    - npm ci
+    - npm run lint
+    - npm run typecheck
+    - npm test
+    - npm run build
 
-        echo "[2/4] Stopping old container..."
-        docker stop leanctx-web || true
-        docker rm leanctx-web || true
-
-        echo "[3/4] Starting new container..."
-        docker run -d \
-          --name leanctx-web \
-          --network coolify \
-          --restart unless-stopped \
-          lean-ctx-web
-
-        echo "[4/4] Done. Container status:"
-        docker ps --filter name=leanctx-web --format "table {{.Names}}\t{{.Status}}"
-      '
-  environment:
-    name: production
-    url: https://leanctx.com
