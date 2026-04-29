@@ -172,19 +172,19 @@ body::after {
 /* ── Fluid Typography Scale ───────────────────────────── */
 
 .fluid-display {
-  font-size: clamp(3.5rem, 2rem + 8vw, 10rem);
+  font-size: clamp(3rem, 2rem + 5.2vw, 7.5rem);
   line-height: 0.95;
   letter-spacing: -0.05em;
 }
 .fluid-h1 {
-  font-size: clamp(2.25rem, 1.2rem + 4.5vw, 5.5rem);
-  line-height: 1.02;
-  letter-spacing: -0.04em;
-}
-.fluid-h2 {
-  font-size: clamp(1.75rem, 1rem + 3vw, 4rem);
+  font-size: clamp(2rem, 1.4rem + 3.2vw, 4.5rem);
   line-height: 1.06;
   letter-spacing: -0.035em;
+}
+.fluid-h2 {
+  font-size: clamp(1.5rem, 1rem + 2.2vw, 3.25rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
 }
 .fluid-h3 {
   font-size: clamp(1.25rem, 1rem + 1vw, 2rem);
@@ -229,19 +229,19 @@ body::after {
 
 .content-grid {
   width: 100%;
-  max-width: 68rem;
+  max-width: clamp(62rem, 92vw, 112rem);
   margin-inline: auto;
   padding-inline: clamp(1.5rem, 0.75rem + 3vw, 5rem);
 }
 .content-grid-narrow {
   width: 100%;
-  max-width: 56rem;
+  max-width: clamp(48rem, 88vw, 78rem);
   margin-inline: auto;
   padding-inline: clamp(1.5rem, 0.75rem + 3vw, 5rem);
 }
 .content-grid-wide {
   width: 100%;
-  max-width: 92rem;
+  max-width: clamp(72rem, 96vw, 140rem);
   margin-inline: auto;
   padding-inline: clamp(1.5rem, 0.75rem + 3vw, 5rem);
 }
@@ -440,6 +440,20 @@ pre code {
 .italic-accent {
   font-style: italic;
   color: var(--color-accent);
+}
+
+.pill-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: rgba(10, 10, 15, 0.5);
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .panel {

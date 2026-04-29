@@ -1,5 +1,172 @@
 /* Landing (IndexPage) — screenshot-inspired section panels */
 
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(1.5rem, 1rem + 2vw, 4rem);
+  align-items: center;
+}
+
+@media (min-width: 1024px) {
+  .split {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  }
+  .split.split--visual-wide {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+  .split.split--reverse > :first-child { order: 2; }
+  .split.split--reverse > :last-child { order: 1; }
+}
+
+.split + .split {
+  margin-top: clamp(3rem, 2rem + 2vw, 5rem);
+}
+
+.scrolly {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(2rem, 1.5rem + 2vw, 5rem);
+  align-items: start;
+  --p: 0;
+}
+
+@media (min-width: 1024px) {
+  .scrolly {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  }
+}
+
+.scrolly-steps {
+  display: grid;
+  gap: 0;
+}
+
+.scrolly-step {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: 1.25rem;
+  padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.scrolly-step:last-child {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.scrolly-step-number {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--color-muted);
+  letter-spacing: -0.02em;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.scrolly-step[data-active='true'] .scrolly-step-number {
+  color: var(--color-accent);
+}
+
+.scrolly-visual-wrap {
+  position: relative;
+}
+
+.scrolly-sticky {
+  position: sticky;
+  top: clamp(5.25rem, 4.5rem + 1vw, 6.5rem);
+}
+
+.scrolly-visual {
+  min-height: clamp(360px, 42vw, 560px);
+}
+
+.scrolly-visual-inner {
+  padding: clamp(1.25rem, 1rem + 1vw, 2rem);
+}
+
+.scrolly-stack {
+  position: relative;
+  height: clamp(300px, 34vw, 480px);
+}
+
+.scrolly-card {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 10, 15, 0.55);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  padding: clamp(1rem, 0.8rem + 0.6vw, 1.25rem);
+  transform-origin: 50% 60%;
+  transition: border-color 0.25s ease;
+}
+
+.scrolly-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.scrolly-card-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-text-bright);
+  font-size: clamp(0.9rem, 0.85rem + 0.15vw, 1rem);
+}
+
+.scrolly-card-bar {
+  margin-top: 1rem;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.scrolly-card-lines {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.scrolly-card-lines span {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.scrolly-card-lines span:nth-child(1) { width: 78%; }
+.scrolly-card-lines span:nth-child(2) { width: 64%; }
+.scrolly-card-lines span:nth-child(3) { width: 52%; }
+
+.scrolly-card[data-i='0'] {
+  transform: translate3d(calc(var(--p) * -22px), calc(var(--p) * -26px), 0) rotate(calc(var(--p) * -2deg));
+}
+.scrolly-card[data-i='1'] {
+  transform: translate3d(calc(var(--p) * 36px), calc(var(--p) * -12px), 0) rotate(calc(var(--p) * 3deg)) scale(0.985);
+  opacity: calc(0.95 + var(--p) * 0.05);
+}
+.scrolly-card[data-i='2'] {
+  transform: translate3d(calc(var(--p) * -38px), calc(var(--p) * 26px), 0) rotate(calc(var(--p) * -4deg)) scale(0.97);
+  opacity: calc(0.92 + var(--p) * 0.08);
+}
+.scrolly-card[data-i='3'] {
+  transform: translate3d(calc(var(--p) * 24px), calc(var(--p) * 44px), 0) rotate(calc(var(--p) * 5deg)) scale(0.96);
+  opacity: calc(0.9 + var(--p) * 0.1);
+}
+
+.scrolly[data-active='0'] .scrolly-card[data-i='0'],
+.scrolly[data-active='1'] .scrolly-card[data-i='1'],
+.scrolly[data-active='2'] .scrolly-card[data-i='2'],
+.scrolly[data-active='3'] .scrolly-card[data-i='3'] {
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.scrolly-hint {
+  margin-top: 1rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
 .landing-hero {
   text-align: center;
 }
@@ -78,6 +245,10 @@
   .compare-grid {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+.compare-grid.is-stacked {
+  grid-template-columns: 1fr;
 }
 
 .compare-card {
