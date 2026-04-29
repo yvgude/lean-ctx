@@ -170,31 +170,31 @@ body::after {
 /* ── Fluid Typography Scale ───────────────────────────── */
 
 .fluid-display {
-  font-size: clamp(3rem, 2rem + 5.2vw, 7.5rem);
+  font-size: clamp(2.25rem, 1.5rem + 4vw, 7rem);
   line-height: 0.95;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.045em;
 }
 .fluid-h1 {
-  font-size: clamp(2rem, 1.4rem + 3.2vw, 4.5rem);
+  font-size: clamp(1.625rem, 1.2rem + 2.5vw, 4rem);
   line-height: 1.06;
   letter-spacing: -0.035em;
 }
 .fluid-h2 {
-  font-size: clamp(1.5rem, 1rem + 2.2vw, 3.25rem);
+  font-size: clamp(1.25rem, 0.95rem + 1.6vw, 2.75rem);
   line-height: 1.12;
   letter-spacing: -0.03em;
 }
 .fluid-h3 {
-  font-size: clamp(1.25rem, 1rem + 1vw, 2rem);
+  font-size: clamp(1.125rem, 0.95rem + 0.8vw, 1.75rem);
   line-height: 1.15;
   letter-spacing: -0.025em;
 }
 .fluid-body {
-  font-size: clamp(1rem, 0.92rem + 0.35vw, 1.25rem);
+  font-size: clamp(0.9375rem, 0.88rem + 0.3vw, 1.1875rem);
   line-height: 1.7;
 }
 .fluid-sm {
-  font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
+  font-size: clamp(0.75rem, 0.72rem + 0.12vw, 0.875rem);
   line-height: 1.6;
 }
 .fluid-label {
@@ -209,12 +209,12 @@ body::after {
 /* ── Fluid Spacing (dramatically increased) ───────────── */
 
 .section-y {
-  padding-top: clamp(6rem, 4rem + 8vw, 14rem);
-  padding-bottom: clamp(6rem, 4rem + 8vw, 14rem);
+  padding-top: clamp(4rem, 2.5rem + 6vw, 12rem);
+  padding-bottom: clamp(4rem, 2.5rem + 6vw, 12rem);
 }
 .section-y-sm {
-  padding-top: clamp(4rem, 3rem + 5vw, 9rem);
-  padding-bottom: clamp(4rem, 3rem + 5vw, 9rem);
+  padding-top: clamp(2.5rem, 2rem + 4vw, 8rem);
+  padding-bottom: clamp(2.5rem, 2rem + 4vw, 8rem);
 }
 .section-y-xs {
   padding-top: clamp(2.5rem, 1.75rem + 2.5vw, 5rem);
@@ -423,14 +423,14 @@ pre code {
 .kicker-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.875rem;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  background: rgba(10, 10, 15, 0.35);
-  backdrop-filter: blur(10px);
+  gap: 0.375rem;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: none;
+  backdrop-filter: none;
   color: var(--color-muted);
-  font-size: clamp(0.6875rem, 0.65rem + 0.08vw, 0.75rem);
+  font-size: clamp(0.625rem, 0.6rem + 0.06vw, 0.6875rem);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
