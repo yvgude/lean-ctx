@@ -1,0 +1,29 @@
+{
+  "name": "lean-ctx-cookbook",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "sdk",
+    "examples/*"
+  ],
+  "scripts": {
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "typecheck": "npm --workspace @leanctx/sdk run build && npm -ws run typecheck",
+    "build": "npm -ws run build",
+    "test": "npm --workspace @leanctx/sdk test",
+    "quickstart": "npm --workspace @leanctx/sdk run build && npm --workspace @leanctx/example-quickstart-cli start",
+    "memory-playground": "npm --workspace @leanctx/sdk run build && npm --workspace @leanctx/example-memory-policy-playground start",
+    "graph-explorer": "npm --workspace @leanctx/sdk run build && npm --workspace @leanctx/example-knowledge-graph-explorer dev"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.13",
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^1.6.1"
+  }
+}

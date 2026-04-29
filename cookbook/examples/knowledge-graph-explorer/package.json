@@ -1,0 +1,24 @@
+{
+  "name": "@leanctx/example-knowledge-graph-explorer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@leanctx/sdk": "^0.1.0",
+    "mermaid": "^10.9.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --strictPort --port 5173",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^5.4.21"
+  }
+}

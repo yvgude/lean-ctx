@@ -1,0 +1,27 @@
+{
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "trailingCommas": "es5"
+    }
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!!**/node_modules",
+      "!!**/dist",
+      "!!**/coverage"
+    ]
+  }
+}
