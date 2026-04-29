@@ -107,19 +107,21 @@ pub struct DimensionStatus {
 impl DimensionStatus {
     fn evaluate(used: usize, limit: usize, limits: &RoleLimits) -> Self {
         if limit == 0 {
+            // Zero limit with any usage => Warning (not Exhausted, LeanCTX never blocks)
             return Self {
                 used,
                 limit,
                 percent: 0,
                 level: if used > 0 {
-                    BudgetLevel::Exhausted
+                    BudgetLevel::Warning
                 } else {
                     BudgetLevel::Ok
                 },
             };
         }
-        let percent = ((used as f64 / limit as f64) * 100.0).min(255.0) as u8;
-        let level = if percent >= limits.block_at_percent {
+        let percent = ((used as f64 / limit as f64) * 100.0).min(254.0) as u8;
+        // block_at_percent == 255 means blocking is disabled (LeanCTX default)
+        let level = if limits.block_at_percent < 255 && percent >= limits.block_at_percent {
             BudgetLevel::Exhausted
         } else if percent >= limits.warn_at_percent {
             BudgetLevel::Warning
@@ -146,19 +148,21 @@ pub struct CostStatus {
 impl CostStatus {
     fn evaluate(used: f64, limit: f64, limits: &RoleLimits) -> Self {
         if limit <= 0.0 {
+            // Zero limit with any usage => Warning (not Exhausted, LeanCTX never blocks)
             return Self {
                 used_usd: used,
                 limit_usd: limit,
                 percent: 0,
                 level: if used > 0.0 {
-                    BudgetLevel::Exhausted
+                    BudgetLevel::Warning
                 } else {
                     BudgetLevel::Ok
                 },
             };
         }
-        let pct = ((used / limit) * 100.0).min(255.0) as u8;
-        let level = if pct >= limits.block_at_percent {
+        let pct = ((used / limit) * 100.0).min(254.0) as u8;
+        // block_at_percent == 255 means blocking is disabled (LeanCTX default)
+        let level = if limits.block_at_percent < 255 && pct >= limits.block_at_percent {
             BudgetLevel::Exhausted
         } else if pct >= limits.warn_at_percent {
             BudgetLevel::Warning
@@ -269,18 +273,32 @@ mod tests {
     }
 
     #[test]
-    fn dimension_status_exhausted() {
+    fn dimension_status_at_100_percent_is_warning_by_default() {
+        // With block_at_percent=255 (default), 100% usage is Warning, not Exhausted
         let limits = RoleLimits::default();
+        assert_eq!(limits.block_at_percent, 255); // Default = never block
         let s = DimensionStatus::evaluate(200_000, 200_000, &limits);
-        assert_eq!(s.level, BudgetLevel::Exhausted);
+        assert_eq!(s.level, BudgetLevel::Warning);
         assert_eq!(s.percent, 100);
     }
 
     #[test]
-    fn zero_limit_blocks_usage() {
+    fn dimension_status_exhausted_when_blocking_enabled() {
+        // Exhausted only happens when block_at_percent is explicitly set low
+        let limits = RoleLimits {
+            block_at_percent: 100,
+            ..Default::default()
+        };
+        let s = DimensionStatus::evaluate(200_000, 200_000, &limits);
+        assert_eq!(s.level, BudgetLevel::Exhausted);
+    }
+
+    #[test]
+    fn zero_limit_warns_usage() {
+        // Zero limit with any usage => Warning (not Exhausted, LeanCTX never blocks by default)
         let limits = RoleLimits::default();
         let s = DimensionStatus::evaluate(1, 0, &limits);
-        assert_eq!(s.level, BudgetLevel::Exhausted);
+        assert_eq!(s.level, BudgetLevel::Warning);
     }
 
     #[test]

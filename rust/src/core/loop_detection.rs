@@ -50,6 +50,7 @@ impl LoopDetector {
     }
 
     /// Creates a loop detector with custom thresholds from config.
+    /// Set blocked_threshold to 0 to disable blocking entirely (LeanCTX philosophy).
     pub fn with_config(cfg: &LoopDetectionConfig) -> Self {
         Self {
             call_history: HashMap::new(),
@@ -58,9 +59,14 @@ impl LoopDetector {
             recent_search_patterns: Vec::new(),
             normal_threshold: cfg.normal_threshold.max(1),
             reduced_threshold: cfg.reduced_threshold.max(2),
-            blocked_threshold: cfg.blocked_threshold.max(3),
+            // 0 = never block (LeanCTX default), >0 = block after N identical calls
+            blocked_threshold: cfg.blocked_threshold,
             window: Duration::from_secs(cfg.window_secs),
-            search_group_limit: cfg.search_group_limit.max(3),
+            search_group_limit: if cfg.blocked_threshold == 0 {
+                u32::MAX
+            } else {
+                cfg.search_group_limit.max(3)
+            },
         }
     }
 
@@ -75,7 +81,8 @@ impl LoopDetector {
         let count = entries.len() as u32;
         *self.duplicate_counts.entry(key).or_default() = count;
 
-        if count > self.blocked_threshold {
+        // blocked_threshold == 0 means blocking is disabled (LeanCTX default)
+        if self.blocked_threshold > 0 && count > self.blocked_threshold {
             return ThrottleResult {
                 level: ThrottleLevel::Blocked,
                 call_count: count,
@@ -134,7 +141,8 @@ impl LoopDetector {
             0
         };
 
-        if similar_count >= self.blocked_threshold {
+        // blocked_threshold == 0 means blocking is disabled (LeanCTX default)
+        if self.blocked_threshold > 0 && similar_count >= self.blocked_threshold {
             return ThrottleResult {
                 level: ThrottleLevel::Blocked,
                 call_count: similar_count,
@@ -142,7 +150,8 @@ impl LoopDetector {
             };
         }
 
-        if search_count > self.search_group_limit {
+        // search_group_limit == u32::MAX when blocking is disabled
+        if self.blocked_threshold > 0 && search_count > self.search_group_limit {
             return ThrottleResult {
                 level: ThrottleLevel::Blocked,
                 call_count: search_count,
@@ -364,8 +373,12 @@ mod tests {
     }
 
     #[test]
-    fn excessive_calls_get_blocked() {
-        let cfg = LoopDetectionConfig::default();
+    fn excessive_calls_get_blocked_when_enabled() {
+        // Blocking must be explicitly enabled (blocked_threshold > 0)
+        let cfg = LoopDetectionConfig {
+            blocked_threshold: 6,
+            ..Default::default()
+        };
         let mut detector = LoopDetector::with_config(&cfg);
         for _ in 0..cfg.blocked_threshold {
             detector.record_call("ctx_shell", "same_fp");
@@ -373,6 +386,21 @@ mod tests {
         let result = detector.record_call("ctx_shell", "same_fp");
         assert_eq!(result.level, ThrottleLevel::Blocked);
         assert!(result.message.unwrap().contains("LOOP DETECTED"));
+    }
+
+    #[test]
+    fn blocking_disabled_by_default() {
+        // Default config has blocked_threshold = 0, so blocking never happens
+        let cfg = LoopDetectionConfig::default();
+        assert_eq!(cfg.blocked_threshold, 0);
+        let mut detector = LoopDetector::with_config(&cfg);
+        // Even 100 calls should not block when blocking is disabled
+        for _ in 0..100 {
+            detector.record_call("ctx_shell", "same_fp");
+        }
+        let result = detector.record_call("ctx_shell", "same_fp");
+        // Should be Reduced (warning) but never Blocked
+        assert_ne!(result.level, ThrottleLevel::Blocked);
     }
 
     #[test]
@@ -446,9 +474,11 @@ mod tests {
     }
 
     #[test]
-    fn search_group_tracking() {
+    fn search_group_tracking_when_blocking_enabled() {
+        // Blocking must be explicitly enabled for search group limits to block
         let cfg = LoopDetectionConfig {
             search_group_limit: 5,
+            blocked_threshold: 6, // Enable blocking
             ..Default::default()
         };
         let mut detector = LoopDetector::with_config(&cfg);
@@ -463,8 +493,12 @@ mod tests {
     }
 
     #[test]
-    fn similar_search_patterns_trigger_block() {
-        let cfg = LoopDetectionConfig::default();
+    fn similar_search_patterns_trigger_block_when_enabled() {
+        // Blocking must be explicitly enabled
+        let cfg = LoopDetectionConfig {
+            blocked_threshold: 6,
+            ..Default::default()
+        };
         let mut detector = LoopDetector::with_config(&cfg);
         let variants = [
             "compress",
@@ -504,12 +538,19 @@ mod tests {
     }
 
     #[test]
-    fn search_block_message_has_guidance() {
-        let mut detector = LoopDetector::new();
+    fn search_block_message_has_guidance_when_blocking_enabled() {
+        // Blocking must be explicitly enabled to get block messages
+        let cfg = LoopDetectionConfig {
+            blocked_threshold: 6,
+            search_group_limit: 8,
+            ..Default::default()
+        };
+        let mut detector = LoopDetector::with_config(&cfg);
         for i in 0..10 {
             detector.record_search("ctx_search", &format!("fp_{i}"), Some("compress"));
         }
         let r = detector.record_search("ctx_search", "fp_new", Some("compress"));
+        assert_eq!(r.level, ThrottleLevel::Blocked);
         let msg = r.message.unwrap();
         assert!(msg.contains("ctx_tree"));
         assert!(msg.contains("path"));

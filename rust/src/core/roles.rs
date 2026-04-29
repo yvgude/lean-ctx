@@ -95,7 +95,10 @@ fn default_warn_pct() -> u8 {
     80
 }
 fn default_block_pct() -> u8 {
-    100
+    // 255 = effectively never block (would need >255% budget usage)
+    // LeanCTX philosophy: always help, never block. Warnings are enough.
+    // Users can explicitly set block_at_percent: 100 in role config if they want blocking.
+    255
 }
 
 impl Role {
@@ -259,7 +262,7 @@ fn builtin_admin() -> Role {
             max_shell_invocations: 500,
             max_cost_usd: 50.0,
             warn_at_percent: 90,
-            block_at_percent: 100,
+            ..Default::default() // block_at_percent: 255 (never block)
         },
     }
 }
@@ -618,6 +621,7 @@ mod tests {
     fn warn_and_block_thresholds() {
         let r = builtin_coder();
         assert_eq!(r.limits.warn_at_percent, 80);
-        assert_eq!(r.limits.block_at_percent, 100);
+        // 255 = never block (LeanCTX philosophy: always help, never block)
+        assert_eq!(r.limits.block_at_percent, 255);
     }
 }

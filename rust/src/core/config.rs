@@ -362,7 +362,9 @@ impl Default for LoopDetectionConfig {
         Self {
             normal_threshold: 2,
             reduced_threshold: 4,
-            blocked_threshold: 6,
+            // 0 = blocking disabled (LeanCTX philosophy: always help, never block)
+            // Set to 6+ in config to enable blocking for strict governance
+            blocked_threshold: 0,
             window_secs: 300,
             search_group_limit: 10,
         }
@@ -578,7 +580,8 @@ mod loop_detection_config_tests {
         let cfg = LoopDetectionConfig::default();
         assert_eq!(cfg.normal_threshold, 2);
         assert_eq!(cfg.reduced_threshold, 4);
-        assert_eq!(cfg.blocked_threshold, 6);
+        // 0 = blocking disabled by default (LeanCTX philosophy: always help, never block)
+        assert_eq!(cfg.blocked_threshold, 0);
         assert_eq!(cfg.window_secs, 300);
         assert_eq!(cfg.search_group_limit, 10);
     }
@@ -586,7 +589,8 @@ mod loop_detection_config_tests {
     #[test]
     fn deserialization_defaults_when_missing() {
         let cfg: Config = toml::from_str("").unwrap();
-        assert_eq!(cfg.loop_detection.blocked_threshold, 6);
+        // 0 = blocking disabled by default
+        assert_eq!(cfg.loop_detection.blocked_threshold, 0);
         assert_eq!(cfg.loop_detection.search_group_limit, 10);
     }
 
