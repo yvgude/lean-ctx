@@ -38,6 +38,7 @@ cookbook:
 deploy_website:
   stage: deploy
   image: docker:24
+  needs: []
   only:
     - deploy
   variables:
