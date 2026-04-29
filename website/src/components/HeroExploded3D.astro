@@ -1,9 +1,12 @@
 ---
 interface Props {
   toolCount: number;
+  unifiedToolCount: number;
+  readModeCount: number;
+  schemaVersion: number;
 }
 
-const { toolCount } = Astro.props;
+const { toolCount, unifiedToolCount, readModeCount, schemaVersion } = Astro.props;
 ---
 
 <div class="hero-visual" data-hero-visual aria-hidden="true">
@@ -17,11 +20,11 @@ const { toolCount } = Astro.props;
           <span class="hero-window-title">ctx_read</span>
         </div>
         <div class="hero-window-body">
-          <div class="hero-line"><span class="hero-k">F7</span> <span class="hero-v">service.ts</span> <span class="hero-m">map</span></div>
-          <div class="hero-line hero-line--muted">deps: jwt · bcrypt · prisma</div>
-          <div class="hero-line"><span class="hero-k">λ</span> login(email, pwd) → Token</div>
-          <div class="hero-line"><span class="hero-k">λ</span> verify(token) → Payload</div>
-          <div class="hero-line hero-line--muted">342L → 48 tokens (98.6% saved)</div>
+          <div class="hero-line"><span class="hero-k">→</span> <span class="hero-v">generated/mcp-tools.json</span> <span class="hero-m">map</span></div>
+          <div class="hero-line hero-line--muted">schema_version: {schemaVersion}</div>
+          <div class="hero-line"><span class="hero-k">tools</span> granular: <span class="hero-v">{toolCount}</span></div>
+          <div class="hero-line"><span class="hero-k">tools</span> unified: <span class="hero-v">{unifiedToolCount}</span></div>
+          <div class="hero-line hero-line--muted">read_modes: {readModeCount}</div>
         </div>
       </div>
     </div>
@@ -36,16 +39,16 @@ const { toolCount } = Astro.props;
         </div>
         <div class="hero-window-body">
           <div class="hero-metric">
-            <span class="hero-metric-label">tool calls</span>
-            <span class="hero-metric-value">847</span>
+            <span class="hero-metric-label">granular tools</span>
+            <span class="hero-metric-value">{toolCount}</span>
           </div>
           <div class="hero-metric">
-            <span class="hero-metric-label">tokens saved</span>
-            <span class="hero-metric-value">412k</span>
+            <span class="hero-metric-label">unified tools</span>
+            <span class="hero-metric-value">{unifiedToolCount}</span>
           </div>
           <div class="hero-metric">
-            <span class="hero-metric-label">cache hits</span>
-            <span class="hero-metric-value">73%</span>
+            <span class="hero-metric-label">read modes</span>
+            <span class="hero-metric-value">{readModeCount}</span>
           </div>
         </div>
       </div>
