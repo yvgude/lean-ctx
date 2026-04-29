@@ -1,5 +1,6 @@
 stages:
   - test
+  - deploy
 
 rust_test:
   stage: test
@@ -33,4 +34,37 @@ cookbook:
     - npm run typecheck
     - npm test
     - npm run build
+
+deploy_website:
+  stage: deploy
+  image: docker:24
+  only:
+    - deploy
+  variables:
+    CONTAINER_NAME: leanctx-web
+    IMAGE_NAME: lean-ctx-web
+    DOCKER_HOST: unix:///var/run/docker.sock
+  script:
+    - echo "Building website image from pre-built dist..."
+    - cd website
+    - |
+      cat > /tmp/Dockerfile.web <<'DEOF'
+      FROM nginx:alpine
+      COPY dist /usr/share/nginx/html
+      COPY nginx.conf /etc/nginx/conf.d/default.conf
+      DEOF
+    - docker build -f /tmp/Dockerfile.web -t ${IMAGE_NAME}:latest .
+    - echo "Stopping old container..."
+    - docker stop ${CONTAINER_NAME} || true
+    - docker rm ${CONTAINER_NAME} || true
+    - echo "Starting new container..."
+    - docker run -d
+      --name ${CONTAINER_NAME}
+      --network coolify
+      --restart unless-stopped
+      ${IMAGE_NAME}:latest
+    - echo "Verifying..."
+    - sleep 2
+    - docker ps --filter name=${CONTAINER_NAME} --format "{{.Status}}"
+    - echo "Deploy complete!"
 
