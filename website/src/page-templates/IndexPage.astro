@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
+import '../styles/index.css';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
@@ -15,42 +16,18 @@ const manifest = getMcpManifest();
 <!-- ═══════════════════════════════════════════════════════
      HERO
      ═══════════════════════════════════════════════════════ -->
-<section class="section-hero relative">
-  <div class="hero-glow"></div>
+<section class="section-hero relative landing-hero">
   <div class="content-grid relative">
-    <div class="animate-entrance">
-      <p class="fluid-label text-accent" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
-        {t('index.heroLabel')}
-      </p>
-    </div>
-
-    <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 2.5rem); max-width: 56rem;">
+    <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance" style="max-width: 56rem;">
       {t('index.heroTitle')}<br/>
-      <span class="gradient-text">{t('index.heroTitleHighlight')}</span>
+      <span class="italic-accent">{t('index.heroTitleHighlight')}</span>
     </h1>
 
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2rem, 1.5rem + 2vw, 4rem); max-width: 40rem;">
+    <p class="fluid-body text-muted animate-entrance stagger-1 hero-subtitle" style="margin-top: clamp(1.5rem, 1rem + 1.5vw, 3rem); max-width: 42rem;">
       {t('index.heroDescription')}
     </p>
 
-    <div class="hero-proof animate-entrance stagger-3" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem);">
-      <div class="hero-proof-item">
-        <span class="hero-proof-number font-display" id="install-count">—</span>
-        <span class="hero-proof-label">{t('index.heroProofInstalls')}</span>
-      </div>
-      <div class="hero-proof-divider"></div>
-      <div class="hero-proof-item">
-        <span class="hero-proof-number font-display" id="github-stars-hero">—</span>
-        <span class="hero-proof-label">{t('index.heroProofStars')}</span>
-      </div>
-      <div class="hero-proof-divider"></div>
-      <div class="hero-proof-item">
-        <span class="hero-proof-number font-display">{manifest.counts.granular}</span>
-        <span class="hero-proof-label">{t('index.heroProofTools')}</span>
-      </div>
-    </div>
-
-    <div class="flex flex-wrap items-center animate-entrance stagger-4" style="gap: clamp(0.875rem, 0.5rem + 0.75vw, 1.5rem);">
+    <div class="flex flex-wrap items-center justify-center animate-entrance stagger-2" style="margin-top: clamp(2rem, 1.5rem + 2vw, 4rem); gap: clamp(0.75rem, 0.5rem + 0.75vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2.5" style="padding: clamp(0.875rem, 0.7rem + 0.35vw, 1.125rem) clamp(1.75rem, 1.25rem + 1vw, 2.75rem); font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
         {t('nav.getStarted')}
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
@@ -69,8 +46,30 @@ const manifest = getMcpManifest();
       </a>
     </div>
 
-    <div class="hero-install animate-entrance stagger-5">
+    <div class="hero-install animate-entrance stagger-3">
       <code class="hero-install-code">curl -fsSL https://leanctx.com/install | sh</code>
+    </div>
+
+    <div class="hero-proof animate-entrance stagger-4" style="margin-top: clamp(2.5rem, 2rem + 2vw, 4.5rem);">
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display" id="install-count">—</span>
+        <span class="hero-proof-label">{t('index.heroProofInstalls')}</span>
+      </div>
+      <div class="hero-proof-divider"></div>
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display" id="github-stars-hero">—</span>
+        <span class="hero-proof-label">{t('index.heroProofStars')}</span>
+      </div>
+      <div class="hero-proof-divider"></div>
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display">{manifest.counts.granular}</span>
+        <span class="hero-proof-label">{t('index.heroProofTools')}</span>
+      </div>
+      <div class="hero-proof-divider"></div>
+      <div class="hero-proof-item">
+        <span class="hero-proof-number font-display">90+</span>
+        <span class="hero-proof-label">{t('index.statsPatterns')}</span>
+      </div>
     </div>
   </div>
 </section>
@@ -79,11 +78,11 @@ const manifest = getMcpManifest();
 <!-- ═══════════════════════════════════════════════════════
      PROBLEM / WHAT HAPPENS
      ═══════════════════════════════════════════════════════ -->
-<section class="section-y glow-section">
+<section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.problemLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.problemLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
       {t('index.problemTitle')}
     </h2>
@@ -94,7 +93,7 @@ const manifest = getMcpManifest();
       {t('index.problemQuote')}
     </p>
 
-    <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+    <div class="compare-grid animate-entrance stagger-3">
       <div class="compare-card">
         <div class="compare-header compare-header--bad">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
@@ -129,9 +128,9 @@ const manifest = getMcpManifest();
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.previewLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.previewLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
       {t('index.previewTitle')}
     </h2>
@@ -196,13 +195,13 @@ const manifest = getMcpManifest();
 <!-- ═══════════════════════════════════════════════════════
      WHAT IS LEANCTX
      ═══════════════════════════════════════════════════════ -->
-<section class="section-y glow-section">
+<section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.whatLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.whatLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
-      {t('index.whatTitle')} <span class="gradient-text">{t('index.whatTitleHighlight')}</span>
+      {t('index.whatTitle')} <span class="italic-accent">{t('index.whatTitleHighlight')}</span>
     </h2>
 
     <div class="grid md:grid-cols-3 animate-entrance stagger-2" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);">
@@ -239,11 +238,11 @@ const manifest = getMcpManifest();
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.dimensionsLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.dimensionsLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
-      {t('index.dimensionsTitle')} <span class="gradient-text">{t('index.dimensionsTitleHighlight')}</span>
+      {t('index.dimensionsTitle')} <span class="italic-accent">{t('index.dimensionsTitleHighlight')}</span>
     </h2>
 
     <div class="grid md:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-2" style="gap: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
@@ -277,21 +276,21 @@ const manifest = getMcpManifest();
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y-sm">
   <div class="content-grid">
-    <div class="stats-grid animate-entrance">
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent">60–99%</span>
+    <div class="stats-panels animate-entrance">
+      <div class="stat-panel">
+        <span class="stat-number text-accent">60–99%</span>
         <span class="stat-desc">{t('index.statsReduction')}</span>
       </div>
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent-2">{manifest.counts.granular}</span>
+      <div class="stat-panel">
+        <span class="stat-number">{manifest.counts.granular}</span>
         <span class="stat-desc">{t('index.statsTools')}</span>
       </div>
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent-3">90+</span>
+      <div class="stat-panel">
+        <span class="stat-number">90+</span>
         <span class="stat-desc">{t('index.statsPatterns')}</span>
       </div>
-      <div class="stat-item">
-        <span class="stat-number font-display text-text-bright">0</span>
+      <div class="stat-panel">
+        <span class="stat-number text-accent">0</span>
         <span class="stat-desc">{t('index.statsConfig')}</span>
       </div>
     </div>
@@ -302,11 +301,11 @@ const manifest = getMcpManifest();
 <!-- ═══════════════════════════════════════════════════════
      THREE LAYERS
      ═══════════════════════════════════════════════════════ -->
-<section class="section-y glow-section">
+<section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.archLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.archLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
       {t('index.archTitle')}
     </h2>
@@ -362,11 +361,11 @@ const manifest = getMcpManifest();
   <div class="content-grid">
     <div class="grid lg:grid-cols-2 animate-entrance" style="gap: clamp(4rem, 3rem + 4vw, 8rem); align-items: center;">
       <div>
-        <p class="fluid-label text-accent" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          {t('index.profilesLabel')}
-        </p>
+        <div style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+          <span class="kicker-pill">{t('index.profilesLabel')}</span>
+        </div>
         <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          {t('index.profilesTitle')} <span class="gradient-text">{t('index.profilesTitleHighlight')}</span>
+          {t('index.profilesTitle')} <span class="italic-accent">{t('index.profilesTitleHighlight')}</span>
         </h2>
         <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
           {t('index.profilesDesc')}
@@ -401,7 +400,7 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 <!-- ═══════════════════════════════════════════════════════
      AGENT GOVERNANCE
      ═══════════════════════════════════════════════════════ -->
-<section class="section-y glow-section">
+<section class="section-y">
   <div class="content-grid">
     <div class="grid lg:grid-cols-2 animate-entrance" style="gap: clamp(4rem, 3rem + 4vw, 8rem); align-items: center;">
       <div class="governance-features lg:order-2">
@@ -423,11 +422,11 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
         </div>
       </div>
       <div class="lg:order-1">
-        <p class="fluid-label text-accent-2" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          {t('index.governanceLabel')}
-        </p>
+        <div style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+          <span class="kicker-pill">{t('index.governanceLabel')}</span>
+        </div>
         <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          {t('index.governanceTitle')} <span class="gradient-text">{t('index.governanceTitleHighlight')}</span>
+          {t('index.governanceTitle')} <span class="italic-accent">{t('index.governanceTitleHighlight')}</span>
         </h2>
         <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
           {t('index.governanceDesc')}
@@ -447,11 +446,11 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.ecoLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.ecoLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
-      {t('index.ecoTitle')} <span class="gradient-text">{t('index.ecoTitleHighlight')}</span>
+      {t('index.ecoTitle')} <span class="italic-accent">{t('index.ecoTitleHighlight')}</span>
     </h2>
     <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 42rem;">
       {t('index.ecoDesc')}
@@ -584,11 +583,11 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 <!-- ═══════════════════════════════════════════════════════
      COMPATIBILITY
      ═══════════════════════════════════════════════════════ -->
-<section class="section-y glow-section">
+<section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.compatLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.compatLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
       {t('index.compatTitle')}
     </h2>
@@ -622,9 +621,9 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      {t('index.testimonialLabel')}
-    </p>
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.testimonialLabel')}</span>
+    </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem);">
       {t('index.testimonialTitle')}
     </h2>
@@ -711,429 +710,6 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
     </div>
   </div>
 </section>
-
-<style>
-  .hero-glow {
-    position: absolute;
-    top: -30%;
-    right: -15%;
-    width: min(900px, 80vw);
-    height: min(900px, 80vw);
-    background: radial-gradient(circle, rgba(52, 211, 153, 0.05), transparent 60%);
-    filter: blur(100px);
-    pointer-events: none;
-  }
-
-  /* ── Hero Social Proof ───────────────────────────────── */
-  .hero-proof {
-    display: flex;
-    align-items: center;
-    gap: clamp(1.25rem, 1rem + 1vw, 2rem);
-    flex-wrap: wrap;
-  }
-  .hero-proof-item {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-  }
-  .hero-proof-number {
-    font-size: clamp(1.75rem, 1.5rem + 1.25vw, 2.75rem);
-    font-weight: 700;
-    color: var(--color-text-bright);
-    letter-spacing: -0.035em;
-    line-height: 1;
-  }
-  .hero-proof-label {
-    font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
-    color: var(--color-muted);
-    font-weight: 400;
-  }
-  .hero-proof-divider {
-    width: 1px;
-    height: 2rem;
-    background: var(--color-border-light);
-  }
-  @media (max-width: 480px) {
-    .hero-proof-divider:nth-of-type(2) { display: none; }
-    .hero-proof { gap: 0.75rem 1.25rem; }
-  }
-
-  /* ── Hero Install ───────────────────────────────────── */
-  .hero-install {
-    margin-top: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);
-  }
-  .hero-install-code {
-    display: inline-block;
-    font-family: var(--font-mono);
-    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.875rem);
-    color: var(--color-muted);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    padding: 0.625rem 1.25rem;
-    user-select: all;
-    cursor: text;
-    transition: border-color 0.2s ease;
-  }
-  .hero-install-code:hover {
-    border-color: var(--color-border-light);
-  }
-
-  /* ── Compare Cards ──────────────────────────────────── */
-  .compare-card {
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius);
-    overflow: hidden;
-    transition: border-color 0.3s ease;
-  }
-  .compare-card:hover {
-    border-color: var(--color-border-light);
-  }
-  .compare-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1.5rem;
-    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .compare-header--bad {
-    background: rgba(248, 113, 113, 0.04);
-    color: var(--color-danger);
-  }
-  .compare-header--good {
-    background: rgba(52, 211, 153, 0.04);
-    color: var(--color-accent);
-  }
-  .compare-body {
-    padding: 1.5rem;
-    background: var(--color-surface);
-  }
-  .compare-line {
-    padding: 0.375rem 0;
-  }
-
-  /* ── Stats ──────────────────────────────────────────── */
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1px;
-    background: var(--color-border);
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius-lg);
-    overflow: hidden;
-  }
-  @media (min-width: 768px) {
-    .stats-grid { grid-template-columns: repeat(4, 1fr); }
-  }
-  .stat-item {
-    display: flex;
-    flex-direction: column;
-    padding: clamp(1.75rem, 1.25rem + 1.5vw, 2.5rem);
-    background: var(--color-bg);
-  }
-  .stat-number {
-    font-size: clamp(2.25rem, 1.75rem + 2.5vw, 4rem);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 1;
-    margin-bottom: 0.75rem;
-  }
-  .stat-desc {
-    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
-    color: var(--color-muted);
-    line-height: 1.5;
-  }
-
-  /* ── Layer Cards ────────────────────────────────────── */
-  .layer-card {
-    display: flex;
-    flex-direction: column;
-    padding: clamp(2rem, 1.5rem + 1.5vw, 3rem);
-    border: 1px solid var(--color-border);
-    background: var(--color-bg);
-    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-    text-decoration: none;
-  }
-  .layer-card:first-child {
-    border-radius: var(--card-radius) var(--card-radius) 0 0;
-  }
-  .layer-card:last-child {
-    border-radius: 0 0 var(--card-radius) var(--card-radius);
-  }
-  .layer-card + .layer-card {
-    border-top: none;
-  }
-  @media (min-width: 768px) {
-    .layer-card:first-child { border-radius: var(--card-radius) 0 0 var(--card-radius); }
-    .layer-card:last-child { border-radius: 0 var(--card-radius) var(--card-radius) 0; }
-    .layer-card + .layer-card { border-top: 1px solid var(--color-border); border-inline-start: none; }
-  }
-  .layer-card:hover {
-    background: var(--color-surface);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  }
-  .layer-icon {
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .layer-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.8125rem);
-    font-weight: 500;
-    margin-top: auto;
-    transition: gap 0.25s ease;
-  }
-  .group:hover .layer-link { gap: 0.75rem; }
-
-  /* ── Terminal Visualizations ──────────────────────────── */
-  .term-divider {
-    height: 1px;
-    background: var(--color-border);
-  }
-  .metrics-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  /* ── LeanCTL Terminal ───────────────────────────────── */
-  .leanctl-status {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    padding: 8px 24px;
-    background: var(--color-surface-2);
-    border-bottom: 1px solid var(--color-border);
-    font-family: var(--font-mono);
-    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .leanctl-status::-webkit-scrollbar { display: none; }
-  .leanctl-sep { color: var(--color-border); margin: 0 8px; }
-  .leanctl-bar {
-    width: 3px;
-    min-height: 100%;
-    background: var(--color-accent);
-    border-radius: 2px;
-    flex-shrink: 0;
-    align-self: stretch;
-  }
-  .leanctl-tools {
-    border: 1px solid var(--color-border);
-    border-radius: 10px;
-    padding: 6px 12px;
-    background: rgba(45, 44, 53, 0.3);
-  }
-  .leanctl-tool-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 2px 0;
-    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-    overflow: hidden;
-    white-space: nowrap;
-  }
-  .leanctl-input {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 24px;
-    background: var(--color-surface-2);
-    border-top: 1px solid var(--color-border);
-    font-family: var(--font-mono);
-    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
-  }
-
-  /* ── Compatibility ──────────────────────────────────── */
-  .compat-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: clamp(0.5rem, 0.375rem + 0.3vw, 0.75rem);
-  }
-  .compat-item {
-    padding: 0.5rem 1rem;
-    border-radius: 12px;
-    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.875rem);
-    font-weight: 450;
-    color: var(--color-text);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    white-space: nowrap;
-    transition: all 0.25s ease;
-  }
-  .compat-item:hover {
-    border-color: var(--color-border-light);
-    transform: translateY(-1px);
-  }
-
-  /* ── Testimonials ──────────────────────────────────── */
-  .testimonial-masonry {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: clamp(1.25rem, 1rem + 1vw, 2rem);
-    align-items: start;
-  }
-  @media (max-width: 860px) {
-    .testimonial-masonry { grid-template-columns: repeat(2, 1fr); }
-    .testimonial-masonry .testimonial-col:nth-child(3) { display: none; }
-  }
-  @media (max-width: 540px) {
-    .testimonial-masonry { grid-template-columns: 1fr; }
-    .testimonial-masonry .testimonial-col:nth-child(2),
-    .testimonial-masonry .testimonial-col:nth-child(3) { display: none; }
-  }
-  .testimonial-col {
-    display: flex;
-    flex-direction: column;
-    gap: clamp(1.25rem, 1rem + 1vw, 2rem);
-  }
-  .testimonial {
-    margin: 0;
-    padding: clamp(1.5rem, 1.25rem + 1vw, 2rem);
-    border-inline-start: 2px solid var(--color-border);
-    background: transparent;
-    transition: border-color 0.3s ease;
-  }
-  .testimonial:hover {
-    border-inline-start-color: var(--color-accent);
-  }
-  .testimonial-text {
-    font-size: clamp(0.9375rem, 0.9rem + 0.15vw, 1.0625rem);
-    color: var(--color-text);
-    line-height: 1.75;
-    margin: 0 0 1rem 0;
-  }
-  .testimonial-footer {
-    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.875rem);
-    color: var(--color-text);
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    flex-wrap: wrap;
-  }
-  .testimonial-footer strong {
-    color: var(--color-text-bright);
-    font-weight: 600;
-  }
-  .testimonial-dash {
-    color: var(--color-accent);
-    font-weight: 500;
-  }
-
-  /* ── What is LeanCTX cards ──────────────────────────── */
-  .what-card {
-    padding: clamp(2rem, 1.5rem + 1vw, 2.5rem);
-    background: linear-gradient(135deg, rgba(52, 211, 153, 0.02) 0%, transparent 100%);
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius);
-    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .what-card:hover {
-    border-color: var(--color-border-light);
-    transform: translateY(-3px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-  }
-  .what-icon {
-    width: 52px;
-    height: 52px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(52, 211, 153, 0.08);
-    border-radius: 14px;
-  }
-
-  /* ── Four Dimensions cards ──────────────────────────── */
-  .dimension-card {
-    padding: clamp(1.5rem, 1.25rem + 0.75vw, 2rem);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius);
-    position: relative;
-    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .dimension-card:hover {
-    border-color: var(--color-border-light);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  }
-  .dimension-number {
-    position: absolute;
-    top: -12px;
-    left: 18px;
-    width: 26px;
-    height: 26px;
-    background: var(--color-accent);
-    color: var(--color-bg);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.8125rem;
-    font-weight: 700;
-    font-family: var(--font-display);
-  }
-
-  /* ── Context as Code ────────────────────────────────── */
-  .profile-demo {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius);
-    overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  }
-  .profile-demo-header {
-    padding: 0.875rem 1.25rem;
-    background: rgba(52, 211, 153, 0.04);
-    border-bottom: 1px solid var(--color-border);
-    font-size: 0.8125rem;
-    color: var(--color-muted);
-    font-family: var(--font-mono);
-  }
-  .profile-demo-code {
-    padding: 1.25rem;
-    font-size: 0.875rem;
-    line-height: 1.65;
-    overflow-x: auto;
-  }
-
-  /* ── Governance ─────────────────────────────────────── */
-  .governance-features {
-    display: grid;
-    gap: 0.875rem;
-  }
-  .governance-feature {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 0.875rem 1.25rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    font-size: 0.9375rem;
-    color: var(--color-text);
-    transition: all 0.25s ease;
-  }
-  .governance-feature:hover {
-    border-color: var(--color-border-light);
-    transform: translateX(4px);
-  }
-  .governance-feature svg {
-    color: var(--color-accent);
-    flex-shrink: 0;
-  }
-</style>
 
 <script is:inline>
 (function() {
