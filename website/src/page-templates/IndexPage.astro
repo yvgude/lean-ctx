@@ -1,7 +1,8 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import ScrollyExploded from '../components/ScrollyExploded.astro';
 import HeroExploded3D from '../components/HeroExploded3D.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import TerminalStepper from '../components/TerminalStepper.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 import '../styles/index.css';
@@ -10,6 +11,62 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
+
+const toolNames = manifest.tools.granular.map((x) => x.name);
+const pickTool = (preferred: string, fallbackIndex: number) =>
+  (toolNames.includes(preferred) ? preferred : toolNames[fallbackIndex] ?? toolNames[0]);
+
+const tRead = pickTool('ctx_read', 0);
+const tSearch = pickTool('ctx_search', 1);
+const tShell = pickTool('ctx_shell', 2);
+const tMulti = pickTool('ctx_multi_read', 3);
+
+const stepperSteps = [
+  {
+    number: '01',
+    title: t('index.dim1Title'),
+    description: t('index.dim1Desc'),
+    terminalTitle: `${tRead} — map`,
+    terminalLines: [
+      `${tRead}({ path: "website/src/lib/mcpManifest.ts", mode: "map" })`,
+      `→ exports: getMcpManifest(), getGranularTools(), getToolEnrichments()`,
+      `→ tools.granular: ${manifest.counts.granular}`,
+    ],
+  },
+  {
+    number: '02',
+    title: t('index.dim2Title'),
+    description: t('index.dim2Desc'),
+    terminalTitle: `${tSearch} — regex`,
+    terminalLines: [
+      `${tSearch}({ pattern: "getMcpManifest", path: "website/src" })`,
+      `→ matches: website/src/page-templates/IndexPage.astro, website/src/lib/mcpManifest.ts`,
+      `→ open minimal context, not the whole repo`,
+    ],
+  },
+  {
+    number: '03',
+    title: t('index.dim3Title'),
+    description: t('index.dim3Desc'),
+    terminalTitle: `${tShell} — build`,
+    terminalLines: [
+      `${tShell}({ command: "npx astro build", cwd: "website" })`,
+      `→ dist/_astro/* updated`,
+      `→ ready for deploy branch`,
+    ],
+  },
+  {
+    number: '04',
+    title: t('index.dim4Title'),
+    description: t('index.dim4Desc'),
+    terminalTitle: `${tMulti} — batch`,
+    terminalLines: [
+      `${tMulti}({ paths: ["website/src/page-templates/IndexPage.astro", "website/src/styles/global.css"], mode: "diff" })`,
+      `→ dedup + compress + return only relevant deltas`,
+      `→ stable review loop`,
+    ],
+  },
+];
 
 ---
 
@@ -156,59 +213,54 @@ const manifest = getMcpManifest();
         </p>
       </div>
 
-      <div class="terminal-chrome animate-entrance stagger-3" data-parallax="a">
-        <div class="terminal-header flex items-center gap-2 px-5 py-3">
-          <span class="terminal-dot bg-[#ff5f57]"></span>
-          <span class="terminal-dot bg-[#febc2e]"></span>
-          <span class="terminal-dot bg-[#28c840]"></span>
-          <span class="ml-3 text-xs text-muted font-mono">ctx_read — map mode</span>
+      <TerminalChrome
+        title={`${tRead} — map`}
+        chromeClass="animate-entrance stagger-3"
+        bodyStyle="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem); line-height: 1.7;"
+        dataParallax="a"
+      >
+        <div>
+          <span class="text-accent">{t('index.demoAiCallsLabel')}</span>{' '}
+          <span class="text-text-bright">{`${tRead}({ path: "website/src/lib/mcpManifest.ts", mode: "map" })`}</span>
         </div>
-        <div class="terminal-body px-6 py-6 font-mono space-y-3" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem); line-height: 1.7;">
-          <div>
-            <span class="text-accent">{t('index.demoAiCallsLabel')}</span> <span class="text-text-bright">ctx_read("generated/mcp-tools.json", mode="map")</span>
-          </div>
-          <div class="term-divider"></div>
-          <div><span class="text-muted">schema_version</span> <span class="text-text-bright">{manifest.schema_version}</span></div>
-          <div><span class="text-muted">tools.granular</span> <span class="text-accent font-semibold">{manifest.counts.granular}</span></div>
-          <div><span class="text-muted">tools.unified</span> <span class="text-text-bright">{manifest.counts.unified}</span></div>
-          <div><span class="text-muted">read_modes</span> <span class="text-text-bright">{manifest.read_modes.count}</span></div>
-          <div class="term-divider"></div>
-          <div class="text-muted">modes: <span class="text-text">{manifest.read_modes.modes.slice(0, 6).join(', ')}</span></div>
-        </div>
-      </div>
+        <div class="term-divider"></div>
+        <div><span class="text-muted">schema_version</span> <span class="text-text-bright">{manifest.schema_version}</span></div>
+        <div><span class="text-muted">tools.granular</span> <span class="text-accent font-semibold">{manifest.counts.granular}</span></div>
+        <div><span class="text-muted">tools.unified</span> <span class="text-text-bright">{manifest.counts.unified}</span></div>
+        <div><span class="text-muted">read_modes</span> <span class="text-text-bright">{manifest.read_modes.count}</span></div>
+        <div class="term-divider"></div>
+        <div class="text-muted">modes: <span class="text-text">{manifest.read_modes.modes.slice(0, 6).join(', ')}</span></div>
+      </TerminalChrome>
     </div>
 
     <div class="split split--visual-wide">
-      <div class="terminal-chrome animate-entrance" data-parallax="b">
-        <div class="terminal-header flex items-center gap-2 px-5 py-3">
-          <span class="terminal-dot bg-[#ff5f57]"></span>
-          <span class="terminal-dot bg-[#febc2e]"></span>
-          <span class="terminal-dot bg-[#28c840]"></span>
-          <span class="ml-3 text-xs text-muted font-mono">generated manifest — snapshot</span>
+      <TerminalChrome
+        title="manifest — snapshot"
+        chromeClass="animate-entrance"
+        bodyStyle="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem); line-height: 1.7;"
+        dataParallax="b"
+      >
+        <div class="flex justify-between">
+          <span class="text-muted">schema_version</span>
+          <span class="text-text-bright">{manifest.schema_version}</span>
         </div>
-        <div class="terminal-body px-6 py-6 font-mono space-y-3" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem); line-height: 1.7;">
-          <div class="flex justify-between">
-            <span class="text-muted">schema_version</span>
-            <span class="text-text-bright">{manifest.schema_version}</span>
-          </div>
-          <div class="term-divider"></div>
-          <div class="metrics-row"><span class="text-text-bright">granular tools</span><span class="text-accent font-semibold">{manifest.counts.granular}</span></div>
-          <div class="metrics-row"><span class="text-text-bright">unified tools</span><span class="text-text-bright font-semibold">{manifest.counts.unified}</span></div>
-          <div class="metrics-row"><span class="text-text-bright">read modes</span><span class="text-text-bright font-semibold">{manifest.read_modes.count}</span></div>
-          <div class="term-divider"></div>
-          <div class="text-muted" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            top tools: <span class="text-text">{manifest.tools.granular.slice(0, 5).map((x) => x.name).join(', ')}</span>
-          </div>
+        <div class="term-divider"></div>
+        <div class="metrics-row"><span class="text-text-bright">granular tools</span><span class="text-accent font-semibold">{manifest.counts.granular}</span></div>
+        <div class="metrics-row"><span class="text-text-bright">unified tools</span><span class="text-text-bright font-semibold">{manifest.counts.unified}</span></div>
+        <div class="metrics-row"><span class="text-text-bright">read modes</span><span class="text-text-bright font-semibold">{manifest.read_modes.count}</span></div>
+        <div class="term-divider"></div>
+        <div class="text-muted" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          top tools: <span class="text-text">{manifest.tools.granular.slice(0, 5).map((x) => x.name).join(', ')}</span>
         </div>
-      </div>
+      </TerminalChrome>
 
       <div class="animate-entrance" style="max-width: 52rem;">
-        <span class="kicker-pill">Scrollytelling</span>
+        <span class="kicker-pill">Workflow</span>
         <h3 class="font-display fluid-h2 font-bold text-text-bright" style="margin-top: 1.5rem; margin-bottom: 1.25rem;">
-          Scroll-driven <span class="italic-accent">insight</span>.
+          Deterministic <span class="italic-accent">context</span>.
         </h3>
         <p class="text-muted fluid-body" style="margin: 0;">
-          {t('index.problemDesc')}
+          {t('index.previewDesc')}
         </p>
       </div>
     </div>
@@ -260,16 +312,11 @@ const manifest = getMcpManifest();
 <!-- ═══════════════════════════════════════════════════════
      FOUR DIMENSIONS
      ═══════════════════════════════════════════════════════ -->
-<ScrollyExploded
+<TerminalStepper
   kicker={t('index.dimensionsLabel')}
   title={t('index.dimensionsTitle')}
   titleHighlight={t('index.dimensionsTitleHighlight')}
-  steps={[
-    { number: '01', title: t('index.dim1Title'), description: t('index.dim1Desc') },
-    { number: '02', title: t('index.dim2Title'), description: t('index.dim2Desc') },
-    { number: '03', title: t('index.dim3Title'), description: t('index.dim3Desc') },
-    { number: '04', title: t('index.dim4Title'), description: t('index.dim4Desc') },
-  ]}
+  steps={stepperSteps}
 />
 
 
@@ -732,7 +779,11 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 
   var hero = document.querySelector('[data-hero]');
   var preview = document.querySelector('[data-preview]');
+  var heroVisual = hero ? hero.querySelector('[data-hero-visual]') : null;
   var ticking = false;
+  var tiltTicking = false;
+  var tiltX = 0;
+  var tiltY = 0;
 
   function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
@@ -757,6 +808,38 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
     if (ticking) return;
     ticking = true;
     requestAnimationFrame(update);
+  }
+
+  function updateTilt() {
+    tiltTicking = false;
+    if (!hero) return;
+    hero.style.setProperty('--ry', (tiltX * 10).toFixed(2) + 'deg');
+    hero.style.setProperty('--rx', (tiltY * -7).toFixed(2) + 'deg');
+  }
+
+  function onPointerMove(ev) {
+    if (!heroVisual) return;
+    var r = heroVisual.getBoundingClientRect();
+    var nx = ((ev.clientX - r.left) / Math.max(1, r.width)) * 2 - 1;
+    var ny = ((ev.clientY - r.top) / Math.max(1, r.height)) * 2 - 1;
+    tiltX = Math.max(-1, Math.min(1, nx));
+    tiltY = Math.max(-1, Math.min(1, ny));
+    if (tiltTicking) return;
+    tiltTicking = true;
+    requestAnimationFrame(updateTilt);
+  }
+
+  function onPointerLeave() {
+    tiltX = 0;
+    tiltY = 0;
+    if (tiltTicking) return;
+    tiltTicking = true;
+    requestAnimationFrame(updateTilt);
+  }
+
+  if (heroVisual) {
+    heroVisual.addEventListener('pointermove', onPointerMove, { passive: true });
+    heroVisual.addEventListener('pointerleave', onPointerLeave);
   }
 
   window.addEventListener('scroll', onScroll, { passive: true });
