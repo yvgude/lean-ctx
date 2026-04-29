@@ -34,7 +34,7 @@ const stepperId = `stepper-${Math.random().toString(36).slice(2)}`;
 
         <div class="stepper-steps">
           {steps.map((s, i) => (
-            <button class="stepper-step" type="button" data-step-btn={i} aria-controls={`${stepperId}-panel-${i}`}>
+            <button class="stepper-step" type="button" data-step-btn={i} data-active={i === 0 ? 'true' : undefined} aria-controls={`${stepperId}-panel-${i}`}>
               <span class="stepper-step-number">{s.number}</span>
               <span class="stepper-step-body">
                 <span class="stepper-step-title">{s.title}</span>
@@ -49,12 +49,12 @@ const stepperId = `stepper-${Math.random().toString(36).slice(2)}`;
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
           </button>
           <div class="stepper-dots" aria-hidden="true">
-            {steps.map((_, i) => (<span class="stepper-dot" data-dot={i}></span>))}
+            {steps.map((_, i) => (<span class="stepper-dot" data-dot={i} data-active={i === 0 ? 'true' : undefined}></span>))}
           </div>
           <button class="stepper-control" type="button" data-next aria-label="Next step">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
           </button>
-          <div class="stepper-counter text-muted font-mono" data-counter></div>
+          <div class="stepper-counter text-muted font-mono" data-counter>step 01</div>
         </div>
       </div>
 
@@ -62,11 +62,11 @@ const stepperId = `stepper-${Math.random().toString(36).slice(2)}`;
         <div class="stepper-visual glass">
           <div class="stepper-visual-top">
             <span class="pill-tag">workflow</span>
-            <span class="stepper-visual-title font-mono text-muted" data-stepper-title></span>
+            <span class="stepper-visual-title font-mono text-muted" data-stepper-title>{`1/${steps.length}`}</span>
           </div>
           <div class="stepper-panels" aria-live="polite">
             {steps.map((s, i) => (
-              <div class="stepper-panel" id={`${stepperId}-panel-${i}`} data-panel={i}>
+              <div class="stepper-panel" id={`${stepperId}-panel-${i}`} data-panel={i} data-active={i === 0 ? 'true' : undefined}>
                 <TerminalChrome
                   title={s.terminalTitle}
                   bodyClass="space-y-1"
