@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 46,
+    "granular": 49,
     "unified": 5
   },
   "read_modes": {
@@ -26,7 +26,7 @@
         "input_schema": {
           "properties": {
             "action": {
-              "description": "Agent operation. diary: persistent log (category=discovery|decision|blocker|progress|insight). recall_diary: read diary. diaries: list all.",
+              "description": "Agent operation. diary: persistent log. share_knowledge: broadcast key=value facts (message: 'k1=v1;k2=v2'). receive_knowledge: poll shared facts from other agents.",
               "enum": [
                 "register",
                 "list",
@@ -38,7 +38,9 @@
                 "sync",
                 "diary",
                 "recall_diary",
-                "diaries"
+                "diaries",
+                "share_knowledge",
+                "receive_knowledge"
               ],
               "type": "string"
             },
@@ -78,7 +80,7 @@
           "type": "object"
         },
         "name": "ctx_agent",
-        "schema_md5": "e3eed852993f6fa1e4da78fec9dbc764"
+        "schema_md5": "8e5656acf265ba8edbb16467198fea7f"
       },
       {
         "description": "Entropy analysis — recommends optimal compression mode for a file.",
@@ -181,7 +183,7 @@
         "schema_md5": "be2d06bc26063e4b271e94537db7aa30"
       },
       {
-        "description": "Find all functions/methods called by a given symbol. Returns callee name, file, and line.",
+        "description": "Find all functions/methods called by a given symbol. Deprecated alias for ctx_callgraph direction=callees.",
         "input_schema": {
           "properties": {
             "file": {
@@ -202,7 +204,7 @@
         "schema_md5": "1aebc705756ba4598d1a34593d10c9eb"
       },
       {
-        "description": "Find all symbols that call a given function/method. Returns caller file, symbol, and line.",
+        "description": "Find all symbols that call a given function/method. Deprecated alias for ctx_callgraph direction=callers.",
         "input_schema": {
           "properties": {
             "file": {
@@ -221,6 +223,31 @@
         },
         "name": "ctx_callers",
         "schema_md5": "ccab40c20158d095e7e5b527409900c6"
+      },
+      {
+        "description": "Unified call graph query. direction=callers|callees for a symbol. Returns file/symbol/line edges.",
+        "input_schema": {
+          "properties": {
+            "direction": {
+              "description": "callers|callees (default: callers)",
+              "type": "string"
+            },
+            "file": {
+              "description": "Optional: scope to a specific file",
+              "type": "string"
+            },
+            "symbol": {
+              "description": "Symbol name to inspect",
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_callgraph",
+        "schema_md5": "98958fb65fc046df77d9874c8a705b5e"
       },
       {
         "description": "Context checkpoint for long conversations.",
@@ -417,6 +444,40 @@
         "schema_md5": "193135d118da09d7f552ee677ee98c4f"
       },
       {
+        "description": "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "retrieve (default) or list",
+              "type": "string"
+            },
+            "end_line": {
+              "description": "End line for range retrieval",
+              "type": "integer"
+            },
+            "id": {
+              "description": "Archive ID from the [Archived: ...] hint",
+              "type": "string"
+            },
+            "search": {
+              "description": "Search pattern to filter archived output",
+              "type": "string"
+            },
+            "session_id": {
+              "description": "Filter list by session ID",
+              "type": "string"
+            },
+            "start_line": {
+              "description": "Start line for range retrieval",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_expand",
+        "schema_md5": "1d84e2c8cb57cb6268727b4fc73f94d8"
+      },
+      {
         "description": "Harness feedback for LLM output tokens/latency (local-first). Actions: record|report|json|reset|status.",
         "input_schema": {
           "properties": {
@@ -499,7 +560,7 @@
         "schema_md5": "cbf54bb11746bf5edb4345a40c259590"
       },
       {
-        "description": "Gain report.",
+        "description": "Gain report (includes Wrapped via action=wrapped).",
         "input_schema": {
           "properties": {
             "action": {
@@ -537,18 +598,29 @@
         "schema_md5": "689b1f4c29249850e4bd369168bcb698"
       },
       {
-        "description": "Code dependency graph. Actions: build (index project), related (find files connected to path), symbol (lookup definition/usages as file::name), impact (blast radius of changes to path), status (index stats).",
+        "description": "Unified code graph. Actions: build (index), related (connected files), symbol (def/usages), impact (blast radius), status (stats), enrich (add commits+tests+knowledge), context (task-based query), diagram (Mermaid deps/calls).",
         "input_schema": {
           "properties": {
             "action": {
-              "description": "Graph operation: build, related, symbol, impact, status",
+              "description": "Graph operation: build, related, symbol, impact, status, enrich, context, diagram",
               "enum": [
                 "build",
                 "related",
                 "symbol",
                 "impact",
-                "status"
+                "status",
+                "enrich",
+                "context",
+                "diagram"
               ],
+              "type": "string"
+            },
+            "depth": {
+              "description": "Optional depth for action=diagram (default: 2)",
+              "type": "integer"
+            },
+            "kind": {
+              "description": "Optional kind for action=diagram: deps|calls",
               "type": "string"
             },
             "path": {
@@ -566,10 +638,10 @@
           "type": "object"
         },
         "name": "ctx_graph",
-        "schema_md5": "d56dfd6355ec656b5e5f8ef7490b7969"
+        "schema_md5": "c998f19ec15f8acefc0c126791558cfb"
       },
       {
-        "description": "Generate a Mermaid diagram of the dependency or call graph. Useful for understanding architecture.",
+        "description": "Generate a Mermaid diagram of the dependency or call graph. Deprecated alias for ctx_graph action=diagram.",
         "input_schema": {
           "properties": {
             "depth": {
@@ -921,7 +993,7 @@
         "schema_md5": "d72370b88a54db91288f2dd7981e3bc7"
       },
       {
-        "description": "Read file (cached, compressed). Re-reads ~13 tok. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
+        "description": "Read file (cached, compressed). Cached re-reads can be ~13 tok when unchanged. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true forces a disk re-read.",
         "input_schema": {
           "properties": {
             "fresh": {
@@ -937,7 +1009,7 @@
               "type": "string"
             },
             "start_line": {
-              "description": "Read from this line number to end of file. Bypasses cache stub — always returns actual content.",
+              "description": "Read from this line number to end of file. Implies fresh=true (disk re-read) to avoid stale snippets.",
               "type": "integer"
             }
           },
@@ -947,7 +1019,7 @@
           "type": "object"
         },
         "name": "ctx_read",
-        "schema_md5": "c009571a83db38f6a0f6e583cc96cc5c"
+        "schema_md5": "dd1d5ae70ed92652e9571da5737f2f98"
       },
       {
         "description": "Compress LLM response text (remove filler, apply TDD).",
@@ -965,6 +1037,36 @@
         },
         "name": "ctx_response",
         "schema_md5": "aa9f7844e1cf4df53682cf13782c264e"
+      },
+      {
+        "description": "Automated code review: combines impact analysis, caller tracking, and test discovery. Actions: review (single file), diff-review (from git diff), checklist (structured review questions).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Review action",
+              "enum": [
+                "review",
+                "diff-review",
+                "checklist"
+              ],
+              "type": "string"
+            },
+            "depth": {
+              "description": "Impact analysis depth (default: 3)",
+              "type": "integer"
+            },
+            "path": {
+              "description": "File path to review (or git diff text for diff-review)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_review",
+        "schema_md5": "e0bc031387cdece1582c08014ca901c2"
       },
       {
         "description": "List HTTP routes/endpoints extracted from the project. Supports Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.",
@@ -1067,7 +1169,7 @@
         "schema_md5": "634633b8dd18cb4cf44a1c1b2266d234"
       },
       {
-        "description": "Cross-session memory (CCP). Actions: load (restore previous session ~400 tok), save, status, task (set current task), finding (record discovery), decision (record choice), reset, list (show sessions), cleanup.",
+        "description": "Cross-session memory (CCP). Actions: load (restore ~400 tok), save, status, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, profile (context profiles), role (governance), budget (limits), slo (observability), diff (compare sessions), verify (output verification stats), episodes (episodic memory), procedures (procedural memory).",
         "input_schema": {
           "properties": {
             "action": {
@@ -1081,7 +1183,18 @@
                 "decision",
                 "reset",
                 "list",
-                "cleanup"
+                "cleanup",
+                "snapshot",
+                "restore",
+                "resume",
+                "profile",
+                "role",
+                "budget",
+                "slo",
+                "diff",
+                "verify",
+                "episodes",
+                "procedures"
               ],
               "type": "string"
             },
@@ -1090,7 +1203,7 @@
               "type": "string"
             },
             "value": {
-              "description": "Value for task/finding/decision actions",
+              "description": "Value for task/finding/decision/profile actions",
               "type": "string"
             }
           },
@@ -1100,7 +1213,7 @@
           "type": "object"
         },
         "name": "ctx_session",
-        "schema_md5": "1c5262c872c35dc6a6a61b25712142ba"
+        "schema_md5": "268597e55008f7da3c4f5be297e3c8f3"
       },
       {
         "description": "Share cached file contexts between agents. Actions: push (share files from your cache to another agent), pull (receive files shared by other agents), list (show all shared contexts), clear (remove your shared contexts).",
@@ -1316,7 +1429,7 @@
         "schema_md5": "b8c2ec2f293a4211b3c018f223cb2b92"
       },
       {
-        "description": "Savings report card. Periods: week|month|all.",
+        "description": "Savings report card. Deprecated alias for ctx_gain action=wrapped.",
         "input_schema": {
           "properties": {
             "period": {
@@ -1337,7 +1450,7 @@
     ],
     "unified": [
       {
-        "description": "Meta-tool: set tool= to sub-tool name. Sub-tools: compress (checkpoint), metrics (stats), analyze (entropy), cache (status|clear|invalidate), discover (missed patterns), smart_read (auto-mode), delta (incremental diff), dedup (cross-file), fill (budget-aware batch read), intent (auto-read by task), response (compress LLM text), context (session state), graph (build|related|symbol|impact|status), session (load|save|task|finding|decision|status|reset|list|cleanup), knowledge (remember|recall|pattern|consolidate|timeline|rooms|search|wakeup|status|remove|export|embeddings_status|embeddings_reset|embeddings_reindex), agent (register|post|read|status|list|info|diary|recall_diary|diaries), overview (project map), wrapped (savings report), benchmark (file|project), multi_read (batch), semantic_search (BM25), cost (attribution), heatmap (file access), impact (graph impact), architecture (graph structure), task (A2A tasks), workflow (state machine).",
+        "description": "Meta-tool: set tool= to sub-tool name. Sub-tools: compress (checkpoint), metrics (stats), analyze (entropy), cache (status|clear|invalidate), discover (missed patterns), smart_read (auto-mode), delta (incremental diff), dedup (cross-file), fill (budget-aware batch read), intent (auto-read by task), response (compress LLM text), context (session state), graph (build|related|symbol|impact|status), session (load|save|task|finding|decision|status|reset|list|cleanup), knowledge (remember|recall|pattern|consolidate|timeline|rooms|search|wakeup|status|remove|export|embeddings_status|embeddings_reset|embeddings_reindex), agent (register|post|read|status|list|info|diary|recall_diary|diaries), overview (project map), wrapped (savings report), benchmark (file|project), multi_read (batch), semantic_search (BM25), cost (attribution), heatmap (file access), impact (graph impact), architecture (graph structure), task (A2A tasks), workflow (state machine), expand (retrieve archived output).",
         "input_schema": {
           "properties": {
             "action": {
@@ -1446,7 +1559,7 @@
               "type": "string"
             },
             "tool": {
-              "description": "compress|metrics|analyze|cache|discover|smart_read|delta|dedup|fill|intent|response|context|graph|session|knowledge|agent|overview|wrapped|benchmark|multi_read|semantic_search|cost|heatmap|impact|architecture|task|workflow",
+              "description": "compress|metrics|analyze|cache|discover|smart_read|delta|dedup|fill|intent|response|context|graph|session|knowledge|agent|overview|wrapped|benchmark|multi_read|semantic_search|cost|heatmap|impact|architecture|task|workflow|expand",
               "type": "string"
             },
             "value": {
@@ -1459,7 +1572,7 @@
           "type": "object"
         },
         "name": "ctx",
-        "schema_md5": "ab784efcae4e71c48415e1c4e51c0d64"
+        "schema_md5": "b694e05805b1877d695d103f2cab2217"
       },
       {
         "description": "Read file (cached, compressed). Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",

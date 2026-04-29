@@ -70,10 +70,16 @@ export function getMcpManifest(): McpManifest {
 
 function resolveGeneratedFile(filename: string): string {
   const viaImportMeta = fileURLToPath(new URL(`../../generated/${filename}`, import.meta.url));
-  if (fs.existsSync(viaImportMeta)) return viaImportMeta;
+  const viaCwdParent = path.resolve(process.cwd(), '..', 'generated', filename);
   const viaCwd = path.join(process.cwd(), 'generated', filename);
-  if (fs.existsSync(viaCwd)) return viaCwd;
-  throw new Error(`Cannot find generated/${filename} (tried ${viaImportMeta} and ${viaCwd})`);
+
+  // Prefer workspace-level generated assets over build output artifacts in dist/generated.
+  const candidates = [viaCwdParent, viaCwd, viaImportMeta];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(`Cannot find generated/${filename} (tried ${candidates.join(', ')})`);
 }
 
 export function getToolEnrichments(): ToolEnrichments {
