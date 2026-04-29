@@ -36,8 +36,8 @@
   --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
-  --card-radius: 16px;
-  --card-radius-lg: 20px;
+  --card-radius: 10px;
+  --card-radius-lg: 12px;
 }
 
 
@@ -288,7 +288,7 @@ pre code {
   background: var(--color-accent);
   color: var(--color-bg);
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 10px;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
 }
@@ -307,7 +307,7 @@ pre code {
   background: transparent;
   color: var(--color-text-bright);
   font-weight: 500;
-  border-radius: 999px;
+  border-radius: 10px;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .btn-outline:hover {
@@ -427,9 +427,10 @@ pre code {
   align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 0.875rem;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 1px solid var(--color-border);
-  background: rgba(10, 10, 15, 0.5);
+  background: rgba(10, 10, 15, 0.35);
+  backdrop-filter: blur(10px);
   color: var(--color-muted);
   font-size: clamp(0.6875rem, 0.65rem + 0.08vw, 0.75rem);
   font-weight: 600;
@@ -446,14 +447,22 @@ pre code {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.625rem;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 1px solid var(--color-border);
-  background: rgba(10, 10, 15, 0.5);
+  background: rgba(10, 10, 15, 0.3);
+  backdrop-filter: blur(10px);
   color: var(--color-muted);
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.glass {
+  background: rgba(10, 10, 15, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
 }
 
 .panel {
@@ -678,7 +687,7 @@ pre code {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 1px solid var(--color-border);
   background: rgba(6, 6, 11, 0.7);
   backdrop-filter: blur(8px);

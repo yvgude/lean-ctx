@@ -1,0 +1,73 @@
+---
+interface Props {
+  toolCount: number;
+}
+
+const { toolCount } = Astro.props;
+---
+
+<div class="hero-visual" data-hero-visual aria-hidden="true">
+  <div class="hero-3d">
+    <div class="hero-layer hero-layer--a" data-i="0">
+      <div class="hero-window">
+        <div class="hero-window-top">
+          <span class="hero-dot hero-dot--r"></span>
+          <span class="hero-dot hero-dot--y"></span>
+          <span class="hero-dot hero-dot--g"></span>
+          <span class="hero-window-title">ctx_read</span>
+        </div>
+        <div class="hero-window-body">
+          <div class="hero-line"><span class="hero-k">F7</span> <span class="hero-v">service.ts</span> <span class="hero-m">map</span></div>
+          <div class="hero-line hero-line--muted">deps: jwt · bcrypt · prisma</div>
+          <div class="hero-line"><span class="hero-k">λ</span> login(email, pwd) → Token</div>
+          <div class="hero-line"><span class="hero-k">λ</span> verify(token) → Payload</div>
+          <div class="hero-line hero-line--muted">342L → 48 tokens (98.6% saved)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-layer hero-layer--b" data-i="1">
+      <div class="hero-window">
+        <div class="hero-window-top">
+          <span class="hero-dot hero-dot--r"></span>
+          <span class="hero-dot hero-dot--y"></span>
+          <span class="hero-dot hero-dot--g"></span>
+          <span class="hero-window-title">ctx_metrics</span>
+        </div>
+        <div class="hero-window-body">
+          <div class="hero-metric">
+            <span class="hero-metric-label">tool calls</span>
+            <span class="hero-metric-value">847</span>
+          </div>
+          <div class="hero-metric">
+            <span class="hero-metric-label">tokens saved</span>
+            <span class="hero-metric-value">412k</span>
+          </div>
+          <div class="hero-metric">
+            <span class="hero-metric-label">cache hits</span>
+            <span class="hero-metric-value">73%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-layer hero-layer--c" data-i="2">
+      <div class="hero-card glass">
+        <div class="hero-card-top">
+          <span class="pill-tag">tools</span>
+          <span class="hero-card-title">{toolCount}</span>
+        </div>
+        <div class="hero-card-lines">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero-shards" data-hero-shards>
+    {Array.from({ length: 18 }).map((_, i) => (
+      <span class="hero-shard" data-s={i}></span>
+    ))}
+  </div>
+</div>
+
