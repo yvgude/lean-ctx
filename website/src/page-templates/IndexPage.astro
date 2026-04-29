@@ -125,13 +125,13 @@ const stepperSteps = [
 
       <div class="hero-terminal-wrap animate-entrance stagger-2">
         <div class="hero-terminal" data-hero-terminal>
-          <div class="terminal-header flex items-center gap-2 px-5 py-3">
+          <div class="terminal-header flex items-center gap-2" style="padding: clamp(0.5rem, 0.375rem + 0.3vw, 0.75rem) clamp(0.75rem, 0.625rem + 0.4vw, 1.25rem);">
             <span class="terminal-dot bg-[#ff5f57]"></span>
             <span class="terminal-dot bg-[#febc2e]"></span>
             <span class="terminal-dot bg-[#28c840]"></span>
             <span class="ml-3 text-xs text-muted font-mono">lean-ctx session</span>
           </div>
-          <div class="terminal-body px-5 py-5 font-mono" style="font-size: clamp(0.65rem, 0.6rem + 0.12vw, 0.8125rem); line-height: 1.8;">
+          <div class="terminal-body font-mono" style="padding: clamp(0.75rem, 0.625rem + 0.4vw, 1.25rem); font-size: clamp(0.6rem, 0.55rem + 0.12vw, 0.8125rem); line-height: 1.75;">
             <div class="hero-term-line" data-term-line="0">
               <span class="text-muted">$</span> <span class="text-accent">{tRead}</span>(<span class="text-text-bright">{{ path: "src/lib/mcpManifest.ts", mode: "map" }}</span>)
             </div>
