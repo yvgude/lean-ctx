@@ -22,7 +22,6 @@ DEPLOY_CHECKLIST.md
 
 # ── Private workflows ──
 n8n-workflows/
-.gitlab-ci.yml
 
 # ── Lab / Neural (private, not for OSS) ──
 
