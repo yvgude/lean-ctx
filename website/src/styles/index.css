@@ -370,51 +370,6 @@
   border-color: var(--color-accent);
 }
 
-/* Preview info stack */
-.preview-info-stack {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);
-}
-
-.preview-info-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-  border: 1px solid var(--color-border);
-  border-radius: var(--card-radius);
-  background: rgba(255, 255, 255, 0.02);
-  transition: border-color 0.2s ease;
-}
-
-.preview-info-card:hover {
-  border-color: var(--color-border-light);
-}
-
-.preview-info-number {
-  font-size: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
-
-.preview-info-title {
-  font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.9375rem);
-  margin-top: 0.25rem;
-}
-
-.preview-info-desc {
-  margin-top: 0.25rem;
-  line-height: 1.5;
-}
-
-@media (max-width: 639px) {
-  .preview-info-stack {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* Compare panels */
 .compare-grid {
   display: grid;
@@ -621,55 +576,6 @@
 }
 
 .group:hover .layer-link { gap: 0.75rem; }
-
-/* LeanCTL panel */
-.leanctl-status {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 8px 24px;
-  background: rgba(10, 10, 15, 0.65);
-  border-bottom: 1px solid var(--color-border);
-  font-family: var(--font-mono);
-  font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.leanctl-status::-webkit-scrollbar { display: none; }
-.leanctl-sep { color: var(--color-border); margin: 0 8px; }
-.leanctl-bar {
-  width: 3px;
-  min-height: 100%;
-  background: var(--color-accent);
-  border-radius: 2px;
-  flex-shrink: 0;
-  align-self: stretch;
-}
-.leanctl-tools {
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.03);
-}
-.leanctl-tool-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-  font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-  overflow: hidden;
-  white-space: nowrap;
-}
-.leanctl-input {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 24px;
-  background: rgba(10, 10, 15, 0.65);
-  border-top: 1px solid var(--color-border);
-  font-family: var(--font-mono);
-  font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
-}
 
 /* Compatibility pills */
 .compat-grid {

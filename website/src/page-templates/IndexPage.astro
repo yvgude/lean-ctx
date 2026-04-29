@@ -27,9 +27,15 @@ const stepperSteps = [
     description: t('index.dim1Desc'),
     terminalTitle: `${tRead} — map`,
     terminalLines: [
-      `${tRead}({ path: "website/src/lib/mcpManifest.ts", mode: "map" })`,
-      `→ exports: getMcpManifest(), getGranularTools(), getToolEnrichments()`,
+      `$ ${tRead}({ path: "src/lib/mcpManifest.ts", mode: "map" })`,
+      ``,
+      `→ exports: getMcpManifest(), getGranularTools()`,
       `→ tools.granular: ${manifest.counts.granular}`,
+      `→ tools.unified: ${manifest.counts.unified}`,
+      `→ read_modes: ${manifest.read_modes.count}`,
+      `→ schema: v${manifest.schema_version}`,
+      ``,
+      `✓ cached — re-read costs ~13 tokens`,
     ],
   },
   {
@@ -38,9 +44,13 @@ const stepperSteps = [
     description: t('index.dim2Desc'),
     terminalTitle: `${tSearch} — regex`,
     terminalLines: [
-      `${tSearch}({ pattern: "getMcpManifest", path: "website/src" })`,
-      `→ matches: website/src/page-templates/IndexPage.astro, website/src/lib/mcpManifest.ts`,
-      `→ open minimal context, not the whole repo`,
+      `$ ${tSearch}({ pattern: "getMcpManifest", path: "src" })`,
+      ``,
+      `→ 2 matches found in 0.8ms`,
+      `  src/lib/mcpManifest.ts:14  export function getMcpManifest()`,
+      `  src/page-templates/IndexPage.astro:12  const manifest = getMcpManifest()`,
+      ``,
+      `✓ compact context — only relevant lines, not the whole file`,
     ],
   },
   {
@@ -49,9 +59,13 @@ const stepperSteps = [
     description: t('index.dim3Desc'),
     terminalTitle: `${tShell} — build`,
     terminalLines: [
-      `${tShell}({ command: "npx astro build", cwd: "website" })`,
-      `→ dist/_astro/* updated`,
-      `→ ready for deploy branch`,
+      `$ ${tShell}({ command: "npx astro build", cwd: "website" })`,
+      ``,
+      `→ 1294 pages built in 3.6s`,
+      `→ raw output: 847 tokens`,
+      `→ compressed: 42 tokens (95% reduction)`,
+      ``,
+      `✓ pattern compression for git, npm, cargo, docker, tsc`,
     ],
   },
   {
@@ -60,9 +74,13 @@ const stepperSteps = [
     description: t('index.dim4Desc'),
     terminalTitle: `${tMulti} — batch`,
     terminalLines: [
-      `${tMulti}({ paths: ["website/src/page-templates/IndexPage.astro", "website/src/styles/global.css"], mode: "diff" })`,
-      `→ dedup + compress + return only relevant deltas`,
-      `→ stable review loop`,
+      `$ ${tMulti}({ paths: ["IndexPage.astro", "global.css"], mode: "diff" })`,
+      ``,
+      `→ dedup across files: 3 shared imports removed`,
+      `→ delta-only: +12 / -8 lines`,
+      `→ cross-file refs: F1=IndexPage, F2=global`,
+      ``,
+      `✓ stable review loop — same input = same output`,
     ],
   },
 ];
@@ -246,51 +264,28 @@ const stepperSteps = [
         <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
           {t('index.previewTitle')}
         </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;">
+        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
           {t('index.previewDesc')}
         </p>
-
-        <TerminalChrome
-          title={`${tRead} — map`}
-          chromeClass="animate-entrance stagger-3"
-          bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
-        >
-          <div>
-            <span class="text-accent">{t('index.demoAiCallsLabel')}</span>{' '}
-            <span class="text-text-bright">{`${tRead}({ path: "src/lib/mcpManifest.ts", mode: "map" })`}</span>
-          </div>
-          <div class="term-divider"></div>
-          <div><span class="text-muted">schema_version</span> <span class="text-text-bright">{manifest.schema_version}</span></div>
-          <div><span class="text-muted">tools.granular</span> <span class="text-accent font-semibold">{manifest.counts.granular}</span></div>
-          <div><span class="text-muted">tools.unified</span> <span class="text-text-bright">{manifest.counts.unified}</span></div>
-          <div><span class="text-muted">read_modes</span> <span class="text-text-bright">{manifest.read_modes.count}</span></div>
-          <div class="term-divider"></div>
-          <div class="text-muted">modes: <span class="text-text">{manifest.read_modes.modes.slice(0, 6).join(', ')}</span></div>
-        </TerminalChrome>
       </div>
 
-      <div class="preview-info-stack animate-entrance stagger-2">
-        <div class="preview-info-card">
-          <span class="preview-info-number text-accent font-display">{manifest.counts.granular}</span>
-          <span class="preview-info-title text-text-bright font-semibold">Granular Tools</span>
-          <span class="preview-info-desc text-muted fluid-sm">{t('index.previewDesc')}</span>
+      <TerminalChrome
+        title={`${tRead} — map`}
+        chromeClass="animate-entrance stagger-3"
+        bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
+      >
+        <div>
+          <span class="text-accent">{t('index.demoAiCallsLabel')}</span>{' '}
+          <span class="text-text-bright">{`${tRead}({ path: "src/lib/mcpManifest.ts", mode: "map" })`}</span>
         </div>
-        <div class="preview-info-card">
-          <span class="preview-info-number text-text-bright font-display">{manifest.read_modes.count}</span>
-          <span class="preview-info-title text-text-bright font-semibold">Read Modes</span>
-          <span class="preview-info-desc text-muted fluid-sm">{manifest.read_modes.modes.slice(0, 8).join(', ')}</span>
-        </div>
-        <div class="preview-info-card">
-          <span class="preview-info-number text-accent font-display">v{manifest.schema_version}</span>
-          <span class="preview-info-title text-text-bright font-semibold">Schema</span>
-          <span class="preview-info-desc text-muted fluid-sm">Deterministic manifest with full tool metadata, categories, and enrichment data.</span>
-        </div>
-        <div class="preview-info-card">
-          <span class="preview-info-number text-text-bright font-display">~13</span>
-          <span class="preview-info-title text-text-bright font-semibold">Re-read tokens</span>
-          <span class="preview-info-desc text-muted fluid-sm">Cached reads return in ~13 tokens. No waste, no re-parsing.</span>
-        </div>
-      </div>
+        <div class="term-divider"></div>
+        <div><span class="text-muted">schema_version</span> <span class="text-text-bright">{manifest.schema_version}</span></div>
+        <div><span class="text-muted">tools.granular</span> <span class="text-accent font-semibold">{manifest.counts.granular}</span></div>
+        <div><span class="text-muted">tools.unified</span> <span class="text-text-bright">{manifest.counts.unified}</span></div>
+        <div><span class="text-muted">read_modes</span> <span class="text-text-bright">{manifest.read_modes.count}</span></div>
+        <div class="term-divider"></div>
+        <div class="text-muted">modes: <span class="text-text">{manifest.read_modes.modes.slice(0, 6).join(', ')}</span></div>
+      </TerminalChrome>
     </div>
   </div>
 </section>
@@ -518,129 +513,6 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 </section>
 
 
-<!-- ═══════════════════════════════════════════════════════
-     ECOSYSTEM: LeanCTL
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('index.ecoLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
-      {t('index.ecoTitle')} <span class="italic-accent">{t('index.ecoTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 42rem;">
-      {t('index.ecoDesc')}
-    </p>
-
-    <div class="terminal-chrome animate-entrance stagger-3">
-      <div class="terminal-header flex items-center gap-2 px-5 py-3">
-        <span class="terminal-dot bg-[#ff5f57]"></span>
-        <span class="terminal-dot bg-[#febc2e]"></span>
-        <span class="terminal-dot bg-[#28c840]"></span>
-        <span class="ml-3 text-xs text-muted font-mono">leanctl · ~/my-project</span>
-      </div>
-      <div class="leanctl-status">
-        <span class="text-text-bright font-bold">lean-ctx</span>
-        <span class="leanctl-sep">╱</span>
-        <span class="text-muted">schema</span>
-        <span class="text-text-bright font-semibold" style="margin-left: 4px;">{manifest.schema_version}</span>
-        <span class="leanctl-sep">╱</span>
-        <span class="text-muted">tools</span>
-        <span class="text-accent font-semibold" style="margin-left: 4px;">{manifest.counts.granular}</span>
-        <span class="leanctl-sep">╱</span>
-        <span class="text-muted">read modes</span>
-        <span class="text-text-bright font-semibold" style="margin-left: 4px;">{manifest.read_modes.count}</span>
-      </div>
-      <div class="terminal-body px-6 py-5 font-mono space-y-2" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem); line-height: 1.7;">
-        <div class="flex items-start gap-2">
-          <span class="leanctl-bar"></span>
-          <span class="text-text-bright font-semibold">Top tools (granular)</span>
-        </div>
-        <div class="leanctl-tools">
-          {manifest.tools.granular.slice(0, 8).map((tool) => (
-            <div class="leanctl-tool-row" style="overflow: hidden;">
-              <span class="text-accent">•</span>
-              <span class="text-accent-2">{tool.name}</span>
-              <span class="text-text" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{tool.description}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div class="leanctl-input">
-        <span class="text-accent font-bold">❯</span>
-        <span class="text-muted italic">{t('index.demoAskAnythingPlaceholder')}</span>
-      </div>
-    </div>
-
-    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-4" style="gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); margin-top: clamp(3rem, 2rem + 2vw, 5rem);">
-      <div class="card p-6 group hover:border-accent/20 transition-all">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-            <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
-          </div>
-          <h3 class="font-display text-sm font-semibold text-text-bright">{t('index.ecoCard3Title')}</h3>
-        </div>
-        <p class="text-sm text-muted leading-relaxed">{t('index.ecoCard3Desc')}</p>
-      </div>
-      <div class="card p-6 group hover:border-accent/20 transition-all">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-            <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
-          </div>
-          <h3 class="font-display text-sm font-semibold text-text-bright">{t('index.ecoCard4Title')}</h3>
-        </div>
-        <p class="text-sm text-muted leading-relaxed">{t('index.ecoCard4Desc')}</p>
-      </div>
-      <div class="card p-6 group hover:border-accent-2/20 transition-all">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-8 h-8 rounded-md bg-accent-2/10 flex items-center justify-center">
-            <svg class="w-4 h-4 text-accent-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17l-5.384 3.18A1.992 1.992 0 013 16.666V3.334A1.993 1.993 0 016.036 1.81l5.384 3.18M15.75 7.5l-2.25 9m4.5-9l-2.25 9M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
-          </div>
-          <h3 class="font-display text-sm font-semibold text-text-bright">{t('index.ecoCard5Title')}</h3>
-        </div>
-        <p class="text-sm text-muted leading-relaxed">{t('index.ecoCard5Desc')}</p>
-      </div>
-      <div class="card p-6 group hover:border-accent-3/20 transition-all">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-8 h-8 rounded-md bg-accent-3/10 flex items-center justify-center">
-            <svg class="w-4 h-4 text-accent-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0-10.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.75c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.249-8.25-3.286zm0 13.036h.008v.008H12v-.008z"/></svg>
-          </div>
-          <h3 class="font-display text-sm font-semibold text-text-bright">{t('index.ecoCard6Title')}</h3>
-        </div>
-        <p class="text-sm text-muted leading-relaxed">{t('index.ecoCard6Desc')}</p>
-      </div>
-      <div class="card p-6 group hover:border-accent/20 transition-all">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-8 h-8 rounded-md bg-accent/10 flex items-center justify-center">
-            <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
-          </div>
-          <h3 class="font-display text-sm font-semibold text-text-bright">{t('index.ecoCard7Title')}</h3>
-        </div>
-        <p class="text-sm text-muted leading-relaxed">{t('index.ecoCard7Desc')}</p>
-      </div>
-      <div class="card p-6 group hover:border-accent-2/20 transition-all">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-8 h-8 rounded-md bg-accent-2/10 flex items-center justify-center">
-            <svg class="w-4 h-4 text-accent-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5"/></svg>
-          </div>
-          <h3 class="font-display text-sm font-semibold text-text-bright">{t('index.ecoCard8Title')}</h3>
-        </div>
-        <p class="text-sm text-muted leading-relaxed">{t('index.ecoCard8Desc')}</p>
-      </div>
-    </div>
-
-    <div class="flex flex-wrap items-center justify-between animate-entrance stagger-5" style="margin-top: clamp(3rem, 2rem + 2vw, 5rem);">
-      <div class="flex flex-wrap items-center" style="gap: clamp(0.875rem, 0.5rem + 0.75vw, 1.5rem);">
-        <a href="https://leanctl.com" target="_blank" rel="noopener" class="btn-primary inline-flex items-center gap-2.5 font-bold text-bg" style="padding: clamp(0.875rem, 0.7rem + 0.35vw, 1.125rem) clamp(1.75rem, 1.25rem + 1vw, 2.75rem); font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
-          {t('index.ecoCta')}
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </a>
-        <span class="fluid-sm text-muted">{t('index.ecoPricingNote')}</span>
-      </div>
-    </div>
-  </div>
-</section>
 
 
 <!-- ═══════════════════════════════════════════════════════
@@ -763,13 +635,6 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
         </a>
       </div>
 
-      <p class="text-muted animate-entrance stagger-5" style="margin-top: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); font-size: clamp(0.875rem, 0.84rem + 0.12vw, 0.9375rem);">
-        {t('index.ctaLeanctl')}
-        <a href="https://leanctl.com" target="_blank" rel="noopener" class="text-accent hover:text-text-bright transition-colors inline-flex items-center gap-1" style="margin-left: 0.25rem;">
-          {t('index.ctaLeanctlLink')}
-          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </a>
-      </p>
     </div>
   </div>
 </section>
