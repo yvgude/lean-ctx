@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────
-   DESIGN SYSTEM: Editorial Minimal
-   Clean. Dark. Spacious. No visual noise.
+   DESIGN SYSTEM: Premium Dark
+   Inspired by Riotters — generous whitespace, bold type,
+   subtle depth, no visual clutter.
    ───────────────────────────────────────────────────────── */
 
 @theme {
@@ -10,13 +11,14 @@
   --color-surface: #0a0a0f;
   --color-surface-2: #111118;
   --color-surface-3: #18181f;
+  --color-surface-elevated: #0d0d14;
 
-  --color-border: #1e1e28;
-  --color-border-light: #2a2a38;
+  --color-border: #1a1a24;
+  --color-border-light: #252532;
 
-  --color-text: #b4b4c8;
-  --color-text-bright: #f0f0f5;
-  --color-muted: #6b6b82;
+  --color-text: #a8a8be;
+  --color-text-bright: #eeeef5;
+  --color-muted: #5e5e78;
 
   --color-accent: #34d399;
   --color-accent-bright: #6ee7b7;
@@ -32,6 +34,9 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  --card-radius: 16px;
+  --card-radius-lg: 20px;
 }
 
 
@@ -46,7 +51,7 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
-  font-size: clamp(0.875rem, 0.83rem + 0.2vw, 1rem);
+  font-size: clamp(0.9375rem, 0.88rem + 0.25vw, 1.0625rem);
   font-weight: 350;
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
@@ -63,27 +68,27 @@ body {
 /* ── Fluid Typography Scale ───────────────────────────── */
 
 .fluid-display {
-  font-size: clamp(2.75rem, 1.5rem + 5.5vw, 7rem);
+  font-size: clamp(3rem, 1.5rem + 6.5vw, 8rem);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+.fluid-h1 {
+  font-size: clamp(2.25rem, 1.2rem + 4.5vw, 5.5rem);
   line-height: 1.02;
   letter-spacing: -0.04em;
 }
-.fluid-h1 {
-  font-size: clamp(2rem, 1.2rem + 3.5vw, 4.5rem);
+.fluid-h2 {
+  font-size: clamp(1.75rem, 1rem + 3vw, 4rem);
   line-height: 1.06;
   letter-spacing: -0.035em;
 }
-.fluid-h2 {
-  font-size: clamp(1.5rem, 1rem + 2.2vw, 3.25rem);
-  line-height: 1.1;
-  letter-spacing: -0.03em;
-}
 .fluid-h3 {
-  font-size: clamp(1.125rem, 0.95rem + 0.8vw, 1.75rem);
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: clamp(1.25rem, 1rem + 1vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: -0.025em;
 }
 .fluid-body {
-  font-size: clamp(0.9375rem, 0.88rem + 0.25vw, 1.1875rem);
+  font-size: clamp(1rem, 0.92rem + 0.35vw, 1.25rem);
   line-height: 1.7;
 }
 .fluid-sm {
@@ -91,50 +96,50 @@ body {
   line-height: 1.6;
 }
 .fluid-label {
-  font-size: clamp(0.625rem, 0.6rem + 0.1vw, 0.75rem);
+  font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
   line-height: 1;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   font-weight: 600;
 }
 
 
-/* ── Fluid Spacing ────────────────────────────────────── */
+/* ── Fluid Spacing (dramatically increased) ───────────── */
 
 .section-y {
+  padding-top: clamp(5rem, 3.5rem + 6vw, 10rem);
+  padding-bottom: clamp(5rem, 3.5rem + 6vw, 10rem);
+}
+.section-y-sm {
   padding-top: clamp(3.5rem, 2.5rem + 4vw, 7rem);
   padding-bottom: clamp(3.5rem, 2.5rem + 4vw, 7rem);
 }
-.section-y-sm {
-  padding-top: clamp(2.5rem, 1.75rem + 3vw, 5rem);
-  padding-bottom: clamp(2.5rem, 1.75rem + 3vw, 5rem);
-}
 .section-y-xs {
-  padding-top: clamp(1.75rem, 1.25rem + 1.5vw, 3.5rem);
-  padding-bottom: clamp(1.75rem, 1.25rem + 1.5vw, 3.5rem);
+  padding-top: clamp(2.5rem, 1.75rem + 2.5vw, 5rem);
+  padding-bottom: clamp(2.5rem, 1.75rem + 2.5vw, 5rem);
 }
 .section-hero {
-  padding-top: clamp(3rem, 2rem + 3vw, 5.5rem);
-  padding-bottom: clamp(3.5rem, 2.5rem + 4vw, 7rem);
+  padding-top: clamp(4rem, 2.5rem + 5vw, 8rem);
+  padding-bottom: clamp(5rem, 3.5rem + 6vw, 10rem);
 }
 
 .content-grid {
   width: 100%;
   max-width: 80rem;
   margin-inline: auto;
-  padding-inline: clamp(1.25rem, 0.5rem + 3vw, 5rem);
+  padding-inline: clamp(1.5rem, 0.75rem + 3vw, 5rem);
 }
 .content-grid-narrow {
   width: 100%;
   max-width: 72rem;
   margin-inline: auto;
-  padding-inline: clamp(1.25rem, 0.5rem + 3vw, 5rem);
+  padding-inline: clamp(1.5rem, 0.75rem + 3vw, 5rem);
 }
 .content-grid-wide {
   width: 100%;
   max-width: 96rem;
   margin-inline: auto;
-  padding-inline: clamp(1.25rem, 0.5rem + 3vw, 5rem);
+  padding-inline: clamp(1.5rem, 0.75rem + 3vw, 5rem);
 }
 
 
@@ -179,14 +184,18 @@ pre code {
   background: var(--color-accent);
   color: var(--color-bg);
   font-weight: 600;
-  transition: opacity 0.2s ease;
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
 }
 .btn-primary:hover {
-  opacity: 0.88;
+  opacity: 0.92;
+  box-shadow: 0 0 24px rgba(52, 211, 153, 0.2);
+  transform: translateY(-1px);
 }
 .btn-primary:focus-visible {
   outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .btn-outline {
@@ -194,15 +203,17 @@ pre code {
   background: transparent;
   color: var(--color-text-bright);
   font-weight: 500;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .btn-outline:hover {
   border-color: var(--color-muted);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
 }
 .btn-outline:focus-visible {
   outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 
@@ -216,20 +227,21 @@ pre code {
 }
 
 
-/* ── Section Divider ──────────────────────────────────── */
+/* ── Section Divider (subtle) ─────────────────────────── */
 
 .section-divider {
   height: 1px;
-  background: var(--color-border);
+  background: linear-gradient(90deg, transparent, var(--color-border), transparent);
 }
 
 
 /* ── Terminal Chrome ──────────────────────────────────── */
 
 .terminal-chrome {
-  border-radius: clamp(8px, 0.8vw, 14px);
+  border-radius: var(--card-radius);
   overflow: hidden;
   border: 1px solid var(--color-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .terminal-body {
@@ -252,12 +264,14 @@ pre code {
 
 .card {
   border: 1px solid var(--color-border);
-  border-radius: clamp(10px, 0.8vw, 16px);
+  border-radius: var(--card-radius);
   background: var(--color-surface);
-  transition: border-color 0.25s ease;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .card:hover {
   border-color: var(--color-border-light);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
 }
 
 
@@ -265,8 +279,8 @@ pre code {
 
 .animate-entrance {
   opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(24px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .animate-entrance.is-visible {
@@ -282,12 +296,34 @@ pre code {
   }
 }
 
-.stagger-1 { transition-delay: 0.06s; }
-.stagger-2 { transition-delay: 0.12s; }
-.stagger-3 { transition-delay: 0.18s; }
-.stagger-4 { transition-delay: 0.24s; }
-.stagger-5 { transition-delay: 0.3s; }
-.stagger-6 { transition-delay: 0.36s; }
+.stagger-1 { transition-delay: 0.08s; }
+.stagger-2 { transition-delay: 0.16s; }
+.stagger-3 { transition-delay: 0.24s; }
+.stagger-4 { transition-delay: 0.32s; }
+.stagger-5 { transition-delay: 0.4s; }
+.stagger-6 { transition-delay: 0.48s; }
+
+
+/* ── Subtle Glow Effects ──────────────────────────────── */
+
+.glow-accent {
+  box-shadow: 0 0 60px rgba(52, 211, 153, 0.06);
+}
+
+.glow-section {
+  position: relative;
+}
+.glow-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(600px, 80vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.15), transparent);
+  pointer-events: none;
+}
 
 
 /* ── Docs Prose ───────────────────────────────────────── */
@@ -344,7 +380,7 @@ pre code {
   border: 1px solid var(--color-border);
 }
 .docs-prose pre {
-  border-radius: clamp(8px, 0.8vw, 14px);
+  border-radius: var(--card-radius);
   padding: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);
   overflow-x: auto;
   margin-bottom: 1.25rem;
@@ -461,7 +497,7 @@ pre code {
 :not(pre) > code {
   background: var(--color-surface-3);
   border: 1px solid var(--color-border);
-  border-radius: 5px;
+  border-radius: 6px;
   padding: 0.15em 0.4em;
 }
 

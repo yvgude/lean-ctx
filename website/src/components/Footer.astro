@@ -98,10 +98,10 @@ const year = new Date().getFullYear();
 </footer>
 
 <style>
-  .footer-root { border-top: 1px solid var(--color-border); }
-  .footer-inner { padding-top: clamp(3rem, 2rem + 4vw, 6rem); padding-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); }
-  .footer-top { display: grid; grid-template-columns: 1fr; gap: clamp(2rem, 1.5rem + 2vw, 3rem); margin-bottom: clamp(2rem, 1.5rem + 2vw, 3.5rem); }
-  @media (min-width: 768px) { .footer-top { grid-template-columns: 1.5fr 3fr; gap: clamp(3rem, 2rem + 3vw, 6rem); } }
+  .footer-root { border-top: 1px solid var(--color-border); background: var(--color-bg); }
+  .footer-inner { padding-top: clamp(5rem, 3.5rem + 6vw, 10rem); padding-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); }
+  .footer-top { display: grid; grid-template-columns: 1fr; gap: clamp(3rem, 2rem + 3vw, 5rem); margin-bottom: clamp(4rem, 3rem + 3vw, 7rem); }
+  @media (min-width: 768px) { .footer-top { grid-template-columns: 1.5fr 3fr; gap: clamp(4rem, 3rem + 4vw, 8rem); } }
   .footer-brand { display: flex; flex-direction: column; gap: 0.75rem; }
   .footer-logo { display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; }
   .footer-logo-icon { width: clamp(1.25rem, 1rem + 0.4vw, 1.5rem); height: clamp(1.25rem, 1rem + 0.4vw, 1.5rem); }
@@ -113,7 +113,7 @@ const year = new Date().getFullYear();
   .footer-links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: clamp(0.375rem, 0.25rem + 0.2vw, 0.5rem); }
   .footer-links a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease; }
   .footer-links a:hover { color: var(--color-text-bright); }
-  .footer-divider { height: 1px; background: var(--color-border); margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); }
+  .footer-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--color-border), transparent); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); }
   .footer-bottom { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
   @media (min-width: 640px) { .footer-bottom { flex-direction: row; justify-content: space-between; } }
   .footer-copy { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.7; }
