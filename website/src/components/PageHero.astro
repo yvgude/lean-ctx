@@ -6,6 +6,9 @@ interface Props {
   highlight?: string;
   description?: string;
   descriptionHtml?: string;
+  kickerMb?: string;
+  descMt?: string;
+  actionsMt?: string;
   titleVariant?: 'h1' | 'display';
   highlightStyle?: 'italic' | 'gradient';
   kickerTone?: 'muted' | 'accent' | 'accent-2' | 'accent-3' | 'bright';
@@ -24,6 +27,9 @@ const {
   highlight,
   description,
   descriptionHtml,
+  kickerMb = 'clamp(1rem, 0.75rem + 0.5vw, 1.5rem)',
+  descMt = 'clamp(1.25rem, 1rem + 1vw, 2rem)',
+  actionsMt = 'clamp(1.5rem, 1rem + 1.25vw, 2.5rem)',
   titleVariant = 'h1',
   highlightStyle = 'italic',
   kickerTone = 'muted',
@@ -52,21 +58,18 @@ const kickerClass =
 const highlightClass = highlightStyle === 'gradient' ? 'gradient-text' : 'italic-accent';
 const titleSizeClass = titleVariant === 'display' ? 'fluid-display' : 'fluid-h1';
 
-const titleStyle = [
-  'margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);',
-  titleMaxWidth ? `max-width: ${titleMaxWidth};` : '',
-].join(' ');
+const titleStyle = titleMaxWidth ? `max-width: ${titleMaxWidth};` : undefined;
 
 const descStyle = [
-  'margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem);',
+  `margin-top: ${descMt};`,
   descMaxWidth ? `max-width: ${descMaxWidth};` : 'max-width: 46rem;',
 ].join(' ');
 ---
 
 <section class={sectionClass}>
-  <div class={gridClass} style={containerStyle}>
+  <div class={gridClass} style={containerStyle || undefined}>
     <div class="animate-entrance">
-      <span class={`kicker-pill ${kickerClass}`} style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">
+      <span class={`kicker-pill ${kickerClass}`} style={`margin-bottom: ${kickerMb};`}>
         {label}
       </span>
     </div>
@@ -99,7 +102,7 @@ const descStyle = [
     {Astro.slots.has('actions') && (
       <div
         class="flex flex-wrap items-center animate-entrance stagger-3"
-        style="gap: clamp(0.5rem, 0.375rem + 0.5vw, 1rem);"
+        style={`margin-top: ${actionsMt}; gap: clamp(0.5rem, 0.375rem + 0.5vw, 1rem);`}
       >
         <slot name="actions" />
       </div>

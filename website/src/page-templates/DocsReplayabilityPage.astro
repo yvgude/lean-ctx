@@ -1,0 +1,88 @@
+---
+import DocsLayout from "../layouts/DocsLayout.astro";
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from "../i18n/utils";
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t("docsReplay.sidebarReplayability"),
+    items: [
+      { label: t("docsReplay.sidebarOverview"), href: lp("/docs/replayability") },
+      { label: t("docsReplay.sidebarInputs"), href: lp("/docs/replayability") + "#inputs" },
+      { label: t("docsReplay.sidebarPolicies"), href: lp("/docs/replayability") + "#policies" },
+      { label: t("docsReplay.sidebarSessions"), href: lp("/docs/replayability") + "#sessions" },
+      { label: t("docsReplay.sidebarVerification"), href: lp("/docs/replayability") + "#verification" },
+      { label: t("docsReplay.sidebarCookbook"), href: lp("/docs/replayability") + "#cookbook" },
+    ],
+  },
+  {
+    title: t("docsReplay.sidebarRelated"),
+    items: [
+      { label: t("docsReplay.sidebarDocsVerification"), href: lp("/docs/verification") },
+      { label: t("docsReplay.sidebarTrust"), href: lp("/trust") },
+      { label: t("docsReplay.sidebarSafety"), href: lp("/safety") },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t("docsReplay.title")} sidebar={sidebar}>
+  <div class="docs-content">
+    <h1>{t("docsReplay.heading")}</h1>
+    <p class="lead">{t("docsReplay.intro")}</p>
+
+    <section id="inputs">
+      <h2>{t("docsReplay.inputsTitle")}</h2>
+      <p>{t("docsReplay.inputsDesc")}</p>
+      <ul>
+        <li>{t("docsReplay.inputs1")}</li>
+        <li>{t("docsReplay.inputs2")}</li>
+        <li>{t("docsReplay.inputs3")}</li>
+      </ul>
+    </section>
+
+    <section id="policies">
+      <h2>{t("docsReplay.policiesTitle")}</h2>
+      <p>{t("docsReplay.policiesDesc")}</p>
+      <pre><code class="language-toml">{`# ~/.lean-ctx/config.toml
+[memory]
+policy = "balanced"
+
+[verification]
+enabled = true`}</code></pre>
+      <p class="text-muted">{t("docsReplay.policiesNote")}</p>
+    </section>
+
+    <section id="sessions">
+      <h2>{t("docsReplay.sessionsTitle")}</h2>
+      <p>{t("docsReplay.sessionsDesc")}</p>
+      <pre><code class="language-bash">{`# Start a server with a fixed project root
+lean-ctx serve --host 127.0.0.1 --port 8080 --project-root /path/to/repo`}</code></pre>
+      <pre><code class="language-text">{`# Example tool calls that leave an audit trail
+ctx_session("load", { id: "..." })
+ctx_knowledge("remember", { category: "...", key: "...", value: "..." })`}</code></pre>
+    </section>
+
+    <section id="verification">
+      <h2>{t("docsReplay.verificationTitle")}</h2>
+      <p>{t("docsReplay.verificationDesc")}</p>
+      <pre><code class="language-bash">{`# CI gates / local checks
+cd rust
+cargo test --all-features
+cargo clippy --all-features -- -D warnings`}</code></pre>
+    </section>
+
+    <section id="cookbook">
+      <h2>{t("docsReplay.cookbookTitle")}</h2>
+      <p>{t("docsReplay.cookbookDesc")}</p>
+      <pre><code class="language-bash">{`cd cookbook
+npm ci
+npm run memory-playground
+npm run graph-explorer`}</code></pre>
+    </section>
+  </div>
+</DocsLayout>
+
