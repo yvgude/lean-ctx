@@ -200,8 +200,7 @@ body::after {
 .fluid-label {
   font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
   line-height: 1;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   font-weight: 600;
 }
 
@@ -430,10 +429,9 @@ pre code {
   background: none;
   backdrop-filter: none;
   color: var(--color-muted);
-  font-size: clamp(0.625rem, 0.6rem + 0.06vw, 0.6875rem);
+  font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .italic-accent {
@@ -450,10 +448,9 @@ pre code {
   background: rgba(10, 10, 15, 0.3);
   backdrop-filter: blur(10px);
   color: var(--color-muted);
-  font-size: 0.75rem;
+  font-size: clamp(0.6875rem, 0.65rem + 0.08vw, 0.75rem);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .glass {
