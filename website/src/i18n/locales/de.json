@@ -3139,6 +3139,8 @@
   "search.noResults": "Keine Ergebnisse für diese Suchanfrage",
   "search.open": "öffnen",
   "search.placeholder": "Docs, Befehle, Tools durchsuchen…",
+  "search.resultsCountOne": "{count} Ergebnis",
+  "search.resultsCountMany": "{count} Ergebnisse",
   "search.searchDocs": "Dokumentation durchsuchen",
   "shellHook.beforeAfterLabel": "Vorher & Nachher",
   "shellHook.beforeAfterTitle": "Sieh den",

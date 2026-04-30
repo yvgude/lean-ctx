@@ -2673,6 +2673,8 @@
   "search.noResults": "No results for this query",
   "search.open": "open",
   "search.placeholder": "Search docs, commands, tools…",
+  "search.resultsCountOne": "{count} result",
+  "search.resultsCountMany": "{count} results",
   "search.searchDocs": "Search the documentation",
   "shellHook.beforeAfterLabel": "Before & After",
   "shellHook.beforeAfterTitle": "See the",

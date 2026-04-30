@@ -5,7 +5,15 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 ---
 
-<div id="search-modal" class="search-overlay" aria-hidden="true" role="dialog" aria-label={t('search.ariaLabel')}>
+<div
+  id="search-modal"
+  class="search-overlay"
+  aria-hidden="true"
+  role="dialog"
+  aria-label={t('search.ariaLabel')}
+  data-results-count-one={t('search.resultsCountOne')}
+  data-results-count-many={t('search.resultsCountMany')}
+>
   <div class="search-backdrop" data-close></div>
   <div class="search-container">
     <div class="search-header">
@@ -103,6 +111,15 @@ const t = useTranslations(locale);
   let currentResults: any[] = [];
   let searchTimeout: ReturnType<typeof setTimeout>;
 
+  const modalEl = document.getElementById('search-modal') as HTMLElement | null;
+  const resultsCountOneTmpl = modalEl?.dataset.resultsCountOne || '{count} result';
+  const resultsCountManyTmpl = modalEl?.dataset.resultsCountMany || '{count} results';
+
+  function formatResultsCount(count: number): string {
+    const tmpl = count === 1 ? resultsCountOneTmpl : resultsCountManyTmpl;
+    return tmpl.replaceAll('{count}', String(count));
+  }
+
   async function initPagefind() {
     if (pagefind) return;
     const path = '/pagefind/pagefind.js';
@@ -167,7 +184,7 @@ const t = useTranslations(locale);
     }
     noResultsEl.style.display = 'none';
     footerEl.style.display = 'flex';
-    countEl.textContent = `${search.results.length} result${search.results.length !== 1 ? 's' : ''}`;
+    countEl.textContent = formatResultsCount(search.results.length);
     const maxResults = Math.min(search.results.length, 8);
     const dataPromises = search.results.slice(0, maxResults).map((r: any) => r.data());
     const dataResults = await Promise.all(dataPromises);
