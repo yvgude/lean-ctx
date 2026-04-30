@@ -3874,5 +3874,6 @@
   "docsReplay.verificationTitle": "CI gates",
   "docsReplay.verificationDesc": "Treat clippy/tests + verification checks as non-optional quality gates.",
   "docsReplay.cookbookTitle": "Cookbook: end-to-end examples",
-  "docsReplay.cookbookDesc": "Run real integrations against a running server (no mock data)."
+  "docsReplay.cookbookDesc": "Run real integrations against a running server (no mock data).",
+  "common.learnMore": "Learn more"
 }

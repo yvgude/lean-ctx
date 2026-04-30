@@ -3874,5 +3874,6 @@
   "docsReplay.verificationTitle": "CI Gates",
   "docsReplay.verificationDesc": "clippy/tests + Verification Checks als nicht-verhandelbare Qualitätsgates behandeln.",
   "docsReplay.cookbookTitle": "Cookbook: End-to-End Beispiele",
-  "docsReplay.cookbookDesc": "Echte Integrationen gegen laufenden Server (keine Mock-Daten)."
+  "docsReplay.cookbookDesc": "Echte Integrationen gegen laufenden Server (keine Mock-Daten).",
+  "common.learnMore": "Mehr erfahren"
 }
