@@ -30,7 +30,7 @@ const {
   kickerMb = 'clamp(1rem, 0.75rem + 0.5vw, 1.5rem)',
   descMt = 'clamp(1.25rem, 1rem + 1vw, 2rem)',
   actionsMt = 'clamp(1.5rem, 1rem + 1.25vw, 2.5rem)',
-  titleVariant = 'h1',
+  titleVariant,
   highlightStyle = 'italic',
   kickerTone = 'muted',
   sectionClass = 'section-hero hero-split',
@@ -44,6 +44,9 @@ const {
 const gridClass =
   container === 'wide' ? 'content-grid-wide' : container === 'narrow' ? 'content-grid-narrow' : 'content-grid';
 
+const resolvedTitleVariant =
+  titleVariant ?? (sectionClass.split(/\s+/).includes('section-hero') ? 'display' : 'h1');
+
 const kickerClass =
   kickerTone === 'accent'
     ? 'text-accent'
@@ -56,7 +59,7 @@ const kickerClass =
           : 'text-muted';
 
 const highlightClass = highlightStyle === 'gradient' ? 'gradient-text' : 'italic-accent';
-const titleSizeClass = titleVariant === 'display' ? 'fluid-display' : 'fluid-h1';
+const titleSizeClass = resolvedTitleVariant === 'display' ? 'fluid-display' : 'fluid-h1';
 
 const titleStyle = titleMaxWidth ? `max-width: ${titleMaxWidth};` : undefined;
 
