@@ -1,13 +1,14 @@
 ---
 import { locales, localeNames, localeFlags, type Locale } from '../i18n/config';
-import { getLocaleFromUrl, getLocalizedPath, removeLocalePrefix } from '../i18n/utils';
+import { getLocaleFromUrl, getLocalizedPath, removeLocalePrefix, useTranslations } from '../i18n/utils';
 
 const currentLocale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(currentLocale);
 const currentPath = removeLocalePrefix(Astro.url.pathname);
 ---
 
 <div class="lang-switcher" data-lang-switcher>
-  <button class="lang-trigger" aria-label="Change language" aria-expanded="false">
+  <button class="lang-trigger" aria-label={t('nav.changeLanguage')} aria-expanded="false">
     <svg class="lang-globe" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="10"/>
       <path d="M2 12h20"/>
