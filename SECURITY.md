@@ -60,11 +60,11 @@ Changes to these files receive extra scrutiny:
 
 | File | Risk | Why |
 |------|------|-----|
-| `src/shell.rs` | Shell execution | Wraps user's shell, executes commands |
-| `src/server.rs` | MCP protocol | Handles all tool calls from AI editors |
-| `src/hooks.rs` | Editor integration | Installs hooks into Claude Code, Cursor, etc. |
-| `src/core/cache.rs` | File caching | Reads and stores file contents |
-| `Cargo.toml` | Supply chain | Dependency manifest |
+| `rust/src/shell/` | Shell execution | Wraps your shell, executes commands |
+| `rust/src/server/` | MCP protocol | Handles all tool calls from AI editors/agents |
+| `rust/src/hooks/` | Editor integration | Installs hooks/config into Claude Code, Cursor, etc. |
+| `rust/src/core/cache.rs` | File caching | Reads and stores file contents |
+| `rust/Cargo.toml` | Supply chain | Dependency manifest |
 | `.github/workflows/*.yml` | CI/CD | Release pipeline integrity |
 
 ---
@@ -149,7 +149,7 @@ Critical vulnerabilities (RCE, data exfiltration) are fast-tracked.
 
 - **Security issues**: yves@pounce.ch
 - **General questions**: [GitHub Discussions](https://github.com/yvgude/lean-ctx/discussions)
-- **Discord**: [Join our server](https://discord.gg/leanctx)
+- **Discord**: [Join our server](https://discord.gg/pTHkG9Hew9)
 
 ---
 

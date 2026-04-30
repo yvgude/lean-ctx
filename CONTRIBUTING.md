@@ -1,12 +1,12 @@
 # Contributing to lean-ctx
 
-Thank you for your interest in lean-ctx! We welcome contributions of all kinds.
+Thanks for your interest in lean-ctx — contributions are welcome.
 
-## Getting Started
+## Quick start (core Rust binary)
 
 ### Prerequisites
 
-- Rust 1.75+ (install via [rustup](https://rustup.rs/))
+- Rust (stable) via [rustup](https://rustup.rs/)
 - Git
 
 ### Setup
@@ -14,99 +14,87 @@ Thank you for your interest in lean-ctx! We welcome contributions of all kinds.
 ```bash
 git clone https://github.com/yvgude/lean-ctx.git
 cd lean-ctx/rust
+
 cargo build
 cargo test
 ```
 
-### Running Tests
+### Quality bar (required)
 
 ```bash
-cargo test              # all tests
-cargo test patterns     # pattern tests only
-cargo test --release    # release mode (catches optimization bugs)
-cargo clippy            # lints — must pass with zero warnings
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+cargo test --release
 ```
 
-## Project Structure
+## Cookbook / SDK / extensions (optional)
 
-```
-rust/
-├── src/
-│   ├── main.rs              # CLI entry point
-│   ├── server.rs            # MCP server (tool registration + dispatch)
-│   ├── cli.rs               # Shell hook integration
-│   ├── core/
-│   │   ├── patterns/        # 90+ shell command compression patterns
-│   │   ├── cache.rs         # Session cache with file refs
-│   │   ├── compressor.rs    # AST-aware file compression
-│   │   ├── entropy.rs       # Shannon entropy + Jaccard analysis
-│   │   ├── graph_index.rs   # Persistent project dependency graph
-│   │   ├── session.rs       # Cross-session state (CCP)
-│   │   ├── knowledge.rs     # Permanent project knowledge store
-│   │   ├── vector_index.rs  # BM25 semantic code search
-│   │   └── ...
-│   ├── tools/               # MCP tool handlers
-│   └── dashboard/           # Local web dashboard
-└── tests/                   # Integration tests
+If you contribute to `cookbook/` or `packages/`, you’ll also need:
+
+- Node.js (>= 22.12.0)
+- npm
+
+```bash
+cd cookbook
+npm ci
+npm test
 ```
 
-## How to Contribute
+## Repo structure
 
-### Adding a Shell Compression Pattern
+```text
+lean-ctx/
+├─ rust/                 # core binary (CLI + MCP server + shell hook)
+│  ├─ src/
+│  │  ├─ main.rs         # CLI entry point
+│  │  ├─ lib.rs          # library entry point (shared core)
+│  │  ├─ mcp_stdio.rs    # MCP stdio transport
+│  │  ├─ server/         # MCP server state + dispatch
+│  │  ├─ tools/          # MCP tool handlers (ctx_read, ctx_shell, ...)
+│  │  ├─ core/           # cache, compression, patterns/, memory, graphs, ...
+│  │  ├─ cli/            # CLI subcommands (setup, init, read, ...)
+│  │  └─ hooks/          # editor/agent installers (Cursor, Claude Code, ...)
+│  └─ tests/             # integration/e2e/adversarial tests
+├─ cookbook/             # real examples + @leanctx/sdk
+├─ packages/             # editor integrations (VSCode, Chrome, JetBrains, ...)
+├─ docs/                 # repo docs (developer-facing)
+└─ website/generated/    # generated schemas (tool + TDD schema)
+```
 
-This is the easiest way to contribute. Each pattern compresses a specific CLI command's output.
+## Common contribution types
 
-1. Create `rust/src/core/patterns/<tool>.rs`
-2. Implement `pub fn compress(command: &str, output: &str) -> Option<String>`
-3. Register in `rust/src/core/patterns/mod.rs`:
-   - Add `pub mod <tool>;`
-   - Add routing in `try_specific_pattern()`
-4. Add tests (see `ruff.rs` or `mypy.rs` for examples)
+### Add a shell compression pattern
 
-### Adding tree-sitter Language Support
+1. Add a new module in `rust/src/core/patterns/<tool>.rs`
+2. Implement:
 
-1. Add the grammar crate to `Cargo.toml` under `[dependencies]`
-2. Add the language to `signatures_ts.rs` (`get_language` + `get_query`)
-3. Add test cases
+```rust
+pub fn compress(command: &str, output: &str) -> Option<String>
+```
 
-### Bug Fixes
+3. Register the module + routing in `rust/src/core/patterns/mod.rs` (`try_specific_pattern`)
+4. Add tests (unit tests in the module or integration tests in `rust/tests/`)
+5. Run the quality checks above
 
-1. Open an issue describing the bug
-2. Fork and create a branch: `fix/<description>`
-3. Write a failing test, then fix it
-4. Submit a PR
+Tip: open a ticket via the [New Compression Pattern](.github/ISSUE_TEMPLATE/compression_pattern.md) template and include raw output + expected compressed output.
 
-### Feature Requests
+### Add or update an MCP tool
 
-Open an issue with the `enhancement` label. Describe:
-- What problem it solves
-- How it should work
-- Why it belongs in the core (vs. a plugin)
+- Tool handlers live in `rust/src/tools/ctx_*.rs`
+- Tool schemas/registration live in `rust/src/tool_defs/` (keep names/counts in sync)
+- If you change the public tool surface, update `LEANCTX_FEATURE_CATALOG.md` (SSOT snapshot) and any affected docs
 
-## Code Style
+### Docs & examples
 
-- **Zero clippy warnings** — run `cargo clippy` before submitting
-- **No mock data** — tests use real patterns, not fake values
-- **Compact output** — compression results should be token-efficient
-- **Edge cases matter** — handle empty input, missing files, malformed output
+- Prefer real, runnable examples (no mock data)
+- If you add a new example app, add it under `cookbook/examples/` and ensure it talks to a real `lean-ctx serve` instance
 
-## Commit Messages
+## Pull requests
 
-Format: `<type>: <description>`
-
-Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
-
-Examples:
-- `feat: add mypy compression pattern`
-- `fix: handle empty cargo test output`
-- `refactor: extract BM25 scoring into separate function`
-
-## Pull Request Process
-
-1. Ensure all tests pass: `cargo test`
-2. Ensure zero clippy warnings: `cargo clippy`
-3. Update relevant documentation
-4. PRs are reviewed within 48 hours
+- Keep PRs focused (one theme per PR)
+- Include a short test plan (commands you ran)
+- If relevant, include a small “before/after” token-savings snippet
 
 ## License
 
