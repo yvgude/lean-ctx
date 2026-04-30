@@ -79,7 +79,7 @@ impl ServerHandler for LeanCtxServer {
             let maintenance = crate::core::startup_guard::try_acquire_lock(
                 "startup-maintenance",
                 std::time::Duration::from_secs(2),
-                std::time::Duration::from_secs(120),
+                std::time::Duration::from_mins(2),
             );
             if maintenance.is_some() {
                 if let Some(home) = dirs::home_dir() {

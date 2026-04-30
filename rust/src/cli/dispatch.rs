@@ -817,9 +817,7 @@ fn run_mcp_server() -> Result<()> {
         std::time::Duration::from_secs(30),
     );
 
-    let parallelism = std::thread::available_parallelism()
-        .map(std::num::NonZeroUsize::get)
-        .unwrap_or(2);
+    let parallelism = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
     let worker_threads = parallelism.clamp(1, 4);
     let max_blocking_threads = (worker_threads * 4).clamp(8, 32);
 
