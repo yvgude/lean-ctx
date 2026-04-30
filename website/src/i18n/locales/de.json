@@ -3243,7 +3243,7 @@
   "testimonials.sebastian": "Ich habe lean-ctx installiert und meine Cursor-Sitzungen fühlten sich sofort flüssiger an. Dateien, die vorher 2K Tokens kosteten, brauchen jetzt nur noch 50.",
   "testimonials.sebastianRole": "TypeScript / React",
   "premium.eyebrow": "Premium-Funktionen",
-  "premium.heading": "Unternehmenstaugliche Fähigkeiten. <span class=\"gradient-text-green\">Open Source.</span>",
+  "premium.heading": "Unternehmenstaugliche Fähigkeiten. <span class=\"italic-accent\">Open Source.</span>",
   "premium.desc": "Fortgeschrittene Funktionen für professionelle KI-Entwicklungsteams — Cache-Optimierung, automatisierte Code-Reviews, Ghost-Token-Erkennung und inhaltsbasiertes Chunking.",
   "premium.cacheSafeTitle": "Cache-Safe-Garantie",
   "premium.cacheSafeDesc": "Stabile Ausgabereihenfolge maximiert Prompt-Cache-Treffer. Imports und Typdefinitionen werden vor Funktionskörpern ausgegeben, damit der KV-Cache Ihres LLM-Anbieters warm bleibt. Bis zu 90 % günstigere API-Aufrufe.",

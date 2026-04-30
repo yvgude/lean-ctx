@@ -3294,7 +3294,7 @@
   "premium.eyebrow": "ميزات متقدمة",
   "premium.ghostDesc": "اكتشف هدر Token المخفي باستخدام <code>lean-ctx ghost</code>. يحدد أوامر Shell غير المحسّنة، وقراءات الملفات المكررة، ونتائج الأدوات الكبيرة — ثم يوضح بدقة كم يمكنك توفيره.",
   "premium.ghostTitle": "اكتشاف Ghost Token",
-  "premium.heading": "إمكانيات بمستوى المؤسسات. <span class=\"gradient-text-green\">مفتوح المصدر.</span>",
+  "premium.heading": "إمكانيات بمستوى المؤسسات. <span class=\"italic-accent\">مفتوح المصدر.</span>",
   "premium.reviewDesc": "يجمع ctx_review بين تحليل التأثير وتتبع المستدعين واكتشاف الاختبارات في سير عمل منظم واحد. احصل على قائمة مراجعة، واعثر على الملفات المتأثرة، وحدد الاختبارات ذات الصلة — تلقائياً.",
   "premium.reviewTitle": "مراجعة أكواد آلية",
   "premium.searchDesc": "محرك Embedding محلي للبحث الدلالي في الأكواد مع أولوية الخصوصية. BM25 + استرجاع هجين كثيف، بدون حاجة لـ API خارجي. أكوادك لا تغادر جهازك أبداً.",

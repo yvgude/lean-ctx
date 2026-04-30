@@ -33,7 +33,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   <div class="content-grid">
     <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.flowLabel')}</p>
     <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.flowTitle')} <span class="gradient-text">{t('shellHook.flowTitleHighlight')}</span>
+      {t('shellHook.flowTitle')} <span class="italic-accent">{t('shellHook.flowTitleHighlight')}</span>
     </h2>
     <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;" set:html={t('shellHook.flowDesc')} />
 
@@ -74,7 +74,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   <div class="content-grid">
     <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.categoriesLabel')}</p>
     <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.categoriesTitle')} <span class="gradient-text">{t('shellHook.categoriesTitleHighlight')}</span>
+      {t('shellHook.categoriesTitle')} <span class="italic-accent">{t('shellHook.categoriesTitleHighlight')}</span>
     </h2>
     <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
       {t('shellHook.categoriesDesc')}
@@ -157,7 +157,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   <div class="content-grid">
     <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.beforeAfterLabel')}</p>
     <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
-      {t('shellHook.beforeAfterTitle')} <span class="gradient-text">{t('shellHook.beforeAfterTitleHighlight')}</span>
+      {t('shellHook.beforeAfterTitle')} <span class="italic-accent">{t('shellHook.beforeAfterTitleHighlight')}</span>
     </h2>
 
     <div class="grid md:grid-cols-2 animate-entrance" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
@@ -240,7 +240,7 @@ untracked: session.test.ts
   <div class="content-grid">
     <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.moreExamplesLabel')}</p>
     <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
-      {t('shellHook.moreExamplesTitle')} <span class="gradient-text">{t('shellHook.moreExamplesTitleHighlight')}</span>
+      {t('shellHook.moreExamplesTitle')} <span class="italic-accent">{t('shellHook.moreExamplesTitleHighlight')}</span>
     </h2>
 
     <div class="grid md:grid-cols-2 animate-entrance" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
@@ -392,7 +392,7 @@ found 0 vulnerabilities</pre>
   <div class="content-grid">
     <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.coverageLabel')}</p>
     <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
-      {t('shellHook.coverageTitle')} <span class="gradient-text">{t('shellHook.coverageTitleHighlight')}</span>
+      {t('shellHook.coverageTitle')} <span class="italic-accent">{t('shellHook.coverageTitleHighlight')}</span>
     </h2>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 animate-entrance">
@@ -442,7 +442,7 @@ ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
 <section class="relative section-y">
   <div class="content-grid">
     <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.rawModeTitle')} <span class="gradient-text">{t('shellHook.rawModeTitleHighlight')}</span>
+      {t('shellHook.rawModeTitle')} <span class="italic-accent">{t('shellHook.rawModeTitleHighlight')}</span>
     </h2>
     <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 44rem;" set:html={t('shellHook.rawModeDesc')} />
     <pre style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.25rem; overflow-x: auto;"><code style="font-size: 0.85rem;"># CLI flag — skip compression for one command
@@ -462,7 +462,7 @@ ctx_shell(command="cat config.json", raw=true)</code></pre>
 <section class="section-y">
   <div class="content-grid">
     <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.ctaTitle')} <span class="gradient-text">{t('shellHook.ctaTitleHighlight')}</span>
+      {t('shellHook.ctaTitle')} <span class="italic-accent">{t('shellHook.ctaTitleHighlight')}</span>
     </h2>
     <p class="fluid-body text-muted" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;" set:html={t('shellHook.ctaDesc')} />
     <div class="flex flex-wrap items-center gap-3">

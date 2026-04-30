@@ -3294,7 +3294,7 @@
   "premium.eyebrow": "Fonctionnalités Premium",
   "premium.ghostDesc": "Trouvez le gaspillage caché de tokens avec <code>lean-ctx ghost</code>. Identifie les commandes shell non optimisées, les lectures de fichiers redondantes et les résultats d'outils surdimensionnés — puis montre exactement combien vous pourriez économiser.",
   "premium.ghostTitle": "Détection de Ghost Tokens",
-  "premium.heading": "Des capacités de niveau entreprise. <span class=\"gradient-text-green\">Open source.</span>",
+  "premium.heading": "Des capacités de niveau entreprise. <span class=\"italic-accent\">Open source.</span>",
   "premium.reviewDesc": "ctx_review combine l'analyse d'impact, le suivi des appelants et la découverte de tests en un workflow structuré. Obtenez une checklist de revue, trouvez les fichiers impactés en aval et localisez les tests associés — automatiquement.",
   "premium.reviewTitle": "Revue de Code Automatisée",
   "premium.searchDesc": "Moteur d'embeddings local pour la recherche sémantique de code, confidentialité d'abord. Récupération hybride BM25 + dense, aucune API externe nécessaire. Votre code ne quitte jamais votre machine.",

@@ -3243,7 +3243,7 @@
   "power.installCargo": "From source via crates.io",
   "power.installAur": "Arch Linux (AUR)",
   "premium.eyebrow": "Premium Features",
-  "premium.heading": "Enterprise-grade capabilities. <span class=\"gradient-text-green\">Open source.</span>",
+  "premium.heading": "Enterprise-grade capabilities. <span class=\"italic-accent\">Open source.</span>",
   "premium.desc": "Advanced features for professional AI development teams — cache optimization, automated code review, ghost token detection, and content-defined chunking.",
   "premium.cacheSafeTitle": "Cache-Safe Guarantee",
   "premium.cacheSafeDesc": "Stable output ordering maximizes prompt cache hits. Imports and type definitions are emitted before function bodies, so your LLM provider's KV-cache stays warm. Up to 90% cheaper API calls.",

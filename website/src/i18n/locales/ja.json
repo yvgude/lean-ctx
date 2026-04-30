@@ -3294,7 +3294,7 @@
   "premium.eyebrow": "プレミアム機能",
   "premium.ghostDesc": "<code>lean-ctx ghost</code>で隠れたtoken浪費を発見。最適化されていないshellコマンド、冗長なファイル読み取り、肥大化したツール結果を特定し、どれだけ節約できるかを正確に表示します。",
   "premium.ghostTitle": "Ghost Token検出",
-  "premium.heading": "エンタープライズグレードの機能。<span class=\"gradient-text-green\">オープンソース。</span>",
+  "premium.heading": "エンタープライズグレードの機能。<span class=\"italic-accent\">オープンソース。</span>",
   "premium.reviewDesc": "ctx_reviewは影響分析、呼び出し元追跡、テスト発見を一つの構造化されたワークフローに統合。レビューチェックリストの取得、影響を受けるダウンストリームファイルの発見、関連テストの特定を自動で行います。",
   "premium.reviewTitle": "自動コードレビュー",
   "premium.searchDesc": "プライバシー優先のセマンティックコード検索のためのローカルembeddingエンジン。BM25 + denseハイブリッド検索、外部APIは不要。コードがマシンの外に出ることはありません。",
