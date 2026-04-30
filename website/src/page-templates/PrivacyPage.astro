@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -14,17 +15,16 @@ const lastUpdated = 'April 2026';
   description={t('privacy.metaDescription')}
   breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('privacy.title'), url: lp('/privacy/') }]}>
 
-<section class="section-hero">
-  <div class="content-grid" style="max-width: 52rem;">
-    <p class="fluid-label text-accent animate-entrance" style="margin-bottom: 1rem;">{t('privacy.labelLegal')}</p>
-    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1rem;">
-      {t('privacy.title')}
-    </h1>
-    <p class="fluid-body text-muted animate-entrance stagger-2">
-      {t('privacy.lastUpdated', { lastUpdated })}
-    </p>
-  </div>
-</section>
+<PageHero
+  label={t('privacy.labelLegal')}
+  title={t('privacy.title')}
+  description={t('privacy.lastUpdated', { lastUpdated })}
+  kickerTone="accent"
+  container="narrow"
+  containerStyle="max-width: 52rem;"
+  titleMaxWidth="52rem"
+  descMaxWidth="52rem"
+/>
 
 <div class="section-divider content-grid"></div>
 

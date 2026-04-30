@@ -1,7 +1,0 @@
----
-import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
-
-const locale = getLocaleFromUrl(Astro.url);
-const lp = (path: string) => getLocalizedPath(path, locale);
-return Astro.redirect(lp('/protocols/tdd'), 301);
----

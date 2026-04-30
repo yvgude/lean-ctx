@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro';
 import DocsSidebar from '../components/DocsSidebar.astro';
+import PageHero from '../components/PageHero.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 interface SidebarItem {
@@ -40,17 +41,20 @@ const breadcrumbs = [
   keywords={keywords || `lean-ctx ${title.toLowerCase()}, LLM token reduction, MCP tools, AI coding documentation`}
   breadcrumbs={breadcrumbs}
 >
-  <div class="content-grid-wide" style="padding-top: clamp(3rem, 2rem + 3vw, 5.5rem);">
+  <PageHero
+    label={t('docs.documentation')}
+    title={title}
+    description={description}
+    kickerTone="accent"
+    container="wide"
+    sectionClass="section-y-xs"
+    titleMaxWidth="42rem"
+    descMaxWidth="42rem"
+    breakHighlight={false}
+  />
 
-    <!-- Hero -->
-    <div class="max-w-2xl" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
-      <p class="fluid-label text-accent" style="margin-bottom: clamp(0.5rem, 0.375rem + 0.3vw, 0.75rem);">{t('docs.documentation')}</p>
-      <h1 class="font-display fluid-h1 font-bold text-text-bright text-balance" style="margin-bottom: clamp(0.5rem, 0.375rem + 0.3vw, 1rem);">{title}</h1>
-      {description && <p class="fluid-sm text-muted leading-relaxed">{description}</p>}
-    </div>
-
-    <!-- Grid: Sidebar + Article -->
-    <div class="lg:grid lg:grid-cols-[240px_1fr] lg:gap-12" style="padding-bottom: clamp(3rem, 2rem + 2vw, 5rem);">
+  <div class="content-grid-wide" style="padding-bottom: clamp(3rem, 2rem + 2vw, 5rem);">
+    <div class="lg:grid lg:grid-cols-[240px_1fr] lg:gap-12">
       <DocsSidebar sections={sidebar} />
       <article class="min-w-0 docs-prose">
         <slot />

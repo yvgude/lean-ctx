@@ -1,6 +1,11 @@
 ---
-import DocsCliPage from '../../../page-templates/DocsCliPage.astro';
 import { getLocaleStaticPaths } from '../../../i18n/routing.ts';
+import { getLocaleFromUrl, getLocalizedPath } from '../../../i18n/utils';
 export const getStaticPaths = getLocaleStaticPaths;
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+return Astro.redirect(lp('/cli'), 301);
 ---
-<DocsCliPage />
+<!-- redirect -->

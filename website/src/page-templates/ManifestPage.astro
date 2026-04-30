@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -19,26 +20,31 @@ const sections = [
 ---
 
 <BaseLayout title={t('manifest.title')} description={t('manifest.description')}>
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-20 sm:pt-28">
-
-    <!-- Hero -->
-    <div class="max-w-2xl mb-8 sm:mb-14">
-      <p class="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-2 sm:mb-3">{t('manifest.positionPaper')}</p>
-      <h1 class="font-display text-2xl sm:text-[2.75rem] lg:text-[3.25rem] font-bold tracking-tight leading-[1.15] text-text-bright mb-3 sm:mb-4">
-        {t('manifest.heroTitle')}<br />
-        <span class="gradient-text-green">{t('manifest.heroTitleHighlight')}</span>
-      </h1>
-      <p class="text-sm sm:text-base text-muted leading-relaxed mb-4">
-        {t('manifest.heroDesc')}
-      </p>
-      <p class="text-xs text-muted font-mono">
+  <PageHero
+    label={t('manifest.positionPaper')}
+    title={t('manifest.heroTitle')}
+    highlight={t('manifest.heroTitleHighlight')}
+    description={t('manifest.heroDesc')}
+    kickerTone="accent"
+    container="wide"
+    sectionClass="section-y-sm"
+    titleMaxWidth="52rem"
+    descMaxWidth="52rem"
+    highlightStyle="italic"
+  >
+    <Fragment slot="actions">
+      <div class="text-xs text-muted font-mono">
         <span class="text-accent">7</span> {t('manifest.sections')}
         <span class="mx-2 text-border-light">/</span>
         <span class="text-accent">5</span> {t('manifest.designPrinciplesCount')}
         <span class="mx-2 text-border-light">/</span>
         <span class="text-accent">7</span> {t('manifest.architectureLayers')}
-      </p>
-    </div>
+      </div>
+    </Fragment>
+  </PageHero>
+
+  <section class="section-y-xs">
+    <div class="content-grid-wide">
 
     <!-- Mobile TOC -->
     <nav class="lg:hidden mb-8">
@@ -361,9 +367,10 @@ const sections = [
         </div>
       </div>
 
-    </article>
+      </article>
     </div>
-  </div>
+    </div>
+  </section>
 </BaseLayout>
 
 <style>

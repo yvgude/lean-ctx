@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
@@ -42,19 +43,13 @@ const shellOnlyTools = [
 <BaseLayout title={t('compatibility.title')} description={t('compatibility.metaDescription')} breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('compatibility.heroLabel'), url: lp('/compatibility/') }]}>
 
 <!-- ═══════ HERO ═══════ -->
-<section class="section-hero">
-  <div class="content-grid">
-    <div class="animate-entrance">
-      <p class="fluid-label text-muted" style="margin-bottom: clamp(1.25rem, 1rem + 1vw, 2.5rem);">{t('compatibility.heroLabel')}</p>
-    </div>
-    <h1 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem);">
-      {t('compatibility.heroTitle')} <span class="gradient-text">{t('compatibility.heroTitleHighlight')}</span>
-    </h1>
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
-      {t('compatibility.heroDesc')}
-    </p>
-  </div>
-</section>
+<PageHero
+  label={t('compatibility.heroLabel')}
+  title={t('compatibility.heroTitle')}
+  highlight={t('compatibility.heroTitleHighlight')}
+  description={t('compatibility.heroDesc')}
+  highlightStyle="italic"
+/>
 
 <div class="section-divider content-grid"></div>
 

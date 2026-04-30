@@ -1,6 +1,11 @@
 ---
-import DocsCcpPage from '../../../page-templates/DocsCcpPage.astro';
 import { getLocaleStaticPaths } from '../../../i18n/routing.ts';
+import { getLocaleFromUrl, getLocalizedPath } from '../../../i18n/utils';
 export const getStaticPaths = getLocaleStaticPaths;
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+return Astro.redirect(lp('/protocols/ccp'), 301);
 ---
-<DocsCcpPage />
+<!-- redirect -->
