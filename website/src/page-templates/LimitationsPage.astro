@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -29,15 +30,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ COMPRESSION LIMITS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.compressionLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.compressionTitle')} <span class="italic-accent">{t('limitations.compressionTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('limitations.compressionDesc')}
-    </p>
+    <SectionHeading
+      label={t('limitations.compressionLabel')}
+      title={t('limitations.compressionTitle')}
+      highlight={t('limitations.compressionTitleHighlight')}
+      description={t('limitations.compressionDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance">
       <p class="fluid-label text-muted font-display mb-4">{t('limitations.compressionTableTitle')}</p>
@@ -95,15 +97,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ LANGUAGE SUPPORT ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.languageLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.languageTitle')} <span class="italic-accent">{t('limitations.languageTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('limitations.languageDesc')}
-    </p>
+    <SectionHeading
+      label={t('limitations.languageLabel')}
+      title={t('limitations.languageTitle')}
+      highlight={t('limitations.languageTitleHighlight')}
+      description={t('limitations.languageDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
       <div class="stat-item">
@@ -157,15 +160,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ ARCHITECTURE CONSTRAINTS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.archLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.archTitle')} <span class="italic-accent">{t('limitations.archTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('limitations.archDesc')}
-    </p>
+    <SectionHeading
+      label={t('limitations.archLabel')}
+      title={t('limitations.archTitle')}
+      highlight={t('limitations.archTitleHighlight')}
+      description={t('limitations.archDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card" style="padding: 1.5rem;">
@@ -194,15 +198,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ NOT A REPLACEMENT FOR ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.notReplaceLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.notReplaceTitle')} <span class="italic-accent">{t('limitations.notReplaceTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('limitations.notReplaceDesc')}
-    </p>
+    <SectionHeading
+      label={t('limitations.notReplaceLabel')}
+      title={t('limitations.notReplaceTitle')}
+      highlight={t('limitations.notReplaceTitleHighlight')}
+      description={t('limitations.notReplaceDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance">
       <div class="compare-card">
@@ -230,15 +235,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.ctaLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('limitations.ctaTitle')} <span class="italic-accent">{t('limitations.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
-      {t('limitations.ctaDesc')}
-    </p>
+    <SectionHeading
+      label={t('limitations.ctaLabel')}
+      title={t('limitations.ctaTitle')}
+      highlight={t('limitations.ctaTitleHighlight')}
+      description={t('limitations.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/safety')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('limitations.ctaSafety')}

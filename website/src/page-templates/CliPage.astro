@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
@@ -23,10 +24,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ ESSENTIAL COMMANDS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('cli.essentialsLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
-      {t('cli.essentialsTitle')} <span class="italic-accent">{t('cli.essentialsTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('cli.essentialsLabel')}
+      title={t('cli.essentialsTitle')}
+      highlight={t('cli.essentialsTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3rem)"
+    />
 
     <div class="grid sm:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card p-8 animate-entrance">
@@ -70,10 +75,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ MONITORING & INSIGHTS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('cli.monitoringLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
-      {t('cli.monitoringTitle')} <span class="italic-accent">{t('cli.monitoringTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('cli.monitoringLabel')}
+      title={t('cli.monitoringTitle')}
+      highlight={t('cli.monitoringTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3rem)"
+    />
 
     <div class="grid md:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
 
@@ -212,10 +221,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ DIAGNOSTICS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('cli.diagnosticsLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
-      {t('cli.diagnosticsTitle')}
-    </h2>
+    <SectionHeading
+      label={t('cli.diagnosticsLabel')}
+      title={t('cli.diagnosticsTitle')}
+      variant="full"
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3rem)"
+    />
 
     <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card p-6 animate-entrance">
@@ -269,10 +280,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ POWER USER ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('cli.powerLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
-      {t('cli.powerTitle')} <span class="italic-accent">{t('cli.powerTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('cli.powerLabel')}
+      title={t('cli.powerTitle')}
+      highlight={t('cli.powerTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3rem)"
+    />
 
     <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
       <table class="w-full text-left border-collapse">
@@ -341,10 +356,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ CTA ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('cli.ctaTitle')} <span class="italic-accent">{t('cli.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;" set:html={t('cli.ctaDesc')} />
+    <SectionHeading
+      title={t('cli.ctaTitle')}
+      highlight={t('cli.ctaTitleHighlight')}
+      descriptionHtml={t('cli.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+      descMaxWidth="44rem"
+    />
     <div class="flex flex-wrap items-center gap-3 animate-entrance stagger-3">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('common.getStarted')}

@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
@@ -31,11 +32,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ HOW IT WORKS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.flowLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.flowTitle')} <span class="italic-accent">{t('shellHook.flowTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;" set:html={t('shellHook.flowDesc')} />
+    <SectionHeading
+      label={t('shellHook.flowLabel')}
+      title={t('shellHook.flowTitle')}
+      highlight={t('shellHook.flowTitleHighlight')}
+      descriptionHtml={t('shellHook.flowDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 sm:gap-0 animate-entrance">
       <div class="sh-flow-step">
@@ -72,13 +78,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ SUPPORTED CATEGORIES ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.categoriesLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.categoriesTitle')} <span class="italic-accent">{t('shellHook.categoriesTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('shellHook.categoriesDesc')}
-    </p>
+    <SectionHeading
+      label={t('shellHook.categoriesLabel')}
+      title={t('shellHook.categoriesTitle')}
+      highlight={t('shellHook.categoriesTitleHighlight')}
+      description={t('shellHook.categoriesDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <div class="sh-category-card card animate-entrance">
@@ -155,10 +164,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ BEFORE / AFTER ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.beforeAfterLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
-      {t('shellHook.beforeAfterTitle')} <span class="italic-accent">{t('shellHook.beforeAfterTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('shellHook.beforeAfterLabel')}
+      title={t('shellHook.beforeAfterTitle')}
+      highlight={t('shellHook.beforeAfterTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid md:grid-cols-2 animate-entrance" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <!-- Before -->
@@ -238,10 +251,14 @@ untracked: session.test.ts
 <!-- ═══════ MORE EXAMPLES ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.moreExamplesLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
-      {t('shellHook.moreExamplesTitle')} <span class="italic-accent">{t('shellHook.moreExamplesTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('shellHook.moreExamplesLabel')}
+      title={t('shellHook.moreExamplesTitle')}
+      highlight={t('shellHook.moreExamplesTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid md:grid-cols-2 animate-entrance" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
       <!-- npm install Before -->
@@ -390,10 +407,14 @@ found 0 vulnerabilities</pre>
 <!-- ═══════ STATS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('shellHook.coverageLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
-      {t('shellHook.coverageTitle')} <span class="italic-accent">{t('shellHook.coverageTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('shellHook.coverageLabel')}
+      title={t('shellHook.coverageTitle')}
+      highlight={t('shellHook.coverageTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 animate-entrance">
       <div class="sh-stat-card card">
@@ -441,10 +462,16 @@ ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
 <!-- ═══════ CTA ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.rawModeTitle')} <span class="italic-accent">{t('shellHook.rawModeTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 44rem;" set:html={t('shellHook.rawModeDesc')} />
+    <SectionHeading
+      title={t('shellHook.rawModeTitle')}
+      highlight={t('shellHook.rawModeTitleHighlight')}
+      descriptionHtml={t('shellHook.rawModeDesc')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+      descMb="clamp(1.5rem, 1rem + 1vw, 2.5rem)"
+      descMaxWidth="44rem"
+    />
     <pre style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.25rem; overflow-x: auto;"><code style="font-size: 0.85rem;"># CLI flag — skip compression for one command
 lean-ctx -c --raw kubectl get pods -o yaml
 
@@ -461,10 +488,15 @@ ctx_shell(command="cat config.json", raw=true)</code></pre>
 
 <section class="section-y">
   <div class="content-grid">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('shellHook.ctaTitle')} <span class="italic-accent">{t('shellHook.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;" set:html={t('shellHook.ctaDesc')} />
+    <SectionHeading
+      title={t('shellHook.ctaTitle')}
+      highlight={t('shellHook.ctaTitleHighlight')}
+      descriptionHtml={t('shellHook.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
     <div class="flex flex-wrap items-center gap-3">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('common.getStarted')}

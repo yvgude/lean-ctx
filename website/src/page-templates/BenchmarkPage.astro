@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -59,11 +60,15 @@ const realWorldExamples = [
 <!-- ═══════ 2. BEFORE / AFTER ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.beforeAfterLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-      {t('benchmark.beforeAfterTitle')} <span class="italic-accent">{t('benchmark.beforeAfterTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 44rem;">{t('benchmark.beforeAfterDesc')}</p>
+    <SectionHeading
+      label={t('benchmark.beforeAfterLabel')}
+      title={t('benchmark.beforeAfterTitle')}
+      highlight={t('benchmark.beforeAfterTitleHighlight')}
+      description={t('benchmark.beforeAfterDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+    />
 
     <div class="bench-compare animate-entrance stagger-3">
       <div class="bench-compare-col">
@@ -127,10 +132,14 @@ const realWorldExamples = [
 <!-- ═══════ 3. HOW IT WORKS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.stepsLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3.5rem);">
-      {t('benchmark.stepsTitle')} <span class="italic-accent">{t('benchmark.stepsTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('benchmark.stepsLabel')}
+      title={t('benchmark.stepsTitle')}
+      highlight={t('benchmark.stepsTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+    />
 
     <div class="bench-steps">
       <div class="bench-step animate-entrance">
@@ -172,11 +181,17 @@ const realWorldExamples = [
   <div class="content-grid">
     <div class="grid lg:grid-cols-[1fr_1.4fr] items-center" style="gap: clamp(1.75rem, 1.25rem + 1.5vw, 3.5rem);">
       <div>
-        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">{t('benchmark.demoLabel')}</p>
-        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-          {t('benchmark.demoTitle')} <span class="italic-accent">{t('benchmark.demoTitleHighlight')}</span>
-        </h2>
-        <p class="fluid-body text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.75vw, 1.75rem);">{t('benchmark.demoDesc')}</p>
+        <SectionHeading
+          label={t('benchmark.demoLabel')}
+          title={t('benchmark.demoTitle')}
+          highlight={t('benchmark.demoTitleHighlight')}
+          description={t('benchmark.demoDesc')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1rem, 0.75rem + 0.75vw, 1.75rem)"
+        />
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
           <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">{t('benchmark.demoBreakdown')}</span> {t('benchmark.demoBreakdownDesc')}</p>
           <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">{t('benchmark.demoQuality')}</span> {t('benchmark.demoQualityDesc')}</p>
@@ -218,10 +233,14 @@ const realWorldExamples = [
 <!-- ═══════ 5. READ MODES CARDS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.modesLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3.5rem);">
-      {t('benchmark.modesTitle')} <span class="italic-accent">{t('benchmark.modesTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('benchmark.modesLabel')}
+      title={t('benchmark.modesTitle')}
+      highlight={t('benchmark.modesTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+    />
 
     <div class="bench-modes-grid">
       {readModes.map((m) => (
@@ -248,9 +267,16 @@ const realWorldExamples = [
 <!-- ═══════ 5b. ADVANCED COMPRESSION PIPELINE ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.advStage')}</p>
-    <h3 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);" set:html={t('benchmark.advPipelineTitle')} />
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3.5rem); max-width: 44rem;" set:html={t('benchmark.advPipelineDesc')} />
+    <SectionHeading
+      label={t('benchmark.advStage')}
+      title=""
+      titleHtml={t('benchmark.advPipelineTitle')}
+      descriptionHtml={t('benchmark.advPipelineDesc')}
+      variant="full"
+      titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+      descMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+      descMaxWidth="44rem"
+    />
 
     <div class="bench-pipeline-table animate-entrance stagger-3">
       <table>
@@ -274,10 +300,14 @@ const realWorldExamples = [
 <!-- ═══════ 6. COMPRESSION QUALITY ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.qualityLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3.5rem);">
-      {t('benchmark.qualityTitle')} <span class="italic-accent">{t('benchmark.qualityTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('benchmark.qualityLabel')}
+      title={t('benchmark.qualityTitle')}
+      highlight={t('benchmark.qualityTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+    />
 
     <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card bench-stat-card animate-entrance">
@@ -326,11 +356,17 @@ const realWorldExamples = [
   <div class="content-grid">
     <div class="grid lg:grid-cols-2 items-start" style="gap: clamp(2rem, 1.5rem + 2vw, 3rem);">
       <div>
-        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">{t('benchmark.whyLabel')}</p>
-        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-          {t('benchmark.whyTitle')} <span class="italic-accent">{t('benchmark.whyTitleHighlight')}</span>
-        </h2>
-        <p class="fluid-body text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.whyDesc1')}</p>
+        <SectionHeading
+          label={t('benchmark.whyLabel')}
+          title={t('benchmark.whyTitle')}
+          highlight={t('benchmark.whyTitleHighlight')}
+          description={t('benchmark.whyDesc1')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+        />
         <p class="fluid-body text-muted">{t('benchmark.whyDesc2')}</p>
       </div>
 
@@ -374,11 +410,17 @@ const realWorldExamples = [
 <!-- ═══════ 8. REAL-WORLD RESULTS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('benchmark.realWorldLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-      {t('benchmark.realWorldTitle')} <span class="italic-accent">{t('benchmark.realWorldTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3.5rem); max-width: 44rem;">{t('benchmark.realWorldDesc')}</p>
+    <SectionHeading
+      label={t('benchmark.realWorldLabel')}
+      title={t('benchmark.realWorldTitle')}
+      highlight={t('benchmark.realWorldTitleHighlight')}
+      description={t('benchmark.realWorldDesc')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+      descMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+      descMaxWidth="44rem"
+    />
 
     <div class="bench-realworld-grid">
       {realWorldExamples.map((ex) => (
@@ -405,20 +447,27 @@ const realWorldExamples = [
 <!-- ═══════ 9. CTA ═══════ -->
 <section class="relative section-y">
   <div class="content-grid" style="text-align: center;">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('benchmark.ctaTitle')} <span class="italic-accent">{t('benchmark.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-bottom: clamp(2rem, 1.5rem + 1vw, 3rem); max-width: 44rem; margin-inline: auto;" set:html={t('benchmark.ctaDesc')} />
+    <SectionHeading
+      title={t('benchmark.ctaTitle')}
+      highlight={t('benchmark.ctaTitleHighlight')}
+      descriptionHtml={t('benchmark.ctaDesc')}
+      variant="full"
+      align="center"
+      breakHighlight={false}
+      titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+      descMb="clamp(2rem, 1.5rem + 1vw, 3rem)"
+      descMaxWidth="44rem"
+    />
 
-    <div class="bench-cta-cmd animate-entrance stagger-2">
+    <div class="bench-cta-cmd animate-entrance stagger-3">
       <code class="font-mono text-accent">{t('benchmark.ctaCommand')}</code>
       <button class="bench-cta-copy" data-copy="lean-ctx benchmark run src/" aria-label={t('benchmark.ctaCopy')}>
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
       </button>
     </div>
-    <p class="fluid-sm text-muted animate-entrance stagger-3" style="margin-bottom: clamp(2rem, 1.5rem + 1vw, 3rem);">{t('benchmark.ctaSubtext')}</p>
+    <p class="fluid-sm text-muted animate-entrance stagger-4" style="margin-bottom: clamp(2rem, 1.5rem + 1vw, 3rem);">{t('benchmark.ctaSubtext')}</p>
 
-    <div class="flex flex-wrap items-center justify-center animate-entrance stagger-4" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+    <div class="flex flex-wrap items-center justify-center animate-entrance stagger-5" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('benchmark.ctaGetStarted')}
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>

@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
@@ -56,10 +57,14 @@ const shellOnlyTools = [
 <!-- ═══════ FULL MCP SUPPORT ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('compatibility.fullMcpLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
-      {t('compatibility.fullMcpTitle')} <span class="italic-accent">{t('compatibility.fullMcpTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('compatibility.fullMcpLabel')}
+      title={t('compatibility.fullMcpTitle')}
+      highlight={t('compatibility.fullMcpTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3rem)"
+    />
 
     <div class="grid sm:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       {mcpTools.map((tool) => (
@@ -84,13 +89,17 @@ const shellOnlyTools = [
   <div class="content-grid">
     <div class="grid lg:grid-cols-2 items-center" style="gap: clamp(2rem, 1.5rem + 2vw, 3rem);">
       <div>
-        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">{t('compatibility.shellOnlyLabel')}</p>
-        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-          {t('compatibility.shellOnlyTitle')} <span class="italic-accent">{t('compatibility.shellOnlyTitleHighlight')}</span>
-        </h2>
-        <p class="fluid-body text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.75vw, 1.75rem);">
-          {t('compatibility.shellOnlyDesc')}
-        </p>
+        <SectionHeading
+          label={t('compatibility.shellOnlyLabel')}
+          title={t('compatibility.shellOnlyTitle')}
+          highlight={t('compatibility.shellOnlyTitleHighlight')}
+          description={t('compatibility.shellOnlyDesc')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1rem, 0.75rem + 0.75vw, 1.75rem)"
+        />
         <div class="flex flex-wrap gap-3">
           {shellOnlyTools.map((tool) => (
             <span class="text-sm font-medium px-4 py-2 rounded-lg bg-surface-2 text-text border border-border">{tool.name}</span>
@@ -156,10 +165,16 @@ const shellOnlyTools = [
       </div>
 
       <div>
-        <p class="fluid-label text-muted" style="margin-bottom: clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem);">{t('compatibility.setupLabel')}</p>
-        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-          {t('compatibility.setupTitle')} <span class="italic-accent">{t('compatibility.setupTitleHighlight')}</span>
-        </h2>
+        <SectionHeading
+          label={t('compatibility.setupLabel')}
+          title={t('compatibility.setupTitle')}
+          highlight={t('compatibility.setupTitleHighlight')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="0"
+        />
         <div class="space-y-5">
           <div class="flex gap-4">
             <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 mt-0.5">
@@ -221,10 +236,16 @@ const shellOnlyTools = [
 <!-- ═══════ CTA ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compatibility.ctaTitle')} <span class="italic-accent">{t('compatibility.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;" set:html={t('compatibility.ctaDesc')} />
+    <SectionHeading
+      title={t('compatibility.ctaTitle')}
+      highlight={t('compatibility.ctaTitleHighlight')}
+      descriptionHtml={t('compatibility.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+      descMaxWidth="44rem"
+    />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('common.getStarted')}

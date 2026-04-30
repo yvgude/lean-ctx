@@ -2,6 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import ProofArtifacts from "../components/ProofArtifacts.astro";
 import PageHero from "../components/PageHero.astro";
+import SectionHeading from "../components/SectionHeading.astro";
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from "../i18n/utils";
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -43,15 +44,15 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   <section class="section-y">
     <div class="content-grid">
-      <p class="fluid-label text-muted animate-entrance" style="margin-bottom: 1rem;">
-        {t("trust.principlesLabel")}
-      </p>
-      <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem;">
-        {t("trust.principlesTitle")} <span class="italic-accent">{t("trust.principlesTitleHighlight")}</span>
-      </h2>
-      <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 56rem;">
-        {t("trust.principlesDesc")}
-      </p>
+      <SectionHeading
+        label={t("trust.principlesLabel")}
+        title={t("trust.principlesTitle")}
+        highlight={t("trust.principlesTitleHighlight")}
+        description={t("trust.principlesDesc")}
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="56rem"
+      />
 
       <div class="grid md:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-3" style="gap: 1rem;">
         {[
@@ -73,15 +74,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   <section class="section-y">
     <div class="content-grid">
-      <p class="fluid-label text-muted animate-entrance" style="margin-bottom: 1rem;">
-        {t("trust.scopeLabel")}
-      </p>
-      <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem;">
-        {t("trust.scopeTitle")}
-      </h2>
-      <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: 2.5rem; max-width: 56rem;">
-        {t("trust.scopeDesc")}
-      </p>
+      <SectionHeading
+        label={t("trust.scopeLabel")}
+        title={t("trust.scopeTitle")}
+        description={t("trust.scopeDesc")}
+        variant="full"
+        descMaxWidth="56rem"
+        descMb="2.5rem"
+      />
 
       <div class="grid lg:grid-cols-2 animate-entrance stagger-3" style="gap: 1rem;">
         <div class="card" style="padding: 1.5rem;">
@@ -110,15 +110,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   <section class="section-y">
     <div class="content-grid">
-      <p class="fluid-label text-muted animate-entrance" style="margin-bottom: 1rem;">
-        {t("trust.verifyLabel")}
-      </p>
-      <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem;">
-        {t("trust.verifyTitle")}
-      </h2>
-      <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: 2rem; max-width: 56rem;">
-        {t("trust.verifyDesc")}
-      </p>
+      <SectionHeading
+        label={t("trust.verifyLabel")}
+        title={t("trust.verifyTitle")}
+        description={t("trust.verifyDesc")}
+        variant="full"
+        descMaxWidth="56rem"
+        descMb="2rem"
+      />
       <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: 1rem;">
         <a href={lp("/docs/replayability")} class="card group" style="padding: 1.5rem;">
           <h3 class="font-display fluid-h3 font-semibold text-text-bright mb-2">{t("trust.verifyCard1Title")}</h3>
@@ -144,15 +143,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   <section class="section-y">
     <div class="content-grid">
-      <p class="fluid-label text-muted animate-entrance" style="margin-bottom: 1rem;">
-        {t("artifacts.label")}
-      </p>
-      <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem;">
-        {t("artifacts.title")}
-      </h2>
-      <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: 2.5rem; max-width: 56rem;">
-        {t("artifacts.desc")}
-      </p>
+      <SectionHeading
+        label={t("artifacts.label")}
+        title={t("artifacts.title")}
+        description={t("artifacts.desc")}
+        variant="full"
+        descMaxWidth="56rem"
+        descMb="2.5rem"
+      />
       <div class="animate-entrance stagger-3">
         <ProofArtifacts />
       </div>

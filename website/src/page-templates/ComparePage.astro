@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -39,15 +40,16 @@ const rows = [
 <!-- ═══════ COMPARISON TABLE ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.tableLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.tableTitle')} <span class="italic-accent">{t('compare.tableTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('compare.tableDesc')}
-    </p>
+    <SectionHeading
+      label={t('compare.tableLabel')}
+      title={t('compare.tableTitle')}
+      highlight={t('compare.tableTitleHighlight')}
+      description={t('compare.tableDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance stagger-3" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
       <div class="rounded-lg border border-border overflow-hidden" style="min-width: 640px;">
@@ -90,15 +92,16 @@ const rows = [
 <!-- ═══════ WHEN LEAN-CTX SHINES ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.shinesLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.shinesTitle')} <span class="italic-accent">{t('compare.shinesTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('compare.shinesDesc')}
-    </p>
+    <SectionHeading
+      label={t('compare.shinesLabel')}
+      title={t('compare.shinesTitle')}
+      highlight={t('compare.shinesTitleHighlight')}
+      description={t('compare.shinesDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card" style="padding: 1.5rem;">
@@ -133,15 +136,16 @@ const rows = [
 <!-- ═══════ WHEN YOU DON'T NEED IT ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.whenNotLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.whenNotTitle')} <span class="italic-accent">{t('compare.whenNotTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('compare.whenNotDesc')}
-    </p>
+    <SectionHeading
+      label={t('compare.whenNotLabel')}
+      title={t('compare.whenNotTitle')}
+      highlight={t('compare.whenNotTitleHighlight')}
+      description={t('compare.whenNotDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance stagger-3" style="max-width: 48rem;">
       <div class="compare-card">
@@ -171,15 +175,16 @@ const rows = [
 <!-- ═══════ REAL NUMBERS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.statsLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.statsTitle')} <span class="italic-accent">{t('compare.statsTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('compare.statsDesc')}
-    </p>
+    <SectionHeading
+      label={t('compare.statsLabel')}
+      title={t('compare.statsTitle')}
+      highlight={t('compare.statsTitleHighlight')}
+      description={t('compare.statsDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="stats-grid animate-entrance stagger-3">
       <div class="stat-item">
@@ -205,15 +210,16 @@ const rows = [
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.ctaLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('compare.ctaTitle')} <span class="italic-accent">{t('compare.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
-      {t('compare.ctaDesc')}
-    </p>
+    <SectionHeading
+      label={t('compare.ctaLabel')}
+      title={t('compare.ctaTitle')}
+      highlight={t('compare.ctaTitleHighlight')}
+      description={t('compare.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('compare.ctaGetStarted')}

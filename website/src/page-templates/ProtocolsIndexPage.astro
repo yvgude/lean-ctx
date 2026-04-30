@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
@@ -259,13 +260,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('protocolsIndex.ctaTitle')} <span class="italic-accent">{t('protocolsIndex.ctaHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
-      {t('protocolsIndex.ctaDesc')}
-    </p>
-    <div class="flex flex-wrap items-center gap-3 animate-entrance stagger-2">
+    <SectionHeading
+      title={t('protocolsIndex.ctaTitle')}
+      highlight={t('protocolsIndex.ctaHighlight')}
+      description={t('protocolsIndex.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
+    <div class="flex flex-wrap items-center gap-3 animate-entrance stagger-3">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('protocolsIndex.ctaGetStarted')}
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>

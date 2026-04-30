@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -29,15 +30,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ ARCHITECTURE GUARANTEES ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.archLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.archTitle')} <span class="italic-accent">{t('safety.archTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('safety.archDesc')}
-    </p>
+    <SectionHeading
+      label={t('safety.archLabel')}
+      title={t('safety.archTitle')}
+      highlight={t('safety.archTitleHighlight')}
+      description={t('safety.archDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
       <div class="stat-item">
@@ -78,15 +80,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ SECURITY ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.secLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.secTitle')} <span class="italic-accent">{t('safety.secTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('safety.secDesc')}
-    </p>
+    <SectionHeading
+      label={t('safety.secLabel')}
+      title={t('safety.secTitle')}
+      highlight={t('safety.secTitleHighlight')}
+      description={t('safety.secDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance">
       <div class="terminal-chrome">
@@ -143,15 +146,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ TESTING & QUALITY ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.testLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.testTitle')} <span class="italic-accent">{t('safety.testTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('safety.testDesc')}
-    </p>
+    <SectionHeading
+      label={t('safety.testLabel')}
+      title={t('safety.testTitle')}
+      highlight={t('safety.testTitleHighlight')}
+      description={t('safety.testDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
       <div class="stat-item">
@@ -204,15 +208,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ TRANSPARENCY ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.transLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.transTitle')} <span class="italic-accent">{t('safety.transTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('safety.transDesc')}
-    </p>
+    <SectionHeading
+      label={t('safety.transLabel')}
+      title={t('safety.transTitle')}
+      highlight={t('safety.transTitleHighlight')}
+      description={t('safety.transDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance">
       <div class="terminal-chrome">
@@ -262,15 +267,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ OUTPUT VERIFICATION ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.verifyLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.verifyTitle')} <span class="italic-accent">{t('safety.verifyTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('safety.verifyDesc')}
-    </p>
+    <SectionHeading
+      label={t('safety.verifyLabel')}
+      title={t('safety.verifyTitle')}
+      highlight={t('safety.verifyTitleHighlight')}
+      description={t('safety.verifyDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance">
       <div class="terminal-chrome">
@@ -323,15 +329,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.ctaLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('safety.ctaTitle')} <span class="italic-accent">{t('safety.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
-      {t('safety.ctaDesc')}
-    </p>
+    <SectionHeading
+      label={t('safety.ctaLabel')}
+      title={t('safety.ctaTitle')}
+      highlight={t('safety.ctaTitleHighlight')}
+      description={t('safety.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('safety.ctaGetStarted')}

@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -45,15 +46,15 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ HOW IT WORKS ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('cloud.howLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('cloud.howTitle')} <span class="italic-accent">{t('cloud.howTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 5rem); max-width: 48rem;">
-      {t('cloud.howDesc')}
-    </p>
+    <SectionHeading
+      label={t('cloud.howLabel')}
+      title={t('cloud.howTitle')}
+      highlight={t('cloud.howTitleHighlight')}
+      description={t('cloud.howDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+    />
 
     <div class="cloud-steps animate-entrance stagger-3">
       <div class="cloud-step">
@@ -93,15 +94,15 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ FEATURES ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('cloud.featLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('cloud.featTitle')} <span class="italic-accent">{t('cloud.featTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('cloud.featDesc')}
-    </p>
+    <SectionHeading
+      label={t('cloud.featLabel')}
+      title={t('cloud.featTitle')}
+      highlight={t('cloud.featTitleHighlight')}
+      description={t('cloud.featDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+    />
 
     {[
       { icon: 'stats', title: t('cloud.feat1Title'), desc: t('cloud.feat1Desc'), detail: t('cloud.feat1Detail'), color: 'accent' },
@@ -135,15 +136,15 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <!-- ═══════ PRIVACY ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('cloud.privacyLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('cloud.privacyTitle')} <span class="italic-accent">{t('cloud.privacyTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 5rem); max-width: 48rem;">
-      {t('cloud.privacyDesc')}
-    </p>
+    <SectionHeading
+      label={t('cloud.privacyLabel')}
+      title={t('cloud.privacyTitle')}
+      highlight={t('cloud.privacyTitleHighlight')}
+      description={t('cloud.privacyDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+    />
 
     <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1px, 0.1vw, 1px);">
       <div class="compare-card">

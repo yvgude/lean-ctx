@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 
@@ -58,15 +59,16 @@ const faqSchema = JSON.stringify({
 <!-- ═══════ DATA FLOW ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.dataFlowLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.dataFlowTitle')} <span class="italic-accent">{t('howItWorks.dataFlowTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('howItWorks.dataFlowDesc')}
-    </p>
+    <SectionHeading
+      label={t('howItWorks.dataFlowLabel')}
+      title={t('howItWorks.dataFlowTitle')}
+      highlight={t('howItWorks.dataFlowTitleHighlight')}
+      description={t('howItWorks.dataFlowDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance">
       <div class="terminal-chrome">
@@ -133,15 +135,17 @@ const faqSchema = JSON.stringify({
 <!-- ═══════ YOUR PART ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.yourPartLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.yourPartTitlePre')} <span class="italic-accent">{t('howItWorks.yourPartTitleHighlight')}</span> {t('howItWorks.yourPartTitlePost')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('howItWorks.yourPartDesc')}
-    </p>
+    <SectionHeading
+      label={t('howItWorks.yourPartLabel')}
+      title={t('howItWorks.yourPartTitlePre')}
+      highlight={t('howItWorks.yourPartTitleHighlight')}
+      afterHighlight={t('howItWorks.yourPartTitlePost')}
+      description={t('howItWorks.yourPartDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid md:grid-cols-3 mb-14" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="hiw-step-card card animate-entrance">
@@ -223,15 +227,16 @@ const faqSchema = JSON.stringify({
 <!-- ═══════ THREE LAYERS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.layersLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.layersTitle')} <span class="italic-accent">{t('howItWorks.layersTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('howItWorks.layersDesc')}
-    </p>
+    <SectionHeading
+      label={t('howItWorks.layersLabel')}
+      title={t('howItWorks.layersTitle')}
+      highlight={t('howItWorks.layersTitleHighlight')}
+      description={t('howItWorks.layersDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
 
@@ -294,15 +299,16 @@ const faqSchema = JSON.stringify({
 <!-- ═══════ SCIENTIFIC COMPRESSION ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.scienceLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.scienceTitle')} <span class="italic-accent">{t('howItWorks.scienceTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('howItWorks.scienceDesc')}
-    </p>
+    <SectionHeading
+      label={t('howItWorks.scienceLabel')}
+      title={t('howItWorks.scienceTitle')}
+      highlight={t('howItWorks.scienceTitleHighlight')}
+      description={t('howItWorks.scienceDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card" style="padding: 1.5rem;">
@@ -385,15 +391,16 @@ const faqSchema = JSON.stringify({
 <!-- ═══════ COMPRESSION QUALITY ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.qualityLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.qualityTitle')} <span class="italic-accent">{t('howItWorks.qualityTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('howItWorks.qualityDesc')}
-    </p>
+    <SectionHeading
+      label={t('howItWorks.qualityLabel')}
+      title={t('howItWorks.qualityTitle')}
+      highlight={t('howItWorks.qualityTitleHighlight')}
+      description={t('howItWorks.qualityDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
       <div class="stat-item">
@@ -435,11 +442,15 @@ const faqSchema = JSON.stringify({
 <!-- ═══════ SECURITY ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      Defense in depth
-    </p>
-    <h3 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);" set:html={t('howItWorks.securityTitle')} />
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;" set:html={t('howItWorks.securityDesc')} />
+    <SectionHeading
+      title=""
+      titleHtml={t('howItWorks.securityTitle')}
+      descriptionHtml={t('howItWorks.securityDesc')}
+      variant="full"
+      titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+      descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      descMaxWidth="48rem"
+    />
     <ul class="space-y-3 animate-entrance stagger-3" style="list-style: none; padding: 0; max-width: 48rem;">
       <li class="fluid-sm text-muted" set:html={t('howItWorks.securityPathJail')} />
       <li class="fluid-sm text-muted" set:html={t('howItWorks.securityShellCap')} />
@@ -456,15 +467,16 @@ const faqSchema = JSON.stringify({
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.ctaLabel')}
-    </p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('howItWorks.ctaTitle')} <span class="italic-accent">{t('howItWorks.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
-      {t('howItWorks.ctaDesc')}
-    </p>
+    <SectionHeading
+      label={t('howItWorks.ctaLabel')}
+      title={t('howItWorks.ctaTitle')}
+      highlight={t('howItWorks.ctaTitleHighlight')}
+      description={t('howItWorks.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('howItWorks.ctaGetStarted')}

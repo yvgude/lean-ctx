@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
@@ -89,10 +90,8 @@ const features = [
 
 <section class="relative section-y">
   <div class="content-grid text-center">
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance" style="margin-bottom: 1.5rem;">
-      {t('common.getStarted')}
-    </h2>
-    <div class="flex flex-wrap justify-center gap-3 animate-entrance stagger-1">
+    <SectionHeading title={t('common.getStarted')} variant="full" align="center" titleMb="1.5rem" />
+    <div class="flex flex-wrap justify-center gap-3 animate-entrance stagger-2">
       <a
         href={lp('/docs/getting-started/')}
         class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg"

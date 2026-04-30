@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { getMcpManifest } from '../lib/mcpManifest';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
@@ -35,13 +36,17 @@ const readModeCount = manifest.read_modes.count;
 <!-- ═══════ HOW MCP WORKS ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('mcpServer.protocolLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('mcpServer.protocolTitle')} <span class="italic-accent">{t('mcpServer.protocolTitleHighlight')}</span> {t('mcpServer.protocolTitleSuffix')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('mcpServer.protocolDesc')}
-    </p>
+    <SectionHeading
+      label={t('mcpServer.protocolLabel')}
+      title={t('mcpServer.protocolTitle')}
+      highlight={t('mcpServer.protocolTitleHighlight')}
+      afterHighlight={t('mcpServer.protocolTitleSuffix')}
+      description={t('mcpServer.protocolDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0 mb-6 animate-entrance">
       <div class="mcp-flow-step">
@@ -78,10 +83,14 @@ const readModeCount = manifest.read_modes.count;
 <!-- ═══════ TOOL CATEGORIES ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('mcpServer.categoriesLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
-      {t('mcpServer.categoriesTitle')} <span class="italic-accent">{t('mcpServer.categoriesTitleHighlight')}</span>
-    </h2>
+    <SectionHeading
+      label={t('mcpServer.categoriesLabel')}
+      title={t('mcpServer.categoriesTitle')}
+      highlight={t('mcpServer.categoriesTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="grid sm:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
 
@@ -216,13 +225,16 @@ const readModeCount = manifest.read_modes.count;
 <!-- ═══════ READ MODES ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('mcpServer.readModesLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('mcpServer.readModesTitle')} <span class="italic-accent">{t('mcpServer.readModesTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem); max-width: 48rem;">
-      {t('mcpServer.readModesDesc')}
-    </p>
+    <SectionHeading
+      label={t('mcpServer.readModesLabel')}
+      title={t('mcpServer.readModesTitle')}
+      highlight={t('mcpServer.readModesTitleHighlight')}
+      description={t('mcpServer.readModesDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
 
     <div class="animate-entrance" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 3rem);">
       <div class="rounded-lg border border-border overflow-hidden">
@@ -323,13 +335,16 @@ const readModeCount = manifest.read_modes.count;
 <!-- ═══════ CTA ═══════ -->
 <section class="relative section-y overflow-hidden">
   <div class="content-grid">
-    <p class="fluid-label text-muted animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('mcpServer.ctaLabel')}</p>
-    <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      {t('mcpServer.ctaTitle')} <span class="italic-accent">{t('mcpServer.ctaTitleHighlight')}</span>
-    </h2>
-    <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 5rem); max-width: 44rem;">
-      {t('mcpServer.ctaDesc')}
-    </p>
+    <SectionHeading
+      label={t('mcpServer.ctaLabel')}
+      title={t('mcpServer.ctaTitle')}
+      highlight={t('mcpServer.ctaTitleHighlight')}
+      description={t('mcpServer.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
     <div class="flex flex-wrap items-center gap-3 animate-entrance stagger-3">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('common.getStarted')}
