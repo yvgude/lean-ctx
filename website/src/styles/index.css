@@ -295,7 +295,7 @@
   align-items: center;
 }
 
-/* Layer cards (Architecture) */
+/* Architecture cards */
 .layer-card {
   display: flex;
   flex-direction: column;
