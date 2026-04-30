@@ -513,6 +513,13 @@ pre code {
   transform: translateY(0);
 }
 
+/* Never hide above-the-fold heroes (fix: blank pages until scroll) */
+.reveal-entrance .section-hero .animate-entrance {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal-entrance .animate-entrance {
     opacity: 1;
