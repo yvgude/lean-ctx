@@ -855,3 +855,137 @@ pre code {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Stack Explorer (QGI-inspired, LeanCTX-truthful) ───────────────── */
+.stack-explorer {
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius-lg);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.stack-explorer-grid {
+  display: grid;
+}
+
+.stack-layer {
+  border-top: 1px solid var(--color-border);
+}
+.stack-layer:first-child {
+  border-top: none;
+}
+
+.stack-layer-summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.stack-layer-summary::-webkit-details-marker {
+  display: none;
+}
+
+.stack-layer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid color-mix(in oklab, currentColor 18%, transparent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: color-mix(in oklab, currentColor 6%, transparent);
+}
+.stack-layer-n {
+  letter-spacing: 0.02em;
+}
+.stack-layer-status {
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.stack-layer-title {
+  color: var(--color-text-bright);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.stack-layer-chevron {
+  color: var(--color-muted);
+  transition: transform 0.18s ease;
+}
+details[open] > .stack-layer-summary .stack-layer-chevron {
+  transform: rotate(90deg);
+}
+
+.stack-layer-body {
+  padding: 0 16px 16px 16px;
+}
+
+.stack-layer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+/* ── Proof Artifacts ─────────────────────────────────────────────── */
+.artifacts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (min-width: 1024px) {
+  .artifacts-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .artifacts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.artifact-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius-lg);
+  background: var(--color-surface);
+  padding: 14px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: start;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.artifact-card:hover {
+  border-color: var(--color-border-light);
+  transform: translateY(-1px);
+}
+
+.artifact-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, currentColor 18%, transparent);
+  background: color-mix(in oklab, currentColor 6%, transparent);
+}
+
+.artifact-title {
+  font-size: 14px;
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+.artifact-desc {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.artifact-arrow {
+  opacity: 0.9;
+  margin-top: 2px;
+}
