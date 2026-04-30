@@ -1,36 +1,5 @@
 /* Landing (IndexPage) — screenshot-inspired section panels */
 
-.hero-split {
-  position: relative;
-  overflow: hidden;
-}
-
-.hero-split::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: url('/images/hero-bg.png') center / cover no-repeat;
-  opacity: 0.35;
-  filter: brightness(0.55) saturate(0.7);
-  pointer-events: none;
-  z-index: -2;
-}
-
-.hero-split::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(180deg, var(--hero-gradient-start) 0%, var(--hero-gradient-mid) 50%, var(--color-bg) 100%);
-  backdrop-filter: blur(0.6px);
-  pointer-events: none;
-  z-index: -1;
-}
-
-.hero-copy {
-  max-width: 56rem;
-}
-
 .hero-terminal-wrap {
   position: relative;
 }
@@ -100,28 +69,6 @@
 @keyframes hero-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
-}
-
-.split {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: clamp(1.5rem, 1rem + 2vw, 4rem);
-  align-items: center;
-}
-
-@media (min-width: 1024px) {
-  .split {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  }
-  .split.split--visual-wide {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  }
-  .split.split--reverse > :first-child { order: 2; }
-  .split.split--reverse > :last-child { order: 1; }
-}
-
-.split + .split {
-  margin-top: clamp(3rem, 2rem + 2vw, 5rem);
 }
 
 /* Stepper (non-scrolly) */
