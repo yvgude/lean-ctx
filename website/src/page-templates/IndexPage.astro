@@ -1,7 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
-import TerminalStepper from '../components/TerminalStepper.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 import '../styles/index.css';
@@ -18,72 +17,8 @@ const pickTool = (preferred: string, fallbackIndex: number) =>
 const tRead = pickTool('ctx_read', 0);
 const tSearch = pickTool('ctx_search', 1);
 const tShell = pickTool('ctx_shell', 2);
-const tMulti = pickTool('ctx_multi_read', 3);
 
-const stepperSteps = [
-  {
-    number: '01',
-    title: t('index.dim1Title'),
-    description: t('index.dim1Desc'),
-    terminalTitle: `${tRead} — map`,
-    terminalLines: [
-      `$ ${tRead}({ path: "src/lib/mcpManifest.ts", mode: "map" })`,
-      ``,
-      `→ exports: getMcpManifest(), getGranularTools()`,
-      `→ tools.granular: ${manifest.counts.granular}`,
-      `→ tools.unified: ${manifest.counts.unified}`,
-      `→ read_modes: ${manifest.read_modes.count}`,
-      `→ schema: v${manifest.schema_version}`,
-      ``,
-      `✓ cached — re-read costs ~13 tokens`,
-    ],
-  },
-  {
-    number: '02',
-    title: t('index.dim2Title'),
-    description: t('index.dim2Desc'),
-    terminalTitle: `${tSearch} — regex`,
-    terminalLines: [
-      `$ ${tSearch}({ pattern: "getMcpManifest", path: "src" })`,
-      ``,
-      `→ 2 matches found in 0.8ms`,
-      `  src/lib/mcpManifest.ts:14  export function getMcpManifest()`,
-      `  src/page-templates/IndexPage.astro:12  const manifest = getMcpManifest()`,
-      ``,
-      `✓ compact context — only relevant lines, not the whole file`,
-    ],
-  },
-  {
-    number: '03',
-    title: t('index.dim3Title'),
-    description: t('index.dim3Desc'),
-    terminalTitle: `${tShell} — build`,
-    terminalLines: [
-      `$ ${tShell}({ command: "npx astro build", cwd: "website" })`,
-      ``,
-      `→ 1294 pages built in 3.6s`,
-      `→ raw output: 847 tokens`,
-      `→ compressed: 42 tokens (95% reduction)`,
-      ``,
-      `✓ pattern compression for git, npm, cargo, docker, tsc`,
-    ],
-  },
-  {
-    number: '04',
-    title: t('index.dim4Title'),
-    description: t('index.dim4Desc'),
-    terminalTitle: `${tMulti} — batch`,
-    terminalLines: [
-      `$ ${tMulti}({ paths: ["IndexPage.astro", "global.css"], mode: "diff" })`,
-      ``,
-      `→ dedup across files: 3 shared imports removed`,
-      `→ delta-only: +12 / -8 lines`,
-      `→ cross-file refs: F1=IndexPage, F2=global`,
-      ``,
-      `✓ stable review loop — same input = same output`,
-    ],
-  },
-];
+
 
 ---
 
@@ -335,12 +270,47 @@ const stepperSteps = [
 <!-- ═══════════════════════════════════════════════════════
      FOUR DIMENSIONS
      ═══════════════════════════════════════════════════════ -->
-<TerminalStepper
-  kicker={t('index.dimensionsLabel')}
-  title={t('index.dimensionsTitle')}
-  titleHighlight={t('index.dimensionsTitleHighlight')}
-  steps={stepperSteps}
-/>
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.dimensionsLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 56rem;">
+      {t('index.dimensionsTitle')} <span class="italic-accent">{t('index.dimensionsTitleHighlight')}</span>
+    </h2>
+
+    <div class="dimensions-grid animate-entrance stagger-2">
+      <div class="dimension-item">
+        <span class="dimension-number text-accent font-display">01</span>
+        <div>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim1Title')}</h3>
+          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim1Desc')}</p>
+        </div>
+      </div>
+      <div class="dimension-item">
+        <span class="dimension-number text-accent-2 font-display">02</span>
+        <div>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim2Title')}</h3>
+          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim2Desc')}</p>
+        </div>
+      </div>
+      <div class="dimension-item">
+        <span class="dimension-number text-accent-3 font-display">03</span>
+        <div>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim3Title')}</h3>
+          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim3Desc')}</p>
+        </div>
+      </div>
+      <div class="dimension-item">
+        <span class="dimension-number text-accent font-display">04</span>
+        <div>
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim4Title')}</h3>
+          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim4Desc')}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 
 <!-- ═══════════════════════════════════════════════════════
@@ -563,49 +533,49 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
       {t('index.testimonialTitle')}
     </h2>
 
-    <div class="testimonial-masonry animate-entrance stagger-2">
-      <div class="testimonial-col">
-        <blockquote class="testimonial">
-          <p class="testimonial-text">{t('index.testimonial1Text')}</p>
-          <footer class="testimonial-footer">
-            <span class="testimonial-dash">—</span> <strong>Sebastian</strong> <span class="text-muted">TypeScript / React</span>
-          </footer>
-        </blockquote>
-        <blockquote class="testimonial">
-          <p class="testimonial-text">{t('index.testimonial2Text')}</p>
-          <footer class="testimonial-footer">
-            <span class="testimonial-dash">—</span> <strong>Marco</strong> <span class="text-muted">SaaS Builder</span>
-          </footer>
-        </blockquote>
-      </div>
-      <div class="testimonial-col">
-        <blockquote class="testimonial">
-          <p class="testimonial-text">{t('index.testimonial3Text')}</p>
-          <footer class="testimonial-footer">
-            <span class="testimonial-dash">—</span> <strong>Jay</strong> <span class="text-muted">AI Tools Enthusiast</span>
-          </footer>
-        </blockquote>
-        <blockquote class="testimonial">
-          <p class="testimonial-text">{t('index.testimonial4Text')}</p>
-          <footer class="testimonial-footer">
-            <span class="testimonial-dash">—</span> <strong>Erik</strong> <span class="text-muted">Platform Engineer</span>
-          </footer>
-        </blockquote>
-      </div>
-      <div class="testimonial-col">
-        <blockquote class="testimonial">
-          <p class="testimonial-text">{t('index.testimonial5Text')}</p>
-          <footer class="testimonial-footer">
-            <span class="testimonial-dash">—</span> <strong>Radmar</strong> <span class="text-muted">Open Source Contributor</span>
-          </footer>
-        </blockquote>
-        <blockquote class="testimonial">
-          <p class="testimonial-text">{t('index.testimonial6Text')}</p>
-          <footer class="testimonial-footer">
-            <span class="testimonial-dash">—</span> <strong>Daniel</strong> <span class="text-muted">Go / Rust Developer</span>
-          </footer>
-        </blockquote>
-      </div>
+    <div class="testimonial-list animate-entrance stagger-2">
+      <blockquote class="testimonial-quote">
+        <p class="testimonial-text">&ldquo;{t('index.testimonial1Text')}&rdquo;</p>
+        <footer class="testimonial-attribution">
+          <strong class="text-text-bright">Sebastian</strong>
+          <span class="text-muted">TypeScript / React</span>
+        </footer>
+      </blockquote>
+      <blockquote class="testimonial-quote">
+        <p class="testimonial-text">&ldquo;{t('index.testimonial2Text')}&rdquo;</p>
+        <footer class="testimonial-attribution">
+          <strong class="text-text-bright">Marco</strong>
+          <span class="text-muted">SaaS Builder</span>
+        </footer>
+      </blockquote>
+      <blockquote class="testimonial-quote">
+        <p class="testimonial-text">&ldquo;{t('index.testimonial3Text')}&rdquo;</p>
+        <footer class="testimonial-attribution">
+          <strong class="text-text-bright">Jay</strong>
+          <span class="text-muted">AI Tools Enthusiast</span>
+        </footer>
+      </blockquote>
+      <blockquote class="testimonial-quote">
+        <p class="testimonial-text">&ldquo;{t('index.testimonial4Text')}&rdquo;</p>
+        <footer class="testimonial-attribution">
+          <strong class="text-text-bright">Erik</strong>
+          <span class="text-muted">Platform Engineer</span>
+        </footer>
+      </blockquote>
+      <blockquote class="testimonial-quote">
+        <p class="testimonial-text">&ldquo;{t('index.testimonial5Text')}&rdquo;</p>
+        <footer class="testimonial-attribution">
+          <strong class="text-text-bright">Radmar</strong>
+          <span class="text-muted">Open Source Contributor</span>
+        </footer>
+      </blockquote>
+      <blockquote class="testimonial-quote">
+        <p class="testimonial-text">&ldquo;{t('index.testimonial6Text')}&rdquo;</p>
+        <footer class="testimonial-attribution">
+          <strong class="text-text-bright">Daniel</strong>
+          <span class="text-muted">Go / Rust Developer</span>
+        </footer>
+      </blockquote>
     </div>
   </div>
 </section>

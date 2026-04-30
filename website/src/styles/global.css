@@ -220,8 +220,8 @@ body::after {
   padding-bottom: clamp(2.5rem, 1.75rem + 2.5vw, 5rem);
 }
 .section-hero {
-  padding-top: clamp(5rem, 3rem + 6vw, 12rem);
-  padding-bottom: clamp(6rem, 4rem + 8vw, 14rem);
+  padding-top: clamp(2rem, 1.5rem + 3vw, 6rem);
+  padding-bottom: clamp(4rem, 3rem + 5vw, 10rem);
 }
 
 .content-grid {
@@ -751,5 +751,44 @@ pre code {
 @supports (padding: env(safe-area-inset-bottom)) {
   footer {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (max-width: 640px) {
+  .btn-primary,
+  .btn-outline {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .split,
+  .split--visual-wide {
+    grid-template-columns: 1fr !important;
+  }
+
+  .content-grid,
+  .content-grid-wide,
+  .content-grid-narrow {
+    padding-inline: clamp(1rem, 0.5rem + 2vw, 1.5rem);
+  }
+
+  .section-y {
+    padding-top: clamp(2.5rem, 2rem + 3vw, 4rem);
+    padding-bottom: clamp(2.5rem, 2rem + 3vw, 4rem);
+  }
+
+  .section-y-sm {
+    padding-top: clamp(1.5rem, 1.25rem + 2vw, 3rem);
+    padding-bottom: clamp(1.5rem, 1.25rem + 2vw, 3rem);
+  }
+
+  .section-hero {
+    padding-top: clamp(1.25rem, 1rem + 1.5vw, 2rem);
+    padding-bottom: clamp(2.5rem, 2rem + 3vw, 4rem);
+  }
+
+  .grid.md\:grid-cols-3 {
+    grid-template-columns: 1fr;
   }
 }
