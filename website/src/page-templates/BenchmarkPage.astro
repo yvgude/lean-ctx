@@ -141,68 +141,55 @@ const realWorldExamples = [
 <!-- ═══════ 2. BEFORE / AFTER ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <SectionHeading
-      label={t('benchmark.beforeAfterLabel')}
-      title={t('benchmark.beforeAfterTitle')}
-      highlight={t('benchmark.beforeAfterTitleHighlight')}
-      description={t('benchmark.beforeAfterDesc')}
-      variant="full"
-      breakHighlight={false}
-      descMaxWidth="44rem"
-    />
-
-    <div class="bench-compare animate-entrance stagger-3">
-      <div class="bench-compare-col">
-        <div class="terminal-chrome">
-          <div class="terminal-header px-4 py-3 flex items-center gap-2">
-            <span class="terminal-dot bg-[#ff5f57]"></span>
-            <span class="terminal-dot bg-[#febc2e]"></span>
-            <span class="terminal-dot bg-[#28c840]"></span>
-            <span class="text-xs text-muted font-mono ml-2">{t('benchmark.beforeTitle')}</span>
-          </div>
-          <div class="terminal-body px-4 py-4 font-mono text-[11px] leading-[1.7]">
-            <p class="text-muted">// src/auth.ts · mode=full</p>
-            <p class="text-text-bright">import {'{'} jwt, verify, sign {'}'} from 'jsonwebtoken';</p>
-            <p class="text-text-bright">import {'{'} bcrypt {'}'} from 'bcryptjs';</p>
-            <p class="text-text-bright">import {'{'} db {'}'} from '../database/connection';</p>
-            <p class="text-text-bright">import {'{'} Redis {'}'} from 'ioredis';</p>
-            <p class="text-text-bright">import {'{'} logger {'}'} from '../utils/logger';</p>
-            <p class="text-muted">// …</p>
-            <p class="text-muted">// …</p>
-            <p class="text-muted">// …</p>
-            <p class="text-border-light/40 mt-2">────────────────────────</p>
-            <p class="text-danger font-bold">{t('benchmark.beforeTokens')}</p>
-          </div>
-        </div>
+    <div class="split split--visual-wide">
+      <div>
+        <SectionHeading
+          label={t('benchmark.beforeAfterLabel')}
+          title={t('benchmark.beforeAfterTitle')}
+          highlight={t('benchmark.beforeAfterTitleHighlight')}
+          description={t('benchmark.beforeAfterDesc')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1rem, 0.75rem + 0.75vw, 1.75rem)"
+        />
       </div>
 
-      <div class="bench-compare-badge">
-        <span class="bench-compare-badge-text">{t('benchmark.savingsBadge')}</span>
-        <svg class="bench-compare-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-      </div>
-
-      <div class="bench-compare-col">
-        <div class="terminal-chrome bench-compare-highlight">
-          <div class="terminal-header px-4 py-3 flex items-center gap-2">
-            <span class="terminal-dot bg-[#ff5f57]"></span>
-            <span class="terminal-dot bg-[#febc2e]"></span>
-            <span class="terminal-dot bg-[#28c840]"></span>
-            <span class="text-xs text-accent font-mono ml-2">{t('benchmark.afterTitle')}</span>
+      <div class="animate-entrance stagger-3">
+        <div class="compare-grid">
+          <div class="compare-card">
+            <div class="compare-header compare-header--bad">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+              {t('benchmark.beforeTitle')}
+            </div>
+            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+              <div class="compare-line"><span class="text-muted">// src/auth.ts · mode=full</span></div>
+              <div class="compare-line"><span class="text-text-bright">import {'{'} jwt, verify, sign {'}'} from 'jsonwebtoken';</span></div>
+              <div class="compare-line"><span class="text-text-bright">import {'{'} bcrypt {'}'} from 'bcryptjs';</span></div>
+              <div class="compare-line"><span class="text-muted">…</span></div>
+              <div class="compare-line"><span class="text-danger font-semibold">{t('benchmark.beforeTokens')}</span></div>
+            </div>
           </div>
-          <div class="terminal-body px-4 py-4 font-mono text-[11px] leading-[1.7]">
-            <p class="text-muted">// src/auth.ts · mode=map</p>
-            <p class="text-accent">exports: AuthService, validateToken,</p>
-            <p class="text-accent">         refreshSession, revokeToken</p>
-            <p class="text-accent">deps: jsonwebtoken, bcryptjs, ioredis</p>
-            <p class="text-accent">types: AuthPayload, SessionConfig,</p>
-            <p class="text-accent">       TokenPair, RefreshResult</p>
-            <p class="text-accent">fns: 4 public, 2 private</p>
-            <p class="text-muted"></p>
-            <p class="text-muted"></p>
-            <p class="text-border-light/40 mt-2">────────────────────────</p>
-            <p class="text-accent font-bold">{t('benchmark.afterTokens')}</p>
+
+          <div class="compare-card">
+            <div class="compare-header compare-header--good">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              {t('benchmark.afterTitle')}
+            </div>
+            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+              <div class="compare-line"><span class="text-muted">// src/auth.ts · mode=map</span></div>
+              <div class="compare-line"><span class="text-accent">exports: AuthService, validateToken, …</span></div>
+              <div class="compare-line"><span class="text-accent">deps: jsonwebtoken, bcryptjs, ioredis</span></div>
+              <div class="compare-line"><span class="text-muted">…</span></div>
+              <div class="compare-line"><span class="text-accent font-semibold">{t('benchmark.afterTokens')}</span></div>
+            </div>
           </div>
         </div>
+
+        <p class="fluid-sm text-muted" style="margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.75rem); margin-bottom: 0;">
+          <span class="text-accent font-semibold">{t('benchmark.savingsBadge')}</span>
+        </p>
       </div>
     </div>
   </div>
@@ -222,35 +209,34 @@ const realWorldExamples = [
       titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
     />
 
-    <div class="bench-steps">
-      <div class="bench-step animate-entrance">
-        <div class="bench-step-num">
-          <span class="text-xl font-bold text-accent font-display">1</span>
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        { n: '01', tone: 'accent', title: t('benchmark.step1Title'), desc: t('benchmark.step1Desc'), code: 'lean-ctx benchmark run src/' },
+        { n: '02', tone: 'accent-2', title: t('benchmark.step2Title'), desc: t('benchmark.step2Desc'), code: 'tiktoken o200k_base' },
+        { n: '03', tone: 'accent-3', title: t('benchmark.step3Title'), desc: t('benchmark.step3Desc'), code: 'modes: 10' },
+      ].map((s, i) => (
+        <div class={`card animate-entrance stagger-${1 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-center gap-3" style="margin-bottom: 0.75rem;">
+            <div
+              class={`w-10 h-10 rounded-lg flex items-center justify-center font-display font-bold ${
+                s.tone === 'accent-2'
+                  ? 'bg-accent-2/10 text-accent-2'
+                  : s.tone === 'accent-3'
+                    ? 'bg-accent-3/10 text-accent-3'
+                    : 'bg-accent/10 text-accent'
+              }`}
+              style="font-size: 0.875rem;"
+            >
+              {s.n}
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">{s.title}</h3>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.875rem 0;">{s.desc}</p>
+          <code class={`inline-flex font-mono text-[11px] ${s.tone === 'accent-2' ? 'text-accent-2/80' : s.tone === 'accent-3' ? 'text-accent-3/80' : 'text-accent/80'}`}>
+            {s.code}
+          </code>
         </div>
-        <div class="bench-step-line"></div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright" style="margin-bottom: 0.5rem;">{t('benchmark.step1Title')}</h3>
-        <p class="fluid-sm text-muted" style="margin-bottom: 0.75rem;">{t('benchmark.step1Desc')}</p>
-        <code class="block text-[11px] font-mono text-accent/70">lean-ctx benchmark run src/</code>
-      </div>
-
-      <div class="bench-step animate-entrance stagger-1">
-        <div class="bench-step-num">
-          <span class="text-xl font-bold text-accent-2 font-display">2</span>
-        </div>
-        <div class="bench-step-line"></div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright" style="margin-bottom: 0.5rem;">{t('benchmark.step2Title')}</h3>
-        <p class="fluid-sm text-muted" style="margin-bottom: 0.75rem;">{t('benchmark.step2Desc')}</p>
-        <code class="block text-[11px] font-mono text-accent-2/70">tiktoken o200k_base</code>
-      </div>
-
-      <div class="bench-step animate-entrance stagger-2">
-        <div class="bench-step-num">
-          <span class="text-xl font-bold text-accent-3 font-display">3</span>
-        </div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright" style="margin-bottom: 0.5rem;">{t('benchmark.step3Title')}</h3>
-        <p class="fluid-sm text-muted" style="margin-bottom: 0.75rem;">{t('benchmark.step3Desc')}</p>
-        <code class="block text-[11px] font-mono text-accent-3/70">modes: 10</code>
-      </div>
+      ))}
     </div>
   </div>
 </section>
@@ -260,7 +246,7 @@ const realWorldExamples = [
 <!-- ═══════ 4. TERMINAL DEMO ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <div class="grid lg:grid-cols-[1fr_1.4fr] items-center" style="gap: clamp(1.75rem, 1.25rem + 1.5vw, 3.5rem);">
+    <div class="split split--visual-wide">
       <div>
         <SectionHeading
           label={t('benchmark.demoLabel')}
@@ -323,15 +309,15 @@ const realWorldExamples = [
       titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
     />
 
-    <div class="bench-modes-grid">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
       {readModes.map((m) => (
-        <div class="card bench-mode-card animate-entrance">
-          <div class="bench-mode-head">
+        <div class="card animate-entrance" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          <div class="flex justify-between items-baseline" style="margin-bottom: 0.75rem;">
             <code class={`text-sm font-mono font-bold ${m.color}`}>{m.mode}</code>
-            <span class={`bench-mode-savings ${m.color}`}>{m.savings}</span>
+            <span class={`font-mono text-[12px] font-semibold ${m.color}`}>{m.savings}</span>
           </div>
-          <div class="bench-mode-bar-track">
-            <div class="bench-mode-bar-fill" style={`width: ${m.barPct}%; background: ${m.barColor}`}></div>
+          <div style="height: 4px; background: var(--color-surface-2); border-radius: 2px; margin-bottom: 0.875rem; overflow: hidden;">
+            <div style={`height: 100%; width: ${m.barPct}%; background: ${m.barColor}; border-radius: 2px;`}></div>
           </div>
           <p class="fluid-sm text-text-bright" style="margin-bottom: 0.25rem;">{m.useCase}</p>
           <p class="text-[12px] text-muted">{m.preserves}</p>
@@ -400,23 +386,22 @@ const realWorldExamples = [
     />
 
     <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-      <div class="card bench-guard-card animate-entrance">
-        <p class="fluid-label text-muted" style="margin-bottom: 0.5rem;">{t('benchmark.stat1Label')}</p>
-        <div class="bench-guard-num font-display text-accent">95%</div>
-        <p class="fluid-sm text-muted" style="margin: 0;">{t('benchmark.stat1Desc')}</p>
-      </div>
-
-      <div class="card bench-guard-card animate-entrance stagger-1">
-        <p class="fluid-label text-muted" style="margin-bottom: 0.5rem;">{t('benchmark.stat2Label')}</p>
-        <div class="bench-guard-num font-display text-accent-2">15%</div>
-        <p class="fluid-sm text-muted" style="margin: 0;">{t('benchmark.stat2Desc')}</p>
-      </div>
-
-      <div class="card bench-guard-card animate-entrance stagger-2">
-        <p class="fluid-label text-muted" style="margin-bottom: 0.5rem;">{t('benchmark.stat3Label')}</p>
-        <div class="bench-guard-num font-display text-accent-3">50/30/20</div>
-        <p class="fluid-sm text-muted" style="margin: 0;">{t('benchmark.stat3Desc')}</p>
-      </div>
+      {[
+        { tone: 'accent', label: t('benchmark.stat1Label'), val: '95%', desc: t('benchmark.stat1Desc') },
+        { tone: 'accent-2', label: t('benchmark.stat2Label'), val: '15%', desc: t('benchmark.stat2Desc') },
+        { tone: 'accent-3', label: t('benchmark.stat3Label'), val: '50/30/20', desc: t('benchmark.stat3Desc') },
+      ].map((x, i) => (
+        <div class={`card animate-entrance stagger-${1 + i}`} style="padding: clamp(1.5rem, 1rem + 1vw, 2rem);">
+          <p class="fluid-label text-muted" style="margin: 0 0 0.5rem 0;">{x.label}</p>
+          <div
+            class={`font-display font-extrabold ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`}
+            style="font-size: clamp(1.75rem, 1.5rem + 1vw, 2.5rem); letter-spacing: -0.04em; line-height: 1.05; margin: 0 0 0.75rem 0;"
+          >
+            {x.val}
+          </div>
+          <p class="fluid-sm text-muted" style="margin: 0;">{x.desc}</p>
+        </div>
+      ))}
     </div>
   </div>
 </section>
@@ -494,19 +479,19 @@ const realWorldExamples = [
       descMaxWidth="44rem"
     />
 
-    <div class="bench-realworld-grid">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
       {realWorldExamples.map((ex) => (
-        <div class="card bench-realworld-card animate-entrance">
-          <div class="bench-realworld-top">
+        <div class="card animate-entrance" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          <div class="flex justify-between items-baseline" style="margin-bottom: 0.25rem;">
             <span class="font-display font-semibold text-text-bright">{ex.file}</span>
-            <span class="bench-realworld-pct" style={`color: ${ex.textColor}`}>{ex.savings}</span>
+            <span class="font-display font-bold" style={`color: ${ex.textColor}; font-size: 1.25rem; letter-spacing: -0.03em;`}>{ex.savings}</span>
           </div>
           <p class="text-[12px] text-muted" style="margin-bottom: 0.75rem;">{ex.detail}</p>
-          <div class="bench-realworld-tokens">
+          <div style="margin-bottom: 0.625rem;">
             <code class="text-[12px] font-mono text-muted">{ex.tokens}</code>
           </div>
-          <div class="bench-realworld-bar-track">
-            <div class="bench-realworld-bar-fill" style={`width: ${ex.savings}; background: ${ex.barColor}`}></div>
+          <div style="height: 4px; background: var(--color-surface-2); border-radius: 2px; overflow: hidden;">
+            <div style={`height: 100%; width: ${ex.savings}; background: ${ex.barColor}; border-radius: 2px;`}></div>
           </div>
         </div>
       ))}
@@ -555,192 +540,6 @@ const realWorldExamples = [
 </BaseLayout>
 
 <style>
-  /* ── Before / After ─────────────────────── */
-  .bench-compare {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-    align-items: center;
-  }
-  @media (min-width: 768px) {
-    .bench-compare {
-      grid-template-columns: 1fr auto 1fr;
-      gap: clamp(1rem, 0.75rem + 0.75vw, 2rem);
-    }
-  }
-  .bench-compare-col {
-    min-width: 0;
-  }
-  .bench-compare-highlight {
-    border-color: var(--color-accent) !important;
-    box-shadow: 0 0 30px rgba(52, 211, 153, 0.08);
-  }
-  .bench-compare-badge {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .bench-compare-badge-text {
-    font-family: var(--font-display);
-    font-size: clamp(0.875rem, 0.8rem + 0.2vw, 1.125rem);
-    font-weight: 700;
-    color: var(--color-accent);
-    white-space: nowrap;
-  }
-  .bench-compare-arrow {
-    width: 24px;
-    height: 24px;
-    color: var(--color-accent);
-  }
-  @media (max-width: 767px) {
-    .bench-compare-arrow {
-      transform: rotate(90deg);
-    }
-  }
-
-  /* ── Steps ──────────────────────────────── */
-  .bench-steps {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-  @media (min-width: 768px) {
-    .bench-steps {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-  .bench-step {
-    position: relative;
-    padding: clamp(1.5rem, 1rem + 1vw, 2.5rem);
-    border-top: 1px solid var(--color-border);
-  }
-  @media (min-width: 768px) {
-    .bench-step {
-      border-top: none;
-      border-left: 1px solid var(--color-border);
-    }
-    .bench-step:first-child {
-      border-left: none;
-    }
-  }
-  .bench-step-num {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1.25rem;
-  }
-  .bench-step-line {
-    display: none;
-  }
-
-  /* ── Mode Cards ─────────────────────────── */
-  .bench-modes-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);
-  }
-  @media (min-width: 640px) {
-    .bench-modes-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-  @media (min-width: 1024px) {
-    .bench-modes-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-  .bench-mode-card {
-    padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-  }
-  .bench-mode-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 0.75rem;
-  }
-  .bench-mode-savings {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-  .bench-mode-bar-track {
-    height: 4px;
-    background: var(--color-surface-2);
-    border-radius: 2px;
-    margin-bottom: 0.875rem;
-    overflow: hidden;
-  }
-  .bench-mode-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  /* ── Quality Guard ───────────────────────── */
-  .bench-guard-card {
-    padding: clamp(1.5rem, 1rem + 1vw, 2rem);
-    text-align: left;
-  }
-  .bench-guard-num {
-    font-size: clamp(1.75rem, 1.5rem + 1vw, 2.5rem);
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 1.05;
-    margin: 0 0 0.75rem 0;
-  }
-
-  /* ── Real-World Grid ────────────────────── */
-  .bench-realworld-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);
-  }
-  @media (min-width: 640px) {
-    .bench-realworld-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-  @media (min-width: 1024px) {
-    .bench-realworld-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-  .bench-realworld-card {
-    padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-  }
-  .bench-realworld-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 0.25rem;
-  }
-  .bench-realworld-pct {
-    font-family: var(--font-display);
-    font-size: 1.25rem;
-    font-weight: 700;
-    letter-spacing: -0.03em;
-  }
-  .bench-realworld-tokens {
-    margin-bottom: 0.625rem;
-  }
-  .bench-realworld-bar-track {
-    height: 4px;
-    background: var(--color-surface-2);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .bench-realworld-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-  }
-
-  /* ── CTA Command ────────────────────────── */
   .bench-cta-cmd {
     display: inline-flex;
     align-items: center;
