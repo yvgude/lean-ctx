@@ -16,9 +16,9 @@ const readModes = [
   { mode: 'aggressive', color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 85, savings: t('benchmark.modeAggressiveSavings'), useCase: t('benchmark.modeAggressiveUseCase'), preserves: t('benchmark.modeAggressivePreserves') },
   { mode: 'entropy',    color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 78, savings: t('benchmark.modeEntropySavings'),    useCase: t('benchmark.modeEntropyUseCase'),    preserves: t('benchmark.modeEntropyPreserves') },
   { mode: 'task',       color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 77, savings: t('benchmark.modeTaskSavings'),       useCase: t('benchmark.modeTaskUseCase'),       preserves: t('benchmark.modeTaskPreserves') },
-  { mode: 'auto',       color: 'text-accent-2', barColor: 'var(--color-accent-2)', barPct: 88, savings: '70-99%',  useCase: 'Default — lean-ctx selects the best mode automatically',   preserves: 'Adapts per file: size, recency, task relevance' },
-  { mode: 'reference',  color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 80, savings: '80-95%',  useCase: 'API docs and reference lookup — keeps types and signatures', preserves: 'Public API, types, docstrings' },
-  { mode: 'lines:N-M',  color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 95, savings: '90-99%',  useCase: 'Read specific line range — surgical precision',            preserves: 'Exact lines requested, with context' },
+  { mode: 'auto',       color: 'text-accent-2', barColor: 'var(--color-accent-2)', barPct: 88, savings: t('benchmark.modeAutoSavings'),      useCase: t('benchmark.modeAutoUseCase'),      preserves: t('benchmark.modeAutoPreserves') },
+  { mode: 'reference',  color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 80, savings: t('benchmark.modeReferenceSavings'), useCase: t('benchmark.modeReferenceUseCase'), preserves: t('benchmark.modeReferencePreserves') },
+  { mode: 'lines:N-M',  color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 95, savings: t('benchmark.modeLinesSavings'),     useCase: t('benchmark.modeLinesUseCase'),     preserves: t('benchmark.modeLinesPreserves') },
 ];
 
 const realWorldExamples = [
@@ -57,6 +57,87 @@ const realWorldExamples = [
 
 <div class="section-divider content-grid"></div>
 
+<!-- ═══════ 1b. FUNDAMENTALS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('benchmark.fundLabel')}
+      title={t('benchmark.fundTitle')}
+      highlight={t('benchmark.fundTitleHighlight')}
+      description={t('benchmark.fundDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="56rem"
+    />
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        {
+          icon: 'tokens',
+          title: t('benchmark.fund1Title'),
+          desc: t('benchmark.fund1Desc'),
+          meta: 'tiktoken o200k_base',
+          tone: 'accent',
+        },
+        {
+          icon: 'quality',
+          title: t('benchmark.fund2Title'),
+          desc: t('benchmark.fund2Desc'),
+          meta: t('benchmark.fund2Meta'),
+          tone: 'accent-2',
+        },
+        {
+          icon: 'local',
+          title: t('benchmark.fund3Title'),
+          desc: t('benchmark.fund3Desc'),
+          meta: t('benchmark.fund3Meta'),
+          tone: 'accent-3',
+        },
+      ].map((x, i) => (
+        <div class={`card animate-entrance stagger-${3 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-center gap-3 mb-3">
+            <div
+              class={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                x.tone === 'accent-2'
+                  ? 'bg-accent-2/10'
+                  : x.tone === 'accent-3'
+                    ? 'bg-accent-3/10'
+                    : 'bg-accent/10'
+              }`}
+            >
+              {x.icon === 'tokens' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c4.418 0 8-1.343 8-3s-3.582-3-8-3-8 1.343-8 3 3.582 3 8 3z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 8v4c0 1.657 3.582 3 8 3s8-1.343 8-3V8" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 12v4c0 1.657 3.582 3 8 3s8-1.343 8-3v-4" />
+                </svg>
+              )}
+              {x.icon === 'quality' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4" />
+                </svg>
+              )}
+              {x.icon === 'local' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z" />
+                </svg>
+              )}
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">{x.title}</h3>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.75rem 0;">{x.desc}</p>
+          <code class={`inline-flex items-center font-mono text-[11px] ${x.tone === 'accent-2' ? 'text-accent-2/80' : x.tone === 'accent-3' ? 'text-accent-3/80' : 'text-accent/80'}`}>
+            {x.meta}
+          </code>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
 <!-- ═══════ 2. BEFORE / AFTER ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
@@ -80,15 +161,15 @@ const realWorldExamples = [
             <span class="text-xs text-muted font-mono ml-2">{t('benchmark.beforeTitle')}</span>
           </div>
           <div class="terminal-body px-4 py-4 font-mono text-[11px] leading-[1.7]">
-            <p class="text-muted">// src/auth.ts — full file read</p>
+            <p class="text-muted">// src/auth.ts · mode=full</p>
             <p class="text-text-bright">import {'{'} jwt, verify, sign {'}'} from 'jsonwebtoken';</p>
             <p class="text-text-bright">import {'{'} bcrypt {'}'} from 'bcryptjs';</p>
             <p class="text-text-bright">import {'{'} db {'}'} from '../database/connection';</p>
             <p class="text-text-bright">import {'{'} Redis {'}'} from 'ioredis';</p>
             <p class="text-text-bright">import {'{'} logger {'}'} from '../utils/logger';</p>
-            <p class="text-muted">// ... 117 more lines of imports, JSDoc,</p>
-            <p class="text-muted">// boilerplate, error classes, type guards,</p>
-            <p class="text-muted">// redundant comments, unused exports ...</p>
+            <p class="text-muted">// …</p>
+            <p class="text-muted">// …</p>
+            <p class="text-muted">// …</p>
             <p class="text-border-light/40 mt-2">────────────────────────</p>
             <p class="text-danger font-bold">{t('benchmark.beforeTokens')}</p>
           </div>
@@ -109,7 +190,7 @@ const realWorldExamples = [
             <span class="text-xs text-accent font-mono ml-2">{t('benchmark.afterTitle')}</span>
           </div>
           <div class="terminal-body px-4 py-4 font-mono text-[11px] leading-[1.7]">
-            <p class="text-muted">// src/auth.ts — map mode</p>
+            <p class="text-muted">// src/auth.ts · mode=map</p>
             <p class="text-accent">exports: AuthService, validateToken,</p>
             <p class="text-accent">         refreshSession, revokeToken</p>
             <p class="text-accent">deps: jsonwebtoken, bcryptjs, ioredis</p>
@@ -168,7 +249,7 @@ const realWorldExamples = [
         </div>
         <h3 class="fluid-h3 font-semibold font-display text-text-bright" style="margin-bottom: 0.5rem;">{t('benchmark.step3Title')}</h3>
         <p class="fluid-sm text-muted" style="margin-bottom: 0.75rem;">{t('benchmark.step3Desc')}</p>
-        <code class="block text-[11px] font-mono text-accent-3/70">10 modes compared</code>
+        <code class="block text-[11px] font-mono text-accent-3/70">modes: 10</code>
       </div>
     </div>
   </div>
@@ -278,17 +359,26 @@ const realWorldExamples = [
       descMaxWidth="44rem"
     />
 
-    <div class="bench-pipeline-table animate-entrance stagger-3">
-      <table>
-        <thead><tr><th>{t('benchmark.advStage')}</th><th>{t('benchmark.advEffect')}</th><th>{t('benchmark.advSavings')}</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Thompson Sampling</strong></td><td set:html={t('benchmark.advThompsonEffect')} /><td>5–15%</td></tr>
-          <tr><td><strong>AST Pruning</strong></td><td set:html={t('benchmark.advAstEffect')} /><td>40–70%</td></tr>
-          <tr><td><strong>IDF Dedup</strong></td><td set:html={t('benchmark.advIdfEffect')} /><td>10–30%</td></tr>
-          <tr><td><strong>IB Filter</strong></td><td set:html={t('benchmark.advIbEffect')} /><td>15–25%</td></tr>
-          <tr><td><strong>Verbatim Compaction</strong></td><td set:html={t('benchmark.advVerbatimEffect')} /><td>5–20%</td></tr>
-        </tbody>
-      </table>
+    <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        { title: 'Thompson Sampling', effectHtml: t('benchmark.advThompsonEffect'), savings: '5–15%', tone: 'accent' },
+        { title: 'AST Pruning', effectHtml: t('benchmark.advAstEffect'), savings: '40–70%', tone: 'accent-2' },
+        { title: 'IDF Dedup', effectHtml: t('benchmark.advIdfEffect'), savings: '10–30%', tone: 'accent' },
+        { title: 'IB Filter', effectHtml: t('benchmark.advIbEffect'), savings: '15–25%', tone: 'accent-3' },
+        { title: 'Verbatim Compaction', effectHtml: t('benchmark.advVerbatimEffect'), savings: '5–20%', tone: 'accent-2' },
+      ].map((s, i) => (
+        <div class={`card animate-entrance stagger-${3 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-baseline justify-between gap-4" style="margin-bottom: 0.75rem;">
+            <span class={`fluid-sm font-semibold font-display ${s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`}>
+              {s.title}
+            </span>
+            <span class={`fluid-sm font-mono ${s.tone === 'accent-2' ? 'text-accent-2/80' : s.tone === 'accent-3' ? 'text-accent-3/80' : 'text-accent/80'}`}>
+              {s.savings}
+            </span>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;" set:html={s.effectHtml} />
+        </div>
+      ))}
     </div>
 
     <p class="fluid-sm text-muted mt-6 animate-entrance" set:html={t('benchmark.advCumulative')} />
@@ -310,40 +400,22 @@ const realWorldExamples = [
     />
 
     <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-      <div class="card bench-stat-card animate-entrance">
-        <div class="bench-stat-ring bench-stat-ring-1">
-          <svg viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-border)" stroke-width="8"/>
-            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-accent)" stroke-width="8" stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="6.53" transform="rotate(-90 60 60)"/>
-          </svg>
-          <span class="bench-stat-ring-val font-display">98%</span>
-        </div>
+      <div class="card bench-guard-card animate-entrance">
         <p class="fluid-label text-muted" style="margin-bottom: 0.5rem;">{t('benchmark.stat1Label')}</p>
-        <p class="fluid-sm text-muted">{t('benchmark.stat1Desc')}</p>
+        <div class="bench-guard-num font-display text-accent">95%</div>
+        <p class="fluid-sm text-muted" style="margin: 0;">{t('benchmark.stat1Desc')}</p>
       </div>
 
-      <div class="card bench-stat-card animate-entrance stagger-1">
-        <div class="bench-stat-ring bench-stat-ring-2">
-          <svg viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-border)" stroke-width="8"/>
-            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-accent-2)" stroke-width="8" stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="9.80" transform="rotate(-90 60 60)"/>
-          </svg>
-          <span class="bench-stat-ring-val font-display">97%</span>
-        </div>
+      <div class="card bench-guard-card animate-entrance stagger-1">
         <p class="fluid-label text-muted" style="margin-bottom: 0.5rem;">{t('benchmark.stat2Label')}</p>
-        <p class="fluid-sm text-muted">{t('benchmark.stat2Desc')}</p>
+        <div class="bench-guard-num font-display text-accent-2">15%</div>
+        <p class="fluid-sm text-muted" style="margin: 0;">{t('benchmark.stat2Desc')}</p>
       </div>
 
-      <div class="card bench-stat-card animate-entrance stagger-2">
-        <div class="bench-stat-ring bench-stat-ring-3">
-          <svg viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-border)" stroke-width="8"/>
-            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-accent-3)" stroke-width="8" stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="13.07" transform="rotate(-90 60 60)"/>
-          </svg>
-          <span class="bench-stat-ring-val font-display">96%</span>
-        </div>
+      <div class="card bench-guard-card animate-entrance stagger-2">
         <p class="fluid-label text-muted" style="margin-bottom: 0.5rem;">{t('benchmark.stat3Label')}</p>
-        <p class="fluid-sm text-muted">{t('benchmark.stat3Desc')}</p>
+        <div class="bench-guard-num font-display text-accent-3">50/30/20</div>
+        <p class="fluid-sm text-muted" style="margin: 0;">{t('benchmark.stat3Desc')}</p>
       </div>
     </div>
   </div>
@@ -610,70 +682,17 @@ const realWorldExamples = [
     transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* ── Pipeline Table ───────────────────────── */
-  .bench-pipeline-table {
-    overflow-x: auto;
-  }
-  .bench-pipeline-table table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
-  }
-  .bench-pipeline-table th {
-    text-align: left;
-    padding: 0.75rem 1rem;
-    border-bottom: 2px solid var(--color-border);
-    color: var(--color-text-bright);
-    font-family: var(--font-display);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .bench-pipeline-table td {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-muted);
-    vertical-align: top;
-  }
-  .bench-pipeline-table td:first-child {
-    color: var(--color-text-bright);
-    white-space: nowrap;
-  }
-  .bench-pipeline-table td:last-child {
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-    color: var(--color-accent);
-    white-space: nowrap;
-    font-weight: 600;
-  }
-  .bench-pipeline-table tr:last-child td {
-    border-bottom: none;
-  }
-
-  /* ── Stat Rings ─────────────────────────── */
-  .bench-stat-card {
+  /* ── Quality Guard ───────────────────────── */
+  .bench-guard-card {
     padding: clamp(1.5rem, 1rem + 1vw, 2rem);
-    text-align: center;
+    text-align: left;
   }
-  .bench-stat-ring {
-    position: relative;
-    width: 100px;
-    height: 100px;
-    margin: 0 auto clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-  }
-  .bench-stat-ring svg {
-    width: 100%;
-    height: 100%;
-  }
-  .bench-stat-ring-val {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--color-text-bright);
-    letter-spacing: -0.03em;
+  .bench-guard-num {
+    font-size: clamp(1.75rem, 1.5rem + 1vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.05;
+    margin: 0 0 0.75rem 0;
   }
 
   /* ── Real-World Grid ────────────────────── */

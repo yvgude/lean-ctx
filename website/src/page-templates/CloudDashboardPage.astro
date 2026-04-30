@@ -12,7 +12,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <BaseLayout
   title={t('cloud.metaTitle')}
   description={t('cloud.metaDesc')}
-  breadcrumbs={[{ name: t('cloud.breadcrumb'), url: '/cloud' }]}
+  breadcrumbs={[{ name: t('cloud.breadcrumb'), url: lp('/cloud') }]}
 >
 
 <!-- ═══════ HERO ═══════ -->
@@ -22,7 +22,6 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   highlight={t('cloud.heroTitleHighlight')}
   description={t('cloud.heroDesc')}
   kickerTone="accent"
-  titleVariant="display"
   highlightStyle="italic"
   descMaxWidth="48rem"
 >
@@ -40,6 +39,133 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     </a>
   </Fragment>
 </PageHero>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ WHY CLOUD ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('cloud.whyLabel')}
+      title={t('cloud.whyTitle')}
+      highlight={t('cloud.whyTitleHighlight')}
+      description={t('cloud.whyDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="56rem"
+    />
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-4" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        { icon: 'sync', title: t('cloud.why1Title'), desc: t('cloud.why1Desc'), tone: 'accent' },
+        { icon: 'insights', title: t('cloud.why2Title'), desc: t('cloud.why2Desc'), tone: 'accent-2' },
+        { icon: 'learn', title: t('cloud.why3Title'), desc: t('cloud.why3Desc'), tone: 'accent-3' },
+        { icon: 'shield', title: t('cloud.why4Title'), desc: t('cloud.why4Desc'), tone: 'accent' },
+      ].map((x, i) => (
+        <div class={`card animate-entrance stagger-${3 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-center gap-3 mb-3">
+            <div
+              class={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                x.tone === 'accent-2'
+                  ? 'bg-accent-2/10'
+                  : x.tone === 'accent-3'
+                    ? 'bg-accent-3/10'
+                    : 'bg-accent/10'
+              }`}
+            >
+              {x.icon === 'sync' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6M5 19a9 9 0 0014-7M19 5a9 9 0 00-14 7" />
+                </svg>
+              )}
+              {x.icon === 'insights' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 14l3-3 3 3 6-6" />
+                </svg>
+              )}
+              {x.icon === 'learn' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6l-8 4 8 4 8-4-8-4z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 10v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6" />
+                </svg>
+              )}
+              {x.icon === 'shield' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4" />
+                </svg>
+              )}
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">{x.title}</h3>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">{x.desc}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ WHAT GETS SYNCED ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-[1fr_1.1fr] items-start" style="gap: clamp(2rem, 1.5rem + 2vw, 3.5rem);">
+      <div>
+        <SectionHeading
+          label={t('cloud.syncLabel')}
+          title={t('cloud.syncTitle')}
+          highlight={t('cloud.syncTitleHighlight')}
+          description={t('cloud.syncDesc')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1.25rem, 1rem + 1vw, 2rem)"
+        />
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          {[
+            { title: t('cloud.sync1Title'), desc: t('cloud.sync1Desc'), tone: 'text-accent' },
+            { title: t('cloud.sync2Title'), desc: t('cloud.sync2Desc'), tone: 'text-accent-2' },
+            { title: t('cloud.sync3Title'), desc: t('cloud.sync3Desc'), tone: 'text-accent-3' },
+            { title: t('cloud.sync4Title'), desc: t('cloud.sync4Desc'), tone: 'text-accent' },
+            { title: t('cloud.sync5Title'), desc: t('cloud.sync5Desc'), tone: 'text-accent-2' },
+            { title: t('cloud.sync6Title'), desc: t('cloud.sync6Desc'), tone: 'text-accent-3' },
+          ].map((x, i) => (
+            <div class={`card animate-entrance stagger-${3 + i}`} style="padding: 1rem 1.25rem;">
+              <p class={`fluid-sm font-semibold ${x.tone}`} style="margin: 0 0 0.25rem 0;">{x.title}</p>
+              <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">{x.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="card animate-entrance stagger-4" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <p class="fluid-label text-muted" style="margin: 0 0 0.75rem 0;">{t('cloud.syncPayloadLabel')}</p>
+        <div class="font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem); line-height: 1.8;">
+          <div class="text-text-bright" style="margin-bottom: 0.5rem;">{t('cloud.syncPayloadTitle')}</div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">stats_daily</span> {'{'} date, tokens_saved, cache_hits, tool_calls {'}'}
+          </div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">command_stats</span> {'{'} command, count, tokens_saved {'}'}
+          </div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">cep_scores</span> {'{'} score, cache_hit_rate, compression_rate {'}'}
+          </div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">knowledge_entries</span> {'{'} category, key, value {'}'}
+          </div>
+          <div class="text-muted">
+            <span class="text-text-bright">gotchas</span>, <span class="text-text-bright">buddy_state</span>, <span class="text-text-bright">feedback_thresholds</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <div class="section-divider content-grid"></div>
 
@@ -101,25 +227,25 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       description={t('cloud.featDesc')}
       variant="full"
       breakHighlight={false}
-      descMaxWidth="48rem"
+      descMaxWidth="56rem"
     />
 
     {[
       { icon: 'stats', title: t('cloud.feat1Title'), desc: t('cloud.feat1Desc'), detail: t('cloud.feat1Detail'), color: 'accent' },
-      { icon: 'learn', title: t('cloud.feat2Title'), desc: t('cloud.feat2Desc'), detail: t('cloud.feat2Detail'), color: 'blue' },
-      { icon: 'spark', title: t('cloud.feat3Title'), desc: t('cloud.feat3Desc'), detail: t('cloud.feat3Detail'), color: 'purple' },
-      { icon: 'bulb', title: t('cloud.feat4Title'), desc: t('cloud.feat4Desc'), detail: t('cloud.feat4Detail'), color: 'accent' },
-      { icon: 'people', title: t('cloud.feat5Title'), desc: t('cloud.feat5Desc'), detail: t('cloud.feat5Detail'), color: 'blue' },
-      { icon: 'trophy', title: t('cloud.feat6Title'), desc: t('cloud.feat6Desc'), detail: t('cloud.feat6Detail'), color: 'purple' },
+      { icon: 'terminal', title: t('cloud.feat2Title'), desc: t('cloud.feat2Desc'), detail: t('cloud.feat2Detail'), color: 'blue' },
+      { icon: 'gauge', title: t('cloud.feat3Title'), desc: t('cloud.feat3Desc'), detail: t('cloud.feat3Detail'), color: 'purple' },
+      { icon: 'brain', title: t('cloud.feat4Title'), desc: t('cloud.feat4Desc'), detail: t('cloud.feat4Detail'), color: 'accent' },
+      { icon: 'shield', title: t('cloud.feat5Title'), desc: t('cloud.feat5Desc'), detail: t('cloud.feat5Detail'), color: 'blue' },
+      { icon: 'spark', title: t('cloud.feat6Title'), desc: t('cloud.feat6Desc'), detail: t('cloud.feat6Detail'), color: 'purple' },
     ].map((f, i) => (
       <div class={`cloud-feature animate-entrance stagger-${3 + i}`}>
         <div class={`cloud-feature-icon ${f.color === 'blue' ? 'cloud-feature-icon--blue' : f.color === 'purple' ? 'cloud-feature-icon--purple' : ''}`}>
           {f.icon === 'stats' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>}
-          {f.icon === 'learn' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.636 50.636 0 00-2.658-.813A59.906 59.906 0 0112 3.493a59.903 59.903 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/></svg>}
+          {f.icon === 'terminal' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16v12H4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M7 9l2 2-2 2"/><path stroke-linecap="round" stroke-linejoin="round" d="M11 13h4"/></svg>}
+          {f.icon === 'gauge' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 00-9 9 8.97 8.97 0 001.5 5h15A8.97 8.97 0 0021 12a9 9 0 00-9-9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 12l3-3"/></svg>}
+          {f.icon === 'brain' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7a3 3 0 016 0v1a3 3 0 010 6v3a2 2 0 01-2 2h-2a2 2 0 01-2-2v-3a3 3 0 010-6V7z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 10h.01M15 10h.01"/></svg>}
           {f.icon === 'spark' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>}
-          {f.icon === 'bulb' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg>}
-          {f.icon === 'people' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>}
-          {f.icon === 'trophy' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-4.5A3.375 3.375 0 0012.75 10.5h-.75V6.75A2.25 2.25 0 009.75 4.5h-.75a2.25 2.25 0 00-2.25 2.25v3.75h-.75A3.375 3.375 0 002.625 14.25v4.5m13.875 0h1.5m-1.5 0h-9m0 0h-1.5"/></svg>}
+          {f.icon === 'shield' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4z"/></svg>}
         </div>
         <div class="cloud-feature-body">
           <h3 class="font-display fluid-h3 font-semibold text-text-bright">{f.title}</h3>
