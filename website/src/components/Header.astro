@@ -729,6 +729,7 @@ const docsColumns = [
   }
 
   function applyTheme(theme: string) {
+    document.documentElement.classList.add('theme-transition');
     if (typeof (window as any).__leanctxSetTheme === 'function') {
       (window as any).__leanctxSetTheme(theme);
     } else {
@@ -737,6 +738,7 @@ const docsColumns = [
       try { localStorage.setItem('leanctx-theme', theme); } catch (_) {}
     }
     window.dispatchEvent(new CustomEvent('leanctx-theme-change', { detail: { theme } }));
+    setTimeout(() => document.documentElement.classList.remove('theme-transition'), 350);
   }
 
   function bindThemeToggles() {
