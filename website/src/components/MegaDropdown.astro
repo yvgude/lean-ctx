@@ -108,7 +108,7 @@ const { id, label, columns } = Astro.props;
     border: 1px solid var(--color-border);
     border-radius: clamp(10px, 0.8vw, 14px);
     padding: 8px;
-    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-elevated);
   }
 
   .mega-dd-col {
@@ -151,7 +151,7 @@ const { id, label, columns } = Astro.props;
     transition: background 0.15s ease;
   }
   .mega-dd-item:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--overlay-hover);
   }
 
   .mega-dd-icon {
@@ -161,7 +161,7 @@ const { id, label, columns } = Astro.props;
     width: 28px;
     height: 28px;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--overlay-light);
     border: 1px solid var(--color-border);
     color: var(--color-accent);
     flex-shrink: 0;

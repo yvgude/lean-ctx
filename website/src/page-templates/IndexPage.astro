@@ -1,6 +1,8 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
+import StackExplorer from '../components/StackExplorer.astro';
+import ProofArtifacts from '../components/ProofArtifacts.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 import '../styles/index.css';
@@ -397,6 +399,29 @@ const tShell = pickTool('ctx_shell', 2);
 
 
 <!-- ═══════════════════════════════════════════════════════
+     STACK (Deterministic runtime)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.stackLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem; max-width: 60rem;">
+      {t('index.stackTitle')} <span class="italic-accent">{t('index.stackTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 56rem;">
+      {t('index.stackDesc')}
+    </p>
+
+    <div class="animate-entrance stagger-3">
+      <StackExplorer />
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════════════════════════════════════════════════════
      CONTEXT AS CODE
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
@@ -524,6 +549,25 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 <!-- ═══════════════════════════════════════════════════════
      TESTIMONIALS
      ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('artifacts.label')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem; max-width: 58rem;">
+      {t('artifacts.title')} <span class="italic-accent">{t('artifacts.titleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 56rem;">
+      {t('artifacts.desc')}
+    </p>
+    <div class="animate-entrance stagger-3">
+      <ProofArtifacts />
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
 <section class="section-y">
   <div class="content-grid">
     <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">

@@ -52,16 +52,16 @@
   --color-surface-elevated: #ffffff;
   --color-border: #d5d8e0;
   --color-border-light: #c5cfde;
-  --color-text: #4a4d5e;
+  --color-text: #3a3d4e;
   --color-text-bright: #111827;
-  --color-muted: #6b7280;
-  --color-accent: #059669;
-  --color-accent-bright: #10b981;
-  --color-accent-2: #6366f1;
-  --color-accent-2-bright: #818cf8;
-  --color-accent-3: #a855f7;
-  --color-danger: #ef4444;
-  --color-warning: #f59e0b;
+  --color-muted: #5f6775;
+  --color-accent: #047857;
+  --color-accent-bright: #059669;
+  --color-accent-2: #4f46e5;
+  --color-accent-2-bright: #6366f1;
+  --color-accent-3: #7c3aed;
+  --color-danger: #dc2626;
+  --color-warning: #d97706;
   --theme-color-meta: #f7f8fb;
 
   --overlay-heavy: rgba(0, 0, 0, 0.06);
@@ -72,8 +72,8 @@
   --overlay-panel: rgba(0, 0, 0, 0.03);
   --overlay-hover: rgba(0, 0, 0, 0.04);
   --overlay-faint: rgba(0, 0, 0, 0.02);
-  --overlay-accent-green: rgba(5, 150, 105, 0.06);
-  --overlay-accent-red: rgba(239, 68, 68, 0.06);
+  --overlay-accent-green: rgba(4, 120, 87, 0.08);
+  --overlay-accent-red: rgba(220, 38, 38, 0.08);
   --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.08);
   --shadow-elevated: 0 18px 60px rgba(0, 0, 0, 0.1);
   --shadow-hero: 0 24px 80px rgba(0, 0, 0, 0.12);
@@ -93,9 +93,9 @@
     --color-surface-elevated: #0d0d14;
     --color-border: #1a1a24;
     --color-border-light: #2a2a38;
-    --color-text: #a8a8be;
+    --color-text: #b0b0c4;
     --color-text-bright: #eeeef5;
-    --color-muted: #5e5e78;
+    --color-muted: #8585a0;
     --color-accent: #34d399;
     --color-accent-bright: #6ee7b7;
     --color-accent-2: #818cf8;
@@ -104,6 +104,24 @@
     --color-danger: #f87171;
     --color-warning: #fbbf24;
     --theme-color-meta: #050507;
+
+    --overlay-heavy: rgba(255, 255, 255, 0.06);
+    --overlay-medium: rgba(255, 255, 255, 0.04);
+    --overlay-light: rgba(255, 255, 255, 0.03);
+    --overlay-subtle: rgba(255, 255, 255, 0.02);
+    --overlay-glass: rgba(10, 10, 15, 0.7);
+    --overlay-panel: rgba(255, 255, 255, 0.03);
+    --overlay-hover: rgba(255, 255, 255, 0.04);
+    --overlay-faint: rgba(255, 255, 255, 0.02);
+    --overlay-accent-green: rgba(52, 211, 153, 0.08);
+    --overlay-accent-red: rgba(248, 113, 113, 0.08);
+    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-elevated: 0 18px 60px rgba(0, 0, 0, 0.5);
+    --shadow-hero: 0 24px 80px rgba(0, 0, 0, 0.6);
+    --grid-line: rgba(255, 255, 255, 0.03);
+    --noise-dot: rgba(255, 255, 255, 0.04);
+    --hero-gradient-start: rgba(5, 5, 7, 0.65);
+    --hero-gradient-mid: rgba(5, 5, 7, 0.35);
   }
 }
 
@@ -116,9 +134,9 @@
   --color-surface-elevated: #0d0d14;
   --color-border: #1a1a24;
   --color-border-light: #2a2a38;
-  --color-text: #a8a8be;
+  --color-text: #b0b0c4;
   --color-text-bright: #eeeef5;
-  --color-muted: #5e5e78;
+  --color-muted: #8585a0;
   --color-accent: #34d399;
   --color-accent-bright: #6ee7b7;
   --color-accent-2: #818cf8;
@@ -127,6 +145,24 @@
   --color-danger: #f87171;
   --color-warning: #fbbf24;
   --theme-color-meta: #050507;
+
+  --overlay-heavy: rgba(255, 255, 255, 0.06);
+  --overlay-medium: rgba(255, 255, 255, 0.04);
+  --overlay-light: rgba(255, 255, 255, 0.03);
+  --overlay-subtle: rgba(255, 255, 255, 0.02);
+  --overlay-glass: rgba(10, 10, 15, 0.7);
+  --overlay-panel: rgba(255, 255, 255, 0.03);
+  --overlay-hover: rgba(255, 255, 255, 0.04);
+  --overlay-faint: rgba(255, 255, 255, 0.02);
+  --overlay-accent-green: rgba(52, 211, 153, 0.08);
+  --overlay-accent-red: rgba(248, 113, 113, 0.08);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 18px 60px rgba(0, 0, 0, 0.5);
+  --shadow-hero: 0 24px 80px rgba(0, 0, 0, 0.6);
+  --grid-line: rgba(255, 255, 255, 0.03);
+  --noise-dot: rgba(255, 255, 255, 0.04);
+  --hero-gradient-start: rgba(5, 5, 7, 0.65);
+  --hero-gradient-mid: rgba(5, 5, 7, 0.35);
 }
 
 /* ── Base ─────────────────────────────────────────────── */
@@ -554,7 +590,7 @@ pre code {
   color: var(--color-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: rgba(52, 211, 153, 0.3);
+  text-decoration-color: var(--overlay-accent-green);
 }
 .docs-prose a:hover {
   text-decoration-color: var(--color-accent);
@@ -629,11 +665,11 @@ pre code {
 .docs-prose td {
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(30, 30, 40, 0.5);
+  border-bottom: 1px solid var(--color-border);
   padding-inline: 0.5rem;
 }
 .docs-prose table tr:hover td {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--overlay-faint);
 }
 .docs-prose table td:first-child,
 .docs-prose table th:first-child {
@@ -711,7 +747,7 @@ pre code {
   height: 36px;
   border-radius: 8px;
   border: 1px solid var(--color-border);
-  background: rgba(6, 6, 11, 0.7);
+  background: var(--overlay-glass);
   backdrop-filter: blur(8px);
   color: var(--color-muted);
   opacity: 1;

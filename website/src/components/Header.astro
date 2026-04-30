@@ -118,6 +118,7 @@ const docsColumns = [
       { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8l4 4-4 4"/><line x1="13" y1="16" x2="17" y2="16"/></svg>' },
       { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' },
       { label: t('nav.docs.verification'), href: lp('/docs/verification'), description: t('nav.docs.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
+      { label: t('nav.docs.replayability'), href: lp('/docs/replayability'), description: t('nav.docs.replayabilityDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 10-3.4 7.1"/><path d="M21 12v-7"/><path d="M21 5h-7"/></svg>' },
     ],
   },
   {
@@ -156,6 +157,9 @@ const docsColumns = [
       <div class="header-center">
         <MegaDropdown id="product" label={t('nav.product')} columns={productColumns} />
         <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
+        <a href={lp('/trust')} class:list={['header-nav-item', currentPath.includes('/trust') ? 'is-active' : '']}>
+          {t('nav.trust')}
+        </a>
         <a href={lp('/benchmark')} class:list={['header-nav-item', currentPath.includes('/benchmark') ? 'is-active' : '']}>
           {t('nav.product.benchmark')}
         </a>
@@ -290,7 +294,7 @@ const docsColumns = [
     border-bottom: 1px solid transparent;
   }
   .header-root[data-scrolled="true"] {
-    background: rgba(5, 5, 7, 0.92);
+    background: color-mix(in srgb, var(--color-bg) 92%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-bottom-color: var(--color-border);
@@ -375,7 +379,7 @@ const docsColumns = [
   .header-search-btn:hover {
     border-color: var(--color-border-light);
     color: var(--color-text-bright);
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--overlay-hover);
   }
   .header-search-label { font-size: 0.8125rem; }
   .header-search-kbd {
@@ -384,7 +388,7 @@ const docsColumns = [
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
     border: 1px solid var(--color-border);
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--overlay-faint);
     color: var(--color-muted);
     margin-inline-start: 0.25rem;
     line-height: 1;
@@ -430,7 +434,7 @@ const docsColumns = [
   }
   .header-github-cta:hover {
     border-color: var(--color-border-light);
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--overlay-hover);
   }
   .header-gh-icon { width: 16px; height: 16px; }
   .header-gh-label { font-weight: 600; }
@@ -494,7 +498,7 @@ const docsColumns = [
   .mobile-menu-closed { display: none; }
   .mobile-menu-open {
     display: block;
-    background: rgba(5, 5, 7, 0.98);
+    background: color-mix(in srgb, var(--color-bg) 98%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--color-border);
@@ -540,7 +544,7 @@ const docsColumns = [
     text-decoration: none;
     min-height: 44px;
   }
-  .mobile-nav-link:hover { color: var(--color-text-bright); background: rgba(255, 255, 255, 0.02); }
+  .mobile-nav-link:hover { color: var(--color-text-bright); background: var(--overlay-hover); }
   .mobile-lang-area {
     padding: 0.25rem 0.5rem;
   }
