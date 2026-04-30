@@ -54,7 +54,7 @@ deploy_website:
       echo "Verifying dist asset references..."
       test -d dist
       test -d dist/_astro
-      rg -o "/_astro/[^\\\"']+\\.(css|js)" dist -g "*.html" | sort -u > /tmp/astro-assets.txt
+      rg --no-filename -o "/_astro/[^\\\"']+\\.(css|js)" dist -g "*.html" | sort -u > /tmp/astro-assets.txt
       while read -r ref; do
         test -f "dist${ref}" || { echo "ERROR: missing dist${ref}"; exit 1; }
       done < /tmp/astro-assets.txt
