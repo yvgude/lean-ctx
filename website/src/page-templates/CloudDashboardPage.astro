@@ -146,7 +146,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       descMaxWidth="48rem"
     />
 
-    <div class="grid md:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1px, 0.1vw, 1px);">
+    <div class="compare-grid animate-entrance stagger-3">
       <div class="compare-card">
         <div class="compare-header compare-header--good">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -247,12 +247,6 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   .cloud-feature-icon--blue { background: rgba(96, 165, 250, 0.08); color: #60a5fa; }
   .cloud-feature-icon--purple { background: rgba(168, 85, 247, 0.08); color: #a855f7; }
   .cloud-feature-body { flex: 1; min-width: 0; }
-  .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
-  .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
-  .compare-header--good { background: rgba(52, 211, 153, 0.04); color: var(--color-accent); }
-  .compare-header--bad { background: rgba(248, 113, 113, 0.04); color: var(--color-danger); }
-  .compare-body { padding: 1.25rem; background: var(--color-surface); }
-  .compare-line { padding: 0.3rem 0; }
 </style>
 
 </BaseLayout>
