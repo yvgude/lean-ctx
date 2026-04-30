@@ -123,6 +123,15 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
     }
   })();
   </script>
+  <script is:inline>
+    (function() {
+      try {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        if (!('IntersectionObserver' in window)) return;
+        document.documentElement.classList.add('reveal-entrance');
+      } catch (_) {}
+    })();
+  </script>
   <meta name="application-name" content="LeanCTX" />
   {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
   {noindex && <meta name="robots" content="noindex, nofollow" />}
@@ -221,7 +230,11 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   </div>
 
   <script is:inline>
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    (function() {
+      var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced) return;
+      if (!('IntersectionObserver' in window)) return;
+
       var io = new IntersectionObserver(function(entries) {
         entries.forEach(function(e) {
           if (e.isIntersecting) {
@@ -230,10 +243,30 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
           }
         });
       }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
-      document.querySelectorAll('.animate-entrance').forEach(function(el) {
-        io.observe(el);
-      });
-    }
+
+      var els = Array.prototype.slice.call(document.querySelectorAll('.animate-entrance'));
+      els.forEach(function(el) { io.observe(el); });
+
+      function revealInViewport() {
+        var vh = window.innerHeight || 0;
+        els.forEach(function(el) {
+          if (el.classList.contains('is-visible')) return;
+          var r = el.getBoundingClientRect();
+          if (r.top < vh * 0.9) {
+            el.classList.add('is-visible');
+            io.unobserve(el);
+          }
+        });
+      }
+
+      requestAnimationFrame(revealInViewport);
+
+      setTimeout(function() {
+        els.forEach(function(el) {
+          if (!el.classList.contains('is-visible')) el.classList.add('is-visible');
+        });
+      }, 1500);
+    })();
     (function() {
       var si = document.getElementById('scroll-indicator');
       if (!si) return;
