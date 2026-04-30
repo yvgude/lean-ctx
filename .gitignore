@@ -1,6 +1,8 @@
 target/
 node_modules/
 dist/
+!website/dist/
+!website/dist/**
 *.tsbuildinfo
 .env
 deploy.sh
