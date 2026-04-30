@@ -11,7 +11,7 @@
 <h3 align="center">The context layer for AI coding agents</h3>
 
 <p align="center">
-  <strong>Reduce token waste in Cursor, Claude Code & Copilot by 60–95%</strong><br/>
+  <strong>Reduce token waste in Cursor, Claude Code, Copilot, Windsurf, Codex, Gemini & more by 60–95% (up to 99% on cached reads)</strong><br/>
   Shell Hook + MCP Server · 49 tools · 10 read modes · 90+ patterns · Single Rust binary
 </p>
 
@@ -79,6 +79,17 @@
 - **File reads (MCP)**: cached + mode-aware reads (`full`, `map`, `signatures`, `diff`, …)
 - **Shell output (hook)**: compresses noisy CLI output via 90+ patterns (git, npm, cargo, docker, …)
 - **Session memory (CCP)**: persist task/facts/decisions across chats for faster cold starts
+- **HTTP mode**: `lean-ctx serve` for Streamable HTTP MCP + `/v1/tools/call` (used by the Cookbook + SDK)
+
+## How it works (30 seconds)
+
+```
+AI tool  →  (MCP tools + shell commands)  →  lean-ctx  →  your repo + CLI
+```
+
+- **MCP server**: exposes `ctx_*` tools (read modes, caching, deltas, search, memory, multi-agent)
+- **Shell hook**: transparently compresses common commands so the LLM sees less noise
+- **CCP**: persists session state so long-running work doesn’t “cold start” every chat
 
 ## Get started (60 seconds)
 
@@ -89,12 +100,72 @@ brew tap yvgude/lean-ctx && brew install lean-ctx    # macOS / Linux
 npm install -g lean-ctx-bin                          # Node.js
 cargo install lean-ctx                               # Rust
 
-# 2) Setup (shell + auto-detected editors)
+# 2) Setup (shell + auto-detected AI tools)
 lean-ctx setup
 
 # 3) Verify
 lean-ctx doctor
+
+# 4) See the payoff
+lean-ctx gain --live
+lean-ctx wrapped --week
 ```
+
+After `setup`, restart your shell and your editor/AI tool once so the MCP + hooks are active.
+
+<details>
+<summary><strong>Troubleshooting / Safety</strong></summary>
+
+- Disable immediately (current shell): `lean-ctx-off`
+- Run a single command uncompressed: `lean-ctx -c --raw "git status"`
+- Update: `lean-ctx update`
+- Diagnose (shareable): `lean-ctx doctor --json`
+
+</details>
+
+## Supported IDEs & AI tools
+
+lean-ctx is a standard **MCP server**, so it works with any MCP-compatible client.
+
+For first-class integration, run:
+
+```bash
+lean-ctx init --agent <tool>
+```
+
+Supported `<tool>` values (24):
+
+<details>
+<summary><strong>Show full list</strong></summary>
+
+- Cursor (`cursor`)
+- Claude Code (`claude`)
+- GitHub Copilot (`copilot`)
+- Windsurf (`windsurf`)
+- Codex CLI (`codex`)
+- Gemini CLI (`gemini`)
+- Cline (`cline`)
+- Roo Code (`roo`)
+- OpenCode (`opencode`)
+- Crush (`crush`)
+- Amazon Q Developer (`amazonq`)
+- AWS Kiro (`kiro`)
+- Antigravity (`antigravity`)
+- Hermes (`hermes`)
+- Qwen (`qwen`)
+- Trae (`trae`)
+- Verdent (`verdent`)
+- Pi (`pi`)
+- Aider (`aider`)
+- Amp (`amp`)
+- JetBrains IDEs (`jetbrains`)
+- Emacs (`emacs`)
+- Neovim (`neovim`)
+- Sublime Text (`sublime`)
+
+</details>
+
+Also supported via MCP config (auto-detected in `setup`): **VS Code** and **Zed**.
 
 ### When to use (and when not to)
 
