@@ -21,7 +21,7 @@ const sidebar = [
     title: t('docs.gettingStarted.sidebarAdvanced'),
     items: [
       { label: t('docs.gettingStarted.sidebarMonitor'), href: lp('/docs/getting-started#monitor') },
-      { label: t('docs.gettingStarted.sidebarMultiAgent'), href: lp('/docs/getting-started#lctx') },
+      { label: t('docs.gettingStarted.sidebarAgentHooks'), href: lp('/docs/getting-started#agent-hooks') },
       { label: t('docs.gettingStarted.sidebarUpdating'), href: lp('/docs/getting-started#update') },
       { label: t('docs.gettingStarted.sidebarUninstalling'), href: lp('/docs/getting-started#uninstall') },
       { label: t('docs.gettingStarted.sidebarAgentRules'), href: lp('/docs/getting-started#agent-rules') },
@@ -1073,30 +1073,18 @@ lean-ctx discover
 # Run a real benchmark on your project
 lean-ctx benchmark run</code></pre>
 
-  <h2 id="lctx">{t('docs.gettingStarted.lctxTitle')}</h2>
-  <p set:html={t('docs.gettingStarted.lctxDesc')} />
-  <pre><code># Auto-detect and launch
-lctx
+  <h2 id="agent-hooks">{t('docs.gettingStarted.hooksTitle')}</h2>
+  <p>{t('docs.gettingStarted.hooksDesc')}</p>
+  <pre><code># Configure MCP for a specific editor
+lean-ctx init --agent cursor
+lean-ctx init --agent claude
+lean-ctx init --agent codex
 
-# Launch a specific agent
-lctx cursor
-lctx claude
-lctx codex
-lctx gemini
+# Run diagnostics and auto-fix issues
+lean-ctx doctor --fix
 
-# List supported agents
-lctx --list</code></pre>
-  <p>{t('docs.gettingStarted.lctxSupported')}</p>
-  <ul>
-    <li set:html={t('docs.gettingStarted.lctxItem1')} />
-    <li set:html={t('docs.gettingStarted.lctxItem2')} />
-    <li>{t('docs.gettingStarted.lctxItem3')}</li>
-  </ul>
-  <p>{t('docs.gettingStarted.lctxInstall')}</p>
-  <pre><code># Copy to your PATH
-sudo cp bin/lctx /usr/local/bin/
-# Or symlink
-sudo ln -sf $(pwd)/bin/lctx /usr/local/bin/lctx</code></pre>
+# Check current status (MCP, shell, editors)
+lean-ctx status --json</code></pre>
 
   <h2 id="update">{t('docs.gettingStarted.updateTitle')}</h2>
   <p>{t('docs.gettingStarted.updatingDesc')}</p>
