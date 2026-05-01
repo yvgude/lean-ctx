@@ -259,7 +259,7 @@ async function execLeanCtx(pi: ExtensionAPI, args: string[]) {
   return result.stdout;
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
   const baseBashTool = createBashToolDefinition(process.cwd(), {
     spawnHook: ({ command, cwd, env }) => {
       const bin = resolveBinary();
@@ -493,9 +493,11 @@ export default function (pi: ExtensionAPI) {
   const mcpBridge = new McpBridge(resolveBinary());
 
   if (!isMcpAdapterConfigured()) {
-    mcpBridge.start(pi).catch((err) => {
+    try {
+      await mcpBridge.start(pi);
+    } catch (err) {
       console.error(`[pi-lean-ctx] MCP bridge startup failed: ${err}`);
-    });
+    }
   }
 
   pi.registerCommand("lean-ctx", {
