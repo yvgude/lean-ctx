@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
 import StackExplorer from '../components/StackExplorer.astro';
 import ProofArtifacts from '../components/ProofArtifacts.astro';
+import PowerFeatures from '../components/PowerFeatures.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 import '../styles/index.css';
@@ -509,6 +510,12 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 
 
 
+
+<!-- ═══════════════════════════════════════════════════════
+     POWER FEATURES (Graph Explorer, Team Server)
+     ═══════════════════════════════════════════════════════ -->
+<div class="section-divider content-grid"></div>
+<PowerFeatures />
 
 <!-- ═══════════════════════════════════════════════════════
      COMPATIBILITY

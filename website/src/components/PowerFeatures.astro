@@ -87,6 +87,59 @@ const features = [
     },
     link: '/docs/getting-started',
   },
+  {
+    eyebrow: t('power.graphExplorerEyebrow'),
+    title: t('power.graphExplorerTitle'),
+    description: t('power.graphExplorerDesc'),
+    badge: 'Since v3.4.6',
+    actions: [
+      { cmd: 'graph export-html --out graph.html', desc: t('power.graphExplorerExport') },
+      { cmd: '--max-nodes 100', desc: t('power.graphExplorerMaxNodes') },
+      { cmd: 'Export PNG button', desc: t('power.graphExplorerPng') },
+    ],
+    terminal: {
+      title: '$ lean-ctx graph export-html --out graph.html',
+      lines: [
+        { text: '/Users/you/project/graph.html', style: 'accent' },
+        { text: '', style: 'muted' },
+        { text: '  ● 142 nodes, 203 edges', style: 'muted' },
+        { text: '  ● Pan / Zoom / Search', style: 'muted' },
+        { text: '  ● Click node → imports & dependents', style: 'muted' },
+        { text: '  ● Right-click → highlight reverse deps', style: 'accent' },
+        { text: '  ● Export PNG → download canvas', style: 'accent' },
+        { text: '', style: 'muted' },
+        { text: 'Self-contained HTML — works offline ✓', style: 'bright' },
+      ],
+    },
+    link: '/docs/tools#ctx_graph',
+  },
+  {
+    eyebrow: t('power.teamServerEyebrow'),
+    title: t('power.teamServerTitle'),
+    description: t('power.teamServerDesc'),
+    badge: 'Since v3.4.6',
+    actions: [
+      { cmd: 'team serve --config team.json', desc: t('power.teamServerServe') },
+      { cmd: 'team token create --scopes search,graph', desc: t('power.teamServerToken') },
+      { cmd: 'team sync --workspace dev', desc: t('power.teamServerSync') },
+      { cmd: 'GET /health', desc: t('power.teamServerHealth') },
+    ],
+    terminal: {
+      title: '$ lean-ctx team serve --config team.json',
+      lines: [
+        { text: 'Team Server — 127.0.0.1:9877', style: 'bright' },
+        { text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', style: 'dim' },
+        { text: 'Workspaces: 2 (frontend, backend)', style: 'muted' },
+        { text: 'Tokens:     3 active', style: 'muted' },
+        { text: `Tools:      ${mcpToolCount} available`, style: 'muted' },
+        { text: '', style: 'muted' },
+        { text: 'Auth:       Bearer token (SHA-256)', style: 'accent' },
+        { text: 'Rate limit: 100 req/s, burst 200', style: 'accent' },
+        { text: 'Audit log:  /var/log/lean-ctx/audit.log', style: 'accent' },
+      ],
+    },
+    link: '/docs/getting-started',
+  },
 ];
 ---
 
