@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
-use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +27,28 @@ pub enum ChunkKind {
     Other,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IndexedFileState {
+    pub mtime_ms: u64,
+    pub size_bytes: u64,
+}
+
+impl IndexedFileState {
+    fn from_path(path: &Path) -> Option<Self> {
+        let meta = path.metadata().ok()?;
+        let size_bytes = meta.len();
+        let mtime_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)?;
+        Some(Self {
+            mtime_ms,
+            size_bytes,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BM25Index {
     pub chunks: Vec<CodeChunk>,
@@ -34,6 +56,8 @@ pub struct BM25Index {
     pub avg_doc_len: f64,
     pub doc_count: usize,
     pub doc_freqs: HashMap<String, usize>,
+    #[serde(default)]
+    pub files: HashMap<String, IndexedFileState>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,40 +89,85 @@ impl BM25Index {
             avg_doc_len: 0.0,
             doc_count: 0,
             doc_freqs: HashMap::new(),
+            files: HashMap::new(),
         }
     }
 
     pub fn build_from_directory(root: &Path) -> Self {
         let mut index = Self::new();
-        let walker = ignore::WalkBuilder::new(root)
-            .hidden(true)
-            .git_ignore(true)
-            .max_depth(Some(10))
-            .build();
-
-        let mut file_count = 0usize;
-        for entry in walker.flatten() {
-            if file_count >= 2000 {
-                break;
-            }
-            let path = entry.path();
-            if !path.is_file() {
+        let files = list_code_files(root);
+        for rel in files {
+            let abs = root.join(&rel);
+            let Some(state) = IndexedFileState::from_path(&abs) else {
                 continue;
-            }
-            if !is_code_file(path) {
-                continue;
-            }
-            if let Ok(content) = std::fs::read_to_string(path) {
-                let rel = path
-                    .strip_prefix(root)
-                    .unwrap_or(path)
-                    .to_string_lossy()
-                    .to_string();
-                let chunks = extract_chunks(&rel, &content);
+            };
+            if let Ok(content) = std::fs::read_to_string(&abs) {
+                let mut chunks = extract_chunks(&rel, &content);
+                chunks.sort_by(|a, b| {
+                    a.start_line
+                        .cmp(&b.start_line)
+                        .then_with(|| a.end_line.cmp(&b.end_line))
+                        .then_with(|| a.symbol_name.cmp(&b.symbol_name))
+                });
                 for chunk in chunks {
                     index.add_chunk(chunk);
                 }
-                file_count += 1;
+                index.files.insert(rel, state);
+            }
+        }
+
+        index.finalize();
+        index
+    }
+
+    pub fn rebuild_incremental(root: &Path, prev: &BM25Index) -> Self {
+        let mut old_by_file: HashMap<String, Vec<CodeChunk>> = HashMap::new();
+        for c in &prev.chunks {
+            old_by_file
+                .entry(c.file_path.clone())
+                .or_default()
+                .push(c.clone());
+        }
+        for v in old_by_file.values_mut() {
+            v.sort_by(|a, b| {
+                a.start_line
+                    .cmp(&b.start_line)
+                    .then_with(|| a.end_line.cmp(&b.end_line))
+                    .then_with(|| a.symbol_name.cmp(&b.symbol_name))
+            });
+        }
+
+        let mut index = Self::new();
+        let files = list_code_files(root);
+        for rel in files {
+            let abs = root.join(&rel);
+            let Some(state) = IndexedFileState::from_path(&abs) else {
+                continue;
+            };
+
+            let unchanged = prev.files.get(&rel).is_some_and(|old| *old == state);
+            if unchanged {
+                if let Some(chunks) = old_by_file.get(&rel) {
+                    for chunk in chunks {
+                        index.add_chunk(chunk.clone());
+                    }
+                    index.files.insert(rel, state);
+                    continue;
+                }
+            }
+
+            if let Ok(content) = std::fs::read_to_string(&abs) {
+                let mut chunks = extract_chunks(&rel, &content);
+                chunks.sort_by(|a, b| {
+                    a.start_line
+                        .cmp(&b.start_line)
+                        .then_with(|| a.end_line.cmp(&b.end_line))
+                        .then_with(|| a.symbol_name.cmp(&b.symbol_name))
+                });
+                for chunk in chunks {
+                    index.add_chunk(chunk);
+                }
+                index.files.insert(rel, state);
             }
         }
 
@@ -199,7 +268,10 @@ impl BM25Index {
         let dir = index_dir(root);
         std::fs::create_dir_all(&dir)?;
         let data = serde_json::to_string(self).map_err(std::io::Error::other)?;
-        std::fs::write(dir.join("bm25_index.json"), data)?;
+        let target = dir.join("bm25_index.json");
+        let tmp = dir.join("bm25_index.json.tmp");
+        std::fs::write(&tmp, data)?;
+        std::fs::rename(&tmp, &target)?;
         Ok(())
     }
 
@@ -218,6 +290,13 @@ impl BM25Index {
                 "[vector_index: stale index detected for {}; rebuilding]",
                 root.display()
             );
+            let rebuilt = if idx.files.is_empty() {
+                Self::build_from_directory(root)
+            } else {
+                Self::rebuild_incremental(root, &idx)
+            };
+            let _ = rebuilt.save(root);
+            return rebuilt;
         }
 
         let built = Self::build_from_directory(root);
@@ -235,16 +314,41 @@ fn vector_index_looks_stale(index: &BM25Index, root: &Path) -> bool {
         return false;
     }
 
-    let mut seen = std::collections::HashSet::<&str>::new();
-    for chunk in &index.chunks {
-        let rel = chunk.file_path.trim_start_matches(['/', '\\']);
-        if rel.is_empty() {
-            continue;
+    if index.files.is_empty() {
+        // Legacy index (pre file-state tracking): only detect missing files.
+        let mut seen = std::collections::HashSet::<&str>::new();
+        for chunk in &index.chunks {
+            let rel = chunk.file_path.trim_start_matches(['/', '\\']);
+            if rel.is_empty() {
+                continue;
+            }
+            if !seen.insert(rel) {
+                continue;
+            }
+            if !root.join(rel).exists() {
+                return true;
+            }
         }
-        if !seen.insert(rel) {
-            continue;
+        return false;
+    }
+
+    // Missing or modified tracked files.
+    for (rel, old_state) in &index.files {
+        let abs = root.join(rel);
+        if !abs.exists() {
+            return true;
         }
-        if !root.join(rel).exists() {
+        let Some(cur) = IndexedFileState::from_path(&abs) else {
+            return true;
+        };
+        if &cur != old_state {
+            return true;
+        }
+    }
+
+    // New files (present on disk but not in index).
+    for rel in list_code_files(root) {
+        if !index.files.contains_key(&rel) {
             return true;
         }
     }
@@ -253,19 +357,50 @@ fn vector_index_looks_stale(index: &BM25Index, root: &Path) -> bool {
 }
 
 fn index_dir(root: &Path) -> PathBuf {
-    let mut hasher = Md5::new();
-    hasher.update(root.to_string_lossy().as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
-    crate::core::data_dir::lean_ctx_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("vectors")
-        .join(hash)
+    crate::core::index_namespace::vectors_dir(root)
 }
 
-pub(crate) fn is_code_file(path: &Path) -> bool {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+fn list_code_files(root: &Path) -> Vec<String> {
+    let walker = ignore::WalkBuilder::new(root)
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .build();
+
+    let mut files: Vec<String> = Vec::new();
+    for entry in walker.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if !is_code_file(path) {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string();
+        if rel.is_empty() {
+            continue;
+        }
+        files.push(rel);
+    }
+
+    files.sort();
+    files.dedup();
+    files
+}
+
+pub fn is_code_file(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     matches!(
-        ext,
+        ext.as_str(),
         "rs" | "ts"
             | "tsx"
             | "js"
@@ -274,6 +409,7 @@ pub(crate) fn is_code_file(path: &Path) -> bool {
             | "go"
             | "java"
             | "c"
+            | "cc"
             | "cpp"
             | "h"
             | "hpp"
@@ -283,6 +419,7 @@ pub(crate) fn is_code_file(path: &Path) -> bool {
             | "swift"
             | "php"
             | "scala"
+            | "sql"
             | "ex"
             | "exs"
             | "zig"
@@ -566,6 +703,9 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     #[test]
     fn tokenize_splits_code() {
         let tokens = tokenize("fn calculate_total(items: Vec<Item>) -> f64");
@@ -631,5 +771,47 @@ mod tests {
 
         std::fs::remove_file(root.join("a.rs")).expect("remove a.rs");
         assert!(vector_index_looks_stale(&idx, root));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn bm25_incremental_rebuild_reuses_unchanged_files_without_reading() {
+        let td = tempdir().expect("tempdir");
+        let root = td.path();
+
+        std::fs::write(root.join("a.rs"), "pub fn a() { println!(\"A\"); }\n").expect("write a.rs");
+        std::fs::write(root.join("b.rs"), "pub fn b() { println!(\"B\"); }\n").expect("write b.rs");
+
+        let idx1 = BM25Index::build_from_directory(root);
+        assert!(idx1.files.contains_key("a.rs"));
+        assert!(idx1.files.contains_key("b.rs"));
+
+        // Make a.rs unreadable. Incremental rebuild must keep it indexed by reusing prior chunks.
+        let a_path = root.join("a.rs");
+        let mut perms = std::fs::metadata(&a_path).expect("meta a.rs").permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&a_path, perms).expect("chmod a.rs");
+
+        // Change b.rs (size changes) to force a re-read for that file.
+        std::fs::write(root.join("b.rs"), "pub fn b() { println!(\"B2\"); }\n")
+            .expect("rewrite b.rs");
+
+        let idx2 = BM25Index::rebuild_incremental(root, &idx1);
+        assert!(
+            idx2.files.contains_key("a.rs"),
+            "a.rs should be kept via reuse"
+        );
+        assert!(idx2.files.contains_key("b.rs"));
+
+        let b_has_b2 = idx2
+            .chunks
+            .iter()
+            .any(|c| c.file_path == "b.rs" && c.content.contains("B2"));
+        assert!(b_has_b2, "b.rs should be re-read and re-chunked");
+
+        // Restore permissions to avoid cleanup surprises.
+        let mut perms = std::fs::metadata(&a_path).expect("meta a.rs").permissions();
+        perms.set_mode(0o644);
+        let _ = std::fs::set_permissions(&a_path, perms);
     }
 }

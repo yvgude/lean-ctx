@@ -1,17 +1,12 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::OnceLock;
-use std::time::SystemTime;
 
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
-use crate::core::hybrid_search::{
-    format_hybrid_results, DenseSearchResult, HybridConfig, HybridResult,
-};
+use crate::core::hybrid_search::{format_hybrid_results, HybridConfig, HybridResult};
 use crate::core::vector_index::{format_search_results, BM25Index};
-#[cfg(feature = "embeddings")]
-use crate::core::{embeddings::cosine_similarity, hybrid_search::hybrid_search};
 use crate::tools::CrpMode;
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
@@ -23,6 +18,8 @@ pub fn handle(
     languages: Option<&[String]>,
     path_glob: Option<&str>,
     mode: Option<&str>,
+    workspace: Option<bool>,
+    artifacts: Option<bool>,
 ) -> String {
     let root = Path::new(path);
     if !root.exists() {
@@ -35,11 +32,6 @@ pub fn handle(
         root
     };
 
-    let index = load_or_refresh_bm25(root);
-    if index.doc_count == 0 {
-        return "No code files found to index.".to_string();
-    }
-
     let filter = match SearchFilter::new(languages, path_glob) {
         Ok(f) => f,
         Err(e) => return format!("ERR: invalid filter: {e}"),
@@ -47,6 +39,20 @@ pub fn handle(
 
     let compact = crp_mode.is_tdd();
     let mode = mode.unwrap_or("hybrid").to_lowercase();
+    let workspace = workspace.unwrap_or(false);
+    let artifacts = artifacts.unwrap_or(false);
+
+    if artifacts {
+        return artifacts_search(query, root, top_k, compact, &filter, workspace);
+    }
+    if workspace {
+        return workspace_search(query, root, top_k, compact, &filter, &mode);
+    }
+
+    let index = load_or_refresh_bm25(root);
+    if index.doc_count == 0 {
+        return "No code files found to index.".to_string();
+    }
 
     match mode.as_str() {
         "bm25" => {
@@ -90,71 +96,64 @@ pub fn handle_reindex(path: &str) -> String {
     };
 
     let idx = BM25Index::build_from_directory(root);
-    let count = idx.doc_count;
-    let chunks = idx.chunks.len();
+    let files = idx.files.len();
+    let chunks = idx.doc_count;
     let _ = idx.save(root);
 
-    format!("Reindexed {path}: {count} files, {chunks} chunks")
+    format!("Reindexed {path}: {files} files, {chunks} chunks")
+}
+
+pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
+    let root = Path::new(path);
+    if !root.exists() {
+        return format!("ERR: path does not exist: {path}");
+    }
+    let root = if root.is_file() {
+        root.parent().unwrap_or(root)
+    } else {
+        root
+    };
+
+    let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+    let mut warnings: Vec<String> = Vec::new();
+
+    if workspace {
+        let linked = crate::core::workspace_config::load_linked_projects(root);
+        warnings.extend(linked.warnings);
+        roots.extend(linked.roots);
+    }
+
+    let mut total_files = 0usize;
+    let mut total_chunks = 0usize;
+    for r in roots {
+        let (idx, w) = crate::core::artifact_index::rebuild_from_scratch(&r);
+        warnings.extend(w);
+        total_files += idx.files.len();
+        total_chunks += idx.doc_count;
+    }
+
+    if warnings.is_empty() {
+        format!("Reindexed artifacts: {total_files} files, {total_chunks} chunks")
+    } else {
+        format!(
+            "Reindexed artifacts: {total_files} files, {total_chunks} chunks ({} warning(s))",
+            warnings.len()
+        )
+    }
 }
 
 fn truncate_query(q: &str, max: usize) -> &str {
     if q.len() <= max {
-        q
-    } else {
-        &q[..max]
+        return q;
+    }
+    match q.char_indices().nth(max) {
+        Some((byte_idx, _)) => &q[..byte_idx],
+        None => q,
     }
 }
 
 fn load_or_refresh_bm25(root: &Path) -> BM25Index {
-    let loaded = BM25Index::load(root);
-    let stale = loaded.as_ref().is_some_and(|idx| idx.doc_count > 0) && index_is_stale(root);
-    if let Some(idx) = loaded {
-        if !stale && idx.doc_count > 0 {
-            return idx;
-        }
-    }
-
-    let idx = BM25Index::build_from_directory(root);
-    let _ = idx.save(root);
-    idx
-}
-
-fn index_is_stale(root: &Path) -> bool {
-    let index_path = BM25Index::index_file_path(root);
-    let Ok(index_mtime) = std::fs::metadata(&index_path).and_then(|m| m.modified()) else {
-        return true;
-    };
-
-    let mut newest: Option<SystemTime> = None;
-    let walker = ignore::WalkBuilder::new(root)
-        .hidden(true)
-        .git_ignore(true)
-        .max_depth(Some(10))
-        .build();
-
-    let mut file_count = 0usize;
-    for entry in walker.flatten() {
-        if file_count >= 2000 {
-            break;
-        }
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if !crate::core::vector_index::is_code_file(path) {
-            continue;
-        }
-        file_count += 1;
-        let Ok(mtime) = path.metadata().and_then(|m| m.modified()) else {
-            continue;
-        };
-        newest = Some(match newest {
-            Some(cur) if cur > mtime => cur,
-            _ => mtime,
-        });
-    }
-
-    newest.is_some_and(|t| t > index_mtime)
+    BM25Index::load_or_build(root)
 }
 
 fn filtered_candidate_k(top_k: usize, filtered: bool) -> usize {
@@ -163,6 +162,435 @@ fn filtered_candidate_k(top_k: usize, filtered: bool) -> usize {
     }
     let candidates = (top_k.max(10)).saturating_mul(10);
     candidates.clamp(50, 500)
+}
+
+const WORKSPACE_RRF_K: f64 = 60.0;
+
+fn artifacts_search(
+    query: &str,
+    root: &Path,
+    top_k: usize,
+    compact: bool,
+    filter: &SearchFilter,
+    workspace: bool,
+) -> String {
+    let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+    let mut warnings: Vec<String> = Vec::new();
+
+    if workspace {
+        let linked = crate::core::workspace_config::load_linked_projects(root);
+        warnings.extend(linked.warnings);
+        roots.extend(linked.roots);
+    }
+    roots.sort();
+    roots.dedup();
+
+    let mut per_project: Vec<(String, Vec<crate::core::vector_index::SearchResult>)> = Vec::new();
+    let mut total_chunks = 0usize;
+
+    for r in &roots {
+        let label = label_for_root(r);
+        let (idx, w) = crate::core::artifact_index::load_or_build(r);
+        warnings.extend(w);
+        total_chunks += idx.doc_count;
+        if idx.doc_count == 0 {
+            continue;
+        }
+
+        let mut results = idx.search(query, filtered_candidate_k(top_k, filter.is_active()));
+        if filter.is_active() {
+            results.retain(|x| filter.matches(&x.file_path));
+        }
+        results.truncate(top_k);
+
+        for res in &mut results {
+            res.file_path = if workspace {
+                format!("[project:{label}] [artifact] {}", res.file_path)
+            } else {
+                format!("[artifact] {}", res.file_path)
+            };
+        }
+
+        per_project.push((label, results));
+    }
+
+    let mut fused: Vec<crate::core::vector_index::SearchResult> = if per_project.len() <= 1 {
+        per_project
+            .into_iter()
+            .next()
+            .map(|(_, v)| v)
+            .unwrap_or_default()
+    } else {
+        rrf_merge_bm25(per_project, top_k)
+    };
+
+    if fused.is_empty() {
+        return "No artifact files found to index.".to_string();
+    }
+
+    fused.truncate(top_k);
+
+    let header = if compact {
+        if workspace {
+            format!(
+                "semantic_search(artifacts,workspace,{top_k}) → {} results, projects={}, {} chunks indexed\n",
+                fused.len(),
+                roots.len(),
+                total_chunks
+            )
+        } else {
+            format!(
+                "semantic_search(artifacts,{top_k}) → {} results, {} chunks indexed\n",
+                fused.len(),
+                total_chunks
+            )
+        }
+    } else if workspace {
+        format!(
+            "Semantic search (Artifacts/Workspace): \"{}\" ({} results from {} projects)\n",
+            truncate_query(query, 60),
+            fused.len(),
+            roots.len()
+        )
+    } else {
+        format!(
+            "Semantic search (Artifacts): \"{}\" ({} results)\n",
+            truncate_query(query, 60),
+            fused.len()
+        )
+    };
+
+    let mut out = format!("{header}{}", format_search_results(&fused, compact));
+    if !warnings.is_empty() && !compact {
+        out.push_str(&format!("\nWarnings ({}):\n", warnings.len()));
+        for w in warnings.iter().take(20) {
+            out.push_str(&format!("- {w}\n"));
+        }
+    }
+    out
+}
+
+fn workspace_search(
+    query: &str,
+    root: &Path,
+    top_k: usize,
+    compact: bool,
+    filter: &SearchFilter,
+    mode: &str,
+) -> String {
+    let linked = crate::core::workspace_config::load_linked_projects(root);
+    let mut warnings = linked.warnings;
+
+    let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+    roots.extend(linked.roots);
+    roots.sort();
+    roots.dedup();
+
+    let mut per_project: Vec<(String, Vec<HybridResult>)> = Vec::new();
+    let mut avg_cov: Option<f64> = None;
+    let mut cov_count = 0usize;
+
+    for r in &roots {
+        let label = label_for_root(r);
+        let index = BM25Index::load_or_build(r);
+        if index.doc_count == 0 {
+            continue;
+        }
+
+        let mut results: Vec<HybridResult> = match mode {
+            "bm25" => {
+                let mut bm25 = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+                if filter.is_active() {
+                    bm25.retain(|x| filter.matches(&x.file_path));
+                }
+                bm25.truncate(top_k);
+                bm25.into_iter()
+                    .map(HybridResult::from_bm25_public)
+                    .collect()
+            }
+            "dense" => {
+                #[cfg(feature = "embeddings")]
+                {
+                    match dense_results_for_root(query, r, &index, top_k, filter) {
+                        Ok((v, cov)) => {
+                            avg_cov = Some(avg_cov.unwrap_or(0.0) + cov);
+                            cov_count += 1;
+                            v
+                        }
+                        Err(e) => {
+                            warnings.push(format!("[{label}] dense search failed: {e}"));
+                            let mut bm25 = index
+                                .search(query, filtered_candidate_k(top_k, filter.is_active()));
+                            if filter.is_active() {
+                                bm25.retain(|x| filter.matches(&x.file_path));
+                            }
+                            bm25.truncate(top_k);
+                            bm25.into_iter()
+                                .map(HybridResult::from_bm25_public)
+                                .collect()
+                        }
+                    }
+                }
+                #[cfg(not(feature = "embeddings"))]
+                {
+                    let _ = (&label, &warnings);
+                    let mut bm25 =
+                        index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+                    if filter.is_active() {
+                        bm25.retain(|x| filter.matches(&x.file_path));
+                    }
+                    bm25.truncate(top_k);
+                    bm25.into_iter()
+                        .map(HybridResult::from_bm25_public)
+                        .collect()
+                }
+            }
+            _ => {
+                #[cfg(feature = "embeddings")]
+                {
+                    match hybrid_results_for_root(query, r, &index, top_k, filter) {
+                        Ok((v, cov)) => {
+                            avg_cov = Some(avg_cov.unwrap_or(0.0) + cov);
+                            cov_count += 1;
+                            v
+                        }
+                        Err(e) => {
+                            warnings.push(format!("[{label}] hybrid search failed: {e}"));
+                            let mut bm25 = index
+                                .search(query, filtered_candidate_k(top_k, filter.is_active()));
+                            if filter.is_active() {
+                                bm25.retain(|x| filter.matches(&x.file_path));
+                            }
+                            bm25.truncate(top_k);
+                            bm25.into_iter()
+                                .map(HybridResult::from_bm25_public)
+                                .collect()
+                        }
+                    }
+                }
+                #[cfg(not(feature = "embeddings"))]
+                {
+                    let _ = (&label, &warnings);
+                    let mut bm25 =
+                        index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+                    if filter.is_active() {
+                        bm25.retain(|x| filter.matches(&x.file_path));
+                    }
+                    bm25.truncate(top_k);
+                    bm25.into_iter()
+                        .map(HybridResult::from_bm25_public)
+                        .collect()
+                }
+            }
+        };
+
+        for res in &mut results {
+            res.file_path = format!("[project:{label}] {}", res.file_path);
+        }
+        per_project.push((label, results));
+    }
+
+    let mut fused: Vec<HybridResult> = if per_project.len() <= 1 {
+        per_project
+            .into_iter()
+            .next()
+            .map(|(_, v)| v)
+            .unwrap_or_default()
+    } else {
+        rrf_merge_hybrid(per_project, top_k)
+    };
+
+    if fused.is_empty() {
+        return "No code files found to index.".to_string();
+    }
+
+    fused.truncate(top_k);
+    let cov = avg_cov.and_then(|s| {
+        if cov_count == 0 {
+            None
+        } else {
+            Some(s / cov_count as f64)
+        }
+    });
+
+    let header = if compact {
+        match (mode, cov) {
+            (_, Some(c)) => format!(
+                "semantic_search(workspace,{mode},{top_k}) → {} results, projects={}, embed_cov={:.0}%\n",
+                fused.len(),
+                roots.len(),
+                c * 100.0
+            ),
+            _ => format!(
+                "semantic_search(workspace,{mode},{top_k}) → {} results, projects={}\n",
+                fused.len(),
+                roots.len()
+            ),
+        }
+    } else {
+        format!(
+            "Workspace semantic search ({mode}): \"{}\" ({} results from {} projects)\n",
+            truncate_query(query, 60),
+            fused.len(),
+            roots.len()
+        )
+    };
+
+    let mut out = format!("{header}{}", format_hybrid_results(&fused, compact));
+    if !warnings.is_empty() && !compact {
+        out.push_str(&format!("\nWarnings ({}):\n", warnings.len()));
+        for w in warnings.iter().take(20) {
+            out.push_str(&format!("- {w}\n"));
+        }
+    }
+    out
+}
+
+fn rrf_merge_hybrid(lists: Vec<(String, Vec<HybridResult>)>, top_k: usize) -> Vec<HybridResult> {
+    use std::collections::HashMap;
+
+    let mut acc: HashMap<String, (HybridResult, f64)> = HashMap::new();
+    for (label, results) in lists {
+        for (rank, r) in results.into_iter().enumerate() {
+            let key = format!(
+                "{label}|{}|{}|{}|{}",
+                r.file_path, r.symbol_name, r.start_line, r.end_line
+            );
+            let rrf = 1.0 / (WORKSPACE_RRF_K + (rank as f64) + 1.0);
+            acc.entry(key)
+                .and_modify(|(_, s)| *s += rrf)
+                .or_insert((r, rrf));
+        }
+    }
+
+    let mut out: Vec<HybridResult> = acc
+        .into_values()
+        .map(|(mut r, s)| {
+            r.rrf_score = s;
+            r
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.rrf_score
+            .partial_cmp(&a.rrf_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out.truncate(top_k);
+    out
+}
+
+fn rrf_merge_bm25(
+    lists: Vec<(String, Vec<crate::core::vector_index::SearchResult>)>,
+    top_k: usize,
+) -> Vec<crate::core::vector_index::SearchResult> {
+    use std::collections::HashMap;
+
+    let mut acc: HashMap<String, (crate::core::vector_index::SearchResult, f64)> = HashMap::new();
+    for (label, results) in lists {
+        for (rank, r) in results.into_iter().enumerate() {
+            let key = format!(
+                "{label}|{}|{}|{}|{}",
+                r.file_path, r.symbol_name, r.start_line, r.end_line
+            );
+            let rrf = 1.0 / (WORKSPACE_RRF_K + (rank as f64) + 1.0);
+            acc.entry(key)
+                .and_modify(|(_, s)| *s += rrf)
+                .or_insert((r, rrf));
+        }
+    }
+
+    let mut out: Vec<crate::core::vector_index::SearchResult> = acc
+        .into_values()
+        .map(|(mut r, s)| {
+            r.score = s;
+            r
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out.truncate(top_k);
+    out
+}
+
+#[cfg(feature = "embeddings")]
+fn dense_results_for_root(
+    query: &str,
+    root: &Path,
+    index: &BM25Index,
+    top_k: usize,
+    filter: &SearchFilter,
+) -> Result<(Vec<HybridResult>, f64), String> {
+    let (engine, mut embed_idx) = load_engine_and_index(root)?;
+    let (aligned, coverage, changed_files) =
+        ensure_embeddings(root, index, engine, &mut embed_idx)?;
+
+    let backend = crate::core::dense_backend::DenseBackendKind::try_from_env()?;
+    let filter_fn = |p: &str| filter.matches(p);
+    let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
+        .is_active()
+        .then_some(&filter_fn as &dyn Fn(&str) -> bool);
+
+    let candidate_k = filtered_candidate_k(top_k, filter.is_active());
+    let mut results = crate::core::dense_backend::dense_results_as_hybrid(
+        backend,
+        root,
+        index,
+        engine,
+        &aligned,
+        &changed_files,
+        query,
+        candidate_k,
+        filter_pred,
+    )?;
+    results.truncate(top_k);
+
+    Ok((results, coverage))
+}
+
+#[cfg(feature = "embeddings")]
+fn hybrid_results_for_root(
+    query: &str,
+    root: &Path,
+    index: &BM25Index,
+    top_k: usize,
+    filter: &SearchFilter,
+) -> Result<(Vec<HybridResult>, f64), String> {
+    let (engine, mut embed_idx) = load_engine_and_index(root)?;
+    let (aligned, coverage, changed_files) =
+        ensure_embeddings(root, index, engine, &mut embed_idx)?;
+
+    let backend = crate::core::dense_backend::DenseBackendKind::try_from_env()?;
+    let cfg = HybridConfig::default();
+    let filter_fn = |p: &str| filter.matches(p);
+    let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
+        .is_active()
+        .then_some(&filter_fn as &dyn Fn(&str) -> bool);
+    let candidate_k = filtered_candidate_k(top_k, filter.is_active());
+    let mut results = crate::core::dense_backend::hybrid_results(
+        backend,
+        root,
+        index,
+        engine,
+        &aligned,
+        &changed_files,
+        query,
+        candidate_k,
+        &cfg,
+        filter_pred,
+    )?;
+    results.truncate(top_k);
+    Ok((results, coverage))
+}
+
+fn label_for_root(root: &Path) -> String {
+    root.file_name()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| root.to_string_lossy().to_string())
 }
 
 fn hybrid_search_mode(
@@ -180,16 +608,37 @@ fn hybrid_search_mode(
             Err(e) => return format!("ERR: {e}"),
         };
 
-        let (aligned, coverage) = match ensure_embeddings(root, index, engine, &mut embed_idx) {
+        let (aligned, coverage, changed_files) =
+            match ensure_embeddings(root, index, engine, &mut embed_idx) {
+                Ok(v) => v,
+                Err(e) => return format!("ERR: {e}"),
+            };
+
+        let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
             Ok(v) => v,
             Err(e) => return format!("ERR: {e}"),
         };
 
         let cfg = HybridConfig::default();
-        let mut results = hybrid_search(query, index, Some(engine), Some(&aligned), top_k, &cfg);
-        if filter.is_active() {
-            results.retain(|r| filter.matches(&r.file_path));
-        }
+        let filter_fn = |p: &str| filter.matches(p);
+        let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
+            .is_active()
+            .then_some(&filter_fn as &dyn Fn(&str) -> bool);
+        let mut results = match crate::core::dense_backend::hybrid_results(
+            backend,
+            root,
+            index,
+            engine,
+            &aligned,
+            &changed_files,
+            query,
+            top_k,
+            &cfg,
+            filter_pred,
+        ) {
+            Ok(v) => v,
+            Err(e) => return format!("ERR: {e}"),
+        };
         results.truncate(top_k);
 
         let header = if compact {
@@ -251,64 +700,38 @@ fn dense_search_mode(
             Err(e) => return format!("ERR: {e}"),
         };
 
-        let (aligned, coverage) = match ensure_embeddings(root, index, engine, &mut embed_idx) {
+        let (aligned, coverage, changed_files) =
+            match ensure_embeddings(root, index, engine, &mut embed_idx) {
+                Ok(v) => v,
+                Err(e) => return format!("ERR: {e}"),
+            };
+
+        let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
             Ok(v) => v,
             Err(e) => return format!("ERR: {e}"),
         };
 
-        let query_embedding = match engine.embed(query) {
+        let filter_fn = |p: &str| filter.matches(p);
+        let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
+            .is_active()
+            .then_some(&filter_fn as &dyn Fn(&str) -> bool);
+
+        let candidate_k = filtered_candidate_k(top_k, filter.is_active());
+        let mut results = match crate::core::dense_backend::dense_results_as_hybrid(
+            backend,
+            root,
+            index,
+            engine,
+            &aligned,
+            &changed_files,
+            query,
+            candidate_k,
+            filter_pred,
+        ) {
             Ok(v) => v,
-            Err(e) => return format!("ERR: embedding failed: {e}"),
+            Err(e) => return format!("ERR: {e}"),
         };
-
-        let mut scored: Vec<(usize, f32)> = aligned
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| {
-                if !filter.is_active() {
-                    return true;
-                }
-                index
-                    .chunks
-                    .get(*i)
-                    .is_some_and(|c| filter.matches(&c.file_path))
-            })
-            .map(|(i, emb)| (i, cosine_similarity(&query_embedding, emb)))
-            .collect();
-
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored.truncate(top_k);
-
-        let results: Vec<HybridResult> = scored
-            .into_iter()
-            .filter_map(|(idx, sim)| {
-                let chunk = index.chunks.get(idx)?;
-                let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
-                let dense = DenseSearchResult {
-                    chunk_idx: idx,
-                    similarity: sim,
-                    file_path: chunk.file_path.clone(),
-                    symbol_name: chunk.symbol_name.clone(),
-                    kind: chunk.kind.clone(),
-                    start_line: chunk.start_line,
-                    end_line: chunk.end_line,
-                    snippet,
-                };
-                Some(HybridResult {
-                    file_path: dense.file_path,
-                    symbol_name: dense.symbol_name,
-                    kind: dense.kind,
-                    start_line: dense.start_line,
-                    end_line: dense.end_line,
-                    snippet: dense.snippet,
-                    rrf_score: dense.similarity as f64,
-                    bm25_score: None,
-                    dense_score: Some(dense.similarity),
-                    bm25_rank: None,
-                    dense_rank: None,
-                })
-            })
-            .collect();
+        results.truncate(top_k);
 
         let header = if compact {
             format!(
@@ -359,14 +782,16 @@ fn ensure_embeddings(
     index: &BM25Index,
     engine: &EmbeddingEngine,
     embed_idx: &mut EmbeddingIndex,
-) -> Result<(Vec<Vec<f32>>, f64), String> {
-    let mut changed = embed_idx.files_needing_update(&index.chunks);
-    changed.sort();
-    changed.dedup();
+) -> Result<(Vec<Vec<f32>>, f64, Vec<String>), String> {
+    let mut changed_files = embed_idx.files_needing_update(&index.chunks);
+    changed_files.sort();
+    changed_files.dedup();
 
-    if !changed.is_empty() {
-        let changed_set: std::collections::HashSet<&str> =
-            changed.iter().map(std::string::String::as_str).collect();
+    if !changed_files.is_empty() {
+        let changed_set: std::collections::HashSet<&str> = changed_files
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let mut new_embeddings: Vec<(usize, Vec<f32>)> = Vec::new();
         for (i, c) in index.chunks.iter().enumerate() {
             if !changed_set.contains(c.file_path.as_str()) {
@@ -377,7 +802,7 @@ fn ensure_embeddings(
                 .map_err(|e| format!("embed failed for {}: {e}", c.file_path))?;
             new_embeddings.push((i, emb));
         }
-        embed_idx.update(&index.chunks, &new_embeddings, &changed);
+        embed_idx.update(&index.chunks, &new_embeddings, &changed_files);
         embed_idx
             .save(root)
             .map_err(|e| format!("save embeddings failed: {e}"))?;
@@ -385,7 +810,7 @@ fn ensure_embeddings(
 
     if let Some(aligned) = embed_idx.get_aligned_embeddings(&index.chunks) {
         let coverage = embed_idx.coverage(index.chunks.len());
-        return Ok((aligned, coverage));
+        return Ok((aligned, coverage, changed_files));
     }
 
     // Alignment missing: rebuild everything once.
@@ -410,7 +835,7 @@ fn ensure_embeddings(
         .get_aligned_embeddings(&index.chunks)
         .ok_or_else(|| "embedding alignment failed after full rebuild".to_string())?;
     let coverage = embed_idx.coverage(index.chunks.len());
-    Ok((aligned, coverage))
+    Ok((aligned, coverage, all_files))
 }
 
 struct SearchFilter {
