@@ -4037,5 +4037,9 @@
   "nav.docs.guides.editorIntegrations": "Editor-Integrationen",
   "nav.docs.guides.editorIntegrationsDesc": "21 unterstützte AI-Editoren",
   "nav.docs.guides.observatory": "Observatory",
-  "nav.docs.guides.observatoryDesc": "Lokales Dashboard + 20+ REST APIs"
+  "nav.docs.guides.observatoryDesc": "Lokales Dashboard + 20+ REST APIs",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "Selbstgehosteter MCP-Server für Teams",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "Interaktiver HTML-Abhängigkeitsgraph"
 }

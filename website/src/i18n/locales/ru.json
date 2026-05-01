@@ -4037,5 +4037,9 @@
   "cloud.sync6Title": "Buddy + пороги feedback",
   "cloud.sync6Desc": "Состояние buddy и пороги настройки feedback, чтобы поведение было одинаковым на разных устройствах.",
   "cloud.syncPayloadLabel": "Sync payload (в общих чертах)",
-  "cloud.syncPayloadTitle": "Типы данных"
+  "cloud.syncPayloadTitle": "Типы данных",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "Самостоятельно размещаемый MCP-сервер для команд",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "Интерактивный HTML-граф зависимостей"
 }

@@ -4037,5 +4037,9 @@
   "cloud.sync6Title": "Buddy + フィードバック閾値",
   "cloud.sync6Desc": "Buddy 状態とフィードバック調整の閾値を同期し、挙動を一致させます。",
   "cloud.syncPayloadLabel": "同期ペイロード（概要）",
-  "cloud.syncPayloadTitle": "データ種別"
+  "cloud.syncPayloadTitle": "データ種別",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "チーム向けセルフホスト MCP サーバー",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "インタラクティブ HTML 依存関係グラフ"
 }

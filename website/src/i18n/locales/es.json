@@ -4037,5 +4037,9 @@
   "cloud.sync6Title": "Buddy + umbrales de feedback",
   "cloud.sync6Desc": "Estado de Buddy y umbrales de ajuste de feedback para mantener el comportamiento consistente.",
   "cloud.syncPayloadLabel": "Payload de sync (alto nivel)",
-  "cloud.syncPayloadTitle": "Tipos de datos"
+  "cloud.syncPayloadTitle": "Tipos de datos",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "Servidor MCP autoalojado para equipos",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "Grafo de dependencias HTML interactivo"
 }

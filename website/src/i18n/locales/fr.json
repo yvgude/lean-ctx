@@ -4037,5 +4037,9 @@
   "cloud.sync6Title": "Buddy + seuils feedback",
   "cloud.sync6Desc": "État Buddy et seuils d’ajustement du feedback pour garder un comportement cohérent entre appareils.",
   "cloud.syncPayloadLabel": "Payload de sync (vue d’ensemble)",
-  "cloud.syncPayloadTitle": "Types de données"
+  "cloud.syncPayloadTitle": "Types de données",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "Serveur MCP auto-hébergé pour les équipes",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "Graphe de dépendances HTML interactif"
 }

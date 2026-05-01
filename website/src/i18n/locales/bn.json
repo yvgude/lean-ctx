@@ -4037,5 +4037,9 @@
   "cloud.sync6Title": "Buddy + feedback thresholds",
   "cloud.sync6Desc": "Buddy state এবং feedback tuning thresholds যাতে devices জুড়ে behavior consistent থাকে।",
   "cloud.syncPayloadLabel": "Sync payload (high level)",
-  "cloud.syncPayloadTitle": "Data types"
+  "cloud.syncPayloadTitle": "Data types",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "টিমের জন্য সেল্ফ-হোস্টেড MCP সার্ভার",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "ইন্টারেক্টিভ HTML ডিপেন্ডেন্সি গ্রাফ"
 }

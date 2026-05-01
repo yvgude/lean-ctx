@@ -4037,5 +4037,9 @@
   "cloud.sync6Title": "Buddy + 反馈阈值",
   "cloud.sync6Desc": "Buddy 状态与反馈调优阈值，保持跨设备行为一致。",
   "cloud.syncPayloadLabel": "同步载荷（概览）",
-  "cloud.syncPayloadTitle": "数据类型"
+  "cloud.syncPayloadTitle": "数据类型",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "团队自托管 MCP 服务器",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "交互式 HTML 依赖关系图"
 }

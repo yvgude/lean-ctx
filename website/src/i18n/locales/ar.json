@@ -4037,5 +4037,9 @@
   "cloud.sync6Title": "Buddy + عتبات الملاحظات",
   "cloud.sync6Desc": "حالة Buddy وعتبات ضبط الملاحظات للحفاظ على سلوك متسق عبر الأجهزة.",
   "cloud.syncPayloadLabel": "حمولة المزامنة (نظرة عامة)",
-  "cloud.syncPayloadTitle": "أنواع البيانات"
+  "cloud.syncPayloadTitle": "أنواع البيانات",
+  "nav.docs.guides.teamServer": "Team Server",
+  "nav.docs.guides.teamServerDesc": "خادم MCP مستضاف ذاتياً للفرق",
+  "nav.docs.guides.graphExplorer": "Graph Explorer",
+  "nav.docs.guides.graphExplorerDesc": "رسم بياني تفاعلي HTML للتبعيات"
 }
