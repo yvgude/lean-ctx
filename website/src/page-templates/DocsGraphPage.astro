@@ -16,6 +16,7 @@ const sidebar = [
       { label: t('docsGraph.sidebarEnrich'), href: lp('/docs/graph') + '#enrichment' },
       { label: t('docsGraph.sidebarContext'), href: lp('/docs/graph') + '#context-query' },
       { label: t('docsGraph.sidebarApi'), href: lp('/docs/graph') + '#api' },
+      { label: t('docsGraph.sidebarExportHtml'), href: lp('/docs/graph') + '#export-html' },
     ],
   },
   {
@@ -140,6 +141,64 @@ ctx_graph symbol src/auth.rs::verify   # Symbol definition/usages`}</code></pre>
         <li>{t('docsGraph.contextPoint2')}</li>
         <li>{t('docsGraph.contextPoint3')}</li>
         <li>{t('docsGraph.contextPoint4')}</li>
+      </ul>
+    </section>
+
+    <!-- Interactive HTML Export -->
+    <section id="export-html">
+      <h2>{t('docsGraph.exportTitle')}</h2>
+      <p>{t('docsGraph.exportIntro')}</p>
+
+      <h3>{t('docsGraph.exportUsageTitle')}</h3>
+      <pre><code class="language-bash">{`# Export full graph (all nodes)
+lean-ctx graph export-html --out graph.html
+
+# Limit to 100 most-connected nodes
+lean-ctx graph export-html --out graph.html --max-nodes 100
+
+# Custom project root
+lean-ctx graph export-html --out graph.html --root /path/to/project`}</code></pre>
+
+      <h3>{t('docsGraph.exportFeaturesTitle')}</h3>
+      <div class="nodes-grid">
+        <div class="node-card">
+          <span class="node-icon">🔍</span>
+          <code>Search</code>
+          <p>{t('docsGraph.exportFeatureSearch')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🖱️</span>
+          <code>Pan & Zoom</code>
+          <p>{t('docsGraph.exportFeaturePanZoom')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">📋</span>
+          <code>Node Details</code>
+          <p>{t('docsGraph.exportFeatureDetails')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🔗</span>
+          <code>Reverse Deps</code>
+          <p>{t('docsGraph.exportFeatureReverse')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🖼️</span>
+          <code>PNG Export</code>
+          <p>{t('docsGraph.exportFeaturePng')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">📡</span>
+          <code>Offline</code>
+          <p>{t('docsGraph.exportFeatureOffline')}</p>
+        </div>
+      </div>
+
+      <h3>{t('docsGraph.exportTipsTitle')}</h3>
+      <ul>
+        <li>{t('docsGraph.exportTip1')}</li>
+        <li>{t('docsGraph.exportTip2')}</li>
+        <li>{t('docsGraph.exportTip3')}</li>
+        <li>{t('docsGraph.exportTip4')}</li>
       </ul>
     </section>
 
