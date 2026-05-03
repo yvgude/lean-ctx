@@ -30,7 +30,7 @@ const sidebar = [
 ---
 
 <DocsLayout
-  title="Read Modes — How lean-ctx Reads Files"
+  title="Read Modes - How lean-ctx Reads Files"
   description="10 read modes for every situation: auto, full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M. Decision tree to pick the right one."
   sidebar={sidebar}
 >
@@ -96,7 +96,7 @@ const sidebar = [
       <tr><th>Mode</th><th>Output</th><th>Token Savings</th><th>Best For</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>auto</code></td><td>Varies — selects best mode</td><td>Best-effort</td><td>When unsure which mode to use</td></tr>
+      <tr><td><code>auto</code></td><td>Varies - selects best mode</td><td>Best-effort</td><td>When unsure which mode to use</td></tr>
       <tr><td><code>full</code></td><td>Complete file + structured headers</td><td>~99% on re-reads</td><td>Files you'll edit</td></tr>
       <tr><td><code>map</code></td><td>Dependencies, exports, API surface</td><td>85-95%</td><td>Understanding a file's role</td></tr>
       <tr><td><code>signatures</code></td><td>All function/class/type signatures</td><td>~87%</td><td>Understanding API surfaces</td></tr>
@@ -148,7 +148,7 @@ ctx_read auth.ts
   <h2 id="signatures">Signatures Mode</h2>
   <p>
     Extracts all function signatures, interface definitions, type aliases, and class declarations.
-    More detailed than <code>map</code> — includes private functions, nested types, and multi-line
+    More detailed than <code>map</code> - includes private functions, nested types, and multi-line
     signatures with compact type abbreviations (<code>:s</code> for string, <code>:n</code> for number).
   </p>
 
@@ -192,9 +192,9 @@ ctx_read src/auth/service.rs --mode task
     Read only specific lines. Supports single lines, ranges, and comma-separated combinations:
   </p>
   <ul>
-    <li><code>lines:42</code> — single line</li>
-    <li><code>lines:10-80</code> — line range</li>
-    <li><code>lines:10-80,120,200-240</code> — multiple ranges</li>
+    <li><code>lines:42</code> - single line</li>
+    <li><code>lines:10-80</code> - line range</li>
+    <li><code>lines:10-80,120,200-240</code> - multiple ranges</li>
   </ul>
 
   <h2>Structured Headers</h2>
@@ -203,9 +203,9 @@ ctx_read src/auth/service.rs --mode task
  deps db,crypto
  exports createUser,validateSession`}</code></pre>
   <ul>
-    <li><code>F1</code>, <code>F2</code>, ... — file reference IDs (persist across the entire session)</li>
-    <li><code>deps</code> — imported modules (compact list)</li>
-    <li><code>exports</code> — exported names</li>
+    <li><code>F1</code>, <code>F2</code>, ... - file reference IDs (persist across the entire session)</li>
+    <li><code>deps</code> - imported modules (compact list)</li>
+    <li><code>exports</code> - exported names</li>
   </ul>
   <p>
     Reference these IDs in subsequent operations instead of full paths to save tokens

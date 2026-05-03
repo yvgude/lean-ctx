@@ -105,7 +105,7 @@ LEAN_CTX_HOST=0.0.0.0 lean-ctx dashboard`}</code></pre>
       </tr>
       <tr>
         <td><strong>Knowledge</strong></td>
-        <td>Project knowledge graph — gotchas, buddy data, discoveries</td>
+        <td>Project knowledge graph - gotchas, buddy data, discoveries</td>
         <td><code>/api/knowledge</code></td>
       </tr>
       <tr>
@@ -115,7 +115,7 @@ LEAN_CTX_HOST=0.0.0.0 lean-ctx dashboard`}</code></pre>
       </tr>
       <tr>
         <td><strong>Heatmap</strong></td>
-        <td>File access heatmap — shows which files are read most often</td>
+        <td>File access heatmap - shows which files are read most often</td>
         <td><code>/api/heatmap</code></td>
       </tr>
       <tr>
@@ -130,7 +130,7 @@ LEAN_CTX_HOST=0.0.0.0 lean-ctx dashboard`}</code></pre>
       </tr>
       <tr>
         <td><strong>Ledger</strong></td>
-        <td>Context budget ledger — tracks token allocation per request</td>
+        <td>Context budget ledger - tracks token allocation per request</td>
         <td><code>/api/context-ledger</code></td>
       </tr>
     </tbody>
@@ -154,12 +154,12 @@ LEAN_CTX_HOST=0.0.0.0 lean-ctx dashboard`}</code></pre>
       </tr>
       <tr>
         <td><code>LEAN_CTX_DASHBOARD_PROJECT</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Pre-select a project on startup</td>
       </tr>
       <tr>
         <td><code>--project=NAME</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>CLI flag equivalent of <code>LEAN_CTX_DASHBOARD_PROJECT</code></td>
       </tr>
     </tbody>
@@ -168,7 +168,7 @@ LEAN_CTX_HOST=0.0.0.0 lean-ctx dashboard`}</code></pre>
   <h2 id="security">Security</h2>
   <p>
     When bound to <code>127.0.0.1</code> (default), the Observatory accepts unauthenticated
-    requests — it's only reachable from your own machine.
+    requests - it's only reachable from your own machine.
   </p>
   <p>
     When you bind to a non-localhost address (e.g. <code>LEAN_CTX_HOST=0.0.0.0</code>),
@@ -185,7 +185,7 @@ curl -H "Authorization: Bearer $TOKEN" http://your-host:3333/api/stats`}</code><
   <!-- REST API ENDPOINTS                          -->
   <!-- ========================================== -->
 
-  <h2 id="api-stats">REST API — Stats & Analytics</h2>
+  <h2 id="api-stats">REST API - Stats & Analytics</h2>
   <p>All endpoints return JSON and are available at <code>http://HOST:PORT/api/...</code></p>
 
   <table>
@@ -196,19 +196,19 @@ curl -H "Authorization: Bearer $TOKEN" http://your-host:3333/api/stats`}</code><
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/stats</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Token statistics: input/output counts, savings percentage, cost estimates</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/gain</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Gain report with per-task breakdown and heatmap data</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/feedback</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Feedback data collected during sessions</td>
       </tr>
     </tbody>
@@ -222,7 +222,7 @@ curl http://127.0.0.1:3333/api/stats
 curl http://127.0.0.1:3333/api/gain
 # {"tasks": [...], "heatmap": {...}, "total_gain": 0.87}`}</code></pre>
 
-  <h2 id="api-agents">REST API — Agents & Knowledge</h2>
+  <h2 id="api-agents">REST API - Agents & Knowledge</h2>
   <table>
     <thead>
       <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
@@ -231,31 +231,31 @@ curl http://127.0.0.1:3333/api/gain
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/agents</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Active agents, scratchpad contents, shared contexts</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/knowledge</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Project knowledge graph (discoveries, patterns, rules)</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/gotchas</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Known project gotchas and warnings</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/buddy</code></td>
-        <td>—</td>
-        <td>Buddy data — learned patterns and preferences</td>
+        <td>-</td>
+        <td>Buddy data - learned patterns and preferences</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/mcp</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>MCP live data from <code>mcp-live.json</code></td>
       </tr>
     </tbody>
@@ -272,7 +272,7 @@ curl http://127.0.0.1:3333/api/knowledge
 # MCP live data
 curl http://127.0.0.1:3333/api/mcp`}</code></pre>
 
-  <h2 id="api-graphs">REST API — Graphs & Heatmaps</h2>
+  <h2 id="api-graphs">REST API - Graphs & Heatmaps</h2>
   <table>
     <thead>
       <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
@@ -281,25 +281,25 @@ curl http://127.0.0.1:3333/api/mcp`}</code></pre>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/graph</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Dependency graph data</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/call-graph</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Call graph with function-level edges</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/heatmap</code></td>
-        <td>—</td>
-        <td>File access heatmap — frequency and recency of reads</td>
+        <td>-</td>
+        <td>File access heatmap - frequency and recency of reads</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/compression-demo</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Live comparison of all compression modes on sample content</td>
       </tr>
     </tbody>
@@ -313,7 +313,7 @@ curl http://127.0.0.1:3333/api/graph
 curl http://127.0.0.1:3333/api/heatmap
 # {"files": [{"path": "src/main.rs", "reads": 47, "last": "2025-04-23T..."}]}`}</code></pre>
 
-  <h2 id="api-search">REST API — Search & Symbols</h2>
+  <h2 id="api-search">REST API - Search & Symbols</h2>
   <table>
     <thead>
       <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
@@ -328,13 +328,13 @@ curl http://127.0.0.1:3333/api/heatmap
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/routes</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>HTTP routes from the project index</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/search-index</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Raw BM25 search index data</td>
       </tr>
       <tr>
@@ -354,7 +354,7 @@ curl "http://127.0.0.1:3333/api/symbols?q=parse&kind=fn"
 curl "http://127.0.0.1:3333/api/search?q=authentication&limit=10"
 # {"results": [{"file": "src/auth.rs", "score": 4.2, "snippet": "..."}]}`}</code></pre>
 
-  <h2 id="api-session">REST API — Session & Pipeline</h2>
+  <h2 id="api-session">REST API - Session & Pipeline</h2>
   <table>
     <thead>
       <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
@@ -363,26 +363,26 @@ curl "http://127.0.0.1:3333/api/search?q=authentication&limit=10"
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/session</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Current session state, call count, active project</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/intent</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>Structured intents detected during the session</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/pipeline-stats</code></td>
-        <td>—</td>
-        <td>Pipeline stage metrics — timing, throughput, bottlenecks</td>
+        <td>-</td>
+        <td>Pipeline stage metrics - timing, throughput, bottlenecks</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/context-ledger</code></td>
-        <td>—</td>
-        <td>Context budget ledger — token allocation per request</td>
+        <td>-</td>
+        <td>Context budget ledger - token allocation per request</td>
       </tr>
     </tbody>
   </table>
@@ -399,7 +399,7 @@ curl http://127.0.0.1:3333/api/pipeline-stats
 curl http://127.0.0.1:3333/api/context-ledger
 # {"budget": 128000, "used": 42000, "entries": [...]}`}</code></pre>
 
-  <h2 id="api-system">REST API — System</h2>
+  <h2 id="api-system">REST API - System</h2>
   <table>
     <thead>
       <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
@@ -408,20 +408,20 @@ curl http://127.0.0.1:3333/api/context-ledger
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/version</code></td>
-        <td>—</td>
+        <td>-</td>
         <td>lean-ctx version, build info, platform</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/pulse</code></td>
-        <td>—</td>
-        <td>Health check — returns uptime, memory usage, active connections</td>
+        <td>-</td>
+        <td>Health check - returns uptime, memory usage, active connections</td>
       </tr>
       <tr>
         <td><code>GET</code></td>
         <td><code>/api/events</code></td>
-        <td>—</td>
-        <td>Event stream — recent system events and notifications</td>
+        <td>-</td>
+        <td>Event stream - recent system events and notifications</td>
       </tr>
     </tbody>
   </table>
@@ -447,14 +447,14 @@ curl http://127.0.0.1:3333/api/pulse
 
   <h3>Features</h3>
   <ul>
-    <li><strong>Authentication</strong> — Email-verified accounts with secure token-based auth</li>
-    <li><strong>Cross-device sync</strong> — View aggregated stats from all your machines</li>
-    <li><strong>Adaptive models</strong> — Cloud-trained compression models that improve over time</li>
-    <li><strong>CSV export</strong> — Download session data and token statistics as CSV</li>
-    <li><strong>Estimated costs</strong> — Dollar-amount cost estimates based on your LLM provider rates</li>
+    <li><strong>Authentication</strong> - Email-verified accounts with secure token-based auth</li>
+    <li><strong>Cross-device sync</strong> - View aggregated stats from all your machines</li>
+    <li><strong>Adaptive models</strong> - Cloud-trained compression models that improve over time</li>
+    <li><strong>CSV export</strong> - Download session data and token statistics as CSV</li>
+    <li><strong>Estimated costs</strong> - Dollar-amount cost estimates based on your LLM provider rates</li>
   </ul>
 
-  <h2 id="local-vs-cloud">Local vs Cloud — What Syncs?</h2>
+  <h2 id="local-vs-cloud">Local vs Cloud - What Syncs?</h2>
   <table>
     <thead>
       <tr><th>Data</th><th>Local Observatory</th><th>Cloud Dashboard</th></tr>
@@ -514,7 +514,7 @@ curl http://127.0.0.1:3333/api/pulse
   </table>
   <p>
     <strong>Privacy note:</strong> Your source code never leaves your machine. The Cloud Dashboard
-    only receives aggregated metrics (token counts, timing data, compression ratios) — not file
+    only receives aggregated metrics (token counts, timing data, compression ratios) - not file
     contents, knowledge entries, or code snippets.
   </p>
 </DocsLayout>

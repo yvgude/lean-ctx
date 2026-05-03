@@ -37,7 +37,7 @@ const sidebar = [
   <h2 id="memory-runtime">Memory Runtime (Autopilot)</h2>
   <p>
     The Memory Runtime is a biologically-inspired memory model that runs <strong>silently</strong> in the
-    background. No verbose outputs, no agent compliance needed — install and it just works.
+    background. No verbose outputs, no agent compliance needed - install and it just works.
   </p>
   <ul>
     <li><strong>Ingestion</strong>: Tool receipts + compact session signals are recorded automatically.</li>
@@ -45,7 +45,7 @@ const sidebar = [
     <li><strong>Consolidation Engine</strong>: <code>consolidate_latest</code> promotes salient findings/decisions into permanent <code>ctx_knowledge</code> (budgeted, no prose).</li>
     <li><strong>Adaptive Forgetting</strong>: Active sets stay small via time-decay and salience thresholds. Low-value facts are archived (not deleted) and can be rehydrated on demand.</li>
     <li><strong>Dual-Process Retrieval</strong>: Fast <strong>System-1</strong> recall (keyword + salience lookup) for immediate answers. Deep <strong>System-2</strong> recall (semantic search + archive rehydration) when System-1 misses.</li>
-    <li><strong>Prospective Memory</strong>: The system remembers pending tasks and surfaces them at the right moment — e.g., "you planned to add error handling to this function" when the file is read again.</li>
+    <li><strong>Prospective Memory</strong>: The system remembers pending tasks and surfaces them at the right moment - e.g., "you planned to add error handling to this function" when the file is read again.</li>
     <li><strong>Structured Intent Layer</strong>: Current task context flows through the entire pipeline, so all read modes, compression, and retrieval are task-aware without explicit configuration.</li>
   </ul>
 
@@ -57,16 +57,16 @@ const sidebar = [
 
   <h3>How to verify it’s working</h3>
   <ul>
-    <li><code>lean-ctx token-report --json</code> — session summary + intent counters.</li>
-    <li><code>ctx_knowledge action=status</code> — active vs archived facts and rooms.</li>
-    <li><code>ctx_cost action=report</code> and <code>ctx_heatmap action=status</code> — non‑empty after normal usage.</li>
+    <li><code>lean-ctx token-report --json</code> - session summary + intent counters.</li>
+    <li><code>ctx_knowledge action=status</code> - active vs archived facts and rooms.</li>
+    <li><code>ctx_cost action=report</code> and <code>ctx_heatmap action=status</code> - non‑empty after normal usage.</li>
   </ul>
 
-  <h2 id="ctx_knowledge">ctx_knowledge — Persistent Project Knowledge</h2>
+  <h2 id="ctx_knowledge">ctx_knowledge - Persistent Project Knowledge</h2>
   <p>
     A persistent knowledge store scoped to each project with temporal fact tracking, contradiction detection,
     and cross-session search. Facts, patterns, and conventions survive across sessions, enabling the LLM to
-    build cumulative project understanding. Facts are automatically versioned — when a high-confidence fact
+    build cumulative project understanding. Facts are automatically versioned - when a high-confidence fact
     changes, the old value is archived (not deleted) with full temporal history.
   </p>
 
@@ -79,18 +79,18 @@ const sidebar = [
       <tr><td><code>remember</code></td><td><code>category</code>, <code>key</code>, <code>value</code>, <code>confidence</code></td><td>Store a fact. Auto-detects contradictions with existing facts and tracks temporal validity.</td></tr>
       <tr><td><code>recall</code></td><td><code>query</code> OR <code>category</code></td><td>Search facts by text or list by category (only current/valid facts)</td></tr>
       <tr><td><code>pattern</code></td><td><code>pattern_type</code>, <code>value</code>, <code>examples</code></td><td>Record a project convention or pattern</td></tr>
-      <tr><td><code>consolidate</code></td><td>—</td><td>Extract session findings/decisions into permanent knowledge</td></tr>
+      <tr><td><code>consolidate</code></td><td>-</td><td>Extract session findings/decisions into permanent knowledge</td></tr>
       <tr><td><code>timeline</code></td><td><code>category</code></td><td>View full version history of facts in a category, including archived values</td></tr>
-      <tr><td><code>rooms</code></td><td>—</td><td>List all knowledge categories (rooms) with fact counts</td></tr>
+      <tr><td><code>rooms</code></td><td>-</td><td>List all knowledge categories (rooms) with fact counts</td></tr>
       <tr><td><code>search</code></td><td><code>query</code></td><td>Cross-session/cross-project search across ALL stored knowledge and sessions</td></tr>
-      <tr><td><code>wakeup</code></td><td>—</td><td>Compact AAAK-formatted briefing of the most important project facts</td></tr>
-      <tr><td><code>status</code></td><td>—</td><td>Show stored knowledge summary with active/archived counts and rooms</td></tr>
+      <tr><td><code>wakeup</code></td><td>-</td><td>Compact AAAK-formatted briefing of the most important project facts</td></tr>
+      <tr><td><code>status</code></td><td>-</td><td>Show stored knowledge summary with active/archived counts and rooms</td></tr>
       <tr><td><code>remove</code></td><td><code>category</code>, <code>key</code></td><td>Remove a fact from the active set (also removes its embedding entry if present)</td></tr>
-      <tr><td><code>export</code></td><td>—</td><td>Export all knowledge as structured JSON</td></tr>
+      <tr><td><code>export</code></td><td>-</td><td>Export all knowledge as structured JSON</td></tr>
       <tr><td><code>gotcha</code></td><td><code>trigger</code>, <code>resolution</code>, <code>severity</code></td><td>Record a bug/mistake to never repeat</td></tr>
-      <tr><td><code>embeddings_status</code></td><td>—</td><td>Show semantic embeddings status (model present/missing, auto-download flag, index size)</td></tr>
-      <tr><td><code>embeddings_reset</code></td><td>—</td><td>Delete the local embeddings index for this project</td></tr>
-      <tr><td><code>embeddings_reindex</code></td><td>—</td><td>Rebuild embeddings index from current (non-archived) facts</td></tr>
+      <tr><td><code>embeddings_status</code></td><td>-</td><td>Show semantic embeddings status (model present/missing, auto-download flag, index size)</td></tr>
+      <tr><td><code>embeddings_reset</code></td><td>-</td><td>Delete the local embeddings index for this project</td></tr>
+      <tr><td><code>embeddings_reindex</code></td><td>-</td><td>Rebuild embeddings index from current (non-archived) facts</td></tr>
     </tbody>
   </table>
 
@@ -173,7 +173,7 @@ ctx_knowledge action=embeddings_reindex
 
   <a href={lp('/docs/tools/ctx-knowledge')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_agent">ctx_agent — Multi-Agent Coordination & Diaries</h2>
+  <h2 id="ctx_agent">ctx_agent - Multi-Agent Coordination & Diaries</h2>
   <p>
     Coordinates multiple concurrent AI agents working on the same project.
     Agents register themselves, share findings via a scratchpad, track each other's status,
@@ -187,16 +187,16 @@ ctx_knowledge action=embeddings_reindex
     </thead>
     <tbody>
       <tr><td><code>register</code></td><td><code>agent_type</code>, <code>role</code></td><td>Register this agent at session start</td></tr>
-      <tr><td><code>list</code></td><td>—</td><td>Show other active agents on this project</td></tr>
+      <tr><td><code>list</code></td><td>-</td><td>Show other active agents on this project</td></tr>
       <tr><td><code>post</code></td><td><code>message</code>, <code>category</code>, <code>to_agent</code></td><td>Share findings/warnings with other agents</td></tr>
-      <tr><td><code>read</code></td><td>—</td><td>Check for new messages from other agents</td></tr>
+      <tr><td><code>read</code></td><td>-</td><td>Check for new messages from other agents</td></tr>
       <tr><td><code>status</code></td><td><code>status</code> (<code>active</code>/<code>idle</code>/<code>finished</code>), <code>message</code></td><td>Update work status</td></tr>
-      <tr><td><code>info</code></td><td>—</td><td>Show registry summary</td></tr>
+      <tr><td><code>info</code></td><td>-</td><td>Show registry summary</td></tr>
       <tr><td><code>handoff</code></td><td><code>to_agent</code>, <code>message</code></td><td>Transfer task to another agent with summary</td></tr>
-      <tr><td><code>sync</code></td><td>—</td><td>Multi-agent sync status: active agents, pending messages, shared contexts</td></tr>
+      <tr><td><code>sync</code></td><td>-</td><td>Multi-agent sync status: active agents, pending messages, shared contexts</td></tr>
       <tr><td><code>diary</code></td><td><code>message</code>, <code>category</code></td><td>Log a structured diary entry (discovery/decision/blocker/progress/insight). Persisted across sessions.</td></tr>
-      <tr><td><code>recall_diary</code></td><td>—</td><td>Read the 10 most recent diary entries with timestamps</td></tr>
-      <tr><td><code>diaries</code></td><td>—</td><td>List all agent diaries across the system</td></tr>
+      <tr><td><code>recall_diary</code></td><td>-</td><td>Read the 10 most recent diary entries with timestamps</td></tr>
+      <tr><td><code>diaries</code></td><td>-</td><td>List all agent diaries across the system</td></tr>
     </tbody>
   </table>
 
@@ -241,7 +241,7 @@ ctx_agent action=diaries
 
   <a href={lp('/docs/tools/ctx-agent')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_share">ctx_share — Multi-Agent Context Sharing</h2>
+  <h2 id="ctx_share">ctx_share - Multi-Agent Context Sharing</h2>
   <p>
     Enables agents to share cached file contents with each other. When one agent has read and cached files,
     it can push them to another agent, avoiding redundant file reads and enabling efficient task handoffs.
@@ -254,9 +254,9 @@ ctx_agent action=diaries
     </thead>
     <tbody>
       <tr><td><code>push</code></td><td><code>paths</code>, <code>to_agent</code>, <code>message</code></td><td>Share cached file contexts with a specific agent or all agents</td></tr>
-      <tr><td><code>pull</code></td><td>—</td><td>Receive shared contexts from other agents</td></tr>
-      <tr><td><code>list</code></td><td>—</td><td>List all shared contexts across agents</td></tr>
-      <tr><td><code>clear</code></td><td>—</td><td>Remove contexts shared by this agent</td></tr>
+      <tr><td><code>pull</code></td><td>-</td><td>Receive shared contexts from other agents</td></tr>
+      <tr><td><code>list</code></td><td>-</td><td>List all shared contexts across agents</td></tr>
+      <tr><td><code>clear</code></td><td>-</td><td>Remove contexts shared by this agent</td></tr>
     </tbody>
   </table>
 
@@ -276,7 +276,7 @@ ctx_share action=pull
 
   <a href={lp('/docs/tools/ctx-share')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_overview">ctx_overview — Task-Aware Project Map with Wake-Up Briefing</h2>
+  <h2 id="ctx_overview">ctx_overview - Task-Aware Project Map with Wake-Up Briefing</h2>
   <p>
     Provides a multi-resolution project map at session start. Uses the dependency graph and keyword
     matching to group files by task relevance into tiers (critical / important / reference / skip).
@@ -286,7 +286,7 @@ ctx_share action=pull
   <p>
     <strong>Automatic wake-up briefing:</strong> When called at session start, ctx_overview now automatically
     includes a compact briefing with top project facts (AAAK format), last task, recent decisions, and active
-    agents. No configuration needed — it's always included when knowledge is available.
+    agents. No configuration needed - it's always included when knowledge is available.
   </p>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -302,19 +302,19 @@ ctx_share action=pull
 
   <h3>Example</h3>
   <pre><code>ctx_overview task="fix JWT token refresh bug"
-→ PROJECT OVERVIEW — /Users/you/project (142 files)
+→ PROJECT OVERVIEW - /Users/you/project (142 files)
 
   CRITICAL (read full):
-    src/auth.ts — JWT logic, token generation
-    src/middleware.ts — token validation
+    src/auth.ts - JWT logic, token generation
+    src/middleware.ts - token validation
 
   IMPORTANT (read map):
-    src/routes.ts — auth route handlers
-    src/lib/session.ts — session management
+    src/routes.ts - auth route handlers
+    src/lib/session.ts - session management
 
   REFERENCE (read signatures):
-    src/lib/db.ts — database layer
-    src/config.ts — JWT config values
+    src/lib/db.ts - database layer
+    src/config.ts - JWT config values
 
   SKIP (67 files):
     tests/, docs/, scripts/, ...
@@ -327,7 +327,7 @@ ctx_share action=pull
 
   <a href={lp('/docs/tools/ctx-overview')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_task">ctx_task — A2A Task Delegation</h2>
+  <h2 id="ctx_task">ctx_task - A2A Task Delegation</h2>
   <p>
     Agent-to-Agent (A2A) task management following the Google A2A protocol. Agents can create,
     assign, update, and track tasks across a multi-agent workflow. Tasks persist across sessions
@@ -342,11 +342,11 @@ ctx_share action=pull
     <tbody>
       <tr><td><code>create</code></td><td><code>title</code>, <code>description</code>, <code>to_agent</code></td><td>Create a new task with optional target agent</td></tr>
       <tr><td><code>update</code></td><td><code>task_id</code>, <code>state</code></td><td>Update task state (Working, InputRequired, Completed, Failed, Canceled)</td></tr>
-      <tr><td><code>list</code></td><td>—</td><td>List all tasks with their current state</td></tr>
+      <tr><td><code>list</code></td><td>-</td><td>List all tasks with their current state</td></tr>
       <tr><td><code>get</code></td><td><code>task_id</code></td><td>Get detailed info about a specific task</td></tr>
       <tr><td><code>cancel</code></td><td><code>task_id</code></td><td>Cancel a task</td></tr>
       <tr><td><code>message</code></td><td><code>task_id</code>, <code>message</code></td><td>Add a message to a task thread</td></tr>
-      <tr><td><code>info</code></td><td>—</td><td>Show A2A task system status and agent card</td></tr>
+      <tr><td><code>info</code></td><td>-</td><td>Show A2A task system status and agent card</td></tr>
     </tbody>
   </table>
 
@@ -376,7 +376,7 @@ ctx_task action=list
 
   <a href={lp('/docs/tools/ctx-task')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_cost">ctx_cost — Token Cost Attribution</h2>
+  <h2 id="ctx_cost">ctx_cost - Token Cost Attribution</h2>
   <p>
     Tracks and reports token costs per agent and per tool. Provides detailed breakdowns of which
     agents and tools are consuming the most tokens, enabling optimization and accountability in
@@ -392,9 +392,9 @@ ctx_task action=list
       <tr><td><code>report</code></td><td><code>limit</code>, <code>agent_id</code></td><td>Show cost attribution report (top N agents/tools)</td></tr>
       <tr><td><code>agent</code></td><td><code>agent_id</code></td><td>Show costs for a specific agent</td></tr>
       <tr><td><code>tool</code></td><td><code>limit</code></td><td>Show per-tool cost breakdown</td></tr>
-      <tr><td><code>session</code></td><td>—</td><td>Show costs for current session only</td></tr>
-      <tr><td><code>json</code></td><td>—</td><td>Export cost data as JSON</td></tr>
-      <tr><td><code>reset</code></td><td>—</td><td>Reset all cost tracking data</td></tr>
+      <tr><td><code>session</code></td><td>-</td><td>Show costs for current session only</td></tr>
+      <tr><td><code>json</code></td><td>-</td><td>Export cost data as JSON</td></tr>
+      <tr><td><code>reset</code></td><td>-</td><td>Reset all cost tracking data</td></tr>
     </tbody>
   </table>
 

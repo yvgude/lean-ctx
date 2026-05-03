@@ -56,7 +56,7 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>path</code> (required) — file path to read</li>
+    <li><code>path</code> (required) - file path to read</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_smart_read src/auth.ts
@@ -71,7 +71,7 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>path</code> (required) — file path to diff against cached version</li>
+    <li><code>path</code> (required) - file path to diff against cached version</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_delta src/auth.ts
@@ -90,9 +90,9 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>paths</code> (required) — array of file paths</li>
-    <li><code>budget</code> (required) — maximum token budget</li>
-    <li><code>task</code> (optional) — task description for priority-based POP-Intent ordering</li>
+    <li><code>paths</code> (required) - array of file paths</li>
+    <li><code>budget</code> (required) - maximum token budget</li>
+    <li><code>task</code> (optional) - task description for priority-based POP-Intent ordering</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_fill ["src/auth.ts", "src/db.ts", "src/routes.ts"] budget=2000
@@ -112,24 +112,24 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>query</code> (required) — natural language description of what you want to do</li>
-    <li><code>project_root</code> (optional) — project root path (defaults to <code>.</code>)</li>
+    <li><code>query</code> (required) - natural language description of what you want to do</li>
+    <li><code>project_root</code> (optional) - project root path (defaults to <code>.</code>)</li>
   </ul>
   <h3>Features (v2.18.0)</h3>
   <ul>
-    <li><strong>Multi-intent</strong> — compound queries like "fix X and then test Y" are split into sub-intents</li>
-    <li><strong>Complexity</strong> — returns mechanical/standard/architectural classification</li>
-    <li><strong>Heat ranking</strong> — files ranked by token density + graph connectivity</li>
+    <li><strong>Multi-intent</strong> - compound queries like "fix X and then test Y" are split into sub-intents</li>
+    <li><strong>Complexity</strong> - returns mechanical/standard/architectural classification</li>
+    <li><strong>Heat ranking</strong> - files ranked by token density + graph connectivity</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_intent "fix the auth bug and then add tests for it"
 → Intent 1: fix_bug | Complexity: standard
   Intent 2: test | Complexity: mechanical
   Loaded 4 relevant files (heat-ranked):
-  F1=src/auth.ts (full, 915t) — heat: 0.92
-  F2=src/login.ts (full, 412t) — heat: 0.78
-  F3=src/__tests__/auth.test.ts (full, 340t) — heat: 0.65
-  F4=src/middleware.ts (map, 89t) — heat: 0.45</code></pre>
+  F1=src/auth.ts (full, 915t) - heat: 0.92
+  F2=src/login.ts (full, 412t) - heat: 0.78
+  F3=src/__tests__/auth.test.ts (full, 340t) - heat: 0.65
+  F4=src/middleware.ts (map, 89t) - heat: 0.45</code></pre>
 
   <a href={lp('/docs/tools/ctx-intent')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
@@ -185,7 +185,7 @@ const sidebar = [
     </p>
   </div>
   <pre><code>ctx_graph action=build
-→ GRAPH BUILD — /Users/you/project
+→ GRAPH BUILD - /Users/you/project
   Scanned: 142 files (38 new, 104 cached)
   Symbols: 847 exports across 12 languages
   Edges:   1,203 import relationships
@@ -199,10 +199,10 @@ const sidebar = [
   </p>
   <pre><code>ctx_graph action=related path=src/auth.ts depth=2
 → Files related to auth.ts (depth 2):
-  src/middleware.ts — imports auth.ts
-  src/login.ts — imports auth.ts
-  src/lib/jwt.ts — imported by auth.ts
-  src/lib/session.ts — via middleware.ts</code></pre>
+  src/middleware.ts - imports auth.ts
+  src/login.ts - imports auth.ts
+  src/lib/jwt.ts - imported by auth.ts
+  src/lib/session.ts - via middleware.ts</code></pre>
 
   <h3>Action: symbol</h3>
   <p>
@@ -219,7 +219,7 @@ const sidebar = [
 
   <h3>Action: impact</h3>
   <p>
-    Reverse dependency analysis — finds all files that depend on a given file.
+    Reverse dependency analysis - finds all files that depend on a given file.
     Essential for understanding what breaks when you change something.
   </p>
   <pre><code>ctx_graph action=impact path=src/lib/db.ts
@@ -254,13 +254,13 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (optional) — <code>analyze</code> (default, report-only) or <code>apply</code> (apply dedup optimizations)</li>
+    <li><code>action</code> (optional) - <code>analyze</code> (default, report-only) or <code>apply</code> (apply dedup optimizations)</li>
   </ul>
   <h3>Example</h3>
   <pre><code>{`ctx_dedup
 → Found 3 shared patterns across 8 cached files:
-  "import { db } from '../pages/docs/lib/db'" — 5 files (saving ~40 tokens)
-  "export default handler" — 4 files (saving ~25 tokens)`}</code></pre>
+  "import { db } from '../pages/docs/lib/db'" - 5 files (saving ~40 tokens)
+  "export default handler" - 4 files (saving ~25 tokens)`}</code></pre>
 
   <a href={lp('/docs/tools/ctx-dedup')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
@@ -271,7 +271,7 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>text</code> (required) — text to compress</li>
+    <li><code>text</code> (required) - text to compress</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-response')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -283,28 +283,28 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>limit</code> (optional) — number of results (default 15)</li>
+    <li><code>limit</code> (optional) - number of results (default 15)</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_discover
 → Shell commands that would benefit from lean-ctx:
-  docker ps -a        — ran 12x, ~800 tokens each → ~9,600 tokens saveable
-  kubectl get pods    — ran 8x, ~1,200 tokens each → ~9,600 tokens saveable</code></pre>
+  docker ps -a        - ran 12x, ~800 tokens each → ~9,600 tokens saveable
+  kubectl get pods    - ran 8x, ~1,200 tokens each → ~9,600 tokens saveable</code></pre>
 
   <a href={lp('/docs/tools/ctx-discover')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
   <h2 id="ctx_edit">ctx_edit</h2>
   <p>
     Search-and-replace file editing that works without needing native Read or Edit tools.
-    Reads the file, replaces the specified string, and writes the result — all in one MCP call.
+    Reads the file, replaces the specified string, and writes the result - all in one MCP call.
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>path</code> (required) — file path to edit</li>
-    <li><code>old_string</code> (optional) — exact text to find. Omit when creating a new file.</li>
-    <li><code>new_string</code> (required) — replacement text</li>
-    <li><code>create</code> (optional, boolean) — create the file if it does not exist. Default: <code>false</code>.</li>
-    <li><code>replace_all</code> (optional, boolean) — replace all occurrences, not just the first. Default: <code>false</code>.</li>
+    <li><code>path</code> (required) - file path to edit</li>
+    <li><code>old_string</code> (optional) - exact text to find. Omit when creating a new file.</li>
+    <li><code>new_string</code> (required) - replacement text</li>
+    <li><code>create</code> (optional, boolean) - create the file if it does not exist. Default: <code>false</code>.</li>
+    <li><code>replace_all</code> (optional, boolean) - replace all occurrences, not just the first. Default: <code>false</code>.</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_edit path=src/config.ts old_string="timeout: 5000" new_string="timeout: 10000"
@@ -319,8 +319,8 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>task</code> (required) — description of current task for relevance-based file selection</li>
-    <li><code>path</code> (optional) — project root path</li>
+    <li><code>task</code> (required) - description of current task for relevance-based file selection</li>
+    <li><code>path</code> (optional) - project root path</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_preload task="fix JWT token refresh"
@@ -336,20 +336,20 @@ const sidebar = [
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>query</code> (required) — natural language search query</li>
-    <li><code>path</code> (optional) — project root to search</li>
-    <li><code>top_k</code> (optional) — number of results (default 10)</li>
-    <li><code>action</code> (optional) — <code>reindex</code> to rebuild index</li>
-    <li><code>mode</code> (optional) — <code>hybrid</code> (default), <code>dense</code>, <code>bm25</code></li>
-    <li><code>languages</code> (optional) — restrict to language/extension (e.g. <code>["rust","ts"]</code>)</li>
-    <li><code>path_glob</code> (optional) — glob filter over relative paths (e.g. <code>"rust/src/**"</code>)</li>
+    <li><code>query</code> (required) - natural language search query</li>
+    <li><code>path</code> (optional) - project root to search</li>
+    <li><code>top_k</code> (optional) - number of results (default 10)</li>
+    <li><code>action</code> (optional) - <code>reindex</code> to rebuild index</li>
+    <li><code>mode</code> (optional) - <code>hybrid</code> (default), <code>dense</code>, <code>bm25</code></li>
+    <li><code>languages</code> (optional) - restrict to language/extension (e.g. <code>["rust","ts"]</code>)</li>
+    <li><code>path_glob</code> (optional) - glob filter over relative paths (e.g. <code>"rust/src/**"</code>)</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_semantic_search query="JWT token validation" top_k=5
 → 5 results:
-  1. src/auth.ts:18-42 — verifyJWT function (score: 0.89)
-  2. src/middleware.ts:5-20 — auth middleware (score: 0.76)
-  3. src/lib/jwt.ts:1-35 — JWT utilities (score: 0.71)</code></pre>
+  1. src/auth.ts:18-42 - verifyJWT function (score: 0.89)
+  2. src/middleware.ts:5-20 - auth middleware (score: 0.76)
+  3. src/lib/jwt.ts:1-35 - JWT utilities (score: 0.71)</code></pre>
 
   <a href={lp('/docs/tools/ctx-semantic-search')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
@@ -357,9 +357,9 @@ const sidebar = [
   <p set:html={t('docsToolsIntelligence.ctxSymbolDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>name</code> (required) — symbol name</li>
-    <li><code>file</code> (optional) — narrow by file path</li>
-    <li><code>kind</code> (optional) — <code>fn</code>, <code>struct</code>, <code>class</code>, <code>method</code>, <code>trait</code>, <code>enum</code></li>
+    <li><code>name</code> (required) - symbol name</li>
+    <li><code>file</code> (optional) - narrow by file path</li>
+    <li><code>kind</code> (optional) - <code>fn</code>, <code>struct</code>, <code>class</code>, <code>method</code>, <code>trait</code>, <code>enum</code></li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-symbol')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -368,8 +368,8 @@ const sidebar = [
   <p set:html={t('docsToolsIntelligence.ctxOutlineDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>path</code> (required) — file path</li>
-    <li><code>kind</code> (optional) — filter by kind</li>
+    <li><code>path</code> (required) - file path</li>
+    <li><code>kind</code> (optional) - filter by kind</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-outline')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -378,8 +378,8 @@ const sidebar = [
   <p set:html={t('docsToolsIntelligence.ctxCallersDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>symbol</code> (required) — symbol name to find callers of</li>
-    <li><code>file</code> (optional) — filter by caller file</li>
+    <li><code>symbol</code> (required) - symbol name to find callers of</li>
+    <li><code>file</code> (optional) - filter by caller file</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-callers')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -388,8 +388,8 @@ const sidebar = [
   <p set:html={t('docsToolsIntelligence.ctxCalleesDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>symbol</code> (required) — symbol name to list callees for</li>
-    <li><code>file</code> (optional) — filter by caller file</li>
+    <li><code>symbol</code> (required) - symbol name to list callees for</li>
+    <li><code>file</code> (optional) - filter by caller file</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-callees')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -398,8 +398,8 @@ const sidebar = [
   <p set:html={t('docsToolsIntelligence.ctxRoutesDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>method</code> (optional) — HTTP method (GET, POST, ...)</li>
-    <li><code>path</code> (optional) — path prefix (e.g. <code>/api</code>)</li>
+    <li><code>method</code> (optional) - HTTP method (GET, POST, ...)</li>
+    <li><code>path</code> (optional) - path prefix (e.g. <code>/api</code>)</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-routes')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -408,9 +408,9 @@ const sidebar = [
   <p set:html={t('docsToolsIntelligence.ctxGraphDiagramDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>kind</code> (optional) — <code>deps</code> (default) or <code>calls</code></li>
-    <li><code>file</code> (optional) — focus filter</li>
-    <li><code>depth</code> (optional) — max depth (default 2)</li>
+    <li><code>kind</code> (optional) - <code>deps</code> (default) or <code>calls</code></li>
+    <li><code>file</code> (optional) - focus filter</li>
+    <li><code>depth</code> (optional) - max depth (default 2)</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-graph-diagram')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -419,47 +419,47 @@ const sidebar = [
   <p set:html={t('docsToolsIntelligence.ctxCompressMemoryDesc')} />
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>path</code> (required) — file path to compress</li>
+    <li><code>path</code> (required) - file path to compress</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-compress-memory')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_impact">ctx_impact — Reverse Dependency Analysis</h2>
+  <h2 id="ctx_impact">ctx_impact - Reverse Dependency Analysis</h2>
   <p>
     Analyzes the impact of changing a file by tracing reverse dependencies through the project graph.
     Shows which files import or depend on the target, helping assess the blast radius of changes.
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (required) — <code>analyze</code> (default), <code>chain</code> (dependency chain), <code>build</code> (rebuild index), or <code>status</code></li>
-    <li><code>root</code> (required for analyze/chain) — file path to analyze impact for</li>
+    <li><code>action</code> (required) - <code>analyze</code> (default), <code>chain</code> (dependency chain), <code>build</code> (rebuild index), or <code>status</code></li>
+    <li><code>root</code> (required for analyze/chain) - file path to analyze impact for</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_impact path=src/auth.ts
 → IMPACT ANALYSIS: src/auth.ts
   Direct dependents (3):
-    src/routes.ts — imports: authenticate, createUser
-    src/middleware.ts — imports: verifyToken
-    src/api/users.ts — imports: AuthToken type
+    src/routes.ts - imports: authenticate, createUser
+    src/middleware.ts - imports: verifyToken
+    src/api/users.ts - imports: AuthToken type
 
   Transitive (depth 2): 7 more files
   Blast radius: 10 files (7% of project)</code></pre>
 
   <a href={lp('/docs/tools/ctx-impact')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_architecture">ctx_architecture — Project Architecture Map</h2>
+  <h2 id="ctx_architecture">ctx_architecture - Project Architecture Map</h2>
   <p>
     Generates a high-level architecture overview of the project using the dependency graph.
     Groups files into logical layers and shows inter-layer dependencies.
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (required) — <code>overview</code> (default), <code>clusters</code>, <code>layers</code>, <code>cycles</code>, <code>entrypoints</code>, or <code>module</code></li>
-    <li><code>root</code> (optional) — project root or module path (defaults to cwd)</li>
+    <li><code>action</code> (required) - <code>overview</code> (default), <code>clusters</code>, <code>layers</code>, <code>cycles</code>, <code>entrypoints</code>, or <code>module</code></li>
+    <li><code>root</code> (optional) - project root or module path (defaults to cwd)</li>
   </ul>
   <h3>Example</h3>
   <pre><code>ctx_architecture action=overview
-→ ARCHITECTURE — /Users/you/project (142 files)
+→ ARCHITECTURE - /Users/you/project (142 files)
 
   Layers:
     API (12 files): routes.ts, controllers/*.ts
@@ -484,7 +484,7 @@ const sidebar = [
     The Adaptive Constraint Optimization Network (ACON) monitors compression outcomes for negative
     signals: retries, mode upgrades (e.g. map→full), errors after reads, and rapid re-reads.
     When a pattern of harmful compressions is detected (harm rate exceeds threshold), ACON
-    automatically raises minimum quality constraints — e.g. increasing the entropy threshold or
+    automatically raises minimum quality constraints - e.g. increasing the entropy threshold or
     reducing maximum compression percentage.
   </p>
 
@@ -515,7 +515,7 @@ const sidebar = [
 
   <h2 id="ctx_index">ctx_index <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
   <p class="text-muted mb-4">
-    <code>ctx_index</code> orchestrates project indexing — builds the property graph, symbol map, and dependency index used by <code>ctx_graph</code>, <code>ctx_impact</code>, and <code>ctx_architecture</code>.
+    <code>ctx_index</code> orchestrates project indexing - builds the property graph, symbol map, and dependency index used by <code>ctx_graph</code>, <code>ctx_impact</code>, and <code>ctx_architecture</code>.
   </p>
   <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
     <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>

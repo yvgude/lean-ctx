@@ -472,16 +472,16 @@ ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
       descMb="clamp(1.5rem, 1rem + 1vw, 2.5rem)"
       descMaxWidth="44rem"
     />
-    <pre style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.25rem; overflow-x: auto;"><code style="font-size: 0.85rem;"># CLI flag — skip compression for one command
+    <pre style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.25rem; overflow-x: auto;"><code style="font-size: 0.85rem;"># CLI flag - skip compression for one command
 lean-ctx -c --raw kubectl get pods -o yaml
 
-# Shell function — quick bypass
+# Shell function - quick bypass
 lean-ctx-raw gh pr view 42
 
-# Kill-switch — disable ALL compression
+# Kill-switch - disable ALL compression
 LEAN_CTX_DISABLED=1 lean-ctx -c git log
 
-# MCP parameter — for AI agents
+# MCP parameter - for AI agents
 ctx_shell(command="cat config.json", raw=true)</code></pre>
   </div>
 </section>

@@ -30,7 +30,7 @@ const sidebar = [
 ---
 
 <DocsLayout
-  title="Protocols — How lean-ctx Communicates"
+  title="Protocols - How lean-ctx Communicates"
   description="5 protocols govern how lean-ctx manages context: CEP, CCP, TDD/CRP, CLP, and A2A. Learn when each activates and how they work together."
   sidebar={sidebar}
 >
@@ -79,7 +79,7 @@ const sidebar = [
     </tbody>
   </table>
 
-  <h2 id="cep">CEP — Context Engineering Protocol</h2>
+  <h2 id="cep">CEP - Context Engineering Protocol</h2>
   <p>
     CEP is injected into every session's system prompt. It establishes 5 core rules that reduce
     token waste from the LLM itself:
@@ -95,7 +95,7 @@ const sidebar = [
     <a href={lp('/docs/cep')}>Full CEP documentation →</a>
   </p>
 
-  <h2 id="ccp">CCP — Context Checkpoint Protocol</h2>
+  <h2 id="ccp">CCP - Context Checkpoint Protocol</h2>
   <p>
     CCP automatically creates compressed session snapshots every ~15 tool calls.
     These checkpoints capture:
@@ -113,7 +113,7 @@ const sidebar = [
     <a href={lp('/docs/ccp')}>Full CCP documentation →</a>
   </p>
 
-  <h2 id="tdd">TDD / CRP — Terse Data Density Mode</h2>
+  <h2 id="tdd">TDD / CRP - Terse Data Density Mode</h2>
   <p>
     Activated when <code>CRP_MODE=tdd</code> is set in the environment or config.
     Applies maximum compression to all lean-ctx output:
@@ -129,16 +129,16 @@ const sidebar = [
     <a href={lp('/docs/tdd')}>Full TDD documentation →</a>
   </p>
 
-  <h2 id="clp">CLP — Context Layered Preload</h2>
+  <h2 id="clp">CLP - Context Layered Preload</h2>
   <p>
     CLP activates when you call <code>ctx_preload</code> at session start. It analyzes your task
     description and the project structure to pre-load the most relevant files in optimal read modes.
   </p>
   <h3>Layers</h3>
   <ol>
-    <li><strong>Layer 1 (Entry):</strong> Files directly mentioned or most relevant to the task — read in <code>full</code> mode</li>
-    <li><strong>Layer 2 (Context):</strong> Dependencies and imports of Layer 1 files — read in <code>map</code> or <code>signatures</code> mode</li>
-    <li><strong>Layer 3 (Reference):</strong> Transitive dependencies — registered as <code>reference</code> mode (no content loaded)</li>
+    <li><strong>Layer 1 (Entry):</strong> Files directly mentioned or most relevant to the task - read in <code>full</code> mode</li>
+    <li><strong>Layer 2 (Context):</strong> Dependencies and imports of Layer 1 files - read in <code>map</code> or <code>signatures</code> mode</li>
+    <li><strong>Layer 3 (Reference):</strong> Transitive dependencies - registered as <code>reference</code> mode (no content loaded)</li>
   </ol>
   <pre><code>{`ctx_preload task="fix the auth refresh token bug"
 → Preloaded 7 files in 3 layers:
@@ -147,7 +147,7 @@ const sidebar = [
   L3 (ref):     src/http/server.rs, src/main.rs
   Total: ~2400 tokens (vs ~12000 tokens for full reads)`}</code></pre>
 
-  <h2 id="a2a">A2A — Agent-to-Agent Protocol</h2>
+  <h2 id="a2a">A2A - Agent-to-Agent Protocol</h2>
   <p>
     A2A enables coordination between multiple AI agents working on the same project.
     Built on <code>ctx_agent</code>, <code>ctx_share</code>, <code>ctx_task</code>, and the shared session cache.
@@ -157,7 +157,7 @@ const sidebar = [
     <li><strong>Agent Registry:</strong> Agents register with type (cursor, claude, codex, gemini) and role (dev, review, test, plan)</li>
     <li><strong>Message Bus:</strong> Broadcast or direct messages between agents with categories (finding, warning, request, status)</li>
     <li><strong>Task Delegation:</strong> Assign tasks to specific agents with descriptions and track completion</li>
-    <li><strong>Shared Cache:</strong> All agents share the session file cache — no duplicate reads</li>
+    <li><strong>Shared Cache:</strong> All agents share the session file cache - no duplicate reads</li>
     <li><strong>Persistent Diaries:</strong> Agents log discoveries, decisions, blockers, and progress that persist across sessions</li>
     <li><strong>Context Handoff:</strong> Transfer full working context (files, knowledge, workflow state) between agents or sessions</li>
   </ul>

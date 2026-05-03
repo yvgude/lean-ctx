@@ -178,19 +178,19 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
       <tr>
         <td><code>[archive]</code></td>
         <td>table</td>
-        <td>—</td>
+        <td>-</td>
         <td>Configure zero-loss compression. Full tool results are saved to disk; the agent retrieves them on demand via <code>ctx_expand</code>. See <a href="#archive">Tool Result Archive</a>.</td>
       </tr>
       <tr>
         <td><code>[compaction]</code></td>
         <td>table</td>
-        <td>—</td>
+        <td>-</td>
         <td>Configure session resilience after IDE compaction events. Controls how lean-ctx recovers context when the IDE truncates conversation history. See <a href="#compaction">Compaction Resilience</a>.</td>
       </tr>
       <tr>
         <td><code>[loop_detection]</code></td>
         <td>table</td>
-        <td>—</td>
+        <td>-</td>
         <td>Configure loop detection thresholds. See <a href="#loop-detection">Loop Detection</a> section below.</td>
       </tr>
     </tbody>
@@ -293,7 +293,7 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
       <tr>
         <td><code>LEAN_CTX_HEADLESS</code></td>
         <td>set / unset</td>
-        <td>Start MCP server in headless mode — skip all auto-setup (rules injection, hook installation, CLAUDE.md modification, agent registry). See <a href="#headless-mode">Headless MCP Mode</a>.</td>
+        <td>Start MCP server in headless mode - skip all auto-setup (rules injection, hook installation, CLAUDE.md modification, agent registry). See <a href="#headless-mode">Headless MCP Mode</a>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_MODELS_DIR</code></td>
@@ -414,7 +414,7 @@ replacement = ""</code></pre>
   <h3>PathJail (Project-Root Sandbox)</h3>
   <p>
     Every file operation is validated through a single <code>resolve_path</code> choke point.
-    Paths must resolve inside the project root — symlink attacks, <code>../</code> traversal,
+    Paths must resolve inside the project root - symlink attacks, <code>../</code> traversal,
     and absolute paths outside the project are rejected. The sandbox is enforced for
     <code>ctx_read</code>, <code>ctx_edit</code>, <code>ctx_search</code>, <code>ctx_tree</code>,
     and all other file-touching tools.
@@ -433,7 +433,7 @@ replacement = ""</code></pre>
 
   <h3>Prompt Injection Hardening</h3>
   <p>
-    All metadata in tool responses is sanitized via <code>neutralize_metadata</code> — stripping
+    All metadata in tool responses is sanitized via <code>neutralize_metadata</code> - stripping
     control characters, encoded sequences, and injection patterns. Sensitive output blocks
     (knowledge, memory, gotchas) are wrapped in CSPRNG-fenced boundaries to prevent
     prompt injection through LLM-generated content stored in memory.
@@ -499,7 +499,7 @@ lean-ctx read file.rs --fresh     # Bypass cache for one read</code></pre>
 
   <h2 id="loop-detection">Progressive Throttling / Loop Detection</h2>
   <p>
-    lean-ctx automatically detects when an AI agent loops — calling the same or similar tools
+    lean-ctx automatically detects when an AI agent loops - calling the same or similar tools
     repeatedly without progress. This prevents token waste in large and monorepo projects.
   </p>
 
@@ -551,7 +551,7 @@ search_group_limit = 10   # total search calls before block</code></pre>
   <h2 id="pipe-guard">Pipe Guard <span class="text-xs font-normal text-muted ml-2">v2.21.6</span></h2>
   <p>
     Since v2.21.6, the shell hook automatically detects when stdout is piped (not a terminal)
-    and bypasses all compression. This prevents corruption when piping command output — for
+    and bypasses all compression. This prevents corruption when piping command output - for
     example, <code>curl -fsSL https://example.com/install.sh | sh</code> now works correctly
     even with the lean-ctx shell hook active.
   </p>
@@ -606,7 +606,7 @@ mask_secrets = true           # Redact secrets before archiving (default: true)<
     </thead>
     <tbody>
       <tr><td><code>archive.enabled</code></td><td>bool</td><td><code>false</code></td><td>Enable the archive system. When disabled, compression is permanent (no retrieval).</td></tr>
-      <tr><td><code>archive.threshold_chars</code></td><td>u32</td><td><code>4096</code></td><td>Minimum character count in a tool response before archiving is considered. Works alongside <code>threshold_tokens</code> — both must be exceeded.</td></tr>
+      <tr><td><code>archive.threshold_chars</code></td><td>u32</td><td><code>4096</code></td><td>Minimum character count in a tool response before archiving is considered. Works alongside <code>threshold_tokens</code> - both must be exceeded.</td></tr>
       <tr><td><code>archive.threshold_tokens</code></td><td>u32</td><td><code>500</code></td><td>Minimum token count before archiving kicks in. Small outputs don't benefit from archiving.</td></tr>
       <tr><td><code>archive.max_age_hours</code></td><td>u32</td><td><code>48</code></td><td>Global maximum age for archived entries. Entries older than this are purged regardless of access patterns.</td></tr>
       <tr><td><code>archive.max_disk_mb</code></td><td>u32</td><td><code>500</code></td><td>Maximum total disk space (in MB) the archive directory may consume. Oldest entries are evicted when the limit is reached.</td></tr>
@@ -641,7 +641,7 @@ mask_secrets = true           # Redact secrets before archiving (default: true)<
   <h2 id="compaction">Compaction Resilience <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
   <p>
     IDEs like Cursor and Windsurf periodically compact (truncate) conversation history to stay within
-    context limits. When this happens, the agent loses all prior context — cached files, knowledge,
+    context limits. When this happens, the agent loses all prior context - cached files, knowledge,
     session state. The <code>[compaction]</code> block controls how lean-ctx automatically recovers.
   </p>
 
@@ -708,7 +708,7 @@ include_knowledge = true      # Include knowledge base entries in resume (defaul
   <pre><code># ~/.lean-ctx/config.toml
 terse_agent = "full"          # off | lite | full | ultra
 
-# Backward compatible — true maps to "full", false maps to "off"
+# Backward compatible - true maps to "full", false maps to "off"
 # terse_agent = true</code></pre>
 
   <h3>Environment Variables</h3>
@@ -734,11 +734,11 @@ terse_agent = "full"          # off | lite | full | ultra
     When terse mode is active at <code>"full"</code> or above, the agent instructions include the <strong>CEP v1</strong> output protocol:
   </p>
   <ul>
-    <li><strong>Act First</strong> — Tool calls before narration</li>
-    <li><strong>Delta Only</strong> — Only changed lines, using function references (F1, F2...)</li>
-    <li><strong>Structured Notation</strong> — <code>+</code> (add), <code>-</code> (remove), <code>~</code> (modify)</li>
-    <li><strong>One Line Per Action</strong> — No verbose explanations</li>
-    <li><strong>150 Token Budget</strong> — Maximum response length for non-code output</li>
+    <li><strong>Act First</strong> - Tool calls before narration</li>
+    <li><strong>Delta Only</strong> - Only changed lines, using function references (F1, F2...)</li>
+    <li><strong>Structured Notation</strong> - <code>+</code> (add), <code>-</code> (remove), <code>~</code> (modify)</li>
+    <li><strong>One Line Per Action</strong> - No verbose explanations</li>
+    <li><strong>150 Token Budget</strong> - Maximum response length for non-code output</li>
   </ul>
   <p>
     This can reduce total token usage by <strong>30-50%</strong> per conversation turn.
@@ -771,8 +771,8 @@ terse_agent = "full"          # off | lite | full | ultra
     </thead>
     <tbody>
       <tr><td><code>"normal"</code></td><td>Full tool output with standard formatting. No compression applied.</td></tr>
-      <tr><td><code>"terse"</code></td><td>Moderate compression — removes blank lines, shortens paths, collapses repetitive output. Typically saves 20-40% input tokens.</td></tr>
-      <tr><td><code>"ultra"</code></td><td>Maximum compression — aggressive truncation, symbol-only formatting, minimal whitespace. Saves 50-70% but may lose context in large outputs.</td></tr>
+      <tr><td><code>"terse"</code></td><td>Moderate compression - removes blank lines, shortens paths, collapses repetitive output. Typically saves 20-40% input tokens.</td></tr>
+      <tr><td><code>"ultra"</code></td><td>Maximum compression - aggressive truncation, symbol-only formatting, minimal whitespace. Saves 50-70% but may lose context in large outputs.</td></tr>
     </tbody>
   </table>
 
@@ -788,7 +788,7 @@ output_density = "terse"
   <h2 id="minimal-overhead">Minimal Overhead <span class="text-xs font-normal text-muted ml-2">v3.4.1</span></h2>
   <p>
     <code>minimal_overhead</code> reduces lean-ctx's per-call token footprint to the absolute minimum.
-    It's designed for environments where every token counts — Codex, CI pipelines, or any
+    It's designed for environments where every token counts - Codex, CI pipelines, or any
     cost-sensitive workflow.
   </p>
 
@@ -819,16 +819,16 @@ minimal_overhead = true
 
   <h3>When to use</h3>
   <ul>
-    <li><strong>Codex / Claude Code CLI</strong> — these environments benefit most from reduced overhead since every token in the conversation counts against the context window</li>
-    <li><strong>CI/CD pipelines</strong> — automated tasks where meta-strings add noise without value</li>
-    <li><strong>High-frequency tool calls</strong> — sessions with many short tool calls where per-call overhead accumulates</li>
-    <li><strong>Cost optimization</strong> — when you want to minimize API costs without changing compression settings</li>
+    <li><strong>Codex / Claude Code CLI</strong> - these environments benefit most from reduced overhead since every token in the conversation counts against the context window</li>
+    <li><strong>CI/CD pipelines</strong> - automated tasks where meta-strings add noise without value</li>
+    <li><strong>High-frequency tool calls</strong> - sessions with many short tool calls where per-call overhead accumulates</li>
+    <li><strong>Cost optimization</strong> - when you want to minimize API costs without changing compression settings</li>
   </ul>
 
   <h3>Measured impact</h3>
   <p>
     Combined with lazy tools (default), minimal overhead reduces per-session token overhead
-    from ~6,600 tokens (full tools + verbose) to ~2,400 tokens (lazy + minimal) — a <strong>64% reduction</strong>.
+    from ~6,600 tokens (full tools + verbose) to ~2,400 tokens (lazy + minimal) - a <strong>64% reduction</strong>.
   </p>
 
   <hr />
@@ -848,7 +848,7 @@ minimal_overhead = true
     <tbody>
       <tr><td><code>"global"</code></td><td><code>~/.cursor/rules/lean-ctx.mdc</code></td><td>Share lean-ctx rules across all projects. Project directories stay clean.</td></tr>
       <tr><td><code>"project"</code></td><td><code>.cursor/rules/lean-ctx.mdc</code></td><td>Per-project rules only. Useful when global rules conflict with other tools.</td></tr>
-      <tr><td><code>"both"</code></td><td>Both locations</td><td>Maximum coverage — ensures lean-ctx is active regardless of how Cursor resolves rules.</td></tr>
+      <tr><td><code>"both"</code></td><td>Both locations</td><td>Maximum coverage - ensures lean-ctx is active regardless of how Cursor resolves rules.</td></tr>
     </tbody>
   </table>
 
@@ -918,7 +918,7 @@ command = "kubectl apply -f k8s/staging/ --dry-run=client"</code></pre>
   <p>
     By default, when lean-ctx starts as an MCP server it automatically configures the environment:
     injecting rules, installing hooks, updating CLAUDE.md, and registering itself. If you want full
-    control over your configuration — for example when using a custom launcher — you can disable
+    control over your configuration - for example when using a custom launcher - you can disable
     all auto-setup behavior.
   </p>
 
@@ -935,10 +935,10 @@ export LEAN_CTX_HEADLESS=1
 
   <h3>When to Use</h3>
   <ul>
-    <li><strong>Custom launchers</strong> — You inject lean-ctx instructions via <code>--append-system-prompt</code></li>
-    <li><strong>Toggle setups</strong> — You want to switch lean-ctx on/off per session</li>
-    <li><strong>CI/CD pipelines</strong> — No interactive environment, no need for hooks</li>
-    <li><strong>Sandboxed environments</strong> — You don't want lean-ctx modifying files outside the project</li>
+    <li><strong>Custom launchers</strong> - You inject lean-ctx instructions via <code>--append-system-prompt</code></li>
+    <li><strong>Toggle setups</strong> - You want to switch lean-ctx on/off per session</li>
+    <li><strong>CI/CD pipelines</strong> - No interactive environment, no need for hooks</li>
+    <li><strong>Sandboxed environments</strong> - You don't want lean-ctx modifying files outside the project</li>
   </ul>
 
   <hr />

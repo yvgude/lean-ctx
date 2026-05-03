@@ -84,7 +84,7 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
 ---
 
 <DocsLayout
-  title={`${toolName} — Tool Reference`}
+  title={`${toolName} - Tool Reference`}
   description={`${tool.description.slice(0, 160)}`}
   keywords={`${toolName}, lean-ctx tool, MCP tool, ${categoryLabel.toLowerCase()}, AI token compression`}
   sidebar={sidebar}
@@ -180,7 +180,7 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
                 <td><code class="text-xs">{formatType(prop)}</code></td>
                 <td>{isRequired ? 'Yes' : 'No'}</td>
                 <td>
-                  {prop.description ?? '—'}
+                  {prop.description ?? '-'}
                   {prop.default !== undefined && (
                     <span class="text-xs text-muted ml-1">(default: <code>{String(prop.default)}</code>)</span>
                   )}

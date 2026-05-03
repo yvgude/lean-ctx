@@ -83,7 +83,7 @@ ctx_read auth.ts
 
   <h3>Mode: map</h3>
   <p>
-    Returns a dependency graph, exports list, and API signatures — everything the LLM needs to understand
+    Returns a dependency graph, exports list, and API signatures - everything the LLM needs to understand
     a file's role without reading its implementation. Use for context files you won't edit.
   </p>
   <pre><code>ctx_read server.rs --mode map
@@ -103,7 +103,7 @@ ctx_read auth.ts
   <p>
     Extracts function signatures, interface definitions, type aliases, and class declarations
     using <strong>tree-sitter AST parsing</strong> across 18 languages (TS/JS, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala, Elixir, Zig).
-    More detail than <code>map</code> mode — includes private functions, nested signatures, and multi-line definitions.
+    More detail than <code>map</code> mode - includes private functions, nested signatures, and multi-line definitions.
     Uses compact notation with type abbreviations.
   </p>
   <pre><code>ctx_read auth.ts --mode signatures
@@ -149,7 +149,7 @@ ctx_read auth.ts
   </p>
   <p>
     <strong>Graph context is best-effort:</strong> it uses an existing project graph if present
-    (prefers SQLite property graph; falls back to the lightweight JSON graph index). It does not build graphs implicitly in task mode —
+    (prefers SQLite property graph; falls back to the lightweight JSON graph index). It does not build graphs implicitly in task mode -
     run <code>ctx_graph action=build</code> (fast) or <code>ctx_impact action=build</code> (deep) once per project to enable it.
   </p>
   <pre><code>ctx_session action=task value="fix auth refresh token bug"
@@ -185,23 +185,23 @@ ctx_read src/auth/service.rs --mode task
  deps db,crypto
  exports createUser,validateSession</code></pre>
   <ul>
-    <li><code>F1</code>, <code>F2</code>, ... — file reference IDs that persist for the session</li>
-    <li><code>=short_path</code> — abbreviated file path</li>
-    <li><code>123L</code> — line count</li>
-    <li><code>deps ...</code> — imported modules (compact list)</li>
-    <li><code>exports ...</code> — exported names (compact list)</li>
+    <li><code>F1</code>, <code>F2</code>, ... - file reference IDs that persist for the session</li>
+    <li><code>=short_path</code> - abbreviated file path</li>
+    <li><code>123L</code> - line count</li>
+    <li><code>deps ...</code> - imported modules (compact list)</li>
+    <li><code>exports ...</code> - exported names (compact list)</li>
   </ul>
 
   <h3>Compact Notation</h3>
   <ul>
-    <li><code>⊛</code> — async function</li>
-    <li><code>:s</code>, <code>:n</code>, <code>:b</code> — type abbreviations (string, number, boolean)</li>
-    <li><code>fn</code>, <code>cl</code>, <code>if</code>, <code>tp</code> — keyword abbreviations</li>
+    <li><code>⊛</code> - async function</li>
+    <li><code>:s</code>, <code>:n</code>, <code>:b</code> - type abbreviations (string, number, boolean)</li>
+    <li><code>fn</code>, <code>cl</code>, <code>if</code>, <code>tp</code> - keyword abbreviations</li>
   </ul>
 
   <h3>Security</h3>
   <p>
-    All file reads pass through the <strong>PathJail</strong> sandbox. Paths must resolve inside the project root —
+    All file reads pass through the <strong>PathJail</strong> sandbox. Paths must resolve inside the project root -
     <code>../</code> traversal, symlink attacks, and absolute paths outside the project are rejected.
     Files exceeding <code>LCTX_MAX_READ_BYTES</code> (default: 5 MB) are rejected to prevent accidental
     ingestion of large binaries or generated files.
@@ -300,7 +300,7 @@ ctx_read src/auth/service.rs --mode task
   <h3>TDD Mode</h3>
   <p>
     Tree output is already ultra-compact by design. TDD mode does not apply additional compression
-    to <code>ctx_tree</code> — the output format is the same regardless of <code>CRP_MODE</code>.
+    to <code>ctx_tree</code> - the output format is the same regardless of <code>CRP_MODE</code>.
   </p>
 
   <a href={lp('/docs/tools/ctx-tree')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -337,10 +337,10 @@ ctx_read src/auth/service.rs --mode task
     <code>ctx_shell</code> enforces multiple security layers:
   </p>
   <ul>
-    <li><strong>File-write blocking</strong> — Shell redirects (<code>&gt;</code>, <code>&gt;&gt;</code>), heredocs that write to files (<code>cat &lt;&lt;EOF &gt; file.txt</code>), and <code>tee</code> are rejected with a clear error. Heredocs for input piping (e.g. <code>psql &lt;&lt;EOF</code>) are allowed. Use the native Write tool for file creation.</li>
-    <li><strong>Command size limit</strong> — Commands over 8KB are rejected. Large heredocs corrupt the MCP protocol stream.</li>
-    <li><strong>Output size cap</strong> — Output exceeding <code>LCTX_MAX_SHELL_BYTES</code> (default: 1 MB) is truncated with a <code>[truncated]</code> marker to prevent context window overflow.</li>
-    <li><strong>Metadata neutralization</strong> — All output is sanitized to strip control characters and potential prompt injection patterns.</li>
+    <li><strong>File-write blocking</strong> - Shell redirects (<code>&gt;</code>, <code>&gt;&gt;</code>), heredocs that write to files (<code>cat &lt;&lt;EOF &gt; file.txt</code>), and <code>tee</code> are rejected with a clear error. Heredocs for input piping (e.g. <code>psql &lt;&lt;EOF</code>) are allowed. Use the native Write tool for file creation.</li>
+    <li><strong>Command size limit</strong> - Commands over 8KB are rejected. Large heredocs corrupt the MCP protocol stream.</li>
+    <li><strong>Output size cap</strong> - Output exceeding <code>LCTX_MAX_SHELL_BYTES</code> (default: 1 MB) is truncated with a <code>[truncated]</code> marker to prevent context window overflow.</li>
+    <li><strong>Metadata neutralization</strong> - All output is sanitized to strip control characters and potential prompt injection patterns.</li>
   </ul>
 
   <h3>Supported Patterns (90+)</h3>
@@ -529,7 +529,7 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
   <h2 id="ctx_execute">ctx_execute</h2>
   <p>
     <code>ctx_execute</code> runs code in isolated subprocesses across 11 languages. Only stdout enters
-    the context window — stderr is captured separately with exit codes. Use it to validate logic,
+    the context window - stderr is captured separately with exit codes. Use it to validate logic,
     transform data, or run quick computations without leaving the AI conversation.
   </p>
 
@@ -591,7 +591,7 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     <li>Each script runs in an isolated subprocess with <code>LEAN_CTX_SANDBOX=1</code> environment variable</li>
     <li>Default timeout: 30 seconds (configurable per call)</li>
     <li>Large outputs are smart-truncated (60% head / 40% tail) to stay within token limits</li>
-    <li>Only stdout enters the AI context — stderr is shown separately for debugging</li>
+    <li>Only stdout enters the AI context - stderr is shown separately for debugging</li>
   </ul>
 
   <a href={lp('/docs/tools/ctx-execute')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
@@ -615,7 +615,7 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     </thead>
     <tbody>
       <tr><td><code>id</code></td><td>string</td><td>Yes</td><td>The archive reference ID (from the <code>[ARCHIVE: ...]</code> marker in a compressed response)</td></tr>
-      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>get</code> (default) — retrieve full content; <code>list</code> — show all archived entries; <code>stats</code> — show archive statistics</td></tr>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>get</code> (default) - retrieve full content; <code>list</code> - show all archived entries; <code>stats</code> - show archive statistics</td></tr>
     </tbody>
   </table>
 
@@ -641,7 +641,7 @@ ctx_expand id="a1b2c3d4"
     <li>Archived entries are automatically cleaned up after the configured TTL (default: 120 minutes)</li>
   </ol>
   <p>
-    Configure the archive via <code>config.toml</code> — see <a href={lp('/docs/configuration') + '#archive'}>Archive Configuration</a>.
+    Configure the archive via <code>config.toml</code> - see <a href={lp('/docs/configuration') + '#archive'}>Archive Configuration</a>.
   </p>
 
   <a href={lp('/docs/tools/ctx-expand')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>

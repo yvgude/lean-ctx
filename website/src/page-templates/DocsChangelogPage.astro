@@ -37,7 +37,7 @@ const sidebar = [
 
 <DocsLayout
   title="Changelog"
-  description="lean-ctx version history — new features, improvements, and bug fixes for every release."
+  description="lean-ctx version history - new features, improvements, and bug fixes for every release."
   sidebar={sidebar}
 >
   <p>
@@ -47,18 +47,18 @@ const sidebar = [
 
   <!-- 3.4.2 -->
   <h2 id="v3.4.2">3.4.2 <span class="text-xs text-muted">(April 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release — bug fixes for Unicode paths and Windows shell detection.</p>
+  <p class="text-sm text-muted">Current stable release - bug fixes for Unicode paths and Windows shell detection.</p>
 
   <h3>Fixed</h3>
   <ul>
-    <li><strong>Unicode SIGABRT in <code>ctx_overview</code></strong> — directory path truncation used byte-index slicing which panicked on multi-byte UTF-8 characters (Chinese, Japanese, Korean, emoji paths). Replaced with char-boundary-safe truncation. <a href="https://github.com/yvgude/lean-ctx/issues/154">#154</a></li>
-    <li><strong>Windows shell detection in Git Bash / MSYS2</strong> — <code>find_real_shell()</code> now checks <code>MSYSTEM</code>/<code>MINGW_PREFIX</code> env vars before <code>PSModulePath</code>, preventing incorrect PowerShell detection when running inside Git Bash. <a href="https://github.com/yvgude/lean-ctx/issues/156">#156</a></li>
+    <li><strong>Unicode SIGABRT in <code>ctx_overview</code></strong> - directory path truncation used byte-index slicing which panicked on multi-byte UTF-8 characters (Chinese, Japanese, Korean, emoji paths). Replaced with char-boundary-safe truncation. <a href="https://github.com/yvgude/lean-ctx/issues/154">#154</a></li>
+    <li><strong>Windows shell detection in Git Bash / MSYS2</strong> - <code>find_real_shell()</code> now checks <code>MSYSTEM</code>/<code>MINGW_PREFIX</code> env vars before <code>PSModulePath</code>, preventing incorrect PowerShell detection when running inside Git Bash. <a href="https://github.com/yvgude/lean-ctx/issues/156">#156</a></li>
   </ul>
 
   <h3>Added</h3>
   <ul>
-    <li><strong>Shell hint in MCP instructions (Windows)</strong> — on Windows, instructions now include the detected shell type with explicit guidance, helping LLMs generate correct commands for the active shell environment</li>
-    <li><strong>Shell mismatch hint in <code>ctx_shell</code> responses (Windows)</strong> — when a command fails and contains PowerShell cmdlets while the detected shell is POSIX, a correction hint is appended</li>
+    <li><strong>Shell hint in MCP instructions (Windows)</strong> - on Windows, instructions now include the detected shell type with explicit guidance, helping LLMs generate correct commands for the active shell environment</li>
+    <li><strong>Shell mismatch hint in <code>ctx_shell</code> responses (Windows)</strong> - when a command fails and contains PowerShell cmdlets while the detected shell is POSIX, a correction hint is appended</li>
   </ul>
 
   <!-- 3.4.1 -->
@@ -67,31 +67,31 @@ const sidebar = [
 
   <h3>Highlights</h3>
   <ul>
-    <li><strong>Up to 64% lower per-session token overhead</strong> — best-case overhead reduced from ~6,600 to ~2,400 tokens through lazy tools + <code>minimal_overhead</code> mode</li>
-    <li><strong>Async I/O on hot paths</strong> — session saves and cost attribution no longer block tool responses, reducing latency for every tool call</li>
-    <li><strong>New <code>minimal_overhead</code> mode</strong> — set <code>minimal_overhead = true</code> or <code>LEAN_CTX_MINIMAL=1</code> to suppress auto-checkpoints, meta-strings, and session blocks in instructions. Ideal for Codex and cost-sensitive environments</li>
+    <li><strong>Up to 64% lower per-session token overhead</strong> - best-case overhead reduced from ~6,600 to ~2,400 tokens through lazy tools + <code>minimal_overhead</code> mode</li>
+    <li><strong>Async I/O on hot paths</strong> - session saves and cost attribution no longer block tool responses, reducing latency for every tool call</li>
+    <li><strong>New <code>minimal_overhead</code> mode</strong> - set <code>minimal_overhead = true</code> or <code>LEAN_CTX_MINIMAL=1</code> to suppress auto-checkpoints, meta-strings, and session blocks in instructions. Ideal for Codex and cost-sensitive environments</li>
   </ul>
 
   <h3>Performance</h3>
   <ul>
-    <li><code>Session.save()</code> split into <code>prepare_save()</code> (CPU under lock) + <code>write_to_disk()</code> (background thread) — serialization stays fast, disk I/O no longer blocks responses</li>
+    <li><code>Session.save()</code> split into <code>prepare_save()</code> (CPU under lock) + <code>write_to_disk()</code> (background thread) - serialization stays fast, disk I/O no longer blocks responses</li>
     <li><code>CostStore</code> writes deferred to background via <code>tokio::task::spawn_blocking</code></li>
     <li><code>mcp-live.json</code> writes debounced to every 5th tool call (80% fewer disk writes)</li>
-    <li><code>count_tokens</code> called once per tool response instead of up to 4 times — cached result reused for hints, cost attribution, and logging</li>
+    <li><code>count_tokens</code> called once per tool response instead of up to 4 times - cached result reused for hints, cost attribution, and logging</li>
     <li><code>compress_output</code> skipped entirely for <code>Normal</code> density (no string copy)</li>
-    <li><code>md5_hex_fast</code> — 8x faster fingerprinting for large outputs (&gt;16 KB) by hashing prefix + suffix + length</li>
+    <li><code>md5_hex_fast</code> - 8x faster fingerprinting for large outputs (&gt;16 KB) by hashing prefix + suffix + length</li>
   </ul>
 
   <h3>Token Savings</h3>
   <ul>
-    <li>Auto-checkpoint injection disabled under <code>minimal_overhead</code> — eliminates the largest per-call token overhead source</li>
+    <li>Auto-checkpoint injection disabled under <code>minimal_overhead</code> - eliminates the largest per-call token overhead source</li>
     <li>Meta-strings (<code>stale_note</code>, <code>savings_note</code>, shell efficiency hints, archive hints) suppressed under <code>minimal_overhead</code></li>
     <li>Session/knowledge/gotcha blocks removed from MCP instructions under <code>minimal_overhead</code></li>
   </ul>
 
   <h3>Bug Fixes</h3>
   <ul>
-    <li>Fixed integer overflow crash in <code>shell_efficiency_hint</code> when output tokens exceeded input tokens (e.g. shell commands that expand output) — now uses <code>saturating_sub</code></li>
+    <li>Fixed integer overflow crash in <code>shell_efficiency_hint</code> when output tokens exceeded input tokens (e.g. shell commands that expand output) - now uses <code>saturating_sub</code></li>
     <li>Synchronous <code>save()</code> restores retry counter on disk write failure, preserving auto-save retry behavior</li>
   </ul>
 
@@ -102,10 +102,10 @@ const sidebar = [
 
   <h3>Highlights</h3>
   <ul>
-    <li><strong>Lazy tools now the default</strong> — only 9 core tools exposed by default instead of 46, reducing per-turn input overhead by ~80%. Use <code>LEAN_CTX_FULL_TOOLS=1</code> to opt back in. <code>ctx_discover_tools</code> lets agents load additional tools on demand</li>
-    <li><strong>XDG Base Directory compliance</strong> — new installs use <code>$XDG_CONFIG_HOME/lean-ctx</code>. Existing <code>~/.lean-ctx</code> directories auto-detected</li>
-    <li><strong>JSONC comment support</strong> — config writers now parse JSON with <code>//</code> and <code>/* */</code> comments</li>
-    <li><strong>Shell hook disable</strong> — <code>--no-shell-hook</code> flag, <code>shell_hook_disabled = true</code> config, <code>LEAN_CTX_NO_HOOK=1</code> env var</li>
+    <li><strong>Lazy tools now the default</strong> - only 9 core tools exposed by default instead of 46, reducing per-turn input overhead by ~80%. Use <code>LEAN_CTX_FULL_TOOLS=1</code> to opt back in. <code>ctx_discover_tools</code> lets agents load additional tools on demand</li>
+    <li><strong>XDG Base Directory compliance</strong> - new installs use <code>$XDG_CONFIG_HOME/lean-ctx</code>. Existing <code>~/.lean-ctx</code> directories auto-detected</li>
+    <li><strong>JSONC comment support</strong> - config writers now parse JSON with <code>//</code> and <code>/* */</code> comments</li>
+    <li><strong>Shell hook disable</strong> - <code>--no-shell-hook</code> flag, <code>shell_hook_disabled = true</code> config, <code>LEAN_CTX_NO_HOOK=1</code> env var</li>
   </ul>
 
   <hr />
@@ -122,7 +122,7 @@ const sidebar = [
 
   <h3>Improvements</h3>
   <ul>
-    <li>Improved CRP mode density — budget enforcement at ≤150 tokens per response</li>
+    <li>Improved CRP mode density - budget enforcement at ≤150 tokens per response</li>
     <li>Enhanced <code>ctx_knowledge</code> with <code>rooms</code>, <code>search</code>, and <code>wakeup</code> actions</li>
     <li>Better session resume flow with <code>ctx_session</code> resume action</li>
     <li>Polished Observatory TUI dashboard layout</li>
@@ -143,14 +143,14 @@ const sidebar = [
   <h3>Highlights</h3>
   <ul>
     <li><strong>Composite project hash:</strong> New <code>project_hash</code> combines content hash, structure hash, and config hash into a single deterministic fingerprint for change detection</li>
-    <li><strong>Codex hooks integration:</strong> Native hook support for OpenAI Codex CLI — <code>PreToolCall</code>, <code>PostToolCall</code>, and <code>SessionStart</code> events</li>
+    <li><strong>Codex hooks integration:</strong> Native hook support for OpenAI Codex CLI - <code>PreToolCall</code>, <code>PostToolCall</code>, and <code>SessionStart</code> events</li>
   </ul>
 
   <h3>New Features</h3>
   <ul>
-    <li><code>project_hash</code> — composite hash for CI caching and drift detection across branches</li>
+    <li><code>project_hash</code> - composite hash for CI caching and drift detection across branches</li>
     <li>Codex hook scripts auto-installed via <code>lean-ctx install --codex</code></li>
-    <li><code>ctx_knowledge action="timeline"</code> — chronological view of knowledge base entries</li>
+    <li><code>ctx_knowledge action="timeline"</code> - chronological view of knowledge base entries</li>
   </ul>
 
   <h3>Improvements</h3>
@@ -172,13 +172,13 @@ const sidebar = [
 
   <h3>Highlights</h3>
   <ul>
-    <li><strong>85+ new passthrough entries:</strong> Massive expansion of the shell passthrough table — commands that are passed through uncompressed when compression would lose critical information</li>
+    <li><strong>85+ new passthrough entries:</strong> Massive expansion of the shell passthrough table - commands that are passed through uncompressed when compression would lose critical information</li>
   </ul>
 
   <h3>New Features</h3>
   <ul>
     <li>85+ new passthrough patterns for debugging tools (<code>strace</code>, <code>ltrace</code>, <code>perf</code>), database CLIs (<code>psql</code>, <code>mysql</code>, <code>redis-cli</code>), and cloud CLIs (<code>aws</code>, <code>gcloud</code>, <code>az</code>)</li>
-    <li><code>ctx_shell raw=true</code> — explicit bypass for any command, returning uncompressed output</li>
+    <li><code>ctx_shell raw=true</code> - explicit bypass for any command, returning uncompressed output</li>
   </ul>
 
   <h3>Improvements</h3>
@@ -197,7 +197,7 @@ const sidebar = [
 
   <!-- 3.3.0 -->
   <h2 id="v3.3.0">3.3.0 <span class="text-xs text-muted">(January 2026)</span></h2>
-  <p class="text-sm text-muted">Major release — expanded tool surface and protocol overhaul.</p>
+  <p class="text-sm text-muted">Major release - expanded tool surface and protocol overhaul.</p>
 
   <h3>Highlights</h3>
   <ul>
@@ -216,7 +216,7 @@ const sidebar = [
       <tr><td><code><a href={lp('/docs/tools/ctx-graph')}>ctx_graph</a></code></td><td>Analysis</td><td>Build and query code dependency graphs</td></tr>
       <tr><td><code><a href={lp('/docs/tools/ctx-graph-diagram')}>ctx_graph_diagram</a></code></td><td>Analysis</td><td>Visual Mermaid diagrams from dependency data</td></tr>
       <tr><td><code><a href={lp('/docs/tools/ctx-heatmap')}>ctx_heatmap</a></code></td><td>Analysis</td><td>File complexity and change-frequency heatmaps</td></tr>
-      <tr><td><code><a href={lp('/docs/tools/ctx-impact')}>ctx_impact</a></code></td><td>Analysis</td><td>Change impact analysis — what breaks if you modify X</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-impact')}>ctx_impact</a></code></td><td>Analysis</td><td>Change impact analysis - what breaks if you modify X</td></tr>
       <tr><td><code><a href={lp('/docs/tools/ctx-workflow')}>ctx_workflow</a></code></td><td>Workflow</td><td>Multi-step workflow orchestration</td></tr>
       <tr><td><code><a href={lp('/docs/tools/ctx-wrapped')}>ctx_wrapped</a></code></td><td>Workflow</td><td>Wrapped tool calls with pre/post hooks</td></tr>
       <tr><td><code><a href={lp('/docs/tools/ctx-execute')}>ctx_execute</a></code></td><td>Workflow</td><td>Execute workflow steps with rollback</td></tr>
@@ -232,7 +232,7 @@ const sidebar = [
 
   <h3>Breaking Changes</h3>
   <ul>
-    <li>CRP mode output format changed — agents using hard-coded parsers should update</li>
+    <li>CRP mode output format changed - agents using hard-coded parsers should update</li>
     <li><code>ctx_agent action="handoff"</code> renamed to <code>ctx_handoff</code> (old form still accepted with deprecation warning)</li>
   </ul>
 
@@ -243,12 +243,12 @@ const sidebar = [
 
   <h3>Highlights</h3>
   <ul>
-    <li><strong><code>LEAN_CTX_SHELL_TIMEOUT_MS</code>:</strong> New environment variable to control shell command timeout globally — prevents runaway processes from blocking sessions</li>
+    <li><strong><code>LEAN_CTX_SHELL_TIMEOUT_MS</code>:</strong> New environment variable to control shell command timeout globally - prevents runaway processes from blocking sessions</li>
   </ul>
 
   <h3>New Features</h3>
   <ul>
-    <li><code>LEAN_CTX_SHELL_TIMEOUT_MS</code> — configurable shell timeout (default: 30000ms), applied to all <code>ctx_shell</code> invocations</li>
+    <li><code>LEAN_CTX_SHELL_TIMEOUT_MS</code> - configurable shell timeout (default: 30000ms), applied to all <code>ctx_shell</code> invocations</li>
     <li><code>ctx_shell</code> now reports timeout kills with exit code and partial output</li>
   </ul>
 
@@ -271,7 +271,7 @@ const sidebar = [
 
   <h3>Highlights</h3>
   <ul>
-    <li><strong>Gemini path change:</strong> Gemini CLI MCP configuration moved from <code>~/.gemini/config.json</code> to VS Code <code>settings.json</code> — lean-ctx auto-detects the new path</li>
+    <li><strong>Gemini path change:</strong> Gemini CLI MCP configuration moved from <code>~/.gemini/config.json</code> to VS Code <code>settings.json</code> - lean-ctx auto-detects the new path</li>
   </ul>
 
   <h3>New Features</h3>
@@ -299,13 +299,13 @@ const sidebar = [
 
   <h3>Highlights</h3>
   <ul>
-    <li><strong><code>rules_scope</code>:</strong> New config option to control which rule files lean-ctx injects — filter by <code>project</code>, <code>user</code>, or <code>global</code> scope</li>
+    <li><strong><code>rules_scope</code>:</strong> New config option to control which rule files lean-ctx injects - filter by <code>project</code>, <code>user</code>, or <code>global</code> scope</li>
   </ul>
 
   <h3>New Features</h3>
   <ul>
-    <li><code>rules_scope</code> config option — restrict injected rules to specific scopes (<code>"project"</code>, <code>"user"</code>, <code>"global"</code>, or combinations)</li>
-    <li><code>ctx_read mode="reference"</code> — compact reference-only output for documentation files</li>
+    <li><code>rules_scope</code> config option - restrict injected rules to specific scopes (<code>"project"</code>, <code>"user"</code>, <code>"global"</code>, or combinations)</li>
+    <li><code>ctx_read mode="reference"</code> - compact reference-only output for documentation files</li>
   </ul>
 
   <h3>Improvements</h3>
@@ -324,25 +324,25 @@ const sidebar = [
 
   <!-- 3.2.0 -->
   <h2 id="v3.2.0">3.2.0 <span class="text-xs text-muted">(August 2025)</span></h2>
-  <p class="text-sm text-muted">Major feature release — HTTP server mode.</p>
+  <p class="text-sm text-muted">Major feature release - HTTP server mode.</p>
 
   <h3>Highlights</h3>
   <ul>
-    <li><strong><code>lean-ctx serve</code>:</strong> HTTP server mode for running lean-ctx as a standalone service — enables remote agents, web integrations, and custom toolchains to use lean-ctx over HTTP</li>
+    <li><strong><code>lean-ctx serve</code>:</strong> HTTP server mode for running lean-ctx as a standalone service - enables remote agents, web integrations, and custom toolchains to use lean-ctx over HTTP</li>
   </ul>
 
   <h3>New Features</h3>
   <ul>
-    <li><code>lean-ctx serve</code> — starts an HTTP server with REST API endpoints mirroring all MCP tools</li>
-    <li><code>lean-ctx serve --stdio</code> — stdio mode for container and pipe-based integrations</li>
-    <li><code>lean-ctx serve --port 9315</code> — configurable port (default: 9315)</li>
+    <li><code>lean-ctx serve</code> - starts an HTTP server with REST API endpoints mirroring all MCP tools</li>
+    <li><code>lean-ctx serve --stdio</code> - stdio mode for container and pipe-based integrations</li>
+    <li><code>lean-ctx serve --port 9315</code> - configurable port (default: 9315)</li>
     <li>Health check endpoint at <code>/health</code> with session and cache stats</li>
   </ul>
 
   <h3>Improvements</h3>
   <ul>
     <li>All 38 tools (at the time) accessible via <code>POST /tool/:name</code> with JSON body</li>
-    <li>Session management via <code>X-Session-ID</code> header — enables multi-tenant usage</li>
+    <li>Session management via <code>X-Session-ID</code> header - enables multi-tenant usage</li>
     <li>CORS support for browser-based integrations</li>
   </ul>
 
@@ -365,15 +365,15 @@ const sidebar = [
 
   <h3>New Features</h3>
   <ul>
-    <li><code>lean-ctx watch</code> — interactive terminal UI with live session monitoring</li>
+    <li><code>lean-ctx watch</code> - interactive terminal UI with live session monitoring</li>
     <li>Dashboard panels: active agents, recent tool calls, token savings graph, cache hit rate, file reference table</li>
     <li>Keyboard shortcuts: <kbd>q</kbd> quit, <kbd>r</kbd> refresh, <kbd>t</kbd> toggle tool detail, <kbd>f</kbd> filter by agent</li>
   </ul>
 
   <h3>Improvements</h3>
   <ul>
-    <li>Complete rewrite from Node.js to Rust — 10x faster startup, 5x lower memory</li>
-    <li>Single binary distribution — no runtime dependencies</li>
+    <li>Complete rewrite from Node.js to Rust - 10x faster startup, 5x lower memory</li>
+    <li>Single binary distribution - no runtime dependencies</li>
     <li>Tree-sitter integration for structural code analysis (initial 12 grammars)</li>
   </ul>
 

@@ -62,7 +62,7 @@ const t = useTranslations(locale);
   const getApiKey = () => localStorage.getItem('leanctx_api_key');
 
   function fmt(n) {
-    if (n == null) return '—';
+    if (n == null) return '-';
     if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
     if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
     if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
@@ -310,7 +310,7 @@ const t = useTranslations(locale);
     if ($('kpiCostSub')) $('kpiCostSub').textContent = 'input ' + fmtDollar(cost.iW - cost.iC) + ' · output ' + fmtDollar(cost.oW - cost.oC);
     if ($('kpiDays')) $('kpiDays').textContent = stats.length.toString();
     if ($('kpiToolCalls')) $('kpiToolCalls').textContent = fmt(agg.totalCalls);
-    if ($('kpiCompression')) $('kpiCompression').textContent = agg.compressionPct > 0 ? agg.compressionPct.toFixed(0) + '%' : '—';
+    if ($('kpiCompression')) $('kpiCompression').textContent = agg.compressionPct > 0 ? agg.compressionPct.toFixed(0) + '%' : '-';
     if ($('kpiAvgDaily')) $('kpiAvgDaily').textContent = fmt(Math.round(agg.avgDaily));
 
     createLineChart('chartTokens', 'tokens',
@@ -360,8 +360,8 @@ const t = useTranslations(locale);
     if ($('statsTfCost')) $('statsTfCost').textContent = fmtDollar(cost.sv);
     if ($('statsTfCostSub')) $('statsTfCostSub').textContent = 'without ' + fmtDollar(cost.tW) + ' · with ' + fmtDollar(cost.tC);
     if ($('statsTfCalls')) $('statsTfCalls').textContent = fmt(agg.totalCalls);
-    if ($('statsTfRate')) $('statsTfRate').textContent = agg.savingsRate > 0 ? agg.savingsRate.toFixed(0) + '%' : '—';
-    if ($('statsTfCacheHit')) $('statsTfCacheHit').textContent = agg.cacheRate > 0 ? agg.cacheRate.toFixed(0) + '%' : '—';
+    if ($('statsTfRate')) $('statsTfRate').textContent = agg.savingsRate > 0 ? agg.savingsRate.toFixed(0) + '%' : '-';
+    if ($('statsTfCacheHit')) $('statsTfCacheHit').textContent = agg.cacheRate > 0 ? agg.cacheRate.toFixed(0) + '%' : '-';
 
     createDailyChart(chartStats);
     createSavingsRateChart(chartStats);
@@ -447,7 +447,7 @@ const t = useTranslations(locale);
     const el = $('statsTable');
     if (!el) return;
     if (!stats.length) {
-      el.innerHTML = `<div class="dash-empty"><svg class="dash-empty-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/></svg><p class="dash-empty-text">No stats yet — sync your data first.</p><div class="dash-empty-action"><code class="dash-code" style="display:inline-block">lean-ctx sync</code></div></div>`;
+      el.innerHTML = `<div class="dash-empty"><svg class="dash-empty-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/></svg><p class="dash-empty-text">No stats yet - sync your data first.</p><div class="dash-empty-action"><code class="dash-code" style="display:inline-block">lean-ctx sync</code></div></div>`;
       return;
     }
     const cnt = $('statsCount');
@@ -520,8 +520,8 @@ const t = useTranslations(locale);
       return `<div class="dash-model-card">
         <div class="dash-model-ext">${m.file_ext || '?'}</div>
         <div class="dash-model-meta">
-          <span class="dash-model-tag dash-model-tag--mode">${m.recommended_mode || '—'}</span>
-          <span class="dash-model-tag">${m.size_bucket || '—'}</span>
+          <span class="dash-model-tag dash-model-tag--mode">${m.recommended_mode || '-'}</span>
+          <span class="dash-model-tag">${m.size_bucket || '-'}</span>
         </div>
         <div class="dash-model-bar-wrap">
           <div class="dash-model-bar-track"><div class="dash-model-bar-fill" style="width:${conf}%"></div></div>
@@ -638,7 +638,7 @@ const t = useTranslations(locale);
     el.innerHTML = `<div class="dash-table-wrap"><table class="dash-table"><thead><tr>
       <th>Category</th><th>Pattern</th><th>Fix</th><th class="text-right">Seen</th><th class="text-right">Prevented</th>
     </tr></thead><tbody>${list.slice(0, 50).map(g => `<tr>
-      <td><span class="dash-badge dash-badge--${g.category === 'build' ? 'red' : g.category === 'runtime' ? 'yellow' : g.category === 'test' ? 'blue' : 'muted'}">${escHtml(g.category || '—')}</span></td>
+      <td><span class="dash-badge dash-badge--${g.category === 'build' ? 'red' : g.category === 'runtime' ? 'yellow' : g.category === 'test' ? 'blue' : 'muted'}">${escHtml(g.category || '-')}</span></td>
       <td style="font-family:var(--font-mono);font-size:0.6875rem;max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(g.pattern)}">${escHtml(g.pattern)}</td>
       <td style="font-size:0.75rem;max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(g.fix)}">${escHtml(g.fix)}</td>
       <td class="td-num">${g.occurrences || 0}</td>
@@ -657,7 +657,7 @@ const t = useTranslations(locale);
     const totalOut = list.reduce((a, c) => a + (Number(c.output_tokens) || 0), 0);
     const totalSaved = totalInp - totalOut;
     const sorted = [...list].sort((a, b) => (Number(b.tokens_saved) || 0) - (Number(a.tokens_saved) || 0));
-    const topSaver = sorted.length ? sorted[0].command : '—';
+    const topSaver = sorted.length ? sorted[0].command : '-';
     const cmdCost = computeCost(totalInp, totalOut, totalCmds);
 
     if ($('cmdTotal')) $('cmdTotal').textContent = fmt(totalCmds);
@@ -684,7 +684,7 @@ const t = useTranslations(locale);
       const rate = inputTokens ? ((saved / inputTokens) * 100) : 0;
       return `<tr>
         <td style="font-family:var(--font-mono);font-size:0.6875rem">${escHtml(c.command)}</td>
-        <td><span class="dash-badge dash-badge--${c.source === 'mcp' ? 'green' : 'blue'}">${c.source || '—'}</span></td>
+        <td><span class="dash-badge dash-badge--${c.source === 'mcp' ? 'green' : 'blue'}">${c.source || '-'}</span></td>
         <td class="td-num">${fmt(c.count)}</td>
         <td class="td-num">${fmt(inputTokens)}</td>
         <td class="td-num">${fmt(Number(c.output_tokens) || 0)}</td>
@@ -765,7 +765,7 @@ const t = useTranslations(locale);
     if ($('cepSessions')) $('cepSessions').textContent = list.length.toString();
 
     if (!list.length) {
-      ['cepLatest', 'cepAvg', 'cepBest', 'cepCacheRate'].forEach(id => { if ($(id)) $(id).textContent = '—'; });
+      ['cepLatest', 'cepAvg', 'cepBest', 'cepCacheRate'].forEach(id => { if ($(id)) $(id).textContent = '-'; });
       return;
     }
 
@@ -869,7 +869,7 @@ const t = useTranslations(locale);
             <span class="dash-buddy-name">${escHtml(buddy.name)}</span>
             <span class="dash-buddy-rarity" style="color:${rarityCol};border-color:${rarityCol}">${escHtml(buddy.rarity || 'Egg')}</span>
           </div>
-          <div class="dash-buddy-meta">${escHtml(buddy.species || '?')} · Lv.${buddy.level} · ${moodEmoji[buddy.mood] || '😐'} ${buddy.mood || '—'} · ${streak}d streak</div>
+          <div class="dash-buddy-meta">${escHtml(buddy.species || '?')} · Lv.${buddy.level} · ${moodEmoji[buddy.mood] || '😐'} ${buddy.mood || '-'} · ${streak}d streak</div>
           ${buddy.speech ? `<div class="dash-buddy-speech">"${escHtml(buddy.speech)}"</div>` : ''}
           ${hasRpg ? `<div class="dash-buddy-rpg">${rpgStats.map(s => `
             <div class="dash-buddy-stat">
@@ -908,9 +908,9 @@ const t = useTranslations(locale);
     const el = $('settingsProfile');
     if (!el) return;
     el.innerHTML = `
-      <div class="dash-kv"><span class="dash-kv-key">Email</span><span class="dash-kv-val">${escHtml(me?.email || '—')}</span></div>
-      <div class="dash-kv"><span class="dash-kv-key">User ID</span><span class="dash-kv-val" style="font-family:var(--font-mono);font-size:0.75rem">${me?.user_id || '—'}</span></div>
-      <div class="dash-kv"><span class="dash-kv-key">Plan</span><span class="dash-kv-val">${me?.plan || '—'}</span></div>
+      <div class="dash-kv"><span class="dash-kv-key">Email</span><span class="dash-kv-val">${escHtml(me?.email || '-')}</span></div>
+      <div class="dash-kv"><span class="dash-kv-key">User ID</span><span class="dash-kv-val" style="font-family:var(--font-mono);font-size:0.75rem">${me?.user_id || '-'}</span></div>
+      <div class="dash-kv"><span class="dash-kv-key">Plan</span><span class="dash-kv-val">${me?.plan || '-'}</span></div>
       <div class="dash-kv"><span class="dash-kv-key">Verified</span><span class="dash-kv-val ${me?.email_verified ? 'dash-verified-yes' : 'dash-verified-no'}">${me?.email_verified ? '✓ Verified' : '✗ Not verified'}</span></div>`;
 
     const keyInput = $('apiKeyDisplay');
@@ -944,8 +944,8 @@ const t = useTranslations(locale);
     const totalSaved = totalOrig - totalComp;
     const co = computeCost(totalOrig, totalComp, totalCalls);
     el.innerHTML = `
-      <div class="dash-kv"><span class="dash-kv-key">Email</span><span class="dash-kv-val">${escHtml(me?.email || '—')}</span></div>
-      <div class="dash-kv"><span class="dash-kv-key">Plan</span><span class="dash-kv-val">${me?.plan || '—'}</span></div>
+      <div class="dash-kv"><span class="dash-kv-key">Email</span><span class="dash-kv-val">${escHtml(me?.email || '-')}</span></div>
+      <div class="dash-kv"><span class="dash-kv-key">Plan</span><span class="dash-kv-val">${me?.plan || '-'}</span></div>
       <div class="dash-kv"><span class="dash-kv-key">Verified</span><span class="dash-kv-val ${me?.email_verified ? 'dash-verified-yes' : 'dash-verified-no'}">${me?.email_verified ? '✓ Verified' : '✗ Not verified'}</span></div>
       <div class="dash-kv"><span class="dash-kv-key">Est. Cost Saved</span><span class="dash-kv-val" style="color:#34d399">${fmtDollar(co.sv)}</span></div>
       <div class="dash-kv"><span class="dash-kv-key">Without lean-ctx</span><span class="dash-kv-val">${fmtDollar(co.tW)}</span></div>

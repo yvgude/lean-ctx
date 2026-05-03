@@ -80,10 +80,10 @@ ctx_agent action="list"
       <tr><th>Role</th><th>Typical Responsibility</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>dev</code></td><td>Primary development — writing code</td></tr>
-      <tr><td><code>review</code></td><td>Code review — checking quality, security, patterns</td></tr>
-      <tr><td><code>test</code></td><td>Testing — writing and running tests</td></tr>
-      <tr><td><code>plan</code></td><td>Architecture — planning and design decisions</td></tr>
+      <tr><td><code>dev</code></td><td>Primary development - writing code</td></tr>
+      <tr><td><code>review</code></td><td>Code review - checking quality, security, patterns</td></tr>
+      <tr><td><code>test</code></td><td>Testing - writing and running tests</td></tr>
+      <tr><td><code>plan</code></td><td>Architecture - planning and design decisions</td></tr>
     </tbody>
   </table>
 
@@ -141,14 +141,14 @@ ctx_agent action="diary" category="discovery" message="Config uses TOML, not YAM
 ctx_agent action="diary" category="decision" message="Using JWT RS256 for auth tokens"
 
 # Log a blocker
-ctx_agent action="diary" category="blocker" message="Cannot test refresh flow — mock server needed"
+ctx_agent action="diary" category="blocker" message="Cannot test refresh flow - mock server needed"
 
 # Recall diary in a new session
 ctx_agent action="recall_diary"
 → 3 entries from cursor-dev-1:
   [discovery] Config uses TOML, not YAML as documented
   [decision] Using JWT RS256 for auth tokens
-  [blocker] Cannot test refresh flow — mock server needed`}</code></pre>
+  [blocker] Cannot test refresh flow - mock server needed`}</code></pre>
 
   <h2 id="handoff">Context Handoff</h2>
   <p>
@@ -190,7 +190,7 @@ ctx_handoff action="load"
   <ol>
     <li>lean-ctx tracks how many tool calls have been made in the session (server-side counter)</li>
     <li>The model's context includes an expected counter value from the session banner</li>
-    <li>After compaction, the model may "forget" recent calls — the next tool call has a counter gap</li>
+    <li>After compaction, the model may "forget" recent calls - the next tool call has a counter gap</li>
     <li>When a gap is detected, lean-ctx automatically injects the resume block into the response</li>
   </ol>
   <pre><code>{`# Normal flow: counters match
@@ -219,7 +219,7 @@ Tool call #10 → server expects #15 ✗ (gap detected)
     that were archived before the context was truncated:
   </p>
   <ul>
-    <li>Archive IDs listed in resume block are validated — expired entries are excluded</li>
+    <li>Archive IDs listed in resume block are validated - expired entries are excluded</li>
     <li>The agent can call <code>ctx_expand id="..."</code> to retrieve any listed archive</li>
     <li>If the archive TTL expired during compaction, the resume block notes it as <code>[expired]</code></li>
   </ul>
@@ -234,7 +234,7 @@ counter_gap_threshold = 2     # Min gap to trigger resume injection`}</code></pr
   <h2>Best Practices</h2>
   <ul>
     <li><strong>Register early:</strong> Call <code>ctx_agent action="register"</code> at the start of every multi-agent session</li>
-    <li><strong>Use diaries:</strong> Log important discoveries and decisions — they persist and help future sessions</li>
+    <li><strong>Use diaries:</strong> Log important discoveries and decisions - they persist and help future sessions</li>
     <li><strong>Categorize messages:</strong> Use <code>finding</code>, <code>warning</code>, <code>request</code>, <code>status</code> for easy filtering</li>
     <li><strong>Delegate with context:</strong> Include clear descriptions when assigning tasks</li>
     <li><strong>Track costs:</strong> Use <code>ctx_cost action="agent"</code> to monitor per-agent token spend</li>

@@ -15,7 +15,7 @@ const sidebar = [
     ],
   },
   {
-    title: 'Tier 1 — Full Setup',
+    title: 'Tier 1 - Full Setup',
     compact: true,
     items: [
       { label: 'Claude Code', href: lp('/docs/guides/editor-integrations') + '#claude-code' },
@@ -26,7 +26,7 @@ const sidebar = [
     ],
   },
   {
-    title: 'Tier 2 — Quick Setup',
+    title: 'Tier 2 - Quick Setup',
     compact: true,
     items: [
       { label: 'Windsurf', href: lp('/docs/guides/editor-integrations') + '#windsurf' },
@@ -37,7 +37,7 @@ const sidebar = [
     ],
   },
   {
-    title: 'Tier 3 — Minimal Setup',
+    title: 'Tier 3 - Minimal Setup',
     compact: true,
     items: [
       { label: 'Hermes Agent', href: lp('/docs/guides/editor-integrations') + '#hermes' },
@@ -67,7 +67,7 @@ const sidebar = [
   <p>
     lean-ctx integrates with <strong>22+ AI coding agents and editors</strong> via the
     <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a>.
-    Each integration is auto-configured by <code>lean-ctx init</code> — or you can set it up manually
+    Each integration is auto-configured by <code>lean-ctx init</code> - or you can set it up manually
     using the guides below.
   </p>
 
@@ -128,17 +128,17 @@ lean-ctx init --agent copilot`}</code></pre>
   <p>lean-ctx integrates with editors at three levels:</p>
   <ol>
     <li>
-      <strong>MCP Server</strong> — lean-ctx runs as a stdio-based MCP server, exposing 46+ tools
+      <strong>MCP Server</strong> - lean-ctx runs as a stdio-based MCP server, exposing 46+ tools
       (<code>ctx_read</code>, <code>ctx_shell</code>, <code>ctx_search</code>, etc.) that replace
       native file/shell operations with compressed equivalents.
     </li>
     <li>
-      <strong>Rules Injection</strong> — Editor-specific rule files (e.g. <code>.cursor/rules/lean-ctx.mdc</code>,
+      <strong>Rules Injection</strong> - Editor-specific rule files (e.g. <code>.cursor/rules/lean-ctx.mdc</code>,
       <code>CLAUDE.md</code>, <code>AGENTS.md</code>) instruct the AI agent to prefer lean-ctx tools
       over native ones.
     </li>
     <li>
-      <strong>Hook Scripts</strong> — For editors that support hooks (Claude Code, Cursor, Codex,
+      <strong>Hook Scripts</strong> - For editors that support hooks (Claude Code, Cursor, Codex,
       Gemini, Copilot), <code>PreToolUse</code> hooks intercept native tool calls and
       transparently rewrite them to lean-ctx equivalents.
     </li>
@@ -149,7 +149,7 @@ lean-ctx init --agent copilot`}</code></pre>
   <!-- ═══════════════════════════════════════════ -->
 
   <div class="tier-divider">
-    <h2 id="tier-1">Tier 1 — Full Setup Guides</h2>
+    <h2 id="tier-1">Tier 1 - Full Setup Guides</h2>
     <p>Editors with deep integration: MCP server + rule injection + hook scripts.</p>
   </div>
 
@@ -236,7 +236,7 @@ lean-ctx init --agent claude --project`}</code></pre>
 
   <h4>Quirks &amp; Notes</h4>
   <ul>
-    <li>Claude Code has a <strong>2048-character limit</strong> for MCP server instructions — lean-ctx uses external rule files to work around this.</li>
+    <li>Claude Code has a <strong>2048-character limit</strong> for MCP server instructions - lean-ctx uses external rule files to work around this.</li>
     <li>The <code>autoApprove</code> list covers all 46+ lean-ctx tools so they run without confirmation prompts.</li>
     <li>If <code>claude</code> CLI is available, <code>lean-ctx init</code> uses <code>claude mcp add-json --scope user</code> for reliable config.</li>
   </ul>
@@ -371,7 +371,7 @@ codex_hooks = true`}</code></pre>
 
   <h4>Quirks &amp; Notes</h4>
   <ul>
-    <li>Codex uses <strong>TOML</strong> for MCP config — not JSON like most other editors.</li>
+    <li>Codex uses <strong>TOML</strong> for MCP config - not JSON like most other editors.</li>
     <li>The <code>codex_hooks = true</code> feature flag must be enabled in <code>config.toml</code> for hooks to work.</li>
     <li><code>SessionStart</code> hooks run when a session starts, resumes, or is cleared.</li>
     <li>lean-ctx auto-creates <code>AGENTS.md</code> in the project root with instructions.</li>
@@ -383,7 +383,7 @@ codex_hooks = true`}</code></pre>
   <p>
     Gemini CLI and Antigravity share the <code>~/.gemini</code> directory but use different
     config formats. <strong>Important:</strong> Gemini CLI uses <code>~/.gemini/settings.json</code>
-    — not <code>mcp.json</code>.
+    - not <code>mcp.json</code>.
   </p>
 
   <h4>Auto Setup</h4>
@@ -442,8 +442,8 @@ lean-ctx init --agent gemini`}</code></pre>
 
   <h4>Quirks &amp; Notes</h4>
   <ul>
-    <li>Gemini CLI config is <code>~/.gemini/settings.json</code> — <strong>not</strong> <code>mcp.json</code>. This is a common mistake.</li>
-    <li>Antigravity does <strong>not</strong> receive <code>autoApprove</code> — it handles tool approval differently.</li>
+    <li>Gemini CLI config is <code>~/.gemini/settings.json</code> - <strong>not</strong> <code>mcp.json</code>. This is a common mistake.</li>
+    <li>Antigravity does <strong>not</strong> receive <code>autoApprove</code> - it handles tool approval differently.</li>
     <li>Gemini uses <code>BeforeTool</code> (not <code>PreToolUse</code>) as the hook event name.</li>
     <li>The <code>"trust": true</code> flag is required for Gemini CLI to allow MCP tool execution.</li>
   </ul>
@@ -521,7 +521,7 @@ lean-ctx init --agent copilot --global`}</code></pre>
   <!-- ═══════════════════════════════════════════ -->
 
   <div class="tier-divider">
-    <h2 id="tier-2">Tier 2 — Quick Setup</h2>
+    <h2 id="tier-2">Tier 2 - Quick Setup</h2>
     <p>Editors with MCP server + rule injection, but no hook scripts.</p>
   </div>
 
@@ -574,7 +574,7 @@ lean-ctx init --agent roo`}</code></pre>
 
   <h4>Quirks &amp; Notes</h4>
   <ul>
-    <li>Config paths are in VS Code's <code>globalStorage</code> directory — platform-specific locations.</li>
+    <li>Config paths are in VS Code's <code>globalStorage</code> directory - platform-specific locations.</li>
     <li>macOS: <code>~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/</code> (Cline)</li>
     <li>macOS: <code>~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/</code> (Roo)</li>
   </ul>
@@ -676,7 +676,7 @@ lean-ctx init --agent roo`}</code></pre>
   <!-- ═══════════════════════════════════════════ -->
 
   <div class="tier-divider">
-    <h2 id="tier-3">Tier 3 — Minimal Setup</h2>
+    <h2 id="tier-3">Tier 3 - Minimal Setup</h2>
     <p>Editors with MCP server configuration only.</p>
   </div>
 
@@ -712,7 +712,7 @@ lean-ctx init --agent roo`}</code></pre>
   }
 }`}</code></pre>
 
-  <p>Amp uses <code>"amp.mcpServers"</code> as the key — not <code>"mcpServers"</code>.</p>
+  <p>Amp uses <code>"amp.mcpServers"</code> as the key - not <code>"mcpServers"</code>.</p>
 
   <!-- ─── JetBrains IDEs ─── -->
 
@@ -817,10 +817,10 @@ lean-ctx doctor
 /memory       # Should show CLAUDE.md loaded
 
 # In Cursor:
-# Check MCP panel in settings — lean-ctx should appear as "connected"
+# Check MCP panel in settings - lean-ctx should appear as "connected"
 
 # In any editor with MCP:
-# Call ctx_overview() — should return project summary`}</code></pre>
+# Call ctx_overview() - should return project summary`}</code></pre>
 
 </DocsLayout>
 

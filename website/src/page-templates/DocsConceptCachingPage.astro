@@ -154,7 +154,7 @@ ttl_minutes = 120`}</code></pre>
 
   <h2 id="zero-loss-archive">Zero-Loss Archive (ctx_expand)</h2>
   <p>
-    The archive system stores large tool outputs to disk so they never consume context window space —
+    The archive system stores large tool outputs to disk so they never consume context window space -
     but unlike simple truncation, <strong>nothing is lost</strong>. The full content is always available
     on demand via <code>ctx_expand</code>.
   </p>
@@ -164,7 +164,7 @@ ttl_minutes = 120`}</code></pre>
     <li>A tool result exceeds the configured token threshold</li>
     <li>The full output is written to <code>~/.lean-ctx/archives/</code> with a unique ID</li>
     <li>The model receives a compact hint instead of the full output:
-      <pre><code>{`[ARCHIVE:a7f3c2] auth.ts analysis (2,847 tokens) — 14 functions, 3 classes
+      <pre><code>{`[ARCHIVE:a7f3c2] auth.ts analysis (2,847 tokens) - 14 functions, 3 classes
   Key exports: AuthService, TokenManager, validateJWT
   Use ctx_expand id="a7f3c2" for full content`}</code></pre>
     </li>
@@ -211,8 +211,8 @@ mask_secrets = true      # Redact detected secrets before archiving`}</code></pr
   <h3>What This Means</h3>
   <ul>
     <li><strong>No silent overwrites:</strong> Once a file is cached as F1 with a specific hash, the F1 reference always points to that exact content until explicitly invalidated</li>
-    <li><strong>Hash-based validation:</strong> Every cache hit verifies the MD5 content hash — if the file changed on disk, the cache entry is invalidated and a full re-read occurs</li>
-    <li><strong>Immutable archive entries:</strong> Archived content (<code>ctx_expand</code> IDs) is immutable once written — the same ID always returns the same content</li>
+    <li><strong>Hash-based validation:</strong> Every cache hit verifies the MD5 content hash - if the file changed on disk, the cache entry is invalidated and a full re-read occurs</li>
+    <li><strong>Immutable archive entries:</strong> Archived content (<code>ctx_expand</code> IDs) is immutable once written - the same ID always returns the same content</li>
     <li><strong>No partial reads:</strong> If a read fails mid-stream, no partial content enters the cache</li>
   </ul>
 

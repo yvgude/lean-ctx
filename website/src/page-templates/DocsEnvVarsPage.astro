@@ -33,7 +33,7 @@ const sidebar = [
 ];
 ---
 
-<DocsLayout title="Environment Variables" description="Complete reference for all LEAN_CTX_* environment variables — grouped by area with types, defaults, and examples." sidebar={sidebar}>
+<DocsLayout title="Environment Variables" description="Complete reference for all LEAN_CTX_* environment variables - grouped by area with types, defaults, and examples." sidebar={sidebar}>
 
   <p>
     lean-ctx behavior can be configured via <code>~/.lean-ctx/config.toml</code> <strong>or</strong> environment variables.
@@ -260,7 +260,7 @@ export LEAN_CTX_SHELL="C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
         <td><code>LEAN_CTX_HEADLESS</code></td>
         <td>flag</td>
         <td><em>unset</em></td>
-        <td>Start MCP server in headless mode — skips all auto-setup (rules injection, hook installation, CLAUDE.md modification, agent registry). Ideal for custom launchers and CI/CD.</td>
+        <td>Start MCP server in headless mode - skips all auto-setup (rules injection, hook installation, CLAUDE.md modification, agent registry). Ideal for custom launchers and CI/CD.</td>
         <td>v3.3</td>
       </tr>
       <tr>
@@ -315,7 +315,7 @@ export LEAN_CTX_MODEL=claude-sonnet-4</code></pre>
   <!-- ─── Autonomy ─── -->
   <h2 id="autonomy">Autonomy</h2>
   <p>
-    Fine-grained control over lean-ctx's autonomous behaviors — preloading, deduplication, related file suggestions, and knowledge consolidation.
+    Fine-grained control over lean-ctx's autonomous behaviors - preloading, deduplication, related file suggestions, and knowledge consolidation.
     All autonomy env vars override the corresponding <code>[autonomy]</code> section in <code>config.toml</code>.
   </p>
 
@@ -414,7 +414,7 @@ export LEAN_CTX_CONSOLIDATE_COOLDOWN_SECS=600</code></pre>
 
   <!-- ─── Tool Mode ─── -->
   <h2 id="tool-mode">Tool Mode</h2>
-  <p>Control how lean-ctx exposes its tools to the AI agent — lazy discovery, single-tool mode, or full tool listing.</p>
+  <p>Control how lean-ctx exposes its tools to the AI agent - lazy discovery, single-tool mode, or full tool listing.</p>
 
   <table>
     <thead>

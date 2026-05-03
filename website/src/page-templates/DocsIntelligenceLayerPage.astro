@@ -70,11 +70,11 @@ const sidebar = [
   </ol>
 
   <h3>{t('docs.common.example')}</h3>
-  <pre><code>{`// Low surprise (boilerplate) — candidate for removal:
+  <pre><code>{`// Low surprise (boilerplate) - candidate for removal:
 return Ok(());                    // surprise: 0.12
 use std::collections::HashMap;   // surprise: 0.18
 
-// High surprise (unique logic) — always preserved:
+// High surprise (unique logic) - always preserved:
 let decay = (-alpha * dist as f64).exp();   // surprise: 0.89
 scores[j] += heat[i] * decay / degree;      // surprise: 0.94`}</code></pre>
 
@@ -91,10 +91,10 @@ scores[j] += heat[i] * decay / degree;      // surprise: 0.94`}</code></pre>
 
   <ol>
     <li>
-      <strong>{t('docs.intelligenceLayer.heatDiffusion')}</strong> — <span set:html={t('docs.intelligenceLayer.spectralHeatDesc')} />
+      <strong>{t('docs.intelligenceLayer.heatDiffusion')}</strong> - <span set:html={t('docs.intelligenceLayer.spectralHeatDesc')} />
     </li>
     <li>
-      <strong>{t('docs.intelligenceLayer.pageRankCentrality')}</strong> — <span set:html={t('docs.intelligenceLayer.spectralPageRankDesc')} />
+      <strong>{t('docs.intelligenceLayer.pageRankCentrality')}</strong> - <span set:html={t('docs.intelligenceLayer.spectralPageRankDesc')} />
     </li>
   </ol>
   <p set:html={t('docs.intelligenceLayer.spectralFormula')} />
@@ -105,7 +105,7 @@ scores[j] += heat[i] * decay / degree;      // surprise: 0.94`}</code></pre>
 Direct matches:       auth.ts, login.ts
 Heat diffusion adds:  middleware.ts (imports auth.ts)
                       session.ts (imported by auth.ts)
-PageRank promotes:    db.ts (imported by 18 files — structural hub)
+PageRank promotes:    db.ts (imported by 18 files - structural hub)
 
 Result: 5 files preloaded instead of 2, covering the full blast radius.`}</code></pre>
 
@@ -161,16 +161,16 @@ Total:                         5,728 tokens (within 8,000 budget)`}</code></pre>
   <h3>{t('docs.common.howItWorks')}</h3>
   <ol>
     <li>
-      <strong>{t('docs.intelligenceLayer.chunkDetection')}</strong> — <span set:html={t('docs.intelligenceLayer.chunkingStep1')} />
+      <strong>{t('docs.intelligenceLayer.chunkDetection')}</strong> - <span set:html={t('docs.intelligenceLayer.chunkingStep1')} />
     </li>
     <li>
-      <strong>{t('docs.intelligenceLayer.relevanceOrdering')}</strong> — <span set:html={t('docs.intelligenceLayer.chunkingStep2')} />
+      <strong>{t('docs.intelligenceLayer.relevanceOrdering')}</strong> - <span set:html={t('docs.intelligenceLayer.chunkingStep2')} />
     </li>
     <li>
-      <strong>{t('docs.intelligenceLayer.attentionBridges')}</strong> — <span set:html={t('docs.intelligenceLayer.chunkingStep3')} />
+      <strong>{t('docs.intelligenceLayer.attentionBridges')}</strong> - <span set:html={t('docs.intelligenceLayer.chunkingStep3')} />
     </li>
     <li>
-      <strong>{t('docs.intelligenceLayer.tailAnchors')}</strong> — <span set:html={t('docs.intelligenceLayer.chunkingStep4')} />
+      <strong>{t('docs.intelligenceLayer.tailAnchors')}</strong> - <span set:html={t('docs.intelligenceLayer.chunkingStep4')} />
     </li>
   </ol>
 
@@ -244,7 +244,7 @@ const MAX_RETRIES = 3;
   <p set:html={t('docs.intelligenceLayer.verifyingDesc')} />
   <pre><code>{`$ lean-ctx benchmark run
 ──────────────────────────────────────────
-BENCHMARK — /Users/you/project
+BENCHMARK - /Users/you/project
 ──────────────────────────────────────────
 Files:       143
 Total:       285,401 → 42,810 tokens (85% reduction)

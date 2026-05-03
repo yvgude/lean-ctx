@@ -92,7 +92,7 @@ ctx_shell(command="cat package.json", raw=true)
 # Environment variable
 LEAN_CTX_RAW=1 lean-ctx -c npm list
 
-# Bypass command — guaranteed zero compression
+# Bypass command - guaranteed zero compression
 lean-ctx bypass "git diff HEAD~1"
 
 # Kill-switch: disable ALL compression
@@ -233,7 +233,7 @@ lean-ctx init powershell | Invoke-Expression  # PowerShell: add to $PROFILE</cod
       <tr><td><code>kilo</code></td><td>Kilo Code</td></tr>
       <tr><td><code>opencode</code></td><td>OpenCode CLI</td></tr>
       <tr><td><code>pi</code></td><td>Installs <code>pi-lean-ctx</code> npm package</td></tr>
-      <tr><td><code>custom</code></td><td>Generic MCP config — prompts for path</td></tr>
+      <tr><td><code>custom</code></td><td>Generic MCP config - prompts for path</td></tr>
     </tbody>
   </table>
 
@@ -307,7 +307,7 @@ lean-ctx update --check # check if a newer version is available (no install)</co
 
   <h3 id="login"><code>lean-ctx login &lt;email&gt; [--password &lt;pw&gt;]</code> <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h3>
   <p>
-    Authenticate with LeanCTX Cloud. Only attempts login — does <strong>not</strong> create a new account.
+    Authenticate with LeanCTX Cloud. Only attempts login - does <strong>not</strong> create a new account.
     If password is omitted, prompts interactively.
   </p>
   <pre><code>lean-ctx login user@example.com
@@ -319,7 +319,7 @@ lean-ctx login user@example.com --password mypassword</code></pre>
 
   <h3 id="register"><code>lean-ctx register &lt;email&gt; [--password &lt;pw&gt;]</code> <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h3>
   <p>
-    Create a new LeanCTX Cloud account. Separate from <code>login</code> — no auto-fallback.
+    Create a new LeanCTX Cloud account. Separate from <code>login</code> - no auto-fallback.
     A verification email is sent after registration.
   </p>
   <pre><code>lean-ctx register user@example.com
@@ -508,7 +508,7 @@ lean-ctx filter validate</code></pre>
 
   <h3 id="ghost"><code>lean-ctx ghost [--json]</code></h3>
   <p>
-    Reveals hidden token waste in your workflow — shows unoptimized shell commands, redundant reads,
+    Reveals hidden token waste in your workflow - shows unoptimized shell commands, redundant reads,
     and oversized contexts with a monthly USD savings estimate. Use <code>--json</code> for CI integration.
   </p>
   <pre><code>lean-ctx ghost
@@ -625,7 +625,7 @@ lean-ctx-on        # re-enable for AI sessions</code></pre>
     <tbody>
       <tr><td><code>--port=&lt;N&gt;</code></td><td><code>9119</code></td><td>Port to listen on</td></tr>
       <tr><td><code>--host=&lt;addr&gt;</code></td><td><code>127.0.0.1</code></td><td>Bind address (<code>0.0.0.0</code> for all interfaces)</td></tr>
-      <tr><td><code>--stateless</code></td><td>off</td><td>Disable session persistence — each request is independent</td></tr>
+      <tr><td><code>--stateless</code></td><td>off</td><td>Disable session persistence - each request is independent</td></tr>
       <tr><td><code>--rate-limit=&lt;N&gt;</code></td><td><code>100</code></td><td>Max requests per minute per client</td></tr>
       <tr><td><code>--timeout=&lt;ms&gt;</code></td><td><code>30000</code></td><td>Request timeout in milliseconds</td></tr>
       <tr><td><code>--cors</code></td><td>off</td><td>Enable CORS headers for browser access</td></tr>
@@ -660,7 +660,7 @@ lean-ctx serve --cors --port=9119</code></pre>
     <thead><tr><th>Flag</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>--filter=&lt;pattern&gt;</code></td><td>Only show events matching the pattern (e.g. <code>ctx_read</code>, <code>error</code>)</td></tr>
-      <tr><td><code>--no-tui</code></td><td>Headless mode — stream events to stdout as JSONL</td></tr>
+      <tr><td><code>--no-tui</code></td><td>Headless mode - stream events to stdout as JSONL</td></tr>
     </tbody>
   </table>
 
@@ -706,7 +706,7 @@ lean-ctx proxy stop        # stop the proxy</code></pre>
   <table>
     <thead><tr><th>Mode</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>off</code></td><td>Terse Agent disabled — standard MCP output</td></tr>
+      <tr><td><code>off</code></td><td>Terse Agent disabled - standard MCP output</td></tr>
       <tr><td><code>lite</code></td><td>Light compression: removes boilerplate, keeps structure</td></tr>
       <tr><td><code>full</code></td><td>Full terse mode: abbreviated keys, minimal whitespace, Fn refs</td></tr>
       <tr><td><code>ultra</code></td><td>Maximum density: single-line responses, aggressive abbreviation, diff-only</td></tr>
@@ -781,7 +781,7 @@ lean-ctx cache reset --project=~/my-app        # reset for one project</code></p
   <h2 id="gotchas">Gotchas</h2>
 
   <p>
-    Manage known gotchas — common pitfalls, edge cases, and warnings that lean-ctx
+    Manage known gotchas - common pitfalls, edge cases, and warnings that lean-ctx
     tracks across your projects. Also available as <code>lean-ctx bugs</code> (alias).
   </p>
 
@@ -827,7 +827,7 @@ lean-ctx bugs clear</code></pre>
   <pre><code>lean-ctx buddy status          # check buddy state
 lean-ctx buddy on              # enable buddy
 lean-ctx buddy name Ferris     # name your buddy
-lean-ctx pet off               # alias — disable buddy</code></pre>
+lean-ctx pet off               # alias - disable buddy</code></pre>
 
   <hr />
 

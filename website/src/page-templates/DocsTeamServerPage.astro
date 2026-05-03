@@ -70,7 +70,7 @@ lean-ctx team token create \\
       <h3>{t('docsTeam.step3Title')}</h3>
       <pre><code class="language-bash">{`lean-ctx team serve --config team.json
 
-# Team Server — 0.0.0.0:9877
+# Team Server - 0.0.0.0:9877
 # Workspaces: 1 (main)
 # Tokens: 1 active
 # Tools: 56 available`}</code></pre>
@@ -100,8 +100,8 @@ curl -X POST -H "Authorization: Bearer <token>" \\
         <tbody>
           <tr><td><code>host</code></td><td>string</td><td>{t('docsTeam.cfgHost')}</td><td><code>127.0.0.1</code></td></tr>
           <tr><td><code>port</code></td><td>u16</td><td>{t('docsTeam.cfgPort')}</td><td><code>9877</code></td></tr>
-          <tr><td><code>defaultWorkspaceId</code></td><td>string</td><td>{t('docsTeam.cfgDefaultWs')}</td><td>—</td></tr>
-          <tr><td><code>auditLogPath</code></td><td>path</td><td>{t('docsTeam.cfgAudit')}</td><td>—</td></tr>
+          <tr><td><code>defaultWorkspaceId</code></td><td>string</td><td>{t('docsTeam.cfgDefaultWs')}</td><td>-</td></tr>
+          <tr><td><code>auditLogPath</code></td><td>path</td><td>{t('docsTeam.cfgAudit')}</td><td>-</td></tr>
           <tr><td><code>disableHostCheck</code></td><td>bool</td><td>{t('docsTeam.cfgHostCheck')}</td><td><code>false</code></td></tr>
           <tr><td><code>allowedHosts</code></td><td>string[]</td><td>{t('docsTeam.cfgAllowedHosts')}</td><td><code>[]</code></td></tr>
           <tr><td><code>maxBodyBytes</code></td><td>usize</td><td>{t('docsTeam.cfgMaxBody')}</td><td><code>10485760</code></td></tr>

@@ -45,9 +45,9 @@ const sidebar = [
 
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (required) — one of: <code>status</code>, <code>load</code>, <code>save</code>, <code>task</code>, <code>finding</code>, <code>decision</code>, <code>list</code>, <code>cleanup</code>, <code>snapshot</code>, <code>restore</code>, <code>resume</code>, <code>profile</code></li>
-    <li><code>value</code> (optional) — value for <code>task</code>, <code>finding</code>, <code>decision</code>, or <code>profile</code> actions</li>
-    <li><code>session_id</code> (optional) — specific session ID to load</li>
+    <li><code>action</code> (required) - one of: <code>status</code>, <code>load</code>, <code>save</code>, <code>task</code>, <code>finding</code>, <code>decision</code>, <code>list</code>, <code>cleanup</code>, <code>snapshot</code>, <code>restore</code>, <code>resume</code>, <code>profile</code></li>
+    <li><code>value</code> (optional) - value for <code>task</code>, <code>finding</code>, <code>decision</code>, or <code>profile</code> actions</li>
+    <li><code>session_id</code> (optional) - specific session ID to load</li>
   </ul>
 
   <h3>Actions</h3>
@@ -60,7 +60,7 @@ const sidebar = [
       <tr><td><code>load</code></td><td>Restore most recent or specified session</td></tr>
       <tr><td><code>save</code></td><td>Force persist session to disk</td></tr>
       <tr><td><code>task</code></td><td>Set current task description</td></tr>
-      <tr><td><code>finding</code></td><td>Record a key finding (e.g. <code>"auth.ts:45 — JWT expiry not checked"</code>)</td></tr>
+      <tr><td><code>finding</code></td><td>Record a key finding (e.g. <code>"auth.ts:45 - JWT expiry not checked"</code>)</td></tr>
       <tr><td><code>decision</code></td><td>Record an architectural decision</td></tr>
       <tr><td><code>list</code></td><td>List all saved sessions</td></tr>
       <tr><td><code>cleanup</code></td><td>Remove old sessions (keeps recent ones)</td></tr>
@@ -73,7 +73,7 @@ const sidebar = [
 
   <h3>Example: Recording Context</h3>
   <pre><code>ctx_session task "Implement OAuth2 login flow"
-ctx_session finding "auth.ts:45 — missing token refresh logic"
+ctx_session finding "auth.ts:45 - missing token refresh logic"
 ctx_session decision "Use refresh tokens with 7-day expiry"
 ctx_session save</code></pre>
 
@@ -110,7 +110,7 @@ ctx_session save</code></pre>
     After compaction, use <code>restore</code> to reload the most recent snapshot and resume seamlessly.
   </p>
   <pre><code>{`ctx_session action=snapshot
-→ Snapshot saved (1847 bytes) — ~/.lean-ctx/sessions/abc123_snapshot.txt
+→ Snapshot saved (1847 bytes) - ~/.lean-ctx/sessions/abc123_snapshot.txt
 
 ctx_session action=restore
 → <session task="Implement OAuth2 login">
@@ -135,7 +135,7 @@ ctx_session action=restore
   <h2 id="ctx_compress">ctx_compress</h2>
   <p>
     <code>ctx_compress</code> creates a compact snapshot of all files currently in the session cache.
-    Use it as a memory checkpoint during long coding sessions — paste the output into a fresh chat
+    Use it as a memory checkpoint during long coding sessions - paste the output into a fresh chat
     to carry over project understanding at minimal token cost.
   </p>
 
@@ -211,7 +211,7 @@ Entropy Distribution:
   High-entropy (H>4.0): 22 lines (28%)
 
 Strategy Comparison:
-  raw                      1856 tok  —
+  raw                      1856 tok  -
   aggressive               1420 tok  -23%
   signatures (tdd)          312 tok  -83%
   entropy                   298 tok  -84%
@@ -224,7 +224,7 @@ Recommendation: signatures (best first-read savings)`}</code></pre>
 
   <h2 id="ctx_benchmark">ctx_benchmark</h2>
   <p>
-    <code>ctx_benchmark</code> measures real token counts using tiktoken (o200k_base — the same tokenizer
+    <code>ctx_benchmark</code> measures real token counts using tiktoken (o200k_base - the same tokenizer
     used by GPT-4 and Claude). It supports two modes: <strong>single-file</strong> benchmarks and
     <strong>project-wide</strong> scans.
   </p>
@@ -252,7 +252,7 @@ ctx_benchmark path="." action="project" format="json"</code></pre>
 
   <h4>Example Output</h4>
   <pre><code>══════════════════════════════════════════════════════════════
-  lean-ctx Benchmark — .
+  lean-ctx Benchmark - .
 ══════════════════════════════════════════════════════════════
   Scanned: 50 files (10 ts, 10 rs, 8 py, 6 go, ...)
   Total raw tokens: 145.2K
@@ -269,7 +269,7 @@ ctx_benchmark path="." action="project" format="json"</code></pre>
   Session Simulation (30-min coding):
   Approach                     Tokens       Cost    Savings
   ──────────────────────────────────────────────────────────
-  Raw (no compression)         290.4K     $0.726          —
+  Raw (no compression)         290.4K     $0.726          -
   lean-ctx (no CCP)             38.2K     $0.096      86.8%
   lean-ctx + CCP                12.4K     $0.031      95.7%
 ══════════════════════════════════════════════════════════════</code></pre>
@@ -298,7 +298,7 @@ Benchmark: auth.ts (123L)
 
 Strategy                     Tokens   Savings
 ──────────────────────────────────────────────
-raw                             915  —
+raw                             915  -
 aggressive                      412  -503 (55%)
 signatures (compact)            121  -794 (87%)
 signatures (tdd)                 98  -817 (89%)
@@ -357,7 +357,7 @@ Projected session savings (incl. thinking): $0.085</code></pre>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>period</code> (optional) — <code>week</code> (default), <code>month</code>, or <code>all</code></li>
+    <li><code>period</code> (optional) - <code>week</code> (default), <code>month</code>, or <code>all</code></li>
   </ul>
 
   <h3>Example</h3>
@@ -382,7 +382,7 @@ Projected session savings (incl. thinking): $0.085</code></pre>
   <h2 id="ctx_cache">ctx_cache</h2>
   <p>
     <code>ctx_cache</code> gives you explicit control over LeanCTX's in-memory session cache.
-    Use it when the LLM's context no longer matches what the server has cached — for example
+    Use it when the LLM's context no longer matches what the server has cached - for example
     after context compaction, session resets, or when running as a subagent.
   </p>
 
@@ -412,7 +412,7 @@ Cache: 3 file(s)
   <p>Removes all entries from the session cache. The next <code>ctx_read</code> call for any file will return full content.</p>
   <pre><code>ctx_cache action=clear
 
-Cache cleared — 3 file(s) removed. Next ctx_read will return full content.</code></pre>
+Cache cleared - 3 file(s) removed. Next ctx_read will return full content.</code></pre>
 
   <h4>invalidate</h4>
   <p>Removes a single file from the cache. Useful when you know a specific file has changed externally.</p>
@@ -429,7 +429,7 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
 
   <a href={lp('/docs/tools/ctx-cache')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_heatmap">ctx_heatmap — File Access Heatmap</h2>
+  <h2 id="ctx_heatmap">ctx_heatmap - File Access Heatmap</h2>
   <p>
     Tracks and displays file access patterns across sessions. Shows which files are accessed most frequently,
     their average compression ratios, and access patterns over time. Helps identify hot files that could
@@ -438,8 +438,8 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
 
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (optional) — <code>status</code> (default), <code>directory</code> (per-dir breakdown), <code>dirs</code> (top directories), <code>cold</code> (least-accessed files), or <code>json</code> (raw data)</li>
-    <li><code>path</code> (optional) — filter to a specific directory</li>
+    <li><code>action</code> (optional) - <code>status</code> (default), <code>directory</code> (per-dir breakdown), <code>dirs</code> (top directories), <code>cold</code> (least-accessed files), or <code>json</code> (raw data)</li>
+    <li><code>path</code> (optional) - filter to a specific directory</li>
   </ul>
 
   <h3>Example</h3>
@@ -462,16 +462,16 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
 
   <a href={lp('/docs/tools/ctx-heatmap')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
-  <h2 id="ctx_gain">ctx_gain — Token Savings Report</h2>
+  <h2 id="ctx_gain">ctx_gain - Token Savings Report</h2>
   <p>
     Reports token savings for the current session or across all sessions. Shows per-tool breakdowns,
     estimated cost savings, and compression effectiveness. Also available via CLI: <code>lean-ctx gain</code>.
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>action</code> (optional) — <code>report</code> (default), <code>score</code> (CEP score), <code>live</code> (real-time), <code>json</code> (machine-readable), <code>reset</code></li>
-    <li><code>period</code> (optional) — time range: <code>session</code> (default), <code>day</code>, <code>week</code>, <code>month</code>, <code>all</code></li>
-    <li><code>model</code> (optional) — pricing model for cost estimates (default: <code>claude-sonnet</code>)</li>
+    <li><code>action</code> (optional) - <code>report</code> (default), <code>score</code> (CEP score), <code>live</code> (real-time), <code>json</code> (machine-readable), <code>reset</code></li>
+    <li><code>period</code> (optional) - time range: <code>session</code> (default), <code>day</code>, <code>week</code>, <code>month</code>, <code>all</code></li>
+    <li><code>model</code> (optional) - pricing model for cost estimates (default: <code>claude-sonnet</code>)</li>
   </ul>
   <h3>Example</h3>
   <pre><code>{`ctx_gain
@@ -506,12 +506,12 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
 
   <h2 id="ctx_verify">ctx_verify <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
   <p class="text-muted mb-4">
-    <code>ctx_verify</code> returns a verification observability snapshot — versioned JSON or compact summary of verifier stats, warnings, and SLO compliance.
+    <code>ctx_verify</code> returns a verification observability snapshot - versioned JSON or compact summary of verifier stats, warnings, and SLO compliance.
   </p>
   <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
     <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
     <tbody>
-      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>stats</code> (default) — returns versioned verification snapshot</td></tr>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>stats</code> (default) - returns versioned verification snapshot</td></tr>
     </tbody>
   </table>
 

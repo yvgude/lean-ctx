@@ -31,14 +31,14 @@ const sidebar = [
 ---
 
 <DocsLayout
-  title="Shell Patterns — Intelligent Output Compression"
+  title="Shell Patterns - Intelligent Output Compression"
   description="How lean-ctx compresses shell output using 51 pattern modules, FilterEngine, passthrough detection, and smart heredoc handling."
   sidebar={sidebar}
 >
   <p>
     Every shell command run through <code>ctx_shell</code> passes through lean-ctx's
     shell compression pipeline. With <strong>51 pattern modules</strong> covering 90+ developer
-    tools, the system strips boilerplate while preserving actionable output — typically saving
+    tools, the system strips boilerplate while preserving actionable output - typically saving
     <strong>50-95% of tokens</strong> per command.
   </p>
 
@@ -85,11 +85,11 @@ Compressed output (~50-95% smaller)`}</code></pre>
     </tbody>
   </table>
 
-  <pre><code>{`# Compress mode (default) — returns compressed output
+  <pre><code>{`# Compress mode (default) - returns compressed output
 ctx_shell command="npm test"
 → ✓ 42 passed, 0 failed (3.2s)  [saved 1,847 tok]
 
-# Track mode — returns only metadata
+# Track mode - returns only metadata
 ctx_shell command="npm install" mode="track"
 → ✓ exit=0 (12.4s)  [output suppressed]`}</code></pre>
 
@@ -230,7 +230,7 @@ ctx_shell command="npm install" mode="track"
   </table>
 
   <h3>Compression Examples</h3>
-  <pre><code>{`# git status — 87% savings
+  <pre><code>{`# git status - 87% savings
 ctx_shell command="git status"
 → branch:main ±0 ahead
   M src/auth.ts
@@ -238,12 +238,12 @@ ctx_shell command="git status"
   ? src/new-file.ts
   [saved 523 tok, 87%]
 
-# cargo test — 91% savings
+# cargo test - 91% savings
 ctx_shell command="cargo test"
 → test result: ok. 156 passed; 0 failed; 2 ignored (4.8s)
   [saved 3,412 tok, 91%]
 
-# npm install — 71% savings
+# npm install - 71% savings
 ctx_shell command="npm install"
 → added 12, removed 0, changed 3, audited 847 packages
   0 vulnerabilities
@@ -366,7 +366,7 @@ match = "contains"
 pattern = "Compiling"
 action = "drop"
 
-# Keep everything else (implicit — unmatched lines pass through)`}</code></pre>
+# Keep everything else (implicit - unmatched lines pass through)`}</code></pre>
 
   <!-- ───── BYPASSING ───── -->
   <h2 id="bypassing">Bypassing Compression</h2>
@@ -389,7 +389,7 @@ action = "drop"
   <pre><code>{`LEAN_CTX_RAW=1 npm test
 → [full uncompressed output, no lean-ctx processing]`}</code></pre>
 
-  <h3>3. <code>LEAN_CTX_DISABLED=1</code> — Disable Entire Hook</h3>
+  <h3>3. <code>LEAN_CTX_DISABLED=1</code> - Disable Entire Hook</h3>
   <p>
     Completely disables the lean-ctx shell hook for the current shell session.
     No interception, no compression, no tracking:
@@ -464,28 +464,28 @@ EOF`}</code></pre>
   </ul>
 
   <h3>Detection Logic</h3>
-  <pre><code>{`# ✓ Allowed — pure heredoc, no file redirect
+  <pre><code>{`# ✓ Allowed - pure heredoc, no file redirect
 cat <<EOF
 inline content
 EOF
 
-# ✓ Allowed — heredoc piped to another command
+# ✓ Allowed - heredoc piped to another command
 cat <<EOF | grep "pattern"
 search this content
 EOF
 
-# ✗ Blocked — heredoc with file redirect
+# ✗ Blocked - heredoc with file redirect
 cat <<EOF > output.txt
 file content
 EOF
 
-# ✗ Blocked — heredoc with append redirect
+# ✗ Blocked - heredoc with append redirect
 cat <<EOF >> log.txt
 log entry
 EOF`}</code></pre>
   <p>
     The PreToolUse hook inspects the command string for heredoc markers (<code>&lt;&lt;</code>)
     combined with redirect operators (<code>&gt;</code>, <code>&gt;&gt;</code>). Only the
-    combination triggers blocking — heredocs alone pass through cleanly.
+    combination triggers blocking - heredocs alone pass through cleanly.
   </p>
 </DocsLayout>

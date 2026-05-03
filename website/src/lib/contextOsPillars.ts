@@ -9,6 +9,18 @@ export interface PillarNavItem {
   anchor: string;
 }
 
+export interface PillarDemoCommand {
+  tool: string;
+  args: string;
+  output: string[];
+}
+
+export interface PillarStat {
+  valueKey: string;
+  labelKey: string;
+  tone: 'accent' | 'accent-2' | 'accent-3';
+}
+
 export interface Pillar {
   id: string;
   slug: string;
@@ -18,6 +30,10 @@ export interface Pillar {
   ctaKey: string;
   icon: string;
   navDescKey: string;
+  problemKey: string;
+  demoDescKey: string;
+  demoCommands: PillarDemoCommand[];
+  stats: PillarStat[];
   features: PillarFeature[];
   navItems: PillarNavItem[];
   protocol?: {
@@ -48,6 +64,16 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.smartIo.cta',
     icon: serverIcon,
     navDescKey: 'nav.pillars.smartIoDesc',
+    problemKey: 'pillar.smartIo.problem',
+    demoDescKey: 'pillar.smartIo.demoDesc',
+    demoCommands: [
+      { tool: 'ctx_read', args: '{ path: "src/lib/auth.ts", mode: "map" }', output: ['exports: authenticate(), validateToken(), refreshSession()', 'deps: jsonwebtoken, bcrypt, redis', 'cached - 180 tokens (was 4,200)'] },
+    ],
+    stats: [
+      { valueKey: 'pillar.smartIo.stat1Value', labelKey: 'pillar.smartIo.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.smartIo.stat2Value', labelKey: 'pillar.smartIo.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.smartIo.stat3Value', labelKey: 'pillar.smartIo.stat3Label', tone: 'accent-3' },
+    ],
     features: [
       { titleKey: 'pillar.smartIo.feature1Title', descKey: 'pillar.smartIo.feature1Desc', icon: featureIcon },
       { titleKey: 'pillar.smartIo.feature2Title', descKey: 'pillar.smartIo.feature2Desc', icon: featureIcon },
@@ -86,6 +112,16 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.intelligence.cta',
     icon: brainIcon,
     navDescKey: 'nav.pillars.intelligenceDesc',
+    problemKey: 'pillar.intelligence.problem',
+    demoDescKey: 'pillar.intelligence.demoDesc',
+    demoCommands: [
+      { tool: 'ctx_intent', args: '{ task: "rename getUserById to findUserById" }', output: ['intent: refactor/rename', 'mode: signatures', 'budget: 8,000 tokens', 'profile: coder'] },
+    ],
+    stats: [
+      { valueKey: 'pillar.intelligence.stat1Value', labelKey: 'pillar.intelligence.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.intelligence.stat2Value', labelKey: 'pillar.intelligence.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.intelligence.stat3Value', labelKey: 'pillar.intelligence.stat3Label', tone: 'accent-3' },
+    ],
     features: [
       { titleKey: 'pillar.intelligence.feature1Title', descKey: 'pillar.intelligence.feature1Desc', icon: featureIcon },
       { titleKey: 'pillar.intelligence.feature2Title', descKey: 'pillar.intelligence.feature2Desc', icon: featureIcon },
@@ -123,6 +159,16 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.memory.cta',
     icon: memoryIcon,
     navDescKey: 'nav.pillars.memoryDesc',
+    problemKey: 'pillar.memory.problem',
+    demoDescKey: 'pillar.memory.demoDesc',
+    demoCommands: [
+      { tool: 'ctx_knowledge', args: '{ action: "search", query: "auth architecture" }', output: ['Found 3 facts (project: my-app)', '1. JWT with refresh tokens, Redis session store', '2. RBAC with 4 roles: admin, editor, viewer, guest', 'quality: 0.92, last verified: 2h ago'] },
+    ],
+    stats: [
+      { valueKey: 'pillar.memory.stat1Value', labelKey: 'pillar.memory.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.memory.stat2Value', labelKey: 'pillar.memory.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.memory.stat3Value', labelKey: 'pillar.memory.stat3Label', tone: 'accent-3' },
+    ],
     features: [
       { titleKey: 'pillar.memory.feature1Title', descKey: 'pillar.memory.feature1Desc', icon: featureIcon },
       { titleKey: 'pillar.memory.feature2Title', descKey: 'pillar.memory.feature2Desc', icon: featureIcon },
@@ -161,6 +207,16 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.governance.cta',
     icon: shieldIcon,
     navDescKey: 'nav.pillars.governanceDesc',
+    problemKey: 'pillar.governance.problem',
+    demoDescKey: 'pillar.governance.demoDesc',
+    demoCommands: [
+      { tool: 'ctx_workflow', args: '{ action: "status" }', output: ['workflow: feature/auth-refactor', 'state: implement (3/5)', 'budget: $1.20 / $2.00 remaining', 'next checkpoint: review'] },
+    ],
+    stats: [
+      { valueKey: 'pillar.governance.stat1Value', labelKey: 'pillar.governance.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.governance.stat2Value', labelKey: 'pillar.governance.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.governance.stat3Value', labelKey: 'pillar.governance.stat3Label', tone: 'accent-3' },
+    ],
     features: [
       { titleKey: 'pillar.governance.feature1Title', descKey: 'pillar.governance.feature1Desc', icon: featureIcon },
       { titleKey: 'pillar.governance.feature2Title', descKey: 'pillar.governance.feature2Desc', icon: featureIcon },
@@ -192,6 +248,16 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.verification.cta',
     icon: checkIcon,
     navDescKey: 'nav.pillars.verificationDesc',
+    problemKey: 'pillar.verification.problem',
+    demoDescKey: 'pillar.verification.demoDesc',
+    demoCommands: [
+      { tool: 'ctx_verify', args: '{ scope: "session" }', output: ['Verified 12 tool calls', 'Paths: 12/12 valid', 'Secrets: 0 detected', 'Replay hash: a3f8c2...consistent'] },
+    ],
+    stats: [
+      { valueKey: 'pillar.verification.stat1Value', labelKey: 'pillar.verification.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.verification.stat2Value', labelKey: 'pillar.verification.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.verification.stat3Value', labelKey: 'pillar.verification.stat3Label', tone: 'accent-3' },
+    ],
     features: [
       { titleKey: 'pillar.verification.feature1Title', descKey: 'pillar.verification.feature1Desc', icon: featureIcon },
       { titleKey: 'pillar.verification.feature2Title', descKey: 'pillar.verification.feature2Desc', icon: featureIcon },
@@ -222,6 +288,16 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.integrations.cta',
     icon: plugIcon,
     navDescKey: 'nav.pillars.integrationsDesc',
+    problemKey: 'pillar.integrations.problem',
+    demoDescKey: 'pillar.integrations.demoDesc',
+    demoCommands: [
+      { tool: 'lean-ctx', args: 'setup --auto', output: ['Detected: Cursor, Claude Code, Neovim', 'MCP config: written to 3 editors', 'Shell hook: installed', 'Ready in 2.1s'] },
+    ],
+    stats: [
+      { valueKey: 'pillar.integrations.stat1Value', labelKey: 'pillar.integrations.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.integrations.stat2Value', labelKey: 'pillar.integrations.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.integrations.stat3Value', labelKey: 'pillar.integrations.stat3Label', tone: 'accent-3' },
+    ],
     features: [
       { titleKey: 'pillar.integrations.feature1Title', descKey: 'pillar.integrations.feature1Desc', icon: featureIcon },
       { titleKey: 'pillar.integrations.feature2Title', descKey: 'pillar.integrations.feature2Desc', icon: featureIcon },
