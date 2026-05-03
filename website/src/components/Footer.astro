@@ -29,15 +29,15 @@ const year = new Date().getFullYear();
 
       <div class="footer-columns">
         <div class="footer-col">
-          <h4 class="footer-col-title">{t('footer.product')}</h4>
+          <h4 class="footer-col-title">Context OS</h4>
           <ul class="footer-links">
-            <li><a href={lp('/how-it-works')}>{t('nav.howItWorks')}</a></li>
-            <li><a href={lp('/mcp-server')}>{t('nav.product.contextServer')}</a></li>
-            <li><a href={lp('/shell-hook')}>{t('nav.product.shellHook')}</a></li>
-            <li><a href={lp('/protocols')}>{t('nav.product.protocols')}</a></li>
-            <li><a href={lp('/benchmark')}>{t('nav.product.benchmark')}</a></li>
-            <li><a href={lp('/compatibility')}>{t('nav.product.compatibility')}</a></li>
-            <li><a href={lp('/cloud')}>{t('nav.cloud')}</a></li>
+            <li><a href={lp('/context-os')}>{t('nav.contextOs')}</a></li>
+            <li><a href={lp('/context-os/smart-io')}>{t('nav.pillars.smartIo')}</a></li>
+            <li><a href={lp('/context-os/intelligence')}>{t('nav.pillars.intelligence')}</a></li>
+            <li><a href={lp('/context-os/memory')}>{t('nav.pillars.memory')}</a></li>
+            <li><a href={lp('/context-os/governance')}>{t('nav.pillars.governance')}</a></li>
+            <li><a href={lp('/context-os/verification')}>{t('nav.pillars.verification')}</a></li>
+            <li><a href={lp('/context-os/integrations')}>{t('nav.pillars.integrations')}</a></li>
           </ul>
         </div>
 
@@ -50,11 +50,8 @@ const year = new Date().getFullYear();
             <li><a href={lp('/docs/cli-reference')}>{t('nav.docs.cliComplete')}</a></li>
             <li><a href={lp('/docs/configuration')}>{t('nav.docs.configuration')}</a></li>
             <li><a href={lp('/docs/verification')}>{t('nav.docs.verification')}</a></li>
-            <li><a href={lp('/docs/concepts/read-modes')}>{t('nav.docs.concepts.readModes')}</a></li>
-            <li><a href={lp('/docs/concepts/protocols')}>{t('nav.docs.concepts.protocols')}</a></li>
-            <li><a href={lp('/docs/guides/first-session')}>{t('nav.docs.guides.firstSession')}</a></li>
-            <li><a href={lp('/docs/guides/editor-integrations')}>{t('nav.docs.guides.editorIntegrations')}</a></li>
-            <li><a href={lp('/docs/guides/observatory')}>{t('nav.docs.guides.observatory')}</a></li>
+            <li><a href={lp('/benchmark')}>{t('nav.product.benchmark')}</a></li>
+            <li><a href={lp('/trust')}>{t('nav.trust')}</a></li>
           </ul>
         </div>
 
@@ -65,8 +62,6 @@ const year = new Date().getFullYear();
             <li><a href="https://crates.io/crates/lean-ctx" target="_blank" rel="noopener">crates.io</a></li>
             <li><a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener">Discord</a></li>
             <li><a href="https://buymeacoffee.com/yvgude" target="_blank" rel="noopener">{t('footer.buyMeACoffee')}</a></li>
-            <li><a href={lp('/privacy')}>{t('footer.privacy')}</a></li>
-            <li><a href={lp('/safety')}>{t('footer.safety')}</a></li>
             <li><a href={lp('/compare')}>{t('footer.compare')}</a></li>
             <li><a href={lp('/limitations')}>{t('footer.limitations')}</a></li>
           </ul>
@@ -76,6 +71,8 @@ const year = new Date().getFullYear();
           <h4 class="footer-col-title">{t('footer.ecosystem')}</h4>
           <ul class="footer-links">
             <li><a href="https://leanctl.com" target="_blank" rel="noopener">{t('nav.product.leanctl')}</a></li>
+            <li><a href={lp('/privacy')}>{t('footer.privacy')}</a></li>
+            <li><a href={lp('/safety')}>{t('footer.safety')}</a></li>
           </ul>
         </div>
       </div>
