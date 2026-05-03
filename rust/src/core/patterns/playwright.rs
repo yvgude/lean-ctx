@@ -1,10 +1,14 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static PW_FAILED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn pw_failed_re() -> &'static Regex {
-    PW_FAILED_RE.get_or_init(|| Regex::new(r"^\s+\d+\)\s+(.+)$").unwrap())
+fn pw_failed_re() -> &'static regex::Regex {
+    static_regex!(r"^\s+\d+\)\s+(.+)$")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {

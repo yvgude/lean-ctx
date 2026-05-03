@@ -49,8 +49,7 @@ impl Species {
         let (top_lang, top_count) = scores
             .iter()
             .max_by_key(|(_, c)| **c)
-            .map(|(l, c)| (*l, *c))
-            .unwrap_or(("", 0));
+            .map_or(("", 0), |(l, c)| (*l, *c));
 
         let dominance = top_count as f64 / total as f64;
 
@@ -141,8 +140,7 @@ impl Rarity {
 
     pub fn color_code(&self) -> &'static str {
         match self {
-            Self::Egg => "\x1b[37m",
-            Self::Common => "\x1b[37m",
+            Self::Egg | Self::Common => "\x1b[37m",
             Self::Uncommon => "\x1b[32m",
             Self::Rare => "\x1b[34m",
             Self::Epic => "\x1b[35m",
@@ -232,15 +230,13 @@ impl CreatureTraits {
 }
 
 fn user_seed() -> u64 {
-    dirs::home_dir()
-        .map(|p| {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut h = DefaultHasher::new();
-            p.hash(&mut h);
-            h.finish()
-        })
-        .unwrap_or(42)
+    dirs::home_dir().map_or(42, |p| {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        p.hash(&mut h);
+        h.finish()
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -277,10 +273,10 @@ impl BuddyState {
             .saturating_sub(store.total_output_tokens);
 
         let project_root = detect_project_root_for_buddy();
-        let gotcha_store = if !project_root.is_empty() {
-            super::gotcha_tracker::GotchaStore::load(&project_root)
-        } else {
+        let gotcha_store = if project_root.is_empty() {
             super::gotcha_tracker::GotchaStore::new("none")
+        } else {
+            super::gotcha_tracker::GotchaStore::load(&project_root)
         };
 
         let bugs_prevented = gotcha_store.stats.total_prevented;
@@ -384,10 +380,8 @@ fn sprite_tier(level: u32) -> u8 {
         3
     } else if level >= 25 {
         2
-    } else if level >= 10 {
-        1
     } else {
-        0
+        u8::from(level >= 10)
     }
 }
 
@@ -548,8 +542,9 @@ fn compute_mood(
         .last_use
         .as_ref()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_hours())
-        .unwrap_or(999);
+        .map_or(999, |dt| {
+            (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_hours()
+        });
 
     if hours_since_last > 48 {
         return Mood::Sleeping;
@@ -789,17 +784,10 @@ fn head_top_part(idx: u8) -> String {
 
 fn head_bracket(head: u8) -> (char, char) {
     match head % 12 {
-        0 => ('|', '|'),
-        1 => ('|', '|'),
-        2 => ('/', '\\'),
-        3 => ('|', '|'),
-        4 => ('(', ')'),
-        5 => ('|', '|'),
-        6 => ('/', '\\'),
+        0 | 1 | 3 | 5 => ('|', '|'),
+        2 | 6 | 10 => ('/', '\\'),
         7 => ('{', '}'),
         8 => ('<', '>'),
-        9 => ('(', ')'),
-        10 => ('/', '\\'),
         _ => ('(', ')'),
     }
 }
@@ -807,7 +795,6 @@ fn head_bracket(head: u8) -> (char, char) {
 fn face_line(head: u8, eye_idx: u8, el: &str, er: &str) -> String {
     let (bl, br) = head_bracket(head);
     let deco = match eye_idx % 10 {
-        0 => (" ", " "),
         1 => ("'", "'"),
         2 => (".", "."),
         3 => ("~", "~"),
@@ -835,7 +822,7 @@ fn mouth_line(head: u8, mouth: u8) -> String {
         8 => " ---  ",
         _ => "  U   ",
     };
-    format!(" {bl}  {}  {br} ", m)
+    format!(" {bl}  {m}  {br} ")
 }
 
 fn neck_part(head: u8) -> String {
@@ -865,15 +852,13 @@ fn body_part(body: u8, markings: u8) -> String {
         _ => " :::: ",
     };
     match body % 10 {
-        0 => format!("  /{fill}\\  "),
-        1 => format!("  |{fill}|  "),
+        0 | 8 => format!("  /{fill}\\  "),
+        1 | 7 => format!("  |{fill}|  "),
         2 => format!("  ({fill})  "),
         3 => format!("  [{fill}]  "),
         4 => format!("  ~{fill}~  "),
         5 => format!("  <{fill}>  "),
         6 => format!("  {{{fill}}}  "),
-        7 => format!("  |{fill}|  "),
-        8 => format!("  /{fill}\\  "),
         _ => format!("  _{fill}_  "),
     }
 }
@@ -959,71 +944,71 @@ pub fn format_buddy_block_at(
 }
 
 pub fn format_buddy_full(state: &BuddyState, theme: &super::theme::Theme) -> String {
-    let r = super::theme::rst();
-    let a = theme.accent.fg();
-    let m = theme.muted.fg();
-    let p = theme.primary.fg();
-    let s = theme.success.fg();
-    let w = theme.warning.fg();
-    let b = super::theme::bold();
+    let rst = super::theme::rst();
+    let accent = theme.accent.fg();
+    let muted = theme.muted.fg();
+    let primary = theme.primary.fg();
+    let success = theme.success.fg();
+    let warn = theme.warning.fg();
+    let bold = super::theme::bold();
     let rarity_color = state.rarity.color_code();
 
     let mut out = Vec::new();
 
     out.push(String::new());
-    out.push(format!("  {b}{a}Token Guardian{r}"));
+    out.push(format!("  {bold}{accent}Token Guardian{rst}"));
     out.push(String::new());
 
     for line in &state.ascii_art {
-        out.push(format!("    {p}{line}{r}"));
+        out.push(format!("    {primary}{line}{rst}"));
     }
     out.push(String::new());
 
     out.push(format!(
-        "  {b}{a}{}{r}  {m}the {}{r}  {rarity_color}{}{r}  {m}Lv.{}{r}",
+        "  {bold}{accent}{}{rst}  {muted}the {}{rst}  {rarity_color}{}{rst}  {muted}Lv.{}{rst}",
         state.name,
         state.species.label(),
         state.rarity.label(),
         state.level,
     ));
     out.push(format!(
-        "  {m}Mood: {}  |  XP: {} / {}  |  Streak: {}d{r}",
+        "  {muted}Mood: {}  |  XP: {} / {}  |  Streak: {}d{rst}",
         state.mood.label(),
         format_compact(state.xp),
         format_compact(state.xp_next_level),
         state.streak_days,
     ));
     out.push(format!(
-        "  {m}Tokens saved: {}  |  Bugs prevented: {}{r}",
+        "  {muted}Tokens saved: {}  |  Bugs prevented: {}{rst}",
         format_compact(state.tokens_saved),
         state.bugs_prevented,
     ));
     out.push(String::new());
 
-    out.push(format!("  {b}Stats{r}"));
+    out.push(format!("  {bold}Stats{rst}"));
     out.push(format!(
-        "  {s}Compression{r}  {}",
+        "  {success}Compression{rst}  {}",
         stat_bar(state.stats.compression, theme)
     ));
     out.push(format!(
-        "  {w}Vigilance  {r}  {}",
+        "  {warn}Vigilance  {rst}  {}",
         stat_bar(state.stats.vigilance, theme)
     ));
     out.push(format!(
-        "  {p}Endurance  {r}  {}",
+        "  {primary}Endurance  {rst}  {}",
         stat_bar(state.stats.endurance, theme)
     ));
     out.push(format!(
-        "  {a}Wisdom     {r}  {}",
+        "  {accent}Wisdom     {rst}  {}",
         stat_bar(state.stats.wisdom, theme)
     ));
     out.push(format!(
-        "  {m}Experience {r}  {}",
+        "  {muted}Experience {rst}  {}",
         stat_bar(state.stats.experience, theme)
     ));
     out.push(String::new());
 
-    out.push(format!("  {m}\"{}\"{r}", state.speech));
+    out.push(format!("  {muted}\"{}\"{rst}", state.speech));
     out.push(String::new());
 
     out.join("\n")

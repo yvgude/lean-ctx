@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discord Support
+    url: https://discord.gg/pTHkG9Hew9
+    about: Get help with setup, editors, and troubleshooting.
+  - name: Security Vulnerability
+    url: https://github.com/yvgude/lean-ctx/security/advisories/new
+    about: Please report security issues privately via GitHub Security Advisories.
+  - name: Documentation
+    url: https://leanctx.com/docs/getting-started
+    about: Start here for installation, concepts, and tool reference.

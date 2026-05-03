@@ -53,6 +53,56 @@ pub enum EventKind {
         old_jaccard: f64,
         new_jaccard: f64,
     },
+    BudgetWarning {
+        role: String,
+        dimension: String,
+        used: String,
+        limit: String,
+        percent: u8,
+    },
+    BudgetExhausted {
+        role: String,
+        dimension: String,
+        used: String,
+        limit: String,
+    },
+    PolicyViolation {
+        role: String,
+        tool: String,
+        reason: String,
+    },
+    RoleChanged {
+        from: String,
+        to: String,
+    },
+    ProfileChanged {
+        from: String,
+        to: String,
+    },
+    SloViolation {
+        slo_name: String,
+        metric: String,
+        threshold: f64,
+        actual: f64,
+        action: String,
+    },
+    Anomaly {
+        metric: String,
+        expected: f64,
+        actual: f64,
+        deviation_factor: f64,
+    },
+    VerificationWarning {
+        warning_kind: String,
+        detail: String,
+        severity: String,
+    },
+    ThresholdAdapted {
+        language: String,
+        arm: String,
+        old_threshold: f64,
+        new_threshold: f64,
+    },
 }
 
 struct EventBus {
@@ -79,7 +129,10 @@ impl EventBus {
         };
 
         {
-            let mut ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ring = self
+                .ring
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if ring.len() >= RING_CAPACITY {
                 ring.pop_front();
             }
@@ -91,12 +144,18 @@ impl EventBus {
     }
 
     fn events_since(&self, after_id: u64) -> Vec<LeanCtxEvent> {
-        let ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
+        let ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ring.iter().filter(|e| e.id > after_id).cloned().collect()
     }
 
     fn latest_events(&self, n: usize) -> Vec<LeanCtxEvent> {
-        let ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
+        let ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let len = ring.len();
         let start = len.saturating_sub(n);
         ring.iter().skip(start).cloned().collect()
@@ -109,7 +168,9 @@ fn bus() -> &'static EventBus {
 }
 
 fn jsonl_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx").join("events.jsonl"))
+    crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|d| d.join("events.jsonl"))
 }
 
 fn append_jsonl(event: &LeanCtxEvent) {
@@ -199,7 +260,84 @@ pub fn emit_agent_action(agent_id: &str, action: &str, tool: Option<&str>) {
     emit(EventKind::AgentAction {
         agent_id: agent_id.to_string(),
         action: action.to_string(),
-        tool: tool.map(|t| t.to_string()),
+        tool: tool.map(std::string::ToString::to_string),
+    });
+}
+
+pub fn emit_budget_warning(role: &str, dimension: &str, used: &str, limit: &str, percent: u8) {
+    emit(EventKind::BudgetWarning {
+        role: role.to_string(),
+        dimension: dimension.to_string(),
+        used: used.to_string(),
+        limit: limit.to_string(),
+        percent,
+    });
+}
+
+pub fn emit_budget_exhausted(role: &str, dimension: &str, used: &str, limit: &str) {
+    emit(EventKind::BudgetExhausted {
+        role: role.to_string(),
+        dimension: dimension.to_string(),
+        used: used.to_string(),
+        limit: limit.to_string(),
+    });
+}
+
+pub fn emit_policy_violation(role: &str, tool: &str, reason: &str) {
+    emit(EventKind::PolicyViolation {
+        role: role.to_string(),
+        tool: tool.to_string(),
+        reason: reason.to_string(),
+    });
+}
+
+pub fn emit_role_changed(from: &str, to: &str) {
+    emit(EventKind::RoleChanged {
+        from: from.to_string(),
+        to: to.to_string(),
+    });
+}
+
+pub fn emit_profile_changed(from: &str, to: &str) {
+    emit(EventKind::ProfileChanged {
+        from: from.to_string(),
+        to: to.to_string(),
+    });
+}
+
+pub fn emit_slo_violation(slo_name: &str, metric: &str, threshold: f64, actual: f64, action: &str) {
+    emit(EventKind::SloViolation {
+        slo_name: slo_name.to_string(),
+        metric: metric.to_string(),
+        threshold,
+        actual,
+        action: action.to_string(),
+    });
+}
+
+pub fn emit_anomaly(metric: &str, expected: f64, actual: f64, deviation_factor: f64) {
+    emit(EventKind::Anomaly {
+        metric: metric.to_string(),
+        expected,
+        actual,
+        deviation_factor,
+    });
+}
+
+pub fn emit_verification_warning(warning_kind: &str, detail: &str, severity: &str) {
+    emit(EventKind::VerificationWarning {
+        warning_kind: warning_kind.to_string(),
+        detail: detail.to_string(),
+        severity: severity.to_string(),
+    });
+}
+
+pub fn emit_threshold_adapted(language: &str, arm: &str, old_threshold: f64, new_threshold: f64) {
+    emit(EventKind::ThresholdAdapted {
+        language: language.to_string(),
+        arm: arm.to_string(),
+        old_threshold,
+        new_threshold,
     });
 }
 

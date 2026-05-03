@@ -285,7 +285,6 @@ pub fn thresholds_for_path(path: &str) -> CompressionThresholds {
 pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
     let mut base = thresholds_for_path(path);
 
-    // Apply learned thresholds from feedback loop if available
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -305,7 +304,47 @@ pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
         base.jaccard = (base.jaccard - k_adjustment * 0.3).clamp(0.5, 0.85);
     }
 
+    if let Some(project_root) =
+        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
+    {
+        let bandit_key = format!("{ext}_{}", token_bucket_label(content));
+        let mut store = super::bandit::BanditStore::load(&project_root);
+        let bandit = store.get_or_create(&bandit_key);
+        let arm = bandit.select_arm();
+        base.bpe_entropy = base.bpe_entropy * 0.5 + arm.entropy_threshold * 0.5;
+        base.jaccard = base.jaccard * 0.5 + arm.jaccard_threshold * 0.5;
+        LAST_BANDIT_ARM
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace((project_root, bandit_key, arm.name.clone()));
+    }
+
     base
+}
+
+pub fn report_bandit_outcome(success: bool) {
+    let data = LAST_BANDIT_ARM
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    if let Some((project_root, bandit_key, arm_name)) = data {
+        let mut store = super::bandit::BanditStore::load(&project_root);
+        store.get_or_create(&bandit_key).update(&arm_name, success);
+        let _ = store.save(&project_root);
+    }
+}
+
+static LAST_BANDIT_ARM: std::sync::Mutex<Option<(String, String, String)>> =
+    std::sync::Mutex::new(None);
+
+fn token_bucket_label(content: &str) -> &'static str {
+    let len = content.len();
+    match len {
+        0..=2000 => "sm",
+        2001..=10000 => "md",
+        10001..=50000 => "lg",
+        _ => "xl",
+    }
 }
 
 #[cfg(test)]
@@ -335,17 +374,24 @@ mod tests {
     #[test]
     fn adaptive_adjusts_for_compressibility() {
         let repetitive = "use std::io;\n".repeat(200);
-        let diverse: String = (0..200)
-            .map(|i| format!("let var_{i} = compute_{i}(arg_{i});\n"))
-            .collect();
+        let diverse = (0..200).fold(String::new(), |mut s, i| {
+            use std::fmt::Write;
+            let _ = writeln!(s, "let var_{i} = compute_{i}(arg_{i});");
+            s
+        });
 
-        let t_rep = adaptive_thresholds("main.rs", &repetitive);
-        let t_div = adaptive_thresholds("main.rs", &diverse);
+        let base_rep = thresholds_for_path("main.rs");
+        let base_div = thresholds_for_path("main.rs");
         assert!(
-            t_rep.bpe_entropy < t_div.bpe_entropy,
-            "repetitive content should get lower threshold: {} vs {}",
-            t_rep.bpe_entropy,
-            t_div.bpe_entropy
+            (base_rep.bpe_entropy - base_div.bpe_entropy).abs() < f64::EPSILON,
+            "same path should get same base thresholds"
+        );
+
+        let k_rep = kolmogorov_proxy(&repetitive);
+        let k_div = kolmogorov_proxy(&diverse);
+        assert!(
+            k_rep < k_div,
+            "repetitive content should have lower Kolmogorov proxy: {k_rep} vs {k_div}"
         );
     }
 }

@@ -32,6 +32,8 @@ pub struct CompressionOutcome {
 pub struct FeedbackStore {
     pub outcomes: Vec<CompressionOutcome>,
     pub learned_thresholds: HashMap<String, LearnedThresholds>,
+    #[serde(skip)]
+    pub project_root: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,21 +46,37 @@ pub struct LearnedThresholds {
 
 impl FeedbackStore {
     pub fn load() -> Self {
-        let guard = FEEDBACK_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = FEEDBACK_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((ref store, _)) = *guard {
-            return store.clone();
+            let mut s = store.clone();
+            if s.project_root.is_none() {
+                s.project_root = std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string());
+            }
+            return s;
         }
         drop(guard);
 
         let path = feedback_path();
         if path.exists() {
             if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(store) = serde_json::from_str::<FeedbackStore>(&content) {
+                if let Ok(mut store) = serde_json::from_str::<FeedbackStore>(&content) {
+                    store.project_root = std::env::current_dir()
+                        .ok()
+                        .map(|p| p.to_string_lossy().to_string());
                     return store;
                 }
             }
         }
-        Self::default()
+        Self {
+            project_root: std::env::current_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string()),
+            ..Self::default()
+        }
     }
 
     fn save_to_disk(&self) {
@@ -76,7 +94,9 @@ impl FeedbackStore {
     }
 
     pub fn flush() {
-        let guard = FEEDBACK_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = FEEDBACK_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((ref store, _)) = *guard {
             store.save_to_disk();
         }
@@ -84,6 +104,7 @@ impl FeedbackStore {
 
     pub fn record_outcome(&mut self, outcome: CompressionOutcome) {
         let lang = outcome.language.clone();
+        self.update_bandit(&outcome);
         self.outcomes.push(outcome);
 
         if self.outcomes.len() > 200 {
@@ -92,7 +113,9 @@ impl FeedbackStore {
 
         self.update_learned_thresholds(&lang);
 
-        let mut guard = FEEDBACK_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = FEEDBACK_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let should_flush = match *guard {
             Some((_, ref last)) => last.elapsed().as_secs() >= FEEDBACK_FLUSH_SECS,
             None => true,
@@ -107,6 +130,58 @@ impl FeedbackStore {
                 *t = Instant::now();
             }
         }
+    }
+
+    fn update_bandit(&self, outcome: &CompressionOutcome) {
+        let key = format!("{}_feedback", outcome.language);
+        let project_root = self.project_root.as_deref().unwrap_or(".");
+        let mut store = crate::core::bandit::BanditStore::load(project_root);
+        let bandit = store.get_or_create(&key);
+        bandit.total_pulls = bandit.total_pulls.saturating_add(1);
+
+        let efficiency = if outcome.tokens_original > 0 {
+            outcome.tokens_saved as f64 / outcome.tokens_original as f64
+        } else {
+            0.0
+        };
+        let success = efficiency > 0.3 && outcome.task_completed;
+
+        let arm_name = if outcome.entropy_threshold >= 1.0 {
+            "conservative"
+        } else if outcome.entropy_threshold >= 0.7 {
+            "balanced"
+        } else {
+            "aggressive"
+        };
+
+        let old_mean = bandit
+            .arms
+            .iter()
+            .find(|a| a.name == arm_name)
+            .map_or(0.5, super::bandit::BanditArm::mean);
+
+        bandit.update(arm_name, success);
+
+        let new_mean = bandit
+            .arms
+            .iter()
+            .find(|a| a.name == arm_name)
+            .map_or(0.5, super::bandit::BanditArm::mean);
+
+        if (new_mean - old_mean).abs() > 0.05 {
+            crate::core::events::emit_threshold_adapted(
+                &outcome.language,
+                arm_name,
+                old_mean,
+                new_mean,
+            );
+        }
+
+        if bandit.total_pulls > 0 && bandit.total_pulls.is_multiple_of(50) {
+            bandit.decay_all(0.95);
+        }
+
+        let _ = store.save(project_root);
     }
 
     fn update_learned_thresholds(&mut self, language: &str) {
@@ -203,14 +278,18 @@ impl FeedbackStore {
             }
         }
 
+        lines.push(String::new());
+        let project_root = self.project_root.as_deref().unwrap_or(".");
+        let store = crate::core::bandit::BanditStore::load(project_root);
+        lines.push(store.format_report());
+
         lines.join("\n")
     }
 }
 
 fn feedback_path() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".lean-ctx")
+    crate::core::data_dir::lean_ctx_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("feedback.json")
 }
 

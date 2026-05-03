@@ -1,29 +1,110 @@
 use crate::tools::CrpMode;
 
+/// Claude Code truncates MCP server instructions at 2048 characters.
+/// Full instructions are installed as `~/.claude/rules/lean-ctx.md` instead.
+const CLAUDE_CODE_INSTRUCTION_CAP: usize = 2048;
+
 pub fn build_instructions(crp_mode: CrpMode) -> String {
     build_instructions_with_client(crp_mode, "")
 }
 
 pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> String {
+    if is_claude_code_client(client_name) {
+        return build_claude_code_instructions();
+    }
+    build_full_instructions(crp_mode, client_name)
+}
+
+pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
+    // Avoid loading dynamic on-disk session/knowledge/gotcha blocks in tests, which can
+    // vary across machines and between concurrent test runs.
+    build_full_instructions_for_test(crp_mode, "")
+}
+
+fn is_claude_code_client(client_name: &str) -> bool {
+    let lower = client_name.to_lowercase();
+    lower.contains("claude") && !lower.contains("cursor")
+}
+
+fn build_claude_code_instructions() -> String {
+    let shell_hint = build_shell_hint();
+    let instr = format!("\
+ALWAYS use lean-ctx MCP tools instead of native equivalents.
+
+Tool mapping (MANDATORY):
+• Read/cat/head/tail -> ctx_read(path, mode)
+• Shell/bash -> ctx_shell(command)
+• Grep/rg -> ctx_search(pattern, path)
+• ls/find -> ctx_tree(path, depth)
+• Edit/StrReplace -> native (lean-ctx=READ only). If Edit needs Read and Read is unavailable, use ctx_edit.
+• Write, Delete, Glob -> normal. NEVER loop on Edit failures — use ctx_edit.
+
+ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M
+Auto-selects mode. Re-reads ~13 tok. File refs F1,F2.. persist.
+Cache auto-validates via file mtime. Use fresh=true (or start_line / lines:N-M) to force a disk re-read.
+
+Auto: ctx_overview, ctx_preload, ctx_dedup, ctx_compress behind the scenes.
+Multi-agent: ctx_agent(action=handoff|sync|diary).
+ctx_semantic_search for meaning search. ctx_session for memory.
+ctx_knowledge: remember|recall|timeline|rooms|search|wakeup.
+ctx_shell raw=true for uncompressed.
+
+CEP: 1.ACT FIRST 2.DELTA ONLY 3.STRUCTURED(+/-/~) 4.ONE LINE 5.QUALITY
+{shell_hint}\
+Prefer: ctx_read>Read | ctx_shell>Shell | ctx_search>Grep | ctx_tree>ls
+Edit: native Edit/StrReplace preferred, ctx_edit if Edit unavailable.
+Never echo tool output. Never narrate. Show only changed code.
+Full instructions at ~/.claude/CLAUDE.md (imports rules/lean-ctx.md)");
+
+    if shell_hint.is_empty() {
+        debug_assert!(
+            instr.len() <= CLAUDE_CODE_INSTRUCTION_CAP,
+            "Claude Code instructions exceed {CLAUDE_CODE_INSTRUCTION_CAP} chars: {} chars",
+            instr.len()
+        );
+    }
+    instr
+}
+
+fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
+    let cfg = crate::core::config::Config::load();
+    let minimal = cfg.minimal_overhead_effective_for_client(client_name);
+
     let profile = crate::core::litm::LitmProfile::from_client_name(client_name);
-    let session_block = match crate::core::session::SessionState::load_latest() {
+    let loaded_session = if minimal {
+        None
+    } else {
+        crate::core::session::SessionState::load_latest()
+    };
+
+    let session_block = match loaded_session {
         Some(ref session) => {
             let positioned = crate::core::litm::position_optimize(session);
+            let resume = if session.stats.total_tool_calls > 0 {
+                format!("\n{}", session.build_resume_block())
+            } else {
+                String::new()
+            };
             format!(
-                "\n\n--- ACTIVE SESSION (LITM P1: begin position, profile: {}) ---\n{}\n---\n",
+                "\n\n--- ACTIVE SESSION (LITM P1: begin position, profile: {}) ---\n{}{resume}\n---\n",
                 profile.name, positioned.begin_block
             )
         }
         None => String::new(),
     };
 
-    let project_root_for_blocks = crate::core::session::SessionState::load_latest()
-        .and_then(|s| s.project_root)
-        .or_else(|| {
-            std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().to_string())
-        });
+    let project_root_for_blocks = if minimal {
+        None
+    } else {
+        loaded_session
+            .as_ref()
+            .and_then(|s| s.project_root.clone())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string())
+            })
+    };
 
     let knowledge_block = match &project_root_for_blocks {
         Some(root) => {
@@ -46,7 +127,8 @@ pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> S
     let gotcha_block = match &project_root_for_blocks {
         Some(root) => {
             let store = crate::core::gotcha_tracker::GotchaStore::load(root);
-            let files: Vec<String> = crate::core::session::SessionState::load_latest()
+            let files: Vec<String> = loaded_session
+                .as_ref()
                 .map(|s| s.files_touched.iter().map(|ft| ft.path.clone()).collect())
                 .unwrap_or_default();
             let block = store.format_injection_block(&files);
@@ -59,6 +141,8 @@ pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> S
         None => String::new(),
     };
 
+    let shell_hint = build_shell_hint();
+
     let mut base = format!("\
 CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token savings.\n\
 \n\
@@ -70,27 +154,17 @@ lean-ctx MCP — MANDATORY tool mapping:\n\
 • Edit/StrReplace -> use native (lean-ctx only replaces READ, not WRITE)\n\
 • Write, Delete, Glob -> use normally\n\
 \n\
-COMPATIBILITY: lean-ctx replaces READ operations only. Your native Edit/Write/StrReplace tools \
-remain unchanged. If your instructions say 'use Edit or Write tools only', that is compatible — \
-lean-ctx only changes how you READ files (ctx_read), not how you EDIT them.\n\
+COMPATIBILITY: lean-ctx replaces READ operations only. Edit/Write/StrReplace stay native.\n\
+FILE EDITING: Native Edit/StrReplace preferred. If Edit fails, use ctx_edit immediately.\n\
+{shell_hint}\
 \n\
-FILE EDITING: Use your IDE's native Edit/StrReplace when available. \
-If Edit requires native Read and Read is unavailable, use ctx_edit instead — it reads, replaces, and writes in one call. \
-NEVER loop trying to make Edit work. If Edit fails, switch to ctx_edit immediately.\n\
+ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M. Auto-selects. Cached re-reads can be ~13 tok when unchanged. Fn refs F1,F2.. persist.\n\
+Cache auto-validates via file mtime. Use fresh=true (or start_line / lines:N-M) to force a disk re-read.\n\
 \n\
-ctx_read modes: full (cached, for edits), map (deps+API), signatures, diff, task (IB-filtered), \
-reference, aggressive, entropy, lines:N-M. Auto-selects when unspecified. Re-reads ~13 tokens. File refs F1,F2.. persist.\n\
-If ctx_read returns 'cached': use fresh=true, start_line=N, or mode='lines:N-M' to re-read.\n\
-\n\
-AUTONOMY: lean-ctx auto-runs ctx_overview, ctx_preload, ctx_dedup, ctx_compress behind the scenes.\n\
-Multi-agent: ctx_share auto-pushes context at checkpoints. Use ctx_agent(action=handoff) to transfer tasks, ctx_agent(action=sync) for status.\n\
-Semantic: ctx_semantic_search finds similar code by meaning — use when exact search (ctx_search) misses.\n\
-Focus on: ctx_read, ctx_shell, ctx_search, ctx_tree. Use ctx_session for memory, ctx_knowledge for project facts.\n\
-Knowledge: ctx_knowledge actions: remember, recall, timeline, rooms, search (cross-session), wakeup. Facts have temporal validity + contradiction detection.\n\
-Agent diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight) to log agent work. ctx_agent(action=recall_diary) to review.\n\
-ctx_shell raw=true: skip compression for small/critical outputs. Full output tee files at ~/.lean-ctx/tee/.\n\
-\n\
-Auto-checkpoint every 15 calls. Cache clears after 5 min idle.\n\
+Auto: ctx_overview, ctx_preload, ctx_dedup, ctx_compress run behind the scenes. Checkpoint every 15 calls.\n\
+Multi-agent: ctx_agent(action=handoff|sync). Diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight).\n\
+ctx_semantic_search for meaning-based search. ctx_session for memory. ctx_knowledge: remember|recall|timeline|rooms|search|wakeup.\n\
+ctx_shell raw=true for uncompressed output.\n\
 \n\
 CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) 4.ONE LINE PER ACTION 5.QUALITY ANCHOR\n\
 \n\
@@ -100,11 +174,15 @@ CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) 4.ONE LINE PER A
 {knowledge_block}\
 {gotcha_block}\
 \n\
+--- ORIGIN ---\n\
+{origin}\n\
+\n\
 --- TOOL PREFERENCE (LITM-END) ---\n\
 Prefer: ctx_read over Read | ctx_shell over Shell | ctx_search over Grep | ctx_tree over ls\n\
 Edit files: native Edit/StrReplace if available, ctx_edit if Edit requires unavailable Read.\n\
 Write, Delete, Glob -> use normally. NEVER loop on Edit failures — use ctx_edit.",
-        decoder_block = crate::core::protocol::instruction_decoder_block()
+        decoder_block = crate::core::protocol::instruction_decoder_block(),
+        origin = crate::core::integrity::origin_line()
     );
 
     if should_use_unified(client_name) {
@@ -117,63 +195,186 @@ See the ctx() tool description for available sub-tools.\n",
     }
 
     let intelligence_block = build_intelligence_block();
+    let terse_block = build_terse_agent_block(&crp_mode);
 
     let base = base;
     match crp_mode {
-        CrpMode::Off => format!("{base}\n\n{intelligence_block}"),
+        CrpMode::Off => format!("{base}\n\n{terse_block}{intelligence_block}"),
         CrpMode::Compact => {
             format!(
                 "{base}\n\n\
 CRP MODE: compact\n\
-Compact Response Protocol:\n\
-• Omit filler words, articles, redundant phrases\n\
-• Abbreviate: fn, cfg, impl, deps, req, res, ctx, err, ret, arg, val, ty, mod\n\
-• Compact lists over prose, code blocks over explanations\n\
-• Code changes: diff lines (+/-) only, not full files\n\
-• TARGET: <=200 tokens per response unless code edits require more\n\
-• Tool outputs are pre-analyzed and compressed. Trust them directly.\n\n\
-{intelligence_block}"
+Omit filler. Abbreviate: fn,cfg,impl,deps,req,res,ctx,err,ret,arg,val,ty,mod.\n\
+Diff lines (+/-) only. TARGET: <=200 tok. Trust tool outputs.\n\n\
+{terse_block}{intelligence_block}"
             )
         }
         CrpMode::Tdd => {
             format!(
                 "{base}\n\n\
-CRP MODE: tdd (Token Dense Dialect)\n\
-Maximize information density. Every token must carry meaning.\n\
-\n\
-RESPONSE RULES:\n\
-• Drop articles, filler words, pleasantries\n\
-• Reference files by Fn refs only, never full paths\n\
-• Code changes: diff lines only (+/-), not full files\n\
-• No explanations unless asked\n\
-• Tables for structured data\n\
-• Abbreviations: fn, cfg, impl, deps, req, res, ctx, err, ret, arg, val, ty, mod\n\
-\n\
-CHANGE NOTATION:\n\
-+F1:42 param(timeout:Duration)     — added\n\
--F1:10-15                           — removed\n\
-~F1:42 validate_token -> verify_jwt — changed\n\
-\n\
-STATUS: ctx_read(F1) -> 808L cached ok | cargo test -> 82 passed 0 failed\n\
-\n\
-TOKEN BUDGET: <=150 tokens per response. Exceed only for multi-file edits.\n\
-Tool outputs are pre-analyzed and compressed. Trust them directly.\n\
-ZERO NARRATION: Act, then report result in 1 line.\n\n\
-{intelligence_block}"
+CRP MODE: tdd\n\
+Max density. Every token carries meaning. Fn refs only, diff lines (+/-) only.\n\
+Abbreviate: fn,cfg,impl,deps,req,res,ctx,err,ret,arg,val,ty,mod.\n\
++F1:42 param(timeout:Duration) | -F1:10-15 | ~F1:42 old->new\n\
+BUDGET: <=150 tok. ZERO NARRATION. Trust tool outputs.\n\n\
+{terse_block}{intelligence_block}"
             )
         }
     }
 }
 
+fn build_full_instructions_for_test(crp_mode: CrpMode, client_name: &str) -> String {
+    let shell_hint = build_shell_hint();
+    let session_block = String::new();
+    let knowledge_block = String::new();
+    let gotcha_block = String::new();
+
+    let mut base = format!(
+        "\
+CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token savings.\n\
+\n\
+lean-ctx MCP — MANDATORY tool mapping:\n\
+• Read/cat/head/tail -> ctx_read(path, mode)  [NEVER use native Read]\n\
+• Shell/bash -> ctx_shell(command)  [NEVER use native Shell]\n\
+• Grep/rg -> ctx_search(pattern, path)  [NEVER use native Grep]\n\
+• ls/find -> ctx_tree(path, depth)\n\
+• Edit/StrReplace -> use native (lean-ctx only replaces READ, not WRITE)\n\
+• Write, Delete, Glob -> use normally\n\
+\n\
+COMPATIBILITY: lean-ctx replaces READ operations only. Edit/Write/StrReplace stay native.\n\
+FILE EDITING: Native Edit/StrReplace preferred. If Edit fails, use ctx_edit immediately.\n\
+{shell_hint}\
+\n\
+ctx_read modes: full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M. Auto-selects. Cached re-reads can be ~13 tok when unchanged. Fn refs F1,F2.. persist.\n\
+Cache auto-validates via file mtime. Use fresh=true (or start_line / lines:N-M) to force a disk re-read.\n\
+\n\
+Auto: ctx_overview, ctx_preload, ctx_dedup, ctx_compress run behind the scenes. Checkpoint every 15 calls.\n\
+Multi-agent: ctx_agent(action=handoff|sync). Diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight).\n\
+ctx_semantic_search for meaning-based search. ctx_session for memory. ctx_knowledge: remember|recall|timeline|rooms|search|wakeup.\n\
+ctx_shell raw=true for uncompressed output.\n\
+\n\
+CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) 4.ONE LINE PER ACTION 5.QUALITY ANCHOR\n\
+\n\
+{decoder_block}\n\
+\n\
+{session_block}\
+{knowledge_block}\
+{gotcha_block}\
+\n\
+--- ORIGIN ---\n\
+{origin}\n\
+\n\
+--- TOOL PREFERENCE (LITM-END) ---\n\
+Prefer: ctx_read over Read | ctx_shell over Shell | ctx_search over Grep | ctx_tree over ls\n\
+Edit files: native Edit/StrReplace if available, ctx_edit if Edit requires unavailable Read.\n\
+Write, Delete, Glob -> use normally. NEVER loop on Edit failures — use ctx_edit.",
+        decoder_block = crate::core::protocol::instruction_decoder_block(),
+        origin = crate::core::integrity::origin_line(),
+    );
+
+    if should_use_unified(client_name) {
+        base.push_str(
+            "\n\n\
+UNIFIED TOOL MODE (active):\n\
+Additional tools are accessed via ctx() meta-tool: ctx(tool=\"<name>\", ...params).\n\
+See the ctx() tool description for available sub-tools.\n",
+        );
+    }
+
+    let intelligence_block = build_intelligence_block();
+    let terse_block = build_terse_agent_block(&crp_mode);
+
+    match crp_mode {
+        CrpMode::Off => format!("{base}\n\n{terse_block}{intelligence_block}"),
+        CrpMode::Compact => {
+            format!(
+                "{base}\n\n\
+CRP MODE: compact\n\
+Omit filler. Abbreviate: fn,cfg,impl,deps,req,res,ctx,err,ret,arg,val,ty,mod.\n\
+Diff lines (+/-) only. TARGET: <=200 tok. Trust tool outputs.\n\n\
+{terse_block}{intelligence_block}"
+            )
+        }
+        CrpMode::Tdd => {
+            format!(
+                "{base}\n\n\
+CRP MODE: tdd\n\
+Max density. Every token carries meaning. Fn refs only, diff lines (+/-) only.\n\
+Abbreviate: fn,cfg,impl,deps,req,res,ctx,err,ret,arg,val,ty,mod.\n\
++F1:42 param(timeout:Duration) | -F1:10-15 | ~F1:42 old->new\n\
+BUDGET: <=150 tok. ZERO NARRATION. Trust tool outputs.\n\n\
+{terse_block}{intelligence_block}"
+            )
+        }
+    }
+}
+
+pub fn claude_code_instructions() -> String {
+    build_claude_code_instructions()
+}
+
+pub fn full_instructions_for_rules_file(crp_mode: CrpMode) -> String {
+    build_full_instructions(crp_mode, "")
+}
+
+fn build_terse_agent_block(crp_mode: &CrpMode) -> String {
+    use crate::core::config::{Config, TerseAgent};
+    let cfg = Config::load();
+    let level = TerseAgent::effective(&cfg.terse_agent);
+    if !level.is_active() {
+        return String::new();
+    }
+    // CRP Tdd already enforces extreme density — only Ultra adds value on top
+    if matches!(crp_mode, CrpMode::Tdd) && !matches!(level, TerseAgent::Ultra) {
+        return String::new();
+    }
+    let text = match level {
+        TerseAgent::Off => return String::new(),
+        TerseAgent::Lite => {
+            "\
+OUTPUT STYLE: Prefer concise responses. Skip narration, explain only when asked.\n\
+Use bullet points over paragraphs. Code > words. Diff > full file."
+        }
+        TerseAgent::Full => {
+            "\
+OUTPUT STYLE: Maximum density. Every token carries meaning.\n\
+Code changes: diff only (+/-), no full blocks. Explanations: 1 sentence max unless asked.\n\
+Lists: no filler words. Never repeat what the user said. Never explain what you're about to do."
+        }
+        TerseAgent::Ultra => {
+            "\
+OUTPUT STYLE: Ultra-terse. Expert pair programmer mode.\n\
+Skip: greetings, transitions, summaries, \"I'll\", \"Let me\", \"Here's\".\n\
+Max 2 sentences per explanation. Code speaks. Act, don't narrate. When uncertain: ask 1 question."
+        }
+    };
+    format!("{text}\n\n")
+}
+
 fn build_intelligence_block() -> String {
     "\
 OUTPUT EFFICIENCY:\n\
-• NEVER echo back code that was provided in tool outputs — it wastes tokens.\n\
-• NEVER add narration comments (// Import, // Define, // Return) — code is self-documenting.\n\
-• For code changes: show only the new/changed code, not unchanged context.\n\
-• Tool outputs include [TASK:type] and SCOPE hints for context.\n\
-• Respect the user's intent: architecture tasks need thorough analysis, simple generates need code."
+• Never echo tool output code. Never add narration comments. Show only changed code.\n\
+• [TASK:type] and SCOPE hints included. Architecture=thorough, generate=code."
         .to_string()
+}
+
+fn build_shell_hint() -> String {
+    if !cfg!(windows) {
+        return String::new();
+    }
+    let name = crate::shell::shell_name();
+    let is_posix = matches!(name.as_str(), "bash" | "sh" | "zsh" | "fish");
+    if is_posix {
+        format!(
+            "\nSHELL: {name} (POSIX). Use POSIX commands (cat, head, grep, find, ls). \
+             Do NOT use PowerShell cmdlets (Get-Content, Select-Object, Get-ChildItem).\n"
+        )
+    } else if name.contains("powershell") || name.contains("pwsh") {
+        format!("\nSHELL: {name}. Use PowerShell cmdlets.\n")
+    } else {
+        format!("\nSHELL: {name}.\n")
+    }
 }
 
 fn should_use_unified(client_name: &str) -> bool {

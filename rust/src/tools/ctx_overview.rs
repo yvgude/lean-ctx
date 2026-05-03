@@ -19,11 +19,18 @@ pub fn handle(
     path: Option<&str>,
     _crp_mode: CrpMode,
 ) -> String {
-    let project_root = path
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| ".".to_string());
+    let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
-    let index = crate::core::graph_index::load_or_build(&project_root);
+    let Some(index) = crate::core::index_orchestrator::try_load_graph_index(&project_root) else {
+        crate::core::index_orchestrator::ensure_all_background(&project_root);
+        return format!(
+            "INDEXING IN PROGRESS\n\n\
+            The knowledge graph for this project is being built in the background.\n\
+            Project: {project_root}\n\n\
+            Because this is a large project, the initial scan may take a moment.\n\
+            Please try this command again in 1-2 minutes."
+        );
+    };
 
     let (task_files, task_keywords) = if let Some(task_desc) = task {
         parse_task_hints(task_desc)
@@ -125,8 +132,7 @@ pub fn handle(
         for file_entry in index.files.values() {
             let dir = std::path::Path::new(&file_entry.path)
                 .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string());
+                .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());
             by_dir
                 .entry(dir)
                 .or_default()
@@ -135,7 +141,8 @@ pub fn handle(
 
         for (dir, files) in &by_dir {
             let dir_display = if dir.len() > 50 {
-                format!("...{}", &dir[dir.len() - 47..])
+                let start = truncate_start_char_boundary(dir, 47);
+                format!("...{}", &dir[start..])
             } else {
                 dir.clone()
             };
@@ -160,7 +167,7 @@ pub fn handle(
             *connection_counts.entry(&edge.to).or_insert(0) += 1;
         }
         let mut hubs: Vec<(&&str, &usize)> = connection_counts.iter().collect();
-        hubs.sort_by(|a, b| b.1.cmp(a.1));
+        hubs.sort_by_key(|item| std::cmp::Reverse(*item.1));
 
         if !hubs.is_empty() {
             output.push("HUB FILES (most connected):".to_string());
@@ -170,7 +177,7 @@ pub fn handle(
         }
     }
 
-    let wakeup = build_wakeup_briefing(&project_root);
+    let wakeup = build_wakeup_briefing(&project_root, task);
     if !wakeup.is_empty() {
         output.push(String::new());
         output.push(wakeup);
@@ -184,7 +191,7 @@ pub fn handle(
     output.join("\n")
 }
 
-fn build_wakeup_briefing(project_root: &str) -> String {
+fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> String {
     let mut parts = Vec::new();
 
     if let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(project_root) {
@@ -207,6 +214,12 @@ fn build_wakeup_briefing(project_root: &str) -> String {
                 .map(|d| d.summary.clone())
                 .collect();
             parts.push(format!("RECENT_DECISIONS:{}", recent.join("|")));
+        }
+    }
+
+    if let Some(t) = task {
+        for r in crate::core::prospective_memory::reminders_for_task(project_root, t) {
+            parts.push(r);
         }
     }
 
@@ -239,8 +252,61 @@ fn short_path(path: &str) -> String {
     parts[parts.len() - 2..].join("/")
 }
 
+/// Find a byte offset at most `max_tail_bytes` from the end of `s`
+/// that falls on a valid UTF-8 char boundary.
+fn truncate_start_char_boundary(s: &str, max_tail_bytes: usize) -> usize {
+    if max_tail_bytes >= s.len() {
+        return 0;
+    }
+    let mut start = s.len() - max_tail_bytes;
+    while start < s.len() && !s.is_char_boundary(start) {
+        start += 1;
+    }
+    start
+}
+
 fn file_line_count(path: &str) -> usize {
-    std::fs::read_to_string(path)
-        .map(|c| c.lines().count())
-        .unwrap_or(0)
+    std::fs::read_to_string(path).map_or(0, |c| c.lines().count())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_start_ascii() {
+        let s = "abcdefghij"; // 10 bytes
+        assert_eq!(truncate_start_char_boundary(s, 5), 5);
+        assert_eq!(&s[5..], "fghij");
+    }
+
+    #[test]
+    fn truncate_start_multibyte_chinese() {
+        // "文档/examples/extensions/custom-provider-anthropic" = multi-byte prefix
+        let s = "文档/examples/extensions/custom-provider-anthropic";
+        let start = truncate_start_char_boundary(s, 47);
+        assert!(s.is_char_boundary(start));
+        let tail = &s[start..];
+        assert!(tail.len() <= 47);
+    }
+
+    #[test]
+    fn truncate_start_all_multibyte() {
+        let s = "这是一个很长的中文目录路径用于测试字符边界处理";
+        let start = truncate_start_char_boundary(s, 20);
+        assert!(s.is_char_boundary(start));
+    }
+
+    #[test]
+    fn truncate_start_larger_than_string() {
+        let s = "short";
+        assert_eq!(truncate_start_char_boundary(s, 100), 0);
+    }
+
+    #[test]
+    fn truncate_start_emoji() {
+        let s = "/home/user/🎉🎉🎉/src/components/deeply/nested";
+        let start = truncate_start_char_boundary(s, 30);
+        assert!(s.is_char_boundary(start));
+    }
 }

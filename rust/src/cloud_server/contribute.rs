@@ -5,6 +5,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::auth::AppState;
+use super::helpers::internal_error;
 
 #[derive(Deserialize)]
 pub struct ContributeEnvelope {
@@ -48,8 +49,4 @@ pub async fn post_contribute(
     Ok(Json(
         serde_json::json!({ "message": format!("Contributed {inserted} entries") }),
     ))
-}
-
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }

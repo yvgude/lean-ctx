@@ -35,7 +35,9 @@ pub enum CacheResult {
 }
 
 fn cache_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx").join("cli-cache"))
+    crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|d| d.join("cli-cache"))
 }
 
 fn cache_file() -> Option<PathBuf> {
@@ -60,9 +62,8 @@ fn normalize_key(path: &str) -> String {
 }
 
 fn load_store() -> CliCacheStore {
-    let path = match cache_file() {
-        Some(p) => p,
-        None => return CliCacheStore::default(),
+    let Some(path) = cache_file() else {
+        return CliCacheStore::default();
     };
     match std::fs::read_to_string(&path) {
         Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
@@ -71,10 +72,7 @@ fn load_store() -> CliCacheStore {
 }
 
 fn save_store(store: &CliCacheStore) {
-    let dir = match cache_dir() {
-        Some(d) => d,
-        None => return,
-    };
+    let Some(dir) = cache_dir() else { return };
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("cache.json");
     if let Ok(data) = serde_json::to_string(store) {
@@ -92,13 +90,10 @@ fn file_ref(key: &str, store: &CliCacheStore) -> String {
 }
 
 pub fn check_and_read(path: &str) -> CacheResult {
-    let content = match crate::tools::ctx_read::read_file_lossy(path) {
-        Ok(c) => c,
-        Err(_) => {
-            return CacheResult::Miss {
-                content: String::new(),
-            }
-        }
+    let Ok(content) = crate::tools::ctx_read::read_file_lossy(path) else {
+        return CacheResult::Miss {
+            content: String::new(),
+        };
     };
 
     let key = normalize_key(path);
@@ -154,6 +149,18 @@ pub fn clear() -> usize {
     store.entries.clear();
     save_store(&store);
     count
+}
+
+pub fn clear_project(project_root: &str) -> usize {
+    let mut store = load_store();
+    let prefix = normalize_key(project_root);
+    let before = store.entries.len();
+    store
+        .entries
+        .retain(|key, entry| !key.starts_with(&prefix) && !entry.path.starts_with(&prefix));
+    let removed = before - store.entries.len();
+    save_store(&store);
+    removed
 }
 
 pub fn stats() -> (u64, u64, usize) {
@@ -278,14 +285,17 @@ mod tests {
 
     #[test]
     fn cache_result_integration() {
-        let unique = format!(
-            "lean_ctx_cli_cache_test_{}.txt",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-        let tmp = std::env::temp_dir().join(&unique);
+        let _lock = crate::core::data_dir::test_env_lock();
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let test_data_dir = std::env::temp_dir().join(format!("lean_ctx_cache_iso_{nanos}"));
+        std::fs::create_dir_all(&test_data_dir).unwrap();
+        std::env::set_var("LEAN_CTX_DATA_DIR", &test_data_dir);
+
+        let tmp = test_data_dir.join("test_file.txt");
         std::fs::write(&tmp, "fn main() {}\n").unwrap();
         let path_str = tmp.to_str().unwrap();
 
@@ -305,7 +315,7 @@ mod tests {
         let result3 = check_and_read(path_str);
         assert!(matches!(result3, CacheResult::Miss { .. }));
 
-        invalidate(path_str);
-        let _ = std::fs::remove_file(&tmp);
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&test_data_dir);
     }
 }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::auth::{auth_user, AppState};
+use super::helpers::internal_error;
 
 #[derive(Deserialize)]
 pub struct StatsEnvelope {
@@ -90,7 +91,7 @@ async fn upsert_daily(
     let client = state.pool.get().await.map_err(internal_error)?;
     client
         .execute(
-            r#"
+            r"
 INSERT INTO stats_daily
   (user_id, date, tokens_original, tokens_compressed, tokens_saved, tool_calls, cache_hits, cache_misses, updated_at)
 VALUES
@@ -104,7 +105,7 @@ DO UPDATE SET
   cache_hits=EXCLUDED.cache_hits,
   cache_misses=EXCLUDED.cache_misses,
   updated_at=NOW()
-"#,
+",
             &[
                 &user_id,
                 &date,
@@ -119,8 +120,4 @@ DO UPDATE SET
         .await
         .map_err(internal_error)?;
     Ok(())
-}
-
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }

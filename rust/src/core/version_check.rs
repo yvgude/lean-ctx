@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const VERSION_URL: &str = "https://leanctx.com/version.txt";
+const GITHUB_API_RELEASES: &str = "https://api.github.com/repos/yvgude/lean-ctx/releases/latest";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 
@@ -13,14 +13,15 @@ struct VersionCache {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx/latest-version.json"))
+    crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|d| d.join("latest-version.json"))
 }
 
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
 }
 
 fn read_cache() -> Option<VersionCache> {
@@ -54,15 +55,21 @@ fn fetch_latest_version() -> Result<String, String> {
     );
 
     let body = agent
-        .get(VERSION_URL)
+        .get(GITHUB_API_RELEASES)
         .header("User-Agent", &format!("lean-ctx/{CURRENT_VERSION}"))
+        .header("Accept", "application/vnd.github.v3+json")
         .call()
         .map_err(|e| e.to_string())?
         .into_body()
         .read_to_string()
         .map_err(|e| e.to_string())?;
 
-    let version = body.trim().trim_start_matches('v').to_string();
+    let release: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let tag = release["tag_name"]
+        .as_str()
+        .ok_or_else(|| "missing tag_name in GitHub releases response".to_string())?;
+
+    let version = tag.trim().trim_start_matches('v').to_string();
     if version.is_empty() || !version.contains('.') {
         return Err("invalid version format".to_string());
     }
@@ -75,10 +82,16 @@ fn is_newer(latest: &str, current: &str) -> bool {
     parse(latest) > parse(current)
 }
 
-/// Spawn a background thread to fetch latest version from leanctx.com/version.txt
-/// and write the result to ~/.lean-ctx/latest-version.json.
+/// Spawn a background thread to fetch latest version from GitHub Releases
+/// and write the result to the lean-ctx data dir (`latest-version.json`).
 /// Non-blocking, fire-and-forget. Skips if cache is fresh (<24h).
+/// Respects `update_check_disabled` config and `LEAN_CTX_NO_UPDATE_CHECK` env var.
 pub fn check_background() {
+    let cfg = super::config::Config::load();
+    if cfg.update_check_disabled_effective() {
+        return;
+    }
+
     let cache = read_cache();
     if let Some(ref c) = cache {
         if !is_cache_stale(c) {

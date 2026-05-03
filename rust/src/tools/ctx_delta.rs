@@ -14,14 +14,11 @@ pub fn handle(cache: &mut SessionCache, path: &str) -> String {
     let new_lines = content.lines().count();
     let new_tokens = count_tokens(&content);
 
-    let cached_entry = match cache.get(path) {
-        Some(entry) => entry,
-        None => {
-            cache.store(path, content.clone());
-            return format!(
-                "{short} [first read, {new_lines}L, {new_tokens} tok] — cached for future deltas"
-            );
-        }
+    let Some(cached_entry) = cache.get(path) else {
+        cache.store(path, content.clone());
+        return format!(
+            "{short} [first read, {new_lines}L, {new_tokens} tok] — cached for future deltas"
+        );
     };
     let old_content = cached_entry.content.clone();
     let old_hash = cached_entry.hash.clone();

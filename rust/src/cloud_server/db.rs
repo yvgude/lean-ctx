@@ -17,7 +17,7 @@ pub async fn init_schema(pool: &DbPool) -> anyhow::Result<()> {
 
     client
         .batch_execute(
-            r#"
+            r"
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
@@ -32,6 +32,25 @@ CREATE TABLE IF NOT EXISTS api_keys (
   api_key_sha256 TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_used_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_name TEXT,
+  client_secret_sha256 TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+  token_sha256 TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+  issued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  last_used_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS stats_daily (
@@ -117,6 +136,21 @@ CREATE TABLE IF NOT EXISTS cep_scores (
   complexity DOUBLE PRECISION
 );
 
+CREATE TABLE IF NOT EXISTS gain_scores (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recorded_at TIMESTAMPTZ NOT NULL,
+  total DOUBLE PRECISION NOT NULL,
+  compression DOUBLE PRECISION NOT NULL,
+  cost_efficiency DOUBLE PRECISION NOT NULL,
+  quality DOUBLE PRECISION NOT NULL,
+  consistency DOUBLE PRECISION NOT NULL,
+  trend TEXT,
+  avoided_usd DOUBLE PRECISION,
+  tool_spend_usd DOUBLE PRECISION,
+  model_key TEXT
+);
+
 CREATE TABLE IF NOT EXISTS gotchas (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   pattern TEXT NOT NULL,
@@ -164,7 +198,7 @@ DO $$ BEGIN
   ALTER TABLE buddy_state ADD COLUMN IF NOT EXISTS state_json TEXT;
 EXCEPTION WHEN others THEN NULL;
 END $$;
-"#,
+",
         )
         .await?;
 

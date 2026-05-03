@@ -45,6 +45,7 @@ fn ceil_char_boundary(s: &str, idx: usize) -> usize {
     i
 }
 
+/// Counts the number of BPE tokens (o200k_base) in the given text, with caching.
 pub fn count_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;
@@ -73,9 +74,78 @@ pub fn count_tokens(text: &str) -> usize {
     count
 }
 
+/// Encodes text into BPE token IDs (o200k_base).
 pub fn encode_tokens(text: &str) -> Vec<u32> {
     if text.is_empty() {
         return Vec::new();
     }
     get_bpe().encode_with_special_tokens(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    fn token_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn reset_cache() {
+        if let Ok(mut guard) = TOKEN_CACHE.lock() {
+            *guard = Some(HashMap::new());
+        }
+    }
+
+    #[test]
+    fn count_tokens_empty_is_zero() {
+        assert_eq!(count_tokens(""), 0);
+    }
+
+    #[test]
+    fn encode_tokens_empty_is_empty() {
+        assert!(encode_tokens("").is_empty());
+    }
+
+    #[test]
+    fn count_tokens_matches_encoded_length() {
+        let _lock = token_test_lock();
+        reset_cache();
+
+        let text = "hello world, Grüezi 🌍";
+        let counted = count_tokens(text);
+        let encoded = encode_tokens(text);
+        assert_eq!(counted, encoded.len());
+
+        // Second call should return same value (cache hit path).
+        assert_eq!(counted, count_tokens(text));
+    }
+
+    #[test]
+    fn char_boundary_helpers_handle_multibyte_indices() {
+        let s = "aé🙂z";
+        let emoji_start = s.find('🙂').expect("emoji exists");
+        let middle_of_emoji = emoji_start + 1;
+
+        let floor = floor_char_boundary(s, middle_of_emoji);
+        let ceil = ceil_char_boundary(s, middle_of_emoji);
+
+        assert!(s.is_char_boundary(floor));
+        assert!(s.is_char_boundary(ceil));
+        assert!(floor <= middle_of_emoji);
+        assert!(ceil >= middle_of_emoji);
+    }
+
+    #[test]
+    fn hash_text_is_stable_for_long_strings() {
+        let long = "abc🙂".repeat(300);
+        let h1 = hash_text(&long);
+        let h2 = hash_text(&long);
+        assert_eq!(h1, h2);
+        assert!(count_tokens(&long) > 0);
+    }
 }

@@ -3,6 +3,64 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.4.7] — 2026-05-01
+
+### Added
+
+- **`ctx_call` meta-tool** — compatibility tool for MCP clients with static tool registries (e.g. Pi Coding Agent). Invoke any `ctx_*` tool by name via a stable schema without requiring dynamic `tools/list` refresh. Fixes #174.
+- **Interactive Graph Explorer** — `ctx_graph action=export-html` generates a self-contained, interactive HTML visualization with pan/zoom, node selection, transitive highlighting, and PNG export.
+- **Self-Hosted Team Server** — `lean-ctx team serve` enables shared context across workspaces with token-based auth, scoped permissions, rate limiting, and audit logging.
+
+### Changed
+
+- **Dual-format hook output** — `lean-ctx hook rewrite/redirect` now emits a combined JSON response compatible with both Cursor (`permission`/`updated_input`) and Claude Code (`hookSpecificOutput`). All IDEs that support PreToolUse hooks now work with the same command.
+- **JetBrains config format** — `~/.jb-mcp.json` now uses the official `mcpServers` snippet format matching JetBrains AI Assistant documentation (was: nonstandard `servers` array).
+- **Shell hook block markers** — `lean-ctx init --global` now writes stable `# lean-ctx shell hook — begin/end` markers, making updates idempotent and safe across reinstalls.
+
+### Fixed
+
+- **Claude Code hooks not intercepting subagent calls** — `extract_json_field` in hook handlers was too rigid for pretty-printed or spaced JSON from Claude Code. Now robustly handles all formatting styles. Fixes Discord report.
+- **Claude Code hooks overwriting other plugins** — `install_claude_hook_config` now *merges* PreToolUse hooks instead of replacing the entire matcher group, preserving hooks from other plugins (e.g. obra/superpowers).
+- **`lean-ctx doctor` false positive "pipe guard missing"** — on Windows Git Bash with XDG config paths, doctor now correctly detects shell hooks in both `~/.lean-ctx/` and `~/.config/lean-ctx/` directories, with both forward and backslash path separators. Fixes Discord report.
+- **Pi Coding Agent array parameters** — `get_str_array` now accepts JSON-encoded strings (e.g. `"[\"a\",\"b\"]"`) in addition to native JSON arrays, fixing `ctx_multi_read` for the Pi MCP bridge. Fixes #173.
+- **Windows CI test failure** — `workspace_config` tests now use `serde_json::json!` for path serialization, preventing invalid JSON escapes on Windows.
+
+## [3.4.6] — 2026-04-30
+
+### Added
+
+- **Unified call graph tool** — new `ctx_callgraph` supports `direction=callers|callees` behind one stable entry point.
+- **Graph diagram in unified graph API** — `ctx_graph` now supports `action=diagram` (with `kind=deps|calls` and optional `depth`).
+- **Release-gate hardening tests** — added golden/edge coverage for `tokens.rs`, `preservation.rs`, `handoff_ledger.rs`, and workflow store roundtrips.
+- **README entry paths** — new 3-tier onboarding/runtime paths (`Quick`, `Power`, `Enterprise`) with concrete commands and expected outcomes.
+- **Knowledge graph auto-bootstrap** — when the dashboard's knowledge graph is empty, lean-ctx now automatically generates initial facts (project root, languages, index stats) so users see data immediately.
+- **Startup guard (cross-process lock)** — new `core::startup_guard` module provides file-based locking with stale eviction, used to serialize concurrent startup and background maintenance.
+- **Cookbook TypeScript SDK** — real integration examples with typed SDK.
+
+### Changed
+
+- **Deprecation aliases (no breaking change)**:
+  - `ctx_callers`/`ctx_callees` now route to `ctx_callgraph` with deprecation hints.
+  - `ctx_graph_diagram` now routes to `ctx_graph action=diagram` with deprecation hint.
+  - `ctx_wrapped` now routes to `ctx_gain action=wrapped` with deprecation hint.
+- **Tool metadata alignment** — descriptors, editor auto-approve lists, and docs updated for the unified entry points and 49-tool manifest.
+- **Documentation/version hygiene** — README and VISION now consistently reference 49 MCP tools and current runtime state.
+- **Legacy cleanup** — removed unlinked `core/watcher.rs` orphan module (no runtime references).
+- **Cloud: OAuth2 client credentials** — cloud sync now supports OAuth2 token-based authentication.
+- **Memory: configurable policies + knowledge relations** — knowledge facts support temporal relations and configurable retention policies.
+
+### Fixed
+
+- **SIGABRT under concurrent MCP startup** — multiple agent sessions starting simultaneously could crash the process. Fixed with `catch_unwind` at the process entry point, a cross-process startup lock, and capped Tokio worker/blocking threads. Fixes #171.
+- **Dashboard stale index auto-rebuild** — `graph_index` and `vector_index` now detect when indexed files are missing and automatically rebuild, preventing empty Knowledge Graph and broken Compression Lab views.
+- **Dashboard Compression Lab path healing** — when a file path from the index no longer exists (e.g. after refactoring), the API now tries suffix/filename matching against indexed files and returns actionable candidates. The UI shows clickable suggestions instead of a bare error.
+- **Background maintenance stampede** — rules injection, hook refresh, and version checks are now guarded by a cross-process lock, preventing multiple instances from running expensive maintenance simultaneously during agent session initialization.
+- **Panic hardening in verification/stats paths** — replaced remaining production `unwrap()` usage in critical library paths:
+  - `core/output_verification.rs` fallback regex paths
+  - `core/stats/mod.rs` optional buffer extraction
+- **CLI guidance consistency** — `lean-ctx wrapped` now clearly points users to the canonical `lean-ctx gain --wrapped` path.
+- **Cookbook npm audit vulnerabilities** — resolved all reported npm audit issues in the cookbook package.
+
 ## [3.4.5] — 2026-04-28
 
 ### Added

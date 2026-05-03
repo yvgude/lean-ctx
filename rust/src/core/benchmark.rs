@@ -8,7 +8,6 @@ use crate::core::compressor;
 use crate::core::deps;
 use crate::core::entropy;
 use crate::core::preservation;
-use crate::core::quality;
 use crate::core::signatures;
 use crate::core::tokens::count_tokens;
 
@@ -42,6 +41,9 @@ pub struct LanguageStats {
     pub ext: String,
     pub count: usize,
     pub total_tokens: usize,
+    pub best_mode: String,
+    pub best_mode_tokens: usize,
+    pub best_savings_pct: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -164,10 +166,7 @@ fn scan_project(root: &str) -> Vec<PathBuf> {
             true
         })
     {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
 
         if entry.file_type().is_dir() {
             continue;
@@ -180,7 +179,7 @@ fn scan_project(root: &str) -> Vec<PathBuf> {
             continue;
         }
 
-        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let size = entry.metadata().map_or(0, |m| m.len());
         if size == 0 || size > MAX_FILE_SIZE {
             continue;
         }
@@ -188,7 +187,7 @@ fn scan_project(root: &str) -> Vec<PathBuf> {
         files.push((path, size));
     }
 
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|x| std::cmp::Reverse(x.1));
 
     let mut selected = Vec::new();
     let mut ext_counts: HashMap<String, usize> = HashMap::new();
@@ -231,7 +230,7 @@ fn measure_mode(content: &str, ext: &str, mode: &str, raw_tokens: usize) -> Mode
             let key_sigs: Vec<String> = sigs
                 .iter()
                 .filter(|s| s.is_exported || s.indent == 0)
-                .map(|s| s.to_compact())
+                .map(super::signatures::Signature::to_compact)
                 .collect();
             if !key_sigs.is_empty() {
                 parts.push(key_sigs.join("\n"));
@@ -241,7 +240,7 @@ fn measure_mode(content: &str, ext: &str, mode: &str, raw_tokens: usize) -> Mode
         "signatures" => {
             let sigs = signatures::extract_signatures(content, ext);
             sigs.iter()
-                .map(|s| s.to_compact())
+                .map(super::signatures::Signature::to_compact)
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -319,21 +318,56 @@ fn measure_file(path: &Path, root: &str) -> Option<FileMeasurement> {
 // ── Aggregation ─────────────────────────────────────────────
 
 fn aggregate_languages(files: &[FileMeasurement]) -> Vec<LanguageStats> {
-    let mut map: HashMap<String, (usize, usize)> = HashMap::new();
-    for f in files {
-        let entry = map.entry(f.ext.clone()).or_insert((0, 0));
-        entry.0 += 1;
-        entry.1 += f.raw_tokens;
+    struct LangAccum {
+        count: usize,
+        total_tokens: usize,
+        mode_tokens: HashMap<String, usize>,
     }
+
+    let mut map: HashMap<String, LangAccum> = HashMap::new();
+    for f in files {
+        let entry = map.entry(f.ext.clone()).or_insert_with(|| LangAccum {
+            count: 0,
+            total_tokens: 0,
+            mode_tokens: HashMap::new(),
+        });
+        entry.count += 1;
+        entry.total_tokens += f.raw_tokens;
+        for m in &f.modes {
+            *entry.mode_tokens.entry(m.mode.clone()).or_insert(0) += m.tokens;
+        }
+    }
+
     let mut stats: Vec<LanguageStats> = map
         .into_iter()
-        .map(|(ext, (count, total_tokens))| LanguageStats {
-            ext,
-            count,
-            total_tokens,
+        .map(|(ext, acc)| {
+            let (best_mode, best_tokens) = acc
+                .mode_tokens
+                .iter()
+                .filter(|(m, _)| m.as_str() != "cache_hit")
+                .min_by_key(|(_, t)| **t)
+                .map_or_else(
+                    || ("none".to_string(), acc.total_tokens),
+                    |(m, t)| (m.clone(), *t),
+                );
+
+            let savings = if acc.total_tokens > 0 {
+                (1.0 - best_tokens as f64 / acc.total_tokens as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            LanguageStats {
+                ext,
+                count: acc.count,
+                total_tokens: acc.total_tokens,
+                best_mode,
+                best_mode_tokens: best_tokens,
+                best_savings_pct: savings,
+            }
         })
         .collect();
-    stats.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    stats.sort_by_key(|x| std::cmp::Reverse(x.total_tokens));
     stats
 }
 
@@ -409,8 +443,7 @@ fn simulate_session(files: &[FileMeasurement]) -> SessionSimResult {
             f.modes
                 .iter()
                 .find(|m| m.mode == mode)
-                .map(|m| m.tokens)
-                .unwrap_or(f.raw_tokens)
+                .map_or(f.raw_tokens, |m| m.tokens)
         })
         .sum();
 
@@ -432,8 +465,7 @@ fn simulate_session(files: &[FileMeasurement]) -> SessionSimResult {
             f.modes
                 .iter()
                 .find(|m| m.mode == "map")
-                .map(|m| m.tokens)
-                .unwrap_or(f.raw_tokens)
+                .map_or(f.raw_tokens, |m| m.tokens)
         })
         .sum();
     let resume_ccp = 400usize;
@@ -487,9 +519,9 @@ pub fn format_terminal(b: &ProjectBenchmark) -> String {
     let mut out = Vec::new();
     let sep = "\u{2550}".repeat(66);
 
-    out.push(sep.to_string());
+    out.push(sep.clone());
     out.push(format!("  lean-ctx Benchmark — {}", b.root));
-    out.push(sep.to_string());
+    out.push(sep.clone());
 
     let lang_summary: Vec<String> = b
         .languages
@@ -506,6 +538,25 @@ pub fn format_terminal(b: &ProjectBenchmark) -> String {
         "  Total raw tokens: {}",
         format_num(b.total_raw_tokens)
     ));
+    out.push(String::new());
+
+    out.push("  Compression by Language:".to_string());
+    out.push(format!(
+        "  {:<10} {:>6} {:>10} {:>10} {:>10} {:>10}",
+        "Lang", "Files", "Raw Tok", "Best Mode", "Compressed", "Savings"
+    ));
+    out.push(format!("  {}", "\u{2500}".repeat(62)));
+    for l in &b.languages {
+        out.push(format!(
+            "  {:<10} {:>6} {:>10} {:>10} {:>10} {:>9.1}%",
+            l.ext,
+            l.count,
+            format_num(l.total_tokens),
+            l.best_mode,
+            format_num(l.best_mode_tokens),
+            l.best_savings_pct,
+        ));
+    }
     out.push(String::new());
 
     out.push("  Mode Performance:".to_string());
@@ -579,7 +630,7 @@ pub fn format_terminal(b: &ProjectBenchmark) -> String {
         ccp_pct,
     ));
 
-    out.push(sep.to_string());
+    out.push(sep.clone());
     out.join("\n")
 }
 
@@ -598,16 +649,19 @@ pub fn format_markdown(b: &ProjectBenchmark) -> String {
     ));
     out.push(String::new());
 
-    out.push("## Languages".to_string());
+    out.push("## Compression by Language".to_string());
     out.push(String::new());
-    out.push("| Extension | Files | Tokens |".to_string());
-    out.push("|-----------|------:|-------:|".to_string());
+    out.push("| Language | Files | Raw Tokens | Best Mode | Compressed | Savings |".to_string());
+    out.push("|----------|------:|-----------:|-----------|----------:|--------:|".to_string());
     for l in &b.languages {
         out.push(format!(
-            "| {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {:.1}% |",
             l.ext,
             l.count,
-            format_num(l.total_tokens)
+            format_num(l.total_tokens),
+            l.best_mode,
+            format_num(l.best_mode_tokens),
+            l.best_savings_pct,
         ));
     }
     out.push(String::new());
@@ -704,6 +758,39 @@ pub fn format_json(b: &ProjectBenchmark) -> String {
                 "ext": l.ext,
                 "count": l.count,
                 "total_tokens": l.total_tokens,
+                "best_mode": l.best_mode,
+                "best_mode_tokens": l.best_mode_tokens,
+                "best_savings_pct": round2(l.best_savings_pct),
+            })
+        })
+        .collect();
+
+    let file_details: Vec<serde_json::Value> = b
+        .file_results
+        .iter()
+        .map(|f| {
+            let file_modes: Vec<serde_json::Value> = f
+                .modes
+                .iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "mode": m.mode,
+                        "tokens": m.tokens,
+                        "savings_pct": round2(m.savings_pct),
+                        "latency_us": m.latency_us,
+                        "preservation": if m.preservation_score < 0.0 {
+                            serde_json::Value::Null
+                        } else {
+                            serde_json::json!(round2(m.preservation_score * 100.0))
+                        },
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "path": f.path,
+                "ext": f.ext,
+                "raw_tokens": f.raw_tokens,
+                "modes": file_modes,
             })
         })
         .collect();
@@ -717,6 +804,7 @@ pub fn format_json(b: &ProjectBenchmark) -> String {
         "total_raw_tokens": b.total_raw_tokens,
         "languages": languages,
         "mode_summaries": modes,
+        "files": file_details,
         "session_simulation": {
             "raw_tokens": s.raw_tokens,
             "lean_tokens": s.lean_tokens,
@@ -728,113 +816,6 @@ pub fn format_json(b: &ProjectBenchmark) -> String {
     });
 
     serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
-}
-
-// ── CEP A/B Benchmark ──────────────────────────────────────
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct CepComparison {
-    pub mode: String,
-    pub tokens_without_cep: usize,
-    pub tokens_with_cep: usize,
-    pub quality_score: f64,
-    pub quality_passed: bool,
-}
-
-#[allow(dead_code)]
-pub fn run_cep_comparison(path: &str) -> Vec<CepComparison> {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("rs");
-
-    let raw_tokens = count_tokens(&content);
-    if raw_tokens == 0 {
-        return Vec::new();
-    }
-
-    let modes = ["map", "signatures", "aggressive", "entropy"];
-    let mut comparisons = Vec::new();
-
-    for mode in &modes {
-        let measurement = measure_mode(&content, ext, mode, raw_tokens);
-
-        let compressed = match *mode {
-            "aggressive" => compressor::aggressive_compress(&content, Some(ext)),
-            "entropy" => entropy::entropy_compress(&content).output,
-            "signatures" => signatures::extract_signatures(&content, ext)
-                .iter()
-                .map(|s| s.to_compact())
-                .collect::<Vec<_>>()
-                .join("\n"),
-            _ => {
-                let dep_info = deps::extract_deps(&content, ext);
-                let sigs = signatures::extract_signatures(&content, ext);
-                let mut parts = Vec::new();
-                if !dep_info.imports.is_empty() {
-                    parts.push(dep_info.imports.join(","));
-                }
-                let key_sigs: Vec<String> = sigs
-                    .iter()
-                    .filter(|s| s.is_exported || s.indent == 0)
-                    .map(|s| s.to_compact())
-                    .collect();
-                if !key_sigs.is_empty() {
-                    parts.push(key_sigs.join("\n"));
-                }
-                parts.join("\n")
-            }
-        };
-
-        let q = quality::score(&content, &compressed, ext);
-        let cep_overhead = 5;
-        let tokens_with_cep = measurement.tokens + cep_overhead;
-
-        comparisons.push(CepComparison {
-            mode: mode.to_string(),
-            tokens_without_cep: measurement.tokens,
-            tokens_with_cep,
-            quality_score: q.composite,
-            quality_passed: q.passed,
-        });
-    }
-
-    comparisons
-}
-
-#[allow(dead_code)]
-pub fn format_cep_comparison(comparisons: &[CepComparison], path: &str) -> String {
-    let mut out = Vec::new();
-    let short = crate::core::protocol::shorten_path(path);
-
-    out.push(format!("CEP A/B Benchmark — {short}"));
-    out.push("═".repeat(60));
-    out.push(format!(
-        "{:<14} {:>8} {:>8} {:>8} {:>6}",
-        "Mode", "Without", "With CEP", "Quality", "Pass"
-    ));
-    out.push("─".repeat(60));
-
-    for c in comparisons {
-        let pass = if c.quality_passed { "✓" } else { "✗" };
-        out.push(format!(
-            "{:<14} {:>8} {:>8} {:>7.0}% {:>6}",
-            c.mode,
-            format_num(c.tokens_without_cep),
-            format_num(c.tokens_with_cep),
-            c.quality_score * 100.0,
-            pass,
-        ));
-    }
-
-    out.push("═".repeat(60));
-    out.join("\n")
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -851,4 +832,222 @@ fn format_num(n: usize) -> String {
 
 fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mock_file(path: &str, ext: &str, raw: usize, modes: Vec<(&str, usize)>) -> FileMeasurement {
+        FileMeasurement {
+            path: path.to_string(),
+            ext: ext.to_string(),
+            raw_tokens: raw,
+            modes: modes
+                .into_iter()
+                .map(|(mode, tokens)| ModeMeasurement {
+                    mode: mode.to_string(),
+                    tokens,
+                    savings_pct: if raw > 0 {
+                        (1.0 - tokens as f64 / raw as f64) * 100.0
+                    } else {
+                        0.0
+                    },
+                    latency_us: 100,
+                    preservation_score: 0.85,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn aggregate_languages_computes_best_mode() {
+        let files = vec![
+            mock_file(
+                "a.rs",
+                "rs",
+                1000,
+                vec![("map", 400), ("signatures", 200), ("aggressive", 300)],
+            ),
+            mock_file(
+                "b.rs",
+                "rs",
+                800,
+                vec![("map", 300), ("signatures", 150), ("aggressive", 250)],
+            ),
+            mock_file(
+                "c.py",
+                "py",
+                600,
+                vec![("map", 100), ("signatures", 250), ("aggressive", 200)],
+            ),
+        ];
+
+        let langs = aggregate_languages(&files);
+        assert_eq!(langs.len(), 2);
+
+        let rs = langs.iter().find(|l| l.ext == "rs").unwrap();
+        assert_eq!(rs.count, 2);
+        assert_eq!(rs.total_tokens, 1800);
+        assert_eq!(rs.best_mode, "signatures");
+        assert_eq!(rs.best_mode_tokens, 350);
+        assert!(rs.best_savings_pct > 80.0);
+
+        let py = langs.iter().find(|l| l.ext == "py").unwrap();
+        assert_eq!(py.best_mode, "map");
+        assert_eq!(py.best_mode_tokens, 100);
+    }
+
+    #[test]
+    fn aggregate_modes_averages() {
+        let files = vec![
+            mock_file("a.rs", "rs", 1000, vec![("map", 400), ("aggressive", 300)]),
+            mock_file("b.rs", "rs", 500, vec![("map", 200), ("aggressive", 100)]),
+        ];
+
+        let modes = aggregate_modes(&files);
+        let map = modes.iter().find(|m| m.mode == "map").unwrap();
+        assert_eq!(map.total_compressed_tokens, 600);
+        assert!(map.avg_savings_pct > 50.0);
+    }
+
+    #[test]
+    fn session_sim_empty_files() {
+        let result = simulate_session(&[]);
+        assert_eq!(result.raw_tokens, 0);
+        assert_eq!(result.lean_tokens, 0);
+        assert!((result.raw_cost).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn session_sim_basic() {
+        let files: Vec<FileMeasurement> = (0..5)
+            .map(|i| {
+                mock_file(
+                    &format!("file_{i}.rs"),
+                    "rs",
+                    2000,
+                    vec![
+                        ("map", 800),
+                        ("aggressive", 600),
+                        ("cache_hit", CACHE_HIT_TOKENS),
+                    ],
+                )
+            })
+            .collect();
+        let result = simulate_session(&files);
+        assert!(result.raw_tokens > 0);
+        assert!(result.lean_tokens < result.raw_tokens);
+        assert!(
+            result.lean_ccp_tokens < result.lean_tokens,
+            "CCP resume ({}) should beat map-based resume ({}) with enough files",
+            result.lean_ccp_tokens,
+            result.lean_tokens
+        );
+    }
+
+    #[test]
+    fn format_json_includes_files_and_language_savings() {
+        let files = vec![mock_file(
+            "src/main.rs",
+            "rs",
+            500,
+            vec![("map", 200), ("signatures", 100), ("cache_hit", 13)],
+        )];
+        let bench = ProjectBenchmark {
+            root: ".".to_string(),
+            files_scanned: 1,
+            files_measured: 1,
+            total_raw_tokens: 500,
+            languages: aggregate_languages(&files),
+            mode_summaries: aggregate_modes(&files),
+            session_sim: simulate_session(&files),
+            file_results: files,
+        };
+
+        let json_str = format_json(&bench);
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert!(parsed["files"].is_array());
+        assert_eq!(parsed["files"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["files"][0]["path"], "src/main.rs");
+        assert!(parsed["files"][0]["modes"].is_array());
+
+        assert!(parsed["languages"][0]["best_mode"].is_string());
+        assert!(parsed["languages"][0]["best_savings_pct"].is_number());
+    }
+
+    #[test]
+    fn format_markdown_contains_language_savings() {
+        let files = vec![mock_file(
+            "lib.rs",
+            "rs",
+            1000,
+            vec![("map", 300), ("signatures", 200)],
+        )];
+        let bench = ProjectBenchmark {
+            root: ".".to_string(),
+            files_scanned: 1,
+            files_measured: 1,
+            total_raw_tokens: 1000,
+            languages: aggregate_languages(&files),
+            mode_summaries: aggregate_modes(&files),
+            session_sim: simulate_session(&files),
+            file_results: files,
+        };
+
+        let md = format_markdown(&bench);
+        assert!(md.contains("Compression by Language"));
+        assert!(md.contains("Best Mode"));
+        assert!(md.contains("Savings"));
+    }
+
+    #[test]
+    fn format_terminal_contains_language_section() {
+        let files = vec![mock_file(
+            "app.py",
+            "py",
+            800,
+            vec![("map", 200), ("aggressive", 300)],
+        )];
+        let bench = ProjectBenchmark {
+            root: ".".to_string(),
+            files_scanned: 1,
+            files_measured: 1,
+            total_raw_tokens: 800,
+            languages: aggregate_languages(&files),
+            mode_summaries: aggregate_modes(&files),
+            session_sim: simulate_session(&files),
+            file_results: files,
+        };
+
+        let out = format_terminal(&bench);
+        assert!(out.contains("Compression by Language"));
+        assert!(out.contains("py"));
+        assert!(out.contains("Best Mode"));
+    }
+
+    #[test]
+    fn run_project_benchmark_on_current_crate() {
+        let bench = run_project_benchmark("src");
+        assert!(bench.files_measured > 0);
+        assert!(bench.total_raw_tokens > 0);
+        assert!(!bench.languages.is_empty());
+        assert!(!bench.mode_summaries.is_empty());
+
+        for lang in &bench.languages {
+            assert!(!lang.best_mode.is_empty());
+            assert!(lang.best_savings_pct >= 0.0);
+        }
+
+        let json = format_json(&bench);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(!parsed["files"].as_array().unwrap().is_empty());
+
+        let md = format_markdown(&bench);
+        assert!(md.contains("lean-ctx Benchmark Report"));
+
+        let term = format_terminal(&bench);
+        assert!(term.contains("Session Simulation"));
+    }
 }

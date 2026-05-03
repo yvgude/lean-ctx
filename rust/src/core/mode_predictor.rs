@@ -7,6 +7,7 @@ const PREDICTOR_FLUSH_SECS: u64 = 10;
 
 static PREDICTOR_BUFFER: Mutex<Option<(ModePredictor, Instant)>> = Mutex::new(None);
 
+/// Observed outcome of a read mode: tokens in/out and information density.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ModeOutcome {
     pub mode: String,
@@ -16,6 +17,7 @@ pub struct ModeOutcome {
 }
 
 impl ModeOutcome {
+    /// Computes an efficiency score: density / compression ratio.
     pub fn efficiency(&self) -> f64 {
         if self.tokens_out == 0 {
             return 0.0;
@@ -24,6 +26,7 @@ impl ModeOutcome {
     }
 }
 
+/// File identity for mode prediction: extension + token-count size bucket.
 #[derive(Clone, Debug, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileSignature {
     pub ext: String,
@@ -31,6 +34,7 @@ pub struct FileSignature {
 }
 
 impl FileSignature {
+    /// Creates a file signature from its path and token count.
     pub fn from_path(path: &str, token_count: usize) -> Self {
         let ext = std::path::Path::new(path)
             .extension()
@@ -48,22 +52,42 @@ impl FileSignature {
     }
 }
 
+/// Learns the best read mode per file signature from historical outcomes.
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModePredictor {
     history: HashMap<FileSignature, Vec<ModeOutcome>>,
+    project_root: Option<String>,
 }
 
 impl ModePredictor {
+    /// Loads or creates the predictor, using an in-memory buffer for caching.
     pub fn new() -> Self {
-        let mut guard = PREDICTOR_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = PREDICTOR_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((ref predictor, _)) = *guard {
             return predictor.clone();
         }
-        let loaded = Self::load_from_disk().unwrap_or_default();
+        let mut loaded = Self::load_from_disk().unwrap_or_default();
+        if loaded.project_root.is_none() {
+            loaded.project_root = std::env::current_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().to_string());
+        }
         *guard = Some((loaded.clone(), Instant::now()));
         loaded
     }
 
+    pub fn with_project_root(mut self, root: &str) -> Self {
+        self.project_root = Some(root.to_string());
+        self
+    }
+
+    pub fn set_project_root(&mut self, root: &str) {
+        self.project_root = Some(root.to_string());
+    }
+
+    /// Records a mode outcome for a file signature (capped at 100 entries).
     pub fn record(&mut self, sig: FileSignature, outcome: ModeOutcome) {
         let entries = self.history.entry(sig).or_default();
         entries.push(outcome);
@@ -73,15 +97,40 @@ impl ModePredictor {
     }
 
     /// Returns the best mode based on historical efficiency.
-    /// Chain: local history -> Pro adaptive models -> built-in defaults.
+    /// Chain: local history -> cloud adaptive models -> built-in defaults.
     pub fn predict_best_mode(&self, sig: &FileSignature) -> Option<String> {
         if let Some(local) = self.predict_from_local(sig) {
             return Some(local);
         }
-        if let Some(pro) = self.predict_from_pro(sig) {
-            return Some(pro);
+        if let Some(bandit) = self.predict_from_bandit(sig) {
+            return Some(bandit);
+        }
+        if let Some(cloud) = self.predict_from_cloud(sig) {
+            return Some(cloud);
         }
         Self::predict_from_defaults(sig)
+    }
+
+    fn predict_from_bandit(&self, sig: &FileSignature) -> Option<String> {
+        let key = format!("{}_feedback", sig.ext);
+        let store =
+            crate::core::bandit::BanditStore::load(self.project_root.as_deref().unwrap_or("."));
+        let bandit = store.bandits.get(&key)?;
+        if bandit.total_pulls < 5 {
+            return None;
+        }
+        let best_arm = bandit.arms.iter().max_by(|a, b| {
+            a.mean()
+                .partial_cmp(&b.mean())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+        let mode = match best_arm.name.as_str() {
+            "conservative" => "full",
+            "balanced" => "signatures",
+            "aggressive" => "aggressive",
+            _ => return None,
+        };
+        Some(mode.to_string())
     }
 
     fn predict_from_local(&self, sig: &FileSignature) -> Option<String> {
@@ -109,10 +158,11 @@ impl ModePredictor {
             .map(|(mode, _)| mode.to_string())
     }
 
-    /// Loads Pro adaptive models (requires Pro subscription).
-    /// Pro models are cached locally and auto-updated for Pro users.
-    fn predict_from_pro(&self, sig: &FileSignature) -> Option<String> {
-        let data = crate::cloud_client::load_pro_models()?;
+    /// Loads cloud adaptive models (synced from LeanCTX Cloud).
+    /// Models are cached locally and auto-updated for cloud users.
+    #[allow(clippy::unused_self)]
+    fn predict_from_cloud(&self, sig: &FileSignature) -> Option<String> {
+        let data = crate::cloud_client::load_cloud_models()?;
         let models = data["models"].as_array()?;
 
         let ext_with_dot = format!(".{}", sig.ext);
@@ -120,7 +170,6 @@ impl ModePredictor {
             0 => "0-500",
             1 => "500-2k",
             2 => "2k-10k",
-            3 => "10k+",
             _ => "10k+",
         };
 
@@ -133,7 +182,7 @@ impl ModePredictor {
 
             if m_ext == ext_with_dot && m_bucket == bucket_name && confidence > 0.5 {
                 if let Some(mode) = model["recommended_mode"].as_str() {
-                    if best.is_none() || confidence > best.unwrap().1 {
+                    if best.is_none_or(|(_, c)| confidence > c) {
                         best = Some((mode, confidence));
                     }
                 }
@@ -148,7 +197,9 @@ impl ModePredictor {
             let m_ext = model["file_ext"].as_str().unwrap_or("");
             let confidence = model["confidence"].as_f64().unwrap_or(0.0);
             if m_ext == ext_with_dot && confidence > 0.5 {
-                return model["recommended_mode"].as_str().map(|s| s.to_string());
+                return model["recommended_mode"]
+                    .as_str()
+                    .map(std::string::ToString::to_string);
             }
         }
 
@@ -156,68 +207,44 @@ impl ModePredictor {
     }
 
     /// Built-in defaults for common file types and sizes.
-    /// Ensures reasonable compression even without local history or Pro models.
+    /// Ensures reasonable compression even without local history or cloud models.
     /// Respects Kolmogorov-Gate: files with K>0.7 skip aggressive modes.
     fn predict_from_defaults(sig: &FileSignature) -> Option<String> {
         let mode = match (sig.ext.as_str(), sig.size_bucket) {
             // Tiny files (0-500 tokens): always full — compression overhead not worth it
             (_, 0) => return None,
 
-            // Config / data files: aggressive strips comments and whitespace
-            ("json" | "yaml" | "yml" | "toml" | "xml" | "csv", _) => "aggressive",
-
-            // Lock files: signatures only (just versions matter)
-            ("lock", _) => "signatures",
-
-            // Code files by size bucket
-            // 500-2k tokens: full is fine
-            (
-                "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "rb"
-                | "swift" | "kt" | "cs" | "vue" | "svelte",
-                1,
-            ) => return None,
-
-            // 2k-5k tokens: map gives structure without bloat
-            (
-                "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "rb"
-                | "swift" | "kt" | "cs" | "vue" | "svelte",
-                2,
-            ) => "map",
-
-            // 5k-20k tokens: map is strongly preferred
-            (
-                "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "rb"
-                | "swift" | "kt" | "cs" | "vue" | "svelte",
-                3,
-            ) => "map",
-
-            // 20k+ tokens: signatures only — too large for full context
-            (
+            // Lock / large code files: signatures only
+            ("lock", _)
+            | (
                 "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "rb"
                 | "swift" | "kt" | "cs" | "vue" | "svelte",
                 4..,
             ) => "signatures",
 
-            // Markup / docs: aggressive for large, map for medium
-            ("md" | "mdx" | "rst" | "txt" | "html" | "astro", 1..=2) => return None,
-            ("md" | "mdx" | "rst" | "txt" | "html" | "astro", 3..) => "aggressive",
+            // Code files 2k-10k / SQL: map gives structure without bloat
+            (
+                "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "rb"
+                | "swift" | "kt" | "cs" | "vue" | "svelte",
+                2 | 3,
+            )
+            | ("sql", 2..) => "map",
 
-            // CSS / styles: aggressive strips whitespace well
-            ("css" | "scss" | "less" | "sass", 2..) => "aggressive",
-
-            // SQL: map for medium+
-            ("sql", 2..) => "map",
-
-            // Unknown large files: aggressive as safe fallback
-            (_, 3..) => "aggressive",
+            // Config/data, CSS, and large unknown files: aggressive
+            ("json" | "yaml" | "yml" | "toml" | "xml" | "csv", _)
+            | ("css" | "scss" | "less" | "sass", 2..)
+            | (_, 3..) => "aggressive",
 
             _ => return None,
         };
         Some(mode.to_string())
     }
 
+    /// Saves to the in-memory buffer and flushes to disk if the interval elapsed.
     pub fn save(&self) {
-        let mut guard = PREDICTOR_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = PREDICTOR_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let should_flush = match *guard {
             Some((_, ref last_flush)) => last_flush.elapsed().as_secs() >= PREDICTOR_FLUSH_SECS,
             None => true,
@@ -229,9 +256,8 @@ impl ModePredictor {
     }
 
     fn save_to_disk(&self) {
-        let dir = match dirs::home_dir() {
-            Some(d) => d.join(".lean-ctx"),
-            None => return,
+        let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+            return;
         };
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join(STATS_FILE);
@@ -243,15 +269,20 @@ impl ModePredictor {
         }
     }
 
+    /// Forces an immediate write of the buffered predictor state to disk.
     pub fn flush() {
-        let guard = PREDICTOR_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = PREDICTOR_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((ref predictor, _)) = *guard {
             predictor.save_to_disk();
         }
     }
 
     fn load_from_disk() -> Option<Self> {
-        let path = dirs::home_dir()?.join(".lean-ctx").join(STATS_FILE);
+        let path = crate::core::data_dir::lean_ctx_data_dir()
+            .ok()?
+            .join(STATS_FILE);
         let data = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&data).ok()
     }

@@ -3,11 +3,11 @@ use lean_ctx::core::gotcha_tracker::{
     Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStats, GotchaStore,
 };
 use lean_ctx::core::knowledge::ProjectKnowledge;
+use lean_ctx::core::memory_policy::MemoryPolicy;
 
 fn main() {
-    let project_root = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| ".".to_string());
+    let project_root =
+        std::env::current_dir().map_or_else(|_| ".".to_string(), |p| p.display().to_string());
 
     println!("Seeding Observatory data for: {project_root}");
 
@@ -155,7 +155,7 @@ fn seed_events() {
         emit(EventKind::AgentAction {
             agent_id: id.to_string(),
             action: action.to_string(),
-            tool: tool.map(|t| t.to_string()),
+            tool: tool.map(std::string::ToString::to_string),
         });
     }
     println!("  {} AgentAction events", agent_actions.len());
@@ -322,7 +322,7 @@ fn seed_knowledge(project_root: &str) {
         (
             "ARCHITECTURE",
             "compression",
-            "8 read modes: full, map, signatures, aggressive, entropy, diff, lines, task",
+            "10 read modes: full, auto, map, signatures, diff, aggressive, entropy, task, reference, lines",
             0.92,
         ),
         (
@@ -407,7 +407,7 @@ fn seed_knowledge(project_root: &str) {
         (
             "ARCHITECTURE",
             "mcp-protocol",
-            "34 MCP tools via rmcp crate",
+            "49 MCP tools via rmcp crate",
             0.96,
         ),
         (
@@ -418,8 +418,9 @@ fn seed_knowledge(project_root: &str) {
         ),
     ];
 
+    let policy = MemoryPolicy::default();
     for (cat, key, val, conf) in &facts {
-        knowledge.remember(cat, key, val, session, *conf);
+        knowledge.remember(cat, key, val, session, *conf, &policy);
     }
     let _ = knowledge.save();
     println!("  {} knowledge facts seeded", facts.len());

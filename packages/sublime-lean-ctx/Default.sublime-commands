@@ -1,0 +1,6 @@
+[
+    { "caption": "lean-ctx: Setup", "command": "lean_ctx_setup" },
+    { "caption": "lean-ctx: Doctor", "command": "lean_ctx_doctor" },
+    { "caption": "lean-ctx: Gain Report", "command": "lean_ctx_gain" },
+    { "caption": "lean-ctx: Dashboard", "command": "lean_ctx_dashboard" }
+]

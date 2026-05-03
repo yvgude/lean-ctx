@@ -18,6 +18,7 @@ pub fn handle(
     paths: &[String],
     budget: usize,
     crp_mode: CrpMode,
+    task: Option<&str>,
 ) -> String {
     if paths.is_empty() {
         return "No files specified.".to_string();
@@ -26,9 +27,8 @@ pub fn handle(
     let mut candidates: Vec<FileCandidate> = Vec::new();
 
     for path in paths {
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
         };
 
         let ext = Path::new(path)
@@ -39,7 +39,7 @@ pub fn handle(
         let sigs = signatures::extract_signatures(&content, ext);
         let sig_text: String = sigs
             .iter()
-            .map(|s| s.to_compact())
+            .map(super::super::core::signatures::Signature::to_compact)
             .collect::<Vec<_>>()
             .join("\n");
         let tokens_sig = count_tokens(&sig_text);
@@ -63,6 +63,43 @@ pub fn handle(
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+
+    let mut pop_lines: Vec<String> = Vec::new();
+    if let Some(t) = task {
+        if let Some(root) = paths
+            .first()
+            .and_then(|p| crate::core::protocol::detect_project_root(p))
+        {
+            let rs: Vec<crate::core::task_relevance::RelevanceScore> = candidates
+                .iter()
+                .map(|c| crate::core::task_relevance::RelevanceScore {
+                    path: c.path.clone(),
+                    score: c.score,
+                    recommended_mode: "signatures",
+                })
+                .collect();
+            let refs: Vec<&crate::core::task_relevance::RelevanceScore> = rs.iter().collect();
+            let pop = crate::core::pop_pruning::decide_for_candidates(t, &root, &refs);
+            if !pop.excluded_modules.is_empty() {
+                let excluded: std::collections::BTreeSet<&str> = pop
+                    .excluded_modules
+                    .iter()
+                    .map(|e| e.module.as_str())
+                    .collect();
+                candidates.retain(|c| {
+                    let m = crate::core::pop_pruning::module_for_path(&c.path, &root);
+                    !excluded.contains(m.as_str())
+                });
+                pop_lines.push("POP:".to_string());
+                for ex in &pop.excluded_modules {
+                    pop_lines.push(format!(
+                        "  - exclude {}/ ({} candidates) — {}",
+                        ex.module, ex.candidate_files, ex.reason
+                    ));
+                }
+            }
+        }
+    }
 
     let mut used_tokens = 0usize;
     let mut selections: Vec<(String, String)> = Vec::new();
@@ -94,6 +131,9 @@ pub fn handle(
         candidates.len(),
         selections.len()
     ));
+    if !pop_lines.is_empty() {
+        output_parts.push(pop_lines.join("\n"));
+    }
     output_parts.push(String::new());
 
     for (path, mode) in &selections {

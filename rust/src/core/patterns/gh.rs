@@ -1,18 +1,20 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static PR_LINE_RE: OnceLock<Regex> = OnceLock::new();
-static ISSUE_LINE_RE: OnceLock<Regex> = OnceLock::new();
-static PR_CREATED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn pr_line_re() -> &'static Regex {
-    PR_LINE_RE.get_or_init(|| Regex::new(r"#(\d+)\s+(.+?)\s{2,}(\S+)\s+(\S+)").unwrap())
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
-fn issue_line_re() -> &'static Regex {
-    ISSUE_LINE_RE.get_or_init(|| Regex::new(r"#(\d+)\s+(.+?)\s{2,}").unwrap())
+
+fn pr_line_re() -> &'static regex::Regex {
+    static_regex!(r"#(\d+)\s+(.+?)\s{2,}(\S+)\s+(\S+)")
 }
-fn pr_created_re() -> &'static Regex {
-    PR_CREATED_RE.get_or_init(|| Regex::new(r"https://github\.com/\S+/pull/(\d+)").unwrap())
+fn issue_line_re() -> &'static regex::Regex {
+    static_regex!(r"#(\d+)\s+(.+?)\s{2,}")
+}
+fn pr_created_re() -> &'static regex::Regex {
+    static_regex!(r"https://github\.com/\S+/pull/(\d+)")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {

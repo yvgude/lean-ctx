@@ -1,11 +1,9 @@
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    lean_ctx::core::logging::init_mcp_logging();
 
     if let Err(e) = lean_ctx::cloud_server::run().await {
-        eprintln!("Cloud server error: {e}");
+        tracing::error!("Cloud server error: {e}");
         std::process::exit(1);
     }
 }

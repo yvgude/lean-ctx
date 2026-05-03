@@ -10,9 +10,7 @@ use std::path::PathBuf;
 
 use super::episodic_memory::{Episode, Outcome};
 
-const MIN_REPETITIONS: usize = 3;
-const MIN_SEQUENCE_LEN: usize = 2;
-const MAX_PROCEDURES: usize = 100;
+use crate::core::memory_policy::ProceduralPolicy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProceduralStore {
@@ -93,35 +91,35 @@ impl ProceduralStore {
         }
     }
 
-    pub fn add_procedure(&mut self, procedure: Procedure) {
+    pub fn add_procedure(&mut self, procedure: Procedure, policy: &ProceduralPolicy) {
         if let Some(existing) = self
             .procedures
             .iter_mut()
             .find(|p| p.name == procedure.name)
         {
-            existing.confidence = (existing.confidence + procedure.confidence) / 2.0;
+            existing.confidence = existing.confidence.midpoint(procedure.confidence);
             existing.steps = procedure.steps;
             existing.activation_keywords = procedure.activation_keywords;
         } else {
             self.procedures.push(procedure);
         }
 
-        if self.procedures.len() > MAX_PROCEDURES {
+        if self.procedures.len() > policy.max_procedures {
             self.procedures.sort_by(|a, b| {
                 b.confidence
                     .partial_cmp(&a.confidence)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            self.procedures.truncate(MAX_PROCEDURES);
+            self.procedures.truncate(policy.max_procedures);
         }
     }
 
-    pub fn detect_patterns(&mut self, episodes: &[Episode]) {
+    pub fn detect_patterns(&mut self, episodes: &[Episode], policy: &ProceduralPolicy) {
         let sequences = extract_tool_sequences(episodes);
-        let patterns = find_repeated_sequences(&sequences);
+        let patterns = find_repeated_sequences(&sequences, policy);
 
         for (steps, count, keywords) in patterns {
-            if count < MIN_REPETITIONS || steps.len() < MIN_SEQUENCE_LEN {
+            if count < policy.min_repetitions || steps.len() < policy.min_sequence_len {
                 continue;
             }
 
@@ -137,25 +135,28 @@ impl ProceduralStore {
                 .count();
             let confidence = success_count as f32 / episodes.len().max(1) as f32;
 
-            self.add_procedure(Procedure {
-                id: format!("proc-{}", md5_short(&name)),
-                name,
-                description: format!("Detected workflow ({count} repetitions)"),
-                steps,
-                activation_keywords: keywords,
-                confidence,
-                times_used: count as u32,
-                times_succeeded: success_count as u32,
-                last_used: Utc::now(),
-                project_specific: true,
-                created_at: Utc::now(),
-            });
+            self.add_procedure(
+                Procedure {
+                    id: format!("proc-{}", md5_short(&name)),
+                    name,
+                    description: format!("Detected workflow ({count} repetitions)"),
+                    steps,
+                    activation_keywords: keywords,
+                    confidence,
+                    times_used: count as u32,
+                    times_succeeded: success_count as u32,
+                    last_used: Utc::now(),
+                    project_specific: true,
+                    created_at: Utc::now(),
+                },
+                policy,
+            );
         }
     }
 
     fn store_path(project_hash: &str) -> Option<PathBuf> {
-        let dir = dirs::home_dir()?
-            .join(".lean-ctx")
+        let dir = crate::core::data_dir::lean_ctx_data_dir()
+            .ok()?
             .join("memory")
             .join("procedures");
         Some(dir.join(format!("{project_hash}.json")))
@@ -173,7 +174,7 @@ impl ProceduralStore {
 
     pub fn save(&self) -> Result<(), String> {
         let path = Self::store_path(&self.project_hash)
-            .ok_or_else(|| "Cannot determine home directory".to_string())?;
+            .ok_or_else(|| "Cannot determine data directory".to_string())?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
         }
@@ -191,11 +192,16 @@ fn extract_tool_sequences(episodes: &[Episode]) -> Vec<Vec<String>> {
 
 fn find_repeated_sequences(
     sequences: &[Vec<String>],
+    policy: &ProceduralPolicy,
 ) -> Vec<(Vec<ProcedureStep>, usize, Vec<String>)> {
     let mut ngram_counts: HashMap<Vec<String>, usize> = HashMap::new();
 
     for seq in sequences {
-        for window_size in MIN_SEQUENCE_LEN..=seq.len().min(10) {
+        if seq.len() < policy.min_sequence_len {
+            continue;
+        }
+        let max_win = seq.len().min(policy.max_window_size);
+        for window_size in policy.min_sequence_len..=max_win {
             for window in seq.windows(window_size) {
                 let key: Vec<String> = window.to_vec();
                 *ngram_counts.entry(key).or_insert(0) += 1;
@@ -215,7 +221,7 @@ fn find_repeated_sequences(
     let mut seen_prefixes: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (tools, count) in sorted {
-        if count < MIN_REPETITIONS {
+        if count < policy.min_repetitions {
             continue;
         }
 
@@ -260,7 +266,7 @@ fn generate_procedure_name(steps: &[ProcedureStep]) -> String {
 fn md5_short(input: &str) -> String {
     use md5::{Digest, Md5};
     let result = Md5::digest(input.as_bytes());
-    format!("{:x}", result)[..8].to_string()
+    format!("{result:x}")[..8].to_string()
 }
 
 fn usage_recency(proc: &Procedure) -> f32 {
@@ -314,12 +320,13 @@ mod tests {
 
     #[test]
     fn detect_patterns_from_episodes() {
+        let policy = ProceduralPolicy::default();
         let episodes: Vec<Episode> = (0..5)
             .map(|_| make_episode_with_tools(&["ctx_read", "ctx_shell", "ctx_read"]))
             .collect();
 
         let mut store = ProceduralStore::new("test");
-        store.detect_patterns(&episodes);
+        store.detect_patterns(&episodes, &policy);
 
         assert!(
             !store.procedures.is_empty(),
@@ -329,24 +336,28 @@ mod tests {
 
     #[test]
     fn suggest_matching_procedure() {
+        let policy = ProceduralPolicy::default();
         let mut store = ProceduralStore::new("test");
-        store.add_procedure(Procedure {
-            id: "proc-1".to_string(),
-            name: "deploy-workflow".to_string(),
-            description: "Deploy".to_string(),
-            steps: vec![ProcedureStep {
-                tool: "ctx_shell".to_string(),
-                description: "cargo build".to_string(),
-                optional: false,
-            }],
-            activation_keywords: vec!["deploy".to_string(), "release".to_string()],
-            confidence: 0.8,
-            times_used: 5,
-            times_succeeded: 4,
-            last_used: Utc::now(),
-            project_specific: true,
-            created_at: Utc::now(),
-        });
+        store.add_procedure(
+            Procedure {
+                id: "proc-1".to_string(),
+                name: "deploy-workflow".to_string(),
+                description: "Deploy".to_string(),
+                steps: vec![ProcedureStep {
+                    tool: "ctx_shell".to_string(),
+                    description: "cargo build".to_string(),
+                    optional: false,
+                }],
+                activation_keywords: vec!["deploy".to_string(), "release".to_string()],
+                confidence: 0.8,
+                times_used: 5,
+                times_succeeded: 4,
+                last_used: Utc::now(),
+                project_specific: true,
+                created_at: Utc::now(),
+            },
+            &policy,
+        );
 
         let suggestions = store.suggest("deploy the new version");
         assert_eq!(suggestions.len(), 1);
@@ -358,20 +369,24 @@ mod tests {
 
     #[test]
     fn record_usage_updates_confidence() {
+        let policy = ProceduralPolicy::default();
         let mut store = ProceduralStore::new("test");
-        store.add_procedure(Procedure {
-            id: "proc-1".to_string(),
-            name: "test-workflow".to_string(),
-            description: "Test".to_string(),
-            steps: vec![],
-            activation_keywords: vec![],
-            confidence: 0.5,
-            times_used: 0,
-            times_succeeded: 0,
-            last_used: Utc::now(),
-            project_specific: false,
-            created_at: Utc::now(),
-        });
+        store.add_procedure(
+            Procedure {
+                id: "proc-1".to_string(),
+                name: "test-workflow".to_string(),
+                description: "Test".to_string(),
+                steps: vec![],
+                activation_keywords: vec![],
+                confidence: 0.5,
+                times_used: 0,
+                times_succeeded: 0,
+                last_used: Utc::now(),
+                project_specific: false,
+                created_at: Utc::now(),
+            },
+            &policy,
+        );
 
         store.record_usage("proc-1", true);
         let proc = &store.procedures[0];
@@ -400,23 +415,27 @@ mod tests {
 
     #[test]
     fn max_procedures_enforced() {
+        let policy = ProceduralPolicy::default();
         let mut store = ProceduralStore::new("test");
         for i in 0..110 {
-            store.add_procedure(Procedure {
-                id: format!("p-{i}"),
-                name: format!("workflow-{i}"),
-                description: String::new(),
-                steps: vec![],
-                activation_keywords: vec![],
-                confidence: i as f32 / 110.0,
-                times_used: 0,
-                times_succeeded: 0,
-                last_used: Utc::now(),
-                project_specific: false,
-                created_at: Utc::now(),
-            });
+            store.add_procedure(
+                Procedure {
+                    id: format!("p-{i}"),
+                    name: format!("workflow-{i}"),
+                    description: String::new(),
+                    steps: vec![],
+                    activation_keywords: vec![],
+                    confidence: i as f32 / 110.0,
+                    times_used: 0,
+                    times_succeeded: 0,
+                    last_used: Utc::now(),
+                    project_specific: false,
+                    created_at: Utc::now(),
+                },
+                &policy,
+            );
         }
-        assert!(store.procedures.len() <= MAX_PROCEDURES);
+        assert!(store.procedures.len() <= policy.max_procedures);
     }
 
     #[test]

@@ -1,0 +1,16 @@
+[
+    {
+        "id": "tools",
+        "children": [
+            {
+                "caption": "lean-ctx",
+                "children": [
+                    { "caption": "Setup", "command": "lean_ctx_setup" },
+                    { "caption": "Doctor", "command": "lean_ctx_doctor" },
+                    { "caption": "Gain Report", "command": "lean_ctx_gain" },
+                    { "caption": "Dashboard", "command": "lean_ctx_dashboard" }
+                ]
+            }
+        ]
+    }
+]

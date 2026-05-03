@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "lean-ctx hook rewrite",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "lean-ctx hook redirect",
+            "type": "command"
+          }
+        ],
+        "matcher": "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory"
+      }
+    ]
+  }
+}

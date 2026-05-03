@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+const HEATMAP_FLUSH_EVERY: usize = 25;
+const HEATMAP_MAX_ENTRIES: usize = 10_000;
+
+static HEATMAP_BUFFER: Mutex<Option<HeatMap>> = Mutex::new(None);
+static HEATMAP_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeatEntry {
@@ -21,12 +29,15 @@ pub struct HeatMap {
 
 impl HeatMap {
     pub fn load() -> Self {
-        let path = Self::storage_path();
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            serde_json::from_str(&content).unwrap_or_default()
-        } else {
-            Self::default()
+        let mut guard = HEATMAP_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(ref hm) = *guard {
+            return hm.clone();
         }
+        let hm = load_from_disk();
+        *guard = Some(hm.clone());
+        hm
     }
 
     pub fn record_access(&mut self, file_path: &str, original_tokens: usize, saved_tokens: usize) {
@@ -58,17 +69,17 @@ impl HeatMap {
         if !self.dirty && !self.entries.is_empty() {
             return Ok(());
         }
-        let path = Self::storage_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, json)
+        save_to_disk(self)?;
+        let mut guard = HEATMAP_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = Some(self.clone());
+        Ok(())
     }
 
     pub fn top_files(&self, limit: usize) -> Vec<&HeatEntry> {
         let mut sorted: Vec<&HeatEntry> = self.entries.values().collect();
-        sorted.sort_by(|a, b| b.access_count.cmp(&a.access_count));
+        sorted.sort_by_key(|x| std::cmp::Reverse(x.access_count));
         sorted.truncate(limit);
         sorted
     }
@@ -78,8 +89,7 @@ impl HeatMap {
         for entry in self.entries.values() {
             let dir = std::path::Path::new(&entry.path)
                 .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string());
+                .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());
             let stat = dirs.entry(dir).or_insert((0, 0));
             stat.0 += entry.access_count;
             stat.1 += entry.total_tokens_saved;
@@ -88,13 +98,16 @@ impl HeatMap {
             .into_iter()
             .map(|(dir, (count, saved))| (dir, count, saved))
             .collect();
-        result.sort_by(|a, b| b.1.cmp(&a.1));
+        result.sort_by_key(|x| std::cmp::Reverse(x.1));
         result
     }
 
     pub fn cold_files(&self, all_files: &[String], limit: usize) -> Vec<String> {
-        let hot: std::collections::HashSet<&str> =
-            self.entries.keys().map(|k| k.as_str()).collect();
+        let hot: std::collections::HashSet<&str> = self
+            .entries
+            .keys()
+            .map(std::string::String::as_str)
+            .collect();
         let mut cold: Vec<String> = all_files
             .iter()
             .filter(|f| !hot.contains(f.as_str()))
@@ -105,8 +118,53 @@ impl HeatMap {
     }
 
     fn storage_path() -> PathBuf {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".lean-ctx").join("heatmap.json")
+        crate::core::data_dir::lean_ctx_data_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("heatmap.json")
+    }
+}
+
+fn load_from_disk() -> HeatMap {
+    let path = HeatMap::storage_path();
+    match std::fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => HeatMap::default(),
+    }
+}
+
+fn save_to_disk(hm: &HeatMap) -> std::io::Result<()> {
+    let path = HeatMap::storage_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(hm)?;
+    std::fs::write(&path, json)
+}
+
+pub fn record_file_access(file_path: &str, original_tokens: usize, saved_tokens: usize) {
+    let mut guard = HEATMAP_BUFFER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let hm = guard.get_or_insert_with(load_from_disk);
+    hm.record_access(file_path, original_tokens, saved_tokens);
+
+    // Enforce bounded retention.
+    if hm.entries.len() > HEATMAP_MAX_ENTRIES {
+        let mut items: Vec<(String, u32)> = hm
+            .entries
+            .values()
+            .map(|e| (e.path.clone(), e.access_count))
+            .collect();
+        items.sort_by_key(|x| x.1);
+        let drop_n = hm.entries.len().saturating_sub(HEATMAP_MAX_ENTRIES);
+        for (path, _) in items.into_iter().take(drop_n) {
+            hm.entries.remove(&path);
+        }
+    }
+
+    let n = HEATMAP_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
+    if n.is_multiple_of(HEATMAP_FLUSH_EVERY) && save_to_disk(hm).is_ok() {
+        hm.dirty = false;
     }
 }
 

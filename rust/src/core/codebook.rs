@@ -67,7 +67,7 @@ impl Codebook {
             .collect();
 
         // Sort by frequency descending (most common boilerplate first)
-        candidates.sort_by(|a, b| b.1.cmp(&a.1));
+        candidates.sort_by_key(|x| std::cmp::Reverse(x.1));
 
         // Take top 50 patterns to keep codebook compact
         for (pattern, freq, idf) in candidates.into_iter().take(50) {
@@ -138,13 +138,20 @@ impl Codebook {
 }
 
 /// Cosine similarity between two documents using TF-IDF vectors.
-/// Used for embedding-space deduplication approximation.
+/// IDF is computed over the two-document corpus to down-weight common terms
+/// like `fn`, `let`, `return` and up-weight domain-specific identifiers.
 pub fn tfidf_cosine_similarity(doc_a: &str, doc_b: &str) -> f64 {
-    let tf_a = term_frequencies(doc_a);
-    let tf_b = term_frequencies(doc_b);
+    tfidf_cosine_similarity_with_corpus(&[doc_a, doc_b], doc_a, doc_b)
+}
+
+/// TF-IDF cosine similarity with IDF computed over a larger corpus.
+pub fn tfidf_cosine_similarity_with_corpus(corpus: &[&str], doc_a: &str, doc_b: &str) -> f64 {
+    let idf = compute_idf(corpus);
+    let tfidf_a = tfidf_vector(doc_a, &idf);
+    let tfidf_b = tfidf_vector(doc_b, &idf);
 
     let all_terms: std::collections::HashSet<&str> =
-        tf_a.keys().chain(tf_b.keys()).copied().collect();
+        tfidf_a.keys().chain(tfidf_b.keys()).copied().collect();
     if all_terms.is_empty() {
         return 0.0;
     }
@@ -154,8 +161,8 @@ pub fn tfidf_cosine_similarity(doc_a: &str, doc_b: &str) -> f64 {
     let mut mag_b = 0.0;
 
     for term in &all_terms {
-        let a = *tf_a.get(term).unwrap_or(&0.0);
-        let b = *tf_b.get(term).unwrap_or(&0.0);
+        let a = *tfidf_a.get(term).unwrap_or(&0.0);
+        let b = *tfidf_b.get(term).unwrap_or(&0.0);
         dot += a * b;
         mag_a += a * a;
         mag_b += b * b;
@@ -170,16 +177,21 @@ pub fn tfidf_cosine_similarity(doc_a: &str, doc_b: &str) -> f64 {
 }
 
 /// Identify semantically duplicate blocks across files.
-/// Returns pairs of (file_a, file_b, similarity) where similarity > threshold.
+/// IDF is computed over the full file corpus for accurate weighting.
 pub fn find_semantic_duplicates(
     files: &[(String, String)],
     threshold: f64,
 ) -> Vec<(String, String, f64)> {
+    let corpus: Vec<&str> = files.iter().map(|(_, c)| c.as_str()).collect();
+    let idf = compute_idf(&corpus);
+    let vectors: Vec<HashMap<&str, f64>> =
+        files.iter().map(|(_, c)| tfidf_vector(c, &idf)).collect();
+
     let mut duplicates = Vec::new();
 
     for i in 0..files.len() {
         for j in (i + 1)..files.len() {
-            let sim = tfidf_cosine_similarity(&files[i].1, &files[j].1);
+            let sim = cosine_from_vectors(&vectors[i], &vectors[j]);
             if sim >= threshold {
                 duplicates.push((files[i].0.clone(), files[j].0.clone(), sim));
             }
@@ -190,23 +202,75 @@ pub fn find_semantic_duplicates(
     duplicates
 }
 
-fn term_frequencies(text: &str) -> HashMap<&str, f64> {
-    let mut freq: HashMap<&str, f64> = HashMap::new();
-    let words: Vec<&str> = text.split_whitespace().collect();
+fn compute_idf<'a>(corpus: &[&'a str]) -> HashMap<&'a str, f64> {
+    let n = corpus.len() as f64;
+    if n == 0.0 {
+        return HashMap::new();
+    }
+
+    let mut doc_freq: HashMap<&str, usize> = HashMap::new();
+    for doc in corpus {
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for word in doc.split_whitespace() {
+            if seen.insert(word) {
+                *doc_freq.entry(word).or_insert(0) += 1;
+            }
+        }
+    }
+
+    doc_freq
+        .into_iter()
+        .map(|(term, df)| (term, (n / (1.0 + df as f64)).ln() + 1.0))
+        .collect()
+}
+
+fn tfidf_vector<'a>(doc: &'a str, idf: &HashMap<&str, f64>) -> HashMap<&'a str, f64> {
+    let words: Vec<&str> = doc.split_whitespace().collect();
     let total = words.len() as f64;
     if total == 0.0 {
-        return freq;
+        return HashMap::new();
     }
 
+    let mut tf: HashMap<&str, f64> = HashMap::new();
     for word in &words {
-        *freq.entry(word).or_insert(0.0) += 1.0;
+        *tf.entry(word).or_insert(0.0) += 1.0;
     }
-
-    for val in freq.values_mut() {
+    for val in tf.values_mut() {
         *val /= total;
     }
 
-    freq
+    tf.into_iter()
+        .map(|(term, tf_val)| {
+            let idf_val = idf.get(term).copied().unwrap_or(1.0);
+            (term, tf_val * idf_val)
+        })
+        .collect()
+}
+
+fn cosine_from_vectors(a: &HashMap<&str, f64>, b: &HashMap<&str, f64>) -> f64 {
+    let all_terms: std::collections::HashSet<&&str> = a.keys().chain(b.keys()).collect();
+    if all_terms.is_empty() {
+        return 0.0;
+    }
+
+    let mut dot = 0.0;
+    let mut mag_a = 0.0;
+    let mut mag_b = 0.0;
+
+    for term in &all_terms {
+        let va = a.get(*term).copied().unwrap_or(0.0);
+        let vb = b.get(*term).copied().unwrap_or(0.0);
+        dot += va * vb;
+        mag_a += va * va;
+        mag_b += vb * vb;
+    }
+
+    let magnitude = (mag_a * mag_b).sqrt();
+    if magnitude < f64::EPSILON {
+        return 0.0;
+    }
+
+    dot / magnitude
 }
 
 fn normalize_line(line: &str) -> String {

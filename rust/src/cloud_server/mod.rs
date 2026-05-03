@@ -6,9 +6,13 @@ mod config;
 mod contribute;
 mod db;
 mod feedback;
+mod gain;
+mod global_stats;
 mod gotchas;
+mod helpers;
 mod knowledge;
 mod models;
+mod oauth;
 mod stats;
 
 use axum::routing::{get, post};
@@ -22,12 +26,17 @@ pub async fn run() -> anyhow::Result<()> {
 
     let mailer = if cfg.smtp_enabled() {
         let m = auth::Mailer::new(&cfg)?;
-        eprintln!("[cloud] SMTP mailer configured (host: {})", cfg.smtp_host.as_deref().unwrap_or("?"));
+        eprintln!(
+            "[cloud] SMTP mailer configured (host: {})",
+            cfg.smtp_host.as_deref().unwrap_or("?")
+        );
         m.test_connection().await;
         Some(m)
     } else {
         eprintln!("[cloud] WARNING: SMTP not configured — email verification and password reset will NOT work");
-        eprintln!("[cloud] Set LEANCTX_CLOUD_SMTP_HOST, _PORT, _USERNAME, _PASSWORD, _FROM to enable");
+        eprintln!(
+            "[cloud] Set LEANCTX_CLOUD_SMTP_HOST, _PORT, _USERNAME, _PASSWORD, _FROM to enable"
+        );
         None
     };
 
@@ -35,9 +44,15 @@ pub async fn run() -> anyhow::Result<()> {
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list([
-            "https://leanctx.com".parse().unwrap(),
-            "https://www.leanctx.com".parse().unwrap(),
-            "http://localhost:4321".parse().unwrap(),
+            "https://leanctx.com"
+                .parse()
+                .expect("BUG: invalid hardcoded URL"),
+            "https://www.leanctx.com"
+                .parse()
+                .expect("BUG: invalid hardcoded URL"),
+            "http://localhost:4321"
+                .parse()
+                .expect("BUG: invalid hardcoded URL"),
         ]))
         .allow_methods([
             axum::http::Method::GET,
@@ -53,6 +68,8 @@ pub async fn run() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(auth::health))
+        .route("/oauth/register", post(oauth::register_client))
+        .route("/oauth/token", post(oauth::token))
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/forgot-password", post(auth::forgot_password))
@@ -86,8 +103,9 @@ pub async fn run() -> anyhow::Result<()> {
             "/api/sync/feedback",
             get(feedback::get_feedback).post(feedback::post_feedback),
         )
+        .route("/api/sync/gain", get(gain::get_gain).post(gain::post_gain))
+        .route("/api/global-stats", get(global_stats::get_global_stats))
         .route("/api/cloud/models", get(models::get_models))
-        .route("/api/pro/models", get(models::get_models))
         .with_state(state)
         .layer(cors);
 

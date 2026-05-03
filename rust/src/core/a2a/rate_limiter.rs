@@ -100,7 +100,9 @@ impl RateLimiter {
 static GLOBAL_LIMITER: Mutex<Option<RateLimiter>> = Mutex::new(None);
 
 pub fn global_rate_limiter() -> std::sync::MutexGuard<'static, Option<RateLimiter>> {
-    GLOBAL_LIMITER.lock().unwrap_or_else(|e| e.into_inner())
+    GLOBAL_LIMITER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 pub fn init_rate_limiter(global_per_min: u32, agent_per_min: u32, tool_per_min: u32) {
@@ -150,7 +152,7 @@ mod tests {
             RateLimitResult::Limited { retry_after_ms } => {
                 assert!(retry_after_ms > 0);
             }
-            _ => panic!("expected rate limit"),
+            RateLimitResult::Allowed => panic!("expected rate limit"),
         }
     }
 
@@ -163,7 +165,7 @@ mod tests {
 
         match limiter.check("a", "t") {
             RateLimitResult::Limited { .. } => {}
-            _ => panic!("agent-a should be limited"),
+            RateLimitResult::Allowed => panic!("agent-a should be limited"),
         }
 
         assert_eq!(limiter.check("b", "t"), RateLimitResult::Allowed);

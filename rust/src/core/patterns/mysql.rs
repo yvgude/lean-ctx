@@ -49,8 +49,7 @@ fn compress_table(output: &str) -> String {
         .enumerate()
         .filter(|(_, l)| l.starts_with('+'))
         .nth(1)
-        .map(|(i, _)| i + 1)
-        .unwrap_or(3);
+        .map_or(3, |(i, _)| i + 1);
 
     let preview_end = (header_end + 10).min(lines.len());
     let preview = &lines[..preview_end];

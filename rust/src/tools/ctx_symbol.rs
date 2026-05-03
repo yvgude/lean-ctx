@@ -66,11 +66,9 @@ fn find_symbols<'a>(
                 || s_lower.starts_with(&format!("{name_lower}::"))
                 || s_lower.contains(&format!("::{name_lower}"));
 
-            let file_match = file_filter.map(|f| s.file.contains(f)).unwrap_or(true);
+            let file_match = file_filter.is_none_or(|f| s.file.contains(f));
 
-            let kind_match = kind_filter
-                .map(|k| s.kind.to_lowercase() == k.to_lowercase())
-                .unwrap_or(true);
+            let kind_match = kind_filter.is_none_or(|k| s.kind.to_lowercase() == k.to_lowercase());
 
             name_match && file_match && kind_match
         })
@@ -88,17 +86,14 @@ fn find_symbols<'a>(
 fn render_single(sym: &SymbolEntry, index: &ProjectIndex, project_root: &str) -> (String, usize) {
     let abs_path = resolve_file_path(&sym.file, project_root);
 
-    let content = match std::fs::read_to_string(&abs_path) {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                format!(
-                    "Symbol '{}' found at {}:L{}-{} but file unreadable",
-                    sym.name, sym.file, sym.start_line, sym.end_line
-                ),
-                0,
-            );
-        }
+    let Ok(content) = std::fs::read_to_string(&abs_path) else {
+        return (
+            format!(
+                "Symbol '{}' found at {}:L{}-{} but file unreadable",
+                sym.name, sym.file, sym.start_line, sym.end_line
+            ),
+            0,
+        );
     };
 
     let lines: Vec<&str> = content.lines().collect();

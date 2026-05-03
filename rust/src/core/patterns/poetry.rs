@@ -1,33 +1,29 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static UV_INSTALLED_LINE: OnceLock<Regex> = OnceLock::new();
-static UV_RESOLVED: OnceLock<Regex> = OnceLock::new();
-static POETRY_INSTALLING: OnceLock<Regex> = OnceLock::new();
-static POETRY_UPDATING: OnceLock<Regex> = OnceLock::new();
-static PIP_STYLE_SUCCESS: OnceLock<Regex> = OnceLock::new();
-static PERCENT_BAR: OnceLock<Regex> = OnceLock::new();
-
-fn uv_installed_line_re() -> &'static Regex {
-    UV_INSTALLED_LINE.get_or_init(|| Regex::new(r"^\s*\+\s+(\S+)").unwrap())
+fn uv_installed_line_re() -> &'static regex::Regex {
+    static_regex!(r"^\s*\+\s+(\S+)")
 }
-fn uv_resolved_re() -> &'static Regex {
-    UV_RESOLVED
-        .get_or_init(|| Regex::new(r"(?i)^(Resolved|Prepared|Installed|Audited)\s+").unwrap())
+fn uv_resolved_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^(Resolved|Prepared|Installed|Audited)\s+")
 }
-fn poetry_installing_re() -> &'static Regex {
-    POETRY_INSTALLING
-        .get_or_init(|| Regex::new(r"(?i)^\s*-\s+Installing\s+(\S+)\s+\(([^)]+)\)").unwrap())
+fn poetry_installing_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^\s*-\s+Installing\s+(\S+)\s+\(([^)]+)\)")
 }
-fn poetry_updating_re() -> &'static Regex {
-    POETRY_UPDATING
-        .get_or_init(|| Regex::new(r"(?i)^\s*-\s+Updating\s+(\S+)\s+\(([^)]+)\)").unwrap())
+fn poetry_updating_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^\s*-\s+Updating\s+(\S+)\s+\(([^)]+)\)")
 }
-fn pip_style_success_re() -> &'static Regex {
-    PIP_STYLE_SUCCESS.get_or_init(|| Regex::new(r"(?i)Successfully installed\s+(.+)").unwrap())
+fn pip_style_success_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)Successfully installed\s+(.+)")
 }
-fn percent_bar_re() -> &'static Regex {
-    PERCENT_BAR.get_or_init(|| Regex::new(r"\d+%\|").unwrap())
+fn percent_bar_re() -> &'static regex::Regex {
+    static_regex!(r"\d+%\|")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -35,9 +31,8 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
     if cl.starts_with("poetry ") {
         let sub = cl.split_whitespace().nth(1).unwrap_or("");
         return match sub {
-            "install" => Some(compress_poetry(output, false)),
+            "install" | "add" => Some(compress_poetry(output, false)),
             "update" => Some(compress_poetry(output, true)),
-            "add" => Some(compress_poetry(output, false)),
             _ => None,
         };
     }
@@ -71,7 +66,7 @@ fn is_download_noise(line: &str) -> bool {
         || tl.contains("kiB/s")
         || tl.contains("kib/s")
         || tl.contains("mib/s")
-        || tl.contains("%") && (tl.contains("eta") || tl.contains('|') || tl.contains("of "))
+        || tl.contains('%') && (tl.contains("eta") || tl.contains('|') || tl.contains("of "))
     {
         return true;
     }

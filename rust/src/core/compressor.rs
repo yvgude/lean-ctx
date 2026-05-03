@@ -1,5 +1,15 @@
 use similar::{ChangeTag, TextDiff};
 
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
+
+/// Removes ANSI escape codes from a string, returning clean text.
 pub fn strip_ansi(s: &str) -> String {
     if !s.contains('\x1b') {
         return s.to_string();
@@ -22,6 +32,7 @@ pub fn strip_ansi(s: &str) -> String {
     result
 }
 
+/// Returns the ratio of ANSI escape characters to total string length.
 pub fn ansi_density(s: &str) -> f64 {
     if s.is_empty() {
         return 0.0;
@@ -30,6 +41,7 @@ pub fn ansi_density(s: &str) -> f64 {
     escape_bytes as f64 / s.len() as f64
 }
 
+/// Strips comments, blank lines, and normalizes indentation for maximum token savings.
 pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     let mut result: Vec<String> = Vec::new();
     let is_python = matches!(ext, Some("py"));
@@ -103,15 +115,31 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
 /// Lightweight post-processing cleanup: collapses consecutive closing braces,
 /// removes whitespace-only lines, and limits consecutive blank lines to 1.
 pub fn lightweight_cleanup(content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let total = lines.len();
+
     let mut result: Vec<String> = Vec::new();
     let mut blank_count = 0u32;
-    let mut close_brace_count = 0u32;
+    let mut brace_run: Vec<&str> = Vec::new();
 
-    for line in content.lines() {
+    let flush_brace_run = |run: &mut Vec<&str>, out: &mut Vec<String>| {
+        if total <= 200 || run.len() <= 5 {
+            for l in run.iter() {
+                out.push(l.to_string());
+            }
+        } else {
+            out.push(run[0].to_string());
+            out.push(run[1].to_string());
+            out.push(format!("[{} brace-only lines collapsed]", run.len() - 2));
+        }
+        run.clear();
+    };
+
+    for line in &lines {
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
-            close_brace_count = 0;
+            flush_brace_run(&mut brace_run, &mut result);
             blank_count += 1;
             if blank_count <= 1 {
                 result.push(String::new());
@@ -121,16 +149,14 @@ pub fn lightweight_cleanup(content: &str) -> String {
         blank_count = 0;
 
         if matches!(trimmed, "}" | "};" | ");" | "});" | ")") {
-            close_brace_count += 1;
-            if close_brace_count <= 2 {
-                result.push(trimmed.to_string());
-            }
+            brace_run.push(trimmed);
             continue;
         }
-        close_brace_count = 0;
 
+        flush_brace_run(&mut brace_run, &mut result);
         result.push(line.to_string());
     }
+    flush_brace_run(&mut brace_run, &mut result);
 
     result.join("\n")
 }
@@ -161,6 +187,7 @@ fn normalize_indentation(line: &str) -> String {
     format!("{}{}", " ".repeat(reduced), content)
 }
 
+/// Produces a compact unified diff between old and new content with line numbers.
 pub fn diff_content(old_content: &str, new_content: &str) -> String {
     if old_content == new_content {
         return "(no changes)".to_string();
@@ -199,6 +226,161 @@ pub fn diff_content(old_content: &str, new_content: &str) -> String {
     changes.join("\n")
 }
 
+/// Deduplicates repeated lines, strips boilerplate, and normalizes timestamps/hashes.
+pub fn verbatim_compact(text: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    let mut blank_count = 0u32;
+    let mut prev_line: Option<String> = None;
+    let mut repeat_count = 0u32;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            blank_count += 1;
+            if blank_count <= 1 {
+                flush_repeats(&mut lines, &mut prev_line, &mut repeat_count);
+                lines.push(String::new());
+            }
+            continue;
+        }
+        blank_count = 0;
+
+        if is_boilerplate_line(trimmed) {
+            continue;
+        }
+
+        let normalized = normalize_whitespace(trimmed);
+        let stripped = strip_timestamps_hashes(&normalized);
+
+        if let Some(ref prev) = prev_line {
+            if *prev == stripped {
+                repeat_count += 1;
+                continue;
+            }
+        }
+
+        flush_repeats(&mut lines, &mut prev_line, &mut repeat_count);
+        prev_line = Some(stripped.clone());
+        repeat_count = 1;
+        lines.push(stripped);
+    }
+
+    flush_repeats(&mut lines, &mut prev_line, &mut repeat_count);
+    lines.join("\n")
+}
+
+/// Compresses content using the active task intent to preserve task-relevant sections.
+pub fn task_aware_compress(
+    content: &str,
+    ext: Option<&str>,
+    intent: &super::intent_engine::StructuredIntent,
+) -> String {
+    use super::intent_engine::{IntentScope, TaskType};
+
+    let budget_ratio = match intent.scope {
+        IntentScope::SingleFile => 0.7,
+        IntentScope::MultiFile => 0.5,
+        IntentScope::CrossModule => 0.35,
+        IntentScope::ProjectWide => 0.25,
+    };
+
+    match intent.task_type {
+        TaskType::FixBug | TaskType::Debug => {
+            let filtered = super::task_relevance::information_bottleneck_filter_typed(
+                content,
+                &intent.keywords,
+                budget_ratio,
+                Some(intent.task_type),
+            );
+            safeguard_ratio(content, &filtered)
+        }
+        TaskType::Refactor | TaskType::Review => {
+            let cleaned = lightweight_cleanup(content);
+            let filtered = super::task_relevance::information_bottleneck_filter_typed(
+                &cleaned,
+                &intent.keywords,
+                budget_ratio.max(0.5),
+                Some(intent.task_type),
+            );
+            safeguard_ratio(content, &filtered)
+        }
+        TaskType::Generate | TaskType::Test => {
+            let compressed = aggressive_compress(content, ext);
+            safeguard_ratio(content, &compressed)
+        }
+        TaskType::Explore | TaskType::Config | TaskType::Deploy => {
+            let cleaned = lightweight_cleanup(content);
+            safeguard_ratio(content, &cleaned)
+        }
+    }
+}
+
+fn flush_repeats(lines: &mut [String], prev_line: &mut Option<String>, count: &mut u32) {
+    if *count > 1 {
+        if let Some(ref prev) = prev_line {
+            let last_idx = lines.len().saturating_sub(1);
+            if last_idx < lines.len() {
+                lines[last_idx] = format!("[{count}x] {prev}");
+            }
+        }
+    }
+    *count = 0;
+    *prev_line = None;
+}
+
+fn normalize_whitespace(line: &str) -> String {
+    let mut result = String::with_capacity(line.len());
+    let mut prev_space = false;
+    for ch in line.chars() {
+        if ch == ' ' || ch == '\t' {
+            if !prev_space {
+                result.push(' ');
+                prev_space = true;
+            }
+        } else {
+            result.push(ch);
+            prev_space = false;
+        }
+    }
+    result
+}
+
+fn strip_timestamps_hashes(line: &str) -> String {
+    let ts_re =
+        static_regex!(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?");
+    let hash_re = static_regex!(r"\b[0-9a-f]{32,64}\b");
+
+    let s = ts_re.replace_all(line, "[TS]");
+    let s = hash_re.replace_all(&s, "[HASH]");
+    s.into_owned()
+}
+
+fn is_boilerplate_line(trimmed: &str) -> bool {
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("copyright")
+        || lower.starts_with("licensed under")
+        || lower.starts_with("license:")
+        || lower.starts_with("all rights reserved")
+    {
+        return true;
+    }
+    if lower.starts_with("generated by") || lower.starts_with("auto-generated") {
+        return true;
+    }
+    if trimmed.len() >= 4 {
+        let chars: Vec<char> = trimmed.chars().collect();
+        let first = chars[0];
+        if matches!(first, '=' | '-' | '*' | '─' | '━') {
+            let same = chars.iter().filter(|c| **c == first).count();
+            if same as f64 / chars.len() as f64 > 0.8 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,7 +390,7 @@ mod tests {
         let old = "line1\nline2\nline3";
         let new = "line1\nline2\nnew_line\nline3";
         let result = diff_content(old, new);
-        assert!(result.contains("+"), "should show additions");
+        assert!(result.contains('+'), "should show additions");
         assert!(result.contains("new_line"));
     }
 
@@ -217,7 +399,7 @@ mod tests {
         let old = "line1\nline2\nline3";
         let new = "line1\nline3";
         let result = diff_content(old, new);
-        assert!(result.contains("-"), "should show deletions");
+        assert!(result.contains('-'), "should show deletions");
         assert!(result.contains("line2"));
     }
 
@@ -229,11 +411,18 @@ mod tests {
 
     #[test]
     fn test_lightweight_cleanup_collapses_braces() {
-        let input = "fn main() {\n    inner()\n}\n}\n}\n}\n}\nfn next() {}";
-        let result = lightweight_cleanup(input);
+        let mut lines: Vec<String> = (0..210).map(|i| format!("line {i}")).collect();
+        lines.extend(
+            ["}", "}", "}", "}", "}", "}", "}", "}"]
+                .iter()
+                .map(std::string::ToString::to_string),
+        );
+        lines.push("fn next() {}".to_string());
+        let input = lines.join("\n");
+        let result = lightweight_cleanup(&input);
         assert!(
-            result.matches('}').count() <= 3,
-            "should collapse consecutive closing braces"
+            result.contains("[6 brace-only lines collapsed]"),
+            "should collapse long brace runs in large files"
         );
         assert!(result.contains("fn next()"));
     }

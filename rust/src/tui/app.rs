@@ -1,4 +1,7 @@
 use crate::core::events::{EventKind, LeanCtxEvent};
+use crate::core::gain::gain_score::GainScore;
+use crate::core::gain::model_pricing::ModelPricing;
+use crate::core::gain::task_classifier::{TaskCategory, TaskClassifier};
 use crate::tui::event_reader::EventTail;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{
@@ -17,6 +20,7 @@ const GREEN: Color = Color::Rgb(52, 211, 153);
 const PURPLE: Color = Color::Rgb(129, 140, 248);
 const BLUE: Color = Color::Rgb(56, 189, 248);
 const YELLOW: Color = Color::Rgb(251, 191, 36);
+const RED: Color = Color::Rgb(248, 113, 113);
 const MUTED: Color = Color::Rgb(107, 107, 136);
 const SURFACE: Color = Color::Rgb(10, 10, 18);
 const BG: Color = Color::Rgb(6, 6, 10);
@@ -26,8 +30,11 @@ struct AppState {
     total_saved: u64,
     total_original: u64,
     cache_hits: u64,
+    cache_reads: u64,
     total_calls: u64,
     files: std::collections::HashMap<String, FileHeat>,
+    gain_score: Option<GainScore>,
+    last_gain_refresh: Instant,
     quit: bool,
     focus: usize,
 }
@@ -39,13 +46,33 @@ struct FileHeat {
 
 impl AppState {
     fn new() -> Self {
+        let store = crate::core::stats::load();
+        let heatmap = crate::core::heatmap::HeatMap::load();
+        let files = heatmap
+            .entries
+            .values()
+            .map(|e| {
+                (
+                    e.path.clone(),
+                    FileHeat {
+                        access_count: e.access_count,
+                        tokens_saved: e.total_tokens_saved,
+                    },
+                )
+            })
+            .collect();
         Self {
             events: Vec::new(),
-            total_saved: 0,
-            total_original: 0,
-            cache_hits: 0,
-            total_calls: 0,
-            files: std::collections::HashMap::new(),
+            total_saved: store
+                .total_input_tokens
+                .saturating_sub(store.total_output_tokens),
+            total_original: store.total_input_tokens,
+            cache_hits: store.cep.total_cache_hits,
+            cache_reads: store.cep.total_cache_reads,
+            total_calls: store.total_commands,
+            files,
+            gain_score: None,
+            last_gain_refresh: Instant::now(),
             quit: false,
             focus: 0,
         }
@@ -83,6 +110,13 @@ impl AppState {
                     entry.access_count += 1;
                     entry.tokens_saved += saved_tokens;
                 }
+                EventKind::Compression { path, .. } => {
+                    let entry = self.files.entry(path.clone()).or_insert(FileHeat {
+                        access_count: 0,
+                        tokens_saved: 0,
+                    });
+                    entry.access_count += 1;
+                }
                 _ => {}
             }
         }
@@ -101,10 +135,19 @@ impl AppState {
     }
 
     fn cache_rate(&self) -> f64 {
-        if self.total_calls == 0 {
+        if self.cache_reads == 0 {
             return 0.0;
         }
-        self.cache_hits as f64 / self.total_calls as f64 * 100.0
+        self.cache_hits as f64 / self.cache_reads as f64 * 100.0
+    }
+
+    fn refresh_gain_score(&mut self) {
+        if self.last_gain_refresh.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+        let engine = crate::core::gain::GainEngine::load();
+        self.gain_score = Some(engine.gain_score(None));
+        self.last_gain_refresh = Instant::now();
     }
 }
 
@@ -128,11 +171,12 @@ pub fn run() -> anyhow::Result<()> {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => state.quit = true,
-                        KeyCode::Tab => state.focus = (state.focus + 1) % 4,
+                        KeyCode::Tab => state.focus = (state.focus + 1) % 5,
                         KeyCode::Char('1') => state.focus = 0,
                         KeyCode::Char('2') => state.focus = 1,
                         KeyCode::Char('3') => state.focus = 2,
                         KeyCode::Char('4') => state.focus = 3,
+                        KeyCode::Char('5') => state.focus = 4,
                         _ => {}
                     }
                 }
@@ -144,6 +188,7 @@ pub fn run() -> anyhow::Result<()> {
             if !new.is_empty() {
                 state.ingest(new);
             }
+            state.refresh_gain_score();
             last_tick = Instant::now();
         }
 
@@ -179,19 +224,43 @@ fn draw(f: &mut ratatui::Frame, state: &AppState) {
 
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Percentage(38),
+            Constraint::Percentage(37),
+            Constraint::Percentage(25),
+        ])
         .split(columns[1]);
 
     draw_live_feed(f, left[0], state);
     draw_heatmap(f, left[1], state);
     draw_savings(f, right[0], state);
     draw_session(f, right[1], state);
+    draw_task_activity(f, right[2], state);
 }
 
 fn draw_header(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
     let saved = format_tokens(state.total_saved);
     let pct = format!("{:.0}%", state.savings_pct());
-    let cost = format!("${:.3}", state.total_saved as f64 * 2.5 / 1_000_000.0);
+    let env_model = std::env::var("LEAN_CTX_MODEL")
+        .or_else(|_| std::env::var("LCTX_MODEL"))
+        .ok();
+    let pricing = ModelPricing::load();
+    let quote = pricing.quote(env_model.as_deref());
+    let cost = format!(
+        "${:.3}",
+        state.total_saved as f64 * quote.cost.input_per_m / 1_000_000.0
+    );
+    let gain_score = state.gain_score.as_ref().map_or(0, |s| s.total);
+    let trend_icon = state.gain_score.as_ref().map_or("─", |s| match s.trend {
+        crate::core::gain::gain_score::Trend::Rising => "▲",
+        crate::core::gain::gain_score::Trend::Stable => "─",
+        crate::core::gain::gain_score::Trend::Declining => "▼",
+    });
+    let trend_color = state.gain_score.as_ref().map_or(MUTED, |s| match s.trend {
+        crate::core::gain::gain_score::Trend::Rising => GREEN,
+        crate::core::gain::gain_score::Trend::Stable => MUTED,
+        crate::core::gain::gain_score::Trend::Declining => YELLOW,
+    });
 
     let spans = vec![
         Span::styled(
@@ -206,6 +275,9 @@ fn draw_header(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Span::raw("  "),
         Span::styled(format!("{cost} avoided"), Style::default().fg(BLUE)),
         Span::raw("  "),
+        Span::styled(format!("{gain_score}/100 gain"), Style::default().fg(GREEN)),
+        Span::styled(format!(" {trend_icon}"), Style::default().fg(trend_color)),
+        Span::raw("  "),
         Span::styled(
             format!("{} events", state.events.len()),
             Style::default().fg(MUTED),
@@ -218,6 +290,56 @@ fn draw_header(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
             .border_style(Style::default().fg(Color::Rgb(30, 30, 50))),
     );
     f.render_widget(header, area);
+}
+
+fn draw_task_activity(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
+    let block = Block::default()
+        .title(Span::styled(
+            " Task Activity ",
+            Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(if state.focus == 4 {
+            GREEN
+        } else {
+            Color::Rgb(30, 30, 50)
+        }))
+        .style(Style::default().bg(SURFACE));
+
+    let mut counts: std::collections::HashMap<TaskCategory, u64> = std::collections::HashMap::new();
+    for ev in state.events.iter().rev().take(120) {
+        if let EventKind::ToolCall { tool, .. } = &ev.kind {
+            let cat = TaskClassifier::classify_tool(tool);
+            *counts.entry(cat).or_insert(0) += 1;
+        }
+    }
+
+    let mut rows: Vec<(TaskCategory, u64)> = counts.into_iter().collect();
+    rows.sort_by_key(|x| std::cmp::Reverse(x.1));
+
+    let max_items = area.height.saturating_sub(2) as usize;
+    let items: Vec<ListItem> = if rows.is_empty() {
+        vec![ListItem::new(Line::from(vec![Span::styled(
+            "No tool calls yet.",
+            Style::default().fg(MUTED),
+        )]))]
+    } else {
+        rows.into_iter()
+            .take(max_items)
+            .map(|(cat, n)| {
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("{:<14}", cat.label()),
+                        Style::default().fg(Color::Rgb(220, 220, 240)),
+                    ),
+                    Span::styled(format!("{n:>4}"), Style::default().fg(MUTED)),
+                ]))
+            })
+            .collect()
+    };
+
+    let list = List::new(items).block(block);
+    f.render_widget(list, area);
 }
 
 fn draw_live_feed(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
@@ -315,6 +437,64 @@ fn draw_live_feed(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
                     format!("{language} e={new_entropy:.2} j={new_jaccard:.2}"),
                     MUTED,
                 ),
+                EventKind::BudgetWarning {
+                    role,
+                    dimension,
+                    percent,
+                    ..
+                } => (
+                    "$$",
+                    "budget",
+                    format!("{role} {dimension} {percent}% WARNING"),
+                    YELLOW,
+                ),
+                EventKind::BudgetExhausted {
+                    role, dimension, ..
+                } => ("!!", "budget", format!("{role} {dimension} EXHAUSTED"), RED),
+                EventKind::PolicyViolation { role, tool, reason } => (
+                    "XX",
+                    "policy",
+                    format!("{role} blocked {tool}: {reason}"),
+                    RED,
+                ),
+                EventKind::RoleChanged { from, to } => {
+                    ("->", "role", format!("{from} -> {to}"), BLUE)
+                }
+                EventKind::ProfileChanged { from, to } => {
+                    ("->", "profile", format!("{from} -> {to}"), BLUE)
+                }
+                EventKind::SloViolation {
+                    slo_name, action, ..
+                } => ("!!", "slo", format!("{slo_name} violated → {action}"), RED),
+                EventKind::Anomaly {
+                    metric,
+                    deviation_factor,
+                    ..
+                } => (
+                    "??",
+                    "anomaly",
+                    format!("{metric} {deviation_factor:.1}x StdDev"),
+                    YELLOW,
+                ),
+                EventKind::VerificationWarning {
+                    warning_kind,
+                    detail,
+                    ..
+                } => (
+                    "!?",
+                    "verify",
+                    format!(
+                        "{warning_kind}: {}",
+                        detail.chars().take(40).collect::<String>()
+                    ),
+                    YELLOW,
+                ),
+                EventKind::ThresholdAdapted { language, arm, .. } => (
+                    "~>",
+                    "adapt",
+                    format!("{language}/{arm} threshold adapted"),
+                    BLUE,
+                ),
             };
             let ts = &ev.timestamp[11..19.min(ev.timestamp.len())];
             ListItem::new(Line::from(vec![
@@ -348,8 +528,15 @@ fn draw_heatmap(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         .style(Style::default().bg(SURFACE));
 
     let mut files: Vec<_> = state.files.iter().collect();
-    files.sort_by(|a, b| b.1.access_count.cmp(&a.1.access_count));
-    let max_access = files.first().map(|f| f.1.access_count).unwrap_or(1).max(1);
+    files.sort_by_key(|x| std::cmp::Reverse(x.1.access_count));
+    if files.is_empty() {
+        let msg = Paragraph::new("Waiting for file activity...")
+            .style(Style::default().fg(MUTED))
+            .block(block);
+        f.render_widget(msg, area);
+        return;
+    }
+    let max_access = files.first().map_or(1, |f| f.1.access_count).max(1);
 
     let visible = (area.height.saturating_sub(2)) as usize;
     let rows: Vec<Row> = files
@@ -426,7 +613,7 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
                 format!(" {} saved ", format_tokens(state.total_saved)),
                 Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("({:.0}%)", pct), Style::default().fg(MUTED)),
+            Span::styled(format!("({pct:.0}%)"), Style::default().fg(MUTED)),
         ])),
         chunks[0],
     );
@@ -436,7 +623,7 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Gauge::default()
             .ratio(ratio)
             .gauge_style(Style::default().fg(GREEN).bg(BG))
-            .label(format!("{:.0}%", pct)),
+            .label(format!("{pct:.0}%")),
         chunks[1],
     );
 
@@ -446,7 +633,11 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(" Cache Hit Rate ", Style::default().fg(PURPLE)),
-            Span::styled(format!("{:.0}%", cache_pct), Style::default().fg(MUTED)),
+            Span::styled(format!("{cache_pct:.0}%"), Style::default().fg(MUTED)),
+            Span::styled(
+                format!(" ({}/{})", state.cache_hits, state.cache_reads),
+                Style::default().fg(MUTED),
+            ),
         ])),
         chunks[3],
     );
@@ -456,7 +647,7 @@ fn draw_savings(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Gauge::default()
             .ratio(cache_ratio)
             .gauge_style(Style::default().fg(PURPLE).bg(BG))
-            .label(format!("{:.0}%", cache_pct)),
+            .label(format!("{cache_pct:.0}%")),
         chunks[4],
     );
 }
@@ -528,5 +719,68 @@ fn format_tokens(n: u64) -> String {
         format!("{:.1}K", n as f64 / 1_000.0)
     } else {
         format!("{n}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_state() -> AppState {
+        AppState {
+            events: Vec::new(),
+            total_saved: 0,
+            total_original: 0,
+            cache_hits: 0,
+            cache_reads: 0,
+            total_calls: 0,
+            files: std::collections::HashMap::new(),
+            gain_score: None,
+            last_gain_refresh: Instant::now(),
+            quit: false,
+            focus: 0,
+        }
+    }
+
+    #[test]
+    fn ingest_toolcall_with_path_populates_heatmap() {
+        let mut s = mk_state();
+        s.ingest(vec![LeanCtxEvent {
+            id: 1,
+            timestamp: "t".to_string(),
+            kind: EventKind::ToolCall {
+                tool: "ctx_read".to_string(),
+                tokens_original: 100,
+                tokens_saved: 80,
+                mode: Some("full".to_string()),
+                duration_ms: 1,
+                path: Some("src/main.rs".to_string()),
+            },
+        }]);
+
+        let entry = s.files.get("src/main.rs").expect("file entry missing");
+        assert_eq!(entry.access_count, 1);
+        assert_eq!(entry.tokens_saved, 80);
+    }
+
+    #[test]
+    fn ingest_compression_counts_access_without_fake_tokens() {
+        let mut s = mk_state();
+        s.ingest(vec![LeanCtxEvent {
+            id: 1,
+            timestamp: "t".to_string(),
+            kind: EventKind::Compression {
+                path: "src/lib.rs".to_string(),
+                before_lines: 100,
+                after_lines: 10,
+                strategy: "entropy".to_string(),
+                kept_line_count: 10,
+                removed_line_count: 90,
+            },
+        }]);
+
+        let entry = s.files.get("src/lib.rs").expect("file entry missing");
+        assert_eq!(entry.access_count, 1);
+        assert_eq!(entry.tokens_saved, 0);
     }
 }

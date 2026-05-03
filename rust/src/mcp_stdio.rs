@@ -282,8 +282,7 @@ fn looks_like_content_length_frame(buf: &BytesMut) -> bool {
     prefix
         .windows(b"content-length".len())
         .next()
-        .map(|candidate| candidate.eq_ignore_ascii_case(b"content-length"))
-        .unwrap_or(false)
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(b"content-length"))
 }
 
 fn find_header_terminator(buf: &BytesMut) -> Option<(usize, usize)> {
@@ -298,9 +297,8 @@ fn find_header_terminator(buf: &BytesMut) -> Option<(usize, usize)> {
 fn parse_content_length(header: &str) -> Result<usize, HybridCodecError> {
     for raw_line in header.lines() {
         let line = raw_line.trim_end_matches('\r');
-        let (name, value) = match line.split_once(':') {
-            Some(parts) => parts,
-            None => continue,
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
         };
         if name.trim().eq_ignore_ascii_case("content-length") {
             return value
@@ -401,17 +399,16 @@ impl<T: DeserializeOwned> Decoder for HybridJsonRpcMessageCodec<T> {
     fn decode_eof(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
         match self.protocol.get() {
             Some(WireProtocol::ContentLength) if !buf.is_empty() => self.decode_content_length(buf),
-            _ => Ok(match self.decode(buf)? {
-                Some(frame) => Some(frame),
-                None => {
-                    self.next_index = 0;
-                    if buf.is_empty() || buf == &b"\r"[..] {
-                        None
-                    } else {
-                        let line = buf.split_to(buf.len());
-                        let payload = without_carriage_return(&line);
-                        try_parse_with_compatibility(payload, "decode_eof")?
-                    }
+            _ => Ok(if let Some(frame) = self.decode(buf)? {
+                Some(frame)
+            } else {
+                self.next_index = 0;
+                if buf.is_empty() || buf == &b"\r"[..] {
+                    None
+                } else {
+                    let line = buf.split_to(buf.len());
+                    let payload = without_carriage_return(&line);
+                    try_parse_with_compatibility(payload, "decode_eof")?
                 }
             }),
         }

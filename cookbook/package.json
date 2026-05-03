@@ -24,6 +24,10 @@
     "@types/node": "^25.6.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
-    "vitest": "^1.6.1"
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "uuid": "^14.0.0",
+    "vite": "^6.4.2"
   }
 }

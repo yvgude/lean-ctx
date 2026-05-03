@@ -13,23 +13,27 @@ pub fn run(args: &[String]) {
     let release = match fetch_latest_release() {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("Error fetching release info: {e}");
+            tracing::error!("Error fetching release info: {e}");
             std::process::exit(1);
         }
     };
 
-    let latest_tag = match release["tag_name"].as_str() {
-        Some(t) => t.trim_start_matches('v').to_string(),
-        None => {
-            eprintln!("Could not parse release tag from GitHub API.");
-            std::process::exit(1);
-        }
+    let latest_tag = if let Some(t) = release["tag_name"].as_str() {
+        t.trim_start_matches('v').to_string()
+    } else {
+        tracing::error!("Could not parse release tag from GitHub API.");
+        std::process::exit(1);
     };
 
     if latest_tag == CURRENT_VERSION {
         println!("  \x1b[32m✓\x1b[0m Already up to date (v{CURRENT_VERSION}).");
         println!("  \x1b[2mIf your IDE still uses an older version, restart it to reconnect the MCP server.\x1b[0m");
         println!();
+        if !check_only {
+            println!("  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m");
+            post_update_rewire();
+            println!();
+        }
         return;
     }
 
@@ -43,19 +47,16 @@ pub fn run(args: &[String]) {
     let asset_name = platform_asset_name();
     println!("  \x1b[2mDownloading {asset_name} …\x1b[0m");
 
-    let download_url = match find_asset_url(&release, &asset_name) {
-        Some(u) => u,
-        None => {
-            eprintln!("No binary found for this platform ({asset_name}).");
-            eprintln!("Download manually: https://github.com/yvgude/lean-ctx/releases/latest");
-            std::process::exit(1);
-        }
+    let Some(download_url) = find_asset_url(&release, &asset_name) else {
+        tracing::error!("No binary found for this platform ({asset_name}).");
+        eprintln!("Download manually: https://github.com/yvgude/lean-ctx/releases/latest");
+        std::process::exit(1);
     };
 
     let bytes = match download_bytes(&download_url) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("Download failed: {e}");
+            tracing::error!("Download failed: {e}");
             std::process::exit(1);
         }
     };
@@ -63,13 +64,16 @@ pub fn run(args: &[String]) {
     let current_exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Cannot locate current executable: {e}");
+            tracing::error!("Cannot locate current executable: {e}");
             std::process::exit(1);
         }
     };
 
     if let Err(e) = replace_binary(&bytes, &asset_name, &current_exe) {
-        eprintln!("Failed to replace binary: {e}");
+        tracing::error!("Failed to replace binary: {e}");
+        eprintln!();
+        eprintln!("Continuing with a setup refresh so your wiring stays correct.");
+        post_update_rewire();
         std::process::exit(1);
     }
 
@@ -78,8 +82,8 @@ pub fn run(args: &[String]) {
     println!("  \x1b[2mBinary: {}\x1b[0m", current_exe.display());
 
     println!();
-    println!("  \x1b[36m\x1b[1mUpdating agent rules & hooks…\x1b[0m");
-    post_update_refresh();
+    println!("  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m");
+    post_update_rewire();
 
     println!();
     crate::terminal_ui::print_logo_animated();
@@ -93,91 +97,16 @@ pub fn run(args: &[String]) {
     println!();
 }
 
-fn post_update_refresh() {
-    if let Some(home) = dirs::home_dir() {
-        let rules_result = crate::rules_inject::inject_all_rules(&home);
-        let rules_count = rules_result.injected.len() + rules_result.updated.len();
-        if rules_count > 0 {
-            let names: Vec<String> = rules_result
-                .injected
-                .iter()
-                .chain(rules_result.updated.iter())
-                .cloned()
-                .collect();
-            println!("    \x1b[32m✓\x1b[0m Rules updated: {}", names.join(", "));
-        }
-        if !rules_result.already.is_empty() {
-            println!(
-                "    \x1b[32m✓\x1b[0m Rules up-to-date: {}",
-                rules_result.already.join(", ")
-            );
-        }
-
-        crate::hooks::refresh_installed_hooks();
-        println!("    \x1b[32m✓\x1b[0m Hook scripts refreshed");
-
-        refresh_shell_aliases(&home);
-    }
-}
-
-fn refresh_shell_aliases(home: &std::path::Path) {
-    let binary = std::env::current_exe()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "lean-ctx".to_string());
-    let bash_binary = crate::hooks::to_bash_compatible_path(&binary);
-
-    let shell_configs: &[(&str, &str)] = &[
-        (".zshrc", "zsh"),
-        (".bashrc", "bash"),
-        (".config/fish/config.fish", "fish"),
-    ];
-
-    let mut updated = false;
-
-    for (rc_file, shell_name) in shell_configs {
-        let rc_path = home.join(rc_file);
-        if !rc_path.exists() {
-            continue;
-        }
-        let content = match std::fs::read_to_string(&rc_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        if !content.contains("lean-ctx shell hook") {
-            continue;
-        }
-
-        match *shell_name {
-            "zsh" => crate::cli::init_posix(true, &bash_binary),
-            "bash" => crate::cli::init_posix(false, &bash_binary),
-            "fish" => crate::cli::init_fish(&bash_binary),
-            _ => continue,
-        }
-        println!("    \x1b[32m✓\x1b[0m Shell aliases updated (~/{rc_file})");
-        updated = true;
-    }
-
-    #[cfg(windows)]
-    {
-        let ps_profile = home
-            .join("Documents")
-            .join("PowerShell")
-            .join("Microsoft.PowerShell_profile.ps1");
-        if ps_profile.exists() {
-            if let Ok(content) = std::fs::read_to_string(&ps_profile) {
-                if content.contains("lean-ctx shell hook") {
-                    crate::cli::init_powershell(&binary);
-                    println!("    \x1b[32m✓\x1b[0m PowerShell aliases updated");
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    if !updated {
-        println!(
-            "    \x1b[2m—\x1b[0m No shell aliases to refresh (run 'lean-ctx setup' to install)"
-        );
+fn post_update_rewire() {
+    let opts = crate::setup::SetupOptions {
+        non_interactive: true,
+        yes: true,
+        // After a binary update, rewire existing configs to the current binary.
+        fix: true,
+        json: false,
+    };
+    if let Err(e) = crate::setup::run_setup_with_options(opts) {
+        tracing::error!("Setup refresh error: {e}");
     }
 }
 
@@ -201,7 +130,7 @@ fn find_asset_url(release: &serde_json::Value, asset_name: &str) -> Option<Strin
         .iter()
         .find(|a| a["name"].as_str() == Some(asset_name))
         .and_then(|a| a["browser_download_url"].as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
@@ -224,7 +153,10 @@ fn replace_binary(
     asset_name: &str,
     current_exe: &std::path::Path,
 ) -> Result<(), String> {
-    let binary_bytes = if asset_name.ends_with(".zip") {
+    let binary_bytes = if std::path::Path::new(asset_name)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    {
         extract_from_zip(archive_bytes)?
     } else {
         extract_from_tar_gz(archive_bytes)?
@@ -265,6 +197,15 @@ fn replace_binary(
 
     #[cfg(not(windows))]
     {
+        // On macOS, rename-over-running-binary causes SIGKILL because the kernel
+        // re-validates code pages against the (now different) on-disk file.
+        // Unlinking first is safe: the kernel keeps the old memory-mapped pages
+        // from the deleted inode, while the new file gets a fresh inode at the path.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::fs::remove_file(current_exe);
+        }
+
         std::fs::rename(&tmp_path, current_exe).map_err(|e| {
             let _ = std::fs::remove_file(&tmp_path);
             format!("Cannot replace binary (permission denied?): {e}")
@@ -414,7 +355,7 @@ fn platform_asset_name() -> String {
         ("linux", "aarch64") => format!("aarch64-unknown-linux-{}", detect_linux_libc()),
         ("windows", "x86_64") => "x86_64-pc-windows-msvc".to_string(),
         _ => {
-            eprintln!(
+            tracing::error!(
                 "Unsupported platform: {os}/{arch}. Download manually from \
                 https://github.com/yvgude/lean-ctx/releases/latest"
             );

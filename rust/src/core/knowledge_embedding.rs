@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::knowledge::{KnowledgeFact, ProjectKnowledge};
+use crate::core::memory_policy::MemoryPolicy;
 
 #[cfg(feature = "embeddings")]
 use super::embeddings::{cosine_similarity, EmbeddingEngine};
@@ -75,14 +76,22 @@ impl KnowledgeEmbeddingIndex {
             })
             .collect();
 
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.category.cmp(&b.0.category))
+                .then_with(|| a.0.key.cmp(&b.0.key))
+        });
         scored.truncate(top_k);
         scored
     }
 
     fn index_path(project_hash: &str) -> Option<PathBuf> {
-        let dir = dirs::home_dir()?.join(".lean-ctx").join("knowledge");
-        Some(dir.join(format!("{project_hash}.embeddings.json")))
+        let dir = crate::core::data_dir::lean_ctx_data_dir()
+            .ok()?
+            .join("knowledge")
+            .join(project_hash);
+        Some(dir.join("embeddings.json"))
     }
 
     pub fn load(project_hash: &str) -> Option<Self> {
@@ -93,13 +102,22 @@ impl KnowledgeEmbeddingIndex {
 
     pub fn save(&self) -> Result<(), String> {
         let path = Self::index_path(&self.project_hash)
-            .ok_or_else(|| "Cannot determine home directory".to_string())?;
+            .ok_or_else(|| "Cannot determine data directory".to_string())?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
         }
         let json = serde_json::to_string(self).map_err(|e| format!("{e}"))?;
         std::fs::write(path, json).map_err(|e| format!("{e}"))
     }
+}
+
+pub fn reset(project_hash: &str) -> Result<(), String> {
+    let path = KnowledgeEmbeddingIndex::index_path(project_hash)
+        .ok_or_else(|| "Cannot determine data directory".to_string())?;
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("{e}"))?;
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -119,9 +137,8 @@ pub fn semantic_recall<'a>(
     query: &str,
     top_k: usize,
 ) -> Vec<ScoredFact<'a>> {
-    let query_embedding = match engine.embed(query) {
-        Ok(e) => e,
-        Err(_) => return lexical_fallback(knowledge, query, top_k),
+    let Ok(query_embedding) = engine.embed(query) else {
+        return lexical_fallback(knowledge, query, top_k);
     };
 
     let semantic_hits = index.semantic_search(&query_embedding, top_k * 2);
@@ -134,7 +151,7 @@ pub fn semantic_recall<'a>(
             .iter()
             .find(|f| f.category == entry.category && f.key == entry.key && f.is_current())
         {
-            let confidence_score = fact.confidence;
+            let confidence_score = fact.quality_score();
             let recency_score = recency_decay(fact);
             let score = ALPHA_SEMANTIC * sim
                 + BETA_CONFIDENCE * confidence_score
@@ -160,7 +177,7 @@ pub fn semantic_recall<'a>(
                 fact,
                 score: 1.0,
                 semantic_score: 1.0,
-                confidence_score: fact.confidence,
+                confidence_score: fact.quality_score(),
                 recency_score: recency_decay(fact),
             });
         }
@@ -170,9 +187,123 @@ pub fn semantic_recall<'a>(
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                b.confidence_score
+                    .partial_cmp(&a.confidence_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| {
+                b.recency_score
+                    .partial_cmp(&a.recency_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.fact.category.cmp(&b.fact.category))
+            .then_with(|| a.fact.key.cmp(&b.fact.key))
+            .then_with(|| a.fact.value.cmp(&b.fact.value))
     });
     results.truncate(top_k);
     results
+}
+
+#[cfg(feature = "embeddings")]
+pub fn semantic_recall_semantic_only<'a>(
+    knowledge: &'a ProjectKnowledge,
+    index: &KnowledgeEmbeddingIndex,
+    engine: &EmbeddingEngine,
+    query: &str,
+    top_k: usize,
+) -> Vec<ScoredFact<'a>> {
+    let Ok(query_embedding) = engine.embed(query) else {
+        return Vec::new();
+    };
+
+    let semantic_hits = index.semantic_search(&query_embedding, top_k * 2);
+    let mut results: Vec<ScoredFact<'a>> = Vec::new();
+
+    for (entry, sim) in &semantic_hits {
+        if let Some(fact) = knowledge
+            .facts
+            .iter()
+            .find(|f| f.category == entry.category && f.key == entry.key && f.is_current())
+        {
+            let confidence_score = fact.quality_score();
+            let recency_score = recency_decay(fact);
+            let score = ALPHA_SEMANTIC * sim
+                + BETA_CONFIDENCE * confidence_score
+                + GAMMA_RECENCY * recency_score;
+
+            results.push(ScoredFact {
+                fact,
+                score,
+                semantic_score: *sim,
+                confidence_score,
+                recency_score,
+            });
+        }
+    }
+
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                b.confidence_score
+                    .partial_cmp(&a.confidence_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| {
+                b.recency_score
+                    .partial_cmp(&a.recency_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.fact.category.cmp(&b.fact.category))
+            .then_with(|| a.fact.key.cmp(&b.fact.key))
+            .then_with(|| a.fact.value.cmp(&b.fact.value))
+    });
+    results.truncate(top_k);
+    results
+}
+
+pub fn compact_against_knowledge(
+    index: &mut KnowledgeEmbeddingIndex,
+    knowledge: &ProjectKnowledge,
+    policy: &MemoryPolicy,
+) {
+    use std::collections::HashMap;
+
+    let mut current: HashMap<(&str, &str), &KnowledgeFact> = HashMap::new();
+    for f in &knowledge.facts {
+        if f.is_current() {
+            current.insert((f.category.as_str(), f.key.as_str()), f);
+        }
+    }
+
+    let mut kept: Vec<(FactEmbedding, &KnowledgeFact)> = index
+        .entries
+        .iter()
+        .filter_map(|e| {
+            current
+                .get(&(e.category.as_str(), e.key.as_str()))
+                .map(|f| (e.clone(), *f))
+        })
+        .collect();
+
+    kept.sort_by(|(ea, fa), (eb, fb)| {
+        fb.confidence
+            .partial_cmp(&fa.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| fb.last_confirmed.cmp(&fa.last_confirmed))
+            .then_with(|| fb.retrieval_count.cmp(&fa.retrieval_count))
+            .then_with(|| ea.category.cmp(&eb.category))
+            .then_with(|| ea.key.cmp(&eb.key))
+    });
+
+    let max = policy.embeddings.max_facts;
+    if kept.len() > max {
+        kept.truncate(max);
+    }
+
+    index.entries = kept.into_iter().map(|(e, _)| e).collect();
 }
 
 fn lexical_fallback<'a>(
@@ -253,6 +384,84 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reset_removes_index_file() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::env::set_var(
+            "LEAN_CTX_DATA_DIR",
+            tmp.path().to_string_lossy().to_string(),
+        );
+
+        let idx = KnowledgeEmbeddingIndex {
+            project_hash: "projhash".to_string(),
+            entries: vec![FactEmbedding {
+                category: "arch".to_string(),
+                key: "db".to_string(),
+                embedding: vec![1.0, 0.0, 0.0],
+            }],
+        };
+        idx.save().expect("save");
+        assert!(KnowledgeEmbeddingIndex::load("projhash").is_some());
+
+        reset("projhash").expect("reset");
+        assert!(KnowledgeEmbeddingIndex::load("projhash").is_none());
+
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn compact_drops_missing_or_archived_facts() {
+        let mut knowledge = ProjectKnowledge::new("/tmp/project");
+        let now = chrono::Utc::now();
+        knowledge.facts.push(KnowledgeFact {
+            category: "arch".to_string(),
+            key: "db".to_string(),
+            value: "Postgres".to_string(),
+            source_session: "s".to_string(),
+            confidence: 0.9,
+            created_at: now,
+            last_confirmed: now,
+            retrieval_count: 5,
+            last_retrieved: None,
+            valid_from: None,
+            valid_until: None,
+            supersedes: None,
+            confirmation_count: 1,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
+        });
+        knowledge.facts.push(KnowledgeFact {
+            category: "arch".to_string(),
+            key: "old".to_string(),
+            value: "Old".to_string(),
+            source_session: "s".to_string(),
+            confidence: 0.9,
+            created_at: now,
+            last_confirmed: now,
+            retrieval_count: 0,
+            last_retrieved: None,
+            valid_from: None,
+            valid_until: Some(now),
+            supersedes: None,
+            confirmation_count: 1,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
+        });
+
+        let mut idx = KnowledgeEmbeddingIndex::new(&knowledge.project_hash);
+        idx.upsert("arch", "db", vec![1.0, 0.0, 0.0]);
+        idx.upsert("arch", "old", vec![0.0, 1.0, 0.0]);
+        idx.upsert("ops", "deploy", vec![0.0, 0.0, 1.0]);
+
+        compact_against_knowledge(&mut idx, &knowledge, &MemoryPolicy::default());
+        assert_eq!(idx.entries.len(), 1);
+        assert_eq!(idx.entries[0].category, "arch");
+        assert_eq!(idx.entries[0].key, "db");
+    }
+
+    #[test]
     fn index_upsert_and_remove() {
         let mut idx = KnowledgeEmbeddingIndex::new("test");
         idx.upsert("arch", "db", vec![1.0, 0.0, 0.0]);
@@ -280,10 +489,15 @@ mod tests {
             confidence: 0.9,
             created_at: chrono::Utc::now(),
             last_confirmed: chrono::Utc::now(),
+            retrieval_count: 0,
+            last_retrieved: None,
             valid_from: None,
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
         };
         let decay = recency_decay(&fact);
         assert!(
@@ -303,10 +517,15 @@ mod tests {
             confidence: 0.5,
             created_at: old_date,
             last_confirmed: old_date,
+            retrieval_count: 0,
+            last_retrieved: None,
             valid_from: None,
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
         };
         let decay = recency_decay(&fact);
         assert_eq!(decay, 0.0, "100-day-old fact should have 0 recency");
@@ -341,10 +560,15 @@ mod tests {
             confidence: 0.95,
             created_at: chrono::Utc::now(),
             last_confirmed: chrono::Utc::now(),
+            retrieval_count: 0,
+            last_retrieved: None,
             valid_from: None,
             valid_until: None,
             supersedes: None,
             confirmation_count: 3,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
         };
         let scored = vec![ScoredFact {
             fact: &fact,

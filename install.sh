@@ -1,18 +1,47 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # install.sh — Install lean-ctx (download pre-built binary or build from source)
 #
 # Usage:
-#   ./install.sh                # build from source (requires Rust)
+#   ./install.sh                # download pre-built binary (no Rust needed)
 #   ./install.sh --download     # download pre-built binary (no Rust needed)
 #   ./install.sh --build-only   # build only, don't install
 #
 # One-liner (no Rust required):
-#   curl -fsSL https://leanctx.com/install.sh | sh
+#   curl -fsSL https://leanctx.com/install.sh | bash
+#   curl -fsSL https://leanctx.com/install.sh | sh   (auto-detects bash)
+
+# POSIX preamble: re-exec under bash if needed.
+# Supports both:
+#   curl ... | sh      (stdin; dash on Ubuntu/WSL)
+#   sh ./install.sh    (file)
+if [ -z "${BASH_VERSION:-}" ]; then
+  if command -v bash >/dev/null 2>&1; then
+    if [ -t 0 ]; then
+      exec bash "$0" "$@"
+    else
+      exec bash -s -- "$@"
+    fi
+  else
+    echo "Error: lean-ctx installer requires bash."
+    echo ""
+    echo "Install bash first, or run:"
+    echo "  curl -fsSL https://leanctx.com/install.sh | bash"
+    exit 1
+  fi
+fi
+
 set -euo pipefail
 
 REPO="yvgude/lean-ctx"
 INSTALL_DIR="${LEAN_CTX_INSTALL_DIR:-$HOME/.local/bin}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-install.sh}")" 2>/dev/null && pwd || pwd)"
+SCRIPT_DIR="$(
+  src="${BASH_SOURCE[0]:-}"
+  if [ -n "$src" ] && [ -f "$src" ]; then
+    cd "$(dirname "$src")" 2>/dev/null && pwd
+  else
+    pwd
+  fi
+)"
 RUST_DIR="$SCRIPT_DIR/rust"
 
 echo "lean-ctx installer"
@@ -203,12 +232,18 @@ case "${1:-}" in
   --help|-h)
     echo "Usage: $0 [--download|--build-only|--help]"
     echo ""
-    echo "  (no args)     Build from source (requires Rust)"
+    echo "  (no args)     Download pre-built binary (builds from source if run inside the lean-ctx repo)"
     echo "  --download    Download pre-built binary (no Rust needed)"
     echo "  --build-only  Build only, don't install"
     echo ""
     echo "Environment:"
     echo "  LEAN_CTX_INSTALL_DIR  Custom install directory (default: ~/.local/bin)"
     ;;
-  *)             install_from_source ;;
+  *)
+    if [[ -d "$RUST_DIR" ]]; then
+      install_from_source
+    else
+      install_download
+    fi
+    ;;
 esac

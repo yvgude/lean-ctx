@@ -1,36 +1,32 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static BUILD_SUMMARY_ERR: OnceLock<Regex> = OnceLock::new();
-static BUILD_SUMMARY_WARN: OnceLock<Regex> = OnceLock::new();
-static BUILD_RESULT: OnceLock<Regex> = OnceLock::new();
-static RESTORED_PROJ: OnceLock<Regex> = OnceLock::new();
-static RESTORED_PKG: OnceLock<Regex> = OnceLock::new();
-static TEST_TOTAL: OnceLock<Regex> = OnceLock::new();
-static PUBLISH_ARROW: OnceLock<Regex> = OnceLock::new();
-
-fn build_summary_err_re() -> &'static Regex {
-    BUILD_SUMMARY_ERR.get_or_init(|| Regex::new(r"(?i)^\s*(\d+)\s+Error\(s\)\s*$").unwrap())
+fn build_summary_err_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^\s*(\d+)\s+Error\(s\)\s*$")
 }
-fn build_summary_warn_re() -> &'static Regex {
-    BUILD_SUMMARY_WARN.get_or_init(|| Regex::new(r"(?i)^\s*(\d+)\s+Warning\(s\)\s*$").unwrap())
+fn build_summary_warn_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^\s*(\d+)\s+Warning\(s\)\s*$")
 }
-fn build_result_re() -> &'static Regex {
-    BUILD_RESULT.get_or_init(|| Regex::new(r"(?i)^(Build succeeded\.|Build FAILED\.)").unwrap())
+fn build_result_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^(Build succeeded\.|Build FAILED\.)")
 }
-fn restored_proj_re() -> &'static Regex {
-    RESTORED_PROJ.get_or_init(|| {
-        Regex::new(r"(?i)^\s*Restored\s+(.+\.csproj[^(\n]*)(?:\s*\([^)]*\))?\s*\.?\s*$").unwrap()
-    })
+fn restored_proj_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^\s*Restored\s+(.+\.csproj[^(\n]*)(?:\s*\([^)]*\))?\s*\.?\s*$")
 }
-fn restored_pkg_re() -> &'static Regex {
-    RESTORED_PKG.get_or_init(|| Regex::new(r"(?i)Restored\s+(\d+)\s+package").unwrap())
+fn restored_pkg_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)Restored\s+(\d+)\s+package")
 }
-fn test_total_re() -> &'static Regex {
-    TEST_TOTAL.get_or_init(|| Regex::new(r"(?i)^\s*Total tests:\s*(\d+)\s*$").unwrap())
+fn test_total_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^\s*Total tests:\s*(\d+)\s*$")
 }
-fn publish_arrow_re() -> &'static Regex {
-    PUBLISH_ARROW.get_or_init(|| Regex::new(r"\s+->\s+").unwrap())
+fn publish_arrow_re() -> &'static regex::Regex {
+    static_regex!(r"\s+->\s+")
 }
 
 fn is_msbuild_noise(line: &str) -> bool {

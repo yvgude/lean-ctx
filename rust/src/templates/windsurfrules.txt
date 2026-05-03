@@ -7,11 +7,13 @@ lean-ctx is configured as an MCP server. Always use lean-ctx MCP tools instead o
 - Search code → `ctx_search(pattern, path)` instead of built-in Grep
 - List directories → `ctx_tree(path, depth)` instead of ls/find
 
-ctx_read modes: full (cached, for files you edit), map (deps+API, context-only), signatures, diff, aggressive, entropy.
+ctx_read modes: auto, full, map, signatures, diff, task, reference, aggressive, entropy, lines:N-M.
 
-For shell commands without MCP equivalents, prefix with `lean-ctx -c`:
-- `lean-ctx -c git status` instead of `git status`
-- `lean-ctx -c cargo test` instead of `cargo test`
-- `lean-ctx -c npm install` instead of `npm install`
+Preferred workflow control: `ctx_workflow` (state + evidence + tool gating).
+
+Fallback only if MCP is unavailable: prefix with `lean-ctx -c`:
+- `lean-ctx -c git status`
+- `lean-ctx -c cargo test`
+- `lean-ctx -c npm install`
 
 Write, StrReplace, Delete have no lean-ctx equivalent — use them normally.

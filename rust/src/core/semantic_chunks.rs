@@ -176,7 +176,7 @@ pub fn order_for_attention(
     let primary_tokens: HashSet<String> = primary
         .lines
         .iter()
-        .flat_map(|l| l.split_whitespace().map(|w| w.to_lowercase()))
+        .flat_map(|l| l.split_whitespace().map(str::to_lowercase))
         .collect();
 
     let (mut deps, mut rest): (Vec<_>, Vec<_>) = chunks[1..].iter().cloned().partition(|chunk| {
@@ -184,7 +184,7 @@ pub fn order_for_attention(
             let chunk_tokens: HashSet<String> = chunk
                 .lines
                 .iter()
-                .flat_map(|l| l.split_whitespace().map(|w| w.to_lowercase()))
+                .flat_map(|l| l.split_whitespace().map(str::to_lowercase))
                 .collect();
             let overlap = primary_tokens.intersection(&chunk_tokens).count();
             overlap >= 2

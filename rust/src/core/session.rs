@@ -2,15 +2,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::core::intent_protocol::{IntentRecord, IntentSource};
+
 const MAX_FINDINGS: usize = 20;
 const MAX_DECISIONS: usize = 10;
 const MAX_FILES: usize = 50;
-#[allow(dead_code)]
-const MAX_PROGRESS: usize = 30;
-#[allow(dead_code)]
-const MAX_NEXT_STEPS: usize = 10;
+const MAX_EVIDENCE: usize = 500;
 const BATCH_SAVE_INTERVAL: u32 = 5;
 
+/// Persistent session state tracking task, findings, files, decisions, and stats.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SessionState {
     pub id: String,
@@ -27,9 +27,16 @@ pub struct SessionState {
     pub test_results: Option<TestSnapshot>,
     pub progress: Vec<ProgressEntry>,
     pub next_steps: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<EvidenceRecord>,
+    #[serde(default)]
+    pub intents: Vec<IntentRecord>,
+    #[serde(default)]
+    pub active_structured_intent: Option<crate::core::intent_engine::StructuredIntent>,
     pub stats: SessionStats,
 }
 
+/// Description of the current task being worked on, with optional progress tracking.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TaskInfo {
     pub description: String,
@@ -37,6 +44,7 @@ pub struct TaskInfo {
     pub progress_pct: Option<u8>,
 }
 
+/// A discovery or observation recorded during the session.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Finding {
     pub file: Option<String>,
@@ -45,6 +53,7 @@ pub struct Finding {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A design or implementation decision made during the session.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Decision {
     pub summary: String,
@@ -52,6 +61,7 @@ pub struct Decision {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A file that was read or modified during the session.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileTouched {
     pub path: String,
@@ -62,6 +72,7 @@ pub struct FileTouched {
     pub tokens: usize,
 }
 
+/// Snapshot of a test run with pass/fail counts.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TestSnapshot {
     pub command: String,
@@ -71,6 +82,7 @@ pub struct TestSnapshot {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A timestamped progress entry describing an action taken.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProgressEntry {
     pub action: String,
@@ -78,7 +90,31 @@ pub struct ProgressEntry {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Source of an evidence record: automatic tool call or manual agent entry.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceKind {
+    ToolCall,
+    Manual,
+}
+
+/// An auditable record of a tool invocation or manual observation.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct EvidenceRecord {
+    pub kind: EvidenceKind,
+    pub key: String,
+    pub value: Option<String>,
+    pub tool: Option<String>,
+    pub input_md5: Option<String>,
+    pub output_md5: Option<String>,
+    pub agent_id: Option<String>,
+    pub client_name: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Aggregate counters for the session: tool calls, token savings, cache hits.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default)]
 pub struct SessionStats {
     pub total_tool_calls: u32,
     pub total_tokens_saved: u64,
@@ -86,12 +122,43 @@ pub struct SessionStats {
     pub cache_hits: u32,
     pub files_read: u32,
     pub commands_run: u32,
+    pub intents_inferred: u32,
+    pub intents_explicit: u32,
     pub unsaved_changes: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct LatestPointer {
     id: String,
+}
+
+/// Pre-serialized session data ready for background disk I/O.
+/// Created by `SessionState::prepare_save()` while holding the write lock,
+/// then written via `write_to_disk()` after the lock is released.
+pub struct PreparedSave {
+    dir: PathBuf,
+    id: String,
+    json: String,
+    pointer_json: String,
+}
+
+impl PreparedSave {
+    /// Writes the pre-serialized session data and latest pointer to disk atomically.
+    pub fn write_to_disk(self) -> Result<(), String> {
+        if !self.dir.exists() {
+            std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
+        }
+        let path = self.dir.join(format!("{}.json", self.id));
+        let tmp = self.dir.join(format!(".{}.json.tmp", self.id));
+        std::fs::write(&tmp, &self.json).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+
+        let latest_path = self.dir.join("latest.json");
+        let latest_tmp = self.dir.join(".latest.json.tmp");
+        std::fs::write(&latest_tmp, &self.pointer_json).map_err(|e| e.to_string())?;
+        std::fs::rename(&latest_tmp, &latest_path).map_err(|e| e.to_string())?;
+        Ok(())
+    }
 }
 
 impl Default for SessionState {
@@ -101,6 +168,7 @@ impl Default for SessionState {
 }
 
 impl SessionState {
+    /// Creates a new session with a unique ID and current timestamp.
     pub fn new() -> Self {
         let now = Utc::now();
         Self {
@@ -117,32 +185,53 @@ impl SessionState {
             test_results: None,
             progress: Vec::new(),
             next_steps: Vec::new(),
+            evidence: Vec::new(),
+            intents: Vec::new(),
+            active_structured_intent: None,
             stats: SessionStats::default(),
         }
     }
 
+    /// Bumps the version counter and marks the session as dirty.
     pub fn increment(&mut self) {
         self.version += 1;
         self.updated_at = Utc::now();
         self.stats.unsaved_changes += 1;
     }
 
+    /// Returns `true` if enough changes have accumulated to warrant a disk save.
     pub fn should_save(&self) -> bool {
         self.stats.unsaved_changes >= BATCH_SAVE_INTERVAL
     }
 
+    /// Sets the active task and infers a structured intent from the description.
     pub fn set_task(&mut self, description: &str, intent: Option<&str>) {
         self.task = Some(TaskInfo {
             description: description.to_string(),
-            intent: intent.map(|s| s.to_string()),
+            intent: intent.map(std::string::ToString::to_string),
             progress_pct: None,
         });
+
+        let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();
+        let si = if touched.is_empty() {
+            crate::core::intent_engine::StructuredIntent::from_query(description)
+        } else {
+            crate::core::intent_engine::StructuredIntent::from_query_with_session(
+                description,
+                &touched,
+            )
+        };
+        if si.confidence >= 0.7 {
+            self.active_structured_intent = Some(si);
+        }
+
         self.increment();
     }
 
+    /// Records a finding (discovery or observation) in the session log.
     pub fn add_finding(&mut self, file: Option<&str>, line: Option<u32>, summary: &str) {
         self.findings.push(Finding {
-            file: file.map(|s| s.to_string()),
+            file: file.map(std::string::ToString::to_string),
             line,
             summary: summary.to_string(),
             timestamp: Utc::now(),
@@ -153,10 +242,11 @@ impl SessionState {
         self.increment();
     }
 
+    /// Records a design or implementation decision with optional rationale.
     pub fn add_decision(&mut self, summary: &str, rationale: Option<&str>) {
         self.decisions.push(Decision {
             summary: summary.to_string(),
-            rationale: rationale.map(|s| s.to_string()),
+            rationale: rationale.map(std::string::ToString::to_string),
             timestamp: Utc::now(),
         });
         while self.decisions.len() > MAX_DECISIONS {
@@ -165,6 +255,7 @@ impl SessionState {
         self.increment();
     }
 
+    /// Records a file read/access in the session, incrementing its read count.
     pub fn touch_file(&mut self, path: &str, file_ref: Option<&str>, mode: &str, tokens: usize) {
         if let Some(existing) = self.files_touched.iter_mut().find(|f| f.path == path) {
             existing.read_count += 1;
@@ -176,7 +267,7 @@ impl SessionState {
         } else {
             self.files_touched.push(FileTouched {
                 path: path.to_string(),
-                file_ref: file_ref.map(|s| s.to_string()),
+                file_ref: file_ref.map(std::string::ToString::to_string),
                 read_count: 1,
                 modified: false,
                 last_mode: mode.to_string(),
@@ -190,6 +281,7 @@ impl SessionState {
         self.increment();
     }
 
+    /// Marks a previously touched file as modified (written to).
     pub fn mark_modified(&mut self, path: &str) {
         if let Some(existing) = self.files_touched.iter_mut().find(|f| f.path == path) {
             existing.modified = true;
@@ -197,41 +289,109 @@ impl SessionState {
         self.increment();
     }
 
-    #[allow(dead_code)]
-    pub fn set_test_results(&mut self, command: &str, passed: u32, failed: u32, total: u32) {
-        self.test_results = Some(TestSnapshot {
-            command: command.to_string(),
-            passed,
-            failed,
-            total,
-            timestamp: Utc::now(),
-        });
-        self.increment();
-    }
-
-    #[allow(dead_code)]
-    pub fn add_progress(&mut self, action: &str, detail: Option<&str>) {
-        self.progress.push(ProgressEntry {
-            action: action.to_string(),
-            detail: detail.map(|s| s.to_string()),
-            timestamp: Utc::now(),
-        });
-        while self.progress.len() > MAX_PROGRESS {
-            self.progress.remove(0);
-        }
-        self.increment();
-    }
-
+    /// Increments the tool call counter and accumulates token savings.
     pub fn record_tool_call(&mut self, tokens_saved: u64, tokens_input: u64) {
         self.stats.total_tool_calls += 1;
         self.stats.total_tokens_saved += tokens_saved;
         self.stats.total_tokens_input += tokens_input;
     }
 
+    /// Records an inferred or explicit intent, coalescing consecutive duplicates.
+    pub fn record_intent(&mut self, mut intent: IntentRecord) {
+        if intent.occurrences == 0 {
+            intent.occurrences = 1;
+        }
+
+        if let Some(last) = self.intents.last_mut() {
+            if last.fingerprint() == intent.fingerprint() {
+                last.occurrences = last.occurrences.saturating_add(intent.occurrences);
+                last.timestamp = intent.timestamp;
+                match intent.source {
+                    IntentSource::Inferred => self.stats.intents_inferred += 1,
+                    IntentSource::Explicit => self.stats.intents_explicit += 1,
+                }
+                self.increment();
+                return;
+            }
+        }
+
+        match intent.source {
+            IntentSource::Inferred => self.stats.intents_inferred += 1,
+            IntentSource::Explicit => self.stats.intents_explicit += 1,
+        }
+
+        self.intents.push(intent);
+        while self.intents.len() > crate::core::budgets::INTENTS_PER_SESSION_LIMIT {
+            self.intents.remove(0);
+        }
+        self.increment();
+    }
+
+    /// Appends an auditable evidence record for a tool invocation.
+    pub fn record_tool_receipt(
+        &mut self,
+        tool: &str,
+        action: Option<&str>,
+        input_md5: &str,
+        output_md5: &str,
+        agent_id: Option<&str>,
+        client_name: Option<&str>,
+    ) {
+        let now = Utc::now();
+        let mut push = |key: String| {
+            self.evidence.push(EvidenceRecord {
+                kind: EvidenceKind::ToolCall,
+                key,
+                value: None,
+                tool: Some(tool.to_string()),
+                input_md5: Some(input_md5.to_string()),
+                output_md5: Some(output_md5.to_string()),
+                agent_id: agent_id.map(std::string::ToString::to_string),
+                client_name: client_name.map(std::string::ToString::to_string),
+                timestamp: now,
+            });
+        };
+
+        push(format!("tool:{tool}"));
+        if let Some(a) = action {
+            push(format!("tool:{tool}:{a}"));
+        }
+        while self.evidence.len() > MAX_EVIDENCE {
+            self.evidence.remove(0);
+        }
+        self.increment();
+    }
+
+    /// Appends a manual (non-tool) evidence record to the audit log.
+    pub fn record_manual_evidence(&mut self, key: &str, value: Option<&str>) {
+        self.evidence.push(EvidenceRecord {
+            kind: EvidenceKind::Manual,
+            key: key.to_string(),
+            value: value.map(std::string::ToString::to_string),
+            tool: None,
+            input_md5: None,
+            output_md5: None,
+            agent_id: None,
+            client_name: None,
+            timestamp: Utc::now(),
+        });
+        while self.evidence.len() > MAX_EVIDENCE {
+            self.evidence.remove(0);
+        }
+        self.increment();
+    }
+
+    /// Returns `true` if an evidence record with the given key exists.
+    pub fn has_evidence_key(&self, key: &str) -> bool {
+        self.evidence.iter().any(|e| e.key == key)
+    }
+
+    /// Increments the session-level cache hit counter.
     pub fn record_cache_hit(&mut self) {
         self.stats.cache_hits += 1;
     }
 
+    /// Increments the session-level command counter.
     pub fn record_command(&mut self) {
         self.stats.commands_run += 1;
     }
@@ -251,8 +411,7 @@ impl SessionState {
             return root.clone();
         }
         std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| ".".to_string())
+            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
     }
 
     /// Updates shell_cwd by detecting `cd` in the command.
@@ -264,8 +423,7 @@ impl SessionState {
             let path = std::path::Path::new(&new_cwd);
             if path.exists() && path.is_dir() {
                 self.shell_cwd = Some(
-                    path.canonicalize()
-                        .unwrap_or_else(|_| path.to_path_buf())
+                    crate::core::pathutil::safe_canonicalize_or_self(path)
                         .to_string_lossy()
                         .to_string(),
                 );
@@ -273,6 +431,7 @@ impl SessionState {
         }
     }
 
+    /// Formats the session state as a compact multi-line summary for agent context.
     pub fn format_compact(&self) -> String {
         let duration = self.updated_at - self.started_at;
         let hours = duration.num_hours();
@@ -370,6 +529,7 @@ impl SessionState {
         lines.join("\n")
     }
 
+    /// Builds a size-limited XML snapshot of session state for context compaction.
     pub fn build_compaction_snapshot(&self) -> String {
         const MAX_SNAPSHOT_BYTES: usize = 2048;
 
@@ -482,6 +642,7 @@ impl SessionState {
         snapshot
     }
 
+    /// Writes the compaction snapshot to disk and returns the snapshot string.
     pub fn save_compaction_snapshot(&self) -> Result<String, String> {
         let snapshot = self.build_compaction_snapshot();
         let dir = sessions_dir().ok_or("cannot determine home directory")?;
@@ -493,17 +654,19 @@ impl SessionState {
         Ok(snapshot)
     }
 
+    /// Loads a previously saved compaction snapshot by session ID.
     pub fn load_compaction_snapshot(session_id: &str) -> Option<String> {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{session_id}_snapshot.txt"));
         std::fs::read_to_string(&path).ok()
     }
 
+    /// Loads the most recently modified compaction snapshot from disk.
     pub fn load_latest_snapshot() -> Option<String> {
         let dir = sessions_dir()?;
         let mut snapshots: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&dir)
             .ok()?
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.path().to_string_lossy().ends_with("_snapshot.txt"))
             .filter_map(|e| {
                 let meta = e.metadata().ok()?;
@@ -512,38 +675,116 @@ impl SessionState {
             })
             .collect();
 
-        snapshots.sort_by(|a, b| b.0.cmp(&a.0));
+        snapshots.sort_by_key(|x| std::cmp::Reverse(x.0));
         snapshots
             .first()
             .and_then(|(_, path)| std::fs::read_to_string(path).ok())
     }
 
-    pub fn save(&mut self) -> Result<(), String> {
-        let dir = sessions_dir().ok_or("cannot determine home directory")?;
-        if !dir.exists() {
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    /// Build a compact resume block for post-compaction injection.
+    /// Max ~500 tokens. Includes task, decisions, files, and archive references.
+    pub fn build_resume_block(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+
+        if let Some(ref root) = self.project_root {
+            let short = root.rsplit('/').next().unwrap_or(root);
+            parts.push(format!("Project: {short}"));
         }
 
-        let path = dir.join(format!("{}.json", self.id));
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        if let Some(ref task) = self.task {
+            let pct = task
+                .progress_pct
+                .map_or(String::new(), |p| format!(" [{p}%]"));
+            parts.push(format!("Task: {}{pct}", task.description));
+        }
 
-        let tmp = dir.join(format!(".{}.json.tmp", self.id));
-        std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+        if !self.decisions.is_empty() {
+            let items: Vec<&str> = self
+                .decisions
+                .iter()
+                .rev()
+                .take(5)
+                .map(|d| d.summary.as_str())
+                .collect();
+            parts.push(format!("Decisions: {}", items.join("; ")));
+        }
 
-        let pointer = LatestPointer {
-            id: self.id.clone(),
-        };
-        let pointer_json = serde_json::to_string(&pointer).map_err(|e| e.to_string())?;
-        let latest_path = dir.join("latest.json");
-        let latest_tmp = dir.join(".latest.json.tmp");
-        std::fs::write(&latest_tmp, &pointer_json).map_err(|e| e.to_string())?;
-        std::fs::rename(&latest_tmp, &latest_path).map_err(|e| e.to_string())?;
+        if !self.files_touched.is_empty() {
+            let modified: Vec<&str> = self
+                .files_touched
+                .iter()
+                .filter(|f| f.modified)
+                .take(10)
+                .map(|f| f.path.as_str())
+                .collect();
+            if !modified.is_empty() {
+                parts.push(format!("Modified: {}", modified.join(", ")));
+            }
+        }
 
-        self.stats.unsaved_changes = 0;
-        Ok(())
+        if !self.next_steps.is_empty() {
+            let steps: Vec<&str> = self
+                .next_steps
+                .iter()
+                .take(3)
+                .map(std::string::String::as_str)
+                .collect();
+            parts.push(format!("Next: {}", steps.join("; ")));
+        }
+
+        let archives = super::archive::list_entries(Some(&self.id));
+        if !archives.is_empty() {
+            let hints: Vec<String> = archives
+                .iter()
+                .take(5)
+                .map(|a| format!("{}({})", a.id, a.tool))
+                .collect();
+            parts.push(format!("Archives: {}", hints.join(", ")));
+        }
+
+        parts.push(format!(
+            "Stats: {} calls, {} tok saved",
+            self.stats.total_tool_calls, self.stats.total_tokens_saved
+        ));
+
+        format!(
+            "--- SESSION RESUME (post-compaction) ---\n{}\n---",
+            parts.join("\n")
+        )
     }
 
+    /// Serializes and writes the session state to disk synchronously.
+    pub fn save(&mut self) -> Result<(), String> {
+        let prepared = self.prepare_save()?;
+        match prepared.write_to_disk() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.stats.unsaved_changes = BATCH_SAVE_INTERVAL;
+                Err(e)
+            }
+        }
+    }
+
+    /// Serialize session state while holding the lock (CPU-only), reset the
+    /// unsaved counter, and return a `PreparedSave` whose I/O can be deferred
+    /// to a background thread via `write_to_disk()`.
+    pub fn prepare_save(&mut self) -> Result<PreparedSave, String> {
+        let dir = sessions_dir().ok_or("cannot determine home directory")?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let pointer_json = serde_json::to_string(&LatestPointer {
+            id: self.id.clone(),
+        })
+        .map_err(|e| e.to_string())?;
+        self.stats.unsaved_changes = 0;
+        Ok(PreparedSave {
+            dir,
+            id: self.id.clone(),
+            json,
+            pointer_json,
+        })
+    }
+
+    /// Loads the most recent session from disk via the `latest.json` pointer.
     pub fn load_latest() -> Option<Self> {
         let dir = sessions_dir()?;
         let latest_path = dir.join("latest.json");
@@ -552,25 +793,57 @@ impl SessionState {
         Self::load_by_id(&pointer.id)
     }
 
+    /// Loads the most recent session matching a specific project root.
+    pub fn load_latest_for_project_root(project_root: &str) -> Option<Self> {
+        let dir = sessions_dir()?;
+        let target_root =
+            crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(project_root));
+        let mut latest_match: Option<Self> = None;
+
+        for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            if path.file_name().and_then(|n| n.to_str()) == Some("latest.json") {
+                continue;
+            }
+
+            let Some(id) = path.file_stem().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Some(session) = Self::load_by_id(id) else {
+                continue;
+            };
+
+            if !session_matches_project_root(&session, &target_root) {
+                continue;
+            }
+
+            if latest_match
+                .as_ref()
+                .is_none_or(|existing| session.updated_at > existing.updated_at)
+            {
+                latest_match = Some(session);
+            }
+        }
+
+        latest_match
+    }
+
+    /// Loads a specific session from disk by its unique ID.
     pub fn load_by_id(id: &str) -> Option<Self> {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{id}.json"));
         let json = std::fs::read_to_string(&path).ok()?;
-        let mut session: Self = serde_json::from_str(&json).ok()?;
-        // Legacy/malformed sessions may serialize empty strings instead of null.
-        if matches!(session.project_root.as_deref(), Some(r) if r.trim().is_empty()) {
-            session.project_root = None;
-        }
-        if matches!(session.shell_cwd.as_deref(), Some(c) if c.trim().is_empty()) {
-            session.shell_cwd = None;
-        }
-        Some(session)
+        let session: Self = serde_json::from_str(&json).ok()?;
+        Some(normalize_loaded_session(session))
     }
 
+    /// Lists all saved sessions as summaries, sorted by most recently updated.
     pub fn list_sessions() -> Vec<SessionSummary> {
-        let dir = match sessions_dir() {
-            Some(d) => d,
-            None => return Vec::new(),
+        let Some(dir) = sessions_dir() else {
+            return Vec::new();
         };
 
         let mut summaries = Vec::new();
@@ -599,15 +872,13 @@ impl SessionState {
             }
         }
 
-        summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        summaries.sort_by_key(|x| std::cmp::Reverse(x.updated_at));
         summaries
     }
 
+    /// Deletes sessions older than `max_age_days`, preserving the latest. Returns count removed.
     pub fn cleanup_old_sessions(max_age_days: i64) -> u32 {
-        let dir = match sessions_dir() {
-            Some(d) => d,
-            None => return 0,
-        };
+        let Some(dir) = sessions_dir() else { return 0 };
 
         let cutoff = Utc::now() - chrono::Duration::days(max_age_days);
         let latest = Self::load_latest().map(|s| s.id);
@@ -640,8 +911,8 @@ impl SessionState {
     }
 }
 
+/// Lightweight summary of a session for listing purposes.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SessionSummary {
     pub id: String,
     pub started_at: DateTime<Utc>,
@@ -653,18 +924,18 @@ pub struct SessionSummary {
 }
 
 fn sessions_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx").join("sessions"))
+    crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|d| d.join("sessions"))
 }
 
 fn generate_session_id() -> String {
+    static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let now = Utc::now();
     let ts = now.format("%Y%m%d-%H%M%S").to_string();
-    let random: u32 = (std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos())
-        % 10000;
-    format!("{ts}-{random:04}")
+    let nanos = now.timestamp_subsec_micros();
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{ts}-{nanos:06}s{seq}")
 }
 
 /// Extracts the `cd` target from a command string.
@@ -695,7 +966,8 @@ fn extract_cd_target(command: &str, base_cwd: &str) -> Option<String> {
         Some(target.to_string())
     } else {
         let base = std::path::Path::new(base_cwd);
-        Some(base.join(target).to_string_lossy().to_string())
+        let joined = base.join(target).to_string_lossy().to_string();
+        Some(joined.replace('\\', "/"))
     }
 }
 
@@ -706,6 +978,75 @@ fn shorten_path(path: &str) -> String {
     }
     let last_two: Vec<&str> = parts.iter().rev().take(2).copied().collect();
     format!("…/{}/{}", last_two[1], last_two[0])
+}
+
+fn normalize_loaded_session(mut session: SessionState) -> SessionState {
+    if matches!(session.project_root.as_deref(), Some(r) if r.trim().is_empty()) {
+        session.project_root = None;
+    }
+    if matches!(session.shell_cwd.as_deref(), Some(c) if c.trim().is_empty()) {
+        session.shell_cwd = None;
+    }
+
+    // Heal stale project_root caused by agent/temp working directories.
+    // If project_root doesn't look like a real project root but shell_cwd does, prefer shell_cwd.
+    if let (Some(ref root), Some(ref cwd)) = (&session.project_root, &session.shell_cwd) {
+        let root_p = std::path::Path::new(root);
+        let cwd_p = std::path::Path::new(cwd);
+        let root_looks_real = has_project_marker(root_p);
+        let cwd_looks_real = has_project_marker(cwd_p);
+
+        if !root_looks_real && cwd_looks_real && is_agent_or_temp_dir(root_p) {
+            session.project_root = Some(cwd.clone());
+        }
+    }
+
+    session
+}
+
+fn session_matches_project_root(session: &SessionState, target_root: &std::path::Path) -> bool {
+    if let Some(root) = session.project_root.as_deref() {
+        let root_path =
+            crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(root));
+        if root_path == target_root {
+            return true;
+        }
+        if has_project_marker(&root_path) {
+            return false;
+        }
+    }
+
+    if let Some(cwd) = session.shell_cwd.as_deref() {
+        let cwd_path = crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(cwd));
+        return cwd_path == target_root || cwd_path.starts_with(target_root);
+    }
+
+    false
+}
+
+fn has_project_marker(dir: &std::path::Path) -> bool {
+    const MARKERS: &[&str] = &[
+        ".git",
+        ".lean-ctx.toml",
+        "Cargo.toml",
+        "package.json",
+        "go.mod",
+        "pyproject.toml",
+        ".planning",
+    ];
+    MARKERS.iter().any(|m| dir.join(m).exists())
+}
+
+fn is_agent_or_temp_dir(dir: &std::path::Path) -> bool {
+    let s = dir.to_string_lossy();
+    s.contains("/.claude")
+        || s.contains("/.codex")
+        || s.contains("/var/folders/")
+        || s.contains("/tmp/")
+        || s.contains("\\.claude")
+        || s.contains("\\.codex")
+        || s.contains("\\AppData\\Local\\Temp")
+        || s.contains("\\Temp\\")
 }
 
 #[cfg(test)]

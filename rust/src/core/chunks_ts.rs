@@ -12,17 +12,17 @@ use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator}
 use super::vector_index::{ChunkKind, CodeChunk};
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_RUST: &str = r#"
+const CHUNK_QUERY_RUST: &str = r"
 (function_item name: (identifier) @name) @chunk
 (struct_item name: (type_identifier) @name) @chunk
 (enum_item name: (type_identifier) @name) @chunk
 (trait_item name: (type_identifier) @name) @chunk
 (impl_item type: (type_identifier) @name) @chunk
 (const_item name: (identifier) @name) @chunk
-"#;
+";
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_TYPESCRIPT: &str = r#"
+const CHUNK_QUERY_TYPESCRIPT: &str = r"
 (function_declaration name: (identifier) @name) @chunk
 (class_declaration name: (type_identifier) @name) @chunk
 (abstract_class_declaration name: (type_identifier) @name) @chunk
@@ -30,49 +30,49 @@ const CHUNK_QUERY_TYPESCRIPT: &str = r#"
 (type_alias_declaration name: (type_identifier) @name) @chunk
 (method_definition name: (property_identifier) @name) @chunk
 (variable_declarator name: (identifier) @name value: (arrow_function)) @chunk
-"#;
+";
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_JAVASCRIPT: &str = r#"
+const CHUNK_QUERY_JAVASCRIPT: &str = r"
 (function_declaration name: (identifier) @name) @chunk
 (class_declaration name: (identifier) @name) @chunk
 (method_definition name: (property_identifier) @name) @chunk
 (variable_declarator name: (identifier) @name value: (arrow_function)) @chunk
-"#;
+";
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_PYTHON: &str = r#"
+const CHUNK_QUERY_PYTHON: &str = r"
 (function_definition name: (identifier) @name) @chunk
 (class_definition name: (identifier) @name) @chunk
-"#;
+";
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_GO: &str = r#"
+const CHUNK_QUERY_GO: &str = r"
 (function_declaration name: (identifier) @name) @chunk
 (method_declaration name: (field_identifier) @name) @chunk
 (type_spec name: (type_identifier) @name) @chunk
-"#;
+";
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_JAVA: &str = r#"
+const CHUNK_QUERY_JAVA: &str = r"
 (method_declaration name: (identifier) @name) @chunk
 (class_declaration name: (identifier) @name) @chunk
 (interface_declaration name: (identifier) @name) @chunk
 (enum_declaration name: (identifier) @name) @chunk
 (constructor_declaration name: (identifier) @name) @chunk
-"#;
+";
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_C: &str = r#"
+const CHUNK_QUERY_C: &str = r"
 (function_definition
   declarator: (function_declarator
     declarator: (identifier) @name)) @chunk
 (struct_specifier name: (type_identifier) @name) @chunk
 (enum_specifier name: (type_identifier) @name) @chunk
-"#;
+";
 
 #[cfg(feature = "tree-sitter")]
-const CHUNK_QUERY_CPP: &str = r#"
+const CHUNK_QUERY_CPP: &str = r"
 (function_definition
   declarator: (function_declarator
     declarator: (_) @name)) @chunk
@@ -80,7 +80,7 @@ const CHUNK_QUERY_CPP: &str = r#"
 (class_specifier name: (type_identifier) @name) @chunk
 (enum_specifier name: (type_identifier) @name) @chunk
 (namespace_definition name: (identifier) @name) @chunk
-"#;
+";
 
 /// Extract code chunks from a file using tree-sitter AST parsing.
 ///
@@ -116,7 +116,7 @@ pub fn extract_chunks_ts(file_path: &str, content: &str, file_ext: &str) -> Opti
         let mut chunk_node: Option<Node> = None;
         let mut name_text = String::new();
 
-        for cap in m.captures.iter() {
+        for cap in m.captures {
             if cap.index == chunk_idx {
                 chunk_node = Some(cap.node);
             } else if cap.index == name_idx {
@@ -228,7 +228,8 @@ fn node_kind_to_chunk_kind(kind: &str) -> ChunkKind {
         | "function_definition"
         | "method_declaration"
         | "method_definition"
-        | "constructor_declaration" => ChunkKind::Function,
+        | "constructor_declaration"
+        | "variable_declarator" => ChunkKind::Function,
 
         "struct_item"
         | "struct_specifier"
@@ -247,8 +248,6 @@ fn node_kind_to_chunk_kind(kind: &str) -> ChunkKind {
         | "abstract_class_declaration"
         | "class_specifier"
         | "class_definition" => ChunkKind::Class,
-
-        "variable_declarator" => ChunkKind::Function,
 
         "namespace_definition" | "namespace_declaration" => ChunkKind::Module,
 
@@ -291,9 +290,9 @@ fn helper() -> bool {
         );
 
         let names: Vec<&str> = chunks.iter().map(|c| c.symbol_name.as_str()).collect();
-        assert!(names.contains(&"process"), "got {:?}", names);
-        assert!(names.contains(&"Config"), "got {:?}", names);
-        assert!(names.contains(&"helper"), "got {:?}", names);
+        assert!(names.contains(&"process"), "got {names:?}");
+        assert!(names.contains(&"Config"), "got {names:?}");
+        assert!(names.contains(&"helper"), "got {names:?}");
 
         let process = chunks.iter().find(|c| c.symbol_name == "process").unwrap();
         assert!(matches!(process.kind, ChunkKind::Function));
@@ -302,7 +301,7 @@ fn helper() -> bool {
 
     #[test]
     fn extract_typescript_chunks() {
-        let src = r#"
+        let src = r"
 export function greet(name: string): string {
     return `Hello ${name}`;
 }
@@ -316,7 +315,7 @@ export class UserService {
 const handler = async (req: Request): Promise<Response> => {
     return new Response();
 };
-"#;
+";
         let chunks = extract_chunks_ts("app.ts", src, "ts").unwrap();
         assert!(
             chunks.len() >= 3,
@@ -325,13 +324,13 @@ const handler = async (req: Request): Promise<Response> => {
         );
 
         let names: Vec<&str> = chunks.iter().map(|c| c.symbol_name.as_str()).collect();
-        assert!(names.contains(&"greet"), "got {:?}", names);
-        assert!(names.contains(&"UserService"), "got {:?}", names);
+        assert!(names.contains(&"greet"), "got {names:?}");
+        assert!(names.contains(&"UserService"), "got {names:?}");
     }
 
     #[test]
     fn extract_python_chunks() {
-        let src = r#"
+        let src = r"
 class AuthService:
     def __init__(self, db):
         self.db = db
@@ -342,7 +341,7 @@ class AuthService:
 
 def create_app():
     return Flask(__name__)
-"#;
+";
         let chunks = extract_chunks_ts("app.py", src, "py").unwrap();
         assert!(
             chunks.len() >= 2,
@@ -351,8 +350,8 @@ def create_app():
         );
 
         let names: Vec<&str> = chunks.iter().map(|c| c.symbol_name.as_str()).collect();
-        assert!(names.contains(&"AuthService"), "got {:?}", names);
-        assert!(names.contains(&"create_app"), "got {:?}", names);
+        assert!(names.contains(&"AuthService"), "got {names:?}");
+        assert!(names.contains(&"create_app"), "got {names:?}");
 
         let auth = chunks
             .iter()
@@ -391,10 +390,10 @@ pub fn complex(x: i32, y: i32) -> Result<String, Error> {
 
     #[test]
     fn chunks_sorted_by_line() {
-        let src = r#"
+        let src = r"
 fn b_func() {}
 fn a_func() {}
-"#;
+";
         let chunks = extract_chunks_ts("sort.rs", src, "rs").unwrap();
         assert!(chunks[0].start_line <= chunks[1].start_line);
     }

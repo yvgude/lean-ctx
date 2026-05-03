@@ -2,11 +2,19 @@ use std::collections::HashMap;
 
 use crate::core::tokens::count_tokens;
 
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
+
 const MIN_IDENT_LENGTH: usize = 6;
 const SHORT_ID_PREFIX: char = 'α';
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SymbolMap {
     forward: HashMap<String, String>,
     next_id: usize,
@@ -48,7 +56,7 @@ impl SymbolMap {
         }
 
         let mut sorted: Vec<(&String, &String)> = self.forward.iter().collect();
-        sorted.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        sorted.sort_by_key(|x| std::cmp::Reverse(x.0.len()));
 
         let mut result = text.to_string();
         for (long, short) in &sorted {
@@ -76,12 +84,10 @@ impl SymbolMap {
         table
     }
 
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.forward.len()
     }
 
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.forward.is_empty()
     }
@@ -113,7 +119,7 @@ pub fn should_register(identifier: &str, occurrences: usize, next_id: usize) -> 
 }
 
 pub fn extract_identifiers(content: &str, ext: &str) -> Vec<String> {
-    let ident_re = regex::Regex::new(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b").unwrap();
+    let ident_re = static_regex!(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b");
 
     let mut seen = HashMap::new();
     for mat in ident_re.find_iter(content) {

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::core::cache::SessionCache;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,14 +33,6 @@ impl TaskComplexity {
             TaskComplexity::Architectural => encode_instructions("architectural"),
         }
     }
-
-    fn complexity_label(&self) -> &'static str {
-        match self {
-            TaskComplexity::Mechanical => "mechanical",
-            TaskComplexity::Standard => "standard",
-            TaskComplexity::Architectural => "architectural",
-        }
-    }
 }
 
 pub fn classify_from_context(cache: &SessionCache) -> TaskComplexity {
@@ -60,6 +51,7 @@ pub fn classify_from_context(cache: &SessionCache) -> TaskComplexity {
     TaskComplexity::Standard
 }
 
+#[cfg(test)]
 pub fn classify_from_signals(
     file_count: usize,
     has_tests: bool,

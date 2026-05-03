@@ -1,15 +1,17 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static LOG_TS_RE: OnceLock<Regex> = OnceLock::new();
-static RESOURCE_ACTION_RE: OnceLock<Regex> = OnceLock::new();
-
-fn log_ts_re() -> &'static Regex {
-    LOG_TS_RE.get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\S*\s+").unwrap())
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
-fn resource_action_re() -> &'static Regex {
-    RESOURCE_ACTION_RE
-        .get_or_init(|| Regex::new(r"(\S+/\S+)\s+(configured|created|unchanged|deleted)").unwrap())
+
+fn log_ts_re() -> &'static regex::Regex {
+    static_regex!(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\S*\s+")
+}
+fn resource_action_re() -> &'static regex::Regex {
+    static_regex!(r"(\S+/\S+)\s+(configured|created|unchanged|deleted)")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -134,7 +136,7 @@ fn compress_describe(output: &str) -> String {
     let mut sections = Vec::new();
     let mut current_section = String::new();
     let mut current_lines: Vec<&str> = Vec::new();
-    for line in lines.iter() {
+    for line in &lines {
         if !line.starts_with(' ')
             && !line.starts_with('\t')
             && line.ends_with(':')

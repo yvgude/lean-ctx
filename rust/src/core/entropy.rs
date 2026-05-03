@@ -8,11 +8,9 @@ use flate2::Compression;
 use super::tokens::{count_tokens, encode_tokens};
 
 const BPE_ENTROPY_THRESHOLD: f64 = 1.0;
-#[allow(dead_code)]
-const MINHASH_NUM_HASHES: usize = 128;
 
+/// Result of entropy-based compression: output text, token counts, and techniques used.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct EntropyResult {
     pub output: String,
     pub original_tokens: usize,
@@ -20,8 +18,8 @@ pub struct EntropyResult {
     pub techniques: Vec<String>,
 }
 
-#[allow(dead_code)]
 impl EntropyResult {
+    /// Returns the percentage of tokens saved by compression.
     pub fn savings_percent(&self) -> f64 {
         if self.original_tokens == 0 {
             return 0.0;
@@ -31,7 +29,7 @@ impl EntropyResult {
     }
 }
 
-#[allow(dead_code)]
+/// Computes Shannon entropy (bits) over character frequencies in the text.
 pub fn shannon_entropy(text: &str) -> f64 {
     if text.is_empty() {
         return 0.0;
@@ -92,7 +90,7 @@ pub fn normalized_token_entropy(text: &str) -> f64 {
     h / h_max
 }
 
-#[allow(dead_code)]
+/// Computes word-set Jaccard similarity between two strings (0.0–1.0).
 pub fn jaccard_similarity(a: &str, b: &str) -> f64 {
     let set_a: HashSet<&str> = a.split_whitespace().collect();
     let set_b: HashSet<&str> = b.split_whitespace().collect();
@@ -125,19 +123,18 @@ fn ngram_set(text: &str, n: usize) -> HashSet<Vec<String>> {
     if words.len() < n {
         let mut set = HashSet::new();
         if !words.is_empty() {
-            set.insert(words.iter().map(|w| w.to_string()).collect());
+            set.insert(words.iter().map(std::string::ToString::to_string).collect());
         }
         return set;
     }
     words
         .windows(n)
-        .map(|w| w.iter().map(|s| s.to_string()).collect())
+        .map(|w| w.iter().map(std::string::ToString::to_string).collect())
         .collect()
 }
 
 /// Minhash signature for approximate Jaccard via LSH.
 /// Uses k independent hash functions (polynomial hashing with different seeds).
-#[allow(dead_code)]
 pub fn minhash_signature(text: &str, n: usize, k: usize) -> Vec<u64> {
     let ngrams = ngram_set(text, n);
     if ngrams.is_empty() {
@@ -156,7 +153,6 @@ pub fn minhash_signature(text: &str, n: usize, k: usize) -> Vec<u64> {
 }
 
 /// Approximate Jaccard from two minhash signatures.
-#[allow(dead_code)]
 pub fn minhash_similarity(sig_a: &[u64], sig_b: &[u64]) -> f64 {
     if sig_a.len() != sig_b.len() || sig_a.is_empty() {
         return 0.0;
@@ -169,7 +165,6 @@ pub fn minhash_similarity(sig_a: &[u64], sig_b: &[u64]) -> f64 {
     matches as f64 / sig_a.len() as f64
 }
 
-#[allow(dead_code)]
 fn hash_with_seed<T: Hash>(value: &T, seed: u64) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     seed.hash(&mut hasher);
@@ -189,6 +184,7 @@ pub fn kolmogorov_proxy(content: &str) -> f64 {
     compressed.len() as f64 / content.len() as f64
 }
 
+/// Classification of content compressibility based on Kolmogorov proxy (gzip ratio).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressibilityClass {
     High,
@@ -197,6 +193,7 @@ pub enum CompressibilityClass {
 }
 
 impl CompressibilityClass {
+    /// Returns a human-readable label with the Kolmogorov threshold range.
     pub fn label(&self) -> &'static str {
         match self {
             Self::High => "high (K<0.3)",
@@ -218,10 +215,12 @@ pub fn compressibility_class(content: &str) -> CompressibilityClass {
     }
 }
 
+/// Compresses content by removing low-entropy lines and deduplicating patterns.
 pub fn entropy_compress(content: &str) -> EntropyResult {
     entropy_compress_with_thresholds(content, BPE_ENTROPY_THRESHOLD, 0.7)
 }
 
+/// Entropy compression with file-type-adaptive thresholds and event emission.
 pub fn entropy_compress_adaptive(content: &str, path: &str) -> EntropyResult {
     let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
     let before_lines = content.lines().count() as u32;
@@ -316,6 +315,7 @@ fn entropy_compress_with_thresholds(
     }
 }
 
+/// Per-line entropy statistics for a block of content.
 #[derive(Debug)]
 pub struct EntropyAnalysis {
     pub avg_entropy: f64,
@@ -324,6 +324,7 @@ pub struct EntropyAnalysis {
     pub total_lines: usize,
 }
 
+/// Analyzes per-line BPE token entropy, counting low/high entropy lines.
 pub fn analyze_entropy(content: &str) -> EntropyAnalysis {
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
@@ -360,58 +361,63 @@ pub fn analyze_entropy(content: &str) -> EntropyAnalysis {
     }
 }
 
-#[allow(dead_code)]
 struct Block {
-    start: usize,
     content: String,
 }
 
 fn extract_blocks(lines: &[&str]) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut current = String::new();
-    let mut start = 0;
 
-    for (i, line) in lines.iter().enumerate() {
+    for line in lines {
         let trimmed = line.trim();
         if trimmed.is_empty() && !current.is_empty() {
             blocks.push(Block {
-                start,
                 content: current.clone(),
             });
             current.clear();
         } else if !trimmed.is_empty() {
-            if current.is_empty() {
-                start = i;
-            }
             current.push_str(trimmed);
             current.push('\n');
         }
     }
 
     if !current.is_empty() {
-        blocks.push(Block {
-            start,
-            content: current,
-        });
+        blocks.push(Block { content: current });
     }
 
     blocks
 }
 
 fn find_pattern_groups(blocks: &[Block], threshold: f64) -> Vec<Vec<usize>> {
+    // Exact n-gram Jaccard, but with precomputed n-gram sets per block to avoid
+    // rebuilding allocations per pair. Includes a size-ratio impossibility check
+    // (max possible Jaccard is |A|/|B| for |A|<=|B|).
+    let sets: Vec<HashSet<Vec<String>>> = blocks.iter().map(|b| ngram_set(&b.content, 2)).collect();
+    let sizes: Vec<usize> = sets.iter().map(std::collections::HashSet::len).collect();
+
     let mut groups: Vec<Vec<usize>> = Vec::new();
     let mut assigned: HashSet<usize> = HashSet::new();
 
-    for (i, block_a) in blocks.iter().enumerate() {
+    for i in 0..blocks.len() {
         if assigned.contains(&i) {
             continue;
         }
         let mut group = vec![i];
-        for (j, block_b) in blocks.iter().enumerate().skip(i + 1) {
+        for j in (i + 1)..blocks.len() {
             if assigned.contains(&j) {
                 continue;
             }
-            if ngram_jaccard(&block_a.content, &block_b.content, 2) >= threshold {
+            let size_i = sizes[i];
+            let size_j = sizes[j];
+            let min_sz = size_i.min(size_j);
+            let max_sz = size_i.max(size_j);
+            if max_sz > 0 && (min_sz as f64) < (threshold * max_sz as f64) {
+                continue;
+            }
+            let inter = sets[i].intersection(&sets[j]).count();
+            let union = size_i + size_j - inter;
+            if union > 0 && (inter as f64 / union as f64) >= threshold {
                 group.push(j);
                 assigned.insert(j);
             }
@@ -555,8 +561,8 @@ mod tests {
         let a = "fn main() { let x = 1; let y = 2; let z = x + y; println!(z); }";
         let b = "fn main() { let x = 1; let y = 2; let z = x + y; return z; }";
         let exact = ngram_jaccard(a, b, 2);
-        let sig_a = minhash_signature(a, 2, MINHASH_NUM_HASHES);
-        let sig_b = minhash_signature(b, 2, MINHASH_NUM_HASHES);
+        let sig_a = minhash_signature(a, 2, 128);
+        let sig_b = minhash_signature(b, 2, 128);
         let approx = minhash_similarity(&sig_a, &sig_b);
         assert!(
             (exact - approx).abs() < 0.2,

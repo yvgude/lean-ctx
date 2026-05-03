@@ -1,32 +1,30 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static MAVEN_DOWNLOAD_RE: OnceLock<Regex> = OnceLock::new();
-static MAVEN_PROGRESS_RE: OnceLock<Regex> = OnceLock::new();
-static GRADLE_DOWNLOAD_RE: OnceLock<Regex> = OnceLock::new();
-static GRADLE_PROGRESS_RE: OnceLock<Regex> = OnceLock::new();
-static TESTS_RUN_RE: OnceLock<Regex> = OnceLock::new();
-
-fn maven_download_re() -> &'static Regex {
-    MAVEN_DOWNLOAD_RE
-        .get_or_init(|| Regex::new(r"(?i)\[INFO\]\s+(Downloading|Downloaded)\s+").unwrap())
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
 
-fn maven_progress_re() -> &'static Regex {
-    MAVEN_PROGRESS_RE.get_or_init(|| Regex::new(r"\[INFO\].*kB\s+\|").unwrap())
+fn maven_download_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)\[INFO\]\s+(Downloading|Downloaded)\s+")
 }
 
-fn gradle_download_re() -> &'static Regex {
-    GRADLE_DOWNLOAD_RE
-        .get_or_init(|| Regex::new(r"(?i)^(Downloading|Download)\s+https?://").unwrap())
+fn maven_progress_re() -> &'static regex::Regex {
+    static_regex!(r"\[INFO\].*kB\s+\|")
 }
 
-fn gradle_progress_re() -> &'static Regex {
-    GRADLE_PROGRESS_RE.get_or_init(|| Regex::new(r"^[<>=\s]+$|^[0-9]+%\s+EXECUTING").unwrap())
+fn gradle_download_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)^(Downloading|Download)\s+https?://")
 }
 
-fn tests_run_re() -> &'static Regex {
-    TESTS_RUN_RE.get_or_init(|| Regex::new(r"Tests run:\s*\d+").unwrap())
+fn gradle_progress_re() -> &'static regex::Regex {
+    static_regex!(r"^[<>=\s]+$|^[0-9]+%\s+EXECUTING")
+}
+
+fn tests_run_re() -> &'static regex::Regex {
+    static_regex!(r"Tests run:\s*\d+")
 }
 
 fn is_maven_noise(line: &str) -> bool {

@@ -1,12 +1,14 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static PNPM_ADDED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn pnpm_added_re() -> &'static Regex {
-    PNPM_ADDED_RE.get_or_init(|| {
-        Regex::new(r"(\d+) packages? (?:are )?(?:installed|added|updated)").unwrap()
-    })
+fn pnpm_added_re() -> &'static regex::Regex {
+    static_regex!(r"(\d+) packages? (?:are )?(?:installed|added|updated)")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -131,7 +133,7 @@ fn compress_run(output: &str) -> String {
         .lines()
         .filter(|l| {
             let t = l.trim();
-            !t.is_empty() && !t.starts_with(">")
+            !t.is_empty() && !t.starts_with('>')
         })
         .collect();
 

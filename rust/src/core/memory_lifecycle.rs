@@ -65,9 +65,18 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         }
 
         let days_since_confirmed = now.signed_duration_since(fact.last_confirmed).num_days() as f32;
+        let days_since_retrieved = fact
+            .last_retrieved
+            .map_or(3650.0, |t| now.signed_duration_since(t).num_days() as f32);
+        let retrieval_count = fact.retrieval_count as f32;
 
         if days_since_confirmed > 0.0 {
-            let decay = config.decay_rate_per_day * days_since_confirmed;
+            // FadeMem-inspired: protect frequently/recently retrieved facts.
+            // Deterministic, local-only signals; never hard-delete (archive-only elsewhere).
+            let freq_protect = 1.0 / (1.0 + retrieval_count.ln_1p()); // 1.0 .. ~0.2
+            let recency_protect = (1.0 - (days_since_retrieved / 30.0).min(1.0)).max(0.0); // 1.0 if today, 0.0 after 30d
+            let protect = (freq_protect * (1.0 - 0.5 * recency_protect)).max(0.05);
+            let decay = config.decay_rate_per_day * days_since_confirmed * protect;
             let new_confidence = (fact.confidence - decay).max(0.05);
             if (new_confidence - fact.confidence).abs() > 0.001 {
                 fact.confidence = new_confidence;
@@ -139,6 +148,11 @@ pub fn compact(
     let mut to_archive: Vec<usize> = Vec::new();
 
     for (i, fact) in facts.iter().enumerate() {
+        let recently_retrieved = fact
+            .last_retrieved
+            .is_some_and(|t| now.signed_duration_since(t).num_days() < 14);
+        let frequently_retrieved = fact.retrieval_count >= 5;
+
         if fact.confidence < config.low_confidence_threshold {
             to_archive.push(i);
             continue;
@@ -147,6 +161,8 @@ pub fn compact(
         if fact.last_confirmed < stale_threshold
             && fact.confirmation_count <= 1
             && fact.confidence < 0.5
+            && !recently_retrieved
+            && !frequently_retrieved
         {
             to_archive.push(i);
         }
@@ -198,9 +214,7 @@ struct ArchivedFacts {
 }
 
 fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
-    let dir = dirs::home_dir()
-        .ok_or("No home dir")?
-        .join(".lean-ctx")
+    let dir = crate::core::data_dir::lean_ctx_data_dir()?
         .join("memory")
         .join("archive");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
@@ -221,9 +235,9 @@ pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String>
 }
 
 pub fn list_archives() -> Vec<PathBuf> {
-    let dir = match dirs::home_dir() {
-        Some(h) => h.join(".lean-ctx").join("memory").join("archive"),
-        None => return Vec::new(),
+    let dir = match crate::core::data_dir::lean_ctx_data_dir() {
+        Ok(d) => d.join("memory").join("archive"),
+        Err(_) => return Vec::new(),
     };
 
     if !dir.exists() {
@@ -234,12 +248,7 @@ pub fn list_archives() -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|ext| ext == "json")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
         .map(|e| e.path())
         .collect();
 
@@ -280,10 +289,15 @@ mod tests {
             confidence,
             created_at: Utc::now(),
             last_confirmed: Utc::now(),
+            retrieval_count: 0,
+            last_retrieved: None,
             valid_from: Some(Utc::now()),
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
         }
     }
 
@@ -303,10 +317,15 @@ mod tests {
             confidence,
             created_at: past,
             last_confirmed: past,
+            retrieval_count: 0,
+            last_retrieved: None,
             valid_from: Some(past),
             valid_until: None,
             supersedes: None,
             confirmation_count: 1,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
         }
     }
 

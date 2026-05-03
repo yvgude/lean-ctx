@@ -48,7 +48,7 @@ fn compress_migrate(output: &str) -> String {
     for line in output.lines() {
         let plain = strip_ansi(line.trim());
         if plain.contains("migration") && plain.contains("created") {
-            migration_name = plain.clone();
+            migration_name.clone_from(&plain);
         }
         if plain.contains("applied")
             || plain.contains("Already in sync")

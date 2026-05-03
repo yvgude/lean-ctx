@@ -7,9 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-const MAX_EPISODES: usize = 500;
-const MAX_ACTIONS_PER_EPISODE: usize = 50;
-const SUMMARY_MAX_TOKENS: usize = 200;
+use crate::core::memory_policy::EpisodicPolicy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodicStore {
@@ -67,17 +65,18 @@ impl EpisodicStore {
         }
     }
 
-    pub fn record_episode(&mut self, mut episode: Episode) {
-        episode.actions.truncate(MAX_ACTIONS_PER_EPISODE);
+    pub fn record_episode(&mut self, mut episode: Episode, policy: &EpisodicPolicy) {
+        episode.actions.truncate(policy.max_actions_per_episode);
 
         if episode.summary.is_empty() {
-            episode.summary = auto_summarize(&episode);
+            episode.summary = auto_summarize(&episode, policy.summary_max_chars);
         }
 
         self.episodes.push(episode);
 
-        if self.episodes.len() > MAX_EPISODES {
-            self.episodes.drain(0..self.episodes.len() - MAX_EPISODES);
+        if self.episodes.len() > policy.max_episodes {
+            self.episodes
+                .drain(0..self.episodes.len() - policy.max_episodes);
         }
     }
 
@@ -155,8 +154,8 @@ impl EpisodicStore {
     }
 
     fn store_path(project_hash: &str) -> Option<PathBuf> {
-        let dir = dirs::home_dir()?
-            .join(".lean-ctx")
+        let dir = crate::core::data_dir::lean_ctx_data_dir()
+            .ok()?
             .join("memory")
             .join("episodes");
         Some(dir.join(format!("{project_hash}.json")))
@@ -174,7 +173,7 @@ impl EpisodicStore {
 
     pub fn save(&self) -> Result<(), String> {
         let path = Self::store_path(&self.project_hash)
-            .ok_or_else(|| "Cannot determine home directory".to_string())?;
+            .ok_or_else(|| "Cannot determine data directory".to_string())?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
         }
@@ -253,7 +252,7 @@ pub fn create_episode_from_session(
     }
 }
 
-fn auto_summarize(episode: &Episode) -> String {
+fn auto_summarize(episode: &Episode, max_chars: usize) -> String {
     let tool_counts = count_tools(&episode.actions);
     let top_tools: Vec<String> = tool_counts
         .into_iter()
@@ -271,13 +270,13 @@ fn auto_summarize(episode: &Episode) -> String {
         )
     };
 
+    let task = if episode.task_description.chars().count() > max_chars {
+        episode.task_description.chars().take(max_chars).collect()
+    } else {
+        episode.task_description.clone()
+    };
     let mut summary = format!(
-        "{} [{}] tools:[{}]",
-        if episode.task_description.len() > SUMMARY_MAX_TOKENS {
-            &episode.task_description[..SUMMARY_MAX_TOKENS]
-        } else {
-            &episode.task_description
-        },
+        "{task} [{}] tools:[{}]",
         episode.outcome.label(),
         top_tools.join(",")
     );
@@ -298,7 +297,7 @@ fn count_tools(actions: &[Action]) -> Vec<(String, usize)> {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|item| std::cmp::Reverse(item.1));
     sorted
 }
 
@@ -349,17 +348,24 @@ mod tests {
 
     #[test]
     fn record_and_search() {
+        let policy = EpisodicPolicy::default();
         let mut store = EpisodicStore::new("test");
-        store.record_episode(make_episode(
-            "Refactor auth module",
-            Outcome::Success { tests_passed: true },
-        ));
-        store.record_episode(make_episode(
-            "Fix database connection",
-            Outcome::Failure {
-                error: "timeout".to_string(),
-            },
-        ));
+        store.record_episode(
+            make_episode(
+                "Refactor auth module",
+                Outcome::Success { tests_passed: true },
+            ),
+            &policy,
+        );
+        store.record_episode(
+            make_episode(
+                "Fix database connection",
+                Outcome::Failure {
+                    error: "timeout".to_string(),
+                },
+            ),
+            &policy,
+        );
 
         let results = store.search("auth refactor");
         assert_eq!(results.len(), 1);
@@ -368,23 +374,30 @@ mod tests {
 
     #[test]
     fn filter_by_outcome() {
+        let policy = EpisodicPolicy::default();
         let mut store = EpisodicStore::new("test");
-        store.record_episode(make_episode(
-            "Task 1",
-            Outcome::Success { tests_passed: true },
-        ));
-        store.record_episode(make_episode(
-            "Task 2",
-            Outcome::Failure {
-                error: "err".to_string(),
-            },
-        ));
-        store.record_episode(make_episode(
-            "Task 3",
-            Outcome::Success {
-                tests_passed: false,
-            },
-        ));
+        store.record_episode(
+            make_episode("Task 1", Outcome::Success { tests_passed: true }),
+            &policy,
+        );
+        store.record_episode(
+            make_episode(
+                "Task 2",
+                Outcome::Failure {
+                    error: "err".to_string(),
+                },
+            ),
+            &policy,
+        );
+        store.record_episode(
+            make_episode(
+                "Task 3",
+                Outcome::Success {
+                    tests_passed: false,
+                },
+            ),
+            &policy,
+        );
 
         assert_eq!(store.by_outcome("success").len(), 2);
         assert_eq!(store.by_outcome("failure").len(), 1);
@@ -392,8 +405,9 @@ mod tests {
 
     #[test]
     fn filter_by_file() {
+        let policy = EpisodicPolicy::default();
         let mut store = EpisodicStore::new("test");
-        store.record_episode(make_episode("Task", Outcome::Unknown));
+        store.record_episode(make_episode("Task", Outcome::Unknown), &policy);
 
         let results = store.by_file("main.rs");
         assert_eq!(results.len(), 1);
@@ -404,32 +418,46 @@ mod tests {
 
     #[test]
     fn recent_episodes() {
+        let policy = EpisodicPolicy::default();
         let mut store = EpisodicStore::new("test");
         for i in 0..5 {
-            store.record_episode(make_episode(&format!("Task {i}"), Outcome::Unknown));
+            store.record_episode(
+                make_episode(&format!("Task {i}"), Outcome::Unknown),
+                &policy,
+            );
         }
 
         let recent = store.recent(3);
         assert_eq!(recent.len(), 3);
-        assert!(recent[0].task_description.contains("4"));
+        assert!(recent[0].task_description.contains('4'));
     }
 
     #[test]
     fn stats_calculation() {
+        let policy = EpisodicPolicy::default();
         let mut store = EpisodicStore::new("test");
-        store.record_episode(make_episode("T1", Outcome::Success { tests_passed: true }));
-        store.record_episode(make_episode(
-            "T2",
-            Outcome::Failure {
-                error: "e".to_string(),
-            },
-        ));
-        store.record_episode(make_episode(
-            "T3",
-            Outcome::Success {
-                tests_passed: false,
-            },
-        ));
+        store.record_episode(
+            make_episode("T1", Outcome::Success { tests_passed: true }),
+            &policy,
+        );
+        store.record_episode(
+            make_episode(
+                "T2",
+                Outcome::Failure {
+                    error: "e".to_string(),
+                },
+            ),
+            &policy,
+        );
+        store.record_episode(
+            make_episode(
+                "T3",
+                Outcome::Success {
+                    tests_passed: false,
+                },
+            ),
+            &policy,
+        );
 
         let stats = store.stats();
         assert_eq!(stats.total_episodes, 3);
@@ -442,7 +470,7 @@ mod tests {
     fn auto_summary_generation() {
         let mut ep = make_episode("Fix the login bug", Outcome::Success { tests_passed: true });
         ep.summary = String::new();
-        let summary = auto_summarize(&ep);
+        let summary = auto_summarize(&ep, EpisodicPolicy::default().summary_max_chars);
         assert!(summary.contains("Fix the login bug"));
         assert!(summary.contains("[success]"));
         assert!(summary.contains("ctx_read"));
@@ -450,11 +478,15 @@ mod tests {
 
     #[test]
     fn max_episodes_enforced() {
+        let policy = EpisodicPolicy::default();
         let mut store = EpisodicStore::new("test");
         for i in 0..510 {
-            store.record_episode(make_episode(&format!("Task {i}"), Outcome::Unknown));
+            store.record_episode(
+                make_episode(&format!("Task {i}"), Outcome::Unknown),
+                &policy,
+            );
         }
-        assert!(store.episodes.len() <= MAX_EPISODES);
+        assert!(store.episodes.len() <= policy.max_episodes);
     }
 
     #[test]

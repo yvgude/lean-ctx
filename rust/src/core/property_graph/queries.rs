@@ -36,7 +36,7 @@ pub fn dependents(conn: &Connection, file_path: &str) -> anyhow::Result<Vec<Stri
 
     let results: Vec<String> = stmt
         .query_map(params![file_path], |row| row.get(0))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     Ok(results)
@@ -56,7 +56,7 @@ pub fn dependencies(conn: &Connection, file_path: &str) -> anyhow::Result<Vec<St
 
     let results: Vec<String> = stmt
         .query_map(params![file_path], |row| row.get(0))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     Ok(results)

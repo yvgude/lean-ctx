@@ -77,7 +77,7 @@ fn group_by_cop(offenses: &[String]) -> Vec<(String, usize)> {
         *map.entry(cop).or_insert(0usize) += 1;
     }
     let mut sorted: Vec<_> = map.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|x| std::cmp::Reverse(x.1));
     sorted
 }
 

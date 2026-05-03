@@ -1,6 +1,6 @@
 # lean-ctx for VS Code
 
-**Token Intelligence Engine** — Reduces LLM token consumption by up to 99%. 28 MCP tools, 90+ compression patterns, cross-session memory.
+**Context Runtime for AI Agents** — Reduces LLM token consumption by up to 99%. 49 MCP tools, 10 read modes, 90+ compression patterns, cross-session memory.
 
 ## Features
 

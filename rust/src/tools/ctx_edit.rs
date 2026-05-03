@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 
+/// Parameters for a file edit operation: path, old/new strings, and flags.
 pub struct EditParams {
     pub path: String,
     pub old_string: String,
@@ -11,17 +12,55 @@ pub struct EditParams {
     pub create: bool,
 }
 
-pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
+struct ReplaceArgs<'a> {
+    content: &'a str,
+    old_str: &'a str,
+    new_str: &'a str,
+    occurrences: usize,
+    replace_all: bool,
+    old_tokens: usize,
+    new_tokens: usize,
+}
+
+/// Performs a string replacement edit on a file with CRLF/LF and whitespace tolerance.
+pub fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
     let file_path = &params.path;
 
     if params.create {
         return handle_create(cache, file_path, &params.new_string);
     }
 
-    let raw_bytes = match std::fs::read(file_path) {
-        Ok(b) => b,
-        Err(e) => return format!("ERROR: cannot read {file_path}: {e}"),
+    let cap = crate::core::limits::max_read_bytes();
+    if let Ok(meta) = std::fs::metadata(file_path) {
+        if meta.len() > cap as u64 {
+            return format!(
+                "ERROR: file too large ({} bytes, cap {} via LCTX_MAX_READ_BYTES): {file_path}",
+                meta.len(),
+                cap
+            );
+        }
+    }
+
+    let mut file = match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(file_path)
+    {
+        Ok(f) => f,
+        Err(e) => return format!("ERROR: cannot open {file_path}: {e}"),
     };
+
+    let mut raw_bytes: Vec<u8> = Vec::new();
+    {
+        use std::io::Read;
+        let mut limited = (&mut file).take((cap as u64).saturating_add(1));
+        if let Err(e) = limited.read_to_end(&mut raw_bytes) {
+            return format!("ERROR: cannot read {file_path}: {e}");
+        }
+    }
+    if raw_bytes.len() > cap {
+        return format!("ERROR: file too large (cap {cap} via LCTX_MAX_READ_BYTES): {file_path}");
+    }
 
     let content = String::from_utf8_lossy(&raw_bytes).into_owned();
 
@@ -36,15 +75,16 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
     let occurrences = content.matches(old_str).count();
 
     if occurrences > 0 {
-        return do_replace(
-            cache,
-            file_path,
-            &content,
+        let args = ReplaceArgs {
+            content: &content,
             old_str,
             new_str,
             occurrences,
-            &params,
-        );
+            replace_all: params.replace_all,
+            old_tokens: count_tokens(&params.old_string),
+            new_tokens: count_tokens(&params.new_string),
+        };
+        return do_replace(cache, &mut file, file_path, &args);
     }
 
     // Direct match failed -- try CRLF/LF normalization
@@ -53,16 +93,32 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
         let occ = content.matches(&old_crlf).count();
         if occ > 0 {
             let new_crlf = new_str.replace('\n', "\r\n");
-            return do_replace(
-                cache, file_path, &content, &old_crlf, &new_crlf, occ, &params,
-            );
+            let args = ReplaceArgs {
+                content: &content,
+                old_str: &old_crlf,
+                new_str: &new_crlf,
+                occurrences: occ,
+                replace_all: params.replace_all,
+                old_tokens: count_tokens(&params.old_string),
+                new_tokens: count_tokens(&params.new_string),
+            };
+            return do_replace(cache, &mut file, file_path, &args);
         }
     } else if !uses_crlf && old_str.contains("\r\n") {
         let old_lf = old_str.replace("\r\n", "\n");
         let occ = content.matches(&old_lf).count();
         if occ > 0 {
             let new_lf = new_str.replace("\r\n", "\n");
-            return do_replace(cache, file_path, &content, &old_lf, &new_lf, occ, &params);
+            let args = ReplaceArgs {
+                content: &content,
+                old_str: &old_lf,
+                new_str: &new_lf,
+                occurrences: occ,
+                replace_all: params.replace_all,
+                old_tokens: count_tokens(&params.old_string),
+                new_tokens: count_tokens(&params.new_string),
+            };
+            return do_replace(cache, &mut file, file_path, &args);
         }
     }
 
@@ -75,15 +131,16 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
         let adapted_old = find_original_span(&content, &normalized_old);
         if let Some(original_match) = adapted_old {
             let occ = content.matches(&original_match).count();
-            return do_replace(
-                cache,
-                file_path,
-                &content,
-                &original_match,
-                &adapted_new,
-                occ,
-                &params,
-            );
+            let args = ReplaceArgs {
+                content: &content,
+                old_str: &original_match,
+                new_str: &adapted_new,
+                occurrences: occ,
+                replace_all: params.replace_all,
+                old_tokens: count_tokens(&params.old_string),
+                new_tokens: count_tokens(&params.new_string),
+            };
+            return do_replace(cache, &mut file, file_path, &args);
         }
     }
 
@@ -106,33 +163,40 @@ pub fn handle(cache: &mut SessionCache, params: EditParams) -> String {
 
 fn do_replace(
     cache: &mut SessionCache,
+    file: &mut std::fs::File,
     file_path: &str,
-    content: &str,
-    old_str: &str,
-    new_str: &str,
-    occurrences: usize,
-    params: &EditParams,
+    args: &ReplaceArgs<'_>,
 ) -> String {
-    if occurrences > 1 && !params.replace_all {
+    if args.occurrences > 1 && !args.replace_all {
         return format!(
-            "ERROR: old_string found {occurrences} times in {file_path}. \
+            "ERROR: old_string found {} times in {file_path}. \
              Use replace_all=true to replace all, or provide more context to make old_string unique."
+            , args.occurrences
         );
     }
 
-    let new_content = if params.replace_all {
-        content.replace(old_str, new_str)
+    let new_content = if args.replace_all {
+        args.content.replace(args.old_str, args.new_str)
     } else {
-        content.replacen(old_str, new_str, 1)
+        args.content.replacen(args.old_str, args.new_str, 1)
     };
 
-    if let Err(e) = std::fs::write(file_path, &new_content) {
+    use std::io::{Seek, SeekFrom, Write};
+    if let Err(e) = file.set_len(0) {
         return format!("ERROR: cannot write {file_path}: {e}");
     }
+    if let Err(e) = file.seek(SeekFrom::Start(0)) {
+        return format!("ERROR: cannot write {file_path}: {e}");
+    }
+    if let Err(e) = file.write_all(new_content.as_bytes()) {
+        return format!("ERROR: cannot write {file_path}: {e}");
+    }
+    let _ = file.flush();
+    let _ = file.sync_all();
 
     cache.invalidate(file_path);
 
-    let old_lines = content.lines().count();
+    let old_lines = args.content.lines().count();
     let new_lines = new_content.lines().count();
     let line_delta = new_lines as i64 - old_lines as i64;
     let delta_str = if line_delta > 0 {
@@ -141,19 +205,19 @@ fn do_replace(
         format!("{line_delta}")
     };
 
-    let old_tokens = count_tokens(&params.old_string);
-    let new_tokens = count_tokens(&params.new_string);
+    let old_tokens = args.old_tokens;
+    let new_tokens = args.new_tokens;
 
-    let replaced_str = if params.replace_all && occurrences > 1 {
-        format!("{occurrences} replacements")
+    let replaced_str = if args.replace_all && args.occurrences > 1 {
+        format!("{} replacements", args.occurrences)
     } else {
         "1 replacement".into()
     };
 
-    let short = Path::new(file_path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| file_path.to_string());
+    let short = Path::new(file_path).file_name().map_or_else(
+        || file_path.to_string(),
+        |f| f.to_string_lossy().to_string(),
+    );
 
     format!("✓ {short}: {replaced_str}, {delta_str} lines ({old_tokens}→{new_tokens} tok)")
 }
@@ -175,19 +239,16 @@ fn handle_create(cache: &mut SessionCache, file_path: &str, content: &str) -> St
 
     let lines = content.lines().count();
     let tokens = count_tokens(content);
-    let short = Path::new(file_path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| file_path.to_string());
+    let short = Path::new(file_path).file_name().map_or_else(
+        || file_path.to_string(),
+        |f| f.to_string_lossy().to_string(),
+    );
 
     format!("✓ created {short}: {lines} lines, {tokens} tok")
 }
 
 fn trim_trailing_per_line(s: &str) -> String {
-    s.lines()
-        .map(|l| l.trim_end())
-        .collect::<Vec<_>>()
-        .join("\n")
+    s.lines().map(str::trim_end).collect::<Vec<_>>().join("\n")
 }
 
 fn adapt_new_string_to_line_sep(s: &str, sep: &str) -> String {
@@ -246,7 +307,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "hello".into(),
                 new_string: "world".into(),
@@ -263,7 +324,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "aaa".into(),
                 new_string: "ccc".into(),
@@ -282,7 +343,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "nonexistent".into(),
                 new_string: "x".into(),
@@ -300,7 +361,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: path.to_str().unwrap().to_string(),
                 old_string: String::new(),
                 new_string: "line1\nline2\nline3\n".into(),
@@ -319,7 +380,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "let x = 42".into(),
                 new_string: "let x = 99".into(),
@@ -339,7 +400,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "line1\nline2".into(),
                 new_string: "changed1\nchanged2".into(),
@@ -365,7 +426,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "line1\r\nline2".into(),
                 new_string: "a\r\nb".into(),
@@ -387,7 +448,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "  let x = 1;\n  let y = 2;".into(),
                 new_string: "  let x = 10;\n  let y = 20;".into(),
@@ -410,7 +471,7 @@ mod tests {
         let mut cache = SessionCache::new();
         let result = handle(
             &mut cache,
-            EditParams {
+            &EditParams {
                 path: f.path().to_str().unwrap().to_string(),
                 old_string: "  const a = 1;\n  const b = 2;".into(),
                 new_string: "  const a = 10;\n  const b = 20;".into(),

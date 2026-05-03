@@ -31,6 +31,7 @@ This auto-detects your shell and editors, installs shell aliases, creates MCP co
 ```bash
 # Universal installer (no Rust needed)
 curl -fsSL https://leanctx.com/install.sh | sh
+# or: curl -fsSL https://leanctx.com/install.sh | bash
 
 # Homebrew (macOS/Linux)
 brew tap yvgude/lean-ctx && brew install lean-ctx

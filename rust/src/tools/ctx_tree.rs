@@ -5,6 +5,7 @@ use ignore::WalkBuilder;
 use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 
+/// Generates a compact directory tree listing with file counts, respecting gitignore.
 pub fn handle(path: &str, depth: usize, show_hidden: bool) -> (String, usize) {
     let root = Path::new(path);
     if !root.is_dir() {
@@ -31,10 +32,10 @@ fn generate_compact_tree(root: &Path, max_depth: usize, show_hidden: bool) -> St
         .git_global(true)
         .git_exclude(true)
         .max_depth(Some(max_depth))
-        .sort_by_file_name(|a, b| a.cmp(b))
+        .sort_by_file_name(std::cmp::Ord::cmp)
         .build();
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker.filter_map(std::result::Result::ok) {
         if entry.depth() == 0 {
             continue;
         }
@@ -74,10 +75,10 @@ fn generate_raw_tree(root: &Path, depth: usize, show_hidden: bool) -> String {
         .git_global(true)
         .git_exclude(true)
         .max_depth(Some(depth))
-        .sort_by_file_name(|a, b| a.cmp(b))
+        .sort_by_file_name(std::cmp::Ord::cmp)
         .build();
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker.filter_map(std::result::Result::ok) {
         if entry.depth() == 0 {
             continue;
         }
@@ -98,7 +99,7 @@ fn count_files_in_dir(dir: &Path) -> usize {
         .git_ignore(true)
         .max_depth(Some(5))
         .build()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
         .count()
 }

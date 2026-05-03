@@ -57,7 +57,7 @@ mod tests {
             .unwrap()
             .query_map([], |row| row.get(0))
             .unwrap()
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
 
         assert!(tables.contains(&"nodes".to_string()));

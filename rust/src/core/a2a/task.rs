@@ -27,7 +27,7 @@ impl std::fmt::Display for TaskState {
 }
 
 impl TaskState {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "created" => Some(Self::Created),
             "working" => Some(Self::Working),
@@ -78,10 +78,7 @@ pub enum TaskPart {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "data")]
-    Data {
-        mime_type: String,
-        data: String,
-    },
+    Data { mime_type: String, data: String },
     #[serde(rename = "file")]
     File {
         name: String,
@@ -157,7 +154,7 @@ impl Task {
             from: self.state.clone(),
             to: new_state.clone(),
             timestamp: Utc::now(),
-            reason: reason.map(|s| s.to_string()),
+            reason: reason.map(std::string::ToString::to_string),
         });
 
         self.state = new_state;
@@ -188,9 +185,8 @@ pub struct TaskStore {
 
 impl TaskStore {
     pub fn load() -> Self {
-        let path = match task_store_path() {
-            Some(p) => p,
-            None => return Self::default(),
+        let Some(path) = task_store_path() else {
+            return Self::default();
         };
         match std::fs::read_to_string(&path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
@@ -199,22 +195,18 @@ impl TaskStore {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        let path = match task_store_path() {
-            Some(p) => p,
-            None => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "no home dir",
-                ))
-            }
+        let Some(path) = task_store_path() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no home dir",
+            ));
         };
 
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         let tmp = path.with_extension("tmp");
         std::fs::write(&tmp, &json)?;
         std::fs::rename(&tmp, &path)?;
@@ -281,7 +273,8 @@ mod tests {
         let mut task = Task::new("agent-a", "agent-b", "fix the bug");
         assert_eq!(task.state, TaskState::Created);
 
-        task.transition(TaskState::Working, Some("started")).unwrap();
+        task.transition(TaskState::Working, Some("started"))
+            .unwrap();
         assert_eq!(task.state, TaskState::Working);
 
         task.transition(TaskState::Completed, Some("done")).unwrap();
@@ -295,7 +288,8 @@ mod tests {
         task.transition(TaskState::Working, None).unwrap();
         task.transition(TaskState::InputRequired, Some("need credentials"))
             .unwrap();
-        task.transition(TaskState::Working, Some("got them")).unwrap();
+        task.transition(TaskState::Working, Some("got them"))
+            .unwrap();
         task.transition(TaskState::Completed, None).unwrap();
         assert_eq!(task.history.len(), 5);
     }

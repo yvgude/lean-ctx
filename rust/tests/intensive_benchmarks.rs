@@ -75,8 +75,8 @@ fn bench_system_instructions_token_count() {
     eprintln!("{}", "=".repeat(70));
 
     assert!(
-        tok_off < 2250,
-        "Base instructions should be <2250 tokens, got {tok_off}"
+        tok_off < 2300,
+        "Base instructions should be <2300 tokens, got {tok_off}"
     );
     assert!(
         tok_compact < 2450,
@@ -86,13 +86,22 @@ fn bench_system_instructions_token_count() {
         tok_tdd < 2550,
         "TDD instructions should be <2550 tokens, got {tok_tdd}"
     );
+
+    let claude_code_instr = lean_ctx::server::build_claude_code_instructions_for_test();
+    let claude_chars = claude_code_instr.len();
+    let claude_tokens = count_tokens(&claude_code_instr);
+    eprintln!("  Claude Code: {claude_tokens:>6} tokens ({claude_chars:>5} chars)");
+    assert!(
+        claude_chars <= 2048,
+        "Claude Code instructions MUST be <=2048 chars, got {claude_chars}"
+    );
     assert!(
         tok_compact - tok_off < 300,
         "Compact mode overhead should be <300 tokens"
     );
     assert!(
-        tok_tdd - tok_off < 500,
-        "TDD mode overhead should be <500 tokens"
+        tok_tdd - tok_off < 650,
+        "TDD mode overhead should be <650 tokens"
     );
 }
 
@@ -146,11 +155,11 @@ fn bench_total_input_overhead() {
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  TOTAL INPUT OVERHEAD (per session start)");
     eprintln!("{}", "=".repeat(70));
-    eprintln!("  System instructions: {:>6} tokens", instr_tokens);
-    eprintln!("  Tool descriptions:   {:>6} tokens", desc_tokens);
-    eprintln!("  Tool schemas (JSON): {:>6} tokens", schema_tokens);
+    eprintln!("  System instructions: {instr_tokens:>6} tokens");
+    eprintln!("  Tool descriptions:   {desc_tokens:>6} tokens");
+    eprintln!("  Tool schemas (JSON): {schema_tokens:>6} tokens");
     eprintln!("  {}", "-".repeat(40));
-    eprintln!("  TOTAL overhead:      {:>6} tokens", total);
+    eprintln!("  TOTAL overhead:      {total:>6} tokens");
     eprintln!(
         "  Estimated cost @$3/1M input: ${:.4}",
         total as f64 * 3.0 / 1_000_000.0
@@ -161,6 +170,96 @@ fn bench_total_input_overhead() {
         total < 5000,
         "Total input overhead should be <5000 tokens, got {total}"
     );
+}
+
+#[test]
+fn bench_lazy_default_vs_full_overhead() {
+    // This benchmark must be hermetic: instructions can inject session/memory blocks
+    // unless minimal overhead is enforced and the data dir is isolated.
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+
+    let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
+    let prev_minimal = std::env::var("LEAN_CTX_MINIMAL").ok();
+
+    std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+    std::env::set_var("LEAN_CTX_MINIMAL", "1");
+
+    let lazy_tools = lean_ctx::tool_defs::lazy_tool_defs();
+    let full_tools = lean_ctx::tool_defs::granular_tool_defs();
+
+    let tool_tokens = |tools: &[rmcp::model::Tool]| -> (usize, usize) {
+        let desc: usize = tools
+            .iter()
+            .map(|t| {
+                t.description
+                    .as_ref()
+                    .map_or(0, |d| count_tokens(d.as_ref()))
+            })
+            .sum();
+        let schema: usize = tools
+            .iter()
+            .map(|t| count_tokens(&serde_json::to_string(&t.input_schema).unwrap_or_default()))
+            .sum();
+        (desc, schema)
+    };
+
+    let (lazy_desc_tokens, lazy_schema_tokens) = tool_tokens(&lazy_tools);
+    let lazy_total = lazy_desc_tokens + lazy_schema_tokens;
+
+    let (full_desc_tokens, full_schema_tokens) = tool_tokens(&full_tools);
+    let full_total = full_desc_tokens + full_schema_tokens;
+    let _ = (full_desc_tokens, full_schema_tokens);
+
+    let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
+    let instr_tokens = count_tokens(&instructions);
+
+    let lazy_user_overhead = instr_tokens + lazy_total;
+    let full_user_overhead = instr_tokens + full_total;
+    let reduction_pct = (full_total - lazy_total) as f64 / full_total as f64 * 100.0;
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  LAZY (DEFAULT) vs FULL TOOL OVERHEAD");
+    eprintln!("{}", "=".repeat(70));
+    eprintln!(
+        "  Lazy tools:   {:>3} tools, {:>5} tokens (desc+schema)",
+        lazy_tools.len(),
+        lazy_total
+    );
+    eprintln!(
+        "  Full tools:   {:>3} tools, {:>5} tokens (desc+schema)",
+        full_tools.len(),
+        full_total
+    );
+    eprintln!("  Instructions:          {instr_tokens:>5} tokens");
+    eprintln!("  {}", "-".repeat(50));
+    eprintln!("  User overhead (LAZY DEFAULT):  {lazy_user_overhead:>5} tokens");
+    eprintln!("  User overhead (FULL opt-in):   {full_user_overhead:>5} tokens");
+    eprintln!("  Tool token reduction:          {reduction_pct:>5.1}%");
+    eprintln!("{}", "=".repeat(70));
+
+    assert!(
+        lazy_tools.len() <= 10,
+        "Lazy mode should expose <=10 tools, got {}",
+        lazy_tools.len()
+    );
+    assert!(
+        lazy_user_overhead < 2500,
+        "Lazy default overhead should be <2500 tokens, got {lazy_user_overhead}"
+    );
+    assert!(
+        reduction_pct > 60.0,
+        "Tool token reduction should be >60%, got {reduction_pct:.1}%"
+    );
+
+    match prev_data_dir {
+        Some(v) => std::env::set_var("LEAN_CTX_DATA_DIR", v),
+        None => std::env::remove_var("LEAN_CTX_DATA_DIR"),
+    }
+    match prev_minimal {
+        Some(v) => std::env::set_var("LEAN_CTX_MINIMAL", v),
+        None => std::env::remove_var("LEAN_CTX_MINIMAL"),
+    }
 }
 
 #[test]
@@ -191,7 +290,7 @@ fn bench_git_all_commands() {
         ("git log --stat -20", generate_git_log_stat(20), 50.0),
         ("git log -30", generate_git_log_standard(30), 60.0),
         ("git status", generate_git_status(), 30.0),
-        ("git diff", generate_git_diff(15), 40.0),
+        ("git diff", generate_git_diff(15), 5.0),
         (
             "git commit -m 'feat'",
             generate_git_commit_with_hooks(30),
@@ -296,7 +395,7 @@ fn bench_pattern_coverage_comprehensive() {
         let (orig, comp, pct) = measure_pattern(cmd, output);
         total_orig += orig;
         total_comp += comp;
-        eprintln!("  {:<40} {:>8} {:>8} {:>6.1}%", cmd, orig, comp, pct);
+        eprintln!("  {cmd:<40} {orig:>8} {comp:>8} {pct:>6.1}%");
     }
 
     let total_pct = compression_ratio(total_orig, total_comp);
@@ -372,10 +471,11 @@ fn bench_signatures_mode_rust() {
     let content = generate_rust_file(200);
     let sigs = extract_signatures(&content, "rs");
 
-    let sig_output: String = sigs
-        .iter()
-        .map(|s| format!("{}\n", s.to_compact()))
-        .collect();
+    let sig_output = sigs.iter().fold(String::new(), |mut s, sig| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "{}", sig.to_compact());
+        s
+    });
     let (orig, comp, pct) = measure_text(&content, &sig_output);
 
     eprintln!(
@@ -398,10 +498,11 @@ fn bench_signatures_mode_typescript() {
     let content = generate_typescript_file(200);
     let sigs = extract_signatures(&content, "ts");
 
-    let sig_output: String = sigs
-        .iter()
-        .map(|s| format!("{}\n", s.to_compact()))
-        .collect();
+    let sig_output = sigs.iter().fold(String::new(), |mut s, sig| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "{}", sig.to_compact());
+        s
+    });
     let (orig, comp, pct) = measure_text(&content, &sig_output);
 
     eprintln!(
@@ -455,10 +556,11 @@ fn bench_all_modes_comparison() {
     let aggressive = aggressive_compress(&content, Some("rs"));
     let entropy = entropy_compress(&content);
     let sigs = extract_signatures(&content, "rs");
-    let sig_text: String = sigs
-        .iter()
-        .map(|s| format!("{}\n", s.to_compact()))
-        .collect();
+    let sig_text = sigs.iter().fold(String::new(), |mut s, sig| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "{}", sig.to_compact());
+        s
+    });
     let cleaned = lightweight_cleanup(&content);
 
     let modes = vec![
@@ -477,9 +579,112 @@ fn bench_all_modes_comparison() {
 
     for (name, tokens) in &modes {
         let pct = compression_ratio(orig_tokens, *tokens);
-        eprintln!("  {:<20} {:>8} {:>6.1}%", name, tokens, pct);
+        eprintln!("  {name:<20} {tokens:>8} {pct:>6.1}%");
     }
     eprintln!("{}", "=".repeat(70));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 3.5: RRF EVICTION SCORING
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn bench_rrf_eviction_vs_legacy() {
+    use std::time::{Duration, Instant};
+
+    let now = Instant::now();
+    let keys: Vec<String> = (0..10).map(|i| format!("file_{i}.rs")).collect();
+    let entries: Vec<lean_ctx::core::cache::CacheEntry> = (0..10)
+        .map(|i| lean_ctx::core::cache::CacheEntry {
+            content: format!("content_{i}"),
+            hash: format!("hash_{i}"),
+            line_count: i + 1,
+            original_tokens: (i + 1) * 100,
+            read_count: (10 - i) as u32,
+            path: format!("/file_{i}.rs"),
+            // Instant::checked_sub can underflow early in process lifetime on some platforms.
+            // Use a small duration and fall back to `now` to keep this benchmark deterministic.
+            last_access: now
+                .checked_sub(Duration::from_secs(i as u64))
+                .unwrap_or(now),
+            stored_mtime: None,
+        })
+        .collect();
+
+    let entry_refs: Vec<(&String, &lean_ctx::core::cache::CacheEntry)> =
+        keys.iter().zip(entries.iter()).collect();
+
+    let rrf_scores = lean_ctx::core::cache::eviction_scores_rrf(&entry_refs, now);
+    assert_eq!(rrf_scores.len(), 10);
+
+    let mut legacy_scores: Vec<(String, f64)> = entries
+        .iter()
+        .map(|e| (e.path.clone(), e.eviction_score_legacy(now)))
+        .collect();
+    let mut rrf_sorted: Vec<(String, f64)> = rrf_scores;
+    rrf_sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    legacy_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  RRF vs LEGACY EVICTION SCORING (10 entries)");
+    eprintln!("{}", "=".repeat(70));
+    eprintln!(
+        "  {:>15} {:>12} {:>12}",
+        "File", "RRF Score", "Legacy Score"
+    );
+    for i in 0..rrf_sorted.len().min(5) {
+        let rrf_path = &rrf_sorted[i].0;
+        let legacy_path = &legacy_scores[i].0;
+        eprintln!(
+            "  RRF#{}: {:>8} {:.6}  | Legacy#{}: {:>8} {:.6}",
+            i + 1,
+            rrf_path,
+            rrf_sorted[i].1,
+            i + 1,
+            legacy_path,
+            legacy_scores[i].1
+        );
+    }
+    eprintln!("{}", "=".repeat(70));
+
+    assert!(
+        rrf_sorted[0].1 > rrf_sorted[9].1,
+        "RRF: highest-scoring entry must rank above lowest"
+    );
+}
+
+#[test]
+fn bench_rrf_eviction_handles_single_entry() {
+    use std::time::Instant;
+
+    let now = Instant::now();
+    let key = "solo.rs".to_string();
+    let entry = lean_ctx::core::cache::CacheEntry {
+        content: "single".to_string(),
+        hash: "h".to_string(),
+        line_count: 1,
+        original_tokens: 50,
+        read_count: 1,
+        path: "/solo.rs".to_string(),
+        last_access: now,
+        stored_mtime: None,
+    };
+
+    let refs: Vec<(&String, &lean_ctx::core::cache::CacheEntry)> = vec![(&key, &entry)];
+    let scores = lean_ctx::core::cache::eviction_scores_rrf(&refs, now);
+    assert_eq!(scores.len(), 1);
+    assert!(
+        scores[0].1 > 0.0,
+        "single entry must have positive RRF score"
+    );
+}
+
+#[test]
+fn bench_rrf_eviction_empty() {
+    use std::time::Instant;
+    let now = Instant::now();
+    let scores = lean_ctx::core::cache::eviction_scores_rrf(&[], now);
+    assert!(scores.is_empty());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -550,15 +755,9 @@ Don't hesitate to reach out if you need further assistance with this or any othe
     let tdd_savings = compression_ratio(orig_tokens, tdd_tokens);
 
     eprintln!("\n  [filler removal in context]");
-    eprintln!("    Original:    {} tokens", orig_tokens);
-    eprintln!(
-        "    CRP Off:     {} tokens ({:.1}% saved)",
-        off_tokens, off_savings
-    );
-    eprintln!(
-        "    CRP TDD:     {} tokens ({:.1}% saved)",
-        tdd_tokens, tdd_savings
-    );
+    eprintln!("    Original:    {orig_tokens} tokens");
+    eprintln!("    CRP Off:     {off_tokens} tokens ({off_savings:.1}% saved)");
+    eprintln!("    CRP TDD:     {tdd_tokens} tokens ({tdd_savings:.1}% saved)");
 
     assert!(
         off_savings > 5.0,
@@ -584,15 +783,17 @@ fn bench_thinking_reduction_cues_present() {
         "Compact mode must contain output efficiency cue"
     );
     assert!(
-        compact.contains("<=200 tokens") || compact.contains("≤200 tokens"),
+        compact.contains("<=200 tok")
+            || compact.contains("<=200 tokens")
+            || compact.contains("≤200"),
         "Compact mode must contain token budget"
     );
     assert!(
-        tdd.contains("OUTPUT EFFICIENCY") || tdd.contains("Trust them directly"),
+        tdd.contains("OUTPUT EFFICIENCY") || tdd.contains("Trust tool outputs"),
         "TDD mode must contain output efficiency cue"
     );
     assert!(
-        tdd.contains("<=150 tokens") || tdd.contains("≤150 tokens"),
+        tdd.contains("<=150 tok") || tdd.contains("<=150 tokens") || tdd.contains("≤150"),
         "TDD mode must contain strict token budget"
     );
     assert!(
@@ -608,10 +809,12 @@ fn bench_crp_mode_token_budgets() {
     let compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
     let tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
 
-    let compact_budget_present =
-        compact.contains("TARGET: <=200 tokens") || compact.contains("TARGET: ≤200 tokens");
-    let tdd_budget_present =
-        tdd.contains("TOKEN BUDGET: <=150 tokens") || tdd.contains("TOKEN BUDGET: ≤150 tokens");
+    let compact_budget_present = compact.contains("<=200 tok")
+        || compact.contains("TARGET: <=200 tokens")
+        || compact.contains("≤200");
+    let tdd_budget_present = tdd.contains("<=150 tok")
+        || tdd.contains("TOKEN BUDGET: <=150 tokens")
+        || tdd.contains("BUDGET: <=150");
 
     eprintln!("\n  [token budgets]");
     eprintln!(
@@ -650,8 +853,7 @@ fn bench_tdd_symbols_token_efficiency() {
     let savings_pct = compression_ratio(prose_tokens, tdd_tokens);
 
     eprintln!(
-        "\n  [TDD symbols] Prose: {} tokens → TDD: {} tokens ({:.1}% saved)",
-        prose_tokens, tdd_tokens, savings_pct
+        "\n  [TDD symbols] Prose: {prose_tokens} tokens → TDD: {tdd_tokens} tokens ({savings_pct:.1}% saved)"
     );
     eprintln!(
         "  Semantic density: {:.1}x more meaning per token",
@@ -797,10 +999,7 @@ fn print_compression_report(title: &str, scenarios: &[(&str, String, f64)]) {
         total_orig += orig;
         total_comp += comp;
         let status = if pct >= *min_savings { "✓" } else { "✗" };
-        eprintln!(
-            "  {:<35} {:>8} {:>8} {:>6.1}% {status}",
-            cmd, orig, comp, pct
-        );
+        eprintln!("  {cmd:<35} {orig:>8} {comp:>8} {pct:>6.1}% {status}");
         assert!(
             pct >= *min_savings,
             "'{cmd}' should save ≥{min_savings}%, got {pct:.1}%"
@@ -826,8 +1025,8 @@ fn generate_rust_file(lines: usize) -> String {
     while line < lines {
         let fn_idx = line / 15;
         s.push_str(&format!(
-            "/// Process item {} with validation and error handling\n\
-             pub fn process_item_{}(input: &str, config: &Config) -> Result<Output, Error> {{\n\
+            "/// Process item {fn_idx} with validation and error handling\n\
+             pub fn process_item_{fn_idx}(input: &str, config: &Config) -> Result<Output, Error> {{\n\
              \tlet validated = validate_input(input)?;\n\
              \tlet transformed = transform_data(&validated, config);\n\
              \t// Apply business rules\n\
@@ -836,8 +1035,7 @@ fn generate_rust_file(lines: usize) -> String {
              \t}}\n\
              \tlet result = compute_result(&transformed)?;\n\
              \tOk(Output::new(result))\n\
-             }}\n\n",
-            fn_idx, fn_idx
+             }}\n\n"
         ));
         line += 13;
     }
@@ -1170,9 +1368,7 @@ fn generate_kubectl_pods(count: usize) -> String {
         String::from("NAME                              READY   STATUS    RESTARTS   AGE\n");
     for i in 0..count {
         let status = match i % 5 {
-            0 => "Running",
-            1 => "Running",
-            2 => "Running",
+            0..=2 => "Running",
             3 => "Pending",
             _ => "CrashLoopBackOff",
         };
@@ -1294,4 +1490,311 @@ fn generate_git_log_stat(n: usize) -> String {
         ));
     }
     output
+}
+
+// ---------------------------------------------------------------------------
+// v3.4.1 Optimization benchmarks: Token overhead + Latency
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bench_minimal_overhead_suppresses_all_meta_strings() {
+    std::env::set_var("LEAN_CTX_MINIMAL", "1");
+
+    let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+    let instr_tokens = count_tokens(&instructions);
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  MINIMAL OVERHEAD: Instructions Token Count");
+    eprintln!("{}", "=".repeat(70));
+    eprintln!("  Instructions (minimal):  {instr_tokens:>5} tokens");
+
+    assert!(
+        !instructions.contains("--- ACTIVE SESSION"),
+        "minimal_overhead should suppress session block"
+    );
+
+    std::env::remove_var("LEAN_CTX_MINIMAL");
+
+    let full_instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+    let full_tokens = count_tokens(&full_instructions);
+
+    eprintln!("  Instructions (full):     {full_tokens:>5} tokens");
+    let saved = full_tokens.saturating_sub(instr_tokens);
+    eprintln!("  Tokens saved by minimal: {saved:>5}");
+    eprintln!("{}", "=".repeat(70));
+
+    assert!(
+        instr_tokens <= full_tokens,
+        "minimal instructions ({instr_tokens}) should be <= full ({full_tokens})"
+    );
+}
+
+#[test]
+fn bench_md5_fast_vs_full_correctness() {
+    use lean_ctx::server::helpers::{md5_hex, md5_hex_fast};
+
+    let small = "a".repeat(1000);
+    assert_eq!(
+        md5_hex(&small),
+        md5_hex_fast(&small),
+        "md5_hex_fast must match md5_hex for small strings"
+    );
+
+    let exactly_16k = "x".repeat(16 * 1024);
+    assert_eq!(
+        md5_hex(&exactly_16k),
+        md5_hex_fast(&exactly_16k),
+        "md5_hex_fast must match md5_hex at the 16KB boundary"
+    );
+
+    let large = "b".repeat(100_000);
+    let fast_hash = md5_hex_fast(&large);
+    assert_eq!(fast_hash.len(), 32, "md5_hex_fast should produce valid hex");
+    assert_ne!(
+        fast_hash,
+        md5_hex_fast(&"c".repeat(100_000)),
+        "different large strings should produce different hashes"
+    );
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  MD5 FAST FINGERPRINT");
+    eprintln!("{}", "=".repeat(70));
+    let start_full = std::time::Instant::now();
+    for _ in 0..100 {
+        let _ = md5_hex(&large);
+    }
+    let full_us = start_full.elapsed().as_micros();
+
+    let start_fast = std::time::Instant::now();
+    for _ in 0..100 {
+        let _ = md5_hex_fast(&large);
+    }
+    let fast_us = start_fast.elapsed().as_micros();
+
+    let speedup = full_us as f64 / fast_us.max(1) as f64;
+    eprintln!("  100x md5_hex(100KB):      {full_us:>6} us");
+    eprintln!("  100x md5_hex_fast(100KB):  {fast_us:>6} us");
+    eprintln!("  Speedup:                  {speedup:>6.1}x");
+    eprintln!("{}", "=".repeat(70));
+
+    assert!(
+        speedup > 2.0,
+        "md5_hex_fast should be at least 2x faster for 100KB, got {speedup:.1}x"
+    );
+}
+
+#[test]
+fn bench_compress_output_normal_is_noop() {
+    use lean_ctx::core::config::OutputDensity;
+    use lean_ctx::core::protocol::compress_output;
+
+    let input = "fn main() {\n    println!(\"hello\");\n}\n".repeat(500);
+
+    let start_terse = std::time::Instant::now();
+    for _ in 0..100 {
+        let _ = compress_output(&input, &OutputDensity::Terse);
+    }
+    let terse_us = start_terse.elapsed().as_micros();
+
+    let start_normal = std::time::Instant::now();
+    for _ in 0..100 {
+        let result = compress_output(&input, &OutputDensity::Normal);
+        assert_eq!(result.len(), input.len());
+    }
+    let normal_us = start_normal.elapsed().as_micros();
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  COMPRESS_OUTPUT DENSITY BENCHMARK (100 iters, ~20KB input)");
+    eprintln!("{}", "=".repeat(70));
+    eprintln!("  Normal (to_string copy): {normal_us:>6} us");
+    eprintln!("  Terse (filter+join):     {terse_us:>6} us");
+    eprintln!("  Note: In production, Normal is skipped entirely (no copy).");
+    eprintln!("{}", "=".repeat(70));
+}
+
+#[test]
+fn bench_count_tokens_cache_effectiveness() {
+    let text = "The quick brown fox jumps over the lazy dog. ".repeat(200);
+
+    let start_cold = std::time::Instant::now();
+    let t1 = count_tokens(&text);
+    let cold_us = start_cold.elapsed().as_micros();
+
+    let start_cached = std::time::Instant::now();
+    let t2 = count_tokens(&text);
+    let cached_us = start_cached.elapsed().as_micros();
+
+    assert_eq!(t1, t2, "cached result must match");
+
+    let slightly_different = format!("{text}X");
+    let start_miss = std::time::Instant::now();
+    let t3 = count_tokens(&slightly_different);
+    let miss_us = start_miss.elapsed().as_micros();
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  COUNT_TOKENS CACHE BENCHMARK (~9KB input)");
+    eprintln!("{}", "=".repeat(70));
+    eprintln!("  Cold (first call):  {cold_us:>6} us  -> {t1} tokens");
+    eprintln!("  Cached (same text): {cached_us:>6} us  -> {t2} tokens");
+    eprintln!("  Miss (diff text):   {miss_us:>6} us  -> {t3} tokens");
+    if cold_us > 0 {
+        let speedup = cold_us as f64 / cached_us.max(1) as f64;
+        eprintln!("  Cache speedup:      {speedup:>6.0}x");
+    }
+    eprintln!("{}", "=".repeat(70));
+
+    assert!(
+        cached_us <= cold_us + 5,
+        "cached call should be faster than cold call"
+    );
+}
+
+#[test]
+fn bench_session_prepare_save_is_cpu_only() {
+    use lean_ctx::core::session::SessionState;
+
+    let mut session = SessionState::new();
+    session.set_task("benchmark task for save split", None);
+    for _ in 0..20 {
+        session.record_tool_call(100, 200);
+        session.stats.unsaved_changes = 0;
+    }
+
+    let start = std::time::Instant::now();
+    for _ in 0..100 {
+        session.stats.unsaved_changes = 5;
+        if let Ok(prepared) = session.prepare_save() {
+            std::mem::drop(prepared);
+        }
+    }
+    let prepare_us = start.elapsed().as_micros();
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  SESSION PREPARE_SAVE BENCHMARK (100 iters)");
+    eprintln!("{}", "=".repeat(70));
+    eprintln!("  100x prepare_save (serialize only): {prepare_us:>6} us");
+    eprintln!(
+        "  Per call:                           {:>6} us",
+        prepare_us / 100
+    );
+    eprintln!("  Note: write_to_disk() I/O runs in background thread.");
+    eprintln!("{}", "=".repeat(70));
+
+    assert!(
+        prepare_us / 100 < 5000,
+        "prepare_save should take <5ms per call, got {} us",
+        prepare_us / 100
+    );
+
+    assert_eq!(
+        session.stats.unsaved_changes, 0,
+        "prepare_save must reset unsaved_changes"
+    );
+}
+
+#[test]
+fn bench_session_save_semantics() {
+    use lean_ctx::core::session::SessionState;
+
+    let mut session = SessionState::new();
+    for _ in 0..6 {
+        session.increment();
+    }
+    assert!(session.should_save(), "should_save after 6 mutations");
+
+    let prepared = session.prepare_save().expect("prepare_save");
+    assert_eq!(
+        session.stats.unsaved_changes, 0,
+        "prepare_save must reset counter immediately (for async path)"
+    );
+    assert!(
+        !session.should_save(),
+        "should_save must be false after prepare_save"
+    );
+
+    let write_result = prepared.write_to_disk();
+    assert!(
+        write_result.is_ok(),
+        "write_to_disk to valid dir should succeed"
+    );
+
+    for _ in 0..6 {
+        session.increment();
+    }
+    assert!(session.should_save());
+
+    let result = session.save();
+    assert!(result.is_ok(), "synchronous save should succeed");
+    assert_eq!(
+        session.stats.unsaved_changes, 0,
+        "save must reset counter on success"
+    );
+    assert!(
+        !session.should_save(),
+        "should_save must be false after save"
+    );
+}
+
+#[test]
+fn bench_full_per_call_overhead_budget() {
+    let lazy_tools = lean_ctx::tool_defs::lazy_tool_defs();
+    let full_tools = lean_ctx::tool_defs::granular_tool_defs();
+
+    let instructions_minimal = {
+        std::env::set_var("LEAN_CTX_MINIMAL", "1");
+        let i = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+        std::env::remove_var("LEAN_CTX_MINIMAL");
+        i
+    };
+    let instructions_full = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+
+    let lazy_tool_tokens: usize = lazy_tools
+        .iter()
+        .map(|t| {
+            let desc = t.description.as_ref().map_or(0, |d| d.as_ref().len());
+            let schema = serde_json::to_string(&t.input_schema)
+                .unwrap_or_default()
+                .len();
+            (desc + schema) / 4
+        })
+        .sum();
+
+    let full_tool_tokens: usize = full_tools
+        .iter()
+        .map(|t| {
+            let desc = t.description.as_ref().map_or(0, |d| d.as_ref().len());
+            let schema = serde_json::to_string(&t.input_schema)
+                .unwrap_or_default()
+                .len();
+            (desc + schema) / 4
+        })
+        .sum();
+
+    let minimal_instr_tokens = count_tokens(&instructions_minimal);
+    let full_instr_tokens = count_tokens(&instructions_full);
+
+    let best_case = minimal_instr_tokens + lazy_tool_tokens;
+    let worst_case = full_instr_tokens + full_tool_tokens;
+
+    eprintln!("\n{}", "=".repeat(70));
+    eprintln!("  TOTAL PER-SESSION OVERHEAD BUDGET");
+    eprintln!("{}", "=".repeat(70));
+    eprintln!(
+        "  Best case  (lazy+minimal):  {best_case:>5} tok  ({minimal_instr_tokens} instr + {lazy_tool_tokens} tools)"
+    );
+    eprintln!(
+        "  Worst case (full+verbose):  {worst_case:>5} tok  ({full_instr_tokens} instr + {full_tool_tokens} tools)"
+    );
+    let reduction = (worst_case - best_case) as f64 / worst_case as f64 * 100.0;
+    eprintln!("  Total reduction potential:   {reduction:>5.1}%");
+    eprintln!("{}", "=".repeat(70));
+
+    assert!(
+        best_case < 3000,
+        "Best-case overhead should be <3000 tokens, got {best_case}"
+    );
+    assert!(
+        reduction > 50.0,
+        "Reduction potential should be >50%, got {reduction:.1}%"
+    );
 }

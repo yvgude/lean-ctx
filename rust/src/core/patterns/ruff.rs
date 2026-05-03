@@ -1,14 +1,17 @@
-use regex::Regex;
-use std::sync::OnceLock;
-
-static RUFF_LINE_RE: OnceLock<Regex> = OnceLock::new();
-static RUFF_FIXED_RE: OnceLock<Regex> = OnceLock::new();
-
-fn ruff_line_re() -> &'static Regex {
-    RUFF_LINE_RE.get_or_init(|| Regex::new(r"^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$").unwrap())
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
 }
-fn ruff_fixed_re() -> &'static Regex {
-    RUFF_FIXED_RE.get_or_init(|| Regex::new(r"Found (\d+) errors?.*?(\d+) fixable").unwrap())
+
+fn ruff_line_re() -> &'static regex::Regex {
+    static_regex!(r"^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$")
+}
+fn ruff_fixed_re() -> &'static regex::Regex {
+    static_regex!(r"Found (\d+) errors?.*?(\d+) fixable")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -26,6 +29,7 @@ fn compress_check(output: &str) -> String {
 
     let mut by_rule: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     let mut files: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut issue_lines: Vec<&str> = Vec::new();
 
     for line in trimmed.lines() {
         if let Some(caps) = ruff_line_re().captures(line) {
@@ -33,6 +37,7 @@ fn compress_check(output: &str) -> String {
             let rule = caps[4].to_string();
             files.insert(file);
             *by_rule.entry(rule).or_insert(0) += 1;
+            issue_lines.push(line);
         }
     }
 
@@ -44,11 +49,24 @@ fn compress_check(output: &str) -> String {
     }
 
     let total: u32 = by_rule.values().sum();
+
+    if total <= 30 {
+        return trimmed.to_string();
+    }
+
     let mut rules: Vec<(String, u32)> = by_rule.into_iter().collect();
-    rules.sort_by(|a, b| b.1.cmp(&a.1));
+    rules.sort_by_key(|x| std::cmp::Reverse(x.1));
 
     let mut parts = Vec::new();
     parts.push(format!("{total} issues in {} files", files.len()));
+    for line in issue_lines.iter().take(20) {
+        parts.push(format!("  {line}"));
+    }
+    if issue_lines.len() > 20 {
+        parts.push(format!("  ... +{} more issues", issue_lines.len() - 20));
+    }
+    parts.push(String::new());
+    parts.push("by rule:".to_string());
     for (rule, count) in rules.iter().take(8) {
         parts.push(format!("  {rule}: {count}"));
     }

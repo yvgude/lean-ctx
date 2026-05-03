@@ -77,8 +77,7 @@ fn normalized_entropy_in_unit_interval() {
         let h = normalized_token_entropy(text);
         assert!(
             (0.0..=1.0).contains(&h),
-            "normalized entropy must be in [0,1], got {h:.4} for {:?}",
-            text
+            "normalized entropy must be in [0,1], got {h:.4} for {text:?}",
         );
     }
 }
@@ -294,7 +293,7 @@ fn litm_monotonic_first_half() {
 fn combined_attention_geometric_mean_bounded() {
     let score = combined_attention("fn main() {", 0.5, 0.9, 0.5, 0.85);
     assert!(
-        score >= 0.0 && score <= 2.0,
+        (0.0..=2.0).contains(&score),
         "combined score must be bounded: {score}"
     );
 }
@@ -327,7 +326,7 @@ fn attention_efficiency_bounds() {
     let importances = vec![0.8, 0.3, 0.3, 0.3, 0.8];
     let eff = attention_efficiency(&importances, 0.9, 0.5, 0.85);
     assert!(
-        eff >= 0.0 && eff <= 100.0,
+        (0.0..=100.0).contains(&eff),
         "efficiency must be in [0, 100]: {eff}"
     );
 }
@@ -372,8 +371,7 @@ fn symbol_map_net_savings_correct() {
 
     let ident = "authenticate_user_credentials_handler";
     let occurrences = 15;
-    let content = std::iter::repeat(ident)
-        .take(occurrences)
+    let content = std::iter::repeat_n(ident, occurrences)
         .collect::<Vec<_>>()
         .join(" some_code ");
 
@@ -432,9 +430,11 @@ fn ib_filter_reduces_more_for_repetitive_content() {
     use lean_ctx::core::task_relevance::{adaptive_ib_budget, information_bottleneck_filter};
 
     let repetitive = "let x = compute(a);\n".repeat(100);
-    let diverse: String = (0..100)
-        .map(|i| format!("let var_{i} = func_{i}(arg_{i});\n"))
-        .collect();
+    let diverse = (0..100).fold(String::new(), |mut s, i| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "let var_{i} = func_{i}(arg_{i});");
+        s
+    });
 
     let budget_rep = adaptive_ib_budget(&repetitive, 0.5);
     let budget_div = adaptive_ib_budget(&diverse, 0.5);
@@ -540,18 +540,17 @@ fn full_scientific_audit() {
 
     check!("Normalized H ∈ [0,1]", {
         let h = normalized_token_entropy("fn main() { let x = compute(); }");
-        h >= 0.0 && h <= 1.0
+        (0.0..=1.0).contains(&h)
     });
 
     check!(
         "Kolmogorov K(redundant) < K(diverse)",
         kolmogorov_proxy(&"abc".repeat(200))
-            < kolmogorov_proxy(
-                &(0..200)
-                    .map(|i| format!("x{i}"))
-                    .collect::<Vec<_>>()
-                    .join("")
-            )
+            < kolmogorov_proxy(&(0..200).fold(String::new(), |mut s, i| {
+                use std::fmt::Write;
+                let _ = write!(s, "x{i}");
+                s
+            }))
     );
 
     check!(

@@ -15,13 +15,15 @@ lean-ctx.config.example.json
 INTERNAL_ARCHITECTURE.md
 RELEASE_SUMMARY.md
 aur/
-memory-bank/
 server.md
 
 .lean-ctx/
 .DS_Store
 DISCORD_POST.md
 DEPLOY_CHECKLIST.md
+
+# ── Private workflows ──
+n8n-workflows/
 
 # ── Lab / Neural (private, not for OSS) ──
 
@@ -36,3 +38,13 @@ docker-compose.yml
 DEVELOPMENT.md
 Makefile.deploy
 PROJECT.md
+memory-bank/
+docs/LEANCTX_CONSOLIDATION_TICKETS.md
+deploy_checklist.md
+
+# ── Local artifacts ──
+lean-ctx-chrome-extension.zip
+/docs/_local/
+test-results/
+
+website/generated/mcp-tools.json

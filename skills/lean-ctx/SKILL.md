@@ -1,12 +1,32 @@
 ---
 name: lean-ctx
-description: Context Intelligence Engine with CEP + CCP — 28 MCP tools, 90+ shell patterns, tree-sitter AST for 18 languages, Cognitive Efficiency Protocol (CEP), cross-session memory (CCP), LITM-aware positioning. Compresses LLM context by up to 99%.
-metadata: {"openclaw": {"requires": {"bins": ["lean-ctx"]}, "install": [{"id": "brew", "kind": "brew", "formula": "lean-ctx", "bins": ["lean-ctx"], "label": "Install LeanCTX (brew tap yvgude/lean-ctx)"}]}}
+description: Context Runtime for AI Agents — 49 MCP tools, 10 read modes, 90+ shell patterns, tree-sitter AST for 18 languages. Compresses LLM context by up to 99%. Use when reading files, running shell commands, searching code, or exploring directories. Auto-installs if not present.
 ---
 
-# LeanCTX v2.19.0 — The Intelligence Layer for AI Coding + CEP + CCP + Multi-Agent Sharing
+# LeanCTX — Context Runtime for AI Agents
 
-LeanCTX is a Rust binary that optimizes LLM context through 28 MCP tools, 90+ shell compression patterns, and tree-sitter AST parsing for 18 languages (TS/JS, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala, Elixir, Zig). It provides adaptive file reading with per-language entropy thresholds, incremental deltas, intent detection, cross-file deduplication with TF-IDF cosine similarity, task-conditioned relevance scoring, a heuristic attention prediction model, a project intelligence graph, the **Cognitive Efficiency Protocol (CEP)** with output token budgets, the **Context Continuity Protocol (CCP)** for cross-session memory with LITM-aware positioning, and a feedback loop for learning optimal compression parameters.
+LeanCTX optimizes LLM context through 49 MCP tools, 90+ shell compression patterns, and tree-sitter AST parsing for 18 languages. It provides adaptive file reading, cross-session memory (CCP), task-conditioned relevance scoring, and a feedback loop for learning optimal compression.
+
+## Setup (run first)
+
+Before using lean-ctx, verify it is installed:
+
+```bash
+which lean-ctx || bash scripts/install.sh
+```
+
+If the install script is not available locally, install manually:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yvgude/lean-ctx/main/skills/lean-ctx/scripts/install.sh | bash
+```
+
+After installation, configure the MCP server:
+
+```bash
+lean-ctx init --global
+lean-ctx doctor --fix
+```
 
 ## When to use lean-ctx
 

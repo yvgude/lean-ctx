@@ -80,7 +80,7 @@ fn download_file(file: &ModelFile, model_dir: &Path) -> anyhow::Result<()> {
     let response = ureq::get(&url)
         .header("User-Agent", USER_AGENT)
         .call()
-        .map_err(|e| anyhow::anyhow!("Failed to download {}: {}", url, e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to download {url}: {e}"))?;
 
     let status = response.status();
     if status != 200 {
@@ -95,7 +95,7 @@ fn download_file(file: &ModelFile, model_dir: &Path) -> anyhow::Result<()> {
 
     let mut body = response.into_body().into_reader();
     let mut out = std::fs::File::create(&tmp_path)?;
-    let mut buf = [0u8; 65536];
+    let mut buf = vec![0u8; 65536];
     let mut total: u64 = 0;
     let mut last_report: u64 = 0;
 
@@ -170,10 +170,7 @@ fn verify_model_files(model_dir: &Path) -> anyhow::Result<()> {
         let content = std::fs::read_to_string(model_dir.join("vocab.txt"))?;
         let line_count = content.lines().count();
         if line_count < 20_000 {
-            anyhow::bail!(
-                "vocab.txt appears corrupt ({} lines, expected ~30K for BERT)",
-                line_count
-            );
+            anyhow::bail!("vocab.txt appears corrupt ({line_count} lines, expected ~30K for BERT)");
         }
     }
 

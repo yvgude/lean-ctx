@@ -1,0 +1,24 @@
+Template Name: Email Verification
+Trigger: Registration (POST /api/auth/register) + Login mit unverified Email (POST /api/auth/login) + Resend (POST /api/auth/resend-verification)
+From: Konfiguriert via SMTP_FROM env var
+Subject: Verify your LeanCTX account
+Link expires: 24 hours
+
+---
+
+Welcome to LeanCTX!
+
+Please verify your email address:
+
+{{link}}
+
+This link expires in 24 hours.
+
+---
+
+Variables:
+  {{link}} = {API_BASE_URL}/api/auth/verify-email?token={token}
+             Beispiel: https://api.leanctx.com/api/auth/verify-email?token=abc123...
+
+Redirect nach Klick: {PUBLIC_BASE_URL}/login?verified=true
+                     Beispiel: https://leanctx.com/login?verified=true

@@ -1,23 +1,23 @@
 # lean-ctx
 
-**Context Intelligence Engine with CCP + TDD. Shell Hook + MCP Server. 28 MCP tools, 90+ shell patterns, cross-session memory (CCP), LITM-aware positioning, tree-sitter AST for 18 languages. Single Rust binary.**
+**Context Runtime for AI Agents with CCP + TDD. Shell Hook + MCP Server. 49 MCP tools, 10 read modes, 90+ shell patterns, cross-session memory (CCP), LITM-aware positioning, tree-sitter AST for 18 languages. Single Rust binary.**
 
 [![CI](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml)
 [![Security Check](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml)
 [![Crates.io](https://img.shields.io/crates/v/lean-ctx)](https://crates.io/crates/lean-ctx)
 [![Downloads](https://img.shields.io/crates/d/lean-ctx)](https://crates.io/crates/lean-ctx)
 [![AUR](https://img.shields.io/aur/version/lean-ctx)](https://aur.archlinux.org/packages/lean-ctx)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/pTHkG9Hew9)
 
-[Website](https://leanctx.com) · [Install](#installation) · [Quick Start](#quick-start) · [CLI Reference](#cli-commands) · [MCP Tools](#28-mcp-tools) · [Changelog](CHANGELOG.md) · [vs RTK](#lean-ctx-vs-rtk) · [Discord](https://discord.gg/pTHkG9Hew9)
+[Website](https://leanctx.com) · [Install](#installation) · [Quick Start](#quick-start) · [CLI Reference](#cli-commands) · [MCP Tools](#49-mcp-tools) · [Changelog](CHANGELOG.md) · [vs RTK](#lean-ctx-vs-rtk) · [Discord](https://discord.gg/pTHkG9Hew9)
 
 ---
 
 lean-ctx reduces LLM token consumption by **up to 99%** through two complementary strategies in a single binary:
 
 1. **Shell Hook** — Transparently compresses CLI output (90+ patterns) before it reaches the LLM. Works without LLM cooperation.
-2. **MCP Server** — 28 tools for cached file reads, adaptive mode selection, incremental deltas, dependency maps, intent detection, cross-file dedup, project graph, cross-session memory (CCP), multi-agent coordination, semantic caching, and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, OpenAI Codex, Google Antigravity, OpenCode, and any MCP-compatible editor.
+2. **MCP Server** — 49 tools for cached file reads, adaptive mode selection, incremental deltas, dependency maps, intent detection, cross-file dedup, project graph, cross-session memory (CCP), multi-agent coordination, semantic caching, and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, OpenAI Codex, Google Antigravity, OpenCode, and any MCP-compatible editor.
 3. **AI Tool Hooks** — One-command integration for Claude Code, Cursor, Gemini CLI, Codex, Crush, Windsurf, and Cline via `lean-ctx init --agent <tool>`.
 
 ## Token Savings (Typical Cursor/Claude Code Session)
@@ -182,7 +182,7 @@ lean-ctx init --global         # Install 23 shell aliases (.zshrc/.bashrc/.confi
 lean-ctx init --agent claude   # Install Claude Code PreToolUse hook
 lean-ctx init --agent cursor   # Install Cursor hooks.json
 lean-ctx init --agent gemini   # Install Gemini CLI BeforeTool hook
-lean-ctx init --agent codex    # Install Codex AGENTS.md
+lean-ctx init --agent codex    # Install Codex AGENTS.md + compatible hooks
 lean-ctx init --agent windsurf # Install .windsurfrules
 lean-ctx init --agent cline    # Install .clinerules
 lean-ctx init --agent crush    # Install Crush MCP config
@@ -347,9 +347,9 @@ $ lean-ctx gain
   lean-ctx v2.1.1  |  leanctx.com  |  lean-ctx dashboard
 ```
 
-## 28 MCP Tools
+## 49 MCP Tools
 
-When configured as an MCP server, lean-ctx provides 28 tools that replace or augment your editor's built-in tools:
+When configured as an MCP server, lean-ctx provides 49 tools that replace or augment your editor's built-in tools:
 
 ### Core Tools
 
@@ -514,6 +514,18 @@ args = []
 ```
 
 Or via CLI: `codex mcp add lean-ctx`
+
+Then run:
+
+```bash
+lean-ctx init --agent codex
+```
+
+This installs:
+
+- `~/.codex/AGENTS.md` + `~/.codex/LEAN-CTX.md`
+- a `SessionStart` hook that reminds Codex to prefer `lean-ctx -c "<command>"` for rewritable shell commands
+- a `PreToolUse` hook that blocks rewritable raw Bash commands and tells Codex exactly how to rerun them through `lean-ctx`
 
 ### Google Antigravity
 
@@ -723,7 +735,7 @@ Contributions welcome! Please open an issue or PR on [GitHub](https://github.com
 
 ## Security
 
-lean-ctx is a **local-only** tool — zero network requests, zero telemetry. See [SECURITY.md](SECURITY.md) for:
+lean-ctx is a **privacy-first** tool — no tracking, no analytics, no PII collection. Optional network activity (daily version check, opt-in anonymous stats) is fully disableable. See [SECURITY.md](SECURITY.md) for:
 
 - Vulnerability reporting process
 - Automated CI security checks (cargo audit, clippy, dangerous pattern scans)
@@ -735,4 +747,4 @@ lean-ctx is a **local-only** tool — zero network requests, zero telemetry. See
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+Apache-2.0 — see [LICENSE](../LICENSE) for details.

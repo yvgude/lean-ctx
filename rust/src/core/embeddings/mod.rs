@@ -130,8 +130,8 @@ impl EmbeddingEngine {
         if let Ok(dir) = std::env::var("LEAN_CTX_MODELS_DIR") {
             return PathBuf::from(dir);
         }
-        if let Some(home) = dirs::home_dir() {
-            return home.join(".lean-ctx").join("models");
+        if let Ok(d) = crate::core::data_dir::lean_ctx_data_dir() {
+            return d.join("models");
         }
         PathBuf::from("models")
     }

@@ -105,7 +105,7 @@ impl AgentRegistry {
         self.agents.push(AgentEntry {
             agent_id: agent_id.clone(),
             agent_type: agent_type.to_string(),
-            role: role.map(|r| r.to_string()),
+            role: role.map(std::string::ToString::to_string),
             project_root: project_root.to_string(),
             started_at: Utc::now(),
             last_active: Utc::now(),
@@ -128,7 +128,7 @@ impl AgentRegistry {
     pub fn set_status(&mut self, agent_id: &str, status: AgentStatus, message: Option<&str>) {
         if let Some(agent) = self.agents.iter_mut().find(|a| a.agent_id == agent_id) {
             agent.status = status;
-            agent.status_message = message.map(|s| s.to_string());
+            agent.status_message = message.map(std::string::ToString::to_string);
             agent.last_active = Utc::now();
         }
         self.updated_at = Utc::now();
@@ -162,7 +162,7 @@ impl AgentRegistry {
         self.scratchpad.push(ScratchpadEntry {
             id: id.clone(),
             from_agent: from_agent.to_string(),
-            to_agent: to_agent.map(|s| s.to_string()),
+            to_agent: to_agent.map(std::string::ToString::to_string),
             category: category.to_string(),
             message: message.to_string(),
             timestamp: Utc::now(),
@@ -297,7 +297,7 @@ impl AgentDiary {
         self.entries.push(DiaryEntry {
             entry_type,
             content: content.to_string(),
-            context: context.map(|s| s.to_string()),
+            context: context.map(std::string::ToString::to_string),
             timestamp: Utc::now(),
         });
         if self.entries.len() > MAX_DIARY_ENTRIES {
@@ -378,9 +378,8 @@ impl AgentDiary {
     }
 
     pub fn list_all() -> Vec<(String, usize, DateTime<Utc>)> {
-        let dir = match diary_dir() {
-            Ok(d) => d,
-            Err(_) => return Vec::new(),
+        let Ok(dir) = diary_dir() else {
+            return Vec::new();
         };
         if !dir.exists() {
             return Vec::new();
@@ -397,7 +396,7 @@ impl AgentDiary {
                 }
             }
         }
-        results.sort_by(|a, b| b.2.cmp(&a.2));
+        results.sort_by_key(|x| std::cmp::Reverse(x.2));
         results
     }
 }
@@ -415,8 +414,8 @@ impl std::fmt::Display for DiaryEntryType {
 }
 
 fn diary_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    Ok(home.join(".lean-ctx").join("agents").join("diaries"))
+    let dir = crate::core::data_dir::lean_ctx_data_dir()?;
+    Ok(dir.join("agents").join("diaries"))
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -440,8 +439,8 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 fn agents_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    Ok(home.join(".lean-ctx").join("agents"))
+    let dir = crate::core::data_dir::lean_ctx_data_dir()?;
+    Ok(dir.join("agents"))
 }
 
 fn generate_short_id() -> String {
@@ -461,8 +460,7 @@ fn is_process_alive(pid: u32) -> bool {
         std::process::Command::new("kill")
             .args(["-0", &pid.to_string()])
             .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|o| o.status.success())
     }
     #[cfg(not(unix))]
     {
@@ -478,28 +476,25 @@ struct FileLock {
 impl FileLock {
     fn acquire(path: &std::path::Path) -> Result<Self, String> {
         for _ in 0..50 {
-            match std::fs::OpenOptions::new()
+            if std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(path)
+                .is_ok()
             {
-                Ok(_) => {
-                    return Ok(Self {
-                        path: path.to_path_buf(),
-                    })
-                }
-                Err(_) => {
-                    if let Ok(metadata) = std::fs::metadata(path) {
-                        if let Ok(modified) = metadata.modified() {
-                            if modified.elapsed().unwrap_or_default().as_secs() > 5 {
-                                let _ = std::fs::remove_file(path);
-                                continue;
-                            }
-                        }
+                return Ok(Self {
+                    path: path.to_path_buf(),
+                });
+            }
+            if let Ok(metadata) = std::fs::metadata(path) {
+                if let Ok(modified) = metadata.modified() {
+                    if modified.elapsed().unwrap_or_default().as_secs() > 5 {
+                        let _ = std::fs::remove_file(path);
+                        continue;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
         Err("Could not acquire lock after 5 seconds".to_string())
     }
@@ -508,6 +503,203 @@ impl FileLock {
 impl Drop for FileLock {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharedFact {
+    pub from_agent: String,
+    pub category: String,
+    pub key: String,
+    pub value: String,
+    pub timestamp: DateTime<Utc>,
+    #[serde(default)]
+    pub received_by: Vec<String>,
+}
+
+impl AgentRegistry {
+    pub fn share_knowledge(&mut self, from: &str, category: &str, facts: &[(String, String)]) {
+        for (key, value) in facts {
+            self.scratchpad.push(ScratchpadEntry {
+                id: format!("knowledge-{}", chrono::Utc::now().timestamp_millis()),
+                from_agent: from.to_string(),
+                to_agent: None,
+                category: category.to_string(),
+                message: format!("[knowledge] {key}={value}"),
+                timestamp: Utc::now(),
+                read_by: Vec::new(),
+            });
+        }
+        let shared_path = Self::shared_knowledge_path();
+        let mut existing: Vec<SharedFact> = std::fs::read_to_string(&shared_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+
+        for (key, value) in facts {
+            existing.push(SharedFact {
+                from_agent: from.to_string(),
+                category: category.to_string(),
+                key: key.clone(),
+                value: value.clone(),
+                timestamp: Utc::now(),
+                received_by: Vec::new(),
+            });
+        }
+
+        if existing.len() > 500 {
+            existing.drain(..existing.len() - 500);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&existing) {
+            let _ = std::fs::write(&shared_path, json);
+        }
+    }
+
+    pub fn receive_shared_knowledge(&mut self, agent_id: &str) -> Vec<SharedFact> {
+        let shared_path = Self::shared_knowledge_path();
+        let mut all: Vec<SharedFact> = std::fs::read_to_string(&shared_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+
+        let mut new_facts = Vec::new();
+        for fact in &mut all {
+            if fact.from_agent != agent_id && !fact.received_by.contains(&agent_id.to_string()) {
+                fact.received_by.push(agent_id.to_string());
+                new_facts.push(fact.clone());
+            }
+        }
+
+        if !new_facts.is_empty() {
+            if let Ok(json) = serde_json::to_string_pretty(&all) {
+                let _ = std::fs::write(&shared_path, json);
+            }
+        }
+        new_facts
+    }
+
+    fn shared_knowledge_path() -> PathBuf {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".lean-ctx")
+            .join("shared_knowledge.json")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRole {
+    Coder,
+    Reviewer,
+    Planner,
+    Explorer,
+    Debugger,
+    Tester,
+    Orchestrator,
+}
+
+impl AgentRole {
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "review" | "reviewer" | "code_review" => Self::Reviewer,
+            "plan" | "planner" | "architect" => Self::Planner,
+            "explore" | "explorer" | "research" => Self::Explorer,
+            "debug" | "debugger" => Self::Debugger,
+            "test" | "tester" | "qa" => Self::Tester,
+            "orchestrator" | "coordinator" | "manager" => Self::Orchestrator,
+            _ => Self::Coder,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextDepthConfig {
+    pub max_files_full: usize,
+    pub max_files_signatures: usize,
+    pub preferred_mode: &'static str,
+    pub include_graph: bool,
+    pub include_knowledge: bool,
+    pub include_gotchas: bool,
+    pub context_budget_ratio: f64,
+}
+
+impl ContextDepthConfig {
+    pub fn for_role(role: AgentRole) -> Self {
+        match role {
+            AgentRole::Coder => Self {
+                max_files_full: 5,
+                max_files_signatures: 15,
+                preferred_mode: "full",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: true,
+                context_budget_ratio: 0.7,
+            },
+            AgentRole::Reviewer => Self {
+                max_files_full: 3,
+                max_files_signatures: 20,
+                preferred_mode: "signatures",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: true,
+                context_budget_ratio: 0.5,
+            },
+            AgentRole::Planner => Self {
+                max_files_full: 1,
+                max_files_signatures: 10,
+                preferred_mode: "map",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: false,
+                context_budget_ratio: 0.3,
+            },
+            AgentRole::Explorer => Self {
+                max_files_full: 2,
+                max_files_signatures: 8,
+                preferred_mode: "map",
+                include_graph: true,
+                include_knowledge: false,
+                include_gotchas: false,
+                context_budget_ratio: 0.4,
+            },
+            AgentRole::Debugger => Self {
+                max_files_full: 8,
+                max_files_signatures: 5,
+                preferred_mode: "full",
+                include_graph: false,
+                include_knowledge: true,
+                include_gotchas: true,
+                context_budget_ratio: 0.8,
+            },
+            AgentRole::Tester => Self {
+                max_files_full: 4,
+                max_files_signatures: 10,
+                preferred_mode: "full",
+                include_graph: false,
+                include_knowledge: false,
+                include_gotchas: true,
+                context_budget_ratio: 0.6,
+            },
+            AgentRole::Orchestrator => Self {
+                max_files_full: 0,
+                max_files_signatures: 5,
+                preferred_mode: "map",
+                include_graph: true,
+                include_knowledge: true,
+                include_gotchas: false,
+                context_budget_ratio: 0.2,
+            },
+        }
+    }
+
+    pub fn mode_for_rank(&self, rank: usize) -> &'static str {
+        if rank < self.max_files_full {
+            "full"
+        } else if rank < self.max_files_full + self.max_files_signatures {
+            "signatures"
+        } else {
+            "map"
+        }
     }
 }
 
@@ -624,7 +816,7 @@ mod tests {
             DiaryEntryType::Insight,
         ];
         for t in types {
-            assert!(!format!("{}", t).is_empty());
+            assert!(!format!("{t}").is_empty());
         }
     }
 

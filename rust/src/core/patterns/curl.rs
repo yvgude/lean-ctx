@@ -18,7 +18,7 @@ pub fn compress(output: &str) -> Option<String> {
     }
 
     if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
-        return compress_html(trimmed);
+        return Some(compress_html(trimmed));
     }
 
     if trimmed.starts_with("HTTP/") {
@@ -33,7 +33,7 @@ fn compress_json(output: &str) -> Option<String> {
     let schema = extract_schema(&val, 0);
     let size = output.len();
 
-    Some(format!("JSON ({} bytes):\n{schema}", size))
+    Some(format!("JSON ({size} bytes):\n{schema}"))
 }
 
 fn extract_schema(val: &serde_json::Value, depth: usize) -> String {
@@ -52,10 +52,12 @@ fn extract_schema(val: &serde_json::Value, depth: usize) -> String {
                     serde_json::Value::Bool(_) => "bool".to_string(),
                     serde_json::Value::Number(_) => "number".to_string(),
                     serde_json::Value::String(s) => {
-                        if s.len() > 50 {
+                        if is_sensitive_key(key) {
+                            format!("string({}, REDACTED)", s.len())
+                        } else if s.len() > 50 {
                             format!("string({})", s.len())
                         } else {
-                            format!("\"{}\"", s)
+                            format!("\"{s}\"")
                         }
                     }
                     serde_json::Value::Array(arr) => {
@@ -111,7 +113,23 @@ fn value_type(val: &serde_json::Value) -> String {
     }
 }
 
-fn compress_html(output: &str) -> Option<String> {
+fn is_sensitive_key(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    lower.contains("token")
+        || lower.contains("key")
+        || lower.contains("secret")
+        || lower.contains("password")
+        || lower.contains("passwd")
+        || lower.contains("auth")
+        || lower.contains("credential")
+        || lower.contains("api_key")
+        || lower.contains("apikey")
+        || lower.contains("access_token")
+        || lower.contains("refresh_token")
+        || lower.contains("private")
+}
+
+fn compress_html(output: &str) -> String {
     let lines = output.lines().count();
     let size = output.len();
 
@@ -123,7 +141,7 @@ fn compress_html(output: &str) -> Option<String> {
         })
         .unwrap_or("(no title)");
 
-    Some(format!("HTML: \"{title}\" ({size} bytes, {lines} lines)"))
+    format!("HTML: \"{title}\" ({size} bytes, {lines} lines)")
 }
 
 fn compress_headers(output: &str) -> Option<String> {

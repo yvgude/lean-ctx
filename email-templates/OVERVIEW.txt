@@ -1,0 +1,33 @@
+LeanCTX Cloud — Email Templates Overview
+=========================================
+
+Quelle: rust/src/cloud_server/auth.rs (Mailer struct, Zeilen 44-94)
+Transport: lettre via SMTP (STARTTLS)
+Format: Plaintext (kein HTML)
+
+Templates:
+  1. verification.txt — Email-Verifizierung (Registration + Login-Resend)
+  2. password-reset.txt — Passwort-Reset
+
+Umgebungsvariablen (config.rs):
+  SMTP_HOST      — SMTP Server Hostname
+  SMTP_PORT      — SMTP Port (Default: 587)
+  SMTP_USERNAME  — SMTP Username
+  SMTP_PASSWORD  — SMTP Password
+  SMTP_FROM      — Absender-Adresse (z.B. "LeanCTX <noreply@leanctx.com>")
+  API_BASE_URL   — API URL fuer Verification Links (z.B. https://api.leanctx.com)
+  PUBLIC_BASE_URL — Website URL fuer Password Reset Links (z.B. https://leanctx.com)
+
+Ausloeser:
+  POST /api/auth/register          → verification.txt (einmal nach Registration)
+  POST /api/auth/login             → verification.txt (wenn Email noch nicht verifiziert)
+  POST /api/auth/resend-verification → verification.txt (manueller Resend)
+  POST /api/auth/forgot-password   → password-reset.txt
+
+Sicherheitshinweise:
+  - Tokens sind 32-Byte Hex (256-Bit), gespeichert als SHA256-Hash in DB
+  - Verification Token: 24h Ablauf
+  - Reset Token: 1h Ablauf
+  - Tokens sind Single-Use (consumed_at wird gesetzt)
+  - forgot-password gibt generische Antwort (Anti-Email-Enumeration)
+  - Password Reset verifiziert automatisch auch die Email-Adresse

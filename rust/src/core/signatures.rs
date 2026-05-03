@@ -1,5 +1,13 @@
 use regex::Regex;
-use std::sync::OnceLock;
+
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
 #[derive(Debug, Clone)]
 pub struct Signature {
@@ -10,9 +18,25 @@ pub struct Signature {
     pub is_async: bool,
     pub is_exported: bool,
     pub indent: usize,
+    pub start_line: Option<usize>,
+    pub end_line: Option<usize>,
 }
 
 impl Signature {
+    pub fn no_span() -> Self {
+        Self {
+            kind: "",
+            name: String::new(),
+            params: String::new(),
+            return_type: String::new(),
+            is_async: false,
+            is_exported: false,
+            indent: 0,
+            start_line: None,
+            end_line: None,
+        }
+    }
+
     pub fn to_compact(&self) -> String {
         let export = if self.is_exported { "⊛ " } else { "" };
         let async_prefix = if self.is_async { "async " } else { "" };
@@ -82,63 +106,48 @@ impl Signature {
     }
 }
 
-static FN_RE: OnceLock<Regex> = OnceLock::new();
-static CLASS_RE: OnceLock<Regex> = OnceLock::new();
-static IFACE_RE: OnceLock<Regex> = OnceLock::new();
-static TYPE_RE: OnceLock<Regex> = OnceLock::new();
-static CONST_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_FN_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_STRUCT_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_ENUM_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_TRAIT_RE: OnceLock<Regex> = OnceLock::new();
-static RUST_IMPL_RE: OnceLock<Regex> = OnceLock::new();
-
 fn fn_re() -> &'static Regex {
-    FN_RE.get_or_init(|| {
-        Regex::new(r"^(\s*)(export\s+)?(async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^\{]+))?\s*\{?")
-            .unwrap()
-    })
+    static_regex!(
+        r"^(\s*)(export\s+)?(async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^\{]+))?\s*\{?"
+    )
 }
 
 fn class_re() -> &'static Regex {
-    CLASS_RE.get_or_init(|| Regex::new(r"^(\s*)(export\s+)?(abstract\s+)?class\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(export\s+)?(abstract\s+)?class\s+(\w+)")
 }
 
 fn iface_re() -> &'static Regex {
-    IFACE_RE.get_or_init(|| Regex::new(r"^(\s*)(export\s+)?interface\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(export\s+)?interface\s+(\w+)")
 }
 
 fn type_re() -> &'static Regex {
-    TYPE_RE.get_or_init(|| Regex::new(r"^(\s*)(export\s+)?type\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(export\s+)?type\s+(\w+)")
 }
 
 fn const_re() -> &'static Regex {
-    CONST_RE.get_or_init(|| {
-        Regex::new(r"^(\s*)(export\s+)?(const|let|var)\s+(\w+)(?:\s*:\s*(\w+))?").unwrap()
-    })
+    static_regex!(r"^(\s*)(export\s+)?(const|let|var)\s+(\w+)(?:\s*:\s*(\w+))?")
 }
 
 fn rust_fn_re() -> &'static Regex {
-    RUST_FN_RE.get_or_init(|| {
-        Regex::new(r"^(\s*)(pub\s+)?(async\s+)?fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*->\s*([^\{]+))?\s*\{?")
-            .unwrap()
-    })
+    static_regex!(
+        r"^(\s*)(pub\s+)?(async\s+)?fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*->\s*([^\{]+))?\s*\{?"
+    )
 }
 
 fn rust_struct_re() -> &'static Regex {
-    RUST_STRUCT_RE.get_or_init(|| Regex::new(r"^(\s*)(pub\s+)?struct\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(pub\s+)?struct\s+(\w+)")
 }
 
 fn rust_enum_re() -> &'static Regex {
-    RUST_ENUM_RE.get_or_init(|| Regex::new(r"^(\s*)(pub\s+)?enum\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(pub\s+)?enum\s+(\w+)")
 }
 
 fn rust_trait_re() -> &'static Regex {
-    RUST_TRAIT_RE.get_or_init(|| Regex::new(r"^(\s*)(pub\s+)?trait\s+(\w+)").unwrap())
+    static_regex!(r"^(\s*)(pub\s+)?trait\s+(\w+)")
 }
 
 fn rust_impl_re() -> &'static Regex {
-    RUST_IMPL_RE.get_or_init(|| Regex::new(r"^(\s*)impl\s+(?:(\w+)\s+for\s+)?(\w+)").unwrap())
+    static_regex!(r"^(\s*)impl\s+(?:(\w+)\s+for\s+)?(\w+)")
 }
 
 pub fn extract_signatures(content: &str, file_ext: &str) -> Vec<Signature> {
@@ -172,7 +181,7 @@ pub fn extract_file_map(path: &str, content: &str) -> String {
     let key_sigs: Vec<String> = sigs
         .iter()
         .filter(|s| s.is_exported || s.indent == 0)
-        .map(|s| s.to_compact())
+        .map(Signature::to_compact)
         .collect();
     if !key_sigs.is_empty() {
         parts.push(key_sigs.join("\n"));
@@ -201,6 +210,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 is_async: caps.get(3).is_some(),
                 is_exported: caps.get(2).is_some(),
                 indent: if indent > 0 { 2 } else { 0 },
+                ..Signature::no_span()
             });
         } else if let Some(caps) = class_re().captures(line) {
             sigs.push(Signature {
@@ -211,6 +221,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps.get(2).is_some(),
                 indent: 0,
+                ..Signature::no_span()
             });
         } else if let Some(caps) = iface_re().captures(line) {
             sigs.push(Signature {
@@ -221,6 +232,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps.get(2).is_some(),
                 indent: 0,
+                ..Signature::no_span()
             });
         } else if let Some(caps) = type_re().captures(line) {
             sigs.push(Signature {
@@ -231,6 +243,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps.get(2).is_some(),
                 indent: 0,
+                ..Signature::no_span()
             });
         } else if let Some(caps) = const_re().captures(line) {
             if caps.get(2).is_some() {
@@ -244,6 +257,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                     is_async: false,
                     is_exported: true,
                     indent: 0,
+                    ..Signature::no_span()
                 });
             }
         }
@@ -273,6 +287,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 is_async: caps.get(3).is_some(),
                 is_exported: caps.get(2).is_some(),
                 indent: if indent > 0 { 2 } else { 0 },
+                ..Signature::no_span()
             });
         } else if let Some(caps) = rust_struct_re().captures(line) {
             sigs.push(Signature {
@@ -283,6 +298,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps.get(2).is_some(),
                 indent: 0,
+                ..Signature::no_span()
             });
         } else if let Some(caps) = rust_enum_re().captures(line) {
             sigs.push(Signature {
@@ -293,6 +309,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps.get(2).is_some(),
                 indent: 0,
+                ..Signature::no_span()
             });
         } else if let Some(caps) = rust_trait_re().captures(line) {
             sigs.push(Signature {
@@ -303,6 +320,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps.get(2).is_some(),
                 indent: 0,
+                ..Signature::no_span()
             });
         } else if let Some(caps) = rust_impl_re().captures(line) {
             let trait_name = caps.get(2).map(|m| m.as_str());
@@ -320,6 +338,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: false,
                 indent: 0,
+                ..Signature::no_span()
             });
         }
     }
@@ -328,15 +347,9 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
 }
 
 fn extract_python_signatures(content: &str) -> Vec<Signature> {
-    use std::sync::OnceLock;
-    static PY_FN: OnceLock<Regex> = OnceLock::new();
-    static PY_CLASS: OnceLock<Regex> = OnceLock::new();
-
     let mut sigs = Vec::new();
-    let py_fn = PY_FN.get_or_init(|| {
-        Regex::new(r"^(\s*)(async\s+)?def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*(\w+))?").unwrap()
-    });
-    let py_class = PY_CLASS.get_or_init(|| Regex::new(r"^(\s*)class\s+(\w+)").unwrap());
+    let py_fn = static_regex!(r"^(\s*)(async\s+)?def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*(\w+))?");
+    let py_class = static_regex!(r"^(\s*)class\s+(\w+)");
 
     for line in content.lines() {
         if let Some(caps) = py_fn.captures(line) {
@@ -351,6 +364,7 @@ fn extract_python_signatures(content: &str) -> Vec<Signature> {
                 is_async: caps.get(2).is_some(),
                 is_exported: !caps[3].starts_with('_'),
                 indent: if indent > 0 { 2 } else { 0 },
+                ..Signature::no_span()
             });
         } else if let Some(caps) = py_class.captures(line) {
             sigs.push(Signature {
@@ -361,6 +375,7 @@ fn extract_python_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: !caps[2].starts_with('_'),
                 indent: 0,
+                ..Signature::no_span()
             });
         }
     }
@@ -369,14 +384,11 @@ fn extract_python_signatures(content: &str) -> Vec<Signature> {
 }
 
 fn extract_go_signatures(content: &str) -> Vec<Signature> {
-    use std::sync::OnceLock;
-    static GO_FN: OnceLock<Regex> = OnceLock::new();
-    static GO_TYPE: OnceLock<Regex> = OnceLock::new();
-
     let mut sigs = Vec::new();
-    let go_fn = GO_FN.get_or_init(|| Regex::new(r"^func\s+(?:\((\w+)\s+\*?(\w+)\)\s+)?(\w+)\s*\(([^)]*)\)(?:\s*(?:\(([^)]*)\)|(\w+)))?\s*\{").unwrap());
-    let go_type =
-        GO_TYPE.get_or_init(|| Regex::new(r"^type\s+(\w+)\s+(struct|interface)").unwrap());
+    let go_fn = static_regex!(
+        r"^func\s+(?:\((\w+)\s+\*?(\w+)\)\s+)?(\w+)\s*\(([^)]*)\)(?:\s*(?:\(([^)]*)\)|(\w+)))?\s*\{"
+    );
+    let go_type = static_regex!(r"^type\s+(\w+)\s+(struct|interface)");
 
     for line in content.lines() {
         if let Some(caps) = go_fn.captures(line) {
@@ -392,6 +404,7 @@ fn extract_go_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps[3].starts_with(char::is_uppercase),
                 indent: if is_method { 2 } else { 0 },
+                ..Signature::no_span()
             });
         } else if let Some(caps) = go_type.captures(line) {
             sigs.push(Signature {
@@ -406,6 +419,7 @@ fn extract_go_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: caps[1].starts_with(char::is_uppercase),
                 indent: 0,
+                ..Signature::no_span()
             });
         }
     }
@@ -497,15 +511,12 @@ fn tdd_params(params: &str) -> String {
 }
 
 fn extract_generic_signatures(content: &str) -> Vec<Signature> {
-    static RE_FUNC: OnceLock<Regex> = OnceLock::new();
-    static RE_CLASS: OnceLock<Regex> = OnceLock::new();
-
-    let re_func = RE_FUNC.get_or_init(|| {
-        Regex::new(r"^\s*(?:(?:public|private|protected|static|async|abstract|virtual|override|final|def|func|fun|fn)\s+)+(\w+)\s*\(").unwrap()
-    });
-    let re_class = RE_CLASS.get_or_init(|| {
-        Regex::new(r"^\s*(?:(?:public|private|protected|abstract|final|sealed|partial)\s+)*(?:class|struct|enum|interface|trait|module|object|record)\s+(\w+)").unwrap()
-    });
+    let re_func = static_regex!(
+        r"^\s*(?:(?:public|private|protected|static|async|abstract|virtual|override|final|def|func|fun|fn)\s+)+(\w+)\s*\("
+    );
+    let re_class = static_regex!(
+        r"^\s*(?:(?:public|private|protected|abstract|final|sealed|partial)\s+)*(?:class|struct|enum|interface|trait|module|object|record)\s+(\w+)"
+    );
 
     let mut sigs = Vec::new();
     for line in content.lines() {
@@ -527,6 +538,7 @@ fn extract_generic_signatures(content: &str) -> Vec<Signature> {
                 is_async: false,
                 is_exported: true,
                 indent: 0,
+                ..Signature::no_span()
             });
         } else if let Some(caps) = re_func.captures(trimmed) {
             sigs.push(Signature {
@@ -537,6 +549,7 @@ fn extract_generic_signatures(content: &str) -> Vec<Signature> {
                 is_async: trimmed.contains("async"),
                 is_exported: true,
                 indent: 0,
+                ..Signature::no_span()
             });
         }
     }

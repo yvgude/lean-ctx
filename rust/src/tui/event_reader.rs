@@ -9,11 +9,10 @@ pub struct EventTail {
 
 impl EventTail {
     pub fn new() -> Self {
-        let path = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".lean-ctx")
-            .join("events.jsonl");
-        let offset = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let base = crate::core::data_dir::lean_ctx_data_dir()
+            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"));
+        let path = base.join("events.jsonl");
+        let offset = std::fs::metadata(&path).map_or(0, |m| m.len());
         Self { path, offset }
     }
 
@@ -21,7 +20,7 @@ impl EventTail {
         let Ok(mut file) = std::fs::File::open(&self.path) else {
             return Vec::new();
         };
-        let meta_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let meta_len = file.metadata().map_or(0, |m| m.len());
         if meta_len < self.offset {
             self.offset = 0;
         }
@@ -32,9 +31,11 @@ impl EventTail {
         let _ = file.seek(SeekFrom::Start(self.offset));
         let reader = BufReader::new(&file);
         let mut events = Vec::new();
+        let mut bytes_read: u64 = 0;
 
         for line in reader.lines() {
             let Ok(line) = line else { break };
+            bytes_read += line.len() as u64 + 1; // +1 for newline
             if line.trim().is_empty() {
                 continue;
             }
@@ -43,7 +44,7 @@ impl EventTail {
             }
         }
 
-        self.offset = meta_len;
+        self.offset += bytes_read;
         events
     }
 }

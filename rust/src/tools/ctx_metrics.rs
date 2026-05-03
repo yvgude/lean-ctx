@@ -3,11 +3,6 @@ use std::collections::HashMap;
 use crate::core::cache::SessionCache;
 use crate::tools::{CrpMode, ToolCallRecord};
 
-use crate::core::stats::{DEFAULT_INPUT_PRICE_PER_M, DEFAULT_OUTPUT_PRICE_PER_M};
-
-const COST_PER_1M_INPUT: f64 = DEFAULT_INPUT_PRICE_PER_M;
-const COST_PER_1M_OUTPUT: f64 = DEFAULT_OUTPUT_PRICE_PER_M;
-
 pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: CrpMode) -> String {
     let cache_stats = cache.get_stats();
     let refs = cache.file_ref_map();
@@ -22,6 +17,11 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
     };
 
     let mut out = Vec::new();
+    let env_model = std::env::var("LEAN_CTX_MODEL")
+        .or_else(|_| std::env::var("LCTX_MODEL"))
+        .ok();
+    let pricing = crate::core::gain::model_pricing::ModelPricing::load();
+    let quote = pricing.quote(env_model.as_deref());
 
     if crp_mode.is_tdd() {
         out.push("§metrics".to_string());
@@ -43,8 +43,8 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
             pct
         ));
 
-        let cost_saved = total_saved as f64 / 1_000_000.0 * COST_PER_1M_INPUT;
-        let cost_without = total_original as f64 / 1_000_000.0 * COST_PER_1M_INPUT;
+        let cost_saved = total_saved as f64 / 1_000_000.0 * quote.cost.input_per_m;
+        let cost_without = total_original as f64 / 1_000_000.0 * quote.cost.input_per_m;
         out.push(format!(
             "cost: ${:.4}→${:.4} | -${:.4}",
             cost_without,
@@ -71,12 +71,11 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
             pct
         ));
 
-        let cost_saved = total_saved as f64 / 1_000_000.0 * COST_PER_1M_INPUT;
-        let cost_without = total_original as f64 / 1_000_000.0 * COST_PER_1M_INPUT;
-        let cost_with = total_sent as f64 / 1_000_000.0 * COST_PER_1M_INPUT;
+        let cost_saved = total_saved as f64 / 1_000_000.0 * quote.cost.input_per_m;
+        let cost_without = total_original as f64 / 1_000_000.0 * quote.cost.input_per_m;
+        let cost_with = total_sent as f64 / 1_000_000.0 * quote.cost.input_per_m;
         out.push(format!(
-            "Cost estimate: ${:.4} without → ${:.4} with lean-ctx | ${:.4} saved",
-            cost_without, cost_with, cost_saved
+            "Cost estimate: ${cost_without:.4} without → ${cost_with:.4} with lean-ctx | ${cost_saved:.4} saved"
         ));
     }
 
@@ -106,8 +105,11 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
             entry.saved += call.saved_tokens;
         }
 
-        let mut sorted: Vec<_> = by_tool.iter().collect();
-        sorted.sort_by(|a, b| b.1.saved.cmp(&a.1.saved));
+        let mut sorted: Vec<_> = by_tool
+            .iter()
+            .filter(|(_, ts)| ts.original > 0 || ts.saved > 0)
+            .collect();
+        sorted.sort_by_key(|x| std::cmp::Reverse(x.1.saved));
 
         for (tool, ts) in &sorted {
             let avg = if ts.original > 0 {
@@ -156,7 +158,7 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
             out.push("─".repeat(if crp_mode.is_tdd() { 28 } else { 30 }));
 
             let mut sorted_modes: Vec<_> = by_mode.iter().collect();
-            sorted_modes.sort_by(|a, b| b.1.saved.cmp(&a.1.saved));
+            sorted_modes.sort_by_key(|x| std::cmp::Reverse(x.1.saved));
 
             for (mode, ms) in &sorted_modes {
                 if crp_mode.is_tdd() {
@@ -201,18 +203,16 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
     }
 
     let projected_session =
-        total_saved as f64 / 1_000_000.0 * (COST_PER_1M_INPUT + COST_PER_1M_OUTPUT * 0.3);
+        total_saved as f64 / 1_000_000.0 * (quote.cost.input_per_m + quote.cost.output_per_m * 0.3);
     if projected_session > 0.001 {
         out.push(String::new());
         if crp_mode.is_tdd() {
             out.push(format!(
-                "∴ session savings (incl. thinking): ${:.3}",
-                projected_session
+                "∴ session savings (incl. thinking): ${projected_session:.3}"
             ));
         } else {
             out.push(format!(
-                "Projected session savings (incl. thinking): ${:.3}",
-                projected_session
+                "Projected session savings (incl. thinking): ${projected_session:.3}"
             ));
         }
     }
@@ -242,7 +242,7 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
     ));
 
     let complexity = crate::core::adaptive::classify_from_context(cache);
-    out.push(format!("  Task complexity:   {:?}", complexity));
+    out.push(format!("  Task complexity:   {complexity:?}"));
 
     out.join("\n")
 }
@@ -263,7 +263,7 @@ fn compute_cep_compliance(cache: &SessionCache, tool_calls: &[ToolCallRecord]) -
         .iter()
         .filter_map(|c| c.mode.as_deref())
         .collect();
-    let possible_modes = 6.0; // full, map, signatures, aggressive, entropy, cache_hit
+    let possible_modes = crate::core::budgets::READ_MODE_COUNT;
     let mode_diversity = (modes_used.len() as f64 / possible_modes).min(1.0);
 
     let total_original: u64 = tool_calls.iter().map(|c| c.original_tokens as u64).sum();

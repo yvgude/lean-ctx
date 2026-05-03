@@ -1,10 +1,14 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static LOG_TIMESTAMP_RE: OnceLock<Regex> = OnceLock::new();
-
-fn log_timestamp_re() -> &'static Regex {
-    LOG_TIMESTAMP_RE.get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap())
+fn log_timestamp_re() -> &'static regex::Regex {
+    static_regex!(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -91,20 +95,89 @@ fn compress_ps(output: &str) -> String {
         return "no containers".to_string();
     }
 
+    let header = lines[0];
+    let col_positions = parse_docker_columns(header);
+
     let mut containers = Vec::new();
     for line in &lines[1..] {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 7 {
-            let name = parts.last().unwrap_or(&"?");
-            let status = parts.get(4).unwrap_or(&"?");
-            containers.push(format!("{name}: {status}"));
+        if line.trim().is_empty() {
+            continue;
         }
+
+        let name = extract_column(line, &col_positions, "NAMES")
+            .unwrap_or_else(|| extract_last_word(line));
+        let mut status =
+            extract_column(line, &col_positions, "STATUS").unwrap_or_else(|| "?".to_string());
+        let image = extract_column(line, &col_positions, "IMAGE");
+
+        // Fallback: if health/exit annotations are in the raw line but missing
+        // from the column-extracted status (column slicing can truncate them),
+        // recover them from the raw line.
+        for annotation in &["(unhealthy)", "(healthy)", "(health: starting)"] {
+            if line.contains(annotation) && !status.contains(annotation) {
+                status = format!("{status} {annotation}");
+            }
+        }
+        if line.contains("Exited") && !status.contains("Exited") {
+            if let Some(pos) = line.find("Exited") {
+                let end = line[pos..].find(')').map_or(pos + 6, |p| pos + p + 1);
+                let exited_str = &line[pos..end.min(line.len())];
+                status = exited_str.to_string();
+            }
+        }
+
+        let mut entry = name.clone();
+        if let Some(img) = image {
+            entry = format!("{name} ({img})");
+        }
+        entry = format!("{entry}: {status}");
+        containers.push(entry);
     }
 
     if containers.is_empty() {
         return "no containers".to_string();
     }
     containers.join("\n")
+}
+
+fn parse_docker_columns(header: &str) -> Vec<(String, usize)> {
+    let cols = [
+        "CONTAINER ID",
+        "IMAGE",
+        "COMMAND",
+        "CREATED",
+        "STATUS",
+        "PORTS",
+        "NAMES",
+    ];
+    let mut positions: Vec<(String, usize)> = Vec::new();
+    for col in &cols {
+        if let Some(pos) = header.find(col) {
+            positions.push((col.to_string(), pos));
+        }
+    }
+    positions.sort_by_key(|(_, pos)| *pos);
+    positions
+}
+
+fn extract_column(line: &str, cols: &[(String, usize)], name: &str) -> Option<String> {
+    let idx = cols.iter().position(|(n, _)| n == name)?;
+    let start = cols[idx].1;
+    let end = cols.get(idx + 1).map_or(line.len(), |(_, p)| *p);
+    if start >= line.len() {
+        return None;
+    }
+    let end = end.min(line.len());
+    let val = line[start..end].trim().to_string();
+    if val.is_empty() {
+        None
+    } else {
+        Some(val)
+    }
+}
+
+fn extract_last_word(line: &str) -> String {
+    line.split_whitespace().last().unwrap_or("?").to_string()
 }
 
 fn compress_images(output: &str) -> String {
@@ -168,12 +241,22 @@ fn compress_logs(output: &str) -> String {
         .collect();
 
     if result.len() > 30 {
+        let result_strs: Vec<&str> = result.iter().map(std::string::String::as_str).collect();
+        let middle = &result_strs[..result_strs.len() - 15];
+        let safety = crate::core::safety_needles::extract_safety_lines(middle, 20);
         let last_lines = &result[result.len() - 15..];
-        format!(
-            "... ({} lines total)\n{}",
-            lines.len(),
-            last_lines.join("\n")
-        )
+
+        let mut out = format!("... ({} lines total", lines.len());
+        if !safety.is_empty() {
+            out.push_str(&format!(", {} safety-relevant preserved", safety.len()));
+        }
+        out.push_str(")\n");
+        for s in &safety {
+            out.push_str(s);
+            out.push('\n');
+        }
+        out.push_str(&last_lines.join("\n"));
+        out
     } else {
         result.join("\n")
     }
@@ -338,7 +421,6 @@ fn compress_system_df(output: &str) -> String {
         }
         if !current_type.is_empty() && trimmed.contains("RECLAIMABLE") {
             current_type.clear();
-            continue;
         }
     }
 
@@ -443,7 +525,7 @@ fn compress_json_value(val: &serde_json::Value, depth: usize) -> String {
     }
     match val {
         serde_json::Value::Object(map) => {
-            let keys: Vec<String> = map.keys().take(15).map(|k| k.to_string()).collect();
+            let keys: Vec<String> = map.keys().take(15).cloned().collect();
             let total = map.len();
             if total > 15 {
                 format!("{{{} ... +{} keys}}", keys.join(", "), total - 15)

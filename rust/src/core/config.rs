@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+use super::memory_policy::MemoryPolicy;
+
+/// Controls when shell output is tee'd to disk for later retrieval.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TeeMode {
@@ -12,6 +15,52 @@ pub enum TeeMode {
     Always,
 }
 
+/// Controls agent output verbosity level injected into MCP instructions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TerseAgent {
+    #[default]
+    Off,
+    Lite,
+    Full,
+    Ultra,
+}
+
+impl TerseAgent {
+    /// Reads the terse-agent level from the `LEAN_CTX_TERSE_AGENT` env var.
+    pub fn from_env() -> Self {
+        match std::env::var("LEAN_CTX_TERSE_AGENT")
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str()
+        {
+            "lite" => Self::Lite,
+            "full" => Self::Full,
+            "ultra" => Self::Ultra,
+            _ => Self::Off,
+        }
+    }
+
+    /// Returns the effective terse level, preferring env var over config value.
+    pub fn effective(config_val: &TerseAgent) -> Self {
+        match std::env::var("LEAN_CTX_TERSE_AGENT") {
+            Ok(val) if !val.is_empty() => match val.to_lowercase().as_str() {
+                "lite" => Self::Lite,
+                "full" => Self::Full,
+                "ultra" => Self::Ultra,
+                _ => Self::Off,
+            },
+            _ => config_val.clone(),
+        }
+    }
+
+    /// Returns `true` if any terse level is enabled (not `Off`).
+    pub fn is_active(&self) -> bool {
+        !matches!(self, Self::Off)
+    }
+}
+
+/// Controls how dense/compact MCP tool output is formatted.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputDensity {
@@ -22,6 +71,7 @@ pub enum OutputDensity {
 }
 
 impl OutputDensity {
+    /// Reads the output density from the `LEAN_CTX_OUTPUT_DENSITY` env var.
     pub fn from_env() -> Self {
         match std::env::var("LEAN_CTX_OUTPUT_DENSITY")
             .unwrap_or_default()
@@ -34,15 +84,29 @@ impl OutputDensity {
         }
     }
 
+    /// Returns the effective density, preferring env var over config value.
     pub fn effective(config_val: &OutputDensity) -> Self {
         let env_val = Self::from_env();
         if env_val != Self::Normal {
             return env_val;
         }
+        let profile_val = crate::core::profiles::active_profile()
+            .compression
+            .output_density
+            .to_lowercase();
+        let profile_density = match profile_val.as_str() {
+            "terse" => Self::Terse,
+            "ultra" => Self::Ultra,
+            _ => Self::Normal,
+        };
+        if profile_density != Self::Normal {
+            return profile_density;
+        }
         config_val.clone()
     }
 }
 
+/// Global lean-ctx configuration loaded from `config.toml`, merged with project-local overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -69,10 +133,74 @@ pub struct Config {
     #[serde(default)]
     pub redirect_exclude: Vec<String>,
     /// Tools to exclude from the MCP tool list returned by list_tools.
-    /// Accepts exact tool names (e.g. ["ctx_graph", "ctx_agent"]).
+    /// Accepts exact tool names (e.g. `["ctx_graph", "ctx_agent"]`).
     /// Empty by default — all tools listed, no behaviour change.
     #[serde(default)]
     pub disabled_tools: Vec<String>,
+    #[serde(default)]
+    pub loop_detection: LoopDetectionConfig,
+    /// Controls where lean-ctx installs agent rule files.
+    /// Values: "both" (default), "global" (home-dir only), "project" (repo-local only).
+    /// Override via LEAN_CTX_RULES_SCOPE env var.
+    #[serde(default)]
+    pub rules_scope: Option<String>,
+    /// Extra glob patterns to ignore in graph/overview/preload (repo-local).
+    /// Example: `["externals/**", "target/**", "temp/**"]`
+    #[serde(default)]
+    pub extra_ignore_patterns: Vec<String>,
+    /// Controls agent output verbosity via instructions injection.
+    /// Values: "off" (default), "lite", "full", "ultra".
+    /// Override via LEAN_CTX_TERSE_AGENT env var.
+    #[serde(default)]
+    pub terse_agent: TerseAgent,
+    /// Archive configuration for zero-loss compression.
+    #[serde(default)]
+    pub archive: ArchiveConfig,
+    /// Memory policy (knowledge/episodic/procedural/lifecycle budgets & thresholds).
+    #[serde(default)]
+    pub memory: MemoryPolicy,
+    /// Additional paths allowed by PathJail (absolute).
+    /// Useful for multi-project workspaces where the jail root is a parent directory.
+    /// Override via LEAN_CTX_ALLOW_PATH env var (path-list separator).
+    #[serde(default)]
+    pub allow_paths: Vec<String>,
+    /// Enable content-defined chunking (Rabin-Karp) for cache-optimal output ordering.
+    /// Stable chunks are emitted first to maximize prompt cache hits.
+    #[serde(default)]
+    pub content_defined_chunking: bool,
+    /// Skip session/knowledge/gotcha blocks in MCP instructions to minimize token overhead.
+    /// Override via LEAN_CTX_MINIMAL env var.
+    #[serde(default)]
+    pub minimal_overhead: bool,
+    /// Disable shell hook injection (the _lc() function that wraps CLI commands).
+    /// Override via LEAN_CTX_NO_HOOK env var.
+    #[serde(default)]
+    pub shell_hook_disabled: bool,
+    /// Disable the daily version check against leanctx.com/version.txt.
+    /// Override via LEAN_CTX_NO_UPDATE_CHECK env var.
+    #[serde(default)]
+    pub update_check_disabled: bool,
+}
+
+/// Settings for the zero-loss compression archive (large tool outputs saved to disk).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArchiveConfig {
+    pub enabled: bool,
+    pub threshold_chars: usize,
+    pub max_age_hours: u64,
+    pub max_disk_mb: u64,
+}
+
+impl Default for ArchiveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold_chars: 4096,
+            max_age_hours: 48,
+            max_disk_mb: 500,
+        }
+    }
 }
 
 fn default_buddy_enabled() -> bool {
@@ -102,6 +230,7 @@ fn default_theme() -> String {
     "default".to_string()
 }
 
+/// Controls autonomous background behaviors (preload, dedup, consolidation).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AutonomyConfig {
@@ -109,8 +238,11 @@ pub struct AutonomyConfig {
     pub auto_preload: bool,
     pub auto_dedup: bool,
     pub auto_related: bool,
+    pub auto_consolidate: bool,
     pub silent_preload: bool,
     pub dedup_threshold: usize,
+    pub consolidate_every_calls: u32,
+    pub consolidate_cooldown_secs: u64,
 }
 
 impl Default for AutonomyConfig {
@@ -120,13 +252,17 @@ impl Default for AutonomyConfig {
             auto_preload: true,
             auto_dedup: true,
             auto_related: true,
+            auto_consolidate: true,
             silent_preload: true,
             dedup_threshold: 8,
+            consolidate_every_calls: 25,
+            consolidate_cooldown_secs: 120,
         }
     }
 }
 
 impl AutonomyConfig {
+    /// Creates an autonomy config from env vars, falling back to defaults.
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         if let Ok(v) = std::env::var("LEAN_CTX_AUTONOMY") {
@@ -143,6 +279,9 @@ impl AutonomyConfig {
         if let Ok(v) = std::env::var("LEAN_CTX_AUTO_RELATED") {
             cfg.auto_related = v != "false" && v != "0";
         }
+        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_CONSOLIDATE") {
+            cfg.auto_consolidate = v != "false" && v != "0";
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_SILENT_PRELOAD") {
             cfg.silent_preload = v != "false" && v != "0";
         }
@@ -151,9 +290,20 @@ impl AutonomyConfig {
                 cfg.dedup_threshold = n;
             }
         }
+        if let Ok(v) = std::env::var("LEAN_CTX_CONSOLIDATE_EVERY_CALLS") {
+            if let Ok(n) = v.parse() {
+                cfg.consolidate_every_calls = n;
+            }
+        }
+        if let Ok(v) = std::env::var("LEAN_CTX_CONSOLIDATE_COOLDOWN_SECS") {
+            if let Ok(n) = v.parse() {
+                cfg.consolidate_cooldown_secs = n;
+            }
+        }
         cfg
     }
 
+    /// Loads autonomy config from disk, with env var overrides applied.
     pub fn load() -> Self {
         let file_cfg = Config::load().autonomy;
         let mut cfg = file_cfg;
@@ -183,19 +333,47 @@ impl AutonomyConfig {
     }
 }
 
+/// Cloud sync and contribution settings (pattern sharing, model pulls).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CloudConfig {
     pub contribute_enabled: bool,
     pub last_contribute: Option<String>,
     pub last_sync: Option<String>,
+    pub last_gain_sync: Option<String>,
     pub last_model_pull: Option<String>,
 }
 
+/// A user-defined command alias mapping for shell compression patterns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AliasEntry {
     pub command: String,
     pub alias: String,
+}
+
+/// Thresholds for detecting and throttling repetitive agent tool call loops.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LoopDetectionConfig {
+    pub normal_threshold: u32,
+    pub reduced_threshold: u32,
+    pub blocked_threshold: u32,
+    pub window_secs: u64,
+    pub search_group_limit: u32,
+}
+
+impl Default for LoopDetectionConfig {
+    fn default() -> Self {
+        Self {
+            normal_threshold: 2,
+            reduced_threshold: 4,
+            // 0 = blocking disabled (LeanCTX philosophy: always help, never block)
+            // Set to 6+ in config to enable blocking for strict governance
+            blocked_threshold: 0,
+            window_secs: 300,
+            search_group_limit: 10,
+        }
+    }
 }
 
 impl Default for Config {
@@ -215,11 +393,43 @@ impl Default for Config {
             buddy_enabled: default_buddy_enabled(),
             redirect_exclude: Vec::new(),
             disabled_tools: Vec::new(),
+            loop_detection: LoopDetectionConfig::default(),
+            rules_scope: None,
+            extra_ignore_patterns: Vec::new(),
+            terse_agent: TerseAgent::default(),
+            archive: ArchiveConfig::default(),
+            memory: MemoryPolicy::default(),
+            allow_paths: Vec::new(),
+            content_defined_chunking: false,
+            minimal_overhead: false,
+            shell_hook_disabled: false,
+            update_check_disabled: false,
         }
     }
 }
 
+/// Where agent rule files are installed: global home dir, project-local, or both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RulesScope {
+    Both,
+    Global,
+    Project,
+}
+
 impl Config {
+    /// Returns the effective rules scope, preferring env var over config file.
+    pub fn rules_scope_effective(&self) -> RulesScope {
+        let raw = std::env::var("LEAN_CTX_RULES_SCOPE")
+            .ok()
+            .or_else(|| self.rules_scope.clone())
+            .unwrap_or_default();
+        match raw.trim().to_lowercase().as_str() {
+            "global" => RulesScope::Global,
+            "project" => RulesScope::Project,
+            _ => RulesScope::Both,
+        }
+    }
+
     fn parse_disabled_tools_env(val: &str) -> Vec<String> {
         val.split(',')
             .map(|s| s.trim().to_string())
@@ -227,12 +437,86 @@ impl Config {
             .collect()
     }
 
+    /// Returns the effective disabled tools list, preferring env var over config file.
     pub fn disabled_tools_effective(&self) -> Vec<String> {
         if let Ok(val) = std::env::var("LEAN_CTX_DISABLED_TOOLS") {
             Self::parse_disabled_tools_env(&val)
         } else {
             self.disabled_tools.clone()
         }
+    }
+
+    /// Returns `true` if minimal overhead is enabled via env var or config.
+    pub fn minimal_overhead_effective(&self) -> bool {
+        std::env::var("LEAN_CTX_MINIMAL").is_ok() || self.minimal_overhead
+    }
+
+    /// Returns `true` if minimal overhead should be enabled for this MCP client.
+    ///
+    /// This is a superset of `minimal_overhead_effective()`:
+    /// - `LEAN_CTX_OVERHEAD_MODE=minimal` forces minimal overhead
+    /// - `LEAN_CTX_OVERHEAD_MODE=full` disables client/model heuristics (still honors LEAN_CTX_MINIMAL / config)
+    /// - In auto mode (default), certain low-context clients/models are treated as minimal to prevent
+    ///   large metadata blocks from destabilizing smaller context windows (e.g. Hermes + MiniMax).
+    pub fn minimal_overhead_effective_for_client(&self, client_name: &str) -> bool {
+        if let Ok(raw) = std::env::var("LEAN_CTX_OVERHEAD_MODE") {
+            match raw.trim().to_lowercase().as_str() {
+                "minimal" => return true,
+                "full" => return self.minimal_overhead_effective(),
+                _ => {}
+            }
+        }
+
+        if self.minimal_overhead_effective() {
+            return true;
+        }
+
+        let client_lower = client_name.trim().to_lowercase();
+        if !client_lower.is_empty() {
+            if let Ok(list) = std::env::var("LEAN_CTX_MINIMAL_CLIENTS") {
+                for needle in list.split(',').map(|s| s.trim().to_lowercase()) {
+                    if !needle.is_empty() && client_lower.contains(&needle) {
+                        return true;
+                    }
+                }
+            } else if client_lower.contains("hermes") || client_lower.contains("minimax") {
+                return true;
+            }
+        }
+
+        let model = std::env::var("LEAN_CTX_MODEL")
+            .or_else(|_| std::env::var("LCTX_MODEL"))
+            .unwrap_or_default();
+        let model = model.trim().to_lowercase();
+        if !model.is_empty() {
+            let m = model.replace(['_', ' '], "-");
+            if m.contains("minimax")
+                || m.contains("mini-max")
+                || m.contains("m2.7")
+                || m.contains("m2-7")
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Returns `true` if shell hook injection is disabled via env var or config.
+    pub fn shell_hook_disabled_effective(&self) -> bool {
+        std::env::var("LEAN_CTX_NO_HOOK").is_ok() || self.shell_hook_disabled
+    }
+
+    /// Returns `true` if the daily update check is disabled via env var or config.
+    pub fn update_check_disabled_effective(&self) -> bool {
+        std::env::var("LEAN_CTX_NO_UPDATE_CHECK").is_ok() || self.update_check_disabled
+    }
+
+    pub fn memory_policy_effective(&self) -> Result<MemoryPolicy, String> {
+        let mut policy = self.memory.clone();
+        policy.apply_env_overrides();
+        policy.validate()?;
+        Ok(policy)
     }
 }
 
@@ -252,8 +536,10 @@ mod disabled_tools_tests {
         if std::env::var("LEAN_CTX_DISABLED_TOOLS").is_ok() {
             return;
         }
-        let mut cfg = Config::default();
-        cfg.disabled_tools = vec!["ctx_graph".to_string(), "ctx_agent".to_string()];
+        let cfg = Config {
+            disabled_tools: vec!["ctx_graph".to_string(), "ctx_agent".to_string()],
+            ..Default::default()
+        };
         assert_eq!(
             cfg.disabled_tools_effective(),
             vec!["ctx_graph", "ctx_agent"]
@@ -297,43 +583,389 @@ mod disabled_tools_tests {
     }
 }
 
-impl Config {
-    pub fn path() -> Option<PathBuf> {
-        dirs::home_dir().map(|h| h.join(".lean-ctx").join("config.toml"))
+#[cfg(test)]
+mod rules_scope_tests {
+    use super::*;
+
+    #[test]
+    fn default_is_both() {
+        let cfg = Config::default();
+        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
     }
 
-    pub fn load() -> Self {
-        static CACHE: Mutex<Option<(Config, SystemTime)>> = Mutex::new(None);
-
-        let path = match Self::path() {
-            Some(p) => p,
-            None => return Self::default(),
+    #[test]
+    fn config_global() {
+        let cfg = Config {
+            rules_scope: Some("global".to_string()),
+            ..Default::default()
         };
+        assert_eq!(cfg.rules_scope_effective(), RulesScope::Global);
+    }
+
+    #[test]
+    fn config_project() {
+        let cfg = Config {
+            rules_scope: Some("project".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.rules_scope_effective(), RulesScope::Project);
+    }
+
+    #[test]
+    fn unknown_value_falls_back_to_both() {
+        let cfg = Config {
+            rules_scope: Some("nonsense".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
+    }
+
+    #[test]
+    fn deserialization_none_by_default() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(cfg.rules_scope.is_none());
+        assert_eq!(cfg.rules_scope_effective(), RulesScope::Both);
+    }
+
+    #[test]
+    fn deserialization_from_toml() {
+        let cfg: Config = toml::from_str(r#"rules_scope = "project""#).unwrap();
+        assert_eq!(cfg.rules_scope.as_deref(), Some("project"));
+        assert_eq!(cfg.rules_scope_effective(), RulesScope::Project);
+    }
+}
+
+#[cfg(test)]
+mod loop_detection_config_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_are_reasonable() {
+        let cfg = LoopDetectionConfig::default();
+        assert_eq!(cfg.normal_threshold, 2);
+        assert_eq!(cfg.reduced_threshold, 4);
+        // 0 = blocking disabled by default (LeanCTX philosophy: always help, never block)
+        assert_eq!(cfg.blocked_threshold, 0);
+        assert_eq!(cfg.window_secs, 300);
+        assert_eq!(cfg.search_group_limit, 10);
+    }
+
+    #[test]
+    fn deserialization_defaults_when_missing() {
+        let cfg: Config = toml::from_str("").unwrap();
+        // 0 = blocking disabled by default
+        assert_eq!(cfg.loop_detection.blocked_threshold, 0);
+        assert_eq!(cfg.loop_detection.search_group_limit, 10);
+    }
+
+    #[test]
+    fn deserialization_from_toml() {
+        let cfg: Config = toml::from_str(
+            r"
+            [loop_detection]
+            normal_threshold = 1
+            reduced_threshold = 3
+            blocked_threshold = 5
+            window_secs = 120
+            search_group_limit = 8
+            ",
+        )
+        .unwrap();
+        assert_eq!(cfg.loop_detection.normal_threshold, 1);
+        assert_eq!(cfg.loop_detection.reduced_threshold, 3);
+        assert_eq!(cfg.loop_detection.blocked_threshold, 5);
+        assert_eq!(cfg.loop_detection.window_secs, 120);
+        assert_eq!(cfg.loop_detection.search_group_limit, 8);
+    }
+
+    #[test]
+    fn partial_override_keeps_defaults() {
+        let cfg: Config = toml::from_str(
+            r"
+            [loop_detection]
+            blocked_threshold = 10
+            ",
+        )
+        .unwrap();
+        assert_eq!(cfg.loop_detection.blocked_threshold, 10);
+        assert_eq!(cfg.loop_detection.normal_threshold, 2);
+        assert_eq!(cfg.loop_detection.search_group_limit, 10);
+    }
+}
+
+impl Config {
+    /// Returns the path to the global config file (`~/.lean-ctx/config.toml`).
+    pub fn path() -> Option<PathBuf> {
+        crate::core::data_dir::lean_ctx_data_dir()
+            .ok()
+            .map(|d| d.join("config.toml"))
+    }
+
+    /// Returns the path to the project-local config override file.
+    pub fn local_path(project_root: &str) -> PathBuf {
+        PathBuf::from(project_root).join(".lean-ctx.toml")
+    }
+
+    fn find_project_root() -> Option<String> {
+        let cwd = std::env::current_dir().ok();
+
+        if let Some(root) =
+            crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
+        {
+            let root_path = std::path::Path::new(&root);
+            let cwd_is_under_root = cwd.as_ref().is_some_and(|c| c.starts_with(root_path));
+            let has_marker = root_path.join(".git").exists()
+                || root_path.join("Cargo.toml").exists()
+                || root_path.join("package.json").exists()
+                || root_path.join("go.mod").exists()
+                || root_path.join("pyproject.toml").exists()
+                || root_path.join(".lean-ctx.toml").exists();
+
+            if cwd_is_under_root || has_marker {
+                return Some(root);
+            }
+        }
+
+        if let Some(ref cwd) = cwd {
+            let git_root = std::process::Command::new("git")
+                .args(["rev-parse", "--show-toplevel"])
+                .current_dir(cwd)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        String::from_utf8(o.stdout)
+                            .ok()
+                            .map(|s| s.trim().to_string())
+                    } else {
+                        None
+                    }
+                });
+            if let Some(root) = git_root {
+                return Some(root);
+            }
+            return Some(cwd.to_string_lossy().to_string());
+        }
+        None
+    }
+
+    /// Loads config from disk with caching, merging global + project-local overrides.
+    pub fn load() -> Self {
+        static CACHE: Mutex<Option<(Config, SystemTime, Option<SystemTime>)>> = Mutex::new(None);
+
+        let Some(path) = Self::path() else {
+            return Self::default();
+        };
+
+        let local_path = Self::find_project_root().map(|r| Self::local_path(&r));
 
         let mtime = std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
+        let local_mtime = local_path
+            .as_ref()
+            .and_then(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+
         if let Ok(guard) = CACHE.lock() {
-            if let Some((ref cfg, ref cached_mtime)) = *guard {
-                if *cached_mtime == mtime {
+            if let Some((ref cfg, ref cached_mtime, ref cached_local_mtime)) = *guard {
+                if *cached_mtime == mtime && *cached_local_mtime == local_mtime {
                     return cfg.clone();
                 }
             }
         }
 
-        let cfg = match std::fs::read_to_string(&path) {
+        let mut cfg: Config = match std::fs::read_to_string(&path) {
             Ok(content) => toml::from_str(&content).unwrap_or_default(),
             Err(_) => Self::default(),
         };
 
+        if let Some(ref lp) = local_path {
+            if let Ok(local_content) = std::fs::read_to_string(lp) {
+                cfg.merge_local(&local_content);
+            }
+        }
+
         if let Ok(mut guard) = CACHE.lock() {
-            *guard = Some((cfg.clone(), mtime));
+            *guard = Some((cfg.clone(), mtime, local_mtime));
         }
 
         cfg
     }
 
+    fn merge_local(&mut self, local_toml: &str) {
+        let local: Config = match toml::from_str(local_toml) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        if local.ultra_compact {
+            self.ultra_compact = true;
+        }
+        if local.tee_mode != TeeMode::default() {
+            self.tee_mode = local.tee_mode;
+        }
+        if local.output_density != OutputDensity::default() {
+            self.output_density = local.output_density;
+        }
+        if local.checkpoint_interval != 15 {
+            self.checkpoint_interval = local.checkpoint_interval;
+        }
+        if !local.excluded_commands.is_empty() {
+            self.excluded_commands.extend(local.excluded_commands);
+        }
+        if !local.passthrough_urls.is_empty() {
+            self.passthrough_urls.extend(local.passthrough_urls);
+        }
+        if !local.custom_aliases.is_empty() {
+            self.custom_aliases.extend(local.custom_aliases);
+        }
+        if local.slow_command_threshold_ms != 5000 {
+            self.slow_command_threshold_ms = local.slow_command_threshold_ms;
+        }
+        if local.theme != "default" {
+            self.theme = local.theme;
+        }
+        if !local.buddy_enabled {
+            self.buddy_enabled = false;
+        }
+        if !local.redirect_exclude.is_empty() {
+            self.redirect_exclude.extend(local.redirect_exclude);
+        }
+        if !local.disabled_tools.is_empty() {
+            self.disabled_tools.extend(local.disabled_tools);
+        }
+        if !local.extra_ignore_patterns.is_empty() {
+            self.extra_ignore_patterns
+                .extend(local.extra_ignore_patterns);
+        }
+        if local.rules_scope.is_some() {
+            self.rules_scope = local.rules_scope;
+        }
+        if !local.autonomy.enabled {
+            self.autonomy.enabled = false;
+        }
+        if !local.autonomy.auto_preload {
+            self.autonomy.auto_preload = false;
+        }
+        if !local.autonomy.auto_dedup {
+            self.autonomy.auto_dedup = false;
+        }
+        if !local.autonomy.auto_related {
+            self.autonomy.auto_related = false;
+        }
+        if !local.autonomy.auto_consolidate {
+            self.autonomy.auto_consolidate = false;
+        }
+        if local.autonomy.silent_preload {
+            self.autonomy.silent_preload = true;
+        }
+        if !local.autonomy.silent_preload && self.autonomy.silent_preload {
+            self.autonomy.silent_preload = false;
+        }
+        if local.autonomy.dedup_threshold != AutonomyConfig::default().dedup_threshold {
+            self.autonomy.dedup_threshold = local.autonomy.dedup_threshold;
+        }
+        if local.autonomy.consolidate_every_calls
+            != AutonomyConfig::default().consolidate_every_calls
+        {
+            self.autonomy.consolidate_every_calls = local.autonomy.consolidate_every_calls;
+        }
+        if local.autonomy.consolidate_cooldown_secs
+            != AutonomyConfig::default().consolidate_cooldown_secs
+        {
+            self.autonomy.consolidate_cooldown_secs = local.autonomy.consolidate_cooldown_secs;
+        }
+        if local.terse_agent != TerseAgent::default() {
+            self.terse_agent = local.terse_agent;
+        }
+        if !local.archive.enabled {
+            self.archive.enabled = false;
+        }
+        if local.archive.threshold_chars != ArchiveConfig::default().threshold_chars {
+            self.archive.threshold_chars = local.archive.threshold_chars;
+        }
+        if local.archive.max_age_hours != ArchiveConfig::default().max_age_hours {
+            self.archive.max_age_hours = local.archive.max_age_hours;
+        }
+        if local.archive.max_disk_mb != ArchiveConfig::default().max_disk_mb {
+            self.archive.max_disk_mb = local.archive.max_disk_mb;
+        }
+        let mem_def = MemoryPolicy::default();
+        if local.memory.knowledge.max_facts != mem_def.knowledge.max_facts {
+            self.memory.knowledge.max_facts = local.memory.knowledge.max_facts;
+        }
+        if local.memory.knowledge.max_patterns != mem_def.knowledge.max_patterns {
+            self.memory.knowledge.max_patterns = local.memory.knowledge.max_patterns;
+        }
+        if local.memory.knowledge.max_history != mem_def.knowledge.max_history {
+            self.memory.knowledge.max_history = local.memory.knowledge.max_history;
+        }
+        if local.memory.knowledge.contradiction_threshold
+            != mem_def.knowledge.contradiction_threshold
+        {
+            self.memory.knowledge.contradiction_threshold =
+                local.memory.knowledge.contradiction_threshold;
+        }
+
+        if local.memory.episodic.max_episodes != mem_def.episodic.max_episodes {
+            self.memory.episodic.max_episodes = local.memory.episodic.max_episodes;
+        }
+        if local.memory.episodic.max_actions_per_episode != mem_def.episodic.max_actions_per_episode
+        {
+            self.memory.episodic.max_actions_per_episode =
+                local.memory.episodic.max_actions_per_episode;
+        }
+        if local.memory.episodic.summary_max_chars != mem_def.episodic.summary_max_chars {
+            self.memory.episodic.summary_max_chars = local.memory.episodic.summary_max_chars;
+        }
+
+        if local.memory.procedural.min_repetitions != mem_def.procedural.min_repetitions {
+            self.memory.procedural.min_repetitions = local.memory.procedural.min_repetitions;
+        }
+        if local.memory.procedural.min_sequence_len != mem_def.procedural.min_sequence_len {
+            self.memory.procedural.min_sequence_len = local.memory.procedural.min_sequence_len;
+        }
+        if local.memory.procedural.max_procedures != mem_def.procedural.max_procedures {
+            self.memory.procedural.max_procedures = local.memory.procedural.max_procedures;
+        }
+        if local.memory.procedural.max_window_size != mem_def.procedural.max_window_size {
+            self.memory.procedural.max_window_size = local.memory.procedural.max_window_size;
+        }
+
+        if local.memory.lifecycle.decay_rate != mem_def.lifecycle.decay_rate {
+            self.memory.lifecycle.decay_rate = local.memory.lifecycle.decay_rate;
+        }
+        if local.memory.lifecycle.low_confidence_threshold
+            != mem_def.lifecycle.low_confidence_threshold
+        {
+            self.memory.lifecycle.low_confidence_threshold =
+                local.memory.lifecycle.low_confidence_threshold;
+        }
+        if local.memory.lifecycle.stale_days != mem_def.lifecycle.stale_days {
+            self.memory.lifecycle.stale_days = local.memory.lifecycle.stale_days;
+        }
+        if local.memory.lifecycle.similarity_threshold != mem_def.lifecycle.similarity_threshold {
+            self.memory.lifecycle.similarity_threshold =
+                local.memory.lifecycle.similarity_threshold;
+        }
+
+        if local.memory.embeddings.max_facts != mem_def.embeddings.max_facts {
+            self.memory.embeddings.max_facts = local.memory.embeddings.max_facts;
+        }
+        if !local.allow_paths.is_empty() {
+            self.allow_paths.extend(local.allow_paths);
+        }
+        if local.minimal_overhead {
+            self.minimal_overhead = true;
+        }
+        if local.shell_hook_disabled {
+            self.shell_hook_disabled = true;
+        }
+    }
+
+    /// Persists the current config to the global config file.
     pub fn save(&self) -> std::result::Result<(), super::error::LeanCtxError> {
         let path = Self::path().ok_or_else(|| {
             super::error::LeanCtxError::Config("cannot determine home directory".into())
@@ -347,11 +979,26 @@ impl Config {
         Ok(())
     }
 
+    /// Formats the current config as a human-readable string with file paths.
     pub fn show(&self) -> String {
-        let path = Self::path()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "~/.lean-ctx/config.toml".to_string());
+        let global_path = Self::path().map_or_else(
+            || "~/.lean-ctx/config.toml".to_string(),
+            |p| p.to_string_lossy().to_string(),
+        );
         let content = toml::to_string_pretty(self).unwrap_or_default();
-        format!("Config: {path}\n\n{content}")
+        let mut out = format!("Global config: {global_path}\n\n{content}");
+
+        if let Some(root) = Self::find_project_root() {
+            let local = Self::local_path(&root);
+            if local.exists() {
+                out.push_str(&format!("\n\nLocal config (merged): {}\n", local.display()));
+            } else {
+                out.push_str(&format!(
+                    "\n\nLocal config: not found (create {} to override per-project)\n",
+                    local.display()
+                ));
+            }
+        }
+        out
     }
 }

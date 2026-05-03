@@ -1,60 +1,52 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static CLASS_RE: OnceLock<Regex> = OnceLock::new();
-static METHOD_RE: OnceLock<Regex> = OnceLock::new();
-static USE_RE: OnceLock<Regex> = OnceLock::new();
-static EXTENDS_RE: OnceLock<Regex> = OnceLock::new();
-static RELATION_RE: OnceLock<Regex> = OnceLock::new();
-static FILLABLE_RE: OnceLock<Regex> = OnceLock::new();
-static CASTS_RE: OnceLock<Regex> = OnceLock::new();
-static SCOPE_RE: OnceLock<Regex> = OnceLock::new();
-static MIGRATION_COL_RE: OnceLock<Regex> = OnceLock::new();
-static MIGRATION_TABLE_RE: OnceLock<Regex> = OnceLock::new();
-static BLADE_DIRECTIVE_RE: OnceLock<Regex> = OnceLock::new();
-
-fn class_re() -> &'static Regex {
-    CLASS_RE.get_or_init(|| {
-        Regex::new(r"(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s\\]+))?").unwrap()
-    })
+fn class_re() -> &'static regex::Regex {
+    static_regex!(
+        r"(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s\\]+))?"
+    )
 }
-fn method_re() -> &'static Regex {
-    METHOD_RE.get_or_init(|| {
-        Regex::new(r"(?:public|protected|private)\s+(?:static\s+)?function\s+(\w+)\s*\(([^)]*)\)(?:\s*:\s*(\S+))?").unwrap()
-    })
+fn method_re() -> &'static regex::Regex {
+    static_regex!(
+        r"(?:public|protected|private)\s+(?:static\s+)?function\s+(\w+)\s*\(([^)]*)\)(?:\s*:\s*(\S+))?"
+    )
 }
-fn use_re() -> &'static Regex {
-    USE_RE.get_or_init(|| Regex::new(r"^use\s+([\w\\]+)(?:\s+as\s+(\w+))?\s*;").unwrap())
+fn use_re() -> &'static regex::Regex {
+    static_regex!(r"^use\s+([\w\\]+)(?:\s+as\s+(\w+))?\s*;")
 }
-fn extends_re() -> &'static Regex {
-    EXTENDS_RE.get_or_init(|| Regex::new(r"extends\s+([\w\\]+)").unwrap())
+fn extends_re() -> &'static regex::Regex {
+    static_regex!(r"extends\s+([\w\\]+)")
 }
-fn relation_re() -> &'static Regex {
-    RELATION_RE.get_or_init(|| {
-        Regex::new(r"\$this->(hasMany|hasOne|belongsTo|belongsToMany|morphMany|morphTo|morphOne|hasManyThrough|hasOneThrough)\s*\(\s*(\w+)::class").unwrap()
-    })
+fn relation_re() -> &'static regex::Regex {
+    static_regex!(
+        r"\$this->(hasMany|hasOne|belongsTo|belongsToMany|morphMany|morphTo|morphOne|hasManyThrough|hasOneThrough)\s*\(\s*(\w+)::class"
+    )
 }
-fn fillable_re() -> &'static Regex {
-    FILLABLE_RE.get_or_init(|| Regex::new(r#"\$fillable\s*=\s*\[([\s\S]*?)\]"#).unwrap())
+fn fillable_re() -> &'static regex::Regex {
+    static_regex!(r"\$fillable\s*=\s*\[([\s\S]*?)\]")
 }
-fn casts_re() -> &'static Regex {
-    CASTS_RE.get_or_init(|| Regex::new(r#"\$casts\s*=\s*\[([\s\S]*?)\]"#).unwrap())
+fn casts_re() -> &'static regex::Regex {
+    static_regex!(r"\$casts\s*=\s*\[([\s\S]*?)\]")
 }
-fn scope_re() -> &'static Regex {
-    SCOPE_RE.get_or_init(|| Regex::new(r"public\s+function\s+(scope\w+)\s*\(").unwrap())
+fn scope_re() -> &'static regex::Regex {
+    static_regex!(r"public\s+function\s+(scope\w+)\s*\(")
 }
-fn migration_col_re() -> &'static Regex {
-    MIGRATION_COL_RE.get_or_init(|| {
-        Regex::new(r#"\$table->(\w+)\s*\(\s*'(\w+)'(?:\s*,\s*(\d+))?\s*\)"#).unwrap()
-    })
+fn migration_col_re() -> &'static regex::Regex {
+    static_regex!(r"\$table->(\w+)\s*\(\s*'(\w+)'(?:\s*,\s*(\d+))?\s*\)")
 }
-fn migration_table_re() -> &'static Regex {
-    MIGRATION_TABLE_RE.get_or_init(|| Regex::new(r#"Schema::create\s*\(\s*'(\w+)'"#).unwrap())
+fn migration_table_re() -> &'static regex::Regex {
+    static_regex!(r"Schema::create\s*\(\s*'(\w+)'")
 }
-fn blade_directive_re() -> &'static Regex {
-    BLADE_DIRECTIVE_RE.get_or_init(|| {
-        Regex::new(r"@(extends|section|yield|component|include|foreach|if|auth|guest|can|slot|push|stack|livewire|props)\s*\(([^)]*)\)").unwrap()
-    })
+fn blade_directive_re() -> &'static regex::Regex {
+    static_regex!(
+        r"@(extends|section|yield|component|include|foreach|if|auth|guest|can|slot|push|stack|livewire|props)\s*\(([^)]*)\)"
+    )
 }
 
 pub fn compress_php_map(content: &str, filename: &str) -> Option<String> {
@@ -67,10 +59,9 @@ pub fn compress_php_map(content: &str, filename: &str) -> Option<String> {
         Some("Model") => Some(compress_eloquent(content)),
         Some("Controller") => Some(compress_controller(content)),
         Some("Migration") if content.contains("Schema::") => Some(compress_migration(content)),
-        Some("Job") | Some("Event") | Some("Listener") | Some("Notification") | Some("Mail")
-        | Some("Policy") | Some("Request") => {
-            Some(compress_service_class(content, parent.as_deref().unwrap()))
-        }
+        Some(
+            kind @ ("Job" | "Event" | "Listener" | "Notification" | "Mail" | "Policy" | "Request"),
+        ) => Some(compress_service_class(content, kind)),
         _ => None,
     }
 }
@@ -153,7 +144,7 @@ fn compress_eloquent(content: &str) -> String {
         .captures_iter(content)
         .filter(|c| !c[1].starts_with("scope"))
         .map(|c| {
-            let ret = c.get(3).map(|m| m.as_str()).unwrap_or("");
+            let ret = c.get(3).map_or("", |m| m.as_str());
             if ret.is_empty() {
                 c[1].to_string()
             } else {
@@ -180,11 +171,11 @@ fn compress_controller(content: &str) -> String {
         .map(|c| {
             let name = &c[1];
             let params = compact_params(&c[2]);
-            let ret = c.get(3).map(|m| m.as_str()).unwrap_or("");
+            let ret = c.get(3).map_or("", |m| m.as_str());
             if ret.is_empty() {
-                format!("  λ {}({})", name, params)
+                format!("  λ {name}({params})")
             } else {
-                format!("  λ {}({})→{}", name, params, ret)
+                format!("  λ {name}({params})→{ret}")
             }
         })
         .collect();
@@ -202,7 +193,7 @@ fn compress_migration(content: &str) -> String {
         .collect();
 
     for table in &tables {
-        parts.push(format!("+{} table:", table));
+        parts.push(format!("+{table} table:"));
     }
 
     let columns: Vec<String> = migration_col_re()
@@ -214,7 +205,7 @@ fn compress_migration(content: &str) -> String {
                 return None;
             }
             let short_type = shorten_column_type(col_type);
-            Some(format!("  {}:{}", col_name, short_type))
+            Some(format!("  {col_name}:{short_type}"))
         })
         .collect();
     parts.extend(columns);
@@ -245,7 +236,7 @@ fn compress_service_class(content: &str, kind: &str) -> String {
         .lines()
         .filter(|l| {
             let t = l.trim();
-            t.contains("public function __construct") || (t.contains("private ") && t.contains("$"))
+            t.contains("public function __construct") || (t.contains("private ") && t.contains('$'))
         })
         .take(1)
         .flat_map(|l| {
@@ -262,7 +253,7 @@ fn compress_service_class(content: &str, kind: &str) -> String {
         .captures_iter(content)
         .filter(|c| &c[1] != "__construct")
         .map(|c| {
-            let ret = c.get(3).map(|m| m.as_str()).unwrap_or("");
+            let ret = c.get(3).map_or("", |m| m.as_str());
             if ret.is_empty() {
                 format!("  λ {}", &c[1])
             } else {
@@ -283,7 +274,7 @@ fn compress_blade(content: &str) -> String {
         .map(|c| {
             let dir = &c[1];
             let arg = c[2].trim().trim_matches('\'').trim_matches('"');
-            format!("@{}({})", dir, arg)
+            format!("@{dir}({arg})")
         })
         .collect();
 
@@ -318,13 +309,15 @@ fn compact_params(params: &str) -> String {
 }
 
 fn extract_quoted_strings(text: &str) -> Vec<String> {
-    let re = Regex::new(r"'(\w+)'").unwrap();
-    re.captures_iter(text).map(|c| c[1].to_string()).collect()
+    static_regex!(r"'(\w+)'")
+        .captures_iter(text)
+        .map(|c| c[1].to_string())
+        .collect()
 }
 
 fn extract_cast_pairs(text: &str) -> Vec<String> {
-    let re = Regex::new(r"'(\w+)'\s*=>\s*'(\w+)'").unwrap();
-    re.captures_iter(text)
+    static_regex!(r"'(\w+)'\s*=>\s*'(\w+)'")
+        .captures_iter(text)
         .map(|c| format!("{}:{}", &c[1], &c[2]))
         .collect()
 }
@@ -356,7 +349,7 @@ mod tests {
 
     #[test]
     fn eloquent_model_compression() {
-        let model = r#"<?php
+        let model = r"<?php
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -382,7 +375,7 @@ class User extends Model
         return $this->first_name . ' ' . $this->last_name;
     }
 }
-"#;
+";
         let result = compress_eloquent(model);
         assert!(result.contains("User extends Model"), "class header");
         assert!(
@@ -396,7 +389,7 @@ class User extends Model
 
     #[test]
     fn controller_compression() {
-        let ctrl = r#"<?php
+        let ctrl = r"<?php
 namespace App\Http\Controllers;
 
 class UserController extends Controller
@@ -417,7 +410,7 @@ class UserController extends Controller
         return view('users.show', compact('user'));
     }
 }
-"#;
+";
         let result = compress_controller(ctrl);
         assert!(result.contains("UserController"), "class name");
         assert!(result.contains("λ index"), "index method");
@@ -427,7 +420,7 @@ class UserController extends Controller
 
     #[test]
     fn migration_compression() {
-        let migration = r#"<?php
+        let migration = r"<?php
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 
@@ -445,7 +438,7 @@ return new class extends Migration
         });
     }
 };
-"#;
+";
         let result = compress_migration(migration);
         assert!(result.contains("+users table:"), "table name");
         assert!(result.contains("name:str"), "string column");
@@ -486,7 +479,7 @@ return new class extends Migration
 
     #[test]
     fn service_class_compression() {
-        let job = r#"<?php
+        let job = r"<?php
 namespace App\Jobs;
 
 class SendWelcomeEmail extends Job implements ShouldQueue
@@ -506,7 +499,7 @@ class SendWelcomeEmail extends Job implements ShouldQueue
         Log::error($e->getMessage());
     }
 }
-"#;
+";
         let result = compress_service_class(job, "Job");
         assert!(result.contains("SendWelcomeEmail [Job]"), "class + kind");
         assert!(result.contains("λ handle"), "handle method");

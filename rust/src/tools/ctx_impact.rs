@@ -22,9 +22,8 @@ fn open_graph(root: &str) -> Result<CodeGraph, String> {
 }
 
 fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'analyze' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'analyze' action".to_string();
     };
 
     let graph = match open_graph(root) {
@@ -32,22 +31,7 @@ fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize) -> String {
         Err(e) => return e,
     };
 
-    let canon_root = std::fs::canonicalize(root)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| root.to_string());
-    let canon_target = std::fs::canonicalize(target)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| target.to_string());
-    let root_slash = if canon_root.ends_with('/') {
-        canon_root.clone()
-    } else {
-        format!("{canon_root}/")
-    };
-    let rel_target = canon_target
-        .strip_prefix(&root_slash)
-        .or_else(|| canon_target.strip_prefix(&canon_root))
-        .unwrap_or(&canon_target)
-        .trim_start_matches('/');
+    let rel_target = graph_target_key(target, root);
 
     let node_count = graph.node_count().unwrap_or(0);
     if node_count == 0 {
@@ -64,19 +48,19 @@ fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize) -> String {
         if graph.node_count().unwrap_or(0) == 0 {
             return "Graph is empty after auto-build. No supported source files found.".to_string();
         }
-        let impact = match graph.impact_analysis(rel_target, max_depth) {
+        let impact = match graph.impact_analysis(&rel_target, max_depth) {
             Ok(r) => r,
             Err(e) => return format!("Impact analysis failed: {e}"),
         };
-        return format_impact(&impact, rel_target);
+        return format_impact(&impact, &rel_target);
     }
 
-    let impact = match graph.impact_analysis(rel_target, max_depth) {
+    let impact = match graph.impact_analysis(&rel_target, max_depth) {
         Ok(r) => r,
         Err(e) => return format!("Impact analysis failed: {e}"),
     };
 
-    format_impact(&impact, rel_target)
+    format_impact(&impact, &rel_target)
 }
 
 fn format_impact(impact: &ImpactResult, target: &str) -> String {
@@ -105,11 +89,8 @@ fn format_impact(impact: &ImpactResult, target: &str) -> String {
 }
 
 fn handle_chain(path: Option<&str>, root: &str) -> String {
-    let spec = match path {
-        Some(p) => p,
-        None => {
-            return "path is required for 'chain' action (format: from_file->to_file)".to_string()
-        }
+    let Some(spec) = path else {
+        return "path is required for 'chain' action (format: from_file->to_file)".to_string();
     };
 
     let (from, to) = match spec.split_once("->") {
@@ -127,32 +108,10 @@ fn handle_chain(path: Option<&str>, root: &str) -> String {
         Err(e) => return e,
     };
 
-    let canon_root = std::fs::canonicalize(root)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| root.to_string());
-    let root_slash = if canon_root.ends_with('/') {
-        canon_root.clone()
-    } else {
-        format!("{canon_root}/")
-    };
-    let canon_from = std::fs::canonicalize(from)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| from.to_string());
-    let canon_to = std::fs::canonicalize(to)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| to.to_string());
-    let rel_from = canon_from
-        .strip_prefix(&root_slash)
-        .or_else(|| canon_from.strip_prefix(&canon_root))
-        .unwrap_or(&canon_from)
-        .trim_start_matches('/');
-    let rel_to = canon_to
-        .strip_prefix(&root_slash)
-        .or_else(|| canon_to.strip_prefix(&canon_root))
-        .unwrap_or(&canon_to)
-        .trim_start_matches('/');
+    let rel_from = graph_target_key(from, root);
+    let rel_to = graph_target_key(to, root);
 
-    match graph.dependency_chain(rel_from, rel_to) {
+    match graph.dependency_chain(&rel_from, &rel_to) {
         Ok(Some(chain)) => format_chain(&chain),
         Ok(None) => {
             let result = format!("No dependency path from {rel_from} to {rel_to}");
@@ -178,6 +137,16 @@ fn format_chain(chain: &DependencyChain) -> String {
     format!("{result}[ctx_impact chain: {tokens} tok]")
 }
 
+fn graph_target_key(path: &str, root: &str) -> String {
+    let rel = crate::core::graph_index::graph_relative_key(path, root);
+    let rel_key = crate::core::graph_index::graph_match_key(&rel);
+    if rel_key.is_empty() {
+        crate::core::graph_index::graph_match_key(path)
+    } else {
+        rel_key
+    }
+}
+
 fn handle_build(root: &str) -> String {
     let graph = match open_graph(root) {
         Ok(g) => g,
@@ -199,7 +168,7 @@ fn handle_build(root: &str) -> String {
     let mut file_contents: Vec<(String, String, String)> = Vec::new();
 
     for entry in walker.flatten() {
-        if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
 
@@ -230,9 +199,8 @@ fn handle_build(root: &str) -> String {
     let mut total_edges = 0usize;
 
     for (rel_path, content, ext) in &file_contents {
-        let file_node_id = match graph.upsert_node(&Node::file(rel_path)) {
-            Ok(id) => id,
-            Err(_) => continue,
+        let Ok(file_node_id) = graph.upsert_node(&Node::file(rel_path)) else {
+            continue;
         };
         total_nodes += 1;
 
@@ -263,9 +231,8 @@ fn handle_build(root: &str) -> String {
                     continue;
                 }
                 if let Some(ref target_path) = imp.resolved_path {
-                    let target_id = match graph.upsert_node(&Node::file(target_path)) {
-                        Ok(id) => id,
-                        Err(_) => continue,
+                    let Ok(target_id) = graph.upsert_node(&Node::file(target_path)) else {
+                        continue;
                     };
                     let _ =
                         graph.upsert_edge(&Edge::new(file_node_id, target_id, EdgeKind::Imports));
@@ -368,5 +335,16 @@ mod tests {
     fn handle_unknown_action() {
         let result = handle("invalid", None, "/tmp", None);
         assert!(result.contains("Unknown action"));
+    }
+
+    #[test]
+    fn graph_target_key_normalizes_windows_styles() {
+        let target = graph_target_key(r"C:/repo/src/main.rs", r"C:\repo");
+        let expected = if cfg!(windows) {
+            "src/main.rs"
+        } else {
+            "C:/repo/src/main.rs"
+        };
+        assert_eq!(target, expected);
     }
 }

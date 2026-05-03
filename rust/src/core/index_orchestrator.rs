@@ -61,7 +61,9 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<Mutex<ProjectBuild>>>> {
 }
 
 fn entry_for(project_root: &str) -> Arc<Mutex<ProjectBuild>> {
-    let mut map = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let mut map = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     map.entry(project_root.to_string())
         .or_insert_with(|| Arc::new(Mutex::new(ProjectBuild::new())))
         .clone()
@@ -100,7 +102,9 @@ fn finish_err(c: &mut Component, e: String) {
 pub fn ensure_all_background(project_root: &str) {
     let state = entry_for(project_root);
     let should_spawn = {
-        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if s.worker_running {
             false
         } else {
@@ -118,7 +122,9 @@ pub fn ensure_all_background(project_root: &str) {
         let state = entry_for(&root);
 
         {
-            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             start_component(&mut s.graph);
         }
         let idx = std::panic::catch_unwind(|| {
@@ -126,19 +132,22 @@ pub fn ensure_all_background(project_root: &str) {
             let _ = idx.save();
             idx
         });
-        match idx {
-            Ok(_i) => {
-                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                finish_ok(&mut s.graph);
-            }
-            Err(_) => {
-                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                finish_err(&mut s.graph, "graph index build panicked".to_string());
-            }
+        if let Ok(_i) = idx {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            finish_ok(&mut s.graph);
+        } else {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            finish_err(&mut s.graph, "graph index build panicked".to_string());
         }
 
         {
-            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             start_component(&mut s.bm25);
         }
         let bm = std::panic::catch_unwind(|| {
@@ -146,18 +155,21 @@ pub fn ensure_all_background(project_root: &str) {
             let idx = BM25Index::load_or_build(root_pb);
             let _ = idx.save(root_pb);
         });
-        match bm {
-            Ok(()) => {
-                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                finish_ok(&mut s.bm25);
-            }
-            Err(_) => {
-                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                finish_err(&mut s.bm25, "bm25 build panicked".to_string());
-            }
+        if let Ok(()) = bm {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            finish_ok(&mut s.bm25);
+        } else {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            finish_err(&mut s.bm25, "bm25 build panicked".to_string());
         }
 
-        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         s.worker_running = false;
     });
 }
@@ -203,7 +215,9 @@ struct StatusResponse<'a> {
 
 pub fn status_json(project_root: &str) -> String {
     let state = entry_for(project_root);
-    let s = state.lock().unwrap_or_else(|e| e.into_inner());
+    let s = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let res = StatusResponse {
         project_root,
         graph_index: component_status(&s.graph),

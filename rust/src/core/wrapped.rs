@@ -1,7 +1,6 @@
 use crate::core::session::SessionState;
 use crate::core::stats;
 
-#[allow(dead_code)]
 pub struct WrappedReport {
     pub period: String,
     pub tokens_saved: u64,
@@ -31,8 +30,12 @@ impl WrappedReport {
             ),
         };
 
-        let cost_per_token = crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
-        let cost_avoided_usd = tokens_saved as f64 * cost_per_token;
+        let env_model = std::env::var("LEAN_CTX_MODEL")
+            .or_else(|_| std::env::var("LCTX_MODEL"))
+            .ok();
+        let pricing = crate::core::gain::model_pricing::ModelPricing::load();
+        let quote = pricing.quote(env_model.as_deref());
+        let cost_avoided_usd = quote.cost.estimate_usd(tokens_saved, 0, 0, 0);
 
         let sessions_count = match period {
             "week" => count_recent_sessions(&sessions, 7),
@@ -53,7 +56,7 @@ impl WrappedReport {
                 (cmd.clone(), saved, pct)
             })
             .collect();
-        top_commands.sort_by(|a, b| b.1.cmp(&a.1));
+        top_commands.sort_by_key(|x| std::cmp::Reverse(x.1));
         top_commands.truncate(5);
 
         let cache_hit_rate = if tokens_input > 0 {
@@ -107,7 +110,7 @@ impl WrappedReport {
              {saved_str} tokens saved      {cost_str} avoided\n  \
              {sessions} sessions            {cmds} commands\n  \
              Top: {top_str}\n  \
-             Cache efficiency: {cache:.1}%\n \
+             Compression rate: {cache:.1}%\n \
              {border}\n  \
              \"Your AI saw only what mattered.\"\n  \
              leanctx.com\n",
@@ -129,7 +132,7 @@ impl WrappedReport {
             .join(" | ");
 
         format!(
-            "WRAPPED [{}]: {} tok saved, {} avoided, {} sessions, {} cmds | Top: {} | Cache: {:.1}%",
+            "WRAPPED [{}]: {} tok saved, {} avoided, {} sessions, {} cmds | Top: {} | Compression: {:.1}%",
             self.period, saved_str, cost_str, self.sessions_count,
             self.total_commands, top_str, self.cache_hit_rate,
         )

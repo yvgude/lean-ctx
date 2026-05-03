@@ -17,17 +17,14 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
     let timeout = timeout_secs.unwrap_or(TIMEOUT_SECS);
     let start = std::time::Instant::now();
 
-    let runtime = match resolve_runtime(language) {
-        Some(r) => r,
-        None => {
-            return SandboxResult {
+    let Some(runtime) = resolve_runtime(language) else {
+        return SandboxResult {
                 stdout: String::new(),
                 stderr: format!("Unsupported language: {language}. Supported: javascript, typescript, python, shell, ruby, go, rust, php, perl, r, elixir"),
                 exit_code: 1,
                 language: language.to_string(),
                 duration_ms: 0,
             };
-        }
     };
 
     let result = if runtime.needs_temp_file {
@@ -201,8 +198,8 @@ fn execute_with_stdin(
 
     let output = wait_with_timeout(child, timeout)?;
     Ok((
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        String::from_utf8_lossy(&output.stderr).to_string(),
+        crate::shell::decode_output(&output.stdout),
+        crate::shell::decode_output(&output.stderr),
         output.status.code().unwrap_or(1),
     ))
 }
@@ -247,8 +244,8 @@ fn execute_with_file(
             .map_err(|e| format!("Failed to spawn {}: {e}", runtime.command))?;
         let output = wait_with_timeout(child, timeout)?;
         Ok((
-            String::from_utf8_lossy(&output.stdout).to_string(),
-            String::from_utf8_lossy(&output.stderr).to_string(),
+            crate::shell::decode_output(&output.stdout),
+            crate::shell::decode_output(&output.stderr),
             output.status.code().unwrap_or(1),
         ))
     };
@@ -271,7 +268,7 @@ fn execute_rust(
         .map_err(|e| format!("rustc not found: {e}"))?;
 
     if !compile.status.success() {
-        let stderr = String::from_utf8_lossy(&compile.stderr).to_string();
+        let stderr = crate::shell::decode_output(&compile.stderr);
         let _ = std::fs::remove_file(&binary_path);
         return Ok((String::new(), stderr, compile.status.code().unwrap_or(1)));
     }
@@ -287,8 +284,8 @@ fn execute_rust(
     let _ = std::fs::remove_file(&binary_path);
 
     Ok((
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        String::from_utf8_lossy(&output.stderr).to_string(),
+        crate::shell::decode_output(&output.stdout),
+        crate::shell::decode_output(&output.stderr),
         output.status.code().unwrap_or(1),
     ))
 }
@@ -339,7 +336,7 @@ fn which_exists(name: &str) -> bool {
         .stderr(std::process::Stdio::null())
         .status();
 
-    check_cmd.map(|s| s.success()).unwrap_or(false)
+    check_cmd.is_ok_and(|s| s.success())
 }
 
 fn truncate_output(output: &str) -> String {
@@ -406,8 +403,15 @@ pub fn supported_languages() -> &'static [&'static str] {
 mod tests {
     use super::*;
 
+    fn python_available() -> bool {
+        find_binary(&["python3", "python"]).is_some()
+    }
+
     #[test]
     fn execute_python_hello() {
+        if !python_available() {
+            return;
+        }
         let result = execute("python", "print('hello sandbox')", None);
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.contains("hello sandbox"));
@@ -430,6 +434,9 @@ mod tests {
 
     #[test]
     fn execute_python_error() {
+        if !python_available() {
+            return;
+        }
         let result = execute("python", "raise ValueError('test error')", None);
         assert_ne!(result.exit_code, 0);
         assert!(result.stderr.contains("ValueError"));
@@ -437,6 +444,9 @@ mod tests {
 
     #[test]
     fn execute_with_timeout() {
+        if !python_available() {
+            return;
+        }
         let result = execute("python", "import time; time.sleep(60)", Some(1));
         assert_ne!(result.exit_code, 0);
     }
@@ -464,13 +474,16 @@ mod tests {
 
     #[test]
     fn sandbox_env_is_set() {
+        if !python_available() {
+            return;
+        }
         let result = execute(
             "python",
             "import os; print(os.environ.get('LEAN_CTX_SANDBOX', 'missing'))",
             None,
         );
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("1"));
+        assert!(result.stdout.contains('1'));
     }
 
     #[test]
@@ -482,7 +495,7 @@ mod tests {
         ];
         let results = batch_execute(&items);
         assert_eq!(results.len(), 2);
-        assert!(results[0].stdout.contains("2"));
+        assert!(results[0].stdout.contains('2'));
         assert!(results[1].stdout.contains("hello"));
     }
 }

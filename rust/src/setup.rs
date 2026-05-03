@@ -1,38 +1,71 @@
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WriteAction {
-    Created,
-    Updated,
-    Already,
+use crate::core::editor_registry::{ConfigType, EditorTarget, WriteAction, WriteOptions};
+use crate::core::portable_binary::resolve_portable_binary;
+use crate::core::setup_report::{PlatformInfo, SetupItem, SetupReport, SetupStepReport};
+use chrono::Utc;
+use std::ffi::OsString;
+
+pub fn claude_config_json_path(home: &std::path::Path) -> PathBuf {
+    crate::core::editor_registry::claude_mcp_json_path(home)
 }
 
-struct EditorTarget {
-    name: &'static str,
-    agent_key: String,
-    config_path: PathBuf,
-    detect_path: PathBuf,
-    config_type: ConfigType,
+pub fn claude_config_dir(home: &std::path::Path) -> PathBuf {
+    crate::core::editor_registry::claude_state_dir(home)
 }
 
-enum ConfigType {
-    McpJson,
-    Zed,
-    Codex,
-    VsCodeMcp,
-    OpenCode,
-    Crush,
+pub(crate) struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvVarGuard {
+    pub(crate) fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
 }
 
 pub fn run_setup() {
     use crate::terminal_ui;
 
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            eprintln!("Cannot determine home directory");
-            std::process::exit(1);
+    if crate::shell::is_non_interactive() {
+        eprintln!("Non-interactive terminal detected (no TTY on stdin).");
+        eprintln!("Running in non-interactive mode (equivalent to: lean-ctx setup --non-interactive --yes)");
+        eprintln!();
+        let opts = SetupOptions {
+            non_interactive: true,
+            yes: true,
+            fix: false,
+            json: false,
+        };
+        match run_setup_with_options(opts) {
+            Ok(report) => {
+                if !report.warnings.is_empty() {
+                    for w in &report.warnings {
+                        tracing::warn!("{w}");
+                    }
+                }
+            }
+            Err(e) => tracing::error!("Setup error: {e}"),
         }
+        return;
+    }
+
+    let Some(home) = dirs::home_dir() else {
+        tracing::error!("Cannot determine home directory");
+        std::process::exit(1);
     };
 
     let binary = resolve_portable_binary();
@@ -41,14 +74,15 @@ pub fn run_setup() {
 
     terminal_ui::print_setup_header();
 
-    // Step 1: Shell hook
-    terminal_ui::print_step_header(1, 5, "Shell Hook");
+    // Step 1: Shell hook (legacy aliases + universal shell hook)
+    terminal_ui::print_step_header(1, 7, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
+    crate::shell_hook::install_all(false);
 
     // Step 2: Editor auto-detection + configuration
-    terminal_ui::print_step_header(2, 5, "AI Tool Detection");
+    terminal_ui::print_step_header(2, 7, "AI Tool Detection");
 
-    let targets = build_targets(&home, &binary);
+    let targets = crate::core::editor_registry::build_targets(&home);
     let mut newly_configured: Vec<&str> = Vec::new();
     let mut already_configured: Vec<&str> = Vec::new();
     let mut not_installed: Vec<&str> = Vec::new();
@@ -62,15 +96,21 @@ pub fn run_setup() {
             continue;
         }
 
-        match write_config(target, &binary) {
-            Ok(WriteAction::Already) => {
+        match crate::core::editor_registry::write_config_with_options(
+            target,
+            &binary,
+            WriteOptions {
+                overwrite_invalid: false,
+            },
+        ) {
+            Ok(res) if res.action == WriteAction::Already => {
                 terminal_ui::print_status_ok(&format!(
                     "{:<20} \x1b[2m{short_path}\x1b[0m",
                     target.name
                 ));
                 already_configured.push(target.name);
             }
-            Ok(WriteAction::Created | WriteAction::Updated) => {
+            Ok(_) => {
                 terminal_ui::print_status_new(&format!(
                     "{:<20} \x1b[2m{short_path}\x1b[0m",
                     target.name
@@ -100,7 +140,7 @@ pub fn run_setup() {
     }
 
     // Step 3: Agent rules injection
-    terminal_ui::print_step_header(3, 5, "Agent Rules");
+    terminal_ui::print_step_header(3, 7, "Agent Rules");
     let rules_result = crate::rules_inject::inject_all_rules(&home);
     for name in &rules_result.injected {
         terminal_ui::print_status_new(&format!("{name:<20} \x1b[2mrules injected\x1b[0m"));
@@ -130,30 +170,39 @@ pub fn run_setup() {
         crate::hooks::install_agent_hook(&target.agent_key, true);
     }
 
-    // Step 4: Data directory + diagnostics
-    terminal_ui::print_step_header(4, 5, "Environment Check");
+    // Step 4: API Proxy configuration
+    terminal_ui::print_step_header(4, 7, "API Proxy");
+    crate::proxy_setup::install_proxy_env(&home, crate::proxy_setup::default_port(), false);
+    println!();
+    println!("  \x1b[2mStart proxy for maximum token savings:\x1b[0m");
+    println!("    \x1b[1mlean-ctx proxy start\x1b[0m");
+    println!("  \x1b[2mEnable autostart:\x1b[0m");
+    println!("    \x1b[1mlean-ctx proxy start --autostart\x1b[0m");
+
+    // Step 5: Data directory + diagnostics
+    terminal_ui::print_step_header(5, 7, "Environment Check");
     let lean_dir = home.join(".lean-ctx");
-    if !lean_dir.exists() {
+    if lean_dir.exists() {
+        terminal_ui::print_status_ok("~/.lean-ctx/ ready");
+    } else {
         let _ = std::fs::create_dir_all(&lean_dir);
         terminal_ui::print_status_new("Created ~/.lean-ctx/");
-    } else {
-        terminal_ui::print_status_ok("~/.lean-ctx/ ready");
     }
     crate::doctor::run_compact();
 
-    // Step 5: Data sharing
-    terminal_ui::print_step_header(5, 5, "Help Improve lean-ctx");
+    // Step 6: Data sharing
+    terminal_ui::print_step_header(6, 7, "Help Improve lean-ctx");
     println!("  Share anonymous compression stats to make lean-ctx better.");
     println!("  \x1b[1mNo code, no file names, no personal data — ever.\x1b[0m");
     println!();
-    print!("  Enable anonymous data sharing? \x1b[1m[Y/n]\x1b[0m ");
+    print!("  Enable anonymous data sharing? \x1b[1m[y/N]\x1b[0m ");
     use std::io::Write;
     std::io::stdout().flush().ok();
 
     let mut input = String::new();
     let contribute = if std::io::stdin().read_line(&mut input).is_ok() {
         let answer = input.trim().to_lowercase();
-        answer.is_empty() || answer == "y" || answer == "yes"
+        answer == "y" || answer == "yes"
     } else {
         false
     };
@@ -175,6 +224,10 @@ pub fn run_setup() {
         terminal_ui::print_status_skip("Skipped — enable later with: lean-ctx config");
     }
 
+    // Step 7: Premium Features Configuration
+    terminal_ui::print_step_header(7, 7, "Premium Features");
+    configure_premium_features(&home);
+
     // Summary
     println!();
     println!(
@@ -188,7 +241,7 @@ pub fn run_setup() {
         println!(
             "  \x1b[33m⚠ {} error{}: {}\x1b[0m",
             errors.len(),
-            if errors.len() != 1 { "s" } else { "" },
+            if errors.len() == 1 { "" } else { "s" },
             errors.join(", ")
         );
     }
@@ -218,8 +271,10 @@ pub fn run_setup() {
     println!("     {bold}{source_cmd}{rst}");
     println!();
 
-    let mut tools_to_restart: Vec<String> =
-        newly_configured.iter().map(|s| s.to_string()).collect();
+    let mut tools_to_restart: Vec<String> = newly_configured
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     for name in rules_result
         .injected
         .iter()
@@ -255,6 +310,266 @@ pub fn run_setup() {
     terminal_ui::print_command_box();
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SetupOptions {
+    pub non_interactive: bool,
+    pub yes: bool,
+    pub fix: bool,
+    pub json: bool,
+}
+
+pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String> {
+    let _quiet_guard = opts.json.then(|| EnvVarGuard::set("LEAN_CTX_QUIET", "1"));
+    let started_at = Utc::now();
+    let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let binary = resolve_portable_binary();
+    let home_str = home.to_string_lossy().to_string();
+
+    let mut steps: Vec<SetupStepReport> = Vec::new();
+
+    // Step: Shell Hook
+    let mut shell_step = SetupStepReport {
+        name: "shell_hook".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    if !opts.non_interactive || opts.yes {
+        if opts.json {
+            crate::cli::cmd_init_quiet(&["--global".to_string()]);
+        } else {
+            crate::cli::cmd_init(&["--global".to_string()]);
+        }
+        crate::shell_hook::install_all(opts.json);
+        shell_step.items.push(SetupItem {
+            name: "init --global".to_string(),
+            status: "ran".to_string(),
+            path: None,
+            note: None,
+        });
+        shell_step.items.push(SetupItem {
+            name: "universal_shell_hook".to_string(),
+            status: "installed".to_string(),
+            path: None,
+            note: Some("~/.zshenv, ~/.bashenv, agent aliases".to_string()),
+        });
+    } else {
+        shell_step
+            .warnings
+            .push("non_interactive_without_yes: shell hook not installed (use --yes)".to_string());
+        shell_step.ok = false;
+        shell_step.items.push(SetupItem {
+            name: "init --global".to_string(),
+            status: "skipped".to_string(),
+            path: None,
+            note: Some("requires --yes in --non-interactive mode".to_string()),
+        });
+    }
+    steps.push(shell_step);
+
+    // Step: Editor MCP config
+    let mut editor_step = SetupStepReport {
+        name: "editors".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    let targets = crate::core::editor_registry::build_targets(&home);
+    for target in &targets {
+        let short_path = shorten_path(&target.config_path.to_string_lossy(), &home_str);
+        if !target.detect_path.exists() {
+            editor_step.items.push(SetupItem {
+                name: target.name.to_string(),
+                status: "not_detected".to_string(),
+                path: Some(short_path),
+                note: None,
+            });
+            continue;
+        }
+
+        let res = crate::core::editor_registry::write_config_with_options(
+            target,
+            &binary,
+            WriteOptions {
+                overwrite_invalid: opts.fix,
+            },
+        );
+        match res {
+            Ok(w) => {
+                editor_step.items.push(SetupItem {
+                    name: target.name.to_string(),
+                    status: match w.action {
+                        WriteAction::Created => "created".to_string(),
+                        WriteAction::Updated => "updated".to_string(),
+                        WriteAction::Already => "already".to_string(),
+                    },
+                    path: Some(short_path),
+                    note: w.note,
+                });
+            }
+            Err(e) => {
+                editor_step.ok = false;
+                editor_step.items.push(SetupItem {
+                    name: target.name.to_string(),
+                    status: "error".to_string(),
+                    path: Some(short_path),
+                    note: Some(e),
+                });
+            }
+        }
+    }
+    steps.push(editor_step);
+
+    // Step: Agent rules
+    let mut rules_step = SetupStepReport {
+        name: "agent_rules".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    let rules_result = crate::rules_inject::inject_all_rules(&home);
+    for n in rules_result.injected {
+        rules_step.items.push(SetupItem {
+            name: n,
+            status: "injected".to_string(),
+            path: None,
+            note: None,
+        });
+    }
+    for n in rules_result.updated {
+        rules_step.items.push(SetupItem {
+            name: n,
+            status: "updated".to_string(),
+            path: None,
+            note: None,
+        });
+    }
+    for n in rules_result.already {
+        rules_step.items.push(SetupItem {
+            name: n,
+            status: "already".to_string(),
+            path: None,
+            note: None,
+        });
+    }
+    for e in rules_result.errors {
+        rules_step.ok = false;
+        rules_step.errors.push(e);
+    }
+    steps.push(rules_step);
+
+    // Step: Agent-specific hooks (Codex, Cursor)
+    let mut hooks_step = SetupStepReport {
+        name: "agent_hooks".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    for target in &targets {
+        if !target.detect_path.exists() {
+            continue;
+        }
+        match target.agent_key.as_str() {
+            "codex" => {
+                crate::hooks::agents::install_codex_hook();
+                hooks_step.items.push(SetupItem {
+                    name: "Codex integration".to_string(),
+                    status: "installed".to_string(),
+                    path: Some("~/.codex/".to_string()),
+                    note: Some(
+                        "Installs AGENTS/MCP guidance and Codex-compatible SessionStart/PreToolUse hooks."
+                            .to_string(),
+                    ),
+                });
+            }
+            "cursor" => {
+                let hooks_path = home.join(".cursor/hooks.json");
+                if !hooks_path.exists() {
+                    crate::hooks::agents::install_cursor_hook(true);
+                    hooks_step.items.push(SetupItem {
+                        name: "Cursor hooks".to_string(),
+                        status: "installed".to_string(),
+                        path: Some("~/.cursor/hooks.json".to_string()),
+                        note: None,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    if !hooks_step.items.is_empty() {
+        steps.push(hooks_step);
+    }
+
+    // Step: Proxy env vars
+    let mut proxy_step = SetupStepReport {
+        name: "proxy_env".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    crate::proxy_setup::install_proxy_env(&home, crate::proxy_setup::default_port(), opts.json);
+    proxy_step.items.push(SetupItem {
+        name: "proxy_env".to_string(),
+        status: "configured".to_string(),
+        path: None,
+        note: Some("ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GEMINI_API_BASE_URL".to_string()),
+    });
+    steps.push(proxy_step);
+
+    // Step: Environment / doctor (compact)
+    let mut env_step = SetupStepReport {
+        name: "doctor_compact".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    let (passed, total) = crate::doctor::compact_score();
+    env_step.items.push(SetupItem {
+        name: "doctor".to_string(),
+        status: format!("{passed}/{total}"),
+        path: None,
+        note: None,
+    });
+    if passed != total {
+        env_step.warnings.push(format!(
+            "doctor compact not fully passing: {passed}/{total}"
+        ));
+    }
+    steps.push(env_step);
+
+    let finished_at = Utc::now();
+    let success = steps.iter().all(|s| s.ok);
+    let report = SetupReport {
+        schema_version: 1,
+        started_at,
+        finished_at,
+        success,
+        platform: PlatformInfo {
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+        },
+        steps,
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    let path = SetupReport::default_path()?;
+    let mut content =
+        serde_json::to_string_pretty(&report).map_err(|e| format!("serialize report: {e}"))?;
+    content.push('\n');
+    crate::config_io::write_atomic(&path, &content)?;
+
+    Ok(report)
+}
+
 pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
     let binary = resolve_portable_binary();
@@ -284,7 +599,7 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
         "claude" | "claude-code" => push(
             &mut targets,
             "Claude Code",
-            home.join(".claude.json"),
+            crate::core::editor_registry::claude_mcp_json_path(&home),
             ConfigType::McpJson,
         ),
         "windsurf" => push(
@@ -303,8 +618,8 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             push(
                 &mut targets,
                 "Gemini CLI",
-                home.join(".gemini/settings/mcp.json"),
-                ConfigType::McpJson,
+                home.join(".gemini/settings.json"),
+                ConfigType::GeminiSettings,
             );
             push(
                 &mut targets,
@@ -322,7 +637,7 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
         "copilot" => push(
             &mut targets,
             "VS Code / Copilot",
-            vscode_mcp_path(),
+            crate::core::editor_registry::vscode_mcp_path(),
             ConfigType::VsCodeMcp,
         ),
         "crush" => push(
@@ -337,11 +652,16 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             home.join(".pi/agent/mcp.json"),
             ConfigType::McpJson,
         ),
-        "cline" => push(&mut targets, "Cline", cline_mcp_path(), ConfigType::McpJson),
+        "cline" => push(
+            &mut targets,
+            "Cline",
+            crate::core::editor_registry::cline_mcp_path(),
+            ConfigType::McpJson,
+        ),
         "roo" => push(
             &mut targets,
             "Roo Code",
-            roo_mcp_path(),
+            crate::core::editor_registry::roo_mcp_path(),
             ConfigType::McpJson,
         ),
         "kiro" => push(
@@ -356,11 +676,56 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             home.join(".verdent/mcp.json"),
             ConfigType::McpJson,
         ),
-        "jetbrains" => push(
+        "jetbrains" | "amp" => {
+            // Handled by dedicated install hooks (servers[] array / amp.mcpServers)
+        }
+        "qwen" => push(
             &mut targets,
-            "JetBrains IDEs",
-            home.join(".jb-mcp.json"),
+            "Qwen Code",
+            home.join(".qwen/mcp.json"),
             ConfigType::McpJson,
+        ),
+        "trae" => push(
+            &mut targets,
+            "Trae",
+            home.join(".trae/mcp.json"),
+            ConfigType::McpJson,
+        ),
+        "amazonq" => push(
+            &mut targets,
+            "Amazon Q Developer",
+            home.join(".aws/amazonq/mcp.json"),
+            ConfigType::McpJson,
+        ),
+        "opencode" => {
+            #[cfg(windows)]
+            let opencode_path = if let Ok(appdata) = std::env::var("APPDATA") {
+                std::path::PathBuf::from(appdata)
+                    .join("opencode")
+                    .join("opencode.json")
+            } else {
+                home.join(".config/opencode/opencode.json")
+            };
+            #[cfg(not(windows))]
+            let opencode_path = home.join(".config/opencode/opencode.json");
+            push(
+                &mut targets,
+                "OpenCode",
+                opencode_path,
+                ConfigType::OpenCode,
+            );
+        }
+        "aider" => push(
+            &mut targets,
+            "Aider",
+            home.join(".aider/mcp.json"),
+            ConfigType::McpJson,
+        ),
+        "hermes" => push(
+            &mut targets,
+            "Hermes Agent",
+            home.join(".hermes/config.yaml"),
+            ConfigType::HermesYaml,
         ),
         _ => {
             return Err(format!("Unknown agent '{agent}'"));
@@ -368,7 +733,13 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
     }
 
     for t in &targets {
-        let _ = write_config(t, &binary)?;
+        crate::core::editor_registry::write_config_with_options(
+            t,
+            &binary,
+            WriteOptions {
+                overwrite_invalid: true,
+            },
+        )?;
     }
 
     if agent == "kiro" {
@@ -405,794 +776,120 @@ fn shorten_path(path: &str, home: &str) -> String {
     }
 }
 
-fn build_targets(home: &std::path::Path, _binary: &str) -> Vec<EditorTarget> {
-    #[cfg(windows)]
-    let opencode_cfg = if let Ok(appdata) = std::env::var("APPDATA") {
-        std::path::PathBuf::from(appdata)
-            .join("opencode")
-            .join("opencode.json")
+fn upsert_toml_key(content: &mut String, key: &str, value: &str) {
+    let pattern = format!("{key} = ");
+    if let Some(start) = content.find(&pattern) {
+        let line_end = content[start..]
+            .find('\n')
+            .map_or(content.len(), |p| start + p);
+        content.replace_range(start..line_end, &format!("{key} = \"{value}\""));
     } else {
-        home.join(".config/opencode/opencode.json")
-    };
-    #[cfg(not(windows))]
-    let opencode_cfg = home.join(".config/opencode/opencode.json");
-
-    #[cfg(windows)]
-    let opencode_detect = opencode_cfg
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| home.join(".config/opencode"));
-    #[cfg(not(windows))]
-    let opencode_detect = home.join(".config/opencode");
-
-    vec![
-        EditorTarget {
-            name: "Cursor",
-            agent_key: "cursor".to_string(),
-            config_path: home.join(".cursor/mcp.json"),
-            detect_path: home.join(".cursor"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Claude Code",
-            agent_key: "claude".to_string(),
-            config_path: home.join(".claude.json"),
-            detect_path: detect_claude_path(),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Windsurf",
-            agent_key: "windsurf".to_string(),
-            config_path: home.join(".codeium/windsurf/mcp_config.json"),
-            detect_path: home.join(".codeium/windsurf"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Codex CLI",
-            agent_key: "codex".to_string(),
-            config_path: home.join(".codex/config.toml"),
-            detect_path: detect_codex_path(home),
-            config_type: ConfigType::Codex,
-        },
-        EditorTarget {
-            name: "Gemini CLI",
-            agent_key: "gemini".to_string(),
-            config_path: home.join(".gemini/settings/mcp.json"),
-            detect_path: home.join(".gemini"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Antigravity",
-            agent_key: "gemini".to_string(),
-            config_path: home.join(".gemini/antigravity/mcp_config.json"),
-            detect_path: home.join(".gemini/antigravity"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Zed",
-            agent_key: "".to_string(),
-            config_path: zed_settings_path(home),
-            detect_path: zed_config_dir(home),
-            config_type: ConfigType::Zed,
-        },
-        EditorTarget {
-            name: "VS Code / Copilot",
-            agent_key: "copilot".to_string(),
-            config_path: vscode_mcp_path(),
-            detect_path: detect_vscode_path(),
-            config_type: ConfigType::VsCodeMcp,
-        },
-        EditorTarget {
-            name: "OpenCode",
-            agent_key: "".to_string(),
-            config_path: opencode_cfg,
-            detect_path: opencode_detect,
-            config_type: ConfigType::OpenCode,
-        },
-        EditorTarget {
-            name: "Qwen Code",
-            agent_key: "qwen".to_string(),
-            config_path: home.join(".qwen/mcp.json"),
-            detect_path: home.join(".qwen"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Trae",
-            agent_key: "trae".to_string(),
-            config_path: home.join(".trae/mcp.json"),
-            detect_path: home.join(".trae"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Amazon Q Developer",
-            agent_key: "amazonq".to_string(),
-            config_path: home.join(".aws/amazonq/mcp.json"),
-            detect_path: home.join(".aws/amazonq"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "JetBrains IDEs",
-            agent_key: "jetbrains".to_string(),
-            config_path: home.join(".jb-mcp.json"),
-            detect_path: detect_jetbrains_path(home),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Cline",
-            agent_key: "cline".to_string(),
-            config_path: cline_mcp_path(),
-            detect_path: detect_cline_path(),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Roo Code",
-            agent_key: "roo".to_string(),
-            config_path: roo_mcp_path(),
-            detect_path: detect_roo_path(),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "AWS Kiro",
-            agent_key: "kiro".to_string(),
-            config_path: home.join(".kiro/settings/mcp.json"),
-            detect_path: home.join(".kiro"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Verdent",
-            agent_key: "verdent".to_string(),
-            config_path: home.join(".verdent/mcp.json"),
-            detect_path: home.join(".verdent"),
-            config_type: ConfigType::McpJson,
-        },
-        EditorTarget {
-            name: "Crush",
-            agent_key: "crush".to_string(),
-            config_path: home.join(".config/crush/crush.json"),
-            detect_path: home.join(".config/crush"),
-            config_type: ConfigType::Crush,
-        },
-        EditorTarget {
-            name: "Pi Coding Agent",
-            agent_key: "pi".to_string(),
-            config_path: home.join(".pi/agent/mcp.json"),
-            detect_path: home.join(".pi/agent"),
-            config_type: ConfigType::McpJson,
-        },
-    ]
-}
-
-fn detect_claude_path() -> PathBuf {
-    if let Ok(output) = std::process::Command::new("which").arg("claude").output() {
-        if output.status.success() {
-            return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
         }
-    }
-    if let Some(home) = dirs::home_dir() {
-        let claude_json = home.join(".claude.json");
-        if claude_json.exists() {
-            return claude_json;
-        }
-    }
-    PathBuf::from("/nonexistent")
-}
-
-fn detect_codex_path(home: &std::path::Path) -> PathBuf {
-    let codex_dir = home.join(".codex");
-    if codex_dir.exists() {
-        return codex_dir;
-    }
-    if let Ok(output) = std::process::Command::new("which").arg("codex").output() {
-        if output.status.success() {
-            return codex_dir;
-        }
-    }
-    PathBuf::from("/nonexistent")
-}
-
-fn zed_settings_path(home: &std::path::Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/Zed/settings.json")
-    } else {
-        home.join(".config/zed/settings.json")
+        content.push_str(&format!("{key} = \"{value}\"\n"));
     }
 }
 
-fn zed_config_dir(home: &std::path::Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/Zed")
-    } else {
-        home.join(".config/zed")
-    }
-}
+fn configure_premium_features(home: &std::path::Path) {
+    use crate::terminal_ui;
+    use std::io::Write;
 
-fn write_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    if let Some(parent) = target.config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    let config_dir = home.join(".lean-ctx");
+    let _ = std::fs::create_dir_all(&config_dir);
+    let config_path = config_dir.join("config.toml");
+    let mut config_content = std::fs::read_to_string(&config_path).unwrap_or_default();
 
-    match target.config_type {
-        ConfigType::McpJson => write_mcp_json(target, binary),
-        ConfigType::Zed => write_zed_config(target, binary),
-        ConfigType::Codex => write_codex_config(target, binary),
-        ConfigType::VsCodeMcp => write_vscode_mcp(target, binary),
-        ConfigType::OpenCode => write_opencode_config(target, binary),
-        ConfigType::Crush => write_crush_config(target, binary),
-    }
-}
+    let dim = "\x1b[2m";
+    let bold = "\x1b[1m";
+    let rst = "\x1b[0m";
 
-fn lean_ctx_server_entry(binary: &str, data_dir: &str) -> serde_json::Value {
-    serde_json::json!({
-        "command": binary,
-        "env": {
-            "LEAN_CTX_DATA_DIR": data_dir
-        },
-        "autoApprove": [
-            "ctx_read", "ctx_shell", "ctx_search", "ctx_tree",
-            "ctx_overview", "ctx_compress", "ctx_metrics", "ctx_session",
-            "ctx_knowledge", "ctx_agent", "ctx_analyze", "ctx_benchmark",
-            "ctx_cache", "ctx_discover", "ctx_smart_read", "ctx_delta",
-            "ctx_edit", "ctx_dedup", "ctx_fill", "ctx_intent", "ctx_response",
-            "ctx_context", "ctx_graph", "ctx_wrapped", "ctx_multi_read",
-            "ctx_semantic_search", "ctx"
-        ]
-    })
-}
-
-fn write_mcp_json(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    let data_dir = dirs::home_dir()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?
-        .join(".lean-ctx")
-        .to_string_lossy()
-        .to_string();
-    let desired = lean_ctx_server_entry(binary, &data_dir);
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json =
-            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
-        let obj = json
-            .as_object_mut()
-            .ok_or_else(|| "root JSON must be an object".to_string())?;
-        let servers = obj
-            .entry("mcpServers")
-            .or_insert_with(|| serde_json::json!({}));
-        let servers_obj = servers
-            .as_object_mut()
-            .ok_or_else(|| "\"mcpServers\" must be an object".to_string())?;
-
-        let existing = servers_obj.get("lean-ctx").cloned();
-        if existing.as_ref() == Some(&desired) {
-            return Ok(WriteAction::Already);
-        }
-        servers_obj.insert("lean-ctx".to_string(), desired);
-        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-        return Ok(WriteAction::Updated);
-    }
-
-    let content = serde_json::to_string_pretty(&serde_json::json!({
-        "mcpServers": {
-            "lean-ctx": desired
-        }
-    }))
-    .map_err(|e| e.to_string())?;
-
-    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
-    Ok(WriteAction::Created)
-}
-
-fn write_zed_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    let desired = serde_json::json!({
-        "source": "custom",
-        "command": binary,
-        "args": [],
-        "env": {}
-    });
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json =
-            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
-        let obj = json
-            .as_object_mut()
-            .ok_or_else(|| "root JSON must be an object".to_string())?;
-        let servers = obj
-            .entry("context_servers")
-            .or_insert_with(|| serde_json::json!({}));
-        let servers_obj = servers
-            .as_object_mut()
-            .ok_or_else(|| "\"context_servers\" must be an object".to_string())?;
-
-        let existing = servers_obj.get("lean-ctx").cloned();
-        if existing.as_ref() == Some(&desired) {
-            return Ok(WriteAction::Already);
-        }
-        servers_obj.insert("lean-ctx".to_string(), desired);
-        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-        return Ok(WriteAction::Updated);
-    }
-
-    let content = serde_json::to_string_pretty(&serde_json::json!({
-        "context_servers": {
-            "lean-ctx": desired
-        }
-    }))
-    .map_err(|e| e.to_string())?;
-
-    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
-    Ok(WriteAction::Created)
-}
-
-fn write_codex_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let updated = upsert_codex_toml(&content, binary);
-        if updated == content {
-            return Ok(WriteAction::Already);
-        }
-        crate::config_io::write_atomic_with_backup(&target.config_path, &updated)?;
-        return Ok(WriteAction::Updated);
-    }
-
-    let content = format!(
-        "[mcp_servers.lean-ctx]\ncommand = \"{}\"\nargs = []\n",
-        binary
+    // Terse Agent Mode
+    println!(
+        "\n  {bold}Agent Output Optimization{rst} {dim}(reduces output tokens by 40-70%){rst}"
     );
-    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
-    Ok(WriteAction::Created)
-}
+    println!(
+        "  {dim}Levels: lite (concise), full (max density), ultra (expert pair-programmer){rst}"
+    );
+    print!("  Terse agent mode? {bold}[off/lite/full/ultra]{rst} {dim}(default: off){rst} ");
+    std::io::stdout().flush().ok();
 
-fn write_vscode_mcp(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    let desired = serde_json::json!({ "command": binary, "args": [] });
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json =
-            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
-        let obj = json
-            .as_object_mut()
-            .ok_or_else(|| "root JSON must be an object".to_string())?;
-        let servers = obj
-            .entry("servers")
-            .or_insert_with(|| serde_json::json!({}));
-        let servers_obj = servers
-            .as_object_mut()
-            .ok_or_else(|| "\"servers\" must be an object".to_string())?;
-
-        let existing = servers_obj.get("lean-ctx").cloned();
-        if existing.as_ref() == Some(&desired) {
-            return Ok(WriteAction::Already);
+    let mut terse_input = String::new();
+    let terse_level = if std::io::stdin().read_line(&mut terse_input).is_ok() {
+        match terse_input.trim().to_lowercase().as_str() {
+            "lite" => "lite",
+            "full" => "full",
+            "ultra" => "ultra",
+            _ => "off",
         }
-        servers_obj.insert("lean-ctx".to_string(), desired);
-        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-        return Ok(WriteAction::Updated);
-    }
-
-    if let Some(parent) = target.config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    let content = serde_json::to_string_pretty(&serde_json::json!({
-        "servers": {
-            "lean-ctx": {
-                "command": binary,
-                "args": []
-            }
-        }
-    }))
-    .map_err(|e| e.to_string())?;
-
-    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
-    Ok(WriteAction::Created)
-}
-
-fn write_opencode_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    let desired = serde_json::json!({
-        "type": "local",
-        "command": [binary],
-        "enabled": true
-    });
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json =
-            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
-        let obj = json
-            .as_object_mut()
-            .ok_or_else(|| "root JSON must be an object".to_string())?;
-        let mcp = obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
-        let mcp_obj = mcp
-            .as_object_mut()
-            .ok_or_else(|| "\"mcp\" must be an object".to_string())?;
-        let existing = mcp_obj.get("lean-ctx").cloned();
-        if existing.as_ref() == Some(&desired) {
-            return Ok(WriteAction::Already);
-        }
-        mcp_obj.insert("lean-ctx".to_string(), desired);
-        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-        return Ok(WriteAction::Updated);
-    }
-
-    if let Some(parent) = target.config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    let content = serde_json::to_string_pretty(&serde_json::json!({
-        "$schema": "https://opencode.ai/config.json",
-        "mcp": {
-            "lean-ctx": {
-                "type": "local",
-                "command": [binary],
-                "enabled": true
-            }
-        }
-    }))
-    .map_err(|e| e.to_string())?;
-
-    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
-    Ok(WriteAction::Created)
-}
-
-fn write_crush_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, String> {
-    let desired = serde_json::json!({ "type": "stdio", "command": binary });
-    if target.config_path.exists() {
-        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json =
-            serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
-        let obj = json
-            .as_object_mut()
-            .ok_or_else(|| "root JSON must be an object".to_string())?;
-        let mcp = obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
-        let mcp_obj = mcp
-            .as_object_mut()
-            .ok_or_else(|| "\"mcp\" must be an object".to_string())?;
-
-        let existing = mcp_obj.get("lean-ctx").cloned();
-        if existing.as_ref() == Some(&desired) {
-            return Ok(WriteAction::Already);
-        }
-        mcp_obj.insert("lean-ctx".to_string(), desired);
-        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
-        return Ok(WriteAction::Updated);
-    }
-
-    let content = serde_json::to_string_pretty(&serde_json::json!({
-        "mcp": { "lean-ctx": desired }
-    }))
-    .map_err(|e| e.to_string())?;
-
-    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
-    Ok(WriteAction::Created)
-}
-
-fn upsert_codex_toml(existing: &str, binary: &str) -> String {
-    let mut out = String::with_capacity(existing.len() + 128);
-    let mut in_section = false;
-    let mut saw_section = false;
-    let mut wrote_command = false;
-    let mut wrote_args = false;
-
-    for line in existing.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            if in_section && !wrote_command {
-                out.push_str(&format!("command = \"{}\"\n", binary));
-                wrote_command = true;
-            }
-            if in_section && !wrote_args {
-                out.push_str("args = []\n");
-                wrote_args = true;
-            }
-            in_section = trimmed == "[mcp_servers.lean-ctx]";
-            if in_section {
-                saw_section = true;
-            }
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-
-        if in_section {
-            if trimmed.starts_with("command") && trimmed.contains('=') {
-                out.push_str(&format!("command = \"{}\"\n", binary));
-                wrote_command = true;
-                continue;
-            }
-            if trimmed.starts_with("args") && trimmed.contains('=') {
-                out.push_str("args = []\n");
-                wrote_args = true;
-                continue;
-            }
-        }
-
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    if saw_section {
-        if in_section && !wrote_command {
-            out.push_str(&format!("command = \"{}\"\n", binary));
-        }
-        if in_section && !wrote_args {
-            out.push_str("args = []\n");
-        }
-        return out;
-    }
-
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out.push_str("\n[mcp_servers.lean-ctx]\n");
-    out.push_str(&format!("command = \"{}\"\n", binary));
-    out.push_str("args = []\n");
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn target(path: PathBuf, ty: ConfigType) -> EditorTarget {
-        EditorTarget {
-            name: "test",
-            agent_key: "test".to_string(),
-            config_path: path,
-            detect_path: PathBuf::from("/nonexistent"),
-            config_type: ty,
-        }
-    }
-
-    #[test]
-    fn mcp_json_upserts_and_preserves_other_servers() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("mcp.json");
-        std::fs::write(
-            &path,
-            r#"{ "mcpServers": { "other": { "command": "other-bin" }, "lean-ctx": { "command": "/old/path/lean-ctx", "autoApprove": [] } } }"#,
-        )
-        .unwrap();
-
-        let t = target(path.clone(), ConfigType::McpJson);
-        let action = write_mcp_json(&t, "/new/path/lean-ctx").unwrap();
-        assert_eq!(action, WriteAction::Updated);
-
-        let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
-        assert_eq!(
-            json["mcpServers"]["lean-ctx"]["command"],
-            "/new/path/lean-ctx"
-        );
-        assert!(json["mcpServers"]["lean-ctx"]["autoApprove"].is_array());
-        assert!(
-            json["mcpServers"]["lean-ctx"]["autoApprove"]
-                .as_array()
-                .unwrap()
-                .len()
-                > 5
-        );
-    }
-
-    #[test]
-    fn crush_config_writes_mcp_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("crush.json");
-        std::fs::write(
-            &path,
-            r#"{ "mcp": { "lean-ctx": { "type": "stdio", "command": "old" } } }"#,
-        )
-        .unwrap();
-
-        let t = target(path.clone(), ConfigType::Crush);
-        let action = write_crush_config(&t, "new").unwrap();
-        assert_eq!(action, WriteAction::Updated);
-
-        let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(json["mcp"]["lean-ctx"]["type"], "stdio");
-        assert_eq!(json["mcp"]["lean-ctx"]["command"], "new");
-    }
-
-    #[test]
-    fn codex_toml_upserts_existing_section() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(
-            &path,
-            r#"[mcp_servers.lean-ctx]
-command = "old"
-args = ["x"]
-"#,
-        )
-        .unwrap();
-
-        let t = target(path.clone(), ConfigType::Codex);
-        let action = write_codex_config(&t, "new").unwrap();
-        assert_eq!(action, WriteAction::Updated);
-
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains(r#"command = "new""#));
-        assert!(content.contains("args = []"));
-    }
-}
-
-fn detect_vscode_path() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(home) = dirs::home_dir() {
-            let vscode = home.join("Library/Application Support/Code/User/settings.json");
-            if vscode.exists() {
-                return vscode;
-            }
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(home) = dirs::home_dir() {
-            let vscode = home.join(".config/Code/User/settings.json");
-            if vscode.exists() {
-                return vscode;
-            }
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let vscode = PathBuf::from(appdata).join("Code/User/settings.json");
-            if vscode.exists() {
-                return vscode;
-            }
-        }
-    }
-    if let Ok(output) = std::process::Command::new("which").arg("code").output() {
-        if output.status.success() {
-            return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-        }
-    }
-    PathBuf::from("/nonexistent")
-}
-
-fn vscode_mcp_path() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        #[cfg(target_os = "macos")]
-        {
-            return home.join("Library/Application Support/Code/User/mcp.json");
-        }
-        #[cfg(target_os = "linux")]
-        {
-            return home.join(".config/Code/User/mcp.json");
-        }
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                return PathBuf::from(appdata).join("Code/User/mcp.json");
-            }
-        }
-        #[allow(unreachable_code)]
-        home.join(".config/Code/User/mcp.json")
     } else {
-        PathBuf::from("/nonexistent")
-    }
-}
+        "off"
+    };
 
-fn detect_jetbrains_path(home: &std::path::Path) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        let lib = home.join("Library/Application Support/JetBrains");
-        if lib.exists() {
-            return lib;
-        }
+    if terse_level != "off" {
+        upsert_toml_key(&mut config_content, "terse_agent", terse_level);
+        terminal_ui::print_status_ok(&format!("Terse agent: {terse_level}"));
+    } else if config_content.contains("terse_agent") {
+        upsert_toml_key(&mut config_content, "terse_agent", "off");
+        terminal_ui::print_status_ok("Terse agent: off");
+    } else {
+        terminal_ui::print_status_skip(
+            "Terse agent: off (change later with: lean-ctx terse <level>)",
+        );
     }
-    #[cfg(target_os = "linux")]
-    {
-        let cfg = home.join(".config/JetBrains");
-        if cfg.exists() {
-            return cfg;
-        }
-    }
-    if home.join(".jb-mcp.json").exists() {
-        return home.join(".jb-mcp.json");
-    }
-    PathBuf::from("/nonexistent")
-}
 
-fn cline_mcp_path() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        #[cfg(target_os = "macos")]
-        {
-            return home.join("Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
-        }
-        #[cfg(target_os = "linux")]
-        {
-            return home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
-        }
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                return PathBuf::from(appdata).join("Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
-            }
-        }
-    }
-    PathBuf::from("/nonexistent")
-}
+    // Tool Result Archive
+    println!(
+        "\n  {bold}Tool Result Archive{rst} {dim}(zero-loss: large outputs archived, retrievable via ctx_expand){rst}"
+    );
+    print!("  Enable auto-archive? {bold}[Y/n]{rst} ");
+    std::io::stdout().flush().ok();
 
-fn detect_cline_path() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        #[cfg(target_os = "macos")]
-        {
-            let p = home
-                .join("Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev");
-            if p.exists() {
-                return p;
-            }
-        }
-        #[cfg(target_os = "linux")]
-        {
-            let p = home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev");
-            if p.exists() {
-                return p;
-            }
-        }
-    }
-    PathBuf::from("/nonexistent")
-}
+    let mut archive_input = String::new();
+    let archive_on = if std::io::stdin().read_line(&mut archive_input).is_ok() {
+        let a = archive_input.trim().to_lowercase();
+        a.is_empty() || a == "y" || a == "yes"
+    } else {
+        true
+    };
 
-fn roo_mcp_path() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        #[cfg(target_os = "macos")]
-        {
-            return home.join("Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+    if archive_on && !config_content.contains("[archive]") {
+        if !config_content.is_empty() && !config_content.ends_with('\n') {
+            config_content.push('\n');
         }
-        #[cfg(target_os = "linux")]
-        {
-            return home.join(".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
-        }
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                return PathBuf::from(appdata).join("Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
-            }
-        }
+        config_content.push_str("\n[archive]\nenabled = true\n");
+        terminal_ui::print_status_ok("Tool Result Archive: enabled");
+    } else if !archive_on {
+        terminal_ui::print_status_skip("Archive: off (enable later in config.toml)");
     }
-    PathBuf::from("/nonexistent")
-}
 
-fn detect_roo_path() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        #[cfg(target_os = "macos")]
-        {
-            let p = home.join(
-                "Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline",
-            );
-            if p.exists() {
-                return p;
-            }
-        }
-        #[cfg(target_os = "linux")]
-        {
-            let p = home.join(".config/Code/User/globalStorage/rooveterinaryinc.roo-cline");
-            if p.exists() {
-                return p;
-            }
-        }
-    }
-    PathBuf::from("/nonexistent")
-}
+    // Output Density
+    println!(
+        "\n  {bold}Output Density{rst} {dim}(compresses tool output: normal, terse, ultra){rst}"
+    );
+    print!("  Output density? {bold}[normal/terse/ultra]{rst} {dim}(default: normal){rst} ");
+    std::io::stdout().flush().ok();
 
-fn resolve_portable_binary() -> String {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(status) = std::process::Command::new(which_cmd)
-        .arg("lean-ctx")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-    {
-        if status.success() {
-            return "lean-ctx".to_string();
+    let mut density_input = String::new();
+    let density = if std::io::stdin().read_line(&mut density_input).is_ok() {
+        match density_input.trim().to_lowercase().as_str() {
+            "terse" => "terse",
+            "ultra" => "ultra",
+            _ => "normal",
         }
+    } else {
+        "normal"
+    };
+
+    if density != "normal" {
+        upsert_toml_key(&mut config_content, "output_density", density);
+        terminal_ui::print_status_ok(&format!("Output density: {density}"));
+    } else if config_content.contains("output_density") {
+        upsert_toml_key(&mut config_content, "output_density", "normal");
+        terminal_ui::print_status_ok("Output density: normal");
+    } else {
+        terminal_ui::print_status_skip("Output density: normal (change later in config.toml)");
     }
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "lean-ctx".to_string())
+
+    let _ = std::fs::write(&config_path, config_content);
 }

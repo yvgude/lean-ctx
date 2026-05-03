@@ -9,26 +9,44 @@ pub enum EdgeKind {
     Defines,
     Exports,
     TypeRef,
+    TestedBy,
+    ChangedIn,
+    BuiltIn,
+    MentionedIn,
+    Affects,
+    Breaks,
 }
 
 impl EdgeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
-            EdgeKind::Imports => "imports",
-            EdgeKind::Calls => "calls",
-            EdgeKind::Defines => "defines",
-            EdgeKind::Exports => "exports",
-            EdgeKind::TypeRef => "type_ref",
+            Self::Imports => "imports",
+            Self::Calls => "calls",
+            Self::Defines => "defines",
+            Self::Exports => "exports",
+            Self::TypeRef => "type_ref",
+            Self::TestedBy => "tested_by",
+            Self::ChangedIn => "changed_in",
+            Self::BuiltIn => "built_in",
+            Self::MentionedIn => "mentioned_in",
+            Self::Affects => "affects",
+            Self::Breaks => "breaks",
         }
     }
 
     pub fn parse(s: &str) -> Self {
         match s {
-            "calls" => EdgeKind::Calls,
-            "defines" => EdgeKind::Defines,
-            "exports" => EdgeKind::Exports,
-            "type_ref" => EdgeKind::TypeRef,
-            _ => EdgeKind::Imports,
+            "calls" => Self::Calls,
+            "defines" => Self::Defines,
+            "exports" => Self::Exports,
+            "type_ref" => Self::TypeRef,
+            "tested_by" => Self::TestedBy,
+            "changed_in" => Self::ChangedIn,
+            "built_in" => Self::BuiltIn,
+            "mentioned_in" => Self::MentionedIn,
+            "affects" => Self::Affects,
+            "breaks" => Self::Breaks,
+            _ => Self::Imports,
         }
     }
 }
@@ -90,7 +108,7 @@ pub fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
                 metadata: row.get(4)?,
             })
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
     Ok(edges)
 }
@@ -110,7 +128,7 @@ pub fn to_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
                 metadata: row.get(4)?,
             })
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
     Ok(edges)
 }

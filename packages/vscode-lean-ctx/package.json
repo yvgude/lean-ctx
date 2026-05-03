@@ -1,10 +1,10 @@
 {
   "name": "lean-ctx",
   "displayName": "lean-ctx — Token Intelligence",
-  "description": "Context Intelligence Engine for AI coding. Live token savings, one-click setup, 28 MCP tools. Reduces LLM token consumption by up to 99%.",
+  "description": "Context Runtime for AI Agents. Live token savings, one-click setup, 49 MCP tools, 10 read modes. Reduces LLM token consumption by up to 99%.",
   "version": "0.1.0",
   "publisher": "yvgude",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "icon": "media/icon.png",
   "repository": {
     "type": "git",

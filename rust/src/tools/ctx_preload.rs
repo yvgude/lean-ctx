@@ -20,14 +20,19 @@ pub fn handle(
         return "ERROR: ctx_preload requires a task description".to_string();
     }
 
-    let project_root = path
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| ".".to_string());
+    let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
     let index = crate::core::graph_index::load_or_build(&project_root);
 
+    let session_intent =
+        crate::core::session::SessionState::load_latest().and_then(|s| s.active_structured_intent);
+
     let (task_files, task_keywords) = parse_task_hints(task);
-    let relevance = compute_relevance(&index, &task_files, &task_keywords);
+    let relevance = if let Some(ref intent) = session_intent {
+        crate::core::task_relevance::compute_relevance_from_intent(&index, intent)
+    } else {
+        compute_relevance(&index, &task_files, &task_keywords)
+    };
 
     let mut scored: Vec<_> = relevance
         .iter()
@@ -37,7 +42,9 @@ pub fn handle(
 
     apply_heat_ranking(&mut scored, &index, &project_root);
 
-    let candidates = scored;
+    let pop = crate::core::pop_pruning::decide_for_candidates(task, &project_root, &scored);
+    let candidates =
+        crate::core::pop_pruning::filter_candidates_by_pop(&project_root, &scored, &pop);
 
     if candidates.is_empty() {
         return format!(
@@ -93,6 +100,20 @@ pub fn handle(
         output.push(format!("[task: {task}] | {complexity_label}"));
     }
 
+    for r in crate::core::prospective_memory::reminders_for_task(&project_root, task) {
+        output.push(r);
+    }
+
+    if !pop.excluded_modules.is_empty() {
+        output.push("POP:".to_string());
+        for ex in &pop.excluded_modules {
+            output.push(format!(
+                "  - exclude {}/ ({} candidates) — {}",
+                ex.module, ex.candidate_files, ex.reason
+            ));
+        }
+    }
+
     let mut total_estimated_saved = 0usize;
     let mut critical_count = 0usize;
 
@@ -105,9 +126,8 @@ pub fn handle(
             break;
         }
 
-        let content = match std::fs::read_to_string(&rel.path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let Ok(content) = std::fs::read_to_string(&rel.path) else {
+            continue;
         };
 
         let file_ref = cache.get_file_ref(&rel.path);
@@ -115,8 +135,7 @@ pub fn handle(
         let line_count = content.lines().count();
         let file_tokens = count_tokens(&content);
 
-        let (entry, _) = cache.store(&rel.path, content.clone());
-        let _ = entry;
+        let _ = cache.store(&rel.path, content.clone());
 
         let mode = budget_to_mode(*token_budget, file_tokens);
 
@@ -213,7 +232,7 @@ fn boltzmann_allocate(
     let log_weights: Vec<f64> = candidates.iter().map(|c| c.score / t).collect();
     let max_log = log_weights
         .iter()
-        .cloned()
+        .copied()
         .fold(f64::NEG_INFINITY, f64::max);
     let exp_weights: Vec<f64> = log_weights.iter().map(|&lw| (lw - max_log).exp()).collect();
     let z: f64 = exp_weights.iter().sum();
@@ -285,7 +304,7 @@ fn extract_critical_lines(content: &str, keywords: &[String], max: usize) -> Vec
         })
         .collect();
 
-    hits.sort_by(|a, b| b.2.cmp(&a.2));
+    hits.sort_by_key(|x| std::cmp::Reverse(x.2));
     hits.truncate(max);
     hits.iter().map(|(n, l, _)| (*n, l.clone())).collect()
 }

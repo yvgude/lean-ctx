@@ -7,22 +7,37 @@ pub enum NodeKind {
     File,
     Symbol,
     Module,
+    Commit,
+    Test,
+    CIRun,
+    Knowledge,
+    Issue,
 }
 
 impl NodeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
-            NodeKind::File => "file",
-            NodeKind::Symbol => "symbol",
-            NodeKind::Module => "module",
+            Self::File => "file",
+            Self::Symbol => "symbol",
+            Self::Module => "module",
+            Self::Commit => "commit",
+            Self::Test => "test",
+            Self::CIRun => "ci_run",
+            Self::Knowledge => "knowledge",
+            Self::Issue => "issue",
         }
     }
 
     pub fn parse(s: &str) -> Self {
         match s {
-            "symbol" => NodeKind::Symbol,
-            "module" => NodeKind::Module,
-            _ => NodeKind::File,
+            "symbol" => Self::Symbol,
+            "module" => Self::Module,
+            "commit" => Self::Commit,
+            "test" => Self::Test,
+            "ci_run" => Self::CIRun,
+            "knowledge" => Self::Knowledge,
+            "issue" => Self::Issue,
+            _ => Self::File,
         }
     }
 }
@@ -72,6 +87,54 @@ impl Node {
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self
+    }
+
+    pub fn commit(hash: &str, message: &str) -> Self {
+        Self {
+            id: None,
+            kind: NodeKind::Commit,
+            name: hash.to_string(),
+            file_path: String::new(),
+            line_start: None,
+            line_end: None,
+            metadata: Some(message.to_string()),
+        }
+    }
+
+    pub fn test(path: &str, test_name: &str) -> Self {
+        Self {
+            id: None,
+            kind: NodeKind::Test,
+            name: test_name.to_string(),
+            file_path: path.to_string(),
+            line_start: None,
+            line_end: None,
+            metadata: None,
+        }
+    }
+
+    pub fn knowledge(id: &str, summary: &str) -> Self {
+        Self {
+            id: None,
+            kind: NodeKind::Knowledge,
+            name: id.to_string(),
+            file_path: String::new(),
+            line_start: None,
+            line_end: None,
+            metadata: Some(summary.to_string()),
+        }
+    }
+
+    pub fn issue(id: &str, title: &str) -> Self {
+        Self {
+            id: None,
+            kind: NodeKind::Issue,
+            name: id.to_string(),
+            file_path: String::new(),
+            line_start: None,
+            line_end: None,
+            metadata: Some(title.to_string()),
+        }
     }
 }
 

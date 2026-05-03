@@ -55,10 +55,7 @@ pub fn handle(
         }
 
         "post" => {
-            let msg = match message {
-                Some(m) => m,
-                None => return "Error: message is required for post".to_string(),
-            };
+            let Some(msg) = message else { return "Error: message is required for post".to_string() };
             let cat = category.unwrap_or("status");
             let from = current_agent_id.unwrap_or("anonymous");
             let mut registry = AgentRegistry::load_or_create();
@@ -73,13 +70,10 @@ pub fn handle(
         }
 
         "read" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => {
+            let Some(agent_id) = current_agent_id else {
                     return "Error: agent must be registered first (use action=register)"
                         .to_string()
-                }
-            };
+                };
             let mut registry = AgentRegistry::load_or_create();
             let messages = registry.read_unread(agent_id);
 
@@ -101,10 +95,7 @@ pub fn handle(
         }
 
         "status" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => return "Error: agent must be registered first".to_string(),
-            };
+            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
             let new_status = match status {
                 Some("active") => AgentStatus::Active,
                 Some("idle") => AgentStatus::Idle,
@@ -145,14 +136,8 @@ pub fn handle(
         }
 
         "handoff" => {
-            let from = match current_agent_id {
-                Some(id) => id,
-                None => return "Error: agent must be registered first".to_string(),
-            };
-            let target = match to_agent {
-                Some(id) => id,
-                None => return "Error: to_agent is required for handoff".to_string(),
-            };
+            let Some(from) = current_agent_id else { return "Error: agent must be registered first".to_string() };
+            let Some(target) = to_agent else { return "Error: to_agent is required for handoff".to_string() };
             let summary = message.unwrap_or("(no summary provided)");
 
             let mut registry = AgentRegistry::load_or_create();
@@ -194,16 +179,14 @@ pub fn handle(
                 })
                 .count();
 
-            let shared_dir = dirs::home_dir()
+            let shared_dir = crate::core::data_dir::lean_ctx_data_dir()
                 .unwrap_or_default()
-                .join(".lean-ctx")
                 .join("agents")
                 .join("shared");
 
             let shared_count = if shared_dir.exists() {
                 std::fs::read_dir(&shared_dir)
-                    .map(|rd| rd.count())
-                    .unwrap_or(0)
+                    .map_or(0, std::iter::Iterator::count)
             } else {
                 0
             };
@@ -224,14 +207,8 @@ pub fn handle(
         }
 
         "diary" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => return "Error: agent must be registered first".to_string(),
-            };
-            let content = match message {
-                Some(m) => m,
-                None => return "Error: message is required for diary entry".to_string(),
-            };
+            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
+            let Some(content) = message else { return "Error: message is required for diary entry".to_string() };
             let entry_type = match category.unwrap_or("progress") {
                 "discovery" | "found" => DiaryEntryType::Discovery,
                 "decision" | "decided" => DiaryEntryType::Decision,
@@ -251,20 +228,17 @@ pub fn handle(
         }
 
         "recall_diary" | "diary_recall" => {
-            let agent_id = match current_agent_id {
-                Some(id) => id,
-                None => {
-                    let diaries = AgentDiary::list_all();
-                    if diaries.is_empty() {
-                        return "No agent diaries found.".to_string();
-                    }
-                    let mut out = format!("Agent Diaries ({}):\n", diaries.len());
-                    for (id, count, updated) in &diaries {
-                        let age = (chrono::Utc::now() - *updated).num_minutes();
-                        out.push_str(&format!("  {id}: {count} entries ({age}m ago)\n"));
-                    }
-                    return out;
+            let Some(agent_id) = current_agent_id else {
+                let diaries = AgentDiary::list_all();
+                if diaries.is_empty() {
+                    return "No agent diaries found.".to_string();
                 }
+                let mut out = format!("Agent Diaries ({}):\n", diaries.len());
+                for (id, count, updated) in &diaries {
+                    let age = (chrono::Utc::now() - *updated).num_minutes();
+                    out.push_str(&format!("  {id}: {count} entries ({age}m ago)\n"));
+                }
+                return out;
             };
             match AgentDiary::load(agent_id) {
                 Some(diary) => diary.format_summary(),
@@ -285,6 +259,47 @@ pub fn handle(
             out
         }
 
-        _ => format!("Unknown action: {action}. Use: register, list, post, read, status, info, handoff, sync, diary, recall_diary, diaries"),
+        "share_knowledge" => {
+            let cat = category.unwrap_or("general");
+            let Some(msg_text) = message else { return "Error: message required (format: key1=value1;key2=value2)".to_string() };
+            let facts: Vec<(String, String)> = msg_text
+                .split(';')
+                .filter_map(|kv| {
+                    let (k, v) = kv.split_once('=')?;
+                    Some((k.trim().to_string(), v.trim().to_string()))
+                })
+                .collect();
+            if facts.is_empty() {
+                return "Error: no valid key=value pairs found".to_string();
+            }
+            let from = current_agent_id.unwrap_or("anonymous");
+            let mut registry = AgentRegistry::load_or_create();
+            registry.share_knowledge(from, cat, &facts);
+            match registry.save() {
+                Ok(()) => format!("Shared {} facts in category '{}'", facts.len(), cat),
+                Err(e) => format!("Share failed: {e}"),
+            }
+        }
+
+        "receive_knowledge" => {
+            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
+            let mut registry = AgentRegistry::load_or_create();
+            let facts = registry.receive_shared_knowledge(agent_id);
+            let _ = registry.save();
+            if facts.is_empty() {
+                return "No new shared knowledge.".to_string();
+            }
+            let mut out = format!("Received {} facts:\n", facts.len());
+            for f in &facts {
+                let age = (chrono::Utc::now() - f.timestamp).num_minutes();
+                out.push_str(&format!(
+                    "  [{}] {}={} (from {}, {}m ago)\n",
+                    f.category, f.key, f.value, f.from_agent, age
+                ));
+            }
+            out
+        }
+
+        _ => format!("Unknown action: {action}. Use: register, list, post, read, status, info, handoff, sync, diary, recall_diary, diaries, share_knowledge, receive_knowledge"),
     }
 }

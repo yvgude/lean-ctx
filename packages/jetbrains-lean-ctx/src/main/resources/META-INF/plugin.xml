@@ -1,0 +1,40 @@
+<idea-plugin>
+    <id>com.leanctx.plugin</id>
+    <name>lean-ctx</name>
+    <vendor email="support@leanctx.com" url="https://leanctx.com">lean-ctx</vendor>
+
+    <description><![CDATA[
+    <p>Context intelligence layer for AI coding assistants. Saves tokens, improves quality.</p>
+    <p>This plugin integrates the lean-ctx binary with JetBrains IDEs, providing:</p>
+    <ul>
+        <li>Status bar showing real-time token savings</li>
+        <li>Commands: setup, doctor, gain, dashboard</li>
+        <li>Auto-detection of lean-ctx binary</li>
+    </ul>
+    <p>Requires lean-ctx binary: <code>cargo install lean-ctx</code></p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <statusBarWidgetFactory
+                implementation="com.leanctx.plugin.LeanCtxStatusBarFactory"
+                id="com.leanctx.statusBar"
+                order="after encodingWidget"/>
+        <postStartupActivity implementation="com.leanctx.plugin.LeanCtxStartupActivity"/>
+    </extensions>
+
+    <actions>
+        <group id="LeanCtx.Menu" text="lean-ctx" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="LeanCtx.Setup" class="com.leanctx.plugin.actions.SetupAction"
+                    text="Setup" description="Run lean-ctx setup"/>
+            <action id="LeanCtx.Doctor" class="com.leanctx.plugin.actions.DoctorAction"
+                    text="Doctor" description="Run lean-ctx doctor"/>
+            <action id="LeanCtx.Gain" class="com.leanctx.plugin.actions.GainAction"
+                    text="Gain Report" description="Show token savings"/>
+            <action id="LeanCtx.Dashboard" class="com.leanctx.plugin.actions.DashboardAction"
+                    text="Dashboard" description="Open lean-ctx dashboard"/>
+        </group>
+    </actions>
+</idea-plugin>

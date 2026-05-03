@@ -89,6 +89,7 @@ mod tests {
                 is_async: false,
                 is_exported: false,
                 indent: 0,
+                ..Signature::no_span()
             },
             Signature {
                 kind: "struct",
@@ -98,6 +99,7 @@ mod tests {
                 is_async: false,
                 is_exported: true,
                 indent: 0,
+                ..Signature::no_span()
             },
             Signature {
                 kind: "fn",
@@ -107,6 +109,7 @@ mod tests {
                 is_async: false,
                 is_exported: true,
                 indent: 2,
+                ..Signature::no_span()
             },
         ]
     }

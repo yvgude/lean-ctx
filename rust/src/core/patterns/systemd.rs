@@ -46,7 +46,7 @@ fn compress_status(output: &str) -> String {
         {
             parts.push(trimmed.to_string());
         }
-        if trimmed.contains(".service") && trimmed.contains("-") && parts.is_empty() {
+        if trimmed.contains(".service") && trimmed.contains('-') && parts.is_empty() {
             parts.insert(0, trimmed.to_string());
         }
     }
@@ -97,7 +97,7 @@ fn compress_journal(output: &str) -> String {
     }
 
     let mut sorted: Vec<_> = deduped.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|x| std::cmp::Reverse(x.1));
 
     let top: Vec<String> = sorted
         .iter()

@@ -167,7 +167,7 @@ fn section_session() -> String {
                     ));
                 }
                 if let Some(stats) = val.get("stats") {
-                    out.push_str(&format!("- Stats: {}\n", stats));
+                    out.push_str(&format!("- Stats: {stats}\n"));
                 }
                 if let Some(files) = val.get("files_touched").and_then(|f| f.as_object()) {
                     out.push_str(&format!("- Files touched: {}\n", files.len()));
@@ -210,10 +210,12 @@ fn section_performance() -> String {
                     let mut top: Vec<_> = cmds
                         .iter()
                         .filter_map(|(k, v)| {
-                            v.get("count").and_then(|c| c.as_u64()).map(|c| (k, c))
+                            v.get("count")
+                                .and_then(serde_json::Value::as_u64)
+                                .map(|c| (k, c))
                         })
                         .collect();
-                    top.sort_by(|a, b| b.1.cmp(&a.1));
+                    top.sort_by_key(|x| std::cmp::Reverse(x.1));
                     top.truncate(5);
                     out.push_str("\n**Top 5 tools:**\n");
                     for (name, count) in top {
@@ -250,11 +252,11 @@ fn section_tee_logs(include_content: bool) -> String {
     if let Some(dir) = lean_ctx_dir() {
         let tee_dir = dir.join("tee");
         if tee_dir.is_dir() {
-            let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(24 * 3600);
+            let cutoff = std::time::SystemTime::now() - std::time::Duration::from_hours(24);
             let mut entries: Vec<_> = std::fs::read_dir(&tee_dir)
                 .into_iter()
                 .flatten()
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| {
                     e.metadata()
                         .ok()
@@ -276,7 +278,7 @@ fn section_tee_logs(include_content: bool) -> String {
             } else {
                 for entry in entries.iter().take(10) {
                     let name = entry.file_name();
-                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    let size = entry.metadata().map_or(0, |m| m.len());
                     out.push_str(&format!("- `{}` ({size} bytes)\n", name.to_string_lossy()));
                 }
                 if include_content {
@@ -301,12 +303,11 @@ fn section_tee_logs(include_content: bool) -> String {
 fn section_project_context() -> String {
     let mut out = String::from("## Project Context\n\n");
     let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "unknown".into());
+        .map_or_else(|_| "unknown".into(), |p| p.to_string_lossy().to_string());
     out.push_str(&format!("- Working directory: {cwd}\n"));
 
     if let Ok(entries) = std::fs::read_dir(".") {
-        let count = entries.filter_map(|e| e.ok()).count();
+        let count = entries.filter_map(std::result::Result::ok).count();
         out.push_str(&format!("- Files in root: {count}\n"));
     }
     out
@@ -384,9 +385,8 @@ fn find_gh_binary() -> Option<std::path::PathBuf> {
 }
 
 fn try_gh_cli(title: &str, body: &str) -> bool {
-    let gh = match find_gh_binary() {
-        Some(p) => p,
-        None => return false,
+    let Some(gh) = find_gh_binary() else {
+        return false;
     };
 
     let tmp = std::env::temp_dir().join("lean-ctx-report.md");
@@ -535,9 +535,8 @@ fn which_lean_ctx() -> Option<PathBuf> {
 }
 
 fn check_shell_hooks() -> String {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return "unknown".into(),
+    let Some(home) = dirs::home_dir() else {
+        return "unknown".into();
     };
 
     let mut found = Vec::new();
@@ -563,21 +562,20 @@ fn check_shell_hooks() -> String {
 }
 
 fn check_mcp_configs() -> String {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return "unknown".into(),
+    let Some(home) = dirs::home_dir() else {
+        return "unknown".into();
     };
 
     let mut found = Vec::new();
-    let configs: &[(&str, &str)] = &[
-        (".cursor/mcp.json", "Cursor"),
-        (".claude.json", "Claude Code"),
-        (".codeium/windsurf/mcp_config.json", "Windsurf"),
+    let claude_cfg = crate::setup::claude_config_json_path(&home);
+    let configs: Vec<(std::path::PathBuf, &str)> = vec![
+        (home.join(".cursor/mcp.json"), "Cursor"),
+        (claude_cfg, "Claude Code"),
+        (home.join(".codeium/windsurf/mcp_config.json"), "Windsurf"),
     ];
 
-    for (path, name) in configs {
-        let full = home.join(path);
-        if let Ok(content) = std::fs::read_to_string(&full) {
+    for (full, name) in &configs {
+        if let Ok(content) = std::fs::read_to_string(full) {
             if content.contains("lean-ctx") {
                 found.push(*name);
             }

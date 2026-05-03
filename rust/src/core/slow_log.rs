@@ -4,14 +4,13 @@ const LOG_FILENAME: &str = "slow-commands.log";
 const MAX_LOG_ENTRIES: usize = 500;
 
 fn slow_log_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx").join(LOG_FILENAME))
+    crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|d| d.join(LOG_FILENAME))
 }
 
 pub fn record(command: &str, duration_ms: u128, exit_code: i32) {
-    let path = match slow_log_path() {
-        Some(p) => p,
-        None => return,
-    };
+    let Some(path) = slow_log_path() else { return };
 
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -39,18 +38,17 @@ pub fn record(command: &str, duration_ms: u128, exit_code: i32) {
 }
 
 pub fn list() -> String {
-    let path = match slow_log_path() {
-        Some(p) => p,
-        None => return "Cannot determine home directory.".to_string(),
+    let Some(path) = slow_log_path() else {
+        return "Cannot determine data directory.".to_string();
     };
 
     match std::fs::read_to_string(&path) {
         Ok(content) if !content.trim().is_empty() => {
             let lines: Vec<&str> = content.lines().collect();
             let header = format!(
-                "Slow command log ({} entries)  [~/.lean-ctx/{}]\n{}\n",
+                "Slow command log ({} entries)  [{}]\n{}\n",
                 lines.len(),
-                LOG_FILENAME,
+                path.display(),
                 "─".repeat(72)
             );
             let table: String = lines
@@ -71,14 +69,13 @@ pub fn list() -> String {
             format!("{header}{table}\n")
         }
         Ok(_) => "No slow commands recorded yet.".to_string(),
-        Err(_) => format!("No slow log found at ~/.lean-ctx/{LOG_FILENAME}"),
+        Err(_) => format!("No slow log found at {}", path.display()),
     }
 }
 
 pub fn clear() -> String {
-    let path = match slow_log_path() {
-        Some(p) => p,
-        None => return "Cannot determine home directory.".to_string(),
+    let Some(path) = slow_log_path() else {
+        return "Cannot determine data directory.".to_string();
     };
 
     if !path.exists() {
@@ -86,7 +83,7 @@ pub fn clear() -> String {
     }
 
     match std::fs::remove_file(&path) {
-        Ok(()) => format!("Cleared ~/.lean-ctx/{LOG_FILENAME}"),
+        Ok(()) => format!("Cleared {}", path.display()),
         Err(e) => format!("Error clearing log: {e}"),
     }
 }

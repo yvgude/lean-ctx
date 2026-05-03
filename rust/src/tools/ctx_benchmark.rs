@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::core::compressor;
 use crate::core::entropy;
+use crate::core::quality;
 use crate::core::signatures;
 use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
@@ -28,14 +29,14 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
     let sigs = signatures::extract_signatures(&content, ext);
     let sig_compact: String = sigs
         .iter()
-        .map(|s| s.to_compact())
+        .map(super::super::core::signatures::Signature::to_compact)
         .collect::<Vec<_>>()
         .join("\n");
     let sig_tokens = count_tokens(&sig_compact);
 
     let sig_tdd: String = sigs
         .iter()
-        .map(|s| s.to_tdd())
+        .map(super::super::core::signatures::Signature::to_tdd)
         .collect::<Vec<_>>()
         .join("\n");
     let sig_tdd_tokens = count_tokens(&sig_tdd);
@@ -61,25 +62,56 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
     let mut rows = Vec::new();
     rows.push(format!("Benchmark: {short} ({line_count}L)\n"));
 
+    let q_aggressive = quality_cell(&content, &aggressive, ext);
+    let q_sig_compact = quality_cell(&content, &sig_compact, ext);
+    let q_sig_tdd = quality_cell(&content, &sig_tdd, ext);
+    let q_entropy = quality_cell(&content, &entropy_result.output, ext);
+
     if crp_mode.is_tdd() {
         rows.push(format!(
-            "{:<28} {:>6}  {:>8}",
-            "Strategy", "Tokens", "Savings"
+            "{:<28} {:>6}  {:>8}  {:>7}",
+            "Strategy", "Tokens", "Savings", "Quality"
         ));
-        rows.push("─".repeat(46));
-        rows.push(format_row("raw", raw_tokens, raw_tokens));
-        rows.push(format_row("aggressive", aggressive_tokens, raw_tokens));
-        rows.push(format_row("signatures (compact)", sig_tokens, raw_tokens));
-        rows.push(format_row("signatures (tdd)", sig_tdd_tokens, raw_tokens));
-        rows.push(format_row("entropy", entropy_tokens, raw_tokens));
-        rows.push(format_row("full + §MAP (tdd)", tdd_full_tokens, raw_tokens));
+        rows.push("─".repeat(57));
+        rows.push(format_row("raw", raw_tokens, raw_tokens, "—"));
+        rows.push(format_row(
+            "aggressive",
+            aggressive_tokens,
+            raw_tokens,
+            &q_aggressive,
+        ));
+        rows.push(format_row(
+            "signatures (compact)",
+            sig_tokens,
+            raw_tokens,
+            &q_sig_compact,
+        ));
+        rows.push(format_row(
+            "signatures (tdd)",
+            sig_tdd_tokens,
+            raw_tokens,
+            &q_sig_tdd,
+        ));
+        rows.push(format_row(
+            "entropy",
+            entropy_tokens,
+            raw_tokens,
+            &q_entropy,
+        ));
+        rows.push(format_row(
+            "full + §MAP (tdd)",
+            tdd_full_tokens,
+            raw_tokens,
+            "—",
+        ));
         rows.push(format_row(
             "aggressive + §MAP (tdd)",
             tdd_agg_tokens,
             raw_tokens,
+            "—",
         ));
-        rows.push(format_row("cache hit", cache_tokens, raw_tokens));
-        rows.push("─".repeat(46));
+        rows.push(format_row("cache hit", cache_tokens, raw_tokens, "—"));
+        rows.push("─".repeat(57));
 
         let strategies = [
             ("aggressive", aggressive_tokens),
@@ -110,21 +142,35 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
             0
         };
         rows.push(format!(
-            "TDD bonus (signatures): {} extra tokens saved ({}%)",
-            tdd_extra, tdd_pct
+            "TDD bonus (signatures): {tdd_extra} extra tokens saved ({tdd_pct}%)"
         ));
     } else {
         rows.push(format!(
-            "{:<24} {:>6}  {:>8}",
-            "Strategy", "Tokens", "Savings"
+            "{:<24} {:>6}  {:>8}  {:>7}",
+            "Strategy", "Tokens", "Savings", "Quality"
         ));
-        rows.push("─".repeat(42));
-        rows.push(format_row("raw", raw_tokens, raw_tokens));
-        rows.push(format_row("aggressive", aggressive_tokens, raw_tokens));
-        rows.push(format_row("signatures (compact)", sig_tokens, raw_tokens));
-        rows.push(format_row("entropy", entropy_tokens, raw_tokens));
-        rows.push(format_row("cache hit", cache_tokens, raw_tokens));
-        rows.push("─".repeat(42));
+        rows.push("─".repeat(53));
+        rows.push(format_row("raw", raw_tokens, raw_tokens, "—"));
+        rows.push(format_row(
+            "aggressive",
+            aggressive_tokens,
+            raw_tokens,
+            &q_aggressive,
+        ));
+        rows.push(format_row(
+            "signatures (compact)",
+            sig_tokens,
+            raw_tokens,
+            &q_sig_compact,
+        ));
+        rows.push(format_row(
+            "entropy",
+            entropy_tokens,
+            raw_tokens,
+            &q_entropy,
+        ));
+        rows.push(format_row("cache hit", cache_tokens, raw_tokens, "—"));
+        rows.push("─".repeat(53));
 
         let strategies = [
             ("aggressive", aggressive_tokens),
@@ -149,12 +195,19 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
     rows.join("\n")
 }
 
-fn format_row(name: &str, tokens: usize, baseline: usize) -> String {
+fn format_row(name: &str, tokens: usize, baseline: usize, quality: &str) -> String {
     if tokens >= baseline {
-        format!("{name:<28} {tokens:>6}  —")
+        format!("{name:<28} {tokens:>6}  —  {quality:>7}")
     } else {
         let saved = baseline - tokens;
         let pct = (saved as f64 / baseline as f64 * 100.0).round() as usize;
-        format!("{name:<28} {tokens:>6}  -{saved} ({pct}%)")
+        format!("{name:<28} {tokens:>6}  -{saved} ({pct}%)  {quality:>7}")
     }
+}
+
+fn quality_cell(original: &str, compressed: &str, ext: &str) -> String {
+    let q = quality::score(original, compressed, ext);
+    let pct = (q.composite * 100.0).round() as u32;
+    let pass = if q.passed { "✓" } else { "✗" };
+    format!("{pct:>3}%{pass}")
 }

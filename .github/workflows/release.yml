@@ -13,6 +13,7 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -23,6 +24,11 @@ jobs:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-22.04
             musl: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-22.04
+            musl: true
+            cross: true
+            zig: true
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -31,23 +37,28 @@ jobs:
             os: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: ${{ matrix.target }}
 
       - name: Install musl tools
-        if: matrix.musl == true
+        if: matrix.musl == true && matrix.zig != true
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
           if [[ "${{ matrix.target }}" == aarch64-* ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu musl-dev
-            sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc /usr/bin/aarch64-linux-musl-gcc || true
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-            echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+            TOOLCHAIN_ROOT="${RUNNER_TEMP}/aarch64-linux-musl-cross"
+            curl -sL "https://musl.cc/aarch64-linux-musl-cross.tgz" | tar xz -C "${RUNNER_TEMP}"
+            echo "${TOOLCHAIN_ROOT}/bin" >> $GITHUB_PATH
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc" >> $GITHUB_ENV
+            echo "CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc" >> $GITHUB_ENV
+            echo "AR_aarch64_unknown_linux_musl=aarch64-linux-musl-ar" >> $GITHUB_ENV
+            echo "RANLIB_aarch64_unknown_linux_musl=aarch64-linux-musl-ranlib" >> $GITHUB_ENV
           fi
 
       - name: Install cross-compilation tools
@@ -60,11 +71,35 @@ jobs:
       - name: Run tests
         if: matrix.cross != true
         working-directory: rust
-        run: cargo test --all-features
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" || "${{ matrix.musl }}" == "true" ]]; then
+            cargo test --lib --all-features -- --test-threads=1
+          else
+            cargo test --all-features -- --test-threads=1
+          fi
+
+      - name: Setup Zig
+        if: matrix.zig == true
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        with:
+          version: 0.13.0
+
+      - name: Install cargo-zigbuild
+        if: matrix.zig == true
+        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2
+        with:
+          tool: cargo-zigbuild
 
       - name: Build
         working-directory: rust
-        run: cargo build --release --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          if [[ "${{ matrix.zig }}" == "true" ]]; then
+            cargo zigbuild --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -81,7 +116,7 @@ jobs:
           Compress-Archive -Path "rust/target/${{ matrix.target }}/release/lean-ctx.exe" -DestinationPath "lean-ctx-${{ matrix.target }}.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: lean-ctx-${{ matrix.target }}
           path: |
@@ -93,9 +128,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           merge-multiple: true
 
@@ -120,17 +157,20 @@ jobs:
             echo ""
             echo "#### Upgrade"
             echo '```bash'
+            echo "lean-ctx update                 # recommended (auto-downloads + refreshes shell hooks)"
             echo "cargo install lean-ctx          # or"
             echo "npm update -g lean-ctx-bin      # or"
             echo "brew upgrade lean-ctx"
             echo '```'
+            echo ""
+            echo "> **Note:** After upgrading via cargo/npm/brew, run \`lean-ctx setup\` to refresh shell aliases. \`lean-ctx update\` does this automatically."
             echo ""
             echo "**Full Changelog**: https://github.com/yvgude/lean-ctx/compare/${PREV_TAG}...v${VERSION}"
             echo "BODY_EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           body: ${{ steps.notes.outputs.body }}
           files: |
@@ -144,8 +184,10 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !contains(github.ref_name, '-rc') }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Publish
         working-directory: rust
         run: cargo publish --allow-dirty --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -159,8 +201,10 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !contains(github.ref_name, '-rc') }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
@@ -210,7 +254,7 @@ jobs:
 
           sed -i "s|url \".*\"|url \"https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/lean-ctx-${VERSION}-source.tar.gz\"|" Formula/lean-ctx.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/lean-ctx.rb
-          sed -i "s|assert_match \"lean-ctx .*\"|assert_match \"lean-ctx ${VERSION}\"|" Formula/lean-ctx.rb
+          sed -i "s|assert_match \"lean-ctx [0-9][^\"]*\"|assert_match \"lean-ctx ${VERSION}\"|" Formula/lean-ctx.rb
 
           grep -q "v${VERSION}/lean-ctx-${VERSION}-source.tar.gz" Formula/lean-ctx.rb
           grep -q "sha256 \"${SHA}\"" Formula/lean-ctx.rb
@@ -223,85 +267,3 @@ jobs:
         env:
           HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
 
-  update-aur:
-    name: Update AUR
-    needs: release
-    runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref_name, '-rc') }}
-    steps:
-      - name: Download checksums and extract hashes
-        id: checksums
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-          gh release download "${GITHUB_REF_NAME}" \
-            --repo yvgude/lean-ctx --pattern "SHA256SUMS" --dir .
-
-          SOURCE_SHA=$(grep "source\.tar\.gz" SHA256SUMS | awk '{print $1}')
-          BIN_SHA=$(grep "x86_64-unknown-linux-gnu\.tar\.gz" SHA256SUMS | awk '{print $1}')
-          echo "source_sha=${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
-          echo "bin_sha=${BIN_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Source SHA256: ${SOURCE_SHA}"
-          echo "Binary SHA256: ${BIN_SHA}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Setup SSH for AUR
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          cat >> ~/.ssh/config <<'SSHEOF'
-          Host aur.archlinux.org
-            IdentityFile ~/.ssh/aur
-            User aur
-            StrictHostKeyChecking accept-new
-          SSHEOF
-
-      - name: Verify AUR SSH access
-        run: |
-          ssh -o BatchMode=yes aur.archlinux.org true
-
-      - name: Update lean-ctx (source build)
-        run: |
-          VERSION="${{ steps.checksums.outputs.version }}"
-          SOURCE_SHA="${{ steps.checksums.outputs.source_sha }}"
-
-          git clone ssh://aur@aur.archlinux.org/lean-ctx.git aur-source
-          cd aur-source
-
-          sed -i "s|^pkgver=.*|pkgver=${VERSION}|" PKGBUILD
-          sed -i "s|sha256sums=('[a-f0-9]\{64\}')|sha256sums=('${SOURCE_SHA}')|" PKGBUILD
-
-          sed -i "s|pkgver = .*|pkgver = ${VERSION}|" .SRCINFO
-          sed -i "s|source = lean-ctx-[0-9.]*\.tar\.gz::https://github.com/yvgude/lean-ctx/releases/download/v[0-9.]*/|source = lean-ctx-${VERSION}.tar.gz::https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/|" .SRCINFO
-          sed -i "s|sha256sums = [a-f0-9]\{64\}|sha256sums = ${SOURCE_SHA}|" .SRCINFO
-
-          git config user.name "Yves Gugger"
-          git config user.email "yves@pounce.ch"
-          git add PKGBUILD .SRCINFO
-          git diff --cached --quiet || git commit -m "Update to ${VERSION}"
-          git push
-
-      - name: Update lean-ctx-bin (binary)
-        run: |
-          VERSION="${{ steps.checksums.outputs.version }}"
-          BIN_SHA="${{ steps.checksums.outputs.bin_sha }}"
-
-          git clone ssh://aur@aur.archlinux.org/lean-ctx-bin.git aur-bin
-          cd aur-bin
-
-          sed -i "s|^pkgver=.*|pkgver=${VERSION}|" PKGBUILD
-          sed -i "s|sha256sums=('[a-f0-9]\{64\}'|sha256sums=('${BIN_SHA}'|" PKGBUILD
-
-          sed -i "s|pkgver = .*|pkgver = ${VERSION}|" .SRCINFO
-          sed -i "s|source = lean-ctx-[0-9.]*\.tar\.gz::https://github.com/yvgude/lean-ctx/releases/download/v[0-9.]*/|source = lean-ctx-${VERSION}.tar.gz::https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/|" .SRCINFO
-          sed -i "s|source = LICENSE::https://raw.githubusercontent.com/yvgude/lean-ctx/v[0-9.]*/|source = LICENSE::https://raw.githubusercontent.com/yvgude/lean-ctx/v${VERSION}/|" .SRCINFO
-          sed -i "s|sha256sums = [a-f0-9]\{64\}|sha256sums = ${BIN_SHA}|" .SRCINFO
-
-          git config user.name "Yves Gugger"
-          git config user.email "yves@pounce.ch"
-          git add PKGBUILD .SRCINFO
-          git diff --cached --quiet || git commit -m "Update to ${VERSION}"
-          git push

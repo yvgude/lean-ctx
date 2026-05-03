@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 pub fn compress(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().collect();
-    if lines.len() < 3 {
-        return None;
+    if lines.len() < 3 || lines.len() <= 100 {
+        return Some(output.to_string());
     }
 
     let mut by_file: HashMap<&str, Vec<(usize, &str)>> = HashMap::new();
@@ -29,11 +29,11 @@ pub fn compress(output: &str) -> Option<String> {
     for (file, matches) in &sorted_files {
         let short = shorten_path(file);
         result.push_str(&format!("\n{short} ({}):", matches.len()));
-        let show = matches.iter().take(5);
+        let show = matches.iter().take(10);
         for (ln, content) in show {
             let trimmed = content.trim();
-            let short_content = if trimmed.len() > 80 {
-                let truncated: String = trimmed.chars().take(79).collect();
+            let short_content = if trimmed.len() > 160 {
+                let truncated: String = trimmed.chars().take(159).collect();
                 format!("{truncated}…")
             } else {
                 trimmed.to_string()
@@ -44,8 +44,8 @@ pub fn compress(output: &str) -> Option<String> {
                 result.push_str(&format!("\n  {short_content}"));
             }
         }
-        if matches.len() > 5 {
-            result.push_str(&format!("\n  ... +{} more", matches.len() - 5));
+        if matches.len() > 10 {
+            result.push_str(&format!("\n  ... +{} more", matches.len() - 10));
         }
     }
 

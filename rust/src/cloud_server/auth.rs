@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::config::Config;
+use super::helpers::internal_error;
 
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let smtp = if state.mailer.is_some() {
@@ -25,6 +26,7 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
 pub struct AppState {
     pub pool: Pool,
     pub cfg: Config,
+    #[allow(dead_code)]
     pub jwt_secret: std::sync::Arc<Vec<u8>>,
     pub mailer: Option<Mailer>,
 }
@@ -348,7 +350,9 @@ pub async fn forgot_password(
                 eprintln!("[cloud-auth] SMTP send_password_reset failed for {email}: {e}");
             }
         } else {
-            eprintln!("[cloud-auth] forgot_password: mailer not configured, cannot send reset email");
+            eprintln!(
+                "[cloud-auth] forgot_password: mailer not configured, cannot send reset email"
+            );
         }
     }
 
@@ -521,7 +525,7 @@ pub async fn auth_user(
 ) -> Result<(Uuid, String), (StatusCode, String)> {
     if let Some(v) = headers.get(axum::http::header::AUTHORIZATION) {
         if let Ok(s) = v.to_str() {
-            if let Some(key) = s.strip_prefix("Bearer ").map(|x| x.trim()) {
+            if let Some(key) = s.strip_prefix("Bearer ").map(str::trim) {
                 let sha = sha256_hex(key);
                 if let Some((user_id, email)) = lookup_api_key(&state.pool, &sha)
                     .await
@@ -529,7 +533,13 @@ pub async fn auth_user(
                 {
                     return Ok((user_id, email));
                 }
-                return Err((StatusCode::UNAUTHORIZED, "Invalid API key".into()));
+                if let Some((user_id, email)) = super::oauth::lookup_access_token(&state.pool, &sha)
+                    .await
+                    .map_err(internal_error)?
+                {
+                    return Ok((user_id, email));
+                }
+                return Err((StatusCode::UNAUTHORIZED, "Invalid token".into()));
             }
         }
     }
@@ -764,7 +774,7 @@ fn verify_password(password: &str, stored: &str) -> bool {
     constant_time_eq(expected_digest.as_bytes(), actual_digest.as_bytes())
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -782,17 +792,13 @@ fn generate_api_key() -> String {
     hex::encode(bytes)
 }
 
-fn generate_token() -> String {
+pub(crate) fn generate_token() -> String {
     let bytes: [u8; 32] = rand::random();
     hex::encode(bytes)
 }
 
-fn sha256_hex(input: &str) -> String {
+pub(crate) fn sha256_hex(input: &str) -> String {
     let mut h = Sha256::new();
     h.update(input.as_bytes());
     hex::encode(h.finalize())
-}
-
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }

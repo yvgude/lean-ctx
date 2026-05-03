@@ -1,0 +1,4 @@
+[submodule "aur/lean-ctx-bin"]
+	path = aur/lean-ctx-bin
+	url = ssh://aur@aur.archlinux.org/lean-ctx-bin.git
+

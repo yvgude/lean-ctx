@@ -1,4 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::core::cache::SessionCache;
 use crate::core::config::AutonomyConfig;
@@ -7,9 +8,11 @@ use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
+/// Tracks autonomous action state: session init, dedup, and consolidation timing.
 pub struct AutonomyState {
     pub session_initialized: AtomicBool,
     pub dedup_applied: AtomicBool,
+    pub last_consolidation_unix: AtomicU64,
     pub config: AutonomyConfig,
 }
 
@@ -20,19 +23,23 @@ impl Default for AutonomyState {
 }
 
 impl AutonomyState {
+    /// Creates a new autonomy state with config loaded from disk.
     pub fn new() -> Self {
         Self {
             session_initialized: AtomicBool::new(false),
             dedup_applied: AtomicBool::new(false),
+            last_consolidation_unix: AtomicU64::new(0),
             config: AutonomyConfig::load(),
         }
     }
 
+    /// Returns true if autonomous actions are enabled in configuration.
     pub fn is_enabled(&self) -> bool {
         self.config.enabled
     }
 }
 
+/// Auto-preloads project context on the first tool call of a session.
 pub fn session_lifecycle_pre_hook(
     state: &AutonomyState,
     tool_name: &str,
@@ -78,6 +85,7 @@ pub fn session_lifecycle_pre_hook(
     ))
 }
 
+/// Appends related-file hints and silently preloads imports after a file read.
 pub fn enrich_after_read(
     state: &AutonomyState,
     cache: &mut SessionCache,
@@ -111,6 +119,7 @@ pub fn enrich_after_read(
     result
 }
 
+/// Output from post-read enrichment: optional related-file hints.
 #[derive(Default)]
 pub struct EnrichResult {
     pub related_hint: Option<String>,
@@ -164,6 +173,7 @@ fn silent_preload_imports(
     }
 }
 
+/// Runs cache deduplication once the entry count exceeds the configured threshold.
 pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     if !state.is_enabled() || !state.config.auto_dedup {
         return;
@@ -186,6 +196,28 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     crate::tools::ctx_dedup::handle_action(cache, "apply");
 }
 
+/// Returns true if enough tool calls have elapsed to trigger auto-consolidation.
+pub fn should_auto_consolidate(state: &AutonomyState, tool_calls: u32) -> bool {
+    if !state.is_enabled() || !state.config.auto_consolidate {
+        return false;
+    }
+    let every = state.config.consolidate_every_calls.max(1);
+    if !tool_calls.is_multiple_of(every) {
+        return false;
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let last = state.last_consolidation_unix.load(Ordering::SeqCst);
+    if now.saturating_sub(last) < state.config.consolidate_cooldown_secs {
+        return false;
+    }
+    state.last_consolidation_unix.store(now, Ordering::SeqCst);
+    true
+}
+
+/// Suggests a more token-efficient lean-ctx tool when shell compression is low.
 pub fn shell_efficiency_hint(
     state: &AutonomyState,
     command: &str,
@@ -200,7 +232,8 @@ pub fn shell_efficiency_hint(
         return None;
     }
 
-    let savings_pct = ((input_tokens - output_tokens) as f64 / input_tokens as f64) * 100.0;
+    let savings_pct =
+        (input_tokens.saturating_sub(output_tokens) as f64 / input_tokens as f64) * 100.0;
     if savings_pct >= 20.0 {
         return None;
     }

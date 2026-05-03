@@ -1,4 +1,4 @@
-//! Import-to-file resolution for the top 5 languages.
+//! Import-to-file resolution (AST-driven import strings → project paths).
 //!
 //! Resolves import strings from `deep_queries::ImportInfo` to actual file paths
 //! within a project. Handles language-specific module systems:
@@ -7,6 +7,12 @@
 //! - Rust: crate/super/self resolution, mod.rs
 //! - Go: go.mod module path, package = directory
 //! - Java: package-to-directory mapping
+//! - C/C++: local includes (best-effort)
+//! - Ruby: require_relative (best-effort)
+//! - PHP: include/require (best-effort)
+//! - Bash: source/. (best-effort)
+//! - Dart: relative + package:<name>/ (best-effort)
+//! - Zig: @import("path.zig") (best-effort)
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,6 +33,7 @@ pub struct ResolverContext {
     pub file_paths: Vec<String>,
     pub tsconfig_paths: HashMap<String, String>,
     pub go_module: Option<String>,
+    pub dart_package: Option<String>,
     file_set: std::collections::HashSet<String>,
 }
 
@@ -36,12 +43,14 @@ impl ResolverContext {
 
         let tsconfig_paths = load_tsconfig_paths(project_root);
         let go_module = load_go_module(project_root);
+        let dart_package = load_dart_package(project_root);
 
         Self {
             project_root: project_root.to_path_buf(),
             file_paths,
             tsconfig_paths,
             go_module,
+            dart_package,
             file_set,
         }
     }
@@ -83,6 +92,15 @@ fn resolve_one(
         "py" => resolve_python(imp, file_path, ctx),
         "go" => resolve_go(imp, ctx),
         "java" => resolve_java(imp, ctx),
+        "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh" => {
+            resolve_c_like(imp, file_path, ctx)
+        }
+        "rb" => resolve_ruby(imp, file_path, ctx),
+        "php" => resolve_php(imp, file_path, ctx),
+        "sh" | "bash" => resolve_bash(imp, file_path, ctx),
+        "dart" => resolve_dart(imp, file_path, ctx),
+        "zig" => resolve_zig(imp, file_path, ctx),
+        "kt" | "kts" => resolve_kotlin(imp, ctx),
         _ => (None, true),
     }
 }
@@ -99,7 +117,7 @@ fn resolve_ts(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opti
         let resolved = dir.join(source);
         let normalized = normalize_path(&resolved);
 
-        if let Some(found) = try_ts_extensions(&normalized, ctx) {
+        if let Some(found) = try_ts_with_js_remap(&normalized, ctx) {
             return (Some(found), false);
         }
         return (None, false);
@@ -110,6 +128,31 @@ fn resolve_ts(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Opti
     }
 
     (None, true)
+}
+
+/// Resolve a TS/JS import path, handling the TypeScript convention where
+/// `.js` specifiers in `.ts` files resolve to `.ts` sources.
+/// See: https://www.typescriptlang.org/docs/handbook/modules/reference.html#relative-file-path-resolution
+fn try_ts_with_js_remap(base: &str, ctx: &ResolverContext) -> Option<String> {
+    const JS_TO_TS: &[(&str, &[&str])] = &[
+        (".js", &[".ts", ".tsx"]),
+        (".jsx", &[".tsx", ".ts"]),
+        (".mjs", &[".mts"]),
+        (".cjs", &[".cts"]),
+    ];
+
+    for &(js_ext, ts_exts) in JS_TO_TS {
+        if let Some(stem) = base.strip_suffix(js_ext) {
+            for ts_ext in ts_exts {
+                let candidate = format!("{stem}{ts_ext}");
+                if ctx.file_exists(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    try_ts_extensions(base, ctx)
 }
 
 fn try_ts_extensions(base: &str, ctx: &ResolverContext) -> Option<String> {
@@ -143,7 +186,7 @@ fn resolve_tsconfig_path(source: &str, ctx: &ResolverContext) -> Option<String> 
         if let Some(remainder) = source.strip_prefix(prefix) {
             let target_base = target.trim_end_matches('*');
             let candidate = format!("{target_base}{remainder}");
-            if let Some(found) = try_ts_extensions(&candidate, ctx) {
+            if let Some(found) = try_ts_with_js_remap(&candidate, ctx) {
                 return Some(found);
             }
         }
@@ -402,7 +445,10 @@ fn resolve_go(imp: &ImportInfo, ctx: &ResolverContext) -> (Option<String>, bool)
 
 fn try_go_package(pkg_path: &str, ctx: &ResolverContext) -> Option<String> {
     for file in &ctx.file_paths {
-        if file.ends_with(".go") {
+        if Path::new(file.as_str())
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("go"))
+        {
             let dir = Path::new(file).parent()?.to_string_lossy();
             if dir == pkg_path || dir.ends_with(pkg_path) {
                 return Some(dir.to_string());
@@ -444,6 +490,399 @@ fn resolve_java(imp: &ImportInfo, ctx: &ResolverContext) -> (Option<String>, boo
         None,
         !ctx.file_paths.iter().any(|f| f.contains(&package_path)),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Kotlin
+// ---------------------------------------------------------------------------
+
+fn resolve_kotlin(imp: &ImportInfo, ctx: &ResolverContext) -> (Option<String>, bool) {
+    let source = &imp.source;
+
+    if source.starts_with("java.")
+        || source.starts_with("javax.")
+        || source.starts_with("kotlin.")
+        || source.starts_with("kotlinx.")
+        || source.starts_with("android.")
+        || source.starts_with("androidx.")
+        || source.starts_with("org.junit.")
+        || source.starts_with("org.jetbrains.")
+    {
+        return (None, true);
+    }
+
+    let parts: Vec<&str> = source.rsplitn(2, '.').collect();
+    if parts.len() < 2 {
+        return (None, true);
+    }
+
+    let class_name = parts[0];
+    let package_path = parts[1].replace('.', "/");
+
+    let search_roots = [
+        "",
+        "src/main/kotlin/",
+        "src/main/java/",
+        "src/",
+        "app/src/main/kotlin/",
+        "app/src/main/java/",
+        "src/commonMain/kotlin/",
+    ];
+
+    for root in &search_roots {
+        for ext in &["kt", "kts", "java"] {
+            let candidate = format!("{root}{package_path}/{class_name}.{ext}");
+            if ctx.file_exists(&candidate) {
+                return (Some(candidate), false);
+            }
+        }
+    }
+
+    (
+        None,
+        !ctx.file_paths.iter().any(|f| f.contains(&package_path)),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// C / C++
+// ---------------------------------------------------------------------------
+
+fn resolve_c_like(
+    imp: &ImportInfo,
+    file_path: &str,
+    ctx: &ResolverContext,
+) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+
+    let try_prefixes = |prefixes: &[&str], rel: &str| -> Option<String> {
+        let rel = rel.trim_start_matches("./").trim_start_matches('/');
+        let mut candidates: Vec<String> = vec![rel.to_string()];
+        for ext in [".h", ".hpp", ".c", ".cpp"] {
+            if !rel.ends_with(ext) {
+                candidates.push(format!("{rel}{ext}"));
+            }
+        }
+        for prefix in prefixes {
+            for c in &candidates {
+                let p = format!("{prefix}{c}");
+                if ctx.file_exists(&p) {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    };
+
+    if source.starts_with('.') {
+        let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+        let dir_prefix = if dir.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dir.to_string_lossy())
+        };
+        if let Some(found) = try_prefixes(&[dir_prefix.as_str()], source) {
+            return (Some(found), false);
+        }
+        return (None, false);
+    }
+
+    if ctx.file_exists(source) {
+        return (Some(source.to_string()), false);
+    }
+
+    if let Some(found) = try_prefixes(&["", "include/", "src/"], source) {
+        return (Some(found), false);
+    }
+
+    (None, true)
+}
+
+// ---------------------------------------------------------------------------
+// Ruby
+// ---------------------------------------------------------------------------
+
+fn resolve_ruby(
+    imp: &ImportInfo,
+    file_path: &str,
+    ctx: &ResolverContext,
+) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+    let source_rel = source.trim_start_matches("./").trim_start_matches('/');
+
+    let try_prefixes = |prefixes: &[&str]| -> Option<String> {
+        let mut candidates: Vec<String> = vec![source_rel.to_string()];
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("rb"))
+        {
+            candidates.push(format!("{source_rel}.rb"));
+        }
+        for prefix in prefixes {
+            for c in &candidates {
+                let p = format!("{prefix}{c}");
+                if ctx.file_exists(&p) {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    };
+
+    if source.starts_with('.') || source_rel.contains('/') {
+        let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+        let dir_prefix = if dir.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dir.to_string_lossy())
+        };
+        if let Some(found) = try_prefixes(&[dir_prefix.as_str()]) {
+            return (Some(found), false);
+        }
+        if let Some(found) = try_prefixes(&["", "lib/", "src/"]) {
+            return (Some(found), false);
+        }
+        return (None, false);
+    }
+
+    (None, true)
+}
+
+// ---------------------------------------------------------------------------
+// PHP
+// ---------------------------------------------------------------------------
+
+fn resolve_php(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+    if source.starts_with("http://") || source.starts_with("https://") {
+        return (None, true);
+    }
+    let source_rel = source.trim_start_matches("./").trim_start_matches('/');
+
+    let try_prefixes = |prefixes: &[&str]| -> Option<String> {
+        let mut candidates: Vec<String> = vec![source_rel.to_string()];
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("php"))
+        {
+            candidates.push(format!("{source_rel}.php"));
+        }
+        for prefix in prefixes {
+            for c in &candidates {
+                let p = format!("{prefix}{c}");
+                if ctx.file_exists(&p) {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    };
+
+    if source.starts_with('.') || source.starts_with('/') || source_rel.contains('/') {
+        let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+        let dir_prefix = if dir.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dir.to_string_lossy())
+        };
+        if let Some(found) = try_prefixes(&[dir_prefix.as_str()]) {
+            return (Some(found), false);
+        }
+        if let Some(found) = try_prefixes(&["", "src/", "lib/"]) {
+            return (Some(found), false);
+        }
+        return (None, false);
+    }
+
+    (None, true)
+}
+
+// ---------------------------------------------------------------------------
+// Bash
+// ---------------------------------------------------------------------------
+
+fn resolve_bash(
+    imp: &ImportInfo,
+    file_path: &str,
+    ctx: &ResolverContext,
+) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+    let source_rel = source.trim_start_matches("./").trim_start_matches('/');
+
+    let try_prefixes = |prefixes: &[&str]| -> Option<String> {
+        let mut candidates: Vec<String> = vec![source_rel.to_string()];
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("sh"))
+        {
+            candidates.push(format!("{source_rel}.sh"));
+        }
+        for prefix in prefixes {
+            for c in &candidates {
+                let p = format!("{prefix}{c}");
+                if ctx.file_exists(&p) {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    };
+
+    if source.starts_with('.') || source.starts_with('/') || source_rel.contains('/') {
+        let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+        let dir_prefix = if dir.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dir.to_string_lossy())
+        };
+        if let Some(found) = try_prefixes(&[dir_prefix.as_str()]) {
+            return (Some(found), false);
+        }
+        if let Some(found) = try_prefixes(&["", "scripts/", "bin/"]) {
+            return (Some(found), false);
+        }
+        return (None, false);
+    }
+
+    (None, true)
+}
+
+// ---------------------------------------------------------------------------
+// Dart
+// ---------------------------------------------------------------------------
+
+fn resolve_dart(
+    imp: &ImportInfo,
+    file_path: &str,
+    ctx: &ResolverContext,
+) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+    if source.starts_with("dart:") {
+        return (None, true);
+    }
+
+    let try_prefixes = |prefixes: &[&str], rel: &str| -> Option<String> {
+        let rel = rel.trim_start_matches("./").trim_start_matches('/').trim();
+        let mut candidates: Vec<String> = vec![rel.to_string()];
+        if !Path::new(rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("dart"))
+        {
+            candidates.push(format!("{rel}.dart"));
+        }
+        for prefix in prefixes {
+            for c in &candidates {
+                let p = format!("{prefix}{c}");
+                if ctx.file_exists(&p) {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    };
+
+    if source.starts_with("package:") {
+        if let Some(pkg) = ctx.dart_package.as_deref() {
+            let prefix = format!("package:{pkg}/");
+            if let Some(rest) = source.strip_prefix(&prefix) {
+                if let Some(found) = try_prefixes(&["lib/", ""], rest) {
+                    return (Some(found), false);
+                }
+                return (None, false);
+            }
+        }
+        return (None, true);
+    }
+
+    if source.starts_with('.') || source.starts_with('/') {
+        let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+        let dir_prefix = if dir.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dir.to_string_lossy())
+        };
+        if let Some(found) = try_prefixes(&[dir_prefix.as_str()], source) {
+            return (Some(found), false);
+        }
+        if let Some(found) = try_prefixes(&["", "lib/"], source) {
+            return (Some(found), false);
+        }
+        return (None, false);
+    }
+
+    (None, true)
+}
+
+// ---------------------------------------------------------------------------
+// Zig
+// ---------------------------------------------------------------------------
+
+fn resolve_zig(imp: &ImportInfo, file_path: &str, ctx: &ResolverContext) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+    let source_rel = source.trim_start_matches("./").trim_start_matches('/');
+    if source_rel == "std" {
+        return (None, true);
+    }
+
+    let try_prefixes = |prefixes: &[&str]| -> Option<String> {
+        let mut candidates: Vec<String> = vec![source_rel.to_string()];
+        if !Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("zig"))
+        {
+            candidates.push(format!("{source_rel}.zig"));
+        }
+        for prefix in prefixes {
+            for c in &candidates {
+                let p = format!("{prefix}{c}");
+                if ctx.file_exists(&p) {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    };
+
+    if source.starts_with('.')
+        || source_rel.contains('/')
+        || Path::new(source_rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("zig"))
+    {
+        let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+        let dir_prefix = if dir.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dir.to_string_lossy())
+        };
+        if let Some(found) = try_prefixes(&[dir_prefix.as_str()]) {
+            return (Some(found), false);
+        }
+        if let Some(found) = try_prefixes(&["", "src/"]) {
+            return (Some(found), false);
+        }
+        return (None, false);
+    }
+
+    (None, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -501,6 +940,21 @@ fn load_go_module(root: &Path) -> Option<String> {
     None
 }
 
+fn load_dart_package(root: &Path) -> Option<String> {
+    let pubspec = root.join("pubspec.yaml");
+    let content = std::fs::read_to_string(pubspec).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("name:") {
+            let name = rest.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -512,7 +966,6 @@ fn normalize_path(path: &Path) -> String {
             std::path::Component::ParentDir => {
                 parts.pop();
             }
-            std::path::Component::CurDir => {}
             std::path::Component::Normal(s) => {
                 parts.push(s.to_str().unwrap_or(""));
             }
@@ -534,10 +987,11 @@ mod tests {
     fn make_ctx(files: &[&str]) -> ResolverContext {
         ResolverContext {
             project_root: PathBuf::from("/project"),
-            file_paths: files.iter().map(|s| s.to_string()).collect(),
+            file_paths: files.iter().map(std::string::ToString::to_string).collect(),
             tsconfig_paths: HashMap::new(),
             go_module: None,
-            file_set: files.iter().map(|s| s.to_string()).collect(),
+            dart_package: None,
+            file_set: files.iter().map(std::string::ToString::to_string).collect(),
         }
     }
 
@@ -582,6 +1036,39 @@ mod tests {
             results[0].resolved_path.as_deref(),
             Some("src/components/index.ts")
         );
+    }
+
+    #[test]
+    fn ts_relative_js_specifier_resolves_to_ts_source() {
+        let ctx = make_ctx(&["src/b.ts", "src/a.ts"]);
+        let imp = make_import("./b.js");
+        let results = resolve_imports(&[imp], "src/a.ts", "ts", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/b.ts"));
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn ts_relative_jsx_specifier_resolves_to_tsx_source() {
+        let ctx = make_ctx(&["src/Button.tsx", "src/App.tsx"]);
+        let imp = make_import("./Button.jsx");
+        let results = resolve_imports(&[imp], "src/App.tsx", "tsx", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/Button.tsx"));
+    }
+
+    #[test]
+    fn ts_relative_mjs_specifier_resolves_to_mts_source() {
+        let ctx = make_ctx(&["src/utils.mts", "src/main.mts"]);
+        let imp = make_import("./utils.mjs");
+        let results = resolve_imports(&[imp], "src/main.mts", "ts", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/utils.mts"));
+    }
+
+    #[test]
+    fn ts_relative_js_specifier_falls_back_to_js_file() {
+        let ctx = make_ctx(&["src/legacy.js", "src/app.ts"]);
+        let imp = make_import("./legacy.js");
+        let results = resolve_imports(&[imp], "src/app.ts", "ts", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("src/legacy.js"));
     }
 
     #[test]
@@ -750,5 +1237,98 @@ mod tests {
         let imp = make_import("some_module");
         let results = resolve_imports(&[imp], "main.rb", "rb", &ctx);
         assert!(results[0].is_external);
+    }
+
+    #[test]
+    fn c_include_resolves_from_include_dir() {
+        let ctx = make_ctx(&["include/foo/bar.h", "src/main.c"]);
+        let imp = make_import("foo/bar.h");
+        let results = resolve_imports(&[imp], "src/main.c", "c", &ctx);
+        assert_eq!(
+            results[0].resolved_path.as_deref(),
+            Some("include/foo/bar.h")
+        );
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn ruby_require_relative_resolves() {
+        let ctx = make_ctx(&["lib/utils.rb", "app.rb"]);
+        let imp = make_import("./lib/utils");
+        let results = resolve_imports(&[imp], "app.rb", "rb", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("lib/utils.rb"));
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn php_require_resolves() {
+        let ctx = make_ctx(&["vendor/autoload.php", "index.php"]);
+        let imp = make_import("./vendor/autoload.php");
+        let results = resolve_imports(&[imp], "index.php", "php", &ctx);
+        assert_eq!(
+            results[0].resolved_path.as_deref(),
+            Some("vendor/autoload.php")
+        );
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn bash_source_resolves() {
+        let ctx = make_ctx(&["scripts/env.sh", "main.sh"]);
+        let imp = make_import("./scripts/env.sh");
+        let results = resolve_imports(&[imp], "main.sh", "sh", &ctx);
+        assert_eq!(results[0].resolved_path.as_deref(), Some("scripts/env.sh"));
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn dart_package_import_resolves_to_lib() {
+        let mut ctx = make_ctx(&["lib/src/util.dart", "lib/app.dart"]);
+        ctx.dart_package = Some("myapp".to_string());
+        let imp = make_import("package:myapp/src/util.dart");
+        let results = resolve_imports(&[imp], "lib/app.dart", "dart", &ctx);
+        assert_eq!(
+            results[0].resolved_path.as_deref(),
+            Some("lib/src/util.dart")
+        );
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn kotlin_import_resolves_to_src_main_kotlin() {
+        let ctx = make_ctx(&[
+            "src/main/kotlin/com/example/service/UserService.kt",
+            "src/main/kotlin/com/example/App.kt",
+        ]);
+        let imp = make_import("com.example.service.UserService");
+        let results = resolve_imports(&[imp], "src/main/kotlin/com/example/App.kt", "kt", &ctx);
+        assert_eq!(
+            results[0].resolved_path.as_deref(),
+            Some("src/main/kotlin/com/example/service/UserService.kt")
+        );
+        assert!(!results[0].is_external);
+    }
+
+    #[test]
+    fn kotlin_stdlib_import_is_external() {
+        let ctx = make_ctx(&["src/main/kotlin/App.kt"]);
+        let imp = make_import("kotlin.collections.List");
+        let results = resolve_imports(&[imp], "src/main/kotlin/App.kt", "kt", &ctx);
+        assert!(results[0].is_external);
+    }
+
+    #[test]
+    fn kotlin_import_resolves_java_file() {
+        let ctx = make_ctx(&[
+            "src/main/java/com/example/LegacyUtil.java",
+            "src/main/kotlin/com/example/App.kt",
+        ]);
+        let imp = make_import("com.example.LegacyUtil");
+        let results = resolve_imports(&[imp], "src/main/kotlin/com/example/App.kt", "kt", &ctx);
+        assert_eq!(
+            results[0].resolved_path.as_deref(),
+            Some("src/main/java/com/example/LegacyUtil.java")
+        );
+        assert!(!results[0].is_external);
     }
 }

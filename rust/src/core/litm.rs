@@ -1,4 +1,3 @@
-use crate::core::attention_model;
 use crate::core::session::SessionState;
 
 #[derive(Debug, Clone, Copy)]
@@ -54,11 +53,13 @@ impl LitmProfile {
     }
 }
 
+#[cfg(test)]
 const _ALPHA: f64 = 0.9;
+#[cfg(test)]
 const _BETA: f64 = 0.55;
+#[cfg(test)]
 const _GAMMA: f64 = 0.85;
 
-#[allow(dead_code)]
 pub struct PositionedOutput {
     pub begin_block: String,
     pub end_block: String,
@@ -147,9 +148,7 @@ pub fn position_optimize(session: &SessionState) -> PositionedOutput {
     }
 }
 
-#[allow(dead_code)]
-/// Compute the theoretical LITM efficiency for a given context layout.
-/// Returns (efficiency_without_ccp, efficiency_with_ccp) as percentages.
+#[cfg(test)]
 pub fn compute_litm_efficiency(
     begin_tokens: usize,
     middle_tokens: usize,
@@ -178,8 +177,7 @@ pub fn compute_litm_efficiency(
     (eff_without, eff_with)
 }
 
-#[allow(dead_code)]
-/// Profile-aware LITM efficiency using model-specific attention weights.
+#[cfg(test)]
 pub fn compute_litm_efficiency_for_profile(
     begin_tokens: usize,
     middle_tokens: usize,
@@ -211,9 +209,10 @@ pub fn compute_litm_efficiency_for_profile(
     (eff_without, eff_with)
 }
 
-/// Compute content-aware attention efficiency using the heuristic attention model.
-/// Combines positional U-curve with structural importance for each line.
+#[cfg(test)]
 pub fn content_attention_efficiency(content: &str, profile: &LitmProfile) -> f64 {
+    use crate::core::attention_model;
+
     let lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
         return 0.0;

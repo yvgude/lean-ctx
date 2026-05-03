@@ -1,0 +1,87 @@
+{
+  "crp": {
+    "modes": [
+      {
+        "description": "No CRP transformation.",
+        "name": "off"
+      },
+      {
+        "description": "Compact prose; prefer bullet points and short lines.",
+        "name": "compact"
+      },
+      {
+        "description": "Token Dense Dialect: max information density, minimal narration.",
+        "name": "tdd"
+      }
+    ],
+    "output_rules": [
+      "Prefer structured bullets over paragraphs.",
+      "Avoid repeating previously shown context.",
+      "Show diffs instead of full files when possible.",
+      "For code reads, prefer map/signatures/task over full."
+    ]
+  },
+  "ctx_read": {
+    "compressed_hint": "[compressed — use mode=\"full\" for complete source]",
+    "file_ref_format": "F<idx>=<short-path> <line-count>L",
+    "read_modes": [
+      {
+        "description": "Predict best mode (predictor + adaptive policy).",
+        "name": "auto"
+      },
+      {
+        "description": "Full file content (cached).",
+        "name": "full"
+      },
+      {
+        "description": "Deps + exports + key API signatures (TOON).",
+        "name": "map"
+      },
+      {
+        "description": "API surface only.",
+        "name": "signatures"
+      },
+      {
+        "description": "Changed lines since last read.",
+        "name": "diff"
+      },
+      {
+        "description": "Whitespace/comment stripping with safeguards.",
+        "name": "aggressive"
+      },
+      {
+        "description": "Entropy/Jaccard-based extraction.",
+        "name": "entropy"
+      },
+      {
+        "description": "Task-aware compression (IB filter + graph context).",
+        "name": "task"
+      },
+      {
+        "description": "Header-only reference (lines/tokens), no content.",
+        "name": "reference"
+      },
+      {
+        "description": "Line-range extraction with line numbers.",
+        "name": "lines:N-M"
+      }
+    ],
+    "toon_header": {
+      "api": "  API:\\n    <signature>",
+      "deps": "  deps: a, b, c",
+      "exports": "  exports: x, y"
+    }
+  },
+  "format": "lean-ctx-tdd",
+  "schema_version": 1,
+  "stability": {
+    "determinism": [
+      "Sorted keys for manifests/exports.",
+      "Stable ordering for ledgers and reports."
+    ],
+    "local_first": [
+      "All files stored under LEAN_CTX_DATA_DIR by default.",
+      "No raw prompts stored."
+    ]
+  }
+}

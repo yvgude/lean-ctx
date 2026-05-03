@@ -1,14 +1,14 @@
-use crate::core::heatmap::{self, HeatMap};
+use crate::core::gain::GainEngine;
+use crate::core::heatmap;
 
 pub fn handle(action: &str, _path: Option<&str>) -> String {
-    let heatmap = HeatMap::load();
+    let engine = GainEngine::load();
 
     match action {
-        "status" => heatmap::format_heatmap_status(&heatmap, 20),
-        "directory" | "dirs" => heatmap::format_directory_summary(&heatmap),
+        "directory" | "dirs" => heatmap::format_directory_summary(&engine.heatmap),
         "cold" => {
             let all = collect_project_files(_path);
-            let cold = heatmap.cold_files(&all, 20);
+            let cold = engine.heatmap.cold_files(&all, 20);
             if cold.is_empty() {
                 "No cold files found (all files have been accessed).".to_string()
             } else {
@@ -22,8 +22,10 @@ pub fn handle(action: &str, _path: Option<&str>) -> String {
                 lines.join("\n")
             }
         }
-        "json" => serde_json::to_string_pretty(&heatmap).unwrap_or_else(|_| "{}".to_string()),
-        _ => heatmap::format_heatmap_status(&heatmap, 20),
+        "json" => {
+            serde_json::to_string_pretty(&engine.heatmap).unwrap_or_else(|_| "{}".to_string())
+        }
+        _ => heatmap::format_heatmap_status(&engine.heatmap, 20),
     }
 }
 

@@ -1,26 +1,23 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static MIGRATION_STATUS_RE: OnceLock<Regex> = OnceLock::new();
-static ROUTE_RE: OnceLock<Regex> = OnceLock::new();
-static TEST_RESULT_RE: OnceLock<Regex> = OnceLock::new();
-static PEST_RESULT_RE: OnceLock<Regex> = OnceLock::new();
-
-fn migration_status_re() -> &'static Regex {
-    MIGRATION_STATUS_RE.get_or_init(|| Regex::new(r"\|\s*(Ran|Pending)\s*\|\s*(.+?)\s*\|").unwrap())
+fn migration_status_re() -> &'static regex::Regex {
+    static_regex!(r"\|\s*(Ran|Pending)\s*\|\s*(.+?)\s*\|")
 }
-fn route_re() -> &'static Regex {
-    ROUTE_RE.get_or_init(|| {
-        Regex::new(r"(GET|POST|PUT|PATCH|DELETE|ANY)\s*\|\s*(\S+)\s*\|\s*(\S+)").unwrap()
-    })
+fn route_re() -> &'static regex::Regex {
+    static_regex!(r"(GET|POST|PUT|PATCH|DELETE|ANY)\s*\|\s*(\S+)\s*\|\s*(\S+)")
 }
-fn test_result_re() -> &'static Regex {
-    TEST_RESULT_RE
-        .get_or_init(|| Regex::new(r"Tests:\s*(\d+)\s*passed(?:,\s*(\d+)\s*failed)?").unwrap())
+fn test_result_re() -> &'static regex::Regex {
+    static_regex!(r"Tests:\s*(\d+)\s*passed(?:,\s*(\d+)\s*failed)?")
 }
-fn pest_result_re() -> &'static Regex {
-    PEST_RESULT_RE
-        .get_or_init(|| Regex::new(r"(\d+)\s*passed.*?(\d+)\s*failed|(\d+)\s*passed").unwrap())
+fn pest_result_re() -> &'static regex::Regex {
+    static_regex!(r"(\d+)\s*passed.*?(\d+)\s*failed|(\d+)\s*passed")
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {
@@ -95,7 +92,7 @@ fn compress_migrate_status(output: &str) -> String {
 
     let ran = statuses.iter().filter(|s| s.starts_with('+')).count();
     let pending = statuses.iter().filter(|s| s.starts_with('-')).count();
-    let mut result = format!("{} ran, {} pending:", ran, pending);
+    let mut result = format!("{ran} ran, {pending} pending:");
 
     for s in statuses.iter().rev().take(10) {
         result.push_str(&format!("\n  {s}"));

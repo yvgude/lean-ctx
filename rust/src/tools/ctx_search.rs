@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use ignore::WalkBuilder;
@@ -11,6 +12,7 @@ use crate::tools::CrpMode;
 const MAX_FILE_SIZE: u64 = 512_000;
 const MAX_WALK_DEPTH: usize = 20;
 
+/// Searches files for a regex pattern with compressed output and monorepo scope hints.
 pub fn handle(
     pattern: &str,
     dir: &str,
@@ -43,8 +45,12 @@ pub fn handle(
     let mut files_skipped_size = 0u32;
     let mut files_skipped_encoding = 0u32;
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker.filter_map(std::result::Result::ok) {
         if entry.file_type().is_none_or(|ft| ft.is_dir()) {
+            continue;
+        }
+
+        if entry.file_type().is_some_and(|ft| ft.is_symlink()) {
             continue;
         }
 
@@ -68,12 +74,9 @@ pub fn handle(
             }
         }
 
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => {
-                files_skipped_encoding += 1;
-                continue;
-            }
+        let Ok(content) = std::fs::read_to_string(path) else {
+            files_skipped_encoding += 1;
+            continue;
         };
 
         files_searched += 1;
@@ -124,6 +127,8 @@ pub fn handle(
         ));
     }
 
+    let scope_hint = monorepo_scope_hint(&matches, dir);
+
     {
         let file_ext = ext_filter.unwrap_or("rs");
         let mut sym = SymbolMap::new();
@@ -141,6 +146,10 @@ pub fn handle(
                 result = format!("{compressed}{sym_table}");
             }
         }
+    }
+
+    if let Some(hint) = scope_hint {
+        result.push_str(&hint);
     }
 
     let raw_output = raw_result_lines.join("\n");
@@ -209,4 +218,39 @@ fn is_generated_file(path: &Path) -> bool {
         || name.ends_with(".d.ts")
         || name.ends_with(".js.map")
         || name.ends_with(".css.map")
+}
+
+fn monorepo_scope_hint(matches: &[String], search_dir: &str) -> Option<String> {
+    let top_dirs: HashSet<&str> = matches
+        .iter()
+        .filter_map(|m| {
+            let path = m.split(':').next()?;
+            let relative = path.strip_prefix("./").unwrap_or(path);
+            let relative = relative.strip_prefix(search_dir).unwrap_or(relative);
+            let relative = relative.strip_prefix('/').unwrap_or(relative);
+            relative.split('/').next()
+        })
+        .collect();
+
+    if top_dirs.len() > 3 {
+        let mut dirs: Vec<&&str> = top_dirs.iter().collect();
+        dirs.sort();
+        let dir_list: Vec<String> = dirs.iter().take(6).map(|d| format!("'{d}'")).collect();
+        let extra = if top_dirs.len() > 6 {
+            format!(", +{} more", top_dirs.len() - 6)
+        } else {
+            String::new()
+        };
+        Some(format!(
+            "\n\nResults span {} directories ({}{}). \
+             Use the 'path' parameter to scope to a specific service, \
+             e.g. path=\"{}/\".",
+            top_dirs.len(),
+            dir_list.join(", "),
+            extra,
+            dirs[0]
+        ))
+    } else {
+        None
+    }
 }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::auth::{auth_user, AppState};
+use super::helpers::internal_error;
 
 #[derive(Deserialize)]
 pub struct KnowledgeEnvelope {
@@ -90,19 +91,15 @@ async fn upsert(
     let client = state.pool.get().await.map_err(internal_error)?;
     client
         .execute(
-            r#"
+            r"
 INSERT INTO knowledge_entries (user_id, category, key, value, updated_at)
 VALUES ($1,$2,$3,$4, NOW())
 ON CONFLICT (user_id, category, key)
 DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()
-"#,
+",
             &[&user_id, &category, &key, &value],
         )
         .await
         .map_err(internal_error)?;
     Ok(())
-}
-
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }

@@ -10,6 +10,8 @@ pub fn handle(
     root: &str,
     cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
+    depth: Option<usize>,
+    kind: Option<&str>,
 ) -> String {
     match action {
         "build" => handle_build(root),
@@ -17,7 +19,13 @@ pub fn handle(
         "symbol" => handle_symbol(path, root, cache, crp_mode),
         "impact" => handle_impact(path, root),
         "status" => handle_status(root),
-        _ => "Unknown action. Use: build, related, symbol, impact, status".to_string(),
+        "enrich" => handle_enrich(root),
+        "context" => handle_context_query(path, root),
+        "diagram" => crate::tools::ctx_graph_diagram::handle(path, depth, kind, root),
+        _ => {
+            "Unknown action. Use: build, related, symbol, impact, status, enrich, context, diagram"
+                .to_string()
+        }
     }
 }
 
@@ -40,7 +48,7 @@ fn handle_build(root: &str) -> String {
     ));
 
     let mut langs: Vec<_> = by_lang.iter().collect();
-    langs.sort_by(|a, b| b.1 .1.cmp(&a.1 .1));
+    langs.sort_by_key(|(_, v)| std::cmp::Reverse(v.1));
     result.push("\nLanguages:".to_string());
     for (lang, (count, tokens)) in &langs {
         result.push(format!("  {lang}: {count} files, {tokens} tok"));
@@ -53,7 +61,7 @@ fn handle_build(root: &str) -> String {
         }
     }
     let mut hotspots: Vec<_> = import_counts.iter().collect();
-    hotspots.sort_by(|a, b| b.1.cmp(a.1));
+    hotspots.sort_by_key(|x| std::cmp::Reverse(*x.1));
 
     if !hotspots.is_empty() {
         result.push(format!("\nMost imported ({}):", hotspots.len().min(10)));
@@ -75,24 +83,17 @@ fn handle_build(root: &str) -> String {
 }
 
 fn handle_related(path: Option<&str>, root: &str) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'related' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'related' action".to_string();
     };
 
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => {
-            return "No graph index found. Run ctx_graph with action='build' first.".to_string()
-        }
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
-    let rel_target = target
-        .strip_prefix(root)
-        .unwrap_or(target)
-        .trim_start_matches('/');
+    let rel_target = graph_index::graph_relative_key(target, root);
 
-    let related = index.get_related(rel_target, 2);
+    let related = index.get_related(&rel_target, 2);
     if related.is_empty() {
         return format!(
             "No related files found for {}",
@@ -119,56 +120,45 @@ fn handle_symbol(
     cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
 ) -> String {
-    let spec = match path {
-        Some(p) => p,
-        None => {
-            return "path is required for 'symbol' action (format: file.rs::function_name)"
-                .to_string()
-        }
+    let Some(spec) = path else {
+        return "path is required for 'symbol' action (format: file.rs::function_name)".to_string();
     };
 
-    let (file_part, symbol_name) = match spec.split_once("::") {
-        Some((f, s)) => (f, s),
-        None => return format!("Invalid symbol spec '{spec}'. Use format: file.rs::function_name"),
+    let Some((file_part, symbol_name)) = spec.split_once("::") else {
+        return format!("Invalid symbol spec '{spec}'. Use format: file.rs::function_name");
     };
 
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => {
-            return "No graph index found. Run ctx_graph with action='build' first.".to_string()
-        }
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
-    let rel_file = file_part
-        .strip_prefix(root)
-        .unwrap_or(file_part)
-        .trim_start_matches('/');
+    let rel_file = graph_index::graph_relative_key(file_part, root);
 
     let key = format!("{rel_file}::{symbol_name}");
-    let symbol = match index.get_symbol(&key) {
-        Some(s) => s,
-        None => {
-            let available: Vec<&str> = index
-                .symbols
-                .keys()
-                .filter(|k| k.starts_with(rel_file))
-                .map(|k| k.as_str())
-                .take(10)
-                .collect();
-            if available.is_empty() {
-                return format!("Symbol '{symbol_name}' not found in {rel_file}. Run ctx_graph action='build' to update the index.");
-            }
-            return format!(
-                "Symbol '{symbol_name}' not found in {rel_file}.\nAvailable symbols:\n  {}",
-                available.join("\n  ")
-            );
+    let Some(symbol) = index.get_symbol(&key) else {
+        let available: Vec<&str> = index
+            .symbols
+            .keys()
+            .filter(|k| k.starts_with(&rel_file))
+            .map(std::string::String::as_str)
+            .take(10)
+            .collect();
+        if available.is_empty() {
+            return format!("Symbol '{symbol_name}' not found in {rel_file}. Run ctx_graph action='build' to update the index.");
         }
+        return format!(
+            "Symbol '{symbol_name}' not found in {rel_file}.\nAvailable symbols:\n  {}",
+            available.join("\n  ")
+        );
     };
 
     let abs_path = if Path::new(file_part).is_absolute() {
         file_part.to_string()
     } else {
-        format!("{root}/{rel_file}")
+        Path::new(root)
+            .join(rel_file.trim_start_matches(['/', '\\']))
+            .to_string_lossy()
+            .to_string()
     };
 
     let content = match std::fs::read_to_string(&abs_path) {
@@ -186,7 +176,7 @@ fn handle_symbol(
 
     let mut result = format!(
         "{}::{} ({}:{}-{})\n",
-        crate::core::protocol::shorten_path(rel_file),
+        crate::core::protocol::shorten_path(&rel_file),
         symbol_name,
         symbol.kind,
         symbol.start_line,
@@ -209,14 +199,21 @@ fn handle_symbol(
     format!("{result}[ctx_graph symbol: {tokens} tok (full file: {full_tokens} tok, -{pct}%)]")
 }
 
-fn file_path_to_module_prefixes(rel_path: &str, project_root: &str) -> Vec<String> {
-    let without_ext = rel_path
+fn file_path_to_module_prefixes(
+    rel_path: &str,
+    project_root: &str,
+    index: &ProjectIndex,
+) -> Vec<String> {
+    let rel_path_slash = graph_index::graph_match_key(rel_path);
+    let without_ext = rel_path_slash
         .strip_suffix(".rs")
-        .or_else(|| rel_path.strip_suffix(".ts"))
-        .or_else(|| rel_path.strip_suffix(".tsx"))
-        .or_else(|| rel_path.strip_suffix(".js"))
-        .or_else(|| rel_path.strip_suffix(".py"))
-        .unwrap_or(rel_path);
+        .or_else(|| rel_path_slash.strip_suffix(".ts"))
+        .or_else(|| rel_path_slash.strip_suffix(".tsx"))
+        .or_else(|| rel_path_slash.strip_suffix(".js"))
+        .or_else(|| rel_path_slash.strip_suffix(".py"))
+        .or_else(|| rel_path_slash.strip_suffix(".kt"))
+        .or_else(|| rel_path_slash.strip_suffix(".kts"))
+        .unwrap_or(&rel_path_slash);
 
     let module_path = without_ext
         .strip_prefix("src/")
@@ -251,6 +248,33 @@ fn file_path_to_module_prefixes(rel_path: &str, project_root: &str) -> Vec<Strin
     if !crate_name.is_empty() {
         prefixes.insert(0, format!("{crate_name}::{module_path}"));
     }
+
+    let ext = Path::new(rel_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if matches!(ext, "kt" | "kts") {
+        let abs_path = Path::new(project_root).join(rel_path.trim_start_matches(['/', '\\']));
+        if let Ok(content) = std::fs::read_to_string(abs_path) {
+            if let Some(package_name) = content.lines().map(str::trim).find_map(|line| {
+                line.strip_prefix("package ")
+                    .map(|rest| rest.trim().trim_end_matches(';').to_string())
+            }) {
+                prefixes.push(package_name.clone());
+                if let Some(entry) = index.files.get(rel_path) {
+                    for export in &entry.exports {
+                        prefixes.push(format!("{package_name}.{export}"));
+                    }
+                }
+                if let Some(file_stem) = Path::new(rel_path).file_stem().and_then(|s| s.to_str()) {
+                    prefixes.push(format!("{package_name}.{file_stem}"));
+                }
+            }
+        }
+    }
+
+    prefixes.sort();
+    prefixes.dedup();
     prefixes
 }
 
@@ -263,24 +287,17 @@ fn edge_matches_file(edge_to: &str, module_prefixes: &[String]) -> bool {
 }
 
 fn handle_impact(path: Option<&str>, root: &str) -> String {
-    let target = match path {
-        Some(p) => p,
-        None => return "path is required for 'impact' action".to_string(),
+    let Some(target) = path else {
+        return "path is required for 'impact' action".to_string();
     };
 
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => {
-            return "No graph index found. Run ctx_graph with action='build' first.".to_string()
-        }
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
-    let rel_target = target
-        .strip_prefix(root)
-        .unwrap_or(target)
-        .trim_start_matches('/');
+    let rel_target = graph_index::graph_relative_key(target, root);
 
-    let module_prefixes = file_path_to_module_prefixes(rel_target, root);
+    let module_prefixes = file_path_to_module_prefixes(&rel_target, root, &index);
 
     let direct: Vec<&str> = index
         .edges
@@ -289,7 +306,10 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
         .map(|e| e.from.as_str())
         .collect();
 
-    let mut all_dependents: Vec<String> = direct.iter().map(|s| s.to_string()).collect();
+    let mut all_dependents: Vec<String> = direct
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     for d in &direct {
         for dep in index.get_reverse_deps(d, 1) {
             if !all_dependents.contains(&dep) && dep != rel_target {
@@ -334,9 +354,8 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
 }
 
 fn handle_status(root: &str) -> String {
-    let index = match ProjectIndex::load(root) {
-        Some(idx) => idx,
-        None => return "No graph index. Run ctx_graph action='build' to create one.".to_string(),
+    let Some(index) = ProjectIndex::load(root) else {
+        return "No graph index. Run ctx_graph action='build' to create one.".to_string();
     };
 
     let mut by_lang: HashMap<&str, usize> = HashMap::new();
@@ -347,7 +366,7 @@ fn handle_status(root: &str) -> String {
     }
 
     let mut langs: Vec<_> = by_lang.iter().collect();
-    langs.sort_by(|a, b| b.1.cmp(a.1));
+    langs.sort_by_key(|item| std::cmp::Reverse(*item.1));
     let lang_summary: String = langs
         .iter()
         .take(5)
@@ -366,6 +385,155 @@ fn handle_status(root: &str) -> String {
             .map(|d| d.to_string_lossy().to_string())
             .unwrap_or_default()
     )
+}
+
+fn resolve_node_name(graph: &crate::core::property_graph::CodeGraph, node_id: i64) -> String {
+    let conn = graph.connection();
+    conn.query_row(
+        "SELECT name FROM nodes WHERE id = ?1",
+        rusqlite::params![node_id],
+        |row| row.get::<_, String>(0),
+    )
+    .unwrap_or_else(|_| format!("node#{node_id}"))
+}
+
+fn handle_enrich(root: &str) -> String {
+    let project_root = Path::new(root);
+    let graph = match crate::core::property_graph::CodeGraph::open(project_root) {
+        Ok(g) => g,
+        Err(e) => return format!("Failed to open graph: {e}"),
+    };
+
+    match crate::core::graph_enricher::enrich_graph(&graph, project_root, 500) {
+        Ok(stats) => {
+            let node_count = graph.node_count().unwrap_or(0);
+            let edge_count = graph.edge_count().unwrap_or(0);
+            format!(
+                "Graph enriched.\n{}\nTotal: {node_count} nodes, {edge_count} edges",
+                stats.format_summary()
+            )
+        }
+        Err(e) => format!("Enrichment failed: {e}"),
+    }
+}
+
+fn handle_context_query(query: Option<&str>, root: &str) -> String {
+    let Some(query) = query else {
+        return "Usage: ctx_graph action=context path=\"<query or file path>\"".to_string();
+    };
+
+    let project_root = Path::new(root);
+    let graph = match crate::core::property_graph::CodeGraph::open(project_root) {
+        Ok(g) => g,
+        Err(e) => return format!("Failed to open graph: {e}"),
+    };
+
+    let index = graph_index::load_or_build(root);
+    let mut result = Vec::new();
+
+    if let Ok(Some(node)) = graph.get_node_by_path(query) {
+        result.push(format!("## Context for `{query}`\n"));
+
+        if let Some(node_id) = node.id {
+            let edges_out = graph.edges_from(node_id).unwrap_or_default();
+            let edges_in = graph.edges_to(node_id).unwrap_or_default();
+
+            let mut tests: Vec<String> = Vec::new();
+            let mut commits: Vec<String> = Vec::new();
+            let mut knowledge: Vec<String> = Vec::new();
+            let mut imports: Vec<String> = Vec::new();
+            let mut dependents: Vec<String> = Vec::new();
+
+            for edge in &edges_out {
+                let target = resolve_node_name(&graph, edge.target_id);
+                match edge.kind {
+                    crate::core::property_graph::EdgeKind::TestedBy => tests.push(target),
+                    crate::core::property_graph::EdgeKind::ChangedIn => commits.push(target),
+                    crate::core::property_graph::EdgeKind::MentionedIn => {
+                        knowledge.push(target);
+                    }
+                    crate::core::property_graph::EdgeKind::Imports => imports.push(target),
+                    _ => {}
+                }
+            }
+
+            for edge in &edges_in {
+                let source = resolve_node_name(&graph, edge.source_id);
+                if edge.kind == crate::core::property_graph::EdgeKind::Imports {
+                    dependents.push(source);
+                }
+            }
+
+            if !tests.is_empty() {
+                result.push(format!("**Tests ({}):** {}", tests.len(), tests.join(", ")));
+            }
+            if !commits.is_empty() {
+                result.push(format!(
+                    "**Recent commits ({}):** {}",
+                    commits.len(),
+                    commits
+                        .iter()
+                        .take(5)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if !knowledge.is_empty() {
+                result.push(format!(
+                    "**Knowledge ({}):** {}",
+                    knowledge.len(),
+                    knowledge.join(", ")
+                ));
+            }
+            if !imports.is_empty() {
+                result.push(format!(
+                    "**Imports ({}):** {}",
+                    imports.len(),
+                    imports
+                        .iter()
+                        .take(10)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if !dependents.is_empty() {
+                result.push(format!(
+                    "**Depended on by ({}):** {}",
+                    dependents.len(),
+                    dependents
+                        .iter()
+                        .take(10)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+
+            if let Ok(impact) = graph.impact_analysis(query, 3) {
+                if !impact.affected_files.is_empty() {
+                    result.push(format!(
+                        "**Impact radius:** {} files within 3 hops",
+                        impact.affected_files.len()
+                    ));
+                }
+            }
+        }
+    } else {
+        result.push(format!("## Search: `{query}`\n"));
+        let related = index.get_related(query, 2);
+        if related.is_empty() {
+            result.push("No matching nodes found in graph.".to_string());
+        } else {
+            result.push(format!("**Related files ({}):**", related.len()));
+            for f in related.iter().take(15) {
+                result.push(format!("  - {f}"));
+            }
+        }
+    }
+
+    result.join("\n")
 }
 
 #[cfg(test)]
@@ -398,14 +566,16 @@ mod tests {
 
     #[test]
     fn test_file_path_to_module_prefixes_rust() {
-        let prefixes = file_path_to_module_prefixes("src/core/cache.rs", "/nonexistent");
+        let index = ProjectIndex::new("/nonexistent");
+        let prefixes = file_path_to_module_prefixes("src/core/cache.rs", "/nonexistent", &index);
         assert!(prefixes.contains(&"crate::core::cache".to_string()));
         assert!(prefixes.contains(&"core::cache".to_string()));
     }
 
     #[test]
     fn test_file_path_to_module_prefixes_mod_rs() {
-        let prefixes = file_path_to_module_prefixes("src/core/mod.rs", "/nonexistent");
+        let index = ProjectIndex::new("/nonexistent");
+        let prefixes = file_path_to_module_prefixes("src/core/mod.rs", "/nonexistent", &index);
         assert!(prefixes.contains(&"crate::core".to_string()));
         assert!(!prefixes.iter().any(|p| p.contains("mod")));
     }

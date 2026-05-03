@@ -222,9 +222,7 @@ mod tests {
             assert_eq!(
                 briefing.classification.task_type.as_str(),
                 expected_type,
-                "Task '{}' should be classified as '{}'",
-                task,
-                expected_type,
+                "Task '{task}' should be classified as '{expected_type}'",
             );
             let formatted = format_briefing(&briefing);
             assert!(formatted.contains("[TASK:"));

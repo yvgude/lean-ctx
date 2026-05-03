@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::deep_queries;
-use super::graph_index::{ProjectIndex, SymbolEntry};
+use super::graph_index::{normalize_project_root, ProjectIndex, SymbolEntry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraph {
@@ -24,7 +24,7 @@ pub struct CallEdge {
 impl CallGraph {
     pub fn new(project_root: &str) -> Self {
         Self {
-            project_root: project_root.to_string(),
+            project_root: normalize_project_root(project_root),
             edges: Vec::new(),
             file_hashes: HashMap::new(),
         }
@@ -38,9 +38,8 @@ impl CallGraph {
 
         for rel_path in index.files.keys() {
             let abs_path = resolve_path(rel_path, project_root);
-            let content = match std::fs::read_to_string(&abs_path) {
-                Ok(c) => c,
-                Err(_) => continue,
+            let Ok(content) = std::fs::read_to_string(&abs_path) else {
+                continue;
             };
 
             let hash = simple_hash(&content);
@@ -75,17 +74,12 @@ impl CallGraph {
 
         for rel_path in index.files.keys() {
             let abs_path = resolve_path(rel_path, project_root);
-            let content = match std::fs::read_to_string(&abs_path) {
-                Ok(c) => c,
-                Err(_) => continue,
+            let Ok(content) = std::fs::read_to_string(&abs_path) else {
+                continue;
             };
 
             let hash = simple_hash(&content);
-            let changed = previous
-                .file_hashes
-                .get(rel_path)
-                .map(|old| old != &hash)
-                .unwrap_or(true);
+            let changed = previous.file_hashes.get(rel_path) != Some(&hash);
 
             graph.file_hashes.insert(rel_path.clone(), hash);
 
@@ -178,9 +172,8 @@ fn group_symbols_by_file(index: &ProjectIndex) -> HashMap<&str, Vec<&SymbolEntry
 }
 
 fn find_enclosing_symbol(file_symbols: Option<&Vec<&SymbolEntry>>, line: usize) -> String {
-    let syms = match file_symbols {
-        Some(s) => s,
-        None => return "<module>".to_string(),
+    let Some(syms) = file_symbols else {
+        return "<module>".to_string();
     };
 
     let mut best: Option<&SymbolEntry> = None;
@@ -199,8 +192,7 @@ fn find_enclosing_symbol(file_symbols: Option<&Vec<&SymbolEntry>>, line: usize) 
         }
     }
 
-    best.map(|s| s.name.clone())
-        .unwrap_or_else(|| "<module>".to_string())
+    best.map_or_else(|| "<module>".to_string(), |s| s.name.clone())
 }
 
 fn resolve_path(relative: &str, project_root: &str) -> String {
@@ -208,6 +200,7 @@ fn resolve_path(relative: &str, project_root: &str) -> String {
     if p.is_absolute() && p.exists() {
         return relative.to_string();
     }
+    let relative = relative.trim_start_matches(['/', '\\']);
     let joined = Path::new(project_root).join(relative);
     joined.to_string_lossy().to_string()
 }
@@ -315,5 +308,17 @@ mod tests {
         let syms = vec![&sym];
         let result = find_enclosing_symbol(Some(&syms), 5);
         assert_eq!(result, "<module>");
+    }
+
+    #[test]
+    fn resolve_path_trims_rooted_relative_prefix() {
+        let resolved = resolve_path(r"\src\main\kotlin\Example.kt", r"C:\repo");
+        assert_eq!(
+            resolved,
+            Path::new(r"C:\repo")
+                .join(r"src\main\kotlin\Example.kt")
+                .to_string_lossy()
+                .to_string()
+        );
     }
 }

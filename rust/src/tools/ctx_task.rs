@@ -12,7 +12,10 @@ pub fn handle(
     let agent = match current_agent_id {
         Some(id) => id,
         None if action == "list" || action == "info" => "unknown",
-        None => return "Error: agent must be registered first (use ctx_agent action=register)".to_string(),
+        None => {
+            return "Error: agent must be registered first (use ctx_agent action=register)"
+                .to_string()
+        }
     };
 
     let mut store = TaskStore::load();
@@ -38,10 +41,14 @@ pub fn handle(
     result
 }
 
-fn handle_create(store: &mut TaskStore, from: &str, to: Option<&str>, desc: Option<&str>) -> String {
-    let to_agent = match to {
-        Some(t) => t,
-        None => return "Error: to_agent is required for task creation".to_string(),
+fn handle_create(
+    store: &mut TaskStore,
+    from: &str,
+    to: Option<&str>,
+    desc: Option<&str>,
+) -> String {
+    let Some(to_agent) = to else {
+        return "Error: to_agent is required for task creation".to_string();
     };
     let description = desc.unwrap_or("(no description)");
     let id = store.create_task(from, to_agent, description);
@@ -55,21 +62,19 @@ fn handle_update(
     state: Option<&str>,
     message: Option<&str>,
 ) -> String {
-    let tid = match task_id {
-        Some(id) => id,
-        None => return "Error: task_id is required".to_string(),
+    let Some(tid) = task_id else {
+        return "Error: task_id is required".to_string();
     };
     let new_state = match state {
-        Some(s) => match TaskState::from_str(s) {
+        Some(s) => match TaskState::parse_str(s) {
             Some(st) => st,
             None => return format!("Error: invalid state '{s}'. Use: working, input-required, completed, failed, canceled"),
         },
         None => return "Error: state is required for update".to_string(),
     };
 
-    let task = match store.get_task_mut(tid) {
-        Some(t) => t,
-        None => return format!("Error: task '{tid}' not found"),
+    let Some(task) = store.get_task_mut(tid) else {
+        return format!("Error: task '{tid}' not found");
     };
 
     if task.to_agent != agent && task.from_agent != agent {
@@ -116,20 +121,21 @@ fn handle_list(store: &TaskStore, agent: &str) -> String {
 
     let pending = store.pending_tasks_for(agent);
     if !pending.is_empty() {
-        lines.push(format!("\n{} pending task(s) assigned to you.", pending.len()));
+        lines.push(format!(
+            "\n{} pending task(s) assigned to you.",
+            pending.len()
+        ));
     }
 
     lines.join("\n")
 }
 
 fn handle_get(store: &TaskStore, task_id: Option<&str>) -> String {
-    let tid = match task_id {
-        Some(id) => id,
-        None => return "Error: task_id is required".to_string(),
+    let Some(tid) = task_id else {
+        return "Error: task_id is required".to_string();
     };
-    let task = match store.get_task(tid) {
-        Some(t) => t,
-        None => return format!("Error: task '{tid}' not found"),
+    let Some(task) = store.get_task(tid) else {
+        return format!("Error: task '{tid}' not found");
     };
 
     let mut lines = vec![
@@ -165,17 +171,18 @@ fn handle_cancel(
     task_id: Option<&str>,
     reason: Option<&str>,
 ) -> String {
-    let tid = match task_id {
-        Some(id) => id,
-        None => return "Error: task_id is required".to_string(),
+    let Some(tid) = task_id else {
+        return "Error: task_id is required".to_string();
     };
-    let task = match store.get_task_mut(tid) {
-        Some(t) => t,
-        None => return format!("Error: task '{tid}' not found"),
+    let Some(task) = store.get_task_mut(tid) else {
+        return format!("Error: task '{tid}' not found");
     };
 
     if task.from_agent != agent {
-        return format!("Error: only the task creator can cancel (creator: {})", task.from_agent);
+        return format!(
+            "Error: only the task creator can cancel (creator: {})",
+            task.from_agent
+        );
     }
 
     match task.transition(TaskState::Canceled, reason) {
@@ -190,17 +197,14 @@ fn handle_message(
     task_id: Option<&str>,
     message: Option<&str>,
 ) -> String {
-    let tid = match task_id {
-        Some(id) => id,
-        None => return "Error: task_id is required".to_string(),
+    let Some(tid) = task_id else {
+        return "Error: task_id is required".to_string();
     };
-    let msg = match message {
-        Some(m) => m,
-        None => return "Error: message is required".to_string(),
+    let Some(msg) = message else {
+        return "Error: message is required".to_string();
     };
-    let task = match store.get_task_mut(tid) {
-        Some(t) => t,
-        None => return format!("Error: task '{tid}' not found"),
+    let Some(task) = store.get_task_mut(tid) else {
+        return format!("Error: task '{tid}' not found");
     };
 
     task.add_message(
@@ -217,7 +221,11 @@ fn handle_message(
 
 fn handle_info(store: &TaskStore) -> String {
     let total = store.tasks.len();
-    let active = store.tasks.iter().filter(|t| !t.state.is_terminal()).count();
+    let active = store
+        .tasks
+        .iter()
+        .filter(|t| !t.state.is_terminal())
+        .count();
     let completed = store
         .tasks
         .iter()
@@ -229,7 +237,5 @@ fn handle_info(store: &TaskStore) -> String {
         .filter(|t| t.state == TaskState::Failed)
         .count();
 
-    format!(
-        "Task Store: {total} total, {active} active, {completed} completed, {failed} failed"
-    )
+    format!("Task Store: {total} total, {active} active, {completed} completed, {failed} failed")
 }

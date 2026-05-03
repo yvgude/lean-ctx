@@ -1,0 +1,17 @@
+lean-ctx
+Copyright 2026 Yves Gugger
+
+This product includes software developed by:
+- Yves Gugger (https://github.com/yvgude)
+
+Portions of this software were originally released under the MIT License.
+See LICENSE-MIT for the original MIT license text.
+
+Third-party contributions (MIT-licensed):
+- frpboy: MCP performance fix, responsive dashboard
+- Victor Bressani de Mello (Chokitus): Kotlin graph support
+- Dustin Reynolds: various improvements
+- Yassine El Ouni (sinouw): various improvements
+- Julien Bodin (jbodin): various improvements
+- Tarek Hamlaoui: various improvements
+- Almario Miano: various improvements

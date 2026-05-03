@@ -1,26 +1,23 @@
-use regex::Regex;
-use std::sync::OnceLock;
+macro_rules! static_regex {
+    ($pattern:expr) => {{
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        RE.get_or_init(|| {
+            regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
+        })
+    }};
+}
 
-static BUILT_ARTIFACT: OnceLock<Regex> = OnceLock::new();
-static FLUTTER_TEST_SUMMARY: OnceLock<Regex> = OnceLock::new();
-static ANALYZE_ISSUES: OnceLock<Regex> = OnceLock::new();
-static ANALYZE_ISSUE_LINE: OnceLock<Regex> = OnceLock::new();
-
-fn built_artifact_re() -> &'static Regex {
-    BUILT_ARTIFACT
-        .get_or_init(|| Regex::new(r"^✓\s+Built\s+(.+?)(?:\s+\(([^)]+)\))?\s*\.?\s*$").unwrap())
+fn built_artifact_re() -> &'static regex::Regex {
+    static_regex!(r"^✓\s+Built\s+(.+?)(?:\s+\(([^)]+)\))?\s*\.?\s*$")
 }
-fn flutter_test_summary_re() -> &'static Regex {
-    FLUTTER_TEST_SUMMARY
-        .get_or_init(|| Regex::new(r"^(\d{2}:\d{2}\s+\+\d+(?:\s+-\d+)?:\s+.+)$").unwrap())
+fn flutter_test_summary_re() -> &'static regex::Regex {
+    static_regex!(r"^(\d{2}:\d{2}\s+\+\d+(?:\s+-\d+)?:\s+.+)$")
 }
-fn analyze_issues_re() -> &'static Regex {
-    ANALYZE_ISSUES.get_or_init(|| {
-        Regex::new(r"(?i)(?:^Analyzing\s+.+\.\.\.\s*)?(\d+)\s+issues?\s+found").unwrap()
-    })
+fn analyze_issues_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)(?:^Analyzing\s+.+\.\.\.\s*)?(\d+)\s+issues?\s+found")
 }
-fn analyze_issue_line_re() -> &'static Regex {
-    ANALYZE_ISSUE_LINE.get_or_init(|| Regex::new(r"^\s*(error|warning|info)\s+•").unwrap())
+fn analyze_issue_line_re() -> &'static regex::Regex {
+    static_regex!(r"^\s*(error|warning|info)\s+•")
 }
 fn is_flutter_build_noise(line: &str) -> bool {
     let t = line.trim();
@@ -65,7 +62,7 @@ fn compress_flutter_build(output: &str) -> String {
         let trim = t.trim();
         if let Some(caps) = built_artifact_re().captures(trim) {
             let path = caps[1].trim();
-            let size = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+            let size = caps.get(2).map_or("", |m| m.as_str());
             if size.is_empty() {
                 parts.push(format!("Built {path}"));
             } else {

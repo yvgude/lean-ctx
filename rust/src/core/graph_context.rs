@@ -1,17 +1,15 @@
 //! Graph-driven context loading — automatically includes related files
 //! based on Property Graph proximity and token budgeting.
 //!
-//! Used by `ctx_read` in `graph` mode to load a file plus its most
-//! relevant dependencies, staying within a token budget.
+//! Used by `ctx_read` (task mode) to surface a small, budgeted set of
+//! related files (deterministic ordering; no output spam).
 
-use std::collections::HashSet;
-use std::path::Path;
-
-use super::property_graph::CodeGraph;
+use super::graph_provider::{self, GraphProviderSource};
 use super::tokens::count_tokens;
 
 #[derive(Debug)]
 pub struct GraphContext {
+    pub source: GraphProviderSource,
     pub primary_file: String,
     pub related_files: Vec<RelatedFile>,
     pub total_tokens: usize,
@@ -53,32 +51,52 @@ impl Relationship {
     }
 }
 
-const DEFAULT_TOKEN_BUDGET: usize = 8000;
+#[derive(Debug, Clone, Copy)]
+pub struct GraphContextOptions {
+    pub token_budget: usize,
+    pub max_files: usize,
+    pub max_edges: usize,
+    pub max_depth: usize,
+    pub allow_build: bool,
+}
+
+impl Default for GraphContextOptions {
+    fn default() -> Self {
+        Self {
+            token_budget: crate::core::budgets::GRAPH_CONTEXT_TOKEN_BUDGET,
+            max_files: crate::core::budgets::GRAPH_CONTEXT_MAX_FILES,
+            max_edges: crate::core::budgets::GRAPH_CONTEXT_MAX_EDGES,
+            max_depth: crate::core::budgets::GRAPH_CONTEXT_MAX_DEPTH,
+            allow_build: false,
+        }
+    }
+}
 
 pub fn build_graph_context(
     file_path: &str,
     project_root: &str,
-    token_budget: Option<usize>,
+    options: Option<GraphContextOptions>,
 ) -> Option<GraphContext> {
-    let graph = CodeGraph::open(Path::new(project_root)).ok()?;
-    let node_count = graph.node_count().ok()?;
-    if node_count == 0 {
-        return None;
-    }
-
-    let budget = token_budget.unwrap_or(DEFAULT_TOKEN_BUDGET);
+    let opts = options.unwrap_or_default();
 
     let rel_path = file_path
         .strip_prefix(project_root)
         .unwrap_or(file_path)
         .trim_start_matches('/');
 
+    let provider_open = if opts.allow_build {
+        graph_provider::open_or_build(project_root)
+    } else {
+        graph_provider::open_best_effort(project_root)
+    }?;
+
     let primary_content = std::fs::read_to_string(file_path).ok()?;
     let primary_tokens = count_tokens(&primary_content);
 
-    let remaining = budget.saturating_sub(primary_tokens);
+    let remaining = opts.token_budget.saturating_sub(primary_tokens);
     if remaining < 200 {
         return Some(GraphContext {
+            source: provider_open.source,
             primary_file: rel_path.to_string(),
             related_files: Vec::new(),
             total_tokens: primary_tokens,
@@ -86,15 +104,26 @@ pub fn build_graph_context(
         });
     }
 
-    let mut candidates = collect_candidates(&graph, rel_path);
-    candidates.sort_by_key(|c| c.relationship.priority());
+    let mut candidates = collect_candidates(&provider_open, rel_path, opts.max_depth);
+    candidates.sort_by(|a, b| {
+        a.relationship
+            .priority()
+            .cmp(&b.relationship.priority())
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    if candidates.len() > opts.max_edges {
+        candidates.truncate(opts.max_edges);
+    }
 
     let mut related: Vec<RelatedFile> = Vec::new();
     let mut tokens_used = primary_tokens;
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     seen.insert(rel_path.to_string());
 
     for candidate in candidates {
+        if related.len() >= opts.max_files {
+            break;
+        }
         if seen.contains(&candidate.path) {
             continue;
         }
@@ -102,7 +131,7 @@ pub fn build_graph_context(
         let abs_path = format!("{project_root}/{}", candidate.path);
         if let Ok(content) = std::fs::read_to_string(&abs_path) {
             let tokens = count_tokens(&content);
-            if tokens_used + tokens > budget {
+            if tokens_used + tokens > opts.token_budget {
                 continue;
             }
             tokens_used += tokens;
@@ -116,10 +145,11 @@ pub fn build_graph_context(
     }
 
     Some(GraphContext {
+        source: provider_open.source,
         primary_file: rel_path.to_string(),
         related_files: related,
         total_tokens: tokens_used,
-        budget_remaining: budget.saturating_sub(tokens_used),
+        budget_remaining: opts.token_budget.saturating_sub(tokens_used),
     })
 }
 
@@ -128,36 +158,43 @@ struct Candidate {
     relationship: Relationship,
 }
 
-fn collect_candidates(graph: &CodeGraph, file_path: &str) -> Vec<Candidate> {
+fn classify_dep(file: &str) -> Relationship {
+    if file.ends_with(".d.ts") {
+        Relationship::TypeProvider
+    } else {
+        Relationship::DirectDependency
+    }
+}
+
+fn collect_candidates(
+    open: &graph_provider::OpenGraphProvider,
+    file_path: &str,
+    max_depth: usize,
+) -> Vec<Candidate> {
     let mut candidates: Vec<Candidate> = Vec::new();
 
-    if let Ok(deps) = graph.dependencies(file_path) {
-        for dep in deps {
-            candidates.push(Candidate {
-                path: dep,
-                relationship: Relationship::DirectDependency,
-            });
-        }
+    for dep in open.provider.dependencies(file_path) {
+        let rel = classify_dep(&dep);
+        candidates.push(Candidate {
+            path: dep,
+            relationship: rel,
+        });
     }
 
-    if let Ok(dependents) = graph.dependents(file_path) {
-        for dep in dependents {
-            candidates.push(Candidate {
-                path: dep,
-                relationship: Relationship::DirectDependent,
-            });
-        }
+    for dep in open.provider.dependents(file_path) {
+        candidates.push(Candidate {
+            path: dep,
+            relationship: Relationship::DirectDependent,
+        });
     }
 
-    if let Ok(impact) = graph.impact_analysis(file_path, 2) {
-        for affected in impact.affected_files {
-            let already = candidates.iter().any(|c| c.path == affected);
-            if !already {
-                candidates.push(Candidate {
-                    path: affected,
-                    relationship: Relationship::TransitiveDependency,
-                });
-            }
+    for affected in open.provider.related(file_path, max_depth.max(1)) {
+        let already = candidates.iter().any(|c| c.path == affected);
+        if !already {
+            candidates.push(Candidate {
+                path: affected,
+                relationship: Relationship::TransitiveDependency,
+            });
         }
     }
 
@@ -169,8 +206,12 @@ pub fn format_graph_context(ctx: &GraphContext) -> String {
         return String::new();
     }
 
+    let source = match ctx.source {
+        GraphProviderSource::PropertyGraph => "property_graph",
+        GraphProviderSource::GraphIndex => "graph_index",
+    };
     let mut result = format!(
-        "\n--- GRAPH CONTEXT ({} related files, {} tok) ---\n",
+        "\n--- GRAPH CONTEXT (source={source}, {} related files, {} tok) ---\n",
         ctx.related_files.len(),
         ctx.total_tokens
     );
@@ -214,6 +255,7 @@ mod tests {
     #[test]
     fn format_empty_context() {
         let ctx = GraphContext {
+            source: GraphProviderSource::GraphIndex,
             primary_file: "main.rs".to_string(),
             related_files: vec![],
             total_tokens: 100,
@@ -225,6 +267,7 @@ mod tests {
     #[test]
     fn format_with_related() {
         let ctx = GraphContext {
+            source: GraphProviderSource::GraphIndex,
             primary_file: "main.rs".to_string(),
             related_files: vec![
                 RelatedFile {

@@ -1,22 +1,17 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum MessagePriority {
     Low,
+    #[default]
     Normal,
     High,
     Critical,
 }
 
-impl Default for MessagePriority {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
 impl MessagePriority {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "low" => Self::Low,
             "high" => Self::High,
@@ -37,21 +32,16 @@ impl std::fmt::Display for MessagePriority {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum PrivacyLevel {
     Public,
+    #[default]
     Team,
     Private,
 }
 
-impl Default for PrivacyLevel {
-    fn default() -> Self {
-        Self::Team
-    }
-}
-
 impl PrivacyLevel {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "public" => Self::Public,
             "private" => Self::Private,
@@ -61,8 +51,7 @@ impl PrivacyLevel {
 
     pub fn allows_access(&self, requester_is_sender: bool, requester_is_recipient: bool) -> bool {
         match self {
-            Self::Public => true,
-            Self::Team => true,
+            Self::Public | Self::Team => true,
             Self::Private => requester_is_sender || requester_is_recipient,
         }
     }
@@ -97,7 +86,7 @@ pub enum MessageCategory {
 }
 
 impl MessageCategory {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "task_delegation" | "delegation" => Self::TaskDelegation,
             "task_update" | "update" => Self::TaskUpdate,
@@ -127,16 +116,11 @@ impl std::fmt::Display for MessageCategory {
 }
 
 impl A2AMessage {
-    pub fn new(
-        from: &str,
-        to: Option<&str>,
-        category: MessageCategory,
-        content: &str,
-    ) -> Self {
+    pub fn new(from: &str, to: Option<&str>, category: MessageCategory, content: &str) -> Self {
         Self {
             id: generate_msg_id(),
             from_agent: from.to_string(),
-            to_agent: to.map(|s| s.to_string()),
+            to_agent: to.map(std::string::ToString::to_string),
             task_id: None,
             category,
             priority: MessagePriority::Normal,
@@ -170,9 +154,7 @@ impl A2AMessage {
     }
 
     pub fn is_expired(&self) -> bool {
-        self.expires_at
-            .map(|exp| Utc::now() > exp)
-            .unwrap_or(false)
+        self.expires_at.is_some_and(|exp| Utc::now() > exp)
     }
 
     pub fn is_visible_to(&self, agent_id: &str) -> bool {
@@ -180,11 +162,7 @@ impl A2AMessage {
             return false;
         }
         let is_sender = self.from_agent == agent_id;
-        let is_recipient = self
-            .to_agent
-            .as_ref()
-            .map(|t| t == agent_id)
-            .unwrap_or(true);
+        let is_recipient = self.to_agent.as_ref().is_none_or(|t| t == agent_id);
         self.privacy.allows_access(is_sender, is_recipient)
     }
 

@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -9,29 +10,42 @@ use crate::core::session::SessionState;
 pub mod autonomy;
 pub mod ctx_agent;
 pub mod ctx_analyze;
+pub mod ctx_architecture;
 pub mod ctx_benchmark;
 pub mod ctx_callees;
 pub mod ctx_callers;
+pub mod ctx_callgraph;
 pub mod ctx_compress;
 pub mod ctx_compress_memory;
 pub mod ctx_context;
+pub mod ctx_cost;
 pub mod ctx_dedup;
 pub mod ctx_delta;
 pub mod ctx_discover;
 pub mod ctx_edit;
 pub mod ctx_execute;
+pub mod ctx_expand;
+pub mod ctx_feedback;
 pub mod ctx_fill;
+pub mod ctx_gain;
 pub mod ctx_graph;
 pub mod ctx_graph_diagram;
+pub mod ctx_handoff;
+pub mod ctx_heatmap;
+pub mod ctx_impact;
 pub mod ctx_intent;
 pub mod ctx_knowledge;
+pub mod ctx_knowledge_relations;
 pub mod ctx_metrics;
 pub mod ctx_multi_read;
 pub mod ctx_outline;
 pub mod ctx_overview;
+pub mod ctx_pack;
+pub mod ctx_prefetch;
 pub mod ctx_preload;
 pub mod ctx_read;
 pub mod ctx_response;
+pub mod ctx_review;
 pub mod ctx_routes;
 pub mod ctx_search;
 pub mod ctx_semantic_search;
@@ -40,7 +54,9 @@ pub mod ctx_share;
 pub mod ctx_shell;
 pub mod ctx_smart_read;
 pub mod ctx_symbol;
+pub mod ctx_task;
 pub mod ctx_tree;
+pub mod ctx_workflow;
 pub mod ctx_wrapped;
 
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;
@@ -60,6 +76,7 @@ struct CepComputedStats {
     tool_call_count: u64,
 }
 
+/// Context Reduction Protocol mode controlling output verbosity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CrpMode {
     Off,
@@ -68,6 +85,7 @@ pub enum CrpMode {
 }
 
 impl CrpMode {
+    /// Reads the CRP mode from the `LEAN_CTX_CRP_MODE` environment variable.
     pub fn from_env() -> Self {
         match std::env::var("LEAN_CTX_CRP_MODE")
             .unwrap_or_default()
@@ -80,29 +98,56 @@ impl CrpMode {
         }
     }
 
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "off" => Some(Self::Off),
+            "compact" => Some(Self::Compact),
+            "tdd" => Some(Self::Tdd),
+            _ => None,
+        }
+    }
+
+    /// Effective CRP mode: explicit env var wins; otherwise use active profile.
+    pub fn effective() -> Self {
+        if let Ok(v) = std::env::var("LEAN_CTX_CRP_MODE") {
+            if !v.trim().is_empty() {
+                return Self::parse(&v).unwrap_or(Self::Tdd);
+            }
+        }
+        let p = crate::core::profiles::active_profile();
+        Self::parse(&p.compression.crp_mode).unwrap_or(Self::Tdd)
+    }
+
+    /// Returns true if the mode is TDD (maximum compression).
     pub fn is_tdd(&self) -> bool {
         *self == Self::Tdd
     }
 }
 
+/// Thread-safe handle to the shared file content cache.
 pub type SharedCache = Arc<RwLock<SessionCache>>;
 
+/// Central MCP server state: cache, session, metrics, and autonomy runtime.
 #[derive(Clone)]
 pub struct LeanCtxServer {
     pub cache: SharedCache,
     pub session: Arc<RwLock<SessionState>>,
     pub tool_calls: Arc<RwLock<Vec<ToolCallRecord>>>,
     pub call_count: Arc<AtomicUsize>,
-    pub checkpoint_interval: usize,
     pub cache_ttl_secs: u64,
     pub last_call: Arc<RwLock<Instant>>,
-    pub crp_mode: CrpMode,
     pub agent_id: Arc<RwLock<Option<String>>>,
     pub client_name: Arc<RwLock<String>>,
     pub autonomy: Arc<autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
+    pub workflow: Arc<RwLock<Option<crate::core::workflow::WorkflowRun>>>,
+    pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
+    pub pipeline_stats: Arc<RwLock<crate::core::pipeline::PipelineStats>>,
+    startup_project_root: Option<String>,
+    startup_shell_cwd: Option<String>,
 }
 
+/// Recorded metrics for a single MCP tool invocation.
 #[derive(Clone, Debug)]
 pub struct ToolCallRecord {
     pub tool: String,
@@ -120,67 +165,171 @@ impl Default for LeanCtxServer {
 }
 
 impl LeanCtxServer {
+    /// Creates a new server with default settings, auto-detecting the project root.
     pub fn new() -> Self {
-        let config = crate::core::config::Config::load();
+        Self::new_with_project_root(None)
+    }
 
-        let interval = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(config.checkpoint_interval as usize);
+    /// Creates a new server rooted at the given project directory.
+    pub fn new_with_project_root(project_root: Option<&str>) -> Self {
+        Self::new_with_startup(project_root, std::env::current_dir().ok().as_deref())
+    }
 
+    fn new_with_startup(project_root: Option<&str>, startup_cwd: Option<&Path>) -> Self {
         let ttl = std::env::var("LEAN_CTX_CACHE_TTL")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(DEFAULT_CACHE_TTL_SECS);
 
-        let crp_mode = CrpMode::from_env();
+        let startup = detect_startup_context(project_root, startup_cwd);
+        let mut session = if let Some(ref root) = startup.project_root {
+            SessionState::load_latest_for_project_root(root).unwrap_or_default()
+        } else {
+            SessionState::load_latest().unwrap_or_default()
+        };
 
-        let session = SessionState::load_latest().unwrap_or_default();
+        if let Some(ref root) = startup.project_root {
+            session.project_root = Some(root.clone());
+        }
+        if let Some(ref cwd) = startup.shell_cwd {
+            session.shell_cwd = Some(cwd.clone());
+        }
 
         Self {
             cache: Arc::new(RwLock::new(SessionCache::new())),
             session: Arc::new(RwLock::new(session)),
             tool_calls: Arc::new(RwLock::new(Vec::new())),
             call_count: Arc::new(AtomicUsize::new(0)),
-            checkpoint_interval: interval,
             cache_ttl_secs: ttl,
             last_call: Arc::new(RwLock::new(Instant::now())),
-            crp_mode,
             agent_id: Arc::new(RwLock::new(None)),
             client_name: Arc::new(RwLock::new(String::new())),
             autonomy: Arc::new(autonomy::AutonomyState::new()),
-            loop_detector: Arc::new(RwLock::new(crate::core::loop_detection::LoopDetector::new())),
+            loop_detector: Arc::new(RwLock::new(
+                crate::core::loop_detection::LoopDetector::with_config(
+                    &crate::core::config::Config::load().loop_detection,
+                ),
+            )),
+            workflow: Arc::new(RwLock::new(
+                crate::core::workflow::load_active().ok().flatten(),
+            )),
+            ledger: Arc::new(RwLock::new(
+                crate::core::context_ledger::ContextLedger::new(),
+            )),
+            pipeline_stats: Arc::new(RwLock::new(crate::core::pipeline::PipelineStats::new())),
+            startup_project_root: startup.project_root,
+            startup_shell_cwd: startup.shell_cwd,
         }
+    }
+
+    pub fn checkpoint_interval_effective() -> usize {
+        if let Ok(v) = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL") {
+            if let Ok(parsed) = v.trim().parse::<usize>() {
+                return parsed;
+            }
+        }
+        let profile_interval = crate::core::profiles::active_profile()
+            .autonomy
+            .checkpoint_interval;
+        if profile_interval > 0 {
+            return profile_interval as usize;
+        }
+        crate::core::config::Config::load().checkpoint_interval as usize
     }
 
     /// Resolves a (possibly relative) tool path against the session's project_root.
     /// Absolute paths and "." are returned as-is. Relative paths like "src/main.rs"
     /// are joined with project_root so tools work regardless of the server's cwd.
-    pub async fn resolve_path(&self, path: &str) -> String {
+    pub async fn resolve_path(&self, path: &str) -> Result<String, String> {
         let normalized = crate::hooks::normalize_tool_path(path);
         if normalized.is_empty() || normalized == "." {
-            return normalized;
+            return Ok(normalized);
         }
         let p = std::path::Path::new(&normalized);
-        if p.is_absolute() || p.exists() {
-            return normalized;
-        }
-        let session = self.session.read().await;
-        if let Some(ref root) = session.project_root {
-            let resolved = std::path::Path::new(root).join(&normalized);
-            if resolved.exists() {
-                return resolved.to_string_lossy().to_string();
+
+        let (resolved, jail_root) = {
+            let session = self.session.read().await;
+            let jail_root = session
+                .project_root
+                .as_deref()
+                .or(session.shell_cwd.as_deref())
+                .unwrap_or(".")
+                .to_string();
+
+            let resolved = if p.is_absolute() || p.exists() {
+                std::path::PathBuf::from(&normalized)
+            } else if let Some(ref root) = session.project_root {
+                let joined = std::path::Path::new(root).join(&normalized);
+                if joined.exists() {
+                    joined
+                } else if let Some(ref cwd) = session.shell_cwd {
+                    std::path::Path::new(cwd).join(&normalized)
+                } else {
+                    std::path::Path::new(&jail_root).join(&normalized)
+                }
+            } else if let Some(ref cwd) = session.shell_cwd {
+                std::path::Path::new(cwd).join(&normalized)
+            } else {
+                std::path::Path::new(&jail_root).join(&normalized)
+            };
+
+            (resolved, jail_root)
+        };
+
+        let jail_root_path = std::path::Path::new(&jail_root);
+        let jailed = match crate::core::pathjail::jail_path(&resolved, jail_root_path) {
+            Ok(p) => p,
+            Err(e) => {
+                if p.is_absolute() {
+                    if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
+                        let candidate_under_jail = resolved.starts_with(jail_root_path);
+                        let allow_reroot = if candidate_under_jail {
+                            false
+                        } else if let Some(ref trusted_root) = self.startup_project_root {
+                            std::path::Path::new(trusted_root) == new_root.as_path()
+                        } else {
+                            !has_project_marker(jail_root_path)
+                                || is_suspicious_root(jail_root_path)
+                        };
+
+                        if allow_reroot {
+                            let mut session = self.session.write().await;
+                            let new_root_str = new_root.to_string_lossy().to_string();
+                            session.project_root = Some(new_root_str.clone());
+                            session.shell_cwd = self
+                                .startup_shell_cwd
+                                .as_ref()
+                                .filter(|cwd| std::path::Path::new(cwd).starts_with(&new_root))
+                                .cloned()
+                                .or_else(|| Some(new_root_str.clone()));
+                            let _ = session.save();
+
+                            crate::core::pathjail::jail_path(&resolved, &new_root)?
+                        } else {
+                            return Err(e);
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                } else {
+                    return Err(e);
+                }
             }
-        }
-        if let Some(ref cwd) = session.shell_cwd {
-            let resolved = std::path::Path::new(cwd).join(&normalized);
-            if resolved.exists() {
-                return resolved.to_string_lossy().to_string();
-            }
-        }
-        normalized
+        };
+
+        Ok(crate::hooks::normalize_tool_path(
+            &jailed.to_string_lossy().replace('\\', "/"),
+        ))
     }
 
+    /// Like `resolve_path`, but returns the original path on failure instead of an error.
+    pub async fn resolve_path_or_passthrough(&self, path: &str) -> String {
+        self.resolve_path(path)
+            .await
+            .unwrap_or_else(|_| path.to_string())
+    }
+
+    /// Clears the cache and saves the session if the TTL idle threshold has been exceeded.
     pub async fn check_idle_expiry(&self) {
         if self.cache_ttl_secs == 0 {
             return;
@@ -203,6 +352,7 @@ impl LeanCtxServer {
         *self.last_call.write().await = Instant::now();
     }
 
+    /// Records a tool call's token savings without timing information.
     pub async fn record_call(
         &self,
         tool: &str,
@@ -214,6 +364,20 @@ impl LeanCtxServer {
             .await;
     }
 
+    /// Records a tool call like `record_call`, but includes an optional file path for observability.
+    pub async fn record_call_with_path(
+        &self,
+        tool: &str,
+        original: usize,
+        saved: usize,
+        mode: Option<String>,
+        path: Option<&str>,
+    ) {
+        self.record_call_with_timing_inner(tool, original, saved, mode, 0, path)
+            .await;
+    }
+
+    /// Records a tool call's token savings, duration, and emits events and stats.
     pub async fn record_call_with_timing(
         &self,
         tool: &str,
@@ -221,6 +385,19 @@ impl LeanCtxServer {
         saved: usize,
         mode: Option<String>,
         duration_ms: u64,
+    ) {
+        self.record_call_with_timing_inner(tool, original, saved, mode, duration_ms, None)
+            .await;
+    }
+
+    async fn record_call_with_timing_inner(
+        &self,
+        tool: &str,
+        original: usize,
+        saved: usize,
+        mode: Option<String>,
+        duration_ms: u64,
+        path: Option<&str>,
     ) {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let mut calls = self.tool_calls.write().await;
@@ -243,7 +420,7 @@ impl LeanCtxServer {
             saved as u64,
             mode.clone(),
             duration_ms,
-            None,
+            path.map(ToString::to_string),
         );
 
         let output_tokens = original.saturating_sub(saved);
@@ -254,20 +431,30 @@ impl LeanCtxServer {
         if tool == "ctx_shell" {
             session.record_command();
         }
-        if session.should_save() {
-            let _ = session.save();
-        }
+        let pending_save = if session.should_save() {
+            session.prepare_save().ok()
+        } else {
+            None
+        };
         drop(calls);
         drop(session);
+
+        if let Some(prepared) = pending_save {
+            tokio::task::spawn_blocking(move || {
+                let _ = prepared.write_to_disk();
+            });
+        }
 
         self.write_mcp_live_stats().await;
     }
 
+    /// Returns true if over an hour has passed since the last tool call.
     pub async fn is_prompt_cache_stale(&self) -> bool {
         let last = *self.last_call.read().await;
         last.elapsed().as_secs() > 3600
     }
 
+    /// Promotes lightweight read modes to richer ones when the prompt cache is stale.
     pub fn upgrade_mode_if_stale(mode: &str, stale: bool) -> &str {
         if !stale {
             return mode;
@@ -279,18 +466,21 @@ impl LeanCtxServer {
         }
     }
 
+    /// Increments the call counter and returns true if a checkpoint is due.
     pub fn increment_and_check(&self) -> bool {
         let count = self.call_count.fetch_add(1, Ordering::Relaxed) + 1;
-        self.checkpoint_interval > 0 && count.is_multiple_of(self.checkpoint_interval)
+        let interval = Self::checkpoint_interval_effective();
+        interval > 0 && count.is_multiple_of(interval)
     }
 
+    /// Generates a compressed context checkpoint with session state and multi-agent sync.
     pub async fn auto_checkpoint(&self) -> Option<String> {
         let cache = self.cache.read().await;
         if cache.get_all_entries().is_empty() {
             return None;
         }
         let complexity = crate::core::adaptive::classify_from_context(&cache);
-        let checkpoint = ctx_compress::handle(&cache, true, self.crp_mode);
+        let checkpoint = ctx_compress::handle(&cache, true, CrpMode::effective());
         drop(cache);
 
         let mut session = self.session.write().await;
@@ -309,7 +499,9 @@ impl LeanCtxServer {
             }
         }
 
-        let multi_agent_block = self.auto_multi_agent_checkpoint(&project_root).await;
+        let multi_agent_block = self
+            .auto_multi_agent_checkpoint(project_root.as_ref())
+            .await;
 
         self.record_call("ctx_compress", 0, 0, Some("auto".to_string()))
             .await;
@@ -322,10 +514,9 @@ impl LeanCtxServer {
         ))
     }
 
-    async fn auto_multi_agent_checkpoint(&self, project_root: &Option<String>) -> String {
-        let root = match project_root {
-            Some(r) => r,
-            None => return String::new(),
+    async fn auto_multi_agent_checkpoint(&self, project_root: Option<&String>) -> String {
+        let Some(root) = project_root else {
+            return String::new();
         };
 
         let registry = crate::core::agents::AgentRegistry::load_or_create();
@@ -345,7 +536,7 @@ impl LeanCtxServer {
         let entries = cache.get_all_entries();
         if !entries.is_empty() {
             let mut by_access: Vec<_> = entries.iter().collect();
-            by_access.sort_by(|a, b| b.1.read_count.cmp(&a.1.read_count));
+            by_access.sort_by_key(|x| std::cmp::Reverse(x.1.read_count));
             let top_paths: Vec<&str> = by_access
                 .iter()
                 .take(5)
@@ -363,15 +554,12 @@ impl LeanCtxServer {
             .filter(|e| !e.read_by.contains(&my_id) && e.from_agent != my_id)
             .count();
 
-        let shared_dir = dirs::home_dir()
+        let shared_dir = crate::core::data_dir::lean_ctx_data_dir()
             .unwrap_or_default()
-            .join(".lean-ctx")
             .join("agents")
             .join("shared");
         let shared_count = if shared_dir.exists() {
-            std::fs::read_dir(&shared_dir)
-                .map(|rd| rd.count())
-                .unwrap_or(0)
+            std::fs::read_dir(&shared_dir).map_or(0, std::iter::Iterator::count)
         } else {
             0
         };
@@ -392,6 +580,7 @@ impl LeanCtxServer {
         )
     }
 
+    /// Appends a tool call entry to the rotating `tool-calls.log` file.
     pub fn append_tool_call_log(
         tool: &str,
         duration_ms: u64,
@@ -401,7 +590,7 @@ impl LeanCtxServer {
         timestamp: &str,
     ) {
         const MAX_LOG_LINES: usize = 50;
-        if let Some(dir) = dirs::home_dir().map(|h| h.join(".lean-ctx")) {
+        if let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() {
             let log_path = dir.join("tool-calls.log");
             let mode_str = mode.unwrap_or("-");
             let slow = if duration_ms > 5000 { " **SLOW**" } else { "" };
@@ -412,7 +601,7 @@ impl LeanCtxServer {
             let mut lines: Vec<String> = std::fs::read_to_string(&log_path)
                 .unwrap_or_default()
                 .lines()
-                .map(|l| l.to_string())
+                .map(std::string::ToString::to_string)
                 .collect();
 
             lines.push(line.trim_end().to_string());
@@ -440,7 +629,7 @@ impl LeanCtxServer {
 
         let modes_used: std::collections::HashSet<&str> =
             calls.iter().filter_map(|c| c.mode.as_deref()).collect();
-        let mode_diversity = (modes_used.len() as f64 / 6.0).min(1.0);
+        let mode_diversity = (modes_used.len() as f64 / 10.0).min(1.0);
         let cache_util = stats.hit_rate() / 100.0;
         let cep_score = cache_util * 0.3 + mode_diversity * 0.2 + compression_rate * 0.5;
 
@@ -461,7 +650,7 @@ impl LeanCtxServer {
             total_compressed,
             total_saved,
             mode_counts,
-            complexity: format!("{:?}", complexity),
+            complexity: format!("{complexity:?}"),
             cache_hits: stats.cache_hits,
             total_reads: stats.total_reads,
             tool_call_count: calls.len() as u64,
@@ -469,16 +658,24 @@ impl LeanCtxServer {
     }
 
     async fn write_mcp_live_stats(&self) {
+        let count = self.call_count.load(Ordering::Relaxed);
+        if count > 1 && !count.is_multiple_of(5) {
+            return;
+        }
+
         let cache = self.cache.read().await;
         let calls = self.tool_calls.read().await;
         let stats = cache.get_stats();
         let complexity = crate::core::adaptive::classify_from_context(&cache);
 
         let cs = Self::compute_cep_stats(&calls, stats, &complexity);
+        let started_at = calls
+            .first()
+            .map(|c| c.timestamp.clone())
+            .unwrap_or_default();
 
         drop(cache);
         drop(calls);
-
         let live = serde_json::json!({
             "cep_score": cs.cep_score,
             "cache_utilization": cs.cache_util,
@@ -491,14 +688,16 @@ impl LeanCtxServer {
             "tokens_saved": cs.total_saved,
             "tokens_original": cs.total_original,
             "tool_calls": cs.tool_call_count,
+            "started_at": started_at,
             "updated_at": chrono::Local::now().to_rfc3339(),
         });
 
-        if let Some(dir) = dirs::home_dir().map(|h| h.join(".lean-ctx")) {
+        if let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() {
             let _ = std::fs::write(dir.join("mcp-live.json"), live.to_string());
         }
     }
 
+    /// Persists a CEP (Context Efficiency Protocol) score snapshot for analytics.
     pub async fn record_cep_snapshot(&self) {
         let cache = self.cache.read().await;
         let calls = self.tool_calls.read().await;
@@ -523,23 +722,109 @@ impl LeanCtxServer {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct StartupContext {
+    project_root: Option<String>,
+    shell_cwd: Option<String>,
+}
+
+/// Creates a new `LeanCtxServer` with default configuration.
 pub fn create_server() -> LeanCtxServer {
     LeanCtxServer::new()
+}
+
+const PROJECT_ROOT_MARKERS: &[&str] = &[
+    ".git",
+    ".lean-ctx.toml",
+    "Cargo.toml",
+    "package.json",
+    "go.mod",
+    "pyproject.toml",
+    "pom.xml",
+    "build.gradle",
+    "Makefile",
+    ".planning",
+];
+
+fn has_project_marker(dir: &std::path::Path) -> bool {
+    PROJECT_ROOT_MARKERS.iter().any(|m| dir.join(m).exists())
+}
+
+fn is_suspicious_root(dir: &std::path::Path) -> bool {
+    let s = dir.to_string_lossy();
+    s.contains("/.claude")
+        || s.contains("/.codex")
+        || s.contains("\\.claude")
+        || s.contains("\\.codex")
+}
+
+fn canonicalize_path(path: &std::path::Path) -> String {
+    crate::core::pathutil::safe_canonicalize_or_self(path)
+        .to_string_lossy()
+        .to_string()
+}
+
+fn detect_startup_context(
+    explicit_project_root: Option<&str>,
+    startup_cwd: Option<&std::path::Path>,
+) -> StartupContext {
+    let shell_cwd = startup_cwd.map(canonicalize_path);
+    let project_root = explicit_project_root
+        .map(|root| canonicalize_path(std::path::Path::new(root)))
+        .or_else(|| {
+            startup_cwd
+                .and_then(maybe_derive_project_root_from_absolute)
+                .map(|p| canonicalize_path(&p))
+        });
+
+    let shell_cwd = match (shell_cwd, project_root.as_ref()) {
+        (Some(cwd), Some(root))
+            if std::path::Path::new(&cwd).starts_with(std::path::Path::new(root)) =>
+        {
+            Some(cwd)
+        }
+        (_, Some(root)) => Some(root.clone()),
+        (cwd, None) => cwd,
+    };
+
+    StartupContext {
+        project_root,
+        shell_cwd,
+    }
+}
+
+fn maybe_derive_project_root_from_absolute(abs: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut cur = if abs.is_dir() {
+        abs.to_path_buf()
+    } else {
+        abs.parent()?.to_path_buf()
+    };
+    loop {
+        if has_project_marker(&cur) {
+            return Some(crate::core::pathutil::safe_canonicalize_or_self(&cur));
+        }
+        if !cur.pop() {
+            break;
+        }
+    }
+    None
 }
 
 fn auto_consolidate_knowledge(project_root: &str) {
     use crate::core::knowledge::ProjectKnowledge;
     use crate::core::session::SessionState;
 
-    let session = match SessionState::load_latest() {
-        Some(s) => s,
-        None => return,
+    let Some(session) = SessionState::load_latest() else {
+        return;
     };
 
     if session.findings.is_empty() && session.decisions.is_empty() {
         return;
     }
 
+    let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() else {
+        return;
+    };
     let mut knowledge = ProjectKnowledge::load_or_create(project_root);
 
     for finding in &session.findings {
@@ -552,7 +837,7 @@ fn auto_consolidate_knowledge(project_root: &str) {
         } else {
             "finding-auto".to_string()
         };
-        knowledge.remember("finding", &key, &finding.summary, &session.id, 0.7);
+        knowledge.remember("finding", &key, &finding.summary, &session.id, 0.7, &policy);
     }
 
     for decision in &session.decisions {
@@ -563,7 +848,14 @@ fn auto_consolidate_knowledge(project_root: &str) {
             .collect::<String>()
             .replace(' ', "-")
             .to_lowercase();
-        knowledge.remember("decision", &key, &decision.summary, &session.id, 0.85);
+        knowledge.remember(
+            "decision",
+            &key,
+            &decision.summary,
+            &session.id,
+            0.85,
+            &policy,
+        );
     }
 
     let task_desc = session
@@ -579,6 +871,174 @@ fn auto_consolidate_knowledge(project_root: &str) {
         session.findings.len(),
         session.decisions.len()
     );
-    knowledge.consolidate(&summary, vec![session.id.clone()]);
+    knowledge.consolidate(&summary, vec![session.id.clone()], &policy);
     let _ = knowledge.save();
+}
+
+#[cfg(test)]
+mod resolve_path_tests {
+    use super::*;
+
+    fn create_git_root(path: &std::path::Path) -> String {
+        std::fs::create_dir_all(path.join(".git")).unwrap();
+        canonicalize_path(path)
+    }
+
+    #[tokio::test]
+    async fn resolve_path_can_reroot_to_trusted_startup_root_when_session_root_is_stale() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stale = tmp.path().join("stale");
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&stale).unwrap();
+        let real_root = create_git_root(&real);
+        std::fs::write(real.join("a.txt"), "ok").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(None, Some(real.as_path()));
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(stale.to_string_lossy().to_string());
+            session.shell_cwd = Some(stale.to_string_lossy().to_string());
+        }
+
+        let out = server
+            .resolve_path(&real.join("a.txt").to_string_lossy())
+            .await
+            .unwrap();
+
+        assert!(out.ends_with("/a.txt"));
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
+        assert_eq!(session.shell_cwd.as_deref(), Some(real_root.as_str()));
+    }
+
+    #[tokio::test]
+    async fn resolve_path_rejects_absolute_path_outside_trusted_startup_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stale = tmp.path().join("stale");
+        let root = tmp.path().join("root");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&stale).unwrap();
+        create_git_root(&root);
+        let _other_value = create_git_root(&other);
+        std::fs::write(other.join("b.txt"), "no").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(None, Some(root.as_path()));
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(stale.to_string_lossy().to_string());
+            session.shell_cwd = Some(stale.to_string_lossy().to_string());
+        }
+
+        let err = server
+            .resolve_path(&other.join("b.txt").to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(err.contains("path escapes project root"));
+
+        let session = server.session.read().await;
+        assert_eq!(
+            session.project_root.as_deref(),
+            Some(stale.to_string_lossy().as_ref())
+        );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn startup_prefers_workspace_scoped_session_over_global_latest() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let _data = tempfile::tempdir().unwrap();
+        let _tmp = tempfile::tempdir().unwrap();
+
+        std::env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+
+        let repo_a = _tmp.path().join("repo-a");
+        let repo_b = _tmp.path().join("repo-b");
+        let root_a = create_git_root(&repo_a);
+        let root_b = create_git_root(&repo_b);
+
+        let mut session_b = SessionState::new();
+        session_b.project_root = Some(root_b.clone());
+        session_b.shell_cwd = Some(root_b.clone());
+        session_b.set_task("repo-b task", None);
+        session_b.save().unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let mut session_a = SessionState::new();
+        session_a.project_root = Some(root_a.clone());
+        session_a.shell_cwd = Some(root_a.clone());
+        session_a.set_task("repo-a latest task", None);
+        session_a.save().unwrap();
+
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b.as_path()));
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
+        assert_eq!(session.shell_cwd.as_deref(), Some(root_b.as_str()));
+        assert_eq!(
+            session.task.as_ref().map(|t| t.description.as_str()),
+            Some("repo-b task")
+        );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn startup_creates_fresh_session_for_new_workspace_and_preserves_subdir_cwd() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let _data = tempfile::tempdir().unwrap();
+        let _tmp = tempfile::tempdir().unwrap();
+
+        std::env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+
+        let repo_a = _tmp.path().join("repo-a");
+        let repo_b = _tmp.path().join("repo-b");
+        let repo_b_src = repo_b.join("src");
+        let root_a = create_git_root(&repo_a);
+        let root_b = create_git_root(&repo_b);
+        std::fs::create_dir_all(&repo_b_src).unwrap();
+        let repo_b_src_value = canonicalize_path(&repo_b_src);
+
+        let mut session_a = SessionState::new();
+        session_a.project_root = Some(root_a.clone());
+        session_a.shell_cwd = Some(root_a.clone());
+        session_a.set_task("repo-a latest task", None);
+        let old_id = session_a.id.clone();
+        session_a.save().unwrap();
+
+        let server = LeanCtxServer::new_with_startup(None, Some(repo_b_src.as_path()));
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
+        assert_eq!(
+            session.shell_cwd.as_deref(),
+            Some(repo_b_src_value.as_str())
+        );
+        assert!(session.task.is_none());
+        assert_ne!(session.id, old_id);
+    }
+
+    #[tokio::test]
+    async fn resolve_path_does_not_auto_update_when_current_root_is_real_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("root");
+        let other = tmp.path().join("other");
+        let root_value = create_git_root(&root);
+        create_git_root(&other);
+        std::fs::write(other.join("b.txt"), "no").unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let server = LeanCtxServer::new_with_project_root(Some(&root_str));
+
+        let err = server
+            .resolve_path(&other.join("b.txt").to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(err.contains("path escapes project root"));
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(root_value.as_str()));
+    }
 }

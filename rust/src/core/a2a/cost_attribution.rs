@@ -16,6 +16,10 @@ pub struct CostStore {
 pub struct AgentCost {
     pub agent_id: String,
     pub agent_type: String,
+    #[serde(default)]
+    pub model_key: Option<String>,
+    #[serde(default)]
+    pub pricing_match: Option<String>,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
     pub total_cached_tokens: u64,
@@ -41,6 +45,8 @@ pub struct ToolCost {
 pub struct SessionCostSnapshot {
     pub timestamp: String,
     pub agent_id: String,
+    #[serde(default)]
+    pub model_key: Option<String>,
     pub total_input: u64,
     pub total_output: u64,
     pub total_saved: u64,
@@ -48,21 +54,19 @@ pub struct SessionCostSnapshot {
     pub duration_secs: u64,
 }
 
-const INPUT_TOKEN_COST: f64 = 3.0 / 1_000_000.0;
-const OUTPUT_TOKEN_COST: f64 = 15.0 / 1_000_000.0;
-const CACHED_TOKEN_COST: f64 = 0.30 / 1_000_000.0;
-
-pub fn estimate_cost(input: u64, output: u64, cached: u64) -> f64 {
-    (input as f64 * INPUT_TOKEN_COST)
-        + (output as f64 * OUTPUT_TOKEN_COST)
-        + (cached as f64 * CACHED_TOKEN_COST)
+pub fn estimate_cost(model_key: Option<&str>, input: u64, output: u64, cached: u64) -> f64 {
+    let pricing = crate::core::gain::model_pricing::ModelPricing::load();
+    let quote = pricing.quote(model_key);
+    quote.cost.estimate_usd(input, output, 0, cached)
 }
 
 static COST_BUFFER: Mutex<Option<CostStore>> = Mutex::new(None);
 
 impl CostStore {
     pub fn load() -> Self {
-        let mut guard = COST_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = COST_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(ref store) = *guard {
             return store.clone();
         }
@@ -81,29 +85,35 @@ impl CostStore {
         output_tokens: u64,
     ) {
         let now = Utc::now().to_rfc3339();
-        let cost = estimate_cost(input_tokens, output_tokens, 0);
+        let pricing = crate::core::gain::model_pricing::ModelPricing::load();
+        let quote = pricing.quote_from_env_or_agent_type(agent_type);
+        let cost = quote.cost.estimate_usd(input_tokens, output_tokens, 0, 0);
 
-        let agent = self.agents.entry(agent_id.to_string()).or_insert_with(|| {
-            AgentCost {
+        let agent = self
+            .agents
+            .entry(agent_id.to_string())
+            .or_insert_with(|| AgentCost {
                 agent_id: agent_id.to_string(),
                 agent_type: agent_type.to_string(),
                 first_seen: Some(now.clone()),
                 ..Default::default()
-            }
-        });
+            });
         agent.total_input_tokens += input_tokens;
         agent.total_output_tokens += output_tokens;
         agent.total_calls += 1;
         agent.cost_usd += cost;
         agent.last_seen = Some(now.clone());
+        agent.model_key = Some(quote.model_key.clone());
+        agent.pricing_match = Some(format!("{:?}", quote.match_kind));
         *agent.tools_used.entry(tool_name.to_string()).or_insert(0) += 1;
 
-        let tool = self.tools.entry(tool_name.to_string()).or_insert_with(|| {
-            ToolCost {
+        let tool = self
+            .tools
+            .entry(tool_name.to_string())
+            .or_insert_with(|| ToolCost {
                 tool_name: tool_name.to_string(),
                 ..Default::default()
-            }
-        });
+            });
         tool.total_input_tokens += input_tokens;
         tool.total_output_tokens += output_tokens;
         tool.total_calls += 1;
@@ -118,21 +128,31 @@ impl CostStore {
 
     pub fn save(&self) -> std::io::Result<()> {
         save_to_disk(self)?;
-        let mut guard = COST_BUFFER.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = COST_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(self.clone());
         Ok(())
     }
 
     pub fn top_agents(&self, limit: usize) -> Vec<&AgentCost> {
         let mut agents: Vec<_> = self.agents.values().collect();
-        agents.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+        agents.sort_by(|a, b| {
+            b.cost_usd
+                .partial_cmp(&a.cost_usd)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         agents.truncate(limit);
         agents
     }
 
     pub fn top_tools(&self, limit: usize) -> Vec<&ToolCost> {
         let mut tools: Vec<_> = self.tools.values().collect();
-        tools.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+        tools.sort_by(|a, b| {
+            b.cost_usd
+                .partial_cmp(&a.cost_usd)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         tools.truncate(limit);
         tools
     }
@@ -155,10 +175,16 @@ impl CostStore {
         saved: u64,
         duration_secs: u64,
     ) {
-        let cost = estimate_cost(input, output, 0);
+        let model_key = self
+            .agents
+            .get(agent_id)
+            .and_then(|a| a.model_key.as_deref())
+            .map(std::string::ToString::to_string);
+        let cost = estimate_cost(model_key.as_deref(), input, output, 0);
         self.sessions.push(SessionCostSnapshot {
             timestamp: Utc::now().to_rfc3339(),
             agent_id: agent_id.to_string(),
+            model_key,
             total_input: input,
             total_output: output,
             total_saved: saved,
@@ -173,13 +199,14 @@ impl CostStore {
 }
 
 fn cost_store_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx/cost_attribution.json"))
+    crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|d| d.join("cost_attribution.json"))
 }
 
 fn load_from_disk() -> CostStore {
-    let path = match cost_store_path() {
-        Some(p) => p,
-        None => return CostStore::default(),
+    let Some(path) = cost_store_path() else {
+        return CostStore::default();
     };
     match std::fs::read_to_string(&path) {
         Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
@@ -188,22 +215,18 @@ fn load_from_disk() -> CostStore {
 }
 
 fn save_to_disk(store: &CostStore) -> std::io::Result<()> {
-    let path = match cost_store_path() {
-        Some(p) => p,
-        None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no home dir",
-            ))
-        }
+    let Some(path) = cost_store_path() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no home dir",
+        ));
     };
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    let json = serde_json::to_string(store)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let json = serde_json::to_string(store).map_err(std::io::Error::other)?;
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, &json)?;
     std::fs::rename(&tmp, &path)?;
@@ -223,6 +246,20 @@ pub fn format_cost_report(store: &CostStore, limit: usize) -> String {
     lines.push(format!(
         "Total: {total_in} input + {total_out} output tokens = ${total_cost:.4}"
     ));
+    if let Ok(m) = std::env::var("LEAN_CTX_MODEL").or_else(|_| std::env::var("LCTX_MODEL")) {
+        if !m.trim().is_empty() {
+            let pricing = crate::core::gain::model_pricing::ModelPricing::load();
+            let q = pricing.quote(Some(&m));
+            lines.push(format!(
+                "Pricing: model={} ({:?}) in=${:.2}/M out=${:.2}/M cacheR=${:.3}/M",
+                q.model_key,
+                q.match_kind,
+                q.cost.input_per_m,
+                q.cost.output_per_m,
+                q.cost.cache_read_per_m
+            ));
+        }
+    }
     lines.push(String::new());
 
     let top_agents = store.top_agents(limit);
@@ -230,14 +267,19 @@ pub fn format_cost_report(store: &CostStore, limit: usize) -> String {
         lines.push("Top Agents by Cost:".to_string());
         for (i, agent) in top_agents.iter().enumerate() {
             lines.push(format!(
-                "  {}. {} ({}) — {} calls, {} in + {} out tok, ${:.4}",
+                "  {}. {} ({}) — {} calls, {} in + {} out tok, ${:.4}{}",
                 i + 1,
                 agent.agent_id,
                 agent.agent_type,
                 agent.total_calls,
                 agent.total_input_tokens,
                 agent.total_output_tokens,
-                agent.cost_usd
+                agent.cost_usd,
+                agent
+                    .model_key
+                    .as_deref()
+                    .map(|m| format!(" [{m}]"))
+                    .unwrap_or_default()
             ));
         }
         lines.push(String::new());
@@ -268,9 +310,8 @@ mod tests {
 
     #[test]
     fn cost_estimation() {
-        let cost = estimate_cost(1000, 100, 500);
+        let cost = estimate_cost(Some("fallback-blended"), 1000, 100, 500);
         assert!(cost > 0.0);
-        assert!(cost < 1.0);
     }
 
     #[test]

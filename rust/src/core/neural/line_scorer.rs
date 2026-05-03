@@ -268,6 +268,7 @@ impl NeuralLineScorer {
     }
 
     #[cfg(not(feature = "neural"))]
+    #[allow(clippy::unused_self)]
     fn decision_tree_score(&self, features: &LineFeatures) -> f64 {
         let f = features.to_array();
 
