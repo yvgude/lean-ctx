@@ -565,5 +565,83 @@
   .testimonial-quote {
     border-right: none !important;
   }
+
+  .pillars-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── Six Pillars ────────────────────────────────────────── */
+
+.pillars-section {
+  padding-block: clamp(4rem, 3rem + 3vw, 7rem);
+}
+.pillars-header {
+  text-align: center;
+  margin-bottom: clamp(2rem, 1.5rem + 1vw, 3rem);
+}
+.pillars-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 1.5rem + 1.5vw, 3rem);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  color: var(--color-text-bright);
+  margin-bottom: 0.75rem;
+}
+.pillars-sub {
+  font-size: clamp(0.9375rem, 0.875rem + 0.25vw, 1.125rem);
+  color: var(--color-muted);
+  max-width: 500px;
+  margin: 0 auto;
+}
+.pillars-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);
+}
+@media (max-width: 768px) {
+  .pillars-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .pillars-grid { grid-template-columns: 1fr; }
+}
+.pillar-card-home {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  text-decoration: none;
+  transition: all 0.25s ease;
+}
+.pillar-card-home:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+}
+.pillar-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--overlay-light);
+  border: 1px solid var(--color-border);
+  color: var(--color-accent);
+  margin-bottom: 0.75rem;
+}
+.pillar-card-name {
+  font-family: var(--font-display);
+  font-size: clamp(0.9375rem, 0.875rem + 0.15vw, 1.0625rem);
+  font-weight: 700;
+  color: var(--color-text-bright);
+  margin-bottom: 0.375rem;
+}
+.pillar-card-desc {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  line-height: 1.5;
 }
 

@@ -1,0 +1,290 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getPillarById, type Pillar } from '../lib/contextOsPillars';
+import { getMcpManifest, getToolEnrichments, toolNameToSlug } from '../lib/mcpManifest';
+
+interface Props {
+  pillarId: string;
+}
+
+const { pillarId } = Astro.props;
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+const pillar = getPillarById(pillarId)!;
+const manifest = getMcpManifest();
+const enrichments = getToolEnrichments();
+
+const pillarTools = pillar.tools
+  .map(name => manifest.tools.granular.find(g => g.name === name))
+  .filter(Boolean);
+---
+
+<BaseLayout title={t(pillar.titleKey) + ' — LeanCTX Context OS'} description={t(pillar.solutionKey)}>
+  <!-- Hero -->
+  <section class="pillar-hero content-grid">
+    <div class="pillar-hero-inner">
+      <span class="pillar-hero-icon" set:html={pillar.icon} />
+      <h1 class="pillar-hero-title">{t(pillar.titleKey)}</h1>
+      <p class="pillar-hero-headline">{t(pillar.headlineKey)}</p>
+      <p class="pillar-hero-solution">{t(pillar.solutionKey)}</p>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section class="pillar-features content-grid">
+    <div class="pillar-features-grid">
+      {pillar.features.map(f => (
+        <div class="pillar-feature-card">
+          <h3 class="pillar-feature-title">{t(f.titleKey)}</h3>
+          <p class="pillar-feature-desc">{t(f.descKey)}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Protocol Section (if applicable) -->
+  {pillar.protocol && (
+    <section class="pillar-protocol content-grid" id={pillar.protocol.legacySlug}>
+      <div class="pillar-protocol-inner">
+        <h2 class="pillar-protocol-title">{t(pillar.protocol.titleKey)}</h2>
+        <p class="pillar-protocol-desc">{t(pillar.protocol.descKey)}</p>
+      </div>
+    </section>
+  )}
+
+  <!-- Tools in this pillar -->
+  <section class="pillar-tools content-grid">
+    <SectionHeading title={`${pillarTools.length} Tools`} />
+    <div class="pillar-tools-grid">
+      {pillarTools.map(tool => tool && (
+        <a href={lp(`/docs/tools/${toolNameToSlug(tool.name)}`)} class="pillar-tool-card">
+          <code class="pillar-tool-name">{tool.name}</code>
+          <p class="pillar-tool-desc">{tool.description}</p>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <!-- Related Docs -->
+  <section class="pillar-docs content-grid">
+    <div class="pillar-docs-inner">
+      {pillar.docsLinks.map(link => (
+        <a href={lp(link)} class="pillar-doc-link">{link.replace('/docs/', '').replace(/-/g, ' ')}</a>
+      ))}
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="pillar-cta content-grid">
+    <div class="pillar-cta-inner">
+      <a href={lp('/docs/getting-started')} class="pillar-cta-btn">{t('nav.getStarted')}</a>
+      <a href={lp('/context-os')} class="pillar-cta-secondary">← All Pillars</a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .pillar-hero {
+    padding-block: clamp(4rem, 3rem + 4vw, 8rem) clamp(2rem, 1.5rem + 2vw, 4rem);
+  }
+  .pillar-hero-inner {
+    max-width: 720px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  .pillar-hero-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: var(--overlay-light);
+    border: 1px solid var(--color-border);
+    color: var(--color-accent);
+    margin-bottom: 1.5rem;
+  }
+  .pillar-hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--color-text-bright);
+    margin-bottom: 1rem;
+  }
+  .pillar-hero-headline {
+    font-size: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+    color: var(--color-accent);
+    font-weight: 500;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+  }
+  .pillar-hero-solution {
+    font-size: clamp(0.9375rem, 0.875rem + 0.25vw, 1.0625rem);
+    color: var(--color-muted);
+    line-height: 1.7;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .pillar-features {
+    padding-block: clamp(2rem, 1.5rem + 2vw, 4rem);
+  }
+  .pillar-features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .pillar-feature-card {
+    padding: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    transition: border-color 0.2s ease;
+  }
+  .pillar-feature-card:hover {
+    border-color: var(--color-border-light);
+  }
+  .pillar-feature-title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-bright);
+    margin-bottom: 0.5rem;
+  }
+  .pillar-feature-desc {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+    line-height: 1.6;
+  }
+
+  .pillar-protocol {
+    padding-block: clamp(2rem, 1.5rem + 2vw, 3rem);
+  }
+  .pillar-protocol-inner {
+    max-width: 700px;
+    margin: 0 auto;
+    text-align: center;
+    padding: clamp(1.5rem, 1rem + 1vw, 2.5rem);
+    border-radius: 16px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-faint);
+  }
+  .pillar-protocol-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    font-weight: 700;
+    color: var(--color-accent);
+    margin-bottom: 0.75rem;
+  }
+  .pillar-protocol-desc {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    line-height: 1.6;
+  }
+
+  .pillar-tools {
+    padding-block: clamp(2rem, 1.5rem + 2vw, 4rem);
+  }
+  .pillar-tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+  .pillar-tool-card {
+    display: block;
+    padding: 1rem 1.25rem;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+  .pillar-tool-card:hover {
+    border-color: var(--color-accent);
+    background: var(--overlay-hover);
+  }
+  .pillar-tool-name {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    display: block;
+    margin-bottom: 0.375rem;
+  }
+  .pillar-tool-desc {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .pillar-docs {
+    padding-block: clamp(1rem, 0.75rem + 0.5vw, 2rem);
+  }
+  .pillar-docs-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+  .pillar-doc-link {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    text-decoration: none;
+    text-transform: capitalize;
+    transition: all 0.2s ease;
+  }
+  .pillar-doc-link:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  .pillar-cta {
+    padding-block: clamp(3rem, 2rem + 2vw, 5rem);
+    text-align: center;
+  }
+  .pillar-cta-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+  .pillar-cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 2rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    border-radius: 12px;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+  .pillar-cta-btn:hover {
+    opacity: 0.9;
+    box-shadow: 0 0 24px rgba(52, 211, 153, 0.15);
+  }
+  .pillar-cta-secondary {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  .pillar-cta-secondary:hover {
+    color: var(--color-accent);
+  }
+</style>

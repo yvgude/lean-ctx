@@ -9,86 +9,26 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const currentPath = Astro.url.pathname;
 
-const productColumns = [
+const contextOsColumns = [
   {
-    title: t('nav.product.compressionLayers'),
+    title: t('nav.pillars.smartIo'),
     items: [
-      {
-        label: t('nav.product.contextServer'),
-        href: lp('/mcp-server'),
-        description: t('nav.product.contextServerDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>',
-      },
-      {
-        label: t('nav.product.shellHook'),
-        href: lp('/shell-hook'),
-        description: t('nav.product.shellHookDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
-      },
-      {
-        label: t('nav.howItWorks'),
-        href: lp('/how-it-works'),
-        description: t('nav.product.howItWorksDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
-      },
+      { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>' },
+      { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/></svg>' },
     ],
   },
   {
-    title: t('nav.product.protocols'),
+    title: t('nav.pillars.memory'),
     items: [
-      {
-        label: 'CEP',
-        href: lp('/protocols/cep'),
-        description: t('nav.product.cepDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
-      },
-      {
-        label: 'CCP',
-        href: lp('/protocols/ccp'),
-        description: t('nav.product.ccpDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>',
-      },
-      {
-        label: 'TDD',
-        href: lp('/protocols/tdd'),
-        description: t('nav.product.tddDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>',
-      },
+      { label: t('nav.pillars.memorySessions'), href: lp('/context-os/memory'), description: t('nav.pillars.memoryDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20"/><path d="M17 2v20"/><path d="M2 12h20"/></svg>' },
+      { label: t('nav.pillars.governance'), href: lp('/context-os/governance'), description: t('nav.pillars.governanceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' },
     ],
   },
   {
-    title: t('nav.product.ecosystem'),
+    title: t('nav.pillars.verification'),
     items: [
-      {
-        label: t('nav.product.leanctl'),
-        href: 'https://leanctl.com',
-        description: t('nav.product.leanctlDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
-      },
-      {
-        label: t('nav.product.compatibility'),
-        href: lp('/compatibility'),
-        description: t('nav.product.compatibilityDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>',
-      },
-      {
-        label: t('nav.product.safety'),
-        href: lp('/safety'),
-        description: t('nav.product.safetyDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
-      },
-      {
-        label: t('nav.product.compare'),
-        href: lp('/compare'),
-        description: t('nav.product.compareDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
-      },
-      {
-        label: t('nav.product.limitations'),
-        href: lp('/limitations'),
-        description: t('nav.product.limitationsDesc'),
-        icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
-      },
+      { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
+      { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>' },
     ],
   },
 ];
@@ -114,7 +54,7 @@ const docsColumns = [
   {
     title: t('nav.docs.reference'),
     items: [
-      { label: t('nav.docs.toolApi') + ' (46)', href: lp('/docs/tools'), description: t('nav.docs.toolApiDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' },
+      { label: t('nav.docs.toolApi'), href: lp('/docs/tools'), description: t('nav.docs.toolApiDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' },
       { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8l4 4-4 4"/><line x1="13" y1="16" x2="17" y2="16"/></svg>' },
       { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' },
       { label: t('nav.docs.verification'), href: lp('/docs/verification'), description: t('nav.docs.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
@@ -157,16 +97,16 @@ const docsColumns = [
       </a>
 
       <div class="header-center">
-        <MegaDropdown id="product" label={t('nav.product')} columns={productColumns} />
+        <MegaDropdown id="context-os" label={t('nav.contextOs')} columns={contextOsColumns} />
         <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
+        <a href={lp('/docs/tools')} class:list={['header-nav-item', currentPath.includes('/tools') ? 'is-active' : '']}>
+          Tools
+        </a>
         <a href={lp('/trust')} class:list={['header-nav-item', currentPath.includes('/trust') ? 'is-active' : '']}>
           {t('nav.trust')}
         </a>
         <a href={lp('/benchmark')} class:list={['header-nav-item', currentPath.includes('/benchmark') ? 'is-active' : '']}>
           {t('nav.product.benchmark')}
-        </a>
-        <a href={lp('/cloud')} class:list={['header-nav-item', currentPath.includes('/cloud') ? 'is-active' : '']}>
-          {t('nav.cloud')}
         </a>
       </div>
 
@@ -232,39 +172,30 @@ const docsColumns = [
   <div id="mobile-menu" class="mobile-menu-closed">
     <div class="mobile-menu-inner">
       <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.product')}</span>
-        <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.howItWorks')}</a>
-        <a href={lp('/mcp-server')} class="mobile-nav-link">{t('nav.product.contextServer')}</a>
-        <a href={lp('/shell-hook')} class="mobile-nav-link">{t('nav.product.shellHook')}</a>
-        <a href={lp('/protocols/cep')} class="mobile-nav-link">CEP</a>
-        <a href={lp('/protocols/ccp')} class="mobile-nav-link">CCP</a>
-        <a href={lp('/protocols/tdd')} class="mobile-nav-link">TDD</a>
-        <a href={lp('/compatibility')} class="mobile-nav-link">{t('nav.product.compatibility')}</a>
+        <span class="mobile-section-title">{t('nav.contextOs')}</span>
+        <a href={lp('/context-os')} class="mobile-nav-link">{t('nav.contextOs')}</a>
+        <a href={lp('/context-os/smart-io')} class="mobile-nav-link">{t('nav.pillars.smartIo')}</a>
+        <a href={lp('/context-os/intelligence')} class="mobile-nav-link">{t('nav.pillars.intelligence')}</a>
+        <a href={lp('/context-os/memory')} class="mobile-nav-link">{t('nav.pillars.memory')}</a>
+        <a href={lp('/context-os/governance')} class="mobile-nav-link">{t('nav.pillars.governance')}</a>
+        <a href={lp('/context-os/verification')} class="mobile-nav-link">{t('nav.pillars.verification')}</a>
+        <a href={lp('/context-os/integrations')} class="mobile-nav-link">{t('nav.pillars.integrations')}</a>
       </div>
 
       <div class="mobile-section">
         <span class="mobile-section-title">{t('nav.docs')}</span>
         <a href={lp('/docs/getting-started')} class="mobile-nav-link">{t('nav.docs.installSetup')}</a>
         <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>
-        <a href={lp('/docs/verification')} class="mobile-nav-link">{t('nav.docs.verification')}</a>
-        <a href={lp('/docs/replayability')} class="mobile-nav-link">{t('nav.docs.replayability')}</a>
-        <a href={lp('/docs/ide-setup')} class="mobile-nav-link">{t('nav.docs.ideSetup')}</a>
-        <a href={lp('/docs/quick-reference')} class="mobile-nav-link">{t('nav.docs.quickReference')}</a>
-        <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
-        <a href={lp('/docs/intelligence-layer')} class="mobile-nav-link">{t('nav.docs.intelligenceLayer')}</a>
         <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.docs.toolApi')}</a>
-        <a href={lp('/docs/tree-sitter')} class="mobile-nav-link">{t('nav.docs.treeSitter')}</a>
-      </div>
-
-      <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.product.ecosystem')}</span>
-        <a href="https://leanctl.com" target="_blank" rel="noopener" class="mobile-nav-link">{t('nav.product.leanctl')}</a>
+        <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
+        <a href={lp('/docs/quick-reference')} class="mobile-nav-link">{t('nav.docs.quickReference')}</a>
+        <a href={lp('/docs/verification')} class="mobile-nav-link">{t('nav.docs.verification')}</a>
+        <a href={lp('/docs/ide-setup')} class="mobile-nav-link">{t('nav.docs.ideSetup')}</a>
       </div>
 
       <div class="mobile-section mobile-top-links">
         <a href={lp('/trust')} class="mobile-nav-link">{t('nav.trust')}</a>
         <a href={lp('/benchmark')} class="mobile-nav-link">{t('nav.product.benchmark')}</a>
-        <a href={lp('/cloud')} class="mobile-nav-link">{t('nav.cloud')}</a>
         <a href={lp('/login')} class="mobile-nav-link">{t('nav.login')}</a>
       </div>
 
