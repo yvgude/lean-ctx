@@ -1,0 +1,54 @@
+<div class="bg-orbs" aria-hidden="true">
+  <div class="bg-orb bg-orb-green"></div>
+  <div class="bg-orb bg-orb-indigo"></div>
+</div>
+
+<style>
+  .bg-orbs {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    contain: paint;
+  }
+
+  .bg-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(120px);
+    will-change: transform;
+  }
+
+  .bg-orb-green {
+    width: 700px;
+    height: 700px;
+    top: -15%;
+    right: -10%;
+    background: radial-gradient(circle, rgba(52, 211, 153, 0.04), transparent 70%);
+    animation: orb-float-1 30s ease-in-out infinite;
+  }
+
+  .bg-orb-indigo {
+    width: 500px;
+    height: 500px;
+    bottom: 5%;
+    left: -10%;
+    background: radial-gradient(circle, rgba(129, 140, 248, 0.03), transparent 70%);
+    animation: orb-float-2 35s ease-in-out infinite;
+  }
+
+  @keyframes orb-float-1 {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(-20px, 30px); }
+  }
+
+  @keyframes orb-float-2 {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(30px, -20px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bg-orb { animation: none; }
+  }
+</style>

@@ -510,4 +510,18 @@ const sidebar = [
     Bandit parameters: <code>~/.lean-ctx/projects/&lt;hash&gt;/bandits.json</code>.<br/>
     ACON constraints: Stored within the feedback store at <code>~/.lean-ctx/feedback.json</code>.
   </p>
+
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_index">ctx_index <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
+  <p class="text-muted mb-4">
+    <code>ctx_index</code> orchestrates project indexing — builds the property graph, symbol map, and dependency index used by <code>ctx_graph</code>, <code>ctx_impact</code>, and <code>ctx_architecture</code>.
+  </p>
+  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+    <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>status</code> (default), <code>build</code>, <code>build-full</code></td></tr>
+    </tbody>
+  </table>
+
 </DocsLayout>

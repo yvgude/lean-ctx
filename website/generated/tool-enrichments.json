@@ -11,7 +11,9 @@
         "ctx_shell",
         "ctx_tree",
         "ctx_edit",
-        "ctx_delta"
+        "ctx_delta",
+        "ctx_call",
+        "ctx_provider"
       ]
     },
     "intelligence": {
@@ -34,7 +36,8 @@
         "ctx_overview",
         "ctx_prefetch",
         "ctx_analyze",
-        "ctx_expand"
+        "ctx_expand",
+        "ctx_index"
       ]
     },
     "memory": {
@@ -59,7 +62,9 @@
         "ctx_heatmap",
         "ctx_cache",
         "ctx_benchmark",
-        "ctx_wrapped"
+        "ctx_wrapped",
+        "ctx_artifacts",
+        "ctx_verify"
       ]
     },
     "workflow": {
@@ -69,7 +74,9 @@
         "ctx_workflow",
         "ctx_handoff",
         "ctx_execute",
-        "ctx_feedback"
+        "ctx_feedback",
+        "ctx_pack",
+        "ctx_proof"
       ]
     },
     "analysis": {

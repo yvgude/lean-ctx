@@ -145,4 +145,33 @@ ctx_handoff action="load"
       <tr><td><code>note</code></td><td>string</td><td>No</td><td>Free-form quality note</td></tr>
     </tbody>
   </table>
+
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_pack">ctx_pack <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
+  <p class="text-muted mb-4">
+    <code>ctx_pack</code> generates a PR Context Pack: changed files, related tests, impact summary, and relevant context artifacts — ideal for code reviews and handoffs.
+  </p>
+  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+    <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>pr</code> (default) — generate PR pack</td></tr>
+      <tr><td><code>output</code></td><td>string</td><td>No</td><td>Output directory (default: stdout)</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_proof">ctx_proof <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
+  <p class="text-muted mb-4">
+    <code>ctx_proof</code> exports a machine-readable <code>ContextProofV1</code> artifact containing verifier results, SLO evaluations, pipeline metrics, and provenance data.
+    Proofs are written to <code>.lean-ctx/proofs/</code>.
+  </p>
+  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+    <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>format</code></td><td>string</td><td>No</td><td><code>json</code> (default) or <code>html</code></td></tr>
+    </tbody>
+  </table>
+
 </DocsLayout>

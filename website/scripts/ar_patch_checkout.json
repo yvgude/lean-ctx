@@ -1,0 +1,21 @@
+{
+  "checkout": {
+    "title": "الدفع — LeanCTX Pro",
+    "description": "اشترك في LeanCTX Pro. 9$/شهر لضغط تكيفي يزداد ذكاءً مع الوقت.",
+    "heroLabel": "LeanCTX Pro",
+    "heroTitle": "ابدأ ترقيتك",
+    "heroPrice": "9$/شهر · ألغِ في أي وقت",
+    "adaptiveCompression": "ضغط تكيفي",
+    "cloudDashboard": "لوحة معلومات سحابية",
+    "crossMachineSync": "مزامنة عبر الأجهزة",
+    "included": "مشمول",
+    "emailLabel": "بريدك الإلكتروني",
+    "continueToPayment": "المتابعة للدفع",
+    "redirecting": "جارٍ التحويل...",
+    "finePrint": "سيتم تحويلك إلى Stripe للدفع الآمن. بعد الدفع، يتم ترقية محركك تلقائياً.",
+    "successTitle": "كل شيء جاهز!",
+    "successDesc": "محركك سيبدأ التعلم تلقائياً. بدون أوامر — فقط واصل البرمجة.",
+    "viewDashboard": "عرض لوحة المعلومات",
+    "emailError": "الرجاء إدخال عنوان بريد إلكتروني صالح."
+  }
+}

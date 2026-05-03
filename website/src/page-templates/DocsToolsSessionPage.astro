@@ -487,4 +487,32 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
     Deduplication:    35,760 tok (17%)`}</code></pre>
 
   <a href={lp('/docs/tools/ctx-gain')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
+
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_artifacts">ctx_artifacts <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
+  <p class="text-muted mb-4">
+    <code>ctx_artifacts</code> manages the context artifact registry with BM25 indexing. Artifacts include proofs, packs, and bundles generated during sessions.
+  </p>
+  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+    <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>Yes</td><td><code>list</code>, <code>status</code>, <code>index</code>, <code>reindex</code>, <code>search</code>, <code>remove</code></td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>No</td><td>Search query (for <code>action=search</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_verify">ctx_verify <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
+  <p class="text-muted mb-4">
+    <code>ctx_verify</code> returns a verification observability snapshot — versioned JSON or compact summary of verifier stats, warnings, and SLO compliance.
+  </p>
+  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+    <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>stats</code> (default) — returns versioned verification snapshot</td></tr>
+    </tbody>
+  </table>
+
 </DocsLayout>

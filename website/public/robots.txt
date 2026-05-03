@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /index-backup/
+Disallow: /checkout/
+Disallow: /admin/
+
+Sitemap: https://leanctx.com/sitemap-index.xml

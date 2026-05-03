@@ -1,0 +1,121 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docs.treeSitter.sidebarTitle'),
+    items: [
+      { label: t('docs.common.overview'), href: lp('/docs/tree-sitter') },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('nav.docs.toolApi'), href: lp('/docs/tools') },
+      { label: t('nav.docs.tokenGuide'), href: lp('/docs/token-guide') },
+      { label: t('nav.docs.quickReference'), href: lp('/docs/quick-reference') },
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
+      { label: t('nav.docs.analytics'), href: lp('/docs/analytics') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docs.treeSitter.title')} description={t('docs.treeSitter.description')} sidebar={sidebar}>
+  <p set:html={t('docs.treeSitter.intro')} />
+
+  <h2>{t('docs.treeSitter.whyTreeSitter')}</h2>
+  <table>
+    <thead>
+      <tr><th>{t('docs.treeSitter.thCapability')}</th><th>{t('docs.treeSitter.thRegex')}</th><th>{t('docs.treeSitter.thTreeSitter')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>{t('docs.treeSitter.capMultiLine')}</td><td>{t('docs.treeSitter.capMultiLineRegex')}</td><td>{t('docs.treeSitter.capMultiLineTs')}</td></tr>
+      <tr><td>{t('docs.treeSitter.capArrow')}</td><td>{t('docs.treeSitter.capArrowRegex')}</td><td>{t('docs.treeSitter.capArrowTs')}</td></tr>
+      <tr><td>{t('docs.treeSitter.capNested')}</td><td>{t('docs.treeSitter.capNestedRegex')}</td><td>{t('docs.treeSitter.capNestedTs')}</td></tr>
+      <tr><td>{t('docs.treeSitter.capDecorators')}</td><td>{t('docs.treeSitter.capDecoratorsRegex')}</td><td>{t('docs.treeSitter.capDecoratorsTs')}</td></tr>
+      <tr><td>{t('docs.treeSitter.capLanguages')}</td><td>4</td><td>18</td></tr>
+      <tr><td>{t('docs.treeSitter.capAccuracy')}</td><td>~85%</td><td>~99%</td></tr>
+    </tbody>
+  </table>
+
+  <h2>{t('docs.treeSitter.supportedLanguages')}</h2>
+  <p>{t('docs.treeSitter.supportedLanguagesDesc')}</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.treeSitter.thLanguage')}</th><th>{t('docs.treeSitter.thExtensions')}</th><th>{t('docs.treeSitter.thExtractedDefs')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>TypeScript</strong></td><td><code>.ts</code>, <code>.tsx</code></td><td>function, class, abstract class, interface, type alias, method, arrow function</td></tr>
+      <tr><td><strong>JavaScript</strong></td><td><code>.js</code>, <code>.jsx</code></td><td>function, class, method, arrow function</td></tr>
+      <tr><td><strong>Rust</strong></td><td><code>.rs</code></td><td>fn, struct, enum, trait, impl, type, const</td></tr>
+      <tr><td><strong>Python</strong></td><td><code>.py</code></td><td>def, class, async def</td></tr>
+      <tr><td><strong>Go</strong></td><td><code>.go</code></td><td>func, method, type (struct/interface)</td></tr>
+      <tr><td><strong>Java</strong></td><td><code>.java</code></td><td>class, interface, enum, method, constructor</td></tr>
+      <tr><td><strong>C</strong></td><td><code>.c</code>, <code>.h</code></td><td>function, struct, enum, typedef</td></tr>
+      <tr><td><strong>C++</strong></td><td><code>.cpp</code>, <code>.cc</code>, <code>.hpp</code></td><td>function, class, struct, enum, namespace</td></tr>
+      <tr><td><strong>Ruby</strong></td><td><code>.rb</code></td><td>class, module, method, singleton_method</td></tr>
+      <tr><td><strong>C#</strong></td><td><code>.cs</code></td><td>class, struct, interface, method, property, record</td></tr>
+      <tr><td><strong>Kotlin</strong></td><td><code>.kt</code>, <code>.kts</code></td><td>class, object, fun, property, interface</td></tr>
+      <tr><td><strong>Swift</strong></td><td><code>.swift</code></td><td>class, struct, enum, func, protocol, extension</td></tr>
+      <tr><td><strong>PHP</strong></td><td><code>.php</code></td><td>class, function, interface, trait, namespace</td></tr>
+      <tr><td><strong>Bash / Shell</strong></td><td><code>.sh</code>, <code>.bash</code></td><td>function</td></tr>
+      <tr><td><strong>Dart</strong></td><td><code>.dart</code></td><td>class, mixin, extension, function, method, enum</td></tr>
+      <tr><td><strong>Scala</strong></td><td><code>.scala</code>, <code>.sc</code></td><td>class, object, trait, def, val</td></tr>
+      <tr><td><strong>Elixir</strong></td><td><code>.ex</code>, <code>.exs</code></td><td>defmodule, def, defp, defmacro</td></tr>
+      <tr><td><strong>Zig</strong></td><td><code>.zig</code></td><td>fn, struct, enum, union</td></tr>
+    </tbody>
+  </table>
+  <p set:html={t('docs.treeSitter.fallbackDesc')} />
+
+  <h2>{t('docs.treeSitter.howItWorksTitle')}</h2>
+  <p set:html={t('docs.treeSitter.howItWorksDesc')} />
+  <ol>
+    <li>{t('docs.treeSitter.howStep1')}</li>
+    <li>{t('docs.treeSitter.howStep2')}</li>
+    <li>{t('docs.treeSitter.howStep3')}</li>
+    <li set:html={t('docs.treeSitter.howStep4')} />
+    <li>{t('docs.treeSitter.howStep5')}</li>
+  </ol>
+
+  <h2>{t('docs.treeSitter.exampleRust')}</h2>
+  <p>{t('docs.treeSitter.exampleRustDesc')}</p>
+  <pre><code>{`// Source (Rust)
+pub fn complex_function<T: Display + Debug>(
+    first_arg: &str,
+    second_arg: Vec<T>,
+    third_arg: Option<HashMap<String, Vec<u8>>>,
+) -> Result<(), Box<dyn Error>> {
+    Ok(())
+}
+
+// signatures mode output:
+fn ⊛ complex_function(first_arg:&str, second_arg:Vec<T>, third_arg:Option<HashMap<String, Vec<u8>>>) → Result<(), Box<dyn Error>>`}</code></pre>
+
+  <h2>{t('docs.treeSitter.exampleArrow')}</h2>
+  <pre><code>{`// Source (TypeScript)
+export const fetchData = async (url: string): Promise<Response> => {
+    return fetch(url);
+};
+
+// signatures mode output:
+fn ⊛ fetchData(url:s) → Promise<Response>`}</code></pre>
+
+  <h2>{t('docs.treeSitter.binarySize')}</h2>
+  <p set:html={t('docs.treeSitter.binarySizeDesc')} />
+  <pre><code>{`# Build from source without tree-sitter (regex-only, 4 languages)
+cargo install lean-ctx --no-default-features`}</code></pre>
+  <p set:html={t('docs.treeSitter.binarySizeNote')} />
+
+  <h2>{t('docs.common.seeAlso')}</h2>
+  <ul>
+    <li><a href={lp('/docs/tools')}>{t('docs.treeSitter.seeAlsoRead')}</a></li>
+    <li><a href={lp('/docs/tdd')}>{t('docs.treeSitter.seeAlsoTdd')}</a></li>
+    <li><a href={lp('/docs/tools') + '#ctx_benchmark'}>{t('docs.treeSitter.seeAlsoBenchmark')}</a></li>
+  </ul>
+</DocsLayout>

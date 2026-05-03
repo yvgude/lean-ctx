@@ -1,0 +1,280 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docs.analytics.sidebarTitle'),
+    items: [
+      { label: t('docs.analytics.sidebarOverview'), href: lp('/docs/analytics') },
+      { label: t('docs.analytics.sidebarTerminal'), href: lp('/docs/analytics#terminal-dashboard') },
+      { label: t('docs.analytics.sidebarLive'), href: lp('/docs/analytics#live-mode') },
+      { label: t('docs.analytics.sidebarCharts'), href: lp('/docs/analytics#charts') },
+      { label: t('docs.analytics.sidebarWeb'), href: lp('/docs/analytics#web-dashboard') },
+      { label: t('docs.analytics.sidebarWrapped'), href: lp('/docs/analytics#wrapped') },
+      { label: t('docs.analytics.sidebarCep'), href: lp('/docs/analytics#cep-report') },
+      { label: t('docs.analytics.sidebarBenchmark'), href: lp('/docs/analytics#benchmarking') },
+      { label: t('docs.analytics.sidebarJson'), href: lp('/docs/analytics#json-export') },
+      { label: t('docs.analytics.sidebarUsd'), href: lp('/docs/analytics#usd-calculation') },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
+      { label: t('nav.docs.quickReference'), href: lp('/docs/quick-reference') },
+      { label: t('nav.docs.configuration'), href: lp('/docs/configuration') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docs.analytics.title')} description={t('docs.analytics.description')} sidebar={sidebar}>
+
+  <p><Fragment set:html={t('docs.analytics.intro')} /></p>
+
+  <p><Fragment set:html={t('docs.analytics.dataStored')} /></p>
+
+  <hr />
+
+  <h2 id="terminal-dashboard" set:html={`${t('docs.analytics.terminalTitle')} — <code>lean-ctx gain</code>`} />
+
+  <p><Fragment set:html={t('docs.analytics.terminalDesc')} /></p>
+
+  <pre><code>$ lean-ctx gain
+
+  ◆ lean-ctx  Token Savings Dashboard
+  ────────────────────────────────────────────────────────
+
+   7.8M          67.8%          3,994        $43.14
+   tokens saved  compression    commands     USD saved
+
+  Top Commands
+  ──────────────
+  curl     328x  ████████████████████  3.2M saved
+  git      412x  ██████████████        1.8M saved
+  cargo    156x  ██████████            1.1M saved
+  npm       89x  ████                  420K saved
+
+  30-day sparkline: ▁▃▅▇██▇▅█▇▃▁▅▇██▇▅█▇▃▁▅▇██▇▅█▇▃▁▅▇██▇▅█▇▃▁</code></pre>
+
+  <h3>{t('docs.analytics.whatNumbersMean')}</h3>
+
+  <table>
+    <thead><tr><th>{t('docs.analytics.thMetric')}</th><th>{t('docs.analytics.thMeaning')}</th></tr></thead>
+    <tbody>
+      <tr><td><strong>tokens saved</strong></td><td><Fragment set:html={t('docs.analytics.metricTokensSaved')} /></td></tr>
+      <tr><td><strong>compression</strong></td><td><Fragment set:html={t('docs.analytics.metricCompressionRate')} /></td></tr>
+      <tr><td><strong>commands</strong></td><td><Fragment set:html={t('docs.analytics.metricCommands')} /></td></tr>
+      <tr><td><strong>USD saved</strong></td><td><Fragment set:html={t('docs.analytics.metricUsd')} /></td></tr>
+      <tr><td><strong>Top Commands</strong></td><td><Fragment set:html={t('docs.analytics.metricTopCommands')} /></td></tr>
+      <tr><td><strong>30-day sparkline</strong></td><td><Fragment set:html={t('docs.analytics.metricSparkline')} /></td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="live-mode" set:html={`${t('docs.analytics.liveTitle')} — <code>lean-ctx gain --live</code>`} />
+
+  <p><Fragment set:html={t('docs.analytics.liveDesc')} /></p>
+
+  <pre><code>$ lean-ctx gain --live
+
+  ◆ lean-ctx  LIVE  refreshing every 2s
+  ────────────────────────────────────────────────────────
+
+   7.8M          67.8%          3,994        $43.14
+   tokens saved  compression    commands     USD saved
+
+  Session: 42 cmds | 89.2K saved | 94.1% rate ▁▃█▇██▁█
+
+  Press q to quit</code></pre>
+
+  <p><Fragment set:html={t('docs.analytics.liveWhen')} /></p>
+
+  <hr />
+
+  <h2 id="charts">{t('docs.analytics.chartsTitle')}</h2>
+
+  <h3><code>lean-ctx gain --graph</code></h3>
+
+  <p><Fragment set:html={t('docs.analytics.chartsGraphDesc')} /></p>
+
+  <pre><code>$ lean-ctx gain --graph
+
+  Token Savings (30 days)
+  ──────────────────────────────
+
+  03-20 │ ██████████████████████ 1.0M
+  03-21 │ ███████████████       690K
+  03-22 │ ████████████████████████ 1.1M
+  03-23 │ █                       9.4K
+  03-24 │ ██████████████████████ 1.7M</code></pre>
+
+  <h3><code>lean-ctx gain --daily</code></h3>
+
+  <p><Fragment set:html={t('docs.analytics.chartsDailyDesc')} /></p>
+
+  <pre><code>$ lean-ctx gain --daily
+
+  ┌────────────┬──────────┬───────┬──────┬────────┐
+  │ Date       │ Saved    │ Rate  │ Cmds │ USD    │
+  ├────────────┼──────────┼───────┼──────┼────────┤
+  │ 2026-03-28 │ 1.7M     │ 72.4% │ 412  │ $4.25  │
+  │ 2026-03-27 │ 1.1M     │ 68.9% │ 289  │ $2.75  │
+  │ 2026-03-26 │ 690K     │ 71.2% │ 187  │ $1.73  │
+  └────────────┴──────────┴───────┴──────┴────────┘</code></pre>
+
+  <hr />
+
+  <h2 id="web-dashboard" set:html={`${t('docs.analytics.webTitle')} — <code>lean-ctx dashboard</code>`} />
+
+  <p><Fragment set:html={t('docs.analytics.webDesc')} /></p>
+
+  <pre><code>lean-ctx dashboard              # default port 3333
+lean-ctx dashboard --port=8080  # custom port</code></pre>
+
+  <h3>{t('docs.analytics.webPanelsTitle')}</h3>
+
+  <table>
+    <thead><tr><th>{t('docs.analytics.thPanel')}</th><th>{t('docs.analytics.thContent')}</th></tr></thead>
+    <tbody>
+      <tr><td><strong>{t('docs.analytics.panelStatsOverview')}</strong></td><td><Fragment set:html={t('docs.analytics.statsOverviewContent')} /></td></tr>
+      <tr><td><strong>{t('docs.analytics.panelMcpActivity')}</strong></td><td><Fragment set:html={t('docs.analytics.mcpActivityContent')} /></td></tr>
+      <tr><td><strong>{t('docs.analytics.panelActiveAgents')}</strong></td><td><Fragment set:html={t('docs.analytics.activeAgentsContent')} /></td></tr>
+      <tr><td><strong>{t('docs.analytics.panelProjectKnowledge')}</strong></td><td><Fragment set:html={t('docs.analytics.projectKnowledgeContent')} /></td></tr>
+    </tbody>
+  </table>
+
+  <h3>{t('docs.analytics.apiTitle')}</h3>
+
+  <p><Fragment set:html={t('docs.analytics.apiDesc')} /></p>
+
+  <table>
+    <thead><tr><th>{t('docs.analytics.thEndpoint')}</th><th>{t('docs.analytics.thData')}</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/stats</code></td><td><Fragment set:html={t('docs.analytics.statsEndpointData')} /></td></tr>
+      <tr><td><code>GET /api/mcp</code></td><td><Fragment set:html={t('docs.analytics.mcpEndpointData')} /></td></tr>
+      <tr><td><code>GET /api/agents</code></td><td><Fragment set:html={t('docs.analytics.agentsEndpointData')} /></td></tr>
+      <tr><td><code>GET /api/knowledge</code></td><td><Fragment set:html={t('docs.analytics.knowledgeEndpointData')} /></td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="wrapped" set:html={`${t('docs.analytics.wrappedTitle')} — <code>lean-ctx wrapped</code>`} />
+
+  <p><Fragment set:html={t('docs.analytics.wrappedDesc')} /></p>
+
+  <pre><code>lean-ctx wrapped           # current week
+lean-ctx wrapped --week    # current week (explicit)
+lean-ctx wrapped --month   # current month
+lean-ctx wrapped --all     # lifetime stats</code></pre>
+
+  <h3>{t('docs.analytics.wrappedExample')}</h3>
+
+  <pre><code>$ lean-ctx wrapped --month
+
+  ◆ Your March 2026 Wrapped
+  ────────────────────────────────
+
+  4.9M tokens saved
+  3,241 commands compressed
+  $12.16 USD saved
+
+  Top pattern: curl (97% compression)
+  You're in the top 5% of lean-ctx users
+
+  Best day: March 24 — 1.7M tokens saved
+  Most used mode: map (42% of reads)</code></pre>
+
+  <hr />
+
+  <h2 id="cep-report" set:html={`${t('docs.analytics.cepTitle')} — <code>lean-ctx cep</code>`} />
+
+  <p><Fragment set:html={t('docs.analytics.cepDesc')} /></p>
+
+  <pre><code>$ lean-ctx cep
+
+  CEP Impact Report
+  ────────────────────────────────
+
+  Score trend:  ▁▃▅▇██▇█  (improving)
+  Cache hits:   94.2% (re-reads served from cache)
+  Mode distribution:
+    full:        42%  ████████████████
+    map:         31%  ████████████
+    signatures:  18%  ███████
+    diff:         9%  ███</code></pre>
+
+  <hr />
+
+  <h2 id="benchmarking">{t('docs.analytics.benchmarkTitle')}</h2>
+
+  <p><Fragment set:html={t('docs.analytics.benchmarkDesc')} /></p>
+
+  <h3><code>lean-ctx benchmark run [path] [--json]</code></h3>
+
+  <pre><code>$ lean-ctx benchmark run src/
+
+  Benchmarking 42 files...
+
+  src/auth.ts (123 lines)
+    full:       3,517 tokens
+    map:          412 tokens (88% saved)
+    signatures:   252 tokens (93% saved)
+    entropy:      312 tokens (91% saved)
+
+  src/server.ts (456 lines)
+    full:       8,234 tokens
+    map:          891 tokens (89% saved)
+    signatures:   534 tokens (94% saved)
+
+  ── Summary ──────────────────────
+  42 files | 89,412 total tokens
+  Average savings: map 87% | signatures 92% | entropy 85%</code></pre>
+
+  <h3><code>lean-ctx benchmark report [path]</code></h3>
+
+  <p><Fragment set:html={t('docs.analytics.benchmarkReportDesc')} /></p>
+
+  <pre><code>lean-ctx benchmark report src/ &gt; BENCHMARK.md</code></pre>
+
+  <p><Fragment set:html={t('docs.analytics.benchmarkReportNote')} /></p>
+
+  <hr />
+
+  <h2 id="json-export" set:html={`${t('docs.analytics.jsonTitle')} — <code>lean-ctx gain --json</code>`} />
+
+  <p><Fragment set:html={t('docs.analytics.jsonDesc')} /></p>
+
+  <pre><code>lean-ctx gain --json &gt; stats.json</code></pre>
+
+  <p><Fragment set:html={t('docs.analytics.jsonIncludes')} /></p>
+  <ul>
+    <li><Fragment set:html={t('docs.analytics.jsonItem1')} /></li>
+    <li><Fragment set:html={t('docs.analytics.jsonItem2')} /></li>
+    <li><Fragment set:html={t('docs.analytics.jsonItem3')} /></li>
+    <li><Fragment set:html={t('docs.analytics.jsonItem4')} /></li>
+  </ul>
+
+  <p><Fragment set:html={t('docs.analytics.jsonCiExample')} /></p>
+  <pre><code>SAVED=$(lean-ctx gain --json | jq '.total_saved')
+echo "lean-ctx saved $SAVED tokens this session"</code></pre>
+
+  <hr />
+
+  <h2 id="usd-calculation">{t('docs.analytics.usdTitle')}</h2>
+
+  <p><Fragment set:html={t('docs.analytics.usdDesc')} /></p>
+
+  <p><Fragment set:html={t('docs.analytics.usdFormula')} /></p>
+  <pre><code>USD saved = (tokens saved / 1,000,000) × $2.50</code></pre>
+
+  <p><Fragment set:html={t('docs.analytics.usdConservative')} /></p>
+
+</DocsLayout>

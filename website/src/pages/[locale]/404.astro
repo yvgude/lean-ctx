@@ -1,0 +1,6 @@
+---
+import NotFoundPage from '../../page-templates/NotFoundPage.astro';
+import { getLocaleStaticPaths } from '../../i18n/routing.ts';
+export const getStaticPaths = getLocaleStaticPaths;
+---
+<NotFoundPage />

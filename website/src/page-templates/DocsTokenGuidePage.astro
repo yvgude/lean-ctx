@@ -1,0 +1,93 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docs.tokenGuide.sidebarTitle'),
+    items: [
+      { label: t('docs.common.overview'), href: lp('/docs/token-guide') },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('nav.product.benchmark'), href: lp('/benchmark') },
+      { label: t('nav.docs.toolApi'), href: lp('/docs/tools') },
+      { label: t('nav.docs.treeSitter'), href: lp('/docs/tree-sitter') },
+      { label: t('nav.docs.configuration'), href: lp('/docs/configuration') },
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
+      { label: t('nav.docs.analytics'), href: lp('/docs/analytics') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docs.tokenGuide.title')} description={t('docs.tokenGuide.description')} sidebar={sidebar}>
+  <p>{t('docs.tokenGuide.intro')}</p>
+
+  <h2>{t('docs.tokenGuide.whereTokensGo')}</h2>
+  <p>{t('docs.tokenGuide.whereTokensGoDesc')}</p>
+
+  <table>
+    <thead>
+      <tr><th>{t('docs.tokenGuide.thCategory')}</th><th>{t('docs.tokenGuide.thPercentTotal')}</th><th>{t('docs.tokenGuide.thControllable')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>{t('docs.tokenGuide.rowThinking')}</strong></td><td>60-80%</td><td>{t('docs.tokenGuide.rowThinkingControl')}</td></tr>
+      <tr><td>{t('docs.tokenGuide.rowHistory')}</td><td>10-15%</td><td>{t('docs.tokenGuide.rowHistoryControl')}</td></tr>
+      <tr><td>{t('docs.tokenGuide.rowSystemPrompt')}</td><td>3-5%</td><td>{t('docs.tokenGuide.rowSystemPromptControl')}</td></tr>
+      <tr><td>{t('docs.tokenGuide.rowOpenFiles')}</td><td>2-5%</td><td>{t('docs.tokenGuide.rowOpenFilesControl')}</td></tr>
+      <tr><td>{t('docs.tokenGuide.rowSubagents')}</td><td>5-15%</td><td>{t('docs.tokenGuide.rowSubagentsControl')}</td></tr>
+      <tr><td>{t('docs.tokenGuide.rowToolOutputs')}</td><td>3-5%</td><td>{t('docs.tokenGuide.rowToolOutputsControl')}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>{t('docs.tokenGuide.chooseModel')}</h2>
+  <p>{t('docs.tokenGuide.chooseModelDesc')}</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.tokenGuide.thModel')}</th><th>{t('docs.tokenGuide.thCostFactor')}</th><th>{t('docs.tokenGuide.thThinkingTokens')}</th><th>{t('docs.tokenGuide.thWhenToUse')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>composer-2-fast</td><td>1x</td><td>Minimal</td><td>{t('docs.tokenGuide.modelFastUse')}</td></tr>
+      <tr><td>claude-4.5-sonnet</td><td>3x</td><td>None</td><td>{t('docs.tokenGuide.modelSonnetUse')}</td></tr>
+      <tr><td>claude-4.6-opus-high-thinking</td><td>10-20x</td><td>100K-1M+</td><td>{t('docs.tokenGuide.modelOpusUse')}</td></tr>
+    </tbody>
+  </table>
+  <p set:html={t('docs.tokenGuide.chooseModelRule')} />
+
+  <h2>{t('docs.tokenGuide.closeFiles')}</h2>
+  <p>{t('docs.tokenGuide.closeFilesDesc')}</p>
+  <p set:html={t('docs.tokenGuide.closeFilesAction')} />
+  <ul>
+    <li>{t('docs.tokenGuide.closeFilesItem1')}</li>
+    <li>{t('docs.tokenGuide.closeFilesItem2')}</li>
+    <li>{t('docs.tokenGuide.closeFilesItem3')}</li>
+  </ul>
+
+  <h2>{t('docs.tokenGuide.freshChats')}</h2>
+  <p>{t('docs.tokenGuide.freshChatsDesc')}</p>
+  <p set:html={t('docs.tokenGuide.freshChatsAction')} />
+
+  <h2>{t('docs.tokenGuide.minimizeSubagents')}</h2>
+  <p>{t('docs.tokenGuide.minimizeSubagentsDesc')}</p>
+  <p set:html={t('docs.tokenGuide.minimizeSubagentsAction')} />
+
+  <h2>{t('docs.tokenGuide.optimizeRules')}</h2>
+  <p>{t('docs.tokenGuide.optimizeRulesDesc')}</p>
+
+  <h2>{t('docs.tokenGuide.useLeanCtx')}</h2>
+  <p>{t('docs.tokenGuide.useLeanCtxDesc')}</p>
+
+  <h2>{t('docs.common.seeAlso')}</h2>
+  <ul>
+    <li><a href={lp('/docs/tools') + '#ctx_benchmark'}>{t('docs.tokenGuide.seeAlsoBenchmark')}</a></li>
+    <li><a href={lp('/docs/tools') + '#ctx_metrics'}>{t('docs.tokenGuide.seeAlsoMetrics')}</a></li>
+    <li><a href={lp('/docs/cli-reference') + '#dashboard'}>{t('docs.tokenGuide.seeAlsoDashboard')}</a></li>
+  </ul>
+</DocsLayout>
