@@ -58,7 +58,7 @@ const pillarTools = pillar.tools
 
   <!-- Tools in this pillar -->
   <section class="pillar-tools content-grid">
-    <SectionHeading title={`${pillarTools.length} Tools`} />
+    <SectionHeading title={`${pillarTools.length} ${t('contextOs.toolsLabel')}`} />
     <div class="pillar-tools-grid">
       {pillarTools.map(tool => tool && (
         <a href={lp(`/docs/tools/${toolNameToSlug(tool.name)}`)} class="pillar-tool-card">

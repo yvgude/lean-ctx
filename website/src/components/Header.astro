@@ -100,7 +100,7 @@ const docsColumns = [
         <MegaDropdown id="context-os" label={t('nav.contextOs')} columns={contextOsColumns} />
         <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
         <a href={lp('/docs/tools')} class:list={['header-nav-item', currentPath.includes('/tools') ? 'is-active' : '']}>
-          Tools
+          {t('nav.tools')}
         </a>
         <a href={lp('/trust')} class:list={['header-nav-item', currentPath.includes('/trust') ? 'is-active' : '']}>
           {t('nav.trust')}

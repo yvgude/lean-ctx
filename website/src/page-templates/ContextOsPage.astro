@@ -45,7 +45,7 @@ const manifest = getMcpManifest();
           <span class="cos-pillar-icon" set:html={p.icon} />
           <h3 class="cos-pillar-name">{t(p.titleKey)}</h3>
           <p class="cos-pillar-desc">{t(p.navDescKey)}</p>
-          <span class="cos-pillar-tools">{p.tools.length} tools</span>
+          <span class="cos-pillar-tools">{p.tools.length} {t('contextOs.toolsLabel')}</span>
         </a>
       ))}
     </div>
@@ -57,17 +57,17 @@ const manifest = getMcpManifest();
       <h2 class="cos-how-title">{t('contextOs.howItWorks')}</h2>
       <p class="cos-how-desc">{t('contextOs.howItWorksDesc')}</p>
       <div class="cos-pipeline">
-        <div class="cos-pipeline-step">Input</div>
+        <div class="cos-pipeline-step">{t('contextOs.pipeInput')}</div>
         <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">Intent</div>
+        <div class="cos-pipeline-step">{t('contextOs.pipeIntent')}</div>
         <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">Relevance</div>
+        <div class="cos-pipeline-step">{t('contextOs.pipeRelevance')}</div>
         <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">Compress</div>
+        <div class="cos-pipeline-step">{t('contextOs.pipeCompress')}</div>
         <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">Verify</div>
+        <div class="cos-pipeline-step">{t('contextOs.pipeVerify')}</div>
         <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">Deliver</div>
+        <div class="cos-pipeline-step">{t('contextOs.pipeDeliver')}</div>
       </div>
     </div>
   </section>
@@ -77,19 +77,19 @@ const manifest = getMcpManifest();
     <div class="cos-stats-grid">
       <div class="cos-stat">
         <span class="cos-stat-num">{manifest.counts.granular}</span>
-        <span class="cos-stat-label">MCP Tools</span>
+        <span class="cos-stat-label">{t('contextOs.statMcpTools')}</span>
       </div>
       <div class="cos-stat">
         <span class="cos-stat-num">90+</span>
-        <span class="cos-stat-label">Shell Patterns</span>
+        <span class="cos-stat-label">{t('contextOs.statShellPatterns')}</span>
       </div>
       <div class="cos-stat">
         <span class="cos-stat-num">24+</span>
-        <span class="cos-stat-label">Integrations</span>
+        <span class="cos-stat-label">{t('contextOs.statIntegrations')}</span>
       </div>
       <div class="cos-stat">
         <span class="cos-stat-num">99%</span>
-        <span class="cos-stat-label">Token Savings</span>
+        <span class="cos-stat-label">{t('contextOs.statTokenSavings')}</span>
       </div>
     </div>
   </section>

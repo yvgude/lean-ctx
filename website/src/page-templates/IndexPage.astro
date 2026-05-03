@@ -93,7 +93,7 @@ const tShell = pickTool('ctx_shell', 2);
           </div>
           <div class="terminal-body font-mono" style="padding: clamp(0.75rem, 0.625rem + 0.4vw, 1.25rem); font-size: clamp(0.6rem, 0.55rem + 0.12vw, 0.8125rem); line-height: 1.75;">
             <div class="hero-term-line" data-term-line="0">
-              <span class="text-muted">$</span> <span class="text-accent">{tRead}</span>(<span class="text-text-bright">{{ path: "src/lib/mcpManifest.ts", mode: "map" }}</span>)
+              <span class="text-muted">$</span> <span class="text-accent">{tRead}</span>(<span class="text-text-bright">{`{ path: "src/lib/mcpManifest.ts", mode: "map" }`}</span>)
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="1">
               <span class="text-muted">→</span> <span class="text-text">exports: getMcpManifest(), getGranularTools()</span>
@@ -106,7 +106,7 @@ const tShell = pickTool('ctx_shell', 2);
             </div>
             <div class="hero-term-spacer" data-term-line="4"></div>
             <div class="hero-term-line" data-term-line="5">
-              <span class="text-muted">$</span> <span class="text-accent">{tSearch}</span>(<span class="text-text-bright">{{ pattern: "getMcpManifest", path: "src" }}</span>)
+              <span class="text-muted">$</span> <span class="text-accent">{tSearch}</span>(<span class="text-text-bright">{`{ pattern: "getMcpManifest", path: "src" }`}</span>)
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="6">
               <span class="text-muted">→</span> <span class="text-text">2 matches in <span class="text-accent">0.8ms</span></span>
@@ -116,7 +116,7 @@ const tShell = pickTool('ctx_shell', 2);
             </div>
             <div class="hero-term-spacer" data-term-line="8"></div>
             <div class="hero-term-line" data-term-line="9">
-              <span class="text-muted">$</span> <span class="text-accent">{tShell}</span>(<span class="text-text-bright">{{ command: "npx astro build" }}</span>)
+              <span class="text-muted">$</span> <span class="text-accent">{tShell}</span>(<span class="text-text-bright">{`{ command: "npx astro build" }`}</span>)
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="10">
               <span class="text-muted">→</span> <span class="text-text">1294 pages built in <span class="text-accent">3.6s</span></span>
