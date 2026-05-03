@@ -125,7 +125,7 @@
     },
     "ctx_shell": {
       "when_to_use": "Running any shell command with automatic output compression. Replaces native terminal tools.",
-      "when_not_to_use": "For long-running processes (dev servers) — those should be run natively. Also skip for simple file reads (use ctx_read).",
+      "when_not_to_use": "For long-running processes (dev servers) - those should be run natively. Also skip for simple file reads (use ctx_read).",
       "related": [
         "ctx_execute",
         "ctx_search",
@@ -193,7 +193,7 @@
     },
     "ctx_gain": {
       "when_to_use": "Checking how many tokens lean-ctx saved in the current session. Useful for reporting and optimization.",
-      "when_not_to_use": "During active development — checking gain too often wastes tokens itself.",
+      "when_not_to_use": "During active development - checking gain too often wastes tokens itself.",
       "related": [
         "ctx_metrics",
         "ctx_benchmark",
@@ -203,7 +203,7 @@
       "cli_equivalent": "lean-ctx gain [--score] [--cost] [--daily] [--wrapped]"
     },
     "ctx_preload": {
-      "when_to_use": "At session start — give it your task description and it auto-loads relevant files into cache.",
+      "when_to_use": "At session start - give it your task description and it auto-loads relevant files into cache.",
       "when_not_to_use": "When you already know exactly which files to read (use ctx_read directly).",
       "related": [
         "ctx_overview",
@@ -214,7 +214,7 @@
       "cli_equivalent": null
     },
     "ctx_overview": {
-      "when_to_use": "First call in a new session — gives project structure, key files, and entry points in one call.",
+      "when_to_use": "First call in a new session - gives project structure, key files, and entry points in one call.",
       "when_not_to_use": "When you already have context from a previous session (use ctx_session load instead).",
       "related": [
         "ctx_preload",
@@ -225,7 +225,7 @@
       "cli_equivalent": null
     },
     "ctx_workflow": {
-      "when_to_use": "Managing multi-step workflows with state machines — enforces step ordering and evidence collection.",
+      "when_to_use": "Managing multi-step workflows with state machines - enforces step ordering and evidence collection.",
       "when_not_to_use": "Simple tasks without multiple stages. Overhead isn't worth it for quick fixes.",
       "related": [
         "ctx_task",
@@ -246,7 +246,7 @@
       "cli_equivalent": null
     },
     "ctx_knowledge": {
-      "when_to_use": "Storing and recalling project-specific knowledge — patterns, gotchas, conventions that persist across sessions.",
+      "when_to_use": "Storing and recalling project-specific knowledge - patterns, gotchas, conventions that persist across sessions.",
       "when_not_to_use": "For temporary findings (use ctx_session finding instead).",
       "related": [
         "ctx_session",

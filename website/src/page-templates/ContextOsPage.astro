@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { pillars } from '../lib/contextOsPillars';
@@ -9,365 +10,240 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
+
+const pipelineSteps = [
+  { n: '01', tone: 'accent',   label: t('contextOs.pipeInput') },
+  { n: '02', tone: 'accent-2', label: t('contextOs.pipeIntent') },
+  { n: '03', tone: 'accent',   label: t('contextOs.pipeRelevance') },
+  { n: '04', tone: 'accent-3', label: t('contextOs.pipeCompress') },
+  { n: '05', tone: 'accent-2', label: t('contextOs.pipeVerify') },
+  { n: '06', tone: 'accent',   label: t('contextOs.pipeDeliver') },
+];
+
+const stats = [
+  { value: String(manifest.counts.granular), label: t('contextOs.statMcpTools'),      tone: 'accent' },
+  { value: '90+',                            label: t('contextOs.statShellPatterns'),  tone: 'accent-2' },
+  { value: '24+',                            label: t('contextOs.statIntegrations'),   tone: 'accent-3' },
+  { value: '99%',                            label: t('contextOs.statTokenSavings'),   tone: 'accent' },
+];
 ---
 
-<BaseLayout title={t('contextOs.headline') + ' — LeanCTX'} description={t('contextOs.subline')}>
-  <!-- Hero -->
-  <section class="cos-hero content-grid">
-    <div class="cos-hero-inner">
-      <span class="cos-hero-label">Context OS</span>
-      <h1 class="cos-hero-title">{t('contextOs.headline')}</h1>
-      <p class="cos-hero-sub">{t('contextOs.subline')}</p>
-    </div>
-  </section>
+<BaseLayout
+  title={t('contextOs.headline') + ' | LeanCTX'}
+  description={t('contextOs.subline')}
+  breadcrumbs={[
+    { name: t('common.home'), url: lp('/') },
+    { name: 'Context OS', url: lp('/context-os/') },
+  ]}
+>
 
-  <!-- What is a Context OS -->
-  <section class="cos-what content-grid">
-    <div class="cos-what-inner">
-      <h2 class="cos-what-title">{t('contextOs.whatIs')}</h2>
-      <p class="cos-what-desc">{t('contextOs.whatIsDesc')}</p>
-      <div class="cos-diagram">
-        <div class="cos-diagram-node cos-diagram-agent">{t('contextOs.diagramAgent')}</div>
-        <div class="cos-diagram-arrow">→</div>
-        <div class="cos-diagram-node cos-diagram-leanctx">{t('contextOs.diagramLeanctx')}</div>
-        <div class="cos-diagram-arrow">→</div>
-        <div class="cos-diagram-node cos-diagram-repo">{t('contextOs.diagramRepo')}</div>
+<!-- 1. HERO -->
+<PageHero
+  label="Context OS"
+  title="The Context OS for"
+  highlight="AI Development"
+  descriptionHtml={t('contextOs.subline')}
+  kickerTone="accent"
+  titleVariant="display"
+  highlightStyle="italic"
+  descMaxWidth="44rem"
+>
+  <Fragment slot="actions">
+    <a
+      href={lp('/docs/getting-started')}
+      class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg"
+      style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
+    >
+      {t('nav.getStarted')}
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+    </a>
+    <a
+      href={lp('/benchmark')}
+      class="btn-outline inline-flex items-center gap-2 font-medium rounded-lg text-text"
+      style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
+    >
+      {t('nav.product.benchmark')}
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+    </a>
+  </Fragment>
+</PageHero>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 2. WHAT IS A CONTEXT OS -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="Context OS"
+      title={t('contextOs.whatIs')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="56rem"
+    />
+
+    <p class="fluid-body text-muted animate-entrance stagger-3" style="max-width: 56rem; margin: 0 auto clamp(2rem, 1.5rem + 1vw, 3rem);">
+      {t('contextOs.whatIsDesc')}
+    </p>
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-4" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); max-width: 44rem; margin: 0 auto;">
+      <div class="card" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-align: center;">
+        <span class="font-display font-semibold text-text-bright fluid-sm">{t('contextOs.diagramAgent')}</span>
+      </div>
+      <div class="card" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-align: center; border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));">
+        <span class="font-display font-semibold text-accent fluid-sm">{t('contextOs.diagramLeanctx')}</span>
+      </div>
+      <div class="card" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-align: center;">
+        <span class="font-display font-semibold text-text-bright fluid-sm">{t('contextOs.diagramRepo')}</span>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- 6 Pillars Grid -->
-  <section class="cos-pillars content-grid">
-    <SectionHeading title={t('index.sixPillarsTitle')} subtitle={t('index.sixPillarsSubline')} />
-    <div class="cos-pillars-grid">
-      {pillars.map(p => (
-        <a href={lp(`/context-os/${p.slug}`)} class="cos-pillar-card">
-          <span class="cos-pillar-icon" set:html={p.icon} />
-          <h3 class="cos-pillar-name">{t(p.titleKey)}</h3>
-          <p class="cos-pillar-desc">{t(p.navDescKey)}</p>
-          <span class="cos-pillar-tools">{p.tools.length} {t('contextOs.toolsLabel')}</span>
+<div class="section-divider content-grid"></div>
+
+<!-- 3. SIX PILLARS -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="Pillars"
+      title={t('index.sixPillarsTitle')}
+      description={t('index.sixPillarsSubline')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+    />
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {pillars.map((p, i) => (
+        <a
+          href={lp(`/context-os/${p.slug}`)}
+          class={`card group animate-entrance stagger-${1 + i}`}
+          style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;"
+        >
+          <div class="flex items-center gap-3" style="margin-bottom: 0.75rem;">
+            <div
+              class="w-9 h-9 rounded-lg flex items-center justify-center bg-accent/10"
+              style="border: 1px solid var(--color-border);"
+            >
+              <span class="text-accent" set:html={p.icon} />
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">
+              {t(p.titleKey)}
+            </h3>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.75rem 0;">
+            {t(p.navDescKey)}
+          </p>
+          <span class="inline-flex items-center gap-2 text-accent font-medium fluid-label">
+            {p.tools.length} {t('contextOs.toolsLabel')}
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </span>
         </a>
       ))}
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- How it works -->
-  <section class="cos-how content-grid">
-    <div class="cos-how-inner">
-      <h2 class="cos-how-title">{t('contextOs.howItWorks')}</h2>
-      <p class="cos-how-desc">{t('contextOs.howItWorksDesc')}</p>
-      <div class="cos-pipeline">
-        <div class="cos-pipeline-step">{t('contextOs.pipeInput')}</div>
-        <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">{t('contextOs.pipeIntent')}</div>
-        <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">{t('contextOs.pipeRelevance')}</div>
-        <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">{t('contextOs.pipeCompress')}</div>
-        <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">{t('contextOs.pipeVerify')}</div>
-        <div class="cos-pipeline-arrow">→</div>
-        <div class="cos-pipeline-step">{t('contextOs.pipeDeliver')}</div>
-      </div>
-    </div>
-  </section>
+<div class="section-divider content-grid"></div>
 
-  <!-- Proof numbers -->
-  <section class="cos-stats content-grid">
-    <div class="cos-stats-grid">
-      <div class="cos-stat">
-        <span class="cos-stat-num">{manifest.counts.granular}</span>
-        <span class="cos-stat-label">{t('contextOs.statMcpTools')}</span>
-      </div>
-      <div class="cos-stat">
-        <span class="cos-stat-num">90+</span>
-        <span class="cos-stat-label">{t('contextOs.statShellPatterns')}</span>
-      </div>
-      <div class="cos-stat">
-        <span class="cos-stat-num">24+</span>
-        <span class="cos-stat-label">{t('contextOs.statIntegrations')}</span>
-      </div>
-      <div class="cos-stat">
-        <span class="cos-stat-num">99%</span>
-        <span class="cos-stat-label">{t('contextOs.statTokenSavings')}</span>
-      </div>
-    </div>
-  </section>
+<!-- 4. HOW IT WORKS -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="Pipeline"
+      title={t('contextOs.howItWorks')}
+      description={t('contextOs.howItWorksDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+    />
 
-  <!-- CTA -->
-  <section class="cos-cta content-grid">
-    <div class="cos-cta-inner">
-      <h2 class="cos-cta-title">{t('index.heroCta')}</h2>
-      <div class="cos-cta-actions">
-        <a href={lp('/docs/getting-started')} class="cos-cta-primary">{t('nav.getStarted')}</a>
-        <a href={lp('/benchmark')} class="cos-cta-secondary">{t('nav.product.benchmark')}</a>
-      </div>
+    <div class="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      {pipelineSteps.map((s, i) => (
+        <div class={`card animate-entrance stagger-${1 + i}`} style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-align: center;">
+          <div
+            class={`w-10 h-10 rounded-lg flex items-center justify-center font-display font-bold mx-auto ${
+              s.tone === 'accent-2'
+                ? 'bg-accent-2/10 text-accent-2'
+                : s.tone === 'accent-3'
+                  ? 'bg-accent-3/10 text-accent-3'
+                  : 'bg-accent/10 text-accent'
+            }`}
+            style="font-size: 0.875rem; margin-bottom: 0.75rem;"
+          >
+            {s.n}
+          </div>
+          <span class="font-display font-semibold text-text-bright fluid-sm">{s.label}</span>
+        </div>
+      ))}
     </div>
-  </section>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 5. STATS -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="grid sm:grid-cols-2 md:grid-cols-4" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {stats.map((s, i) => (
+        <div class={`card animate-entrance stagger-${1 + i}`} style="padding: clamp(1.5rem, 1rem + 1vw, 2rem); text-align: center;">
+          <div
+            class={`font-display font-extrabold ${
+              s.tone === 'accent-2'
+                ? 'text-accent-2'
+                : s.tone === 'accent-3'
+                  ? 'text-accent-3'
+                  : 'text-accent'
+            }`}
+            style="font-size: clamp(1.75rem, 1.5rem + 1vw, 2.5rem); letter-spacing: -0.04em; line-height: 1.05; margin: 0 0 0.5rem 0;"
+          >
+            {s.value}
+          </div>
+          <p class="fluid-label text-muted" style="margin: 0;">{s.label}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 6. CTA -->
+<section class="relative section-y">
+  <div class="content-grid" style="text-align: center;">
+    <SectionHeading
+      title={t('index.heroCta')}
+      descriptionHtml={t('contextOs.subline')}
+      variant="full"
+      align="center"
+      breakHighlight={false}
+      titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+      descMb="clamp(2rem, 1.5rem + 1vw, 3rem)"
+      descMaxWidth="44rem"
+    />
+
+    <div class="flex flex-wrap items-center justify-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a
+        href={lp('/docs/getting-started')}
+        class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg"
+        style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
+      >
+        {t('nav.getStarted')}
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a
+        href="https://github.com/yvgude/lean-ctx"
+        target="_blank"
+        rel="noopener"
+        class="btn-outline inline-flex items-center gap-2 font-medium rounded-lg text-text"
+        style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
+      >
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
 </BaseLayout>
-
-<style>
-  .cos-hero {
-    padding-block: clamp(5rem, 4rem + 4vw, 10rem) clamp(2rem, 1.5rem + 2vw, 4rem);
-  }
-  .cos-hero-inner {
-    max-width: 800px;
-    margin: 0 auto;
-    text-align: center;
-  }
-  .cos-hero-label {
-    display: inline-block;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-    color: var(--color-accent);
-    padding: 0.375rem 1rem;
-    border-radius: 100px;
-    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
-    margin-bottom: 1.5rem;
-  }
-  .cos-hero-title {
-    font-family: var(--font-display);
-    font-size: clamp(2.5rem, 2rem + 2.5vw, 4.5rem);
-    font-weight: 750;
-    letter-spacing: -0.04em;
-    line-height: 1.1;
-    color: var(--color-text-bright);
-    margin-bottom: 1.25rem;
-  }
-  .cos-hero-sub {
-    font-size: clamp(1rem, 0.9rem + 0.5vw, 1.25rem);
-    color: var(--color-muted);
-    line-height: 1.6;
-    max-width: 600px;
-    margin: 0 auto;
-  }
-
-  .cos-what {
-    padding-block: clamp(3rem, 2rem + 2vw, 5rem);
-  }
-  .cos-what-inner {
-    max-width: 800px;
-    margin: 0 auto;
-    text-align: center;
-  }
-  .cos-what-title {
-    font-family: var(--font-display);
-    font-size: clamp(1.5rem, 1.25rem + 1vw, 2.25rem);
-    font-weight: 700;
-    color: var(--color-text-bright);
-    margin-bottom: 1rem;
-  }
-  .cos-what-desc {
-    font-size: clamp(0.9375rem, 0.875rem + 0.25vw, 1.0625rem);
-    color: var(--color-muted);
-    line-height: 1.7;
-    margin-bottom: 2rem;
-  }
-  .cos-diagram {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: clamp(0.5rem, 0.25rem + 0.5vw, 1rem);
-    flex-wrap: wrap;
-  }
-  .cos-diagram-node {
-    padding: 0.75rem 1.5rem;
-    border-radius: 10px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text-bright);
-    white-space: nowrap;
-  }
-  .cos-diagram-leanctx {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
-  }
-  .cos-diagram-arrow {
-    color: var(--color-muted);
-    font-size: 1.25rem;
-  }
-
-  .cos-pillars {
-    padding-block: clamp(3rem, 2rem + 2vw, 5rem);
-  }
-  .cos-pillars-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-    margin-top: 2rem;
-  }
-  .cos-pillar-card {
-    display: flex;
-    flex-direction: column;
-    padding: clamp(1.5rem, 1.25rem + 0.5vw, 2rem);
-    border-radius: 14px;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    text-decoration: none;
-    transition: all 0.25s ease;
-  }
-  .cos-pillar-card:hover {
-    border-color: var(--color-accent);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-  }
-  .cos-pillar-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    background: var(--overlay-light);
-    border: 1px solid var(--color-border);
-    color: var(--color-accent);
-    margin-bottom: 1rem;
-  }
-  .cos-pillar-name {
-    font-family: var(--font-display);
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--color-text-bright);
-    margin-bottom: 0.5rem;
-  }
-  .cos-pillar-desc {
-    font-size: 0.8125rem;
-    color: var(--color-muted);
-    line-height: 1.5;
-    flex: 1;
-  }
-  .cos-pillar-tools {
-    margin-top: 0.75rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--color-accent);
-  }
-
-  .cos-how {
-    padding-block: clamp(3rem, 2rem + 2vw, 5rem);
-  }
-  .cos-how-inner {
-    max-width: 800px;
-    margin: 0 auto;
-    text-align: center;
-  }
-  .cos-how-title {
-    font-family: var(--font-display);
-    font-size: clamp(1.5rem, 1.25rem + 1vw, 2.25rem);
-    font-weight: 700;
-    color: var(--color-text-bright);
-    margin-bottom: 0.75rem;
-  }
-  .cos-how-desc {
-    font-size: 0.9375rem;
-    color: var(--color-muted);
-    line-height: 1.6;
-    margin-bottom: 2rem;
-  }
-  .cos-pipeline {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-  .cos-pipeline-step {
-    padding: 0.625rem 1.25rem;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text-bright);
-  }
-  .cos-pipeline-arrow {
-    color: var(--color-accent);
-    font-weight: 700;
-  }
-
-  .cos-stats {
-    padding-block: clamp(2rem, 1.5rem + 1vw, 3rem);
-  }
-  .cos-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
-    max-width: 700px;
-    margin: 0 auto;
-    text-align: center;
-  }
-  @media (max-width: 640px) {
-    .cos-stats-grid { grid-template-columns: repeat(2, 1fr); }
-  }
-  .cos-stat-num {
-    display: block;
-    font-family: var(--font-display);
-    font-size: clamp(1.5rem, 1.25rem + 1vw, 2.25rem);
-    font-weight: 750;
-    color: var(--color-accent);
-    letter-spacing: -0.03em;
-  }
-  .cos-stat-label {
-    font-size: 0.75rem;
-    color: var(--color-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-  }
-
-  .cos-cta {
-    padding-block: clamp(4rem, 3rem + 2vw, 6rem);
-    text-align: center;
-  }
-  .cos-cta-inner {
-    max-width: 500px;
-    margin: 0 auto;
-  }
-  .cos-cta-title {
-    font-family: var(--font-display);
-    font-size: clamp(1.5rem, 1.25rem + 0.5vw, 2rem);
-    font-weight: 700;
-    color: var(--color-text-bright);
-    margin-bottom: 1.5rem;
-  }
-  .cos-cta-actions {
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-  .cos-cta-primary {
-    padding: 0.75rem 2rem;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    border-radius: 12px;
-    background: var(--color-accent);
-    color: var(--color-bg);
-    text-decoration: none;
-    transition: all 0.2s ease;
-  }
-  .cos-cta-primary:hover {
-    opacity: 0.9;
-    box-shadow: 0 0 24px rgba(52, 211, 153, 0.15);
-  }
-  .cos-cta-secondary {
-    padding: 0.75rem 2rem;
-    font-size: 0.9375rem;
-    font-weight: 500;
-    border-radius: 12px;
-    border: 1px solid var(--color-border);
-    color: var(--color-muted);
-    text-decoration: none;
-    transition: all 0.2s ease;
-  }
-  .cos-cta-secondary:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-  }
-</style>

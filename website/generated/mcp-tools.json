@@ -22,7 +22,7 @@
   "tools": {
     "granular": [
       {
-        "description": "Multi-agent coordination (shared message bus + persistent diaries). Actions: register (join with agent_type+role), post (broadcast or direct message with category), read (poll messages), status (update state: active|idle|finished), handoff (transfer task to another agent with summary), sync (overview of all agents + pending messages + shared contexts), diary (log discovery/decision/blocker/progress/insight — persisted across sessions), recall_diary (read agent diary), diaries (list all agent diaries), list, info.",
+        "description": "Multi-agent coordination (shared message bus + persistent diaries). Actions: register (join with agent_type+role), post (broadcast or direct message with category), read (poll messages), status (update state: active|idle|finished), handoff (transfer task to another agent with summary), sync (overview of all agents + pending messages + shared contexts), diary (log discovery/decision/blocker/progress/insight - persisted across sessions), recall_diary (read agent diary), diaries (list all agent diaries), list, info.",
         "input_schema": {
           "properties": {
             "action": {
@@ -83,7 +83,7 @@
         "schema_md5": "8e5656acf265ba8edbb16467198fea7f"
       },
       {
-        "description": "Entropy analysis — recommends optimal compression mode for a file.",
+        "description": "Entropy analysis - recommends optimal compression mode for a file.",
         "input_schema": {
           "properties": {
             "path": {
@@ -352,7 +352,7 @@
         "schema_md5": "82f50feed0439dd2264d45f470bc2a5a"
       },
       {
-        "description": "Session context overview — cached files, seen files, session state.",
+        "description": "Session context overview - cached files, seen files, session state.",
         "input_schema": {
           "properties": {},
           "type": "object"
@@ -406,7 +406,7 @@
         "schema_md5": "05554f176d4289b9b9f41f48314e86fc"
       },
       {
-        "description": "Incremental diff — sends only changed lines since last read.",
+        "description": "Incremental diff - sends only changed lines since last read.",
         "input_schema": {
           "properties": {
             "path": {
@@ -477,7 +477,7 @@
         "input_schema": {
           "properties": {
             "action": {
-              "description": "batch — execute multiple scripts. Provide items as JSON array [{language, code}]",
+              "description": "batch - execute multiple scripts. Provide items as JSON array [{language, code}]",
               "type": "string"
             },
             "code": {
@@ -602,7 +602,7 @@
         "schema_md5": "c8f0abaf207d048062889c97b9214537"
       },
       {
-        "description": "Budget-aware context fill — auto-selects compression per file within token limit.",
+        "description": "Budget-aware context fill - auto-selects compression per file within token limit.",
         "input_schema": {
           "properties": {
             "budget": {
@@ -861,7 +861,7 @@
         "schema_md5": "5da09d2467261816c9812fa1d9faca43"
       },
       {
-        "description": "Structured intent input (optional) — submit compact JSON or short text; server also infers intents automatically from tool calls.",
+        "description": "Structured intent input (optional) - submit compact JSON or short text; server also infers intents automatically from tool calls.",
         "input_schema": {
           "properties": {
             "project_root": {
@@ -1034,7 +1034,7 @@
         "schema_md5": "d5c2e2a1091f6b9ad00400a547063ada"
       },
       {
-        "description": "Task-relevant project map — use at session start.",
+        "description": "Task-relevant project map - use at session start.",
         "input_schema": {
           "properties": {
             "path": {
@@ -1096,7 +1096,7 @@
         "schema_md5": "de0b2c71470713edf13051183266ab9c"
       },
       {
-        "description": "Predictive prefetch — prewarm cache for blast radius files (graph + task signals) within budgets.",
+        "description": "Predictive prefetch - prewarm cache for blast radius files (graph + task signals) within budgets.",
         "input_schema": {
           "properties": {
             "budget_tokens": {
@@ -1129,7 +1129,7 @@
         "schema_md5": "a861285ce8f2a416a04d44ecbedd823c"
       },
       {
-        "description": "Proactive context loader — caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
+        "description": "Proactive context loader - caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
         "input_schema": {
           "properties": {
             "path": {
