@@ -1492,7 +1492,7 @@
         "schema_md5": "60408629ab4dfbd4954c4e094cc67148"
       },
       {
-        "description": "Run shell command (compressed output, 90+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking). Output redaction is on by default for non-admin roles (admin can disable).",
+        "description": "Run shell command (compressed output, 95+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking). Output redaction is on by default for non-admin roles (admin can disable).",
         "input_schema": {
           "properties": {
             "command": {

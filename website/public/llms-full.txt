@@ -14,7 +14,7 @@
 
 - [How It Works](https://leanctx.com/how-it-works/): Data flow, compression pipeline, quality preservation
 - [MCP Server](https://leanctx.com/mcp-server/): MCP tools documentation and read modes
-- [Shell Hook](https://leanctx.com/shell-hook/): 90+ command patterns with before/after examples
+- [Shell Hook](https://leanctx.com/shell-hook/): 95+ command patterns with before/after examples
 - [Intelligence Layer](https://leanctx.com/docs/intelligence-layer/): 6 scientific compression algorithms
 - [Tree-sitter Engine](https://leanctx.com/docs/tree-sitter/): AST parsing for 18 languages
 - [Protocols](https://leanctx.com/protocols/): CEP, CCP, and TDD communication protocols

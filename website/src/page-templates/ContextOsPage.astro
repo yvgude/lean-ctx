@@ -25,8 +25,9 @@ const pipelineSteps = [
 
 const stats = [
   { value: String(manifest.counts.granular), label: t('contextOs.statMcpTools'),     tone: 'accent' },
-  { value: '90+',                            label: t('contextOs.statShellPatterns'), tone: 'accent-2' },
+  { value: '95+',                            label: t('contextOs.statShellPatterns'), tone: 'accent-2' },
   { value: '24+',                            label: t('contextOs.statIntegrations'),  tone: 'accent-3' },
+  { value: '3',                              label: t('contextOs.statModes'),         tone: 'accent-2' },
   { value: '99%',                            label: t('contextOs.statTokenSavings'),  tone: 'accent' },
 ];
 ---
@@ -188,16 +189,189 @@ const stats = [
       {t('contextOs.howItWorksDesc')}
     </p>
 
-    <div class="dimensions-grid animate-entrance stagger-3">
-      {pipelineSteps.map((s) => (
-        <div class="dimension-item">
-          <span class={`dimension-number font-display ${
-            s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'
-          }`}>{s.n}</span>
-          <div>
-            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{s.label}</h3>
-            <p class="fluid-sm text-muted leading-relaxed">{s.desc}</p>
+    <div class="pipeline-stepper animate-entrance stagger-3" data-pipeline-stepper>
+      <div class="pipeline-tabs" role="tablist">
+        {pipelineSteps.map((s, i) => (
+          <button
+            role="tab"
+            class={`pipeline-tab ${i === 0 ? 'is-active' : ''}`}
+            data-pipeline-tab={String(i)}
+            aria-selected={i === 0 ? 'true' : 'false'}
+          >
+            <span class={`pipeline-tab-number ${
+              s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'
+            }`}>{s.n}</span>
+            <span class="pipeline-tab-label">{s.label}</span>
+          </button>
+        ))}
+      </div>
+      <div class="pipeline-panels">
+        {pipelineSteps.map((s, i) => (
+          <div
+            role="tabpanel"
+            class={`pipeline-panel ${i === 0 ? 'is-active' : ''}`}
+            data-pipeline-panel={String(i)}
+          >
+            <div class="pipeline-panel-inner">
+              <span class={`pipeline-panel-number font-display ${
+                s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'
+              }`}>{s.n}</span>
+              <h3 class="font-display fluid-h2 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{s.label}</h3>
+              <p class="fluid-body text-muted leading-relaxed" style="max-width: 40rem;">{s.desc}</p>
+            </div>
           </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 4b. INTEGRATION MODES -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('contextOs.modesLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+      {t('contextOs.modesTitle')}
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      {t('contextOs.modesDesc')}
+    </p>
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      <div class="compare-card animate-entrance stagger-3">
+        <div class="compare-header compare-header--good">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
+          {t('contextOs.modeCliTitle')}
+        </div>
+        <div class="compare-body" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+          <div class="compare-line"><span class="text-accent font-semibold">{t('contextOs.modeCliTag')}</span></div>
+          <div class="compare-line"><span class="text-muted">{t('contextOs.modeCliDesc')}</span></div>
+          <div class="compare-line" style="margin-top: 0.5rem;">
+            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">lean-ctx read src/auth.ts -m map</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="compare-card animate-entrance stagger-4">
+        <div class="compare-header" style="background: color-mix(in srgb, var(--color-accent-2) 12%, var(--color-surface)); border-color: var(--color-accent-2);">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+          {t('contextOs.modeHybridTitle')}
+        </div>
+        <div class="compare-body" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+          <div class="compare-line"><span class="text-accent-2 font-semibold">{t('contextOs.modeHybridTag')}</span></div>
+          <div class="compare-line"><span class="text-muted">{t('contextOs.modeHybridDesc')}</span></div>
+          <div class="compare-line" style="margin-top: 0.5rem;">
+            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">MCP cache + CLI shell/search</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="compare-card animate-entrance stagger-5">
+        <div class="compare-header" style="background: color-mix(in srgb, var(--color-accent-3) 12%, var(--color-surface)); border-color: var(--color-accent-3);">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008V18m-3 0h.008v.008h-.008V18m-3 0h.008v.008h-.008V18"/></svg>
+          {t('contextOs.modeMcpTitle')}
+        </div>
+        <div class="compare-body" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+          <div class="compare-line"><span class="text-accent-3 font-semibold">{t('contextOs.modeMcpTag')}</span></div>
+          <div class="compare-line"><span class="text-muted">{t('contextOs.modeMcpDesc')}</span></div>
+          <div class="compare-line" style="margin-top: 0.5rem;">
+            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">56 tools via MCP + lazy tool set</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 4c. DAEMON + SMART SETUP -->
+<section class="section-y">
+  <div class="content-grid-wide">
+    <div class="split split--visual-wide">
+      <div>
+        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+          <span class="kicker-pill">{t('contextOs.daemonLabel')}</span>
+        </div>
+        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
+          {t('contextOs.daemonTitle')}
+        </h2>
+        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
+          {t('contextOs.daemonDesc')}
+        </p>
+      </div>
+
+      <TerminalChrome
+        title="lean-ctx serve --status"
+        chromeClass="animate-entrance stagger-3"
+        bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
+      >
+        <div>
+          <span class="text-accent">$</span>{' '}
+          <span class="text-text-bright">lean-ctx serve --status</span>
+        </div>
+        <div class="term-divider"></div>
+        <div><span class="text-muted">daemon</span>  <span class="text-accent font-semibold">running</span> <span class="text-muted">(PID 4139)</span></div>
+        <div><span class="text-muted">socket</span>  <span class="text-text-bright">/tmp/lean-ctx.sock</span></div>
+        <div><span class="text-muted">uptime</span>  <span class="text-text">2h 14m</span></div>
+        <div><span class="text-muted">sessions</span> <span class="text-text-bright">3 active</span></div>
+        <div class="term-divider"></div>
+        <div><span class="text-muted">cache</span>   <span class="text-accent">247 entries</span> <span class="text-muted">(hit rate 94.2%)</span></div>
+        <div><span class="text-muted">memory</span>  <span class="text-text">12.4 MB</span></div>
+      </TerminalChrome>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 4d. AGENT MATRIX -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('contextOs.agentMatrixLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+      {t('contextOs.agentMatrixTitle')}
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      {t('contextOs.agentMatrixDesc')}
+    </p>
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 animate-entrance stagger-3" style="gap: clamp(0.5rem, 0.375rem + 0.25vw, 0.75rem);">
+      {[
+        { name: 'Cursor', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'Claude Code', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'Codex', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'OpenCode', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'Gemini CLI', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'Windsurf', mode: 'Hybrid', tone: 'accent-2' },
+        { name: 'Amp', mode: 'Hybrid', tone: 'accent-2' },
+        { name: 'Antigravity', mode: 'Hybrid', tone: 'accent-2' },
+        { name: 'Hermes', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'Kiro', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'JetBrains', mode: 'MCP', tone: 'accent-3' },
+        { name: 'Copilot', mode: 'MCP', tone: 'accent-3' },
+        { name: 'Cline', mode: 'MCP', tone: 'accent-3' },
+        { name: 'Roo Code', mode: 'MCP', tone: 'accent-3' },
+        { name: 'VS Code', mode: 'MCP', tone: 'accent-3' },
+        { name: 'Zed', mode: 'MCP', tone: 'accent-3' },
+        { name: 'CRUSH', mode: 'CLI-Redirect', tone: 'accent' },
+        { name: 'Aider', mode: 'MCP', tone: 'accent-3' },
+        { name: 'Continue', mode: 'MCP', tone: 'accent-3' },
+        { name: 'Trae', mode: 'MCP', tone: 'accent-3' },
+      ].map((agent) => (
+        <div class="card" style="padding: clamp(0.625rem, 0.5rem + 0.25vw, 0.875rem); text-align: center;">
+          <span class="font-display font-semibold text-text-bright" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); display: block; margin-bottom: 0.25rem;">
+            {agent.name}
+          </span>
+          <span class={`font-mono text-${agent.tone}`} style="font-size: 0.625rem; opacity: 0.85;">
+            {agent.mode}
+          </span>
         </div>
       ))}
     </div>
@@ -352,5 +526,84 @@ const stats = [
     </div>
   </div>
 </section>
+
+<style>
+  .pipeline-stepper {
+    display: grid;
+    gap: clamp(1.5rem, 1rem + 1vw, 2.5rem);
+  }
+  .pipeline-tabs {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0.25rem;
+  }
+  .pipeline-tabs::-webkit-scrollbar { display: none; }
+  .pipeline-tab {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: all 0.25s ease;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    white-space: nowrap;
+  }
+  .pipeline-tab:hover {
+    border-color: var(--color-border-light);
+    background: var(--overlay-hover);
+  }
+  .pipeline-tab.is-active {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+    color: var(--color-text-bright);
+  }
+  .pipeline-tab-number {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.875rem;
+  }
+  .pipeline-tab-label { font-weight: 600; }
+  .pipeline-panel { display: none; }
+  .pipeline-panel.is-active { display: block; }
+  .pipeline-panel-inner {
+    padding: clamp(1.5rem, 1rem + 1vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-surface);
+  }
+  .pipeline-panel-number {
+    font-size: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);
+    font-weight: 800;
+    opacity: 0.2;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+</style>
+
+<script>
+  document.querySelectorAll('[data-pipeline-stepper]').forEach((stepper) => {
+    const tabs = stepper.querySelectorAll('[data-pipeline-tab]');
+    const panels = stepper.querySelectorAll('[data-pipeline-panel]');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const idx = tab.getAttribute('data-pipeline-tab');
+        tabs.forEach((t) => { t.classList.remove('is-active'); t.setAttribute('aria-selected', 'false'); });
+        panels.forEach((p) => p.classList.remove('is-active'));
+        tab.classList.add('is-active');
+        tab.setAttribute('aria-selected', 'true');
+        stepper.querySelector(`[data-pipeline-panel="${idx}"]`)?.classList.add('is-active');
+      });
+    });
+  });
+</script>
 
 </BaseLayout>

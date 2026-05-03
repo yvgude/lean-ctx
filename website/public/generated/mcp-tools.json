@@ -1138,7 +1138,7 @@
         "schema_md5": "60408629ab4dfbd4954c4e094cc67148"
       },
       {
-        "description": "Run shell command (compressed output, 90+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking).",
+        "description": "Run shell command (compressed output, 95+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking).",
         "input_schema": {
           "properties": {
             "command": {

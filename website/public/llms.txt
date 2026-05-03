@@ -18,14 +18,14 @@ Notes:
 
 # LeanCTX — Context Runtime for AI Agents
 
-> Open-source MCP server + shell hook that reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary with MCP tools, 90+ CLI compression patterns, and zero telemetry. Works with 24 AI coding tools. Security by default (PathJail sandbox, size caps, TOCTOU mitigation, prompt injection hardening).
+> Open-source MCP server + shell hook that reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary with MCP tools, 95+ CLI compression patterns, and zero telemetry. Works with 24 AI coding tools. Security by default (PathJail sandbox, size caps, TOCTOU mitigation, prompt injection hardening).
 
 ## What is LeanCTX?
 
 LeanCTX (lean-ctx) is an open-source context runtime for AI coding agents. It sits transparently between your AI tool (Cursor, Claude Code, GitHub Copilot, Windsurf, Gemini CLI, etc.) and the LLM, compressing all context before it reaches the model. This reduces token usage by 60-99%, cuts API costs, and makes AI responses faster.
 
 Key capabilities:
-- **Compression**: AST-aware compression, session caching, 10 read modes, 90+ shell patterns
+- **Compression**: AST-aware compression, session caching, 10 read modes, 95+ shell patterns
 - **Memory Runtime**: Biologically-inspired memory with adaptive forgetting, salience tagging, dual-process retrieval, prospective memory
 - **Security Layer**: PathJail project-root sandbox, size caps, TOCTOU mitigation, metadata neutralization, CSPRNG fencing
 - **Unified Gain**: GainScore (0-100), embedded ModelPricing, TaskClassifier (13 categories), cost attribution
@@ -37,7 +37,7 @@ Install in 60 seconds: `npm install -g lean-ctx-bin && lean-ctx setup`
 ## How It Reduces Token Costs
 
 1. **MCP Server**: Compression-aware tools replace built-in file reads, shell commands, and code search. Uses tree-sitter AST parsing across 18 languages. 10 read modes + caching; cached re-reads cost ~13 tokens.
-2. **Shell Hook**: Intercepts 90+ CLI command patterns (git, npm, cargo, docker, kubectl, pip, go, tsc, curl) and compresses output by 60-95%.
+2. **Shell Hook**: Intercepts 95+ CLI command patterns (git, npm, cargo, docker, kubectl, pip, go, tsc, curl) and compresses output by 60-95%.
 3. **AI Tool Hooks**: One-command integration for 24 editors via `lean-ctx setup`. No workflow changes needed.
 4. **Communication Protocols**: CEP (Cognitive Efficiency Protocol), CCP (Context Continuity Protocol), and TDD (Token Dense Dialect) teach the AI to respond more efficiently, saving 8-25% additional tokens.
 5. **Memory Runtime**: Persistent project knowledge with temporal fact tracking, adaptive forgetting, and cross-session recall. Automatically consolidates session findings into permanent knowledge.
@@ -124,7 +124,7 @@ All configured automatically with `lean-ctx setup`.
 - [Home](https://leanctx.com/): Overview and quick start
 - [How It Works](https://leanctx.com/how-it-works/): Data flow, compression pipeline, quality preservation
 - [MCP Server](https://leanctx.com/mcp-server/): MCP tools documentation
-- [Shell Hook](https://leanctx.com/shell-hook/): 90+ command patterns with before/after examples
+- [Shell Hook](https://leanctx.com/shell-hook/): 95+ command patterns with before/after examples
 - [Compatibility](https://leanctx.com/compatibility/): All 24 supported AI tools with setup commands
 - [Benchmark](https://leanctx.com/benchmark/): Token savings measurement and verification
 - [CLI Reference](https://leanctx.com/cli/): Terminal commands for humans

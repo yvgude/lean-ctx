@@ -12,7 +12,7 @@ const sidebar = [
     items: [
       { label: 'Overview', href: lp('/docs/concepts/shell-patterns') },
       { label: 'How It Works', href: lp('/docs/concepts/shell-patterns') + '#how-it-works' },
-      { label: '51 Pattern Modules', href: lp('/docs/concepts/shell-patterns') + '#pattern-modules' },
+      { label: '56 Pattern Modules', href: lp('/docs/concepts/shell-patterns') + '#pattern-modules' },
       { label: 'Passthrough Commands', href: lp('/docs/concepts/shell-patterns') + '#passthrough' },
       { label: 'FilterEngine', href: lp('/docs/concepts/shell-patterns') + '#filter-engine' },
       { label: 'Bypassing Compression', href: lp('/docs/concepts/shell-patterns') + '#bypassing' },
@@ -32,12 +32,12 @@ const sidebar = [
 
 <DocsLayout
   title="Shell Patterns - Intelligent Output Compression"
-  description="How lean-ctx compresses shell output using 51 pattern modules, FilterEngine, passthrough detection, and smart heredoc handling."
+  description="How lean-ctx compresses shell output using 56 pattern modules, FilterEngine, passthrough detection, and smart heredoc handling."
   sidebar={sidebar}
 >
   <p>
     Every shell command run through <code>ctx_shell</code> passes through lean-ctx's
-    shell compression pipeline. With <strong>51 pattern modules</strong> covering 90+ developer
+    shell compression pipeline. With <strong>56 pattern modules</strong> covering 95+ developer
     tools, the system strips boilerplate while preserving actionable output - typically saving
     <strong>50-95% of tokens</strong> per command.
   </p>
@@ -94,7 +94,7 @@ ctx_shell command="npm install" mode="track"
 → ✓ exit=0 (12.4s)  [output suppressed]`}</code></pre>
 
   <!-- ───── PATTERN MODULES ───── -->
-  <h2 id="pattern-modules">51 Pattern Modules</h2>
+  <h2 id="pattern-modules">56 Pattern Modules</h2>
   <p>
     Each pattern module knows the structure of a specific tool's output and extracts only
     the information an agent needs. Patterns are organized by ecosystem:

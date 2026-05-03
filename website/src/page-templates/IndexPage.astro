@@ -93,36 +93,36 @@ const tShell = pickTool('ctx_shell', 2);
           </div>
           <div class="terminal-body font-mono" style="padding: clamp(0.75rem, 0.625rem + 0.4vw, 1.25rem); font-size: clamp(0.6rem, 0.55rem + 0.12vw, 0.8125rem); line-height: 1.75;">
             <div class="hero-term-line" data-term-line="0">
-              <span class="text-muted">$</span> <span class="text-accent">{tRead}</span>(<span class="text-text-bright">{`{ path: "src/lib/mcpManifest.ts", mode: "map" }`}</span>)
+              <span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> <span class="text-text-bright">read src/lib/auth.ts -m map</span>
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="1">
-              <span class="text-muted">→</span> <span class="text-text">exports: getMcpManifest(), getGranularTools()</span>
+              <span class="text-muted">→</span> <span class="text-text">exports: authenticate(), validateToken(), refreshSession()</span>
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="2">
-              <span class="text-muted">→</span> <span class="text-text">tools.granular: <span class="text-accent font-semibold">{manifest.counts.granular}</span></span>
+              <span class="text-muted">→</span> <span class="text-text">4,200 → <span class="text-accent font-semibold">180 tokens</span> (96% saved)</span>
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="3">
-              <span class="text-muted">→</span> <span class="text-text">cached - <span class="text-accent">13 tokens</span> on re-read</span>
+              <span class="text-muted">→</span> <span class="text-text">cached: <span class="text-accent">13 tokens</span> on re-read</span>
             </div>
             <div class="hero-term-spacer" data-term-line="4"></div>
             <div class="hero-term-line" data-term-line="5">
-              <span class="text-muted">$</span> <span class="text-accent">{tSearch}</span>(<span class="text-text-bright">{`{ pattern: "getMcpManifest", path: "src" }`}</span>)
+              <span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> <span class="text-text-bright">grep "authenticate" src/</span>
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="6">
-              <span class="text-muted">→</span> <span class="text-text">2 matches in <span class="text-accent">0.8ms</span></span>
+              <span class="text-muted">→</span> <span class="text-text">3 matches in <span class="text-accent">0.8ms</span></span>
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="7">
-              <span class="text-muted">→</span> <span class="text-text">mcpManifest.ts:14, IndexPage.astro:12</span>
+              <span class="text-muted">→</span> <span class="text-text">auth.ts:14, middleware.ts:8, routes.ts:23</span>
             </div>
             <div class="hero-term-spacer" data-term-line="8"></div>
             <div class="hero-term-line" data-term-line="9">
-              <span class="text-muted">$</span> <span class="text-accent">{tShell}</span>(<span class="text-text-bright">{`{ command: "npx astro build" }`}</span>)
+              <span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> <span class="text-text-bright">-c "cargo build --release"</span>
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="10">
-              <span class="text-muted">→</span> <span class="text-text">1294 pages built in <span class="text-accent">3.6s</span></span>
+              <span class="text-muted">→</span> <span class="text-text">Compiling lean-ctx v0.27.0 in <span class="text-accent">3.6s</span></span>
             </div>
             <div class="hero-term-line hero-term-result" data-term-line="11">
-              <span class="text-muted">→</span> <span class="text-text">compressed output: <span class="text-accent">847 → 42 tokens</span></span>
+              <span class="text-muted">→</span> <span class="text-text">compressed: <span class="text-accent">847 → 42 tokens</span></span>
             </div>
             <div class="hero-term-cursor" data-term-line="12"></div>
           </div>

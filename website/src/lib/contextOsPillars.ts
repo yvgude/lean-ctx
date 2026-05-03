@@ -291,7 +291,21 @@ export const pillars: Pillar[] = [
     problemKey: 'pillar.integrations.problem',
     demoDescKey: 'pillar.integrations.demoDesc',
     demoCommands: [
-      { tool: 'lean-ctx', args: 'setup --auto', output: ['Detected: Cursor, Claude Code, Neovim', 'MCP config: written to 3 editors', 'Shell hook: installed', 'Ready in 2.1s'] },
+      { tool: 'lean-ctx', args: 'setup --auto', output: [
+        'Detected: Cursor, Claude Code, Windsurf, Copilot, Antigravity',
+        'Cursor: CLI-redirect (MCP removed, rules installed)',
+        'Claude Code: CLI-redirect (rules + skill installed)',
+        'Windsurf: Hybrid (MCP active, CLI for shell)',
+        'Copilot: MCP (56 tools, lazy set)',
+        'Daemon started (PID 4139, UDS ready)',
+      ] },
+      { tool: 'lean-ctx', args: 'serve --status', output: [
+        'daemon    running (PID 4139)',
+        'socket    /tmp/lean-ctx.sock',
+        'uptime    2h 14m',
+        'sessions  3 active',
+        'cache     247 entries (hit rate 94.2%)',
+      ] },
     ],
     stats: [
       { valueKey: 'pillar.integrations.stat1Value', labelKey: 'pillar.integrations.stat1Label', tone: 'accent' },
