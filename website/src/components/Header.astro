@@ -29,6 +29,7 @@ const contextOsColumns = [
     items: [
       { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
       { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>' },
+      { label: t('nav.product.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.product.benchmarkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>' },
     ],
   },
 ];
@@ -101,9 +102,6 @@ const docsColumns = [
         <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
         <a href={lp('/docs/tools')} class:list={['header-nav-item', currentPath.includes('/tools') ? 'is-active' : '']}>
           {t('nav.tools')}
-        </a>
-        <a href={lp('/context-os/benchmark')} class:list={['header-nav-item', currentPath.includes('/benchmark') ? 'is-active' : '']}>
-          {t('nav.product.benchmark')}
         </a>
       </div>
 
@@ -194,7 +192,6 @@ const docsColumns = [
       </div>
 
       <div class="mobile-section mobile-top-links">
-        <a href={lp('/context-os/benchmark')} class="mobile-nav-link">{t('nav.product.benchmark')}</a>
         <a href={lp('/login')} class="mobile-nav-link">{t('nav.login')}</a>
       </div>
 
