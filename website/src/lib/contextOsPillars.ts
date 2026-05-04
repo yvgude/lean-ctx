@@ -81,6 +81,8 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.smartIo.feature2Title', descKey: 'pillar.smartIo.feature2Desc', icon: featureIcon },
       { titleKey: 'pillar.smartIo.feature3Title', descKey: 'pillar.smartIo.feature3Desc', icon: featureIcon },
       { titleKey: 'pillar.smartIo.feature4Title', descKey: 'pillar.smartIo.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.smartIo.feature5Title', descKey: 'pillar.smartIo.feature5Desc', icon: featureIcon },
+      { titleKey: 'pillar.smartIo.feature6Title', descKey: 'pillar.smartIo.feature6Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.smartIoReads', anchor: '#reads' },
@@ -130,6 +132,10 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.intelligence.feature2Title', descKey: 'pillar.intelligence.feature2Desc', icon: featureIcon },
       { titleKey: 'pillar.intelligence.feature3Title', descKey: 'pillar.intelligence.feature3Desc', icon: featureIcon },
       { titleKey: 'pillar.intelligence.feature4Title', descKey: 'pillar.intelligence.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.intelligence.feature5Title', descKey: 'pillar.intelligence.feature5Desc', icon: featureIcon },
+      { titleKey: 'pillar.intelligence.feature6Title', descKey: 'pillar.intelligence.feature6Desc', icon: featureIcon },
+      { titleKey: 'pillar.intelligence.feature7Title', descKey: 'pillar.intelligence.feature7Desc', icon: featureIcon },
+      { titleKey: 'pillar.intelligence.feature8Title', descKey: 'pillar.intelligence.feature8Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.intelligenceRouting', anchor: '#routing' },
@@ -178,6 +184,7 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.memory.feature2Title', descKey: 'pillar.memory.feature2Desc', icon: featureIcon },
       { titleKey: 'pillar.memory.feature3Title', descKey: 'pillar.memory.feature3Desc', icon: featureIcon },
       { titleKey: 'pillar.memory.feature4Title', descKey: 'pillar.memory.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.memory.feature5Title', descKey: 'pillar.memory.feature5Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.memorySessions', anchor: '#sessions' },

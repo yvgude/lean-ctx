@@ -37,15 +37,15 @@ const stats = [
   description={t('contextOs.subline')}
   breadcrumbs={[
     { name: t('common.home'), url: lp('/') },
-    { name: 'Context OS', url: lp('/context-os/') },
+    { name: t('nav.contextOs'), url: lp('/context-os/') },
   ]}
 >
 
 <!-- 1. HERO -->
 <PageHero
-  label="Context OS"
-  title="The Context OS for"
-  highlight="AI Development"
+  label={t('contextOs.heroLabel')}
+  title={t('contextOs.heroTitle')}
+  highlight={t('contextOs.heroHighlight')}
   descriptionHtml={t('contextOs.subline')}
   kickerTone="accent"
   titleVariant="display"
@@ -130,7 +130,7 @@ const stats = [
     <div class="split split--visual-wide">
       <div>
         <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          <span class="kicker-pill">Context OS</span>
+          <span class="kicker-pill">{t('contextOs.heroLabel')}</span>
         </div>
         <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
           {t('contextOs.whatIs')}
@@ -180,7 +180,7 @@ const stats = [
 <section class="section-y">
   <div class="content-grid">
     <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">Pipeline</span>
+      <span class="kicker-pill">{t('contextOs.pipelineLabel')}</span>
     </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
       {t('contextOs.howItWorks')}
@@ -384,7 +384,7 @@ const stats = [
 <section class="section-y">
   <div class="content-grid">
     <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">Pillars</span>
+      <span class="kicker-pill">{t('contextOs.pillarsLabel')}</span>
     </div>
     <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
       {t('index.sixPillarsTitle')}
@@ -416,7 +416,7 @@ const stats = [
               {p.tools.length} {t('contextOs.toolsLabel')}
               <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
             </span>
-            <span class="fluid-label text-muted">{p.features.length} features</span>
+            <span class="fluid-label text-muted">{p.features.length} {t('contextOs.featuresLabel')}</span>
           </div>
         </a>
       ))}
