@@ -32,6 +32,8 @@ export interface Pillar {
   navDescKey: string;
   problemTitleKey: string;
   problemKey: string;
+  metaTitleKey: string;
+  metaDescKey: string;
   demoDescKey: string;
   demoCommands: PillarDemoCommand[];
   stats: PillarStat[];
@@ -67,6 +69,8 @@ export const pillars: Pillar[] = [
     navDescKey: 'nav.pillars.smartIoDesc',
     problemTitleKey: 'pillar.smartIo.problemTitle',
     problemKey: 'pillar.smartIo.problem',
+    metaTitleKey: 'pillar.smartIo.metaTitle',
+    metaDescKey: 'pillar.smartIo.metaDesc',
     demoDescKey: 'pillar.smartIo.demoDesc',
     demoCommands: [
       { tool: 'ctx_read', args: '{ path: "src/lib/auth.ts", mode: "map" }', output: ['exports: authenticate(), validateToken(), refreshSession()', 'deps: jsonwebtoken, bcrypt, redis', 'cached - 180 tokens (was 4,200)'] },
@@ -118,6 +122,8 @@ export const pillars: Pillar[] = [
     navDescKey: 'nav.pillars.intelligenceDesc',
     problemTitleKey: 'pillar.intelligence.problemTitle',
     problemKey: 'pillar.intelligence.problem',
+    metaTitleKey: 'pillar.intelligence.metaTitle',
+    metaDescKey: 'pillar.intelligence.metaDesc',
     demoDescKey: 'pillar.intelligence.demoDesc',
     demoCommands: [
       { tool: 'ctx_intent', args: '{ task: "rename getUserById to findUserById" }', output: ['intent: refactor/rename', 'mode: signatures', 'budget: 8,000 tokens', 'profile: coder'] },
@@ -170,6 +176,8 @@ export const pillars: Pillar[] = [
     navDescKey: 'nav.pillars.memoryDesc',
     problemTitleKey: 'pillar.memory.problemTitle',
     problemKey: 'pillar.memory.problem',
+    metaTitleKey: 'pillar.memory.metaTitle',
+    metaDescKey: 'pillar.memory.metaDesc',
     demoDescKey: 'pillar.memory.demoDesc',
     demoCommands: [
       { tool: 'ctx_knowledge', args: '{ action: "search", query: "auth architecture" }', output: ['Found 3 facts (project: my-app)', '1. JWT with refresh tokens, Redis session store', '2. RBAC with 4 roles: admin, editor, viewer, guest', 'quality: 0.92, last verified: 2h ago'] },
@@ -220,6 +228,8 @@ export const pillars: Pillar[] = [
     navDescKey: 'nav.pillars.governanceDesc',
     problemTitleKey: 'pillar.governance.problemTitle',
     problemKey: 'pillar.governance.problem',
+    metaTitleKey: 'pillar.governance.metaTitle',
+    metaDescKey: 'pillar.governance.metaDesc',
     demoDescKey: 'pillar.governance.demoDesc',
     demoCommands: [
       { tool: 'ctx_workflow', args: '{ action: "status" }', output: ['workflow: feature/auth-refactor', 'state: implement (3/5)', 'budget: $1.20 / $2.00 remaining', 'next checkpoint: review'] },
@@ -262,6 +272,8 @@ export const pillars: Pillar[] = [
     navDescKey: 'nav.pillars.verificationDesc',
     problemTitleKey: 'pillar.verification.problemTitle',
     problemKey: 'pillar.verification.problem',
+    metaTitleKey: 'pillar.verification.metaTitle',
+    metaDescKey: 'pillar.verification.metaDesc',
     demoDescKey: 'pillar.verification.demoDesc',
     demoCommands: [
       { tool: 'ctx_verify', args: '{ scope: "session" }', output: ['Verified 12 tool calls', 'Paths: 12/12 valid', 'Secrets: 0 detected', 'Replay hash: a3f8c2...consistent'] },
@@ -303,6 +315,8 @@ export const pillars: Pillar[] = [
     navDescKey: 'nav.pillars.integrationsDesc',
     problemTitleKey: 'pillar.integrations.problemTitle',
     problemKey: 'pillar.integrations.problem',
+    metaTitleKey: 'pillar.integrations.metaTitle',
+    metaDescKey: 'pillar.integrations.metaDesc',
     demoDescKey: 'pillar.integrations.demoDesc',
     demoCommands: [
       { tool: 'lean-ctx', args: 'setup --auto', output: [

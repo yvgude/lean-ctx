@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   site: 'https://leanctx.com',
+  trailingSlash: 'always',
   i18n: {
     defaultLocale: 'en',
     locales: ['en', 'de', 'ar', 'zh', 'hi', 'es', 'fr', 'bn', 'pt', 'ru', 'ja'],

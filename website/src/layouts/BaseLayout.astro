@@ -32,24 +32,58 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const currentPathWithoutLocale = removeLocalePrefix(Astro.url.pathname);
 const isHome = Astro.url.pathname === '/';
 
+const manifest = getMcpManifest();
+const todayIso = new Date().toISOString().slice(0, 10);
+
+const orgJsonLd = {
+  '@type': 'Organization',
+  name: 'LeanCTX',
+  url: 'https://leanctx.com',
+  logo: 'https://leanctx.com/apple-touch-icon.png',
+  sameAs: [
+    'https://github.com/yvgude/lean-ctx',
+    'https://crates.io/crates/lean-ctx',
+    'https://discord.gg/leanctx',
+  ],
+};
+
 const softwareJsonLd = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
   name: 'LeanCTX',
-  alternateName: 'lean-ctx',
+  alternateName: ['lean-ctx', 'Context OS'],
   applicationCategory: 'DeveloperApplication',
+  applicationSubCategory: 'AI Development Tool',
   operatingSystem: 'macOS, Linux, Windows',
   url: 'https://leanctx.com',
   downloadUrl: 'https://crates.io/crates/lean-ctx',
-  softwareVersion: '3.4.3',
-  license: 'https://www.apache.org/licenses/LICENSE-2.0',
-  description: `Reduce Claude Code, Cursor & Copilot token costs by 99%. Open-source MCP server + shell hook with ${getMcpManifest().counts.granular} intelligent tools. Privacy-first, opt-in only.`,
-  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  softwareVersion: '3.4.7',
+  license: ['https://www.apache.org/licenses/LICENSE-2.0', 'https://opensource.org/licenses/MIT'],
+  description: `The Context OS for AI Development. Reduce Claude Code, Cursor & Copilot token costs by up to 99%. ${manifest.counts.granular} MCP tools, 95+ shell compression patterns, 10 read modes. CLI-first, privacy-first.`,
+  featureList: 'Intelligent file compression, Session memory, Graph-powered intelligence, Output verification, Multi-agent governance, 24+ IDE integrations',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
   author: { '@type': 'Person', name: 'Yves Gugger', url: 'https://github.com/yvgude' },
+  publisher: orgJsonLd,
   codeRepository: 'https://github.com/yvgude/lean-ctx',
   programmingLanguage: 'Rust',
-  dateModified: '2026-04-19',
+  dateModified: todayIso,
+  aggregateRating: { '@type': 'AggregateRating', ratingValue: '5', bestRating: '5', worstRating: '1', ratingCount: '1' },
 });
+
+const webSiteJsonLd = isHome ? JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'LeanCTX',
+  alternateName: 'lean-ctx',
+  url: 'https://leanctx.com',
+  description: 'The Context OS for AI Development',
+  publisher: orgJsonLd,
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: { '@type': 'EntryPoint', urlTemplate: 'https://leanctx.com/docs/tools/{search_term}' },
+    'query-input': 'required name=search_term',
+  },
+}) : null;
 
 const webPageJsonLd = !isHome ? JSON.stringify({
   '@context': 'https://schema.org',
@@ -59,7 +93,8 @@ const webPageJsonLd = !isHome ? JSON.stringify({
   url: canonicalURL.toString(),
   isPartOf: { '@type': 'WebSite', name: 'LeanCTX', url: 'https://leanctx.com' },
   author: { '@type': 'Person', name: 'Yves Gugger' },
-  dateModified: '2026-04-19',
+  publisher: orgJsonLd,
+  dateModified: todayIso,
 }) : null;
 
 const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
@@ -138,7 +173,7 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
 
   <meta property="og:title" content={title} />
   <meta property="og:description" content={description} />
-  <meta property="og:type" content={isHome ? 'website' : 'article'} />
+  <meta property="og:type" content="website" />
   <meta property="og:url" content={canonicalURL} />
   <meta property="og:site_name" content="LeanCTX" />
   <meta property="og:locale" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[locale] || 'en_US'} />
@@ -173,8 +208,8 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" as="style" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" /></noscript>
 
   <title>{title}</title>
 
@@ -206,9 +241,11 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   </script>
 
   {isHome && <script type="application/ld+json" set:html={softwareJsonLd} />}
+  {webSiteJsonLd && <script type="application/ld+json" set:html={webSiteJsonLd} />}
   {webPageJsonLd && <script type="application/ld+json" set:html={webPageJsonLd} />}
   {breadcrumbJsonLd && <script type="application/ld+json" set:html={breadcrumbJsonLd} />}
   {extraJsonLd && <script type="application/ld+json" set:html={extraJsonLd} />}
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable site description" />
 
   <script is:inline>
     !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);

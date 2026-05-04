@@ -24,9 +24,18 @@ const tShell = pickTool('ctx_shell', 2);
 
 
 
+const faqJsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [1,2,3,4,5].map(i => ({
+    '@type': 'Question',
+    name: t(`index.faq${i}Q`),
+    acceptedAnswer: { '@type': 'Answer', text: t(`index.faq${i}A`) },
+  })),
+});
 ---
 
-<BaseLayout title={t('index.title')} description={t('index.metaDesc')}>
+<BaseLayout title={t('index.title')} description={t('index.metaDesc')} extraJsonLd={faqJsonLd}>
 
 <!-- ═══════════════════════════════════════════════════════
      HERO
@@ -651,6 +660,34 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
           <span class="text-muted">Go / Rust Developer</span>
         </footer>
       </blockquote>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     FAQ (SEO + Rich Results)
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y" id="faq">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      <span class="kicker-pill">FAQ</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      Frequently Asked Questions
+    </h2>
+    <div class="faq-grid" style="display: grid; gap: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
+      {[1,2,3,4,5].map(i => (
+        <details class="faq-item" style="border-bottom: 1px solid var(--border); padding-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          <summary class="fluid-body font-semibold text-text-bright" style="cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center;">
+            {t(`index.faq${i}Q`)}
+            <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </summary>
+          <p class="text-muted fluid-sm" style="margin-top: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+            {t(`index.faq${i}A`)}
+          </p>
+        </details>
+      ))}
     </div>
   </div>
 </section>
