@@ -102,10 +102,7 @@ const docsColumns = [
         <a href={lp('/docs/tools')} class:list={['header-nav-item', currentPath.includes('/tools') ? 'is-active' : '']}>
           {t('nav.tools')}
         </a>
-        <a href={lp('/trust')} class:list={['header-nav-item', currentPath.includes('/trust') ? 'is-active' : '']}>
-          {t('nav.trust')}
-        </a>
-        <a href={lp('/benchmark')} class:list={['header-nav-item', currentPath.includes('/benchmark') ? 'is-active' : '']}>
+        <a href={lp('/context-os/benchmark')} class:list={['header-nav-item', currentPath.includes('/benchmark') ? 'is-active' : '']}>
           {t('nav.product.benchmark')}
         </a>
       </div>
@@ -197,8 +194,7 @@ const docsColumns = [
       </div>
 
       <div class="mobile-section mobile-top-links">
-        <a href={lp('/trust')} class="mobile-nav-link">{t('nav.trust')}</a>
-        <a href={lp('/benchmark')} class="mobile-nav-link">{t('nav.product.benchmark')}</a>
+        <a href={lp('/context-os/benchmark')} class="mobile-nav-link">{t('nav.product.benchmark')}</a>
         <a href={lp('/login')} class="mobile-nav-link">{t('nav.login')}</a>
       </div>
 
