@@ -37,7 +37,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 - Version: 3.4.7
 - License: MIT + Apache-2.0 (dual-licensed)
 - Language: Rust (single binary)
-- Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx`
+- Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `pi install npm:pi-lean-ctx`
 - Setup: `lean-ctx setup` (auto-configures shell + all detected editors)
 - Telemetry: Zero. None. Ever. Everything runs 100% locally.
 - Repository: https://github.com/yvgude/lean-ctx
@@ -46,7 +46,9 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 ## Supported AI Tools (24+)
 
-Cursor, Claude Code, GitHub Copilot, Windsurf, VS Code, Zed, OpenAI Codex CLI, Gemini CLI, Cline, Roo Code, Google Antigravity, OpenCode, Aider, Amp, AWS Kiro, JetBrains IDEs, Amazon Q Developer, Trae, Continue, Crush, Hermes, Sublime Text, Emacs, Neovim.
+Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CLI, Gemini CLI, Cline, Roo Code, Google Antigravity, OpenCode, Aider, Amp, AWS Kiro, JetBrains IDEs, Amazon Q Developer, Trae, Continue, Crush, Hermes, Sublime Text, Emacs, Neovim.
+
+Pi has a dedicated first-class package: `pi install npm:pi-lean-ctx` — see https://pi.dev/packages/pi-lean-ctx
 
 ## MCP Tools
 

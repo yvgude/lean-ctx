@@ -189,39 +189,23 @@ const stats = [
       {t('contextOs.howItWorksDesc')}
     </p>
 
-    <div class="pipeline-stepper animate-entrance stagger-3" data-pipeline-stepper>
-      <div class="pipeline-tabs" role="tablist">
-        {pipelineSteps.map((s, i) => (
-          <button
-            role="tab"
-            class={`pipeline-tab ${i === 0 ? 'is-active' : ''}`}
-            data-pipeline-tab={String(i)}
-            aria-selected={i === 0 ? 'true' : 'false'}
-          >
-            <span class={`pipeline-tab-number ${
-              s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'
-            }`}>{s.n}</span>
-            <span class="pipeline-tab-label">{s.label}</span>
-          </button>
-        ))}
-      </div>
-      <div class="pipeline-panels">
-        {pipelineSteps.map((s, i) => (
-          <div
-            role="tabpanel"
-            class={`pipeline-panel ${i === 0 ? 'is-active' : ''}`}
-            data-pipeline-panel={String(i)}
-          >
-            <div class="pipeline-panel-inner">
-              <span class={`pipeline-panel-number font-display ${
-                s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'
-              }`}>{s.n}</span>
-              <h3 class="font-display fluid-h2 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{s.label}</h3>
-              <p class="fluid-body text-muted leading-relaxed" style="max-width: 40rem;">{s.desc}</p>
-            </div>
+    <div class="pipeline-flow animate-entrance stagger-3">
+      {pipelineSteps.map((s, i) => (
+        <div class="pipeline-step">
+          <div class="pipeline-step-indicator">
+            <span class={`pipeline-step-dot ${
+              s.tone === 'accent-2' ? 'dot-accent-2' : s.tone === 'accent-3' ? 'dot-accent-3' : 'dot-accent'
+            }`}>
+              <span class="pipeline-step-num">{s.n}</span>
+            </span>
+            {i < pipelineSteps.length - 1 && <div class="pipeline-step-line" />}
           </div>
-        ))}
-      </div>
+          <div class="pipeline-step-content">
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.5rem 0;">{s.label}</h3>
+            <p class="fluid-body text-muted leading-relaxed" style="margin: 0; max-width: 40rem;">{s.desc}</p>
+          </div>
+        </div>
+      ))}
     </div>
   </div>
 </section>
@@ -528,82 +512,59 @@ const stats = [
 </section>
 
 <style>
-  .pipeline-stepper {
-    display: grid;
-    gap: clamp(1.5rem, 1rem + 1vw, 2.5rem);
-  }
-  .pipeline-tabs {
+  .pipeline-flow {
     display: flex;
-    gap: 0.25rem;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 0.25rem;
+    flex-direction: column;
+    gap: 0;
   }
-  .pipeline-tabs::-webkit-scrollbar { display: none; }
-  .pipeline-tab {
-    flex: 1;
-    min-width: 0;
+  .pipeline-step {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    min-height: 0;
+  }
+  .pipeline-step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+  .pipeline-step-dot {
+    width: clamp(2.5rem, 2rem + 1vw, 3.25rem);
+    height: clamp(2.5rem, 2rem + 1vw, 3.25rem);
+    border-radius: 50%;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--color-muted);
-    cursor: pointer;
-    transition: all 0.25s ease;
-    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-    white-space: nowrap;
+    justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    border: 2px solid var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
   }
-  .pipeline-tab:hover {
-    border-color: var(--color-border-light);
-    background: var(--overlay-hover);
+  .pipeline-step-dot.dot-accent-2 {
+    border-color: var(--color-accent-2);
+    background: color-mix(in srgb, var(--color-accent-2) 12%, var(--color-bg));
   }
-  .pipeline-tab.is-active {
-    border-color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  .pipeline-step-dot.dot-accent-3 {
+    border-color: var(--color-accent-3);
+    background: color-mix(in srgb, var(--color-accent-3) 12%, var(--color-bg));
+  }
+  .pipeline-step-num {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(0.75rem, 0.65rem + 0.25vw, 0.9375rem);
     color: var(--color-text-bright);
   }
-  .pipeline-tab-number {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.875rem;
+  .pipeline-step-line {
+    width: 2px;
+    flex: 1;
+    min-height: clamp(1.5rem, 1rem + 1vw, 2.5rem);
+    background: linear-gradient(to bottom, var(--color-border-light), var(--color-border));
   }
-  .pipeline-tab-label { font-weight: 600; }
-  .pipeline-panel { display: none; }
-  .pipeline-panel.is-active { display: block; }
-  .pipeline-panel-inner {
-    padding: clamp(1.5rem, 1rem + 1vw, 2.5rem);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    background: var(--color-surface);
-  }
-  .pipeline-panel-number {
-    font-size: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);
-    font-weight: 800;
-    opacity: 0.2;
-    display: block;
-    margin-bottom: 0.5rem;
+  .pipeline-step-content {
+    padding: clamp(0.25rem, 0.125rem + 0.25vw, 0.5rem) 0 clamp(2rem, 1.5rem + 1vw, 3rem) 0;
   }
 </style>
-
-<script>
-  document.querySelectorAll('[data-pipeline-stepper]').forEach((stepper) => {
-    const tabs = stepper.querySelectorAll('[data-pipeline-tab]');
-    const panels = stepper.querySelectorAll('[data-pipeline-panel]');
-    tabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        const idx = tab.getAttribute('data-pipeline-tab');
-        tabs.forEach((t) => { t.classList.remove('is-active'); t.setAttribute('aria-selected', 'false'); });
-        panels.forEach((p) => p.classList.remove('is-active'));
-        tab.classList.add('is-active');
-        tab.setAttribute('aria-selected', 'true');
-        stepper.querySelector(`[data-pipeline-panel="${idx}"]`)?.classList.add('is-active');
-      });
-    });
-  });
-</script>
 
 </BaseLayout>
