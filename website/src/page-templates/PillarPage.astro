@@ -78,10 +78,13 @@ const accentTones = ['accent', 'accent-2', 'accent-3'];
         <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
           <span class="kicker-pill">{t('contextOs.problemLabel')}</span>
         </div>
-        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t(pillar.problemKey)}
+        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); max-width: 54rem;">
+          {t(pillar.problemTitleKey)}
         </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
+        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); max-width: 48rem;">
+          {t(pillar.problemKey)}
+        </p>
+        <p class="text-muted fluid-body animate-entrance stagger-3" style="margin: 0; max-width: 48rem;">
           {t(pillar.demoDescKey)}
         </p>
       </div>

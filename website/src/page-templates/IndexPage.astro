@@ -38,7 +38,7 @@ const tShell = pickTool('ctx_shell', 2);
         <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
           <span class="kicker-pill">{t('index.heroLabel')}</span>
         </div>
-        <h1 class="font-display fluid-display font-bold text-text-bright animate-entrance">
+        <h1 class="font-display font-bold text-text-bright animate-entrance hero-headline">
           {t('index.heroHeadline')}
         </h1>
 
@@ -755,5 +755,15 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
   update();
 })();
 </script>
+
+<style>
+  .hero-headline {
+    font-size: clamp(2.25rem, 1.5rem + 3.5vw, 4.5rem);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+    max-width: 14ch;
+  }
+</style>
 
 </BaseLayout>

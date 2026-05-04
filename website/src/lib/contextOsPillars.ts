@@ -30,6 +30,7 @@ export interface Pillar {
   ctaKey: string;
   icon: string;
   navDescKey: string;
+  problemTitleKey: string;
   problemKey: string;
   demoDescKey: string;
   demoCommands: PillarDemoCommand[];
@@ -64,6 +65,7 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.smartIo.cta',
     icon: serverIcon,
     navDescKey: 'nav.pillars.smartIoDesc',
+    problemTitleKey: 'pillar.smartIo.problemTitle',
     problemKey: 'pillar.smartIo.problem',
     demoDescKey: 'pillar.smartIo.demoDesc',
     demoCommands: [
@@ -112,6 +114,7 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.intelligence.cta',
     icon: brainIcon,
     navDescKey: 'nav.pillars.intelligenceDesc',
+    problemTitleKey: 'pillar.intelligence.problemTitle',
     problemKey: 'pillar.intelligence.problem',
     demoDescKey: 'pillar.intelligence.demoDesc',
     demoCommands: [
@@ -159,6 +162,7 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.memory.cta',
     icon: memoryIcon,
     navDescKey: 'nav.pillars.memoryDesc',
+    problemTitleKey: 'pillar.memory.problemTitle',
     problemKey: 'pillar.memory.problem',
     demoDescKey: 'pillar.memory.demoDesc',
     demoCommands: [
@@ -207,6 +211,7 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.governance.cta',
     icon: shieldIcon,
     navDescKey: 'nav.pillars.governanceDesc',
+    problemTitleKey: 'pillar.governance.problemTitle',
     problemKey: 'pillar.governance.problem',
     demoDescKey: 'pillar.governance.demoDesc',
     demoCommands: [
@@ -248,6 +253,7 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.verification.cta',
     icon: checkIcon,
     navDescKey: 'nav.pillars.verificationDesc',
+    problemTitleKey: 'pillar.verification.problemTitle',
     problemKey: 'pillar.verification.problem',
     demoDescKey: 'pillar.verification.demoDesc',
     demoCommands: [
@@ -288,6 +294,7 @@ export const pillars: Pillar[] = [
     ctaKey: 'pillar.integrations.cta',
     icon: plugIcon,
     navDescKey: 'nav.pillars.integrationsDesc',
+    problemTitleKey: 'pillar.integrations.problemTitle',
     problemKey: 'pillar.integrations.problem',
     demoDescKey: 'pillar.integrations.demoDesc',
     demoCommands: [
