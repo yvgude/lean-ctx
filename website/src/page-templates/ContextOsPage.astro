@@ -26,7 +26,7 @@ const pipelineSteps = [
 const stats = [
   { value: String(manifest.counts.granular), label: t('contextOs.statMcpTools'),     tone: 'accent' },
   { value: '95+',                            label: t('contextOs.statShellPatterns'), tone: 'accent-2' },
-  { value: '24+',                            label: t('contextOs.statIntegrations'),  tone: 'accent-3' },
+  { value: '29+',                            label: t('contextOs.statIntegrations'),  tone: 'accent-3' },
   { value: '99%',                            label: t('contextOs.statTokenSavings'),  tone: 'accent' },
 ];
 ---
@@ -362,6 +362,9 @@ const stats = [
             { name: 'QoderWork',   mode: 'mcp', cmd: 'lean-ctx init --agent qoderwork' },
             { name: 'VS Code',     mode: 'mcp', cmd: 'lean-ctx init --agent vscode' },
             { name: 'Zed',         mode: 'mcp', cmd: 'lean-ctx init --agent zed' },
+            { name: 'Neovim',      mode: 'mcp', cmd: 'lean-ctx init --agent neovim' },
+            { name: 'Emacs',       mode: 'mcp', cmd: 'lean-ctx init --agent emacs' },
+            { name: 'Sublime Text',mode: 'mcp', cmd: 'lean-ctx init --agent sublime' },
             { name: 'Aider',       mode: 'mcp', cmd: 'lean-ctx init --agent aider' },
             { name: 'Continue',    mode: 'mcp', cmd: 'lean-ctx init --agent continue' },
           ].map((a) => (
