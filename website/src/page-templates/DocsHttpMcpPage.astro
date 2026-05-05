@@ -1,0 +1,121 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'HTTP MCP',
+    items: [
+      { label: 'Overview', href: lp('/docs/http-mcp') },
+      { label: 'Endpoints', href: lp('/docs/http-mcp') + '#endpoints' },
+      { label: 'Auth & host checks', href: lp('/docs/http-mcp') + '#auth-host' },
+      { label: 'Limits & timeouts', href: lp('/docs/http-mcp') + '#limits' },
+      { label: 'Error codes', href: lp('/docs/http-mcp') + '#errors' },
+      { label: 'Examples (curl)', href: lp('/docs/http-mcp') + '#examples' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'CLI Reference', href: lp('/docs/cli-reference') },
+      { label: 'Team Server', href: lp('/docs/team-server') },
+      { label: 'Remote Setup', href: lp('/docs/remote-setup') },
+      { label: 'Verification', href: lp('/docs/verification') },
+    ],
+  },
+];
+---
+
+<DocsLayout title="HTTP MCP Contract v1" description="Stable HTTP endpoints for system-to-system access to the LeanCTX tool surface." sidebar={sidebar}>
+  <div class="docs-content">
+    <h1>HTTP MCP Contract v1</h1>
+    <p class="lead">
+      LeanCTX exposes a small, stable HTTP surface for system-to-system integrations. These endpoints mirror the MCP tool
+      registry and tool execution semantics, with explicit auth + limits.
+    </p>
+
+    <section id="endpoints">
+      <h2>Endpoints</h2>
+      <ul>
+        <li><code>GET /health</code> — always open, returns <code>ok</code></li>
+        <li><code>GET /v1/manifest</code> — tool manifest (SSOT surface)</li>
+        <li><code>GET /v1/tools?offset=&amp;limit=</code> — paginated tool list (granular tools)</li>
+        <li><code>POST /v1/tools/call</code> — call a tool by name with JSON arguments</li>
+      </ul>
+    </section>
+
+    <section id="auth-host">
+      <h2>Auth &amp; host checks</h2>
+      <ul>
+        <li>
+          <strong>Loopback bind</strong> (<code>127.0.0.1</code>/<code>localhost</code>/<code>::1</code>): auth token is optional.
+        </li>
+        <li>
+          <strong>Non-loopback bind</strong> (e.g. <code>0.0.0.0</code> / public IP): requires <code>--auth-token</code>.
+        </li>
+        <li>
+          Requests use <code>Authorization: Bearer $TOKEN</code>. Token compare is constant-time.
+        </li>
+        <li>
+          Host header is checked unless disabled. Use <code>--allowed-host</code> (repeatable) to add hostnames, or
+          <code>--disable-host-check</code> to disable the DNS-rebinding guard.
+        </li>
+      </ul>
+    </section>
+
+    <section id="limits">
+      <h2>Limits &amp; timeouts</h2>
+      <ul>
+        <li><strong>Body size cap</strong>: <code>maxBodyBytes</code></li>
+        <li><strong>Concurrency cap</strong>: <code>maxConcurrency</code></li>
+        <li><strong>Rate limit</strong>: <code>maxRps</code> with <code>rateBurst</code></li>
+        <li><strong>Request timeout</strong>: <code>requestTimeoutMs</code> (tool calls return 504 on timeout)</li>
+      </ul>
+    </section>
+
+    <section id="errors">
+      <h2>Error codes</h2>
+      <p class="text-sm text-muted">
+        Errors are returned as JSON with <code>error_code</code> + <code>error</code>. Status codes are stable.
+      </p>
+      <ul>
+        <li><code>401</code> — <code>unauthorized</code> (missing/invalid Bearer token)</li>
+        <li><code>400</code> — <code>host_denied</code> (Host header not allowed)</li>
+        <li><code>429</code> — <code>rate_limited</code> (RPS guard)</li>
+        <li><code>429</code> — <code>concurrency_limited</code> (in-flight guard)</li>
+        <li><code>400</code> — <code>tool_error</code> (tool execution rejected/failed)</li>
+        <li><code>504</code> — <code>request_timeout</code> (tool call exceeded timeout)</li>
+      </ul>
+    </section>
+
+    <section id="examples">
+      <h2>Examples (curl)</h2>
+      <pre><code class="language-bash">{`# Start server on loopback (no auth required)
+lean-ctx serve --host 127.0.0.1 --port 8080
+
+# Health (always open)
+curl http://127.0.0.1:8080/health
+
+# Manifest + tool list
+curl http://127.0.0.1:8080/v1/manifest
+curl "http://127.0.0.1:8080/v1/tools?offset=0&limit=50"
+
+# Call a tool
+curl -X POST \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"ctx_tree","arguments":{"path":".","depth":2}}' \\
+  http://127.0.0.1:8080/v1/tools/call
+
+# Non-loopback bind requires auth + allowed hosts
+lean-ctx serve \\
+  --host 0.0.0.0 \\
+  --port 8080 \\
+  --auth-token "$TOKEN" \\
+  --allowed-host "your-domain.example"`}</code></pre>
+    </section>
+  </div>
+</DocsLayout>
+

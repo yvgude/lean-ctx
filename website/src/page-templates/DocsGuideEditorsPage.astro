@@ -96,6 +96,12 @@ curl -fsSL https://leanctx.com/install | sh
 # Auto-detect and configure all installed editors
 lean-ctx setup
 
+# Premium repair (merge-based, idempotent)
+lean-ctx install --repair
+
+# Premium integration health checks (Cursor/Claude Code)
+lean-ctx doctor integrations
+
 # Or configure a specific editor
 lean-ctx init --agent claude
 lean-ctx init --agent cursor
@@ -129,7 +135,6 @@ lean-ctx init --agent copilot`}</code></pre>
       <tr><td><code>jetbrains</code></td><td>JetBrains IDEs</td><td><code>~/.jb-mcp.json</code></td></tr>
       <tr><td><code>opencode</code></td><td>OpenCode</td><td><code>~/.config/opencode/opencode.json</code></td></tr>
       <tr><td><code>crush</code></td><td>Crush</td><td><code>~/.config/crush/crush.json</code></td></tr>
-      <tr><td><code>aider</code></td><td>Aider</td><td><code>~/.aider/mcp.json</code></td></tr>
       <tr><td><code>verdent</code></td><td>Verdent</td><td><code>~/.verdent/mcp.json</code></td></tr>
       <tr><td><code>qoder</code></td><td>Qoder</td><td><code>~/.qoder/settings.json</code> <span class="text-muted">(hooks)</span> / <code>~/.qoder/mcp.json</code> <span class="text-muted">(MCP/Hybrid)</span></td></tr>
       <tr><td><code>qoderwork</code></td><td>QoderWork</td><td><code>~/.qoderwork/mcp.json</code></td></tr>
@@ -209,13 +214,7 @@ lean-ctx init --agent claude --mode mcp`}</code></pre>
       "command": "lean-ctx",
       "env": {
         "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
-      },
-      "autoApprove": [
-        "ctx_read", "ctx_shell", "ctx_search", "ctx_tree",
-        "ctx_overview", "ctx_preload", "ctx_compress",
-        "ctx_session", "ctx_knowledge", "ctx_agent",
-        "ctx_semantic_search", "ctx_edit", "..."
-      ]
+      }
     }
   }
 }`}</code></pre>
@@ -293,8 +292,7 @@ lean-ctx init --agent claude --project`}</code></pre>
       "command": "lean-ctx",
       "env": {
         "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
-      },
-      "autoApprove": ["ctx_read", "ctx_shell", "ctx_search", "..."]
+      }
     }
   }
 }`}</code></pre>
@@ -559,8 +557,7 @@ lean-ctx init --agent copilot --global`}</code></pre>
   "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx",
-      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" },
-      "autoApprove": ["ctx_read", "ctx_shell", "ctx_search", "..."]
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
     }
   }
 }`}</code></pre>
@@ -584,8 +581,7 @@ lean-ctx init --agent roo`}</code></pre>
   "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx",
-      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" },
-      "autoApprove": ["ctx_read", "ctx_shell", "ctx_search", "..."]
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
     }
   }
 }`}</code></pre>
@@ -658,8 +654,7 @@ lean-ctx init --agent roo`}</code></pre>
   "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx",
-      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" },
-      "autoApprove": ["ctx_read", "ctx_shell", "ctx_search", "..."]
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
     }
   }
 }`}</code></pre>
@@ -799,7 +794,6 @@ lean-ctx init --agent roo`}</code></pre>
     </thead>
     <tbody>
       <tr><td>Verdent</td><td><code>verdent</code></td><td><code>~/.verdent/mcp.json</code></td></tr>
-      <tr><td>Aider</td><td><code>aider</code></td><td><code>~/.aider/mcp.json</code></td></tr>
       <tr><td>Crush</td><td><code>crush</code></td><td><code>~/.config/crush/crush.json</code> (<code>mcp</code> key)</td></tr>
       <tr><td>Qwen Code</td><td><code>qwen</code></td><td><code>~/.qwen/settings.json</code></td></tr>
       <tr><td>Trae</td><td><code>trae</code></td><td><code>~/.trae/mcp.json</code></td></tr>
@@ -807,13 +801,12 @@ lean-ctx init --agent roo`}</code></pre>
     </tbody>
   </table>
 
-  <p>Standard <code>mcpServers</code> JSON format (used by Verdent, Aider, Qwen, Trae, Amazon Q):</p>
+  <p>Standard <code>mcpServers</code> JSON format (used by Verdent, Qwen, Trae, Amazon Q):</p>
   <pre><code>{`{
   "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx",
-      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" },
-      "autoApprove": ["ctx_read", "ctx_shell", "ctx_search", "..."]
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
     }
   }
 }`}</code></pre>
@@ -834,6 +827,12 @@ lean-ctx init --agent roo`}</code></pre>
   <p>After configuring any editor, verify lean-ctx is connected:</p>
   <pre><code>{`# Check lean-ctx health
 lean-ctx doctor
+
+# Premium integration health (Cursor/Claude Code)
+lean-ctx doctor integrations
+
+# Repair drift (safe, merge-based)
+lean-ctx install --repair
 
 # In Claude Code:
 /mcp          # Should show lean-ctx as connected

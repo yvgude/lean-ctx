@@ -1,0 +1,163 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { contextOsPillars } from '../lib/contextOsIa';
+import { getMcpManifest, getToolEnrichments, toolNameToSlug } from '../lib/mcpManifest';
+
+export interface Props {
+  pillarHref: string;
+}
+
+const { pillarHref } = Astro.props;
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const pillar = contextOsPillars.find((p) => p.href === pillarHref);
+if (!pillar) {
+  throw new Error(`Unknown Context OS pillar href: ${pillarHref}`);
+}
+
+const pillarSlug = pillarHref.replace(/^\/docs\//, '');
+const pillarToolsHref = `/docs/tools/${pillarSlug}`;
+
+const manifest = getMcpManifest();
+const enrichments = getToolEnrichments();
+const toolsByName = new Map(manifest.tools.granular.map((tool) => [tool.name, tool]));
+
+const byCategory = enrichments.categories;
+
+function uniq(names: string[]): string[] {
+  return Array.from(new Set(names));
+}
+
+function pillarToolNames(href: string): string[] {
+  switch (href) {
+    case '/docs/context-io':
+      return uniq([...byCategory.core.tools, ...byCategory.analysis.tools]);
+    case '/docs/context-orchestration':
+      return uniq([...byCategory.intelligence.tools, ...byCategory.workflow.tools, ...byCategory.session.tools]);
+    case '/docs/context-memory':
+      return uniq([...byCategory.memory.tools, 'ctx_session', 'ctx_context', 'ctx_share']);
+    case '/docs/context-verification':
+      return uniq(['ctx_verify', 'ctx_proof', 'ctx_metrics', 'ctx_context', 'ctx_session', 'ctx_workflow']);
+    case '/docs/context-delivery':
+      return uniq(['ctx_share', 'ctx_handoff', 'ctx_call', 'ctx_pack', 'ctx_execute', 'ctx_proof', 'ctx_verify']);
+    default:
+      return [];
+  }
+}
+
+const toolNames = pillarToolNames(pillarHref).filter((n) => toolsByName.has(n));
+
+const sidebar = [
+  {
+    title: t('docs.tools.sidebarCategories'),
+    items: [
+      { label: t('docs.tools.sidebarAllTools'), href: lp('/docs/tools') },
+      { label: t(pillar.labelKey), href: lp(pillarToolsHref) },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('nav.trust'), href: lp('/trust') },
+      { label: t('docs.sidebarVerification'), href: lp('/docs/verification') },
+      { label: t('docs.sidebarReplayability'), href: lp('/docs/replayability') },
+      { label: t('nav.docs.quickReference'), href: lp('/docs/quick-reference') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={`${t(pillar.labelKey)} — Tools`} description={pillar.descriptionKey ? t(pillar.descriptionKey) : undefined} sidebar={sidebar}>
+  <div class="docs-content">
+    <p class="lead">
+      Tool reference grouped by Context OS pillar. All tool definitions and schemas are derived from <code>generated/mcp-tools.json</code>.
+    </p>
+
+    <div class="card" style="padding: 1rem; margin: 1rem 0 1.25rem 0;">
+      <label class="text-sm font-medium text-text-bright" for="toolFilter">Search tools</label>
+      <input
+        id="toolFilter"
+        type="search"
+        class="w-full mt-2"
+        placeholder="Type to filter by tool name or description"
+        style="padding: 0.65rem 0.75rem; border-radius: 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);"
+      />
+      <div class="text-xs text-muted mt-2">
+        Matches update instantly. Source is SSOT manifest — no manual lists.
+      </div>
+    </div>
+
+    <p class="text-sm text-muted">
+      Pillar: <a href={lp(pillarHref)}>{t(pillar.labelKey)}</a> · Tools in this pillar view: <strong>{toolNames.length}</strong> · Pillar tools URL:{' '}
+      <a href={lp(pillarToolsHref)}><code>{pillarToolsHref}</code></a>
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>{t('docs.tools.thTool')}</th>
+          <th>{t('docs.tools.thWhatItDoes')}</th>
+          <th>Args</th>
+          <th>Schema MD5</th>
+        </tr>
+      </thead>
+      <tbody>
+        {toolNames.map((toolName) => {
+          const tool = toolsByName.get(toolName);
+          if (!tool) return null;
+          const schema = tool.input_schema ?? {};
+          const props = schema.properties ?? {};
+          const required = schema.required ?? [];
+          const enrich = enrichments.tools[toolName];
+          const slug = toolNameToSlug(toolName);
+          return (
+            <tr data-tool-name={toolName} data-tool-desc={tool.description}>
+              <td>
+                <a href={lp(`/docs/tools/${slug}`)}><code>{toolName}</code></a>
+              </td>
+              <td>
+                {tool.description}
+                {enrich?.token_impact && (
+                  <div class="text-xs text-muted mt-1">Token impact: {enrich.token_impact}</div>
+                )}
+              </td>
+              <td>
+                <span class="text-xs text-muted">
+                  {Object.keys(props).length} params / {required.length} required
+                </span>
+              </td>
+              <td><code class="text-xs">{tool.schema_md5}</code></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+</DocsLayout>
+
+<script is:inline>
+  (() => {
+    const input = document.getElementById('toolFilter');
+    if (!input) return;
+    const rows = Array.from(document.querySelectorAll('tr[data-tool-name]'));
+    const normalize = (s) => String(s || '').toLowerCase();
+
+    const apply = () => {
+      const q = normalize(input.value).trim();
+      for (const row of rows) {
+        const name = normalize(row.getAttribute('data-tool-name'));
+        const desc = normalize(row.getAttribute('data-tool-desc'));
+        const ok = !q || name.includes(q) || desc.includes(q);
+        row.style.display = ok ? '' : 'none';
+      }
+    };
+
+    input.addEventListener('input', apply);
+    apply();
+  })();
+</script>
+

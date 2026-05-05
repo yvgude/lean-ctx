@@ -71,8 +71,21 @@ ctx_knowledge("remember", { category: "...", key: "...", value: "..." })`}</code
       <p>{t("docsReplay.verificationDesc")}</p>
       <pre><code class="language-bash">{`# CI gates / local checks
 cd rust
-cargo test --all-features
-cargo clippy --all-features -- -D warnings`}</code></pre>
+cargo fmt -- --check
+cargo clippy --all-features -- -D warnings
+
+# SSOT drift gate (manifest must be up-to-date)
+cargo run -q --bin gen_mcp_manifest
+git diff --exit-code ../website/generated/mcp-tools.json
+
+# Core tests (deterministic + bounded)
+cargo test --all-features -- --test-threads=1
+
+# Lightweight regression checks (stable thresholds)
+cargo test -q --test savings_verification
+
+# Proof artifact (machine-readable attestation, no secrets)
+cargo run -q --bin lean-ctx -- proof --summary --no-write`}</code></pre>
     </section>
 
     <section id="cookbook">

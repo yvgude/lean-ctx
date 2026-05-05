@@ -1,0 +1,9 @@
+---
+import DocsContextOsPillarPage from "../../../page-templates/DocsContextOsPillarPage.astro";
+import { getLocaleStaticPaths } from "../../../i18n/routing.ts";
+
+export const getStaticPaths = getLocaleStaticPaths;
+---
+
+<DocsContextOsPillarPage pillarHref="/docs/context-orchestration" />
+

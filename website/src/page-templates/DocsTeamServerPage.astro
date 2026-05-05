@@ -60,12 +60,13 @@ const sidebar = [
 
       <h3>{t('docsTeam.step2Title')}</h3>
       <pre><code class="language-bash">{`# Generate a token with specific scopes
-lean-ctx team token create \\
+TOKEN="$(lean-ctx team token create \\
   --config team.json \\
   --id dev-alice \\
   --scopes search,graph,artifacts,index
+)"
 
-# Output: e622aee...  (this is the Bearer token)`}</code></pre>
+# TOKEN is the Bearer token (printed once; config stores only sha256Hex).`}</code></pre>
 
       <h3>{t('docsTeam.step3Title')}</h3>
       <pre><code class="language-bash">{`lean-ctx team serve --config team.json
@@ -80,13 +81,20 @@ lean-ctx team token create \\
 curl http://your-server:9877/health
 
 # List available tools (requires token)
-curl -H "Authorization: Bearer <token>" \\
+curl -H "Authorization: Bearer $TOKEN" \\
   http://your-server:9877/v1/manifest
 
-# Call a tool
-curl -X POST -H "Authorization: Bearer <token>" \\
+# Call a tool (workspace defaults to defaultWorkspaceId)
+curl -X POST -H "Authorization: Bearer $TOKEN" \\
   -H "Content-Type: application/json" \\
-  -d '{"name":"ctx_tree","arguments":{"depth":2}}' \\
+  -d '{"name":"ctx_tree","arguments":{"path":".","depth":2}}' \\
+  http://your-server:9877/v1/tools/call
+
+# Call a tool in a specific workspace (header overrides default)
+curl -X POST -H "Authorization: Bearer $TOKEN" \\
+  -H "x-leanctx-workspace: main" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"ctx_read","arguments":{"path":"README.md","mode":"signatures"}}' \\
   http://your-server:9877/v1/tools/call`}</code></pre>
     </section>
 
@@ -104,10 +112,10 @@ curl -X POST -H "Authorization: Bearer <token>" \\
           <tr><td><code>auditLogPath</code></td><td>path</td><td>{t('docsTeam.cfgAudit')}</td><td>-</td></tr>
           <tr><td><code>disableHostCheck</code></td><td>bool</td><td>{t('docsTeam.cfgHostCheck')}</td><td><code>false</code></td></tr>
           <tr><td><code>allowedHosts</code></td><td>string[]</td><td>{t('docsTeam.cfgAllowedHosts')}</td><td><code>[]</code></td></tr>
-          <tr><td><code>maxBodyBytes</code></td><td>usize</td><td>{t('docsTeam.cfgMaxBody')}</td><td><code>10485760</code></td></tr>
-          <tr><td><code>maxConcurrency</code></td><td>usize</td><td>{t('docsTeam.cfgConcurrency')}</td><td><code>64</code></td></tr>
-          <tr><td><code>maxRps</code></td><td>u32</td><td>{t('docsTeam.cfgMaxRps')}</td><td><code>100</code></td></tr>
-          <tr><td><code>rateBurst</code></td><td>u32</td><td>{t('docsTeam.cfgBurst')}</td><td><code>200</code></td></tr>
+          <tr><td><code>maxBodyBytes</code></td><td>usize</td><td>{t('docsTeam.cfgMaxBody')}</td><td><code>2097152</code></td></tr>
+          <tr><td><code>maxConcurrency</code></td><td>usize</td><td>{t('docsTeam.cfgConcurrency')}</td><td><code>32</code></td></tr>
+          <tr><td><code>maxRps</code></td><td>u32</td><td>{t('docsTeam.cfgMaxRps')}</td><td><code>50</code></td></tr>
+          <tr><td><code>rateBurst</code></td><td>u32</td><td>{t('docsTeam.cfgBurst')}</td><td><code>100</code></td></tr>
           <tr><td><code>requestTimeoutMs</code></td><td>u64</td><td>{t('docsTeam.cfgTimeout')}</td><td><code>30000</code></td></tr>
         </tbody>
       </table>
@@ -162,11 +170,11 @@ lean-ctx team token create \\
     <section id="authentication">
       <h2>{t('docsTeam.authTitle')}</h2>
       <p>{t('docsTeam.authDesc')}</p>
-      <pre><code class="language-text">{`Authorization: Bearer <token>
+      <pre><code class="language-text">{`Authorization: Bearer $TOKEN
 
-# Without token → HTTP 401 Unauthorized
-# Invalid token → HTTP 401 Unauthorized
-# Valid token, wrong scope → HTTP 403 Forbidden`}</code></pre>
+# Without token → HTTP 401 + JSON {error_code:"unauthorized", ...}
+# Invalid token → HTTP 401 + JSON {error_code:"unauthorized", ...}
+# Valid token, wrong scope → HTTP 403 + JSON {error_code:"scope_denied", ...}`}</code></pre>
     </section>
 
     <!-- Rate Limits -->
@@ -174,11 +182,11 @@ lean-ctx team token create \\
       <h2>{t('docsTeam.rateLimitsTitle')}</h2>
       <p>{t('docsTeam.rateLimitsDesc')}</p>
       <pre><code class="language-json">{`{
-  "maxRps": 100,
-  "rateBurst": 200,
-  "maxConcurrency": 64,
+  "maxRps": 50,
+  "rateBurst": 100,
+  "maxConcurrency": 32,
   "requestTimeoutMs": 30000,
-  "maxBodyBytes": 10485760
+  "maxBodyBytes": 2097152
 }`}</code></pre>
     </section>
 
@@ -186,14 +194,15 @@ lean-ctx team token create \\
     <section id="audit-log">
       <h2>{t('docsTeam.auditTitle')}</h2>
       <p>{t('docsTeam.auditDesc')}</p>
-      <pre><code class="language-json">{`{
-  "ts": "2026-05-01T14:30:00Z",
-  "token_id": "dev-alice",
-  "tool": "ctx_read",
-  "workspace": "frontend",
-  "duration_ms": 12,
-  "status": "ok"
-}`}</code></pre>
+      <p class="text-sm text-muted">
+        Audit log is <strong>JSONL</strong> (one JSON object per line). It never stores raw tool arguments — only
+        <code>argumentsMd5</code> of a canonicalized JSON representation.
+      </p>
+      <pre><code class="language-bash">{`# Inspect the latest audit entry
+tail -n 1 /var/log/lean-ctx/audit.log | jq .
+
+# Keys per entry:
+# ts, tokenId, workspaceId, tool, method, allowed, deniedReason, argumentsMd5`}</code></pre>
     </section>
 
     <!-- Sync -->

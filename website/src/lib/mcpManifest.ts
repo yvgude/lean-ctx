@@ -43,6 +43,8 @@ export type ToolEnrichment = {
   related?: string[];
   token_impact?: string;
   cli_equivalent?: string | null;
+  output_contract?: string;
+  code_paths?: string[];
   examples?: ToolExample[];
 };
 

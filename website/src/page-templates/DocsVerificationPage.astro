@@ -20,6 +20,9 @@ const sidebar = [
   {
     title: t('docsVerify.sidebarRelated'),
     items: [
+      { label: t('nav.trust'), href: lp('/trust') },
+      { label: t('docsReplay.sidebarReplayability'), href: lp('/docs/replayability') },
+      { label: t('artifacts.cookbookTitle'), href: lp('/docs/quick-reference#cookbook') },
       { label: t('docsVerify.sidebarObservability'), href: lp('/docs/observability') },
       { label: t('docsVerify.sidebarSafety'), href: lp('/safety') },
       { label: t('docsVerify.sidebarProfiles'), href: lp('/docs/profiles') },
@@ -59,15 +62,37 @@ const sidebar = [
       <pre><code class="language-toml">{`# Profile-specific verification settings
 [verification]
 enabled = true
+# Optional explicit mode (recommended for clarity):
+#   "warn" (default) -> FAIL only on High severity warnings
+#   "fail"           -> FAIL on Medium+High warnings (strict)
+mode = "warn"
 check_paths = true
 check_identifiers = true
 check_line_numbers = false  # opt-in
-check_structure = true`}</code></pre>
+check_structure = true
+
+# Legacy alias (still supported):
+# strict_mode = true`}</code></pre>
 
       <h3>{t('docsVerify.resultFormatTitle')}</h3>
       <p>{t('docsVerify.resultFormatDesc')}</p>
 
-      <pre><code class="language-text">{`[VERIFY] WARN(missing_path=1, mangled_identifier=2) loss=15.0%`}</code></pre>
+      <pre><code class="language-text">{`[VERIFY] WARN(mangled_identifier=2, missing_path=1) loss=15.0%
+[VERIFY] FAIL(brace_mismatch=1, missing_path=1) loss=40.0%`}</code></pre>
+
+      <h3>Proof artifacts (ContextProofV1)</h3>
+      <pre><code class="language-text">{`# MCP
+ctx_proof action="export" format="summary"
+
+# CLI
+lean-ctx proof --summary`}</code></pre>
+
+      <h3>Verification observability (versioned stats)</h3>
+      <pre><code class="language-text">{`# MCP
+ctx_verify action="stats" format="json"
+
+# CLI
+lean-ctx verify --json`}</code></pre>
     </section>
 
     <!-- Model Routing -->

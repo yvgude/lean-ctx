@@ -35,6 +35,20 @@ cookbook:
     - npm test
     - npm run build
 
+website_build:
+  stage: test
+  image: node:22.12.0
+  variables:
+    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/website/.npm"
+  cache:
+    key: "website-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - website/.npm/
+  script:
+    - cd website
+    - npm ci
+    - npm run build
+
 deploy_website:
   stage: deploy
   image: docker:24
@@ -46,26 +60,11 @@ deploy_website:
     IMAGE_NAME: lean-ctx-web
     DOCKER_HOST: unix:///var/run/docker.sock
   script:
-    - echo "Building website image from pre-built dist..."
+    - echo "Building website image from source (multi-stage Dockerfile)..."
+    - test "$(git ls-files website/dist | wc -l)" -eq 0
+    - test "$(git ls-files website/node_modules | wc -l)" -eq 0
     - cd website
-    - apk add --no-cache ripgrep
-    - |
-      set -eu
-      echo "Verifying dist asset references..."
-      test -d dist
-      test -d dist/_astro
-      rg --no-filename -o "/_astro/[^\\\"']+\\.(css|js)" dist -g "*.html" | sort -u > /tmp/astro-assets.txt
-      while read -r ref; do
-        test -f "dist${ref}" || { echo "ERROR: missing dist${ref}"; exit 1; }
-      done < /tmp/astro-assets.txt
-      echo "Dist assets OK."
-    - |
-      cat > /tmp/Dockerfile.web <<'DEOF'
-      FROM nginx:alpine
-      COPY dist /usr/share/nginx/html
-      COPY nginx.conf /etc/nginx/conf.d/default.conf
-      DEOF
-    - docker build -f /tmp/Dockerfile.web -t ${IMAGE_NAME}:latest .
+    - docker build -t ${IMAGE_NAME}:latest .
     - echo "Stopping old container..."
     - docker stop ${CONTAINER_NAME} || true
     - docker rm ${CONTAINER_NAME} || true

@@ -1,10 +1,12 @@
 ---
 import DocsLayout from '../layouts/DocsLayout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getMcpManifest } from '../lib/mcpManifest';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
+const toolCount = getMcpManifest().counts.granular;
 
 const sidebar = [
   {
@@ -29,7 +31,7 @@ const sidebar = [
     items: [
       { label: 'Getting Started', href: lp('/docs/getting-started') },
       { label: 'Configuration', href: lp('/docs/configuration') },
-      { label: 'Tool API (46)', href: lp('/docs/tools') },
+      { label: `${t('docs.sidebarToolApi')} (${toolCount})`, href: lp('/docs/tools') },
     ],
   },
 ];

@@ -2,672 +2,130 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
-import TerminalChrome from '../components/TerminalChrome.astro';
-import ProofArtifacts from '../components/ProofArtifacts.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
-import { pillars } from '../lib/contextOsPillars';
-import { getMcpManifest } from '../lib/mcpManifest';
-import '../styles/index.css';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
-const manifest = getMcpManifest();
 
-const pipelineSteps = [
-  { n: '01', tone: 'accent',   label: t('contextOs.pipeInput'),     desc: t('contextOs.pipeInputDesc') },
-  { n: '02', tone: 'accent-2', label: t('contextOs.pipeIntent'),    desc: t('contextOs.pipeIntentDesc') },
-  { n: '03', tone: 'accent',   label: t('contextOs.pipeRelevance'), desc: t('contextOs.pipeRelevanceDesc') },
-  { n: '04', tone: 'accent-3', label: t('contextOs.pipeCompress'),  desc: t('contextOs.pipeCompressDesc') },
-  { n: '05', tone: 'accent-2', label: t('contextOs.pipeVerify'),    desc: t('contextOs.pipeVerifyDesc') },
-  { n: '06', tone: 'accent',   label: t('contextOs.pipeDeliver'),   desc: t('contextOs.pipeDeliverDesc') },
-];
+const sdkSnippet = `import { LeanCtxClient } from "@leanctx/sdk";
 
-const stats = [
-  { value: String(manifest.counts.granular), label: t('contextOs.statMcpTools'),     tone: 'accent' },
-  { value: '95+',                            label: t('contextOs.statShellPatterns'), tone: 'accent-2' },
-  { value: '29+',                            label: t('contextOs.statIntegrations'),  tone: 'accent-3' },
-  { value: '99%',                            label: t('contextOs.statTokenSavings'),  tone: 'accent' },
-];
+const client = new LeanCtxClient({
+  baseUrl: "http://127.0.0.1:8080",
+  workspaceId: "acme",
+  channelId: "build-123",
+});
+
+// Tool calls are recorded into the shared session and published to /v1/events.
+await client.callToolText("ctx_tree", { path: ".", depth: 2 });
+
+// Subscribe to live + replayed events.
+for await (const ev of client.subscribeEvents({ since: 0, limit: 200 })) {
+  console.log(ev.kind, ev.payload);
+}
+`;
 ---
 
 <BaseLayout
-  title={t('contextOs.metaTitle')}
-  description={t('contextOs.metaDesc')}
-  breadcrumbs={[
-    { name: t('common.home'), url: lp('/') },
-    { name: t('nav.contextOs'), url: lp('/context-os/') },
-  ]}
+  title={t('contextOs.title')}
+  description={t('contextOs.metaDescription')}
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('contextOs.heroLabel'), url: lp('/context-os/') }]}
 >
+  <PageHero
+    label={t('contextOs.heroLabel')}
+    title={t('contextOs.heroTitle')}
+    highlight={t('contextOs.heroTitleHighlight')}
+    description={t('contextOs.heroDesc')}
+    highlightStyle="italic"
+  >
+    <Fragment slot="actions">
+      <span class="mcp-hero-stat">
+        <span class="text-accent font-bold">Shared</span> Sessions
+      </span>
+      <span class="mcp-hero-stat">
+        <span class="text-accent font-bold">SSE</span> Event Stream
+      </span>
+      <span class="mcp-hero-stat">
+        <span class="text-accent font-bold">SDK</span> Integration
+      </span>
+    </Fragment>
+  </PageHero>
 
-<!-- 1. HERO -->
-<PageHero
-  label={t('contextOs.heroLabel')}
-  title={t('contextOs.heroTitle')}
-  highlight={t('contextOs.heroHighlight')}
-  descriptionHtml={t('contextOs.subline')}
-  kickerTone="accent"
-  titleVariant="display"
-  highlightStyle="italic"
-  descMaxWidth="44rem"
->
-  <Fragment slot="actions">
-    <a
-      href={lp('/docs/getting-started')}
-      class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg"
-      style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
-    >
-      {t('nav.getStarted')}
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-    </a>
-    <a
-      href={lp('/context-os/benchmark')}
-      class="btn-outline inline-flex items-center gap-2 font-medium rounded-lg text-text"
-      style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
-    >
-      {t('nav.product.benchmark')}
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-    </a>
-  </Fragment>
-</PageHero>
+  <div class="section-divider content-grid"></div>
 
-<div class="section-divider content-grid"></div>
+  <section class="relative section-y">
+    <div class="content-grid">
+      <SectionHeading
+        label={t('contextOs.section1Label')}
+        title={t('contextOs.section1Title')}
+        highlight={t('contextOs.section1TitleHighlight')}
+        description={t('contextOs.section1Desc')}
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="52rem"
+        descMb="clamp(2.5rem, 2rem + 2vw, 4rem)"
+      />
 
-<!-- 2. PROBLEM / SOLUTION SPLIT with Compare Cards -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="split split--visual-wide">
-      <div>
-        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          <span class="kicker-pill">{t('contextOs.problemLabel')}</span>
+      <div class="grid sm:grid-cols-3 gap-4">
+        <div class="card animate-entrance" style="padding: 1.25rem;">
+          <div class="text-accent font-mono text-[11px] mb-2">workspaceId + channelId</div>
+          <h3 class="fluid-h3 font-display font-semibold text-text-bright mb-2">{t('contextOs.cardSharedSessionsTitle')}</h3>
+          <p class="fluid-sm text-muted">{t('contextOs.cardSharedSessionsDesc')}</p>
         </div>
-        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t('contextOs.problemTitle')}
-        </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 52rem;">
-          {t('contextOs.problemDesc')}
-        </p>
-      </div>
-
-      <div class="animate-entrance stagger-3">
-        <div class="compare-grid is-stacked">
-          <div class="compare-card">
-            <div class="compare-header compare-header--bad">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-              {t('contextOs.withoutLabel')}
-            </div>
-            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-              <div class="compare-line"><span class="text-danger">{t('contextOs.without1')}</span></div>
-              <div class="compare-line"><span class="text-danger">{t('contextOs.without2')}</span></div>
-              <div class="compare-line"><span class="text-muted">{t('contextOs.without3')}</span></div>
-              <div class="compare-line"><span class="text-danger">{t('contextOs.without4')}</span></div>
-            </div>
-          </div>
-          <div class="compare-card">
-            <div class="compare-header compare-header--good">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-              {t('contextOs.withLabel')}
-            </div>
-            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-              <div class="compare-line"><span class="text-accent">{t('contextOs.with1')}</span></div>
-              <div class="compare-line"><span class="text-accent">{t('contextOs.with2')}</span></div>
-              <div class="compare-line"><span class="text-muted">{t('contextOs.with3')}</span></div>
-              <div class="compare-line"><span class="text-accent">{t('contextOs.with4')}</span></div>
-            </div>
-          </div>
+        <div class="card animate-entrance" style="padding: 1.25rem;">
+          <div class="text-accent font-mono text-[11px] mb-2">GET /v1/events</div>
+          <h3 class="fluid-h3 font-display font-semibold text-text-bright mb-2">{t('contextOs.cardEventStreamTitle')}</h3>
+          <p class="fluid-sm text-muted">{t('contextOs.cardEventStreamDesc')}</p>
+        </div>
+        <div class="card animate-entrance" style="padding: 1.25rem;">
+          <div class="text-accent font-mono text-[11px] mb-2">POST /v1/tools/call</div>
+          <h3 class="fluid-h3 font-display font-semibold text-text-bright mb-2">{t('contextOs.cardToolGatewayTitle')}</h3>
+          <p class="fluid-sm text-muted">{t('contextOs.cardToolGatewayDesc')}</p>
         </div>
       </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<div class="section-divider content-grid"></div>
+  <div class="section-divider content-grid"></div>
 
-<!-- 3. WHAT IS A CONTEXT OS - Split with Architecture -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="split split--visual-wide">
-      <div>
-        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          <span class="kicker-pill">{t('contextOs.heroLabel')}</span>
+  <section class="relative section-y">
+    <div class="content-grid">
+      <SectionHeading
+        label={t('contextOs.section2Label')}
+        title={t('contextOs.section2Title')}
+        highlight={t('contextOs.section2TitleHighlight')}
+        description={t('contextOs.section2Desc')}
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="52rem"
+        descMb="clamp(2.5rem, 2rem + 2vw, 4rem)"
+      />
+
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div class="card" style="padding: 1.25rem;">
+          <div class="text-[11px] text-muted font-mono mb-3">{t('contextOs.snippetTitle')}</div>
+          <pre class="m-0 overflow-auto rounded-xl border border-white/10 bg-black/50 p-4 text-[12px] leading-relaxed"><code>{sdkSnippet}</code></pre>
         </div>
-        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t('contextOs.whatIs')}
-        </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
-          {t('contextOs.whatIsDesc')}
-        </p>
-      </div>
 
-      <div class="animate-entrance stagger-3">
-        <div class="grid" style="gap: clamp(0.5rem, 0.375rem + 0.25vw, 0.75rem);">
-          <div class="card" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-align: center; border-color: var(--color-border);">
-            <div class="flex items-center justify-center gap-2">
-              <svg class="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0"/></svg>
-              <span class="font-display font-semibold text-text-bright fluid-sm">{t('contextOs.diagramAgent')}</span>
-            </div>
-          </div>
-          <div class="flex justify-center"><svg class="w-4 h-4 text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3"/></svg></div>
-          <div class="card" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-align: center; border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));">
-            <div class="flex items-center justify-center gap-2">
-              <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008V18m-3 0h.008v.008h-.008V18m-3 0h.008v.008h-.008V18"/></svg>
-              <span class="font-display font-semibold text-accent fluid-sm">{t('contextOs.diagramLeanctx')}</span>
-            </div>
-            <div class="flex flex-wrap justify-center gap-1 mt-2" style="font-size: 0.6875rem;">
-              <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">I/O</span>
-              <span class="px-2 py-0.5 rounded bg-accent-2/10 text-accent-2 font-mono">Intelligence</span>
-              <span class="px-2 py-0.5 rounded bg-accent-3/10 text-accent-3 font-mono">Memory</span>
-              <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">Verify</span>
-            </div>
-          </div>
-          <div class="flex justify-center"><svg class="w-4 h-4 text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3"/></svg></div>
-          <div class="card" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-align: center; border-color: var(--color-border);">
-            <div class="flex items-center justify-center gap-2">
-              <svg class="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5"/></svg>
-              <span class="font-display font-semibold text-text-bright fluid-sm">{t('contextOs.diagramRepo')}</span>
-            </div>
-          </div>
+        <div class="card" style="padding: 1.25rem;">
+          <h3 class="fluid-h3 font-display font-semibold text-text-bright mb-3">{t('contextOs.nextStepsTitle')}</h3>
+          <ul class="fluid-sm text-muted leading-relaxed" style="margin: 0; padding-left: 1.2rem;">
+            <li class="mb-2">
+              <a class="text-accent hover:underline" href={lp('/docs/team-server')}>{t('contextOs.nextStepsTeamServer')}</a>
+            </li>
+            <li class="mb-2">
+              <a class="text-accent hover:underline" href={lp('/docs/http-mcp')}>{t('contextOs.nextStepsHttpMcp')}</a>
+            </li>
+            <li class="mb-2">
+              <a class="text-accent hover:underline" href={lp('/docs/context-io')}>{t('contextOs.nextStepsPillars')}</a>
+            </li>
+            <li>
+              <a class="text-accent hover:underline" href={lp('/docs/tools')}>{t('contextOs.nextStepsTools')}</a>
+            </li>
+          </ul>
         </div>
       </div>
     </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 4. PIPELINE - Dimensions Grid -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('contextOs.pipelineLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('contextOs.howItWorks')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
-      {t('contextOs.howItWorksDesc')}
-    </p>
-
-    <div class="pipeline-flow animate-entrance stagger-3">
-      {pipelineSteps.map((s, i) => (
-        <div class="pipeline-step">
-          <div class="pipeline-step-indicator">
-            <span class={`pipeline-step-dot ${
-              s.tone === 'accent-2' ? 'dot-accent-2' : s.tone === 'accent-3' ? 'dot-accent-3' : 'dot-accent'
-            }`}>
-              <span class="pipeline-step-num">{s.n}</span>
-            </span>
-            {i < pipelineSteps.length - 1 && <div class="pipeline-step-line" />}
-          </div>
-          <div class="pipeline-step-content">
-            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.5rem 0;">{s.label}</h3>
-            <p class="fluid-body text-muted leading-relaxed" style="margin: 0; max-width: 40rem;">{s.desc}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 4b. INTEGRATION MODES -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('contextOs.modesLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('contextOs.modesTitle')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
-      {t('contextOs.modesDesc')}
-    </p>
-
-    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      <div class="compare-card animate-entrance stagger-3">
-        <div class="compare-header compare-header--good">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
-          {t('contextOs.modeCliTitle')}
-        </div>
-        <div class="compare-body" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-          <div class="compare-line"><span class="text-accent font-semibold">{t('contextOs.modeCliTag')}</span></div>
-          <div class="compare-line"><span class="text-muted">{t('contextOs.modeCliDesc')}</span></div>
-          <div class="compare-line" style="margin-top: 0.5rem;">
-            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">lean-ctx read src/auth.ts -m map</code>
-          </div>
-        </div>
-      </div>
-
-      <div class="compare-card animate-entrance stagger-4">
-        <div class="compare-header" style="background: color-mix(in srgb, var(--color-accent-2) 12%, var(--color-surface)); border-color: var(--color-accent-2);">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
-          {t('contextOs.modeHybridTitle')}
-        </div>
-        <div class="compare-body" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-          <div class="compare-line"><span class="text-accent-2 font-semibold">{t('contextOs.modeHybridTag')}</span></div>
-          <div class="compare-line"><span class="text-muted">{t('contextOs.modeHybridDesc')}</span></div>
-          <div class="compare-line" style="margin-top: 0.5rem;">
-            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">MCP cache + CLI shell/search</code>
-          </div>
-        </div>
-      </div>
-
-      <div class="compare-card animate-entrance stagger-5">
-        <div class="compare-header" style="background: color-mix(in srgb, var(--color-accent-3) 12%, var(--color-surface)); border-color: var(--color-accent-3);">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008V18m-3 0h.008v.008h-.008V18m-3 0h.008v.008h-.008V18"/></svg>
-          {t('contextOs.modeMcpTitle')}
-        </div>
-        <div class="compare-body" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-          <div class="compare-line"><span class="text-accent-3 font-semibold">{t('contextOs.modeMcpTag')}</span></div>
-          <div class="compare-line"><span class="text-muted">{t('contextOs.modeMcpDesc')}</span></div>
-          <div class="compare-line" style="margin-top: 0.5rem;">
-            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">56 tools via MCP + lazy tool set</code>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 4c. DAEMON + SMART SETUP -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="split split--visual-wide">
-      <div>
-        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          <span class="kicker-pill">{t('contextOs.daemonLabel')}</span>
-        </div>
-        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t('contextOs.daemonTitle')}
-        </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
-          {t('contextOs.daemonDesc')}
-        </p>
-      </div>
-
-      <TerminalChrome
-        title="lean-ctx serve --status"
-        chromeClass="animate-entrance stagger-3"
-        bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
-      >
-        <div>
-          <span class="text-accent">$</span>{' '}
-          <span class="text-text-bright">lean-ctx serve --status</span>
-        </div>
-        <div class="term-divider"></div>
-        <div><span class="text-muted">daemon</span>  <span class="text-accent font-semibold">running</span> <span class="text-muted">(PID 4139)</span></div>
-        <div><span class="text-muted">socket</span>  <span class="text-text-bright">/tmp/lean-ctx.sock</span></div>
-        <div><span class="text-muted">uptime</span>  <span class="text-text">2h 14m</span></div>
-        <div><span class="text-muted">sessions</span> <span class="text-text-bright">3 active</span></div>
-        <div class="term-divider"></div>
-        <div><span class="text-muted">cache</span>   <span class="text-accent">247 entries</span> <span class="text-muted">(hit rate 94.2%)</span></div>
-        <div><span class="text-muted">memory</span>  <span class="text-text">12.4 MB</span></div>
-      </TerminalChrome>
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 4d. AGENT MATRIX -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('contextOs.agentMatrixLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('contextOs.agentMatrixTitle')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
-      {t('contextOs.agentMatrixDesc')}
-    </p>
-
-    <div class="animate-entrance stagger-3" style="overflow-x: auto;">
-      <table class="agent-matrix" style="width: 100%; border-collapse: collapse; font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-        <thead>
-          <tr>
-            <th class="matrix-th matrix-th-agent">Agent</th>
-            <th class="matrix-th matrix-th-mode"><span class="matrix-mode-dot dot-cli"></span>CLI-Redirect</th>
-            <th class="matrix-th matrix-th-mode"><span class="matrix-mode-dot dot-hybrid"></span>Hybrid</th>
-            <th class="matrix-th matrix-th-mode"><span class="matrix-mode-dot dot-mcp"></span>MCP</th>
-            <th class="matrix-th matrix-th-setup">Setup</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            { name: 'Cursor',      mode: 'cli', cmd: 'lean-ctx init --agent cursor' },
-            { name: 'Claude Code', mode: 'cli', cmd: 'lean-ctx init --agent claude' },
-            { name: 'Codex',       mode: 'cli', cmd: 'lean-ctx init --agent codex' },
-            { name: 'OpenCode',    mode: 'cli', cmd: 'lean-ctx init --agent opencode' },
-            { name: 'Gemini CLI',  mode: 'cli', cmd: 'lean-ctx init --agent gemini' },
-            { name: 'CRUSH',       mode: 'cli', cmd: 'lean-ctx init --agent crush' },
-            { name: 'Hermes',      mode: 'cli', cmd: 'lean-ctx init --agent hermes' },
-            { name: 'Pi',          mode: 'cli', cmd: 'lean-ctx init --agent pi' },
-            { name: 'Qoder',       mode: 'cli', cmd: 'lean-ctx init --agent qoder' },
-            { name: 'Windsurf',    mode: 'hybrid', cmd: 'lean-ctx init --agent windsurf' },
-            { name: 'Copilot',     mode: 'hybrid', cmd: 'lean-ctx init --agent copilot' },
-            { name: 'Amp',         mode: 'hybrid', cmd: 'lean-ctx init --agent amp' },
-            { name: 'Cline',       mode: 'hybrid', cmd: 'lean-ctx init --agent cline' },
-            { name: 'Roo Code',    mode: 'hybrid', cmd: 'lean-ctx init --agent roo' },
-            { name: 'Kiro',        mode: 'hybrid', cmd: 'lean-ctx init --agent kiro' },
-            { name: 'Antigravity', mode: 'hybrid', cmd: 'lean-ctx init --agent antigravity' },
-            { name: 'Amazon Q',    mode: 'hybrid', cmd: 'lean-ctx init --agent amazonq' },
-            { name: 'Qwen',        mode: 'hybrid', cmd: 'lean-ctx init --agent qwen' },
-            { name: 'Trae',        mode: 'hybrid', cmd: 'lean-ctx init --agent trae' },
-            { name: 'Verdent',     mode: 'hybrid', cmd: 'lean-ctx init --agent verdent' },
-            { name: 'JetBrains',   mode: 'mcp', cmd: 'lean-ctx init --agent jetbrains' },
-            { name: 'QoderWork',   mode: 'mcp', cmd: 'lean-ctx init --agent qoderwork' },
-            { name: 'VS Code',     mode: 'mcp', cmd: 'lean-ctx init --agent vscode' },
-            { name: 'Zed',         mode: 'mcp', cmd: 'lean-ctx init --agent zed' },
-            { name: 'Neovim',      mode: 'mcp', cmd: 'lean-ctx init --agent neovim' },
-            { name: 'Emacs',       mode: 'mcp', cmd: 'lean-ctx init --agent emacs' },
-            { name: 'Sublime Text',mode: 'mcp', cmd: 'lean-ctx init --agent sublime' },
-            { name: 'Aider',       mode: 'mcp', cmd: 'lean-ctx init --agent aider' },
-            { name: 'Continue',    mode: 'mcp', cmd: 'lean-ctx init --agent continue' },
-          ].map((a) => (
-            <tr class="matrix-row">
-              <td class="matrix-td matrix-td-agent">{a.name}</td>
-              <td class="matrix-td matrix-td-check">{a.mode === 'cli'    ? <span class="matrix-dot matrix-dot-cli" aria-label="CLI-Redirect">●</span> : <span class="matrix-empty">–</span>}</td>
-              <td class="matrix-td matrix-td-check">{a.mode === 'hybrid' ? <span class="matrix-dot matrix-dot-hybrid" aria-label="Hybrid">●</span>      : <span class="matrix-empty">–</span>}</td>
-              <td class="matrix-td matrix-td-check">{a.mode === 'mcp'    ? <span class="matrix-dot matrix-dot-mcp" aria-label="MCP">●</span>             : <span class="matrix-empty">–</span>}</td>
-              <td class="matrix-td matrix-td-setup"><code>{a.cmd}</code></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 5. SIX PILLARS -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('contextOs.pillarsLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('index.sixPillarsTitle')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
-      {t('index.sixPillarsSubline')}
-    </p>
-
-    <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-      {pillars.map((p, i) => (
-        <a
-          href={lp(`/context-os/${p.slug}`)}
-          class={`card group animate-entrance stagger-${1 + i}`}
-          style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;"
-        >
-          <div class="flex items-center gap-3" style="margin-bottom: 0.75rem;">
-            <div class="w-9 h-9 rounded-lg flex items-center justify-center bg-accent/10" style="border: 1px solid var(--color-border);">
-              <span class="text-accent" set:html={p.icon} />
-            </div>
-            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">
-              {t(p.titleKey)}
-            </h3>
-          </div>
-          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.75rem 0;">
-            {t(p.navDescKey)}
-          </p>
-          <div class="flex items-center justify-between">
-            <span class="inline-flex items-center gap-2 text-accent font-medium fluid-label">
-              {p.tools.length} {t('contextOs.toolsLabel')}
-              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-            </span>
-            <span class="fluid-label text-muted">{p.features.length} {t('contextOs.featuresLabel')}</span>
-          </div>
-        </a>
-      ))}
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 6. LIVE DEMO - Split with Terminal -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="split split--visual-wide">
-      <div>
-        <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-          <span class="kicker-pill">{t('contextOs.liveLabel')}</span>
-        </div>
-        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t('contextOs.liveTitle')}
-        </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
-          {t('contextOs.liveDesc')}
-        </p>
-      </div>
-
-      <TerminalChrome
-        title="ctx_read - map"
-        chromeClass="animate-entrance stagger-3"
-        bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
-      >
-        <div>
-          <span class="text-accent">ctx_read</span>{' '}
-          <span class="text-text-bright">{`({ path: "src/lib/auth.ts", mode: "map" })`}</span>
-        </div>
-        <div class="term-divider"></div>
-        <div><span class="text-muted">exports</span> <span class="text-text-bright">authenticate(), validateToken(), refreshSession()</span></div>
-        <div><span class="text-muted">deps</span> <span class="text-text-bright">jsonwebtoken, bcrypt, redis</span></div>
-        <div><span class="text-muted">lines</span> <span class="text-text-bright">247</span></div>
-        <div class="term-divider"></div>
-        <div><span class="text-muted">original</span> <span class="text-text">4,200 tokens</span></div>
-        <div><span class="text-muted">compressed</span> <span class="text-accent font-semibold">180 tokens (96% saved)</span></div>
-        <div><span class="text-muted">cached</span> <span class="text-accent">13 tokens on re-read</span></div>
-      </TerminalChrome>
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 7. STATS -->
-<section class="section-y-sm">
-  <div class="content-grid">
-    <div class="stats-panels animate-entrance">
-      {stats.map((s) => (
-        <div class="stat-panel">
-          <span class={`stat-number ${s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`}>{s.value}</span>
-          <span class="stat-desc">{s.label}</span>
-        </div>
-      ))}
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 8. PROOF ARTIFACTS -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('contextOs.proofLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem; max-width: 58rem;">
-      {t('contextOs.proofTitle')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 56rem;">
-      {t('contextOs.proofDesc')}
-    </p>
-    <div class="animate-entrance stagger-3">
-      <ProofArtifacts />
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 9. CTA -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance">
-      <h2 class="font-display fluid-display font-bold text-text-bright" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem); max-width: 48rem;">
-        {t('index.ctaTitle')}
-      </h2>
-      <p class="text-muted fluid-body" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 36rem;">
-        {t('contextOs.subline')}
-      </p>
-
-      <div class="flex flex-wrap items-center" style="gap: clamp(0.875rem, 0.5rem + 0.75vw, 1.5rem);">
-        <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2.5" style="padding: clamp(0.875rem, 0.7rem + 0.4vw, 1.125rem) clamp(2rem, 1.5rem + 1vw, 3rem); font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
-          {t('nav.getStarted')}
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </a>
-        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2.5" style="padding: clamp(0.875rem, 0.7rem + 0.4vw, 1.125rem) clamp(2rem, 1.5rem + 1vw, 3rem); font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
-          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
-          GitHub
-        </a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<style>
-  .pipeline-flow {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-  .pipeline-step {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-    min-height: 0;
-  }
-  .pipeline-step-indicator {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    position: relative;
-  }
-  .pipeline-step-dot {
-    width: clamp(2.5rem, 2rem + 1vw, 3.25rem);
-    height: clamp(2.5rem, 2rem + 1vw, 3.25rem);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    position: relative;
-    z-index: 1;
-    border: 2px solid var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
-  }
-  .pipeline-step-dot.dot-accent-2 {
-    border-color: var(--color-accent-2);
-    background: color-mix(in srgb, var(--color-accent-2) 12%, var(--color-bg));
-  }
-  .pipeline-step-dot.dot-accent-3 {
-    border-color: var(--color-accent-3);
-    background: color-mix(in srgb, var(--color-accent-3) 12%, var(--color-bg));
-  }
-  .pipeline-step-num {
-    font-family: var(--font-display);
-    font-weight: 800;
-    font-size: clamp(0.75rem, 0.65rem + 0.25vw, 0.9375rem);
-    color: var(--color-text-bright);
-  }
-  .pipeline-step-line {
-    width: 2px;
-    flex: 1;
-    min-height: clamp(1.5rem, 1rem + 1vw, 2.5rem);
-    background: linear-gradient(to bottom, var(--color-border-light), var(--color-border));
-  }
-  .pipeline-step-content {
-    padding: clamp(0.25rem, 0.125rem + 0.25vw, 0.5rem) 0 clamp(2rem, 1.5rem + 1vw, 3rem) 0;
-  }
-
-  /* Agent Matrix */
-  .agent-matrix {
-    border: 1px solid var(--color-border);
-    border-radius: 0.75rem;
-    overflow: hidden;
-  }
-  .matrix-th {
-    padding: 0.625rem 0.75rem;
-    font-weight: 600;
-    color: var(--color-text-bright);
-    background: color-mix(in srgb, var(--color-surface) 60%, var(--color-bg));
-    border-bottom: 1px solid var(--color-border);
-    white-space: nowrap;
-  }
-  .matrix-th-agent {
-    text-align: left;
-    min-width: 8rem;
-  }
-  .matrix-th-mode {
-    text-align: center;
-    font-size: 0.6875rem;
-    letter-spacing: 0.02em;
-  }
-  .matrix-th-setup {
-    text-align: left;
-    font-size: 0.6875rem;
-  }
-  .matrix-mode-dot {
-    display: inline-block;
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    margin-right: 0.375rem;
-    vertical-align: middle;
-  }
-  .matrix-mode-dot.dot-cli { background: var(--color-accent); }
-  .matrix-mode-dot.dot-hybrid { background: var(--color-accent-2); }
-  .matrix-mode-dot.dot-mcp { background: var(--color-accent-3); }
-
-  .matrix-row {
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-    transition: background 0.15s ease;
-  }
-  .matrix-row:hover {
-    background: color-mix(in srgb, var(--color-surface) 40%, transparent);
-  }
-  .matrix-row:last-child {
-    border-bottom: none;
-  }
-  .matrix-td {
-    padding: 0.4rem 0.75rem;
-  }
-  .matrix-td-agent {
-    color: var(--color-text-bright);
-    font-weight: 500;
-  }
-  .matrix-td-check {
-    text-align: center;
-    font-size: 0.875rem;
-  }
-  .matrix-td-setup code {
-    font-size: 0.625rem;
-    opacity: 0.55;
-    letter-spacing: -0.01em;
-  }
-  .matrix-dot {
-    font-size: 1rem;
-    line-height: 1;
-  }
-  .matrix-dot-cli { color: var(--color-accent); }
-  .matrix-dot-hybrid { color: var(--color-accent-2); }
-  .matrix-dot-mcp { color: var(--color-accent-3); }
-  .matrix-empty {
-    color: var(--color-border);
-    font-size: 0.75rem;
-  }
-
-  @media (max-width: 640px) {
-    .matrix-th-setup, .matrix-td-setup { display: none; }
-    .matrix-th-mode { font-size: 0.5625rem; padding: 0.5rem 0.375rem; }
-    .matrix-td-check { padding: 0.4rem 0.375rem; }
-  }
-</style>
-
+  </section>
 </BaseLayout>
+

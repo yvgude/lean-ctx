@@ -1,6 +1,8 @@
 ---
 import DocsLayout from '../layouts/DocsLayout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   getGranularToolByName,
   getToolEnrichmentByName,
@@ -25,6 +27,14 @@ if (!tool) throw new Error(`Tool "${toolName}" not found in mcp-tools.json`);
 const enrichment = getToolEnrichmentByName(toolName);
 const categoryInfo = getCategoryForTool(toolName);
 const enrichments = getToolEnrichments();
+const repoBase = 'https://github.com/yvgude/lean-ctx/blob/main/';
+
+const repoRoot = path.resolve(process.cwd(), '..');
+const fallbackToolPath = `rust/src/tools/${toolName}.rs`;
+const fallbackExists = fs.existsSync(path.join(repoRoot, 'rust', 'src', 'tools', `${toolName}.rs`));
+const codePaths = (enrichment?.code_paths && enrichment.code_paths.length > 0)
+  ? enrichment.code_paths
+  : (fallbackExists ? [fallbackToolPath] : []);
 
 const schema = tool.input_schema;
 const properties = schema?.properties ?? {};
@@ -155,6 +165,31 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
         </div>
       )}
     </div>
+  )}
+
+  <!-- Output contract -->
+  {enrichment?.output_contract && (
+    <>
+      <h2>Output contract</h2>
+      <p class="text-muted leading-relaxed">{enrichment.output_contract}</p>
+    </>
+  )}
+
+  <!-- Implementation -->
+  {codePaths.length > 0 && (
+    <>
+      <h2>Implementation</h2>
+      <p class="text-muted">Source paths in the LeanCTX repository:</p>
+      <ul class="list-disc pl-5 text-muted">
+        {codePaths.map((p) => (
+          <li>
+            <a href={`${repoBase}${p}`} target="_blank" rel="noopener" class="hover:text-accent transition-colors">
+              <code>{p}</code>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
   )}
 
   <!-- Parameters -->
