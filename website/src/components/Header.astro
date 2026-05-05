@@ -9,71 +9,124 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const currentPath = Astro.url.pathname;
 
+const ico = {
+  doc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>',
+  clock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  list: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  gear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="M12 16v6"/><path d="M4.93 4.93l4.24 4.24"/><path d="M14.83 14.83l4.24 4.24"/><path d="M2 12h6"/><path d="M16 12h6"/><path d="M4.93 19.07l4.24-4.24"/><path d="M14.83 9.17l4.24-4.24"/><circle cx="12" cy="12" r="3"/></svg>',
+  flow: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  bar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>',
+  bulb: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/></svg>',
+  shield: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
+  grid: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20"/><path d="M17 2v20"/><path d="M2 12h20"/></svg>',
+  server: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>',
+  share: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>',
+  code: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+  book: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>',
+  dollar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>',
+  term: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
+  cli: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8l4 4-4 4"/><line x1="13" y1="16" x2="17" y2="16"/></svg>',
+  cog: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+  users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
+  monitor: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+  sliders: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>',
+  graph: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><path d="M6 9v12"/></svg>',
+  wrench: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+};
+
+const learnColumns = [
+  {
+    title: t('nav.learn.getStarted'),
+    items: [
+      { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: 'Start here' },
+      { label: t('nav.learn.firstSession'), href: lp('/docs/guides/first-session'), description: t('nav.learn.firstSessionDesc'), icon: ico.clock },
+      { label: t('nav.learn.quickReference'), href: lp('/docs/quick-reference'), description: t('nav.learn.quickReferenceDesc'), icon: ico.list },
+      { label: t('nav.learn.ideSetup'), href: lp('/docs/ide-setup'), description: t('nav.learn.ideSetupDesc'), icon: ico.gear },
+    ],
+  },
+  {
+    title: t('nav.learn.understand'),
+    items: [
+      { label: t('nav.learn.howItWorks'), href: lp('/how-it-works'), description: t('nav.learn.howItWorksDesc'), icon: ico.flow },
+      { label: t('nav.learn.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.learn.benchmarkDesc'), icon: ico.bar },
+      { label: t('nav.learn.contextEngineering'), href: lp('/what-is-context-engineering'), description: t('nav.learn.contextEngineeringDesc'), icon: ico.bulb },
+      { label: t('nav.learn.contextGovernance'), href: lp('/context-governance'), description: t('nav.learn.contextGovernanceDesc'), icon: ico.shield },
+    ],
+  },
+  {
+    title: t('nav.learn.forTeams'),
+    items: [
+      { label: t('nav.learn.teamSetup'), href: lp('/docs/team-setup'), description: t('nav.learn.teamSetupDesc'), icon: ico.users },
+      { label: t('nav.learn.teamServer'), href: lp('/docs/team-server'), description: t('nav.learn.teamServerDesc'), icon: ico.server },
+      { label: t('nav.learn.observatory'), href: lp('/docs/guides/observatory'), description: t('nav.learn.observatoryDesc'), icon: ico.bar },
+      { label: t('nav.learn.profiles'), href: lp('/docs/profiles'), description: t('nav.learn.profilesDesc'), icon: ico.sliders },
+    ],
+  },
+];
+
 const contextOsColumns = [
   {
     title: 'Core',
     items: [
-      { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>', badge: 'Start here' },
-      { label: t('nav.pillars.memorySessions'), href: lp('/context-os/memory'), description: t('nav.pillars.memoryDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20"/><path d="M17 2v20"/><path d="M2 12h20"/></svg>' },
-      { label: t('nav.pillars.governance'), href: lp('/context-os/governance'), description: t('nav.pillars.governanceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' },
+      { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: ico.doc },
+      { label: t('nav.pillars.memorySessions'), href: lp('/context-os/memory'), description: t('nav.pillars.memoryDesc'), icon: ico.grid },
+      { label: t('nav.pillars.governance'), href: lp('/context-os/governance'), description: t('nav.pillars.governanceDesc'), icon: ico.shield },
     ],
   },
   {
     title: 'Advanced',
     items: [
-      { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
-      { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/></svg>' },
-      { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>' },
+      { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: ico.check },
+      { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: ico.bulb },
+      { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: ico.server },
     ],
   },
   {
     title: t('nav.pillars.multiAgent'),
     items: [
-      { label: t('nav.pillars.sharedSessions'), href: lp('/context-os/shared-sessions'), description: t('nav.pillars.sharedSessionsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>' },
-      { label: t('nav.pillars.contextBus'), href: lp('/context-os/context-bus'), description: t('nav.pillars.contextBusDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' },
-      { label: t('nav.pillars.sdk'), href: lp('/context-os/sdk'), description: t('nav.pillars.sdkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>' },
-      { label: t('nav.product.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.product.benchmarkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>' },
+      { label: t('nav.pillars.sharedSessions'), href: lp('/context-os/shared-sessions'), description: t('nav.pillars.sharedSessionsDesc'), icon: ico.share },
+      { label: t('nav.pillars.contextBus'), href: lp('/context-os/context-bus'), description: t('nav.pillars.contextBusDesc'), icon: ico.flow },
+      { label: t('nav.pillars.sdk'), href: lp('/context-os/sdk'), description: t('nav.pillars.sdkDesc'), icon: ico.code },
     ],
   },
 ];
 
 const docsColumns = [
   {
-    title: t('nav.docs.getStarted'),
-    items: [
-      { label: t('nav.docs.installSetup'), href: lp('/docs/getting-started'), description: t('nav.docs.installSetupDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>' },
-      { label: t('nav.docs.quickReference'), href: lp('/docs/quick-reference'), description: t('nav.docs.quickReferenceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>' },
-      { label: t('nav.docs.ideSetup'), href: lp('/docs/ide-setup'), description: t('nav.docs.ideSetupDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="M12 16v6"/><path d="M4.93 4.93l4.24 4.24"/><path d="M14.83 14.83l4.24 4.24"/><path d="M2 12h6"/><path d="M16 12h6"/><path d="M4.93 19.07l4.24-4.24"/><path d="M14.83 9.17l4.24-4.24"/><circle cx="12" cy="12" r="3"/></svg>' },
-    ],
-  },
-  {
     title: t('nav.docs.concepts'),
     items: [
-      { label: t('nav.docs.concepts.readModes'), href: lp('/docs/concepts/read-modes'), description: t('nav.docs.concepts.readModesDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>' },
-      { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols'), description: t('nav.docs.concepts.protocolsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>' },
-      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>' },
-      { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>' },
+      { label: t('nav.docs.concepts.readModes'), href: lp('/docs/concepts/read-modes'), description: t('nav.docs.concepts.readModesDesc'), icon: ico.book },
+      { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols'), description: t('nav.docs.concepts.protocolsDesc'), icon: ico.flow },
+      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: ico.dollar },
+      { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: ico.term },
     ],
   },
   {
     title: t('nav.docs.reference'),
     items: [
-      { label: t('nav.docs.toolApi'), href: lp('/docs/tools'), description: t('nav.docs.toolApiDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' },
-      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8l4 4-4 4"/><line x1="13" y1="16" x2="17" y2="16"/></svg>' },
-      { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' },
-      { label: t('nav.docs.verification'), href: lp('/docs/verification'), description: t('nav.docs.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
-      { label: t('nav.docs.replayability'), href: lp('/docs/replayability'), description: t('nav.docs.replayabilityDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 10-3.4 7.1"/><path d="M21 12v-7"/><path d="M21 5h-7"/></svg>' },
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
+      { label: 'API Reference', href: lp('/docs/api-reference'), description: 'REST endpoints & SDK', icon: ico.code },
+      { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
+      { label: 'Security', href: lp('/docs/security'), description: 'PathJail, scopes, audit trail', icon: ico.shield },
+    ],
+  },
+];
+
+const toolsColumns = [
+  {
+    title: t('nav.tools.browse'),
+    items: [
+      { label: t('nav.tools.allTools'), href: lp('/docs/tools'), description: t('nav.tools.allToolsDesc'), icon: ico.wrench, badge: '56 tools' },
     ],
   },
   {
-    title: t('nav.docs.guides'),
+    title: t('nav.tools.categories'),
     items: [
-      { label: t('nav.docs.guides.firstSession'), href: lp('/docs/guides/first-session'), description: t('nav.docs.guides.firstSessionDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>' },
-      { label: t('nav.docs.guides.dockerSetup'), href: lp('/docs/guides/docker'), description: t('nav.docs.guides.dockerSetupDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>' },
-      { label: t('nav.docs.guides.editorIntegrations'), href: lp('/docs/guides/editor-integrations'), description: t('nav.docs.guides.editorIntegrationsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' },
-      { label: t('nav.docs.guides.observatory'), href: lp('/docs/guides/observatory'), description: t('nav.docs.guides.observatoryDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>' },
-      { label: t('nav.docs.guides.teamServer'), href: lp('/docs/team-server'), description: t('nav.docs.guides.teamServerDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>' },
-      { label: t('nav.docs.guides.graphExplorer'), href: lp('/docs/graph#export-html'), description: t('nav.docs.guides.graphExplorerDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><path d="M6 9v12"/></svg>' },
+      { label: t('nav.tools.coreTools'), href: lp('/docs/tools/core'), description: t('nav.tools.coreToolsDesc'), icon: ico.doc },
+      { label: t('nav.tools.intelligence'), href: lp('/docs/tools/intelligence'), description: t('nav.tools.intelligenceDesc'), icon: ico.bulb },
+      { label: t('nav.tools.memorySession'), href: lp('/docs/tools/memory'), description: t('nav.tools.memorySessionDesc'), icon: ico.grid },
+      { label: t('nav.tools.workflowAnalysis'), href: lp('/docs/tools/workflow'), description: t('nav.tools.workflowAnalysisDesc'), icon: ico.graph },
     ],
   },
 ];
@@ -101,11 +154,10 @@ const docsColumns = [
       </a>
 
       <div class="header-center">
+        <MegaDropdown id="learn" label={t('nav.learn')} columns={learnColumns} />
         <MegaDropdown id="context-os" label={t('nav.contextOs')} columns={contextOsColumns} />
         <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
-        <a href={lp('/docs/tools')} class:list={['header-nav-item', currentPath.includes('/tools') ? 'is-active' : '']}>
-          {t('nav.tools')}
-        </a>
+        <MegaDropdown id="tools" label={t('nav.tools')} columns={toolsColumns} />
       </div>
 
       <div class="header-right">
@@ -173,25 +225,38 @@ const docsColumns = [
   <div id="mobile-menu" class="mobile-menu-closed">
     <div class="mobile-menu-inner">
       <div class="mobile-section">
+        <span class="mobile-section-title">{t('nav.learn')}</span>
+        <a href={lp('/docs/getting-started')} class="mobile-nav-link">{t('nav.learn.gettingStarted')}</a>
+        <a href={lp('/docs/guides/first-session')} class="mobile-nav-link">{t('nav.learn.firstSession')}</a>
+        <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.learn.howItWorks')}</a>
+        <a href={lp('/context-os/benchmark')} class="mobile-nav-link">{t('nav.learn.benchmark')}</a>
+        <a href={lp('/docs/team-setup')} class="mobile-nav-link">{t('nav.learn.teamSetup')}</a>
+      </div>
+
+      <div class="mobile-section">
         <span class="mobile-section-title">{t('nav.contextOs')}</span>
         <a href={lp('/context-os')} class="mobile-nav-link">{t('nav.contextOs')}</a>
         <a href={lp('/context-os/smart-io')} class="mobile-nav-link">{t('nav.pillars.smartIo')}</a>
-        <a href={lp('/context-os/intelligence')} class="mobile-nav-link">{t('nav.pillars.intelligence')}</a>
         <a href={lp('/context-os/memory')} class="mobile-nav-link">{t('nav.pillars.memory')}</a>
         <a href={lp('/context-os/governance')} class="mobile-nav-link">{t('nav.pillars.governance')}</a>
         <a href={lp('/context-os/verification')} class="mobile-nav-link">{t('nav.pillars.verification')}</a>
-        <a href={lp('/context-os/integrations')} class="mobile-nav-link">{t('nav.pillars.integrations')}</a>
+        <a href={lp('/context-os/intelligence')} class="mobile-nav-link">{t('nav.pillars.intelligence')}</a>
       </div>
 
       <div class="mobile-section">
         <span class="mobile-section-title">{t('nav.docs')}</span>
-        <a href={lp('/docs/getting-started')} class="mobile-nav-link">{t('nav.docs.installSetup')}</a>
-        <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>
-        <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.docs.toolApi')}</a>
+        <a href={lp('/docs/concepts/read-modes')} class="mobile-nav-link">{t('nav.docs.concepts.readModes')}</a>
         <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
-        <a href={lp('/docs/quick-reference')} class="mobile-nav-link">{t('nav.docs.quickReference')}</a>
-        <a href={lp('/docs/verification')} class="mobile-nav-link">{t('nav.docs.verification')}</a>
-        <a href={lp('/docs/ide-setup')} class="mobile-nav-link">{t('nav.docs.ideSetup')}</a>
+        <a href={lp('/docs/api-reference')} class="mobile-nav-link">API Reference</a>
+        <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>
+      </div>
+
+      <div class="mobile-section">
+        <span class="mobile-section-title">{t('nav.tools')}</span>
+        <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.tools.allTools')}</a>
+        <a href={lp('/docs/tools/core')} class="mobile-nav-link">{t('nav.tools.coreTools')}</a>
+        <a href={lp('/docs/tools/intelligence')} class="mobile-nav-link">{t('nav.tools.intelligence')}</a>
+        <a href={lp('/docs/tools/memory')} class="mobile-nav-link">{t('nav.tools.memorySession')}</a>
       </div>
 
       <div class="mobile-section mobile-top-links">
