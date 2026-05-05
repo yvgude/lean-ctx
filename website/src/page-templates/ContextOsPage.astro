@@ -325,44 +325,78 @@ const stats = [
       {t('contextOs.agentMatrixDesc')}
     </p>
 
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 animate-entrance stagger-3" style="gap: clamp(0.5rem, 0.375rem + 0.25vw, 0.75rem);">
-      {[
-        { name: 'Cursor', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'Claude Code', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'Codex', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'OpenCode', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'Gemini CLI', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'CRUSH', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'Hermes', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'Pi', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'Qoder', mode: 'CLI-Redirect', tone: 'accent' },
-        { name: 'Windsurf', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Amp', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Copilot', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Cline', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Roo Code', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Kiro', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Antigravity', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Amazon Q', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Qwen', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Trae', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'Verdent', mode: 'Hybrid', tone: 'accent-2' },
-        { name: 'JetBrains', mode: 'MCP', tone: 'accent-3' },
-        { name: 'QoderWork', mode: 'MCP', tone: 'accent-3' },
-        { name: 'VS Code', mode: 'MCP', tone: 'accent-3' },
-        { name: 'Zed', mode: 'MCP', tone: 'accent-3' },
-        { name: 'Aider', mode: 'MCP', tone: 'accent-3' },
-        { name: 'Continue', mode: 'MCP', tone: 'accent-3' },
-      ].map((agent) => (
-        <div class="card" style="padding: clamp(0.625rem, 0.5rem + 0.25vw, 0.875rem); text-align: center;">
-          <span class="font-display font-semibold text-text-bright" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); display: block; margin-bottom: 0.25rem;">
-            {agent.name}
-          </span>
-          <span class={`font-mono text-${agent.tone}`} style="font-size: 0.625rem; opacity: 0.85;">
-            {agent.mode}
-          </span>
-        </div>
-      ))}
+    <div class="animate-entrance stagger-3" style="overflow-x: auto;">
+      <table class="agent-matrix-table" style="width: 100%; border-collapse: collapse; font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--color-border);">
+            <th style="text-align: left; padding: 0.75rem 1rem; font-weight: 600; color: var(--color-text-bright);">Agent</th>
+            <th style="text-align: left; padding: 0.75rem 1rem; font-weight: 600; color: var(--color-text-bright);">Mode</th>
+            <th style="text-align: left; padding: 0.75rem 1rem; font-weight: 600; color: var(--color-text-bright);">Setup</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid var(--color-border); opacity: 0.06; height: 0;"><td colspan="3"></td></tr>
+          <tr style="border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);">
+            <td colspan="3" style="padding: 0.5rem 1rem; font-weight: 600; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-accent);">CLI-Redirect — zero MCP overhead</td>
+          </tr>
+          {[
+            { name: 'Cursor', cmd: 'lean-ctx init --agent cursor' },
+            { name: 'Claude Code', cmd: 'lean-ctx init --agent claude' },
+            { name: 'Codex', cmd: 'lean-ctx init --agent codex' },
+            { name: 'OpenCode', cmd: 'lean-ctx init --agent opencode' },
+            { name: 'Gemini CLI', cmd: 'lean-ctx init --agent gemini' },
+            { name: 'CRUSH', cmd: 'lean-ctx init --agent crush' },
+            { name: 'Hermes', cmd: 'lean-ctx init --agent hermes' },
+            { name: 'Pi', cmd: 'lean-ctx init --agent pi' },
+            { name: 'Qoder', cmd: 'lean-ctx init --agent qoder' },
+          ].map((a) => (
+            <tr style="border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);">
+              <td style="padding: 0.5rem 1rem; color: var(--color-text-bright); font-weight: 500;">{a.name}</td>
+              <td style="padding: 0.5rem 1rem;"><span class="font-mono text-accent" style="font-size: 0.6875rem;">CLI-Redirect</span></td>
+              <td style="padding: 0.5rem 1rem;"><code style="font-size: 0.6875rem; opacity: 0.7;">{a.cmd}</code></td>
+            </tr>
+          ))}
+          <tr style="border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);">
+            <td colspan="3" style="padding: 0.75rem 1rem 0.5rem; font-weight: 600; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-accent-2);">Hybrid — MCP + CLI rules</td>
+          </tr>
+          {[
+            { name: 'Windsurf', cmd: 'lean-ctx init --agent windsurf' },
+            { name: 'Copilot', cmd: 'lean-ctx init --agent copilot' },
+            { name: 'Amp', cmd: 'lean-ctx init --agent amp' },
+            { name: 'Cline', cmd: 'lean-ctx init --agent cline' },
+            { name: 'Roo Code', cmd: 'lean-ctx init --agent roo' },
+            { name: 'Kiro', cmd: 'lean-ctx init --agent kiro' },
+            { name: 'Antigravity', cmd: 'lean-ctx setup' },
+            { name: 'Amazon Q', cmd: 'lean-ctx init --agent amazonq' },
+            { name: 'Qwen', cmd: 'lean-ctx init --agent qwen' },
+            { name: 'Trae', cmd: 'lean-ctx init --agent trae' },
+            { name: 'Verdent', cmd: 'lean-ctx init --agent verdent' },
+          ].map((a) => (
+            <tr style="border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);">
+              <td style="padding: 0.5rem 1rem; color: var(--color-text-bright); font-weight: 500;">{a.name}</td>
+              <td style="padding: 0.5rem 1rem;"><span class="font-mono text-accent-2" style="font-size: 0.6875rem;">Hybrid</span></td>
+              <td style="padding: 0.5rem 1rem;"><code style="font-size: 0.6875rem; opacity: 0.7;">{a.cmd}</code></td>
+            </tr>
+          ))}
+          <tr style="border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);">
+            <td colspan="3" style="padding: 0.75rem 1rem 0.5rem; font-weight: 600; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-accent-3);">Full MCP — explicit ctx_* tools</td>
+          </tr>
+          {[
+            { name: 'JetBrains', cmd: 'lean-ctx init --agent jetbrains' },
+            { name: 'QoderWork', cmd: 'lean-ctx init --agent qoderwork' },
+            { name: 'VS Code', cmd: 'lean-ctx setup' },
+            { name: 'Zed', cmd: 'lean-ctx setup' },
+            { name: 'Aider', cmd: 'lean-ctx init --agent aider' },
+            { name: 'Continue', cmd: 'lean-ctx setup' },
+          ].map((a) => (
+            <tr style="border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);">
+              <td style="padding: 0.5rem 1rem; color: var(--color-text-bright); font-weight: 500;">{a.name}</td>
+              <td style="padding: 0.5rem 1rem;"><span class="font-mono text-accent-3" style="font-size: 0.6875rem;">MCP</span></td>
+              <td style="padding: 0.5rem 1rem;"><code style="font-size: 0.6875rem; opacity: 0.7;">{a.cmd}</code></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
