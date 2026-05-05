@@ -5,6 +5,8 @@ stages:
 rust_test:
   stage: test
   image: rust:latest
+  except:
+    - deploy
   variables:
     CARGO_TERM_COLOR: always
     RUSTFLAGS: "-Dwarnings"
@@ -21,6 +23,8 @@ rust_test:
 cookbook:
   stage: test
   image: node:20
+  except:
+    - deploy
   variables:
     NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/cookbook/.npm"
   cache:

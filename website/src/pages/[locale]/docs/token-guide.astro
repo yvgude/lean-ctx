@@ -1,9 +1,7 @@
 ---
-import { getLocaleFromUrl, getLocalizedPath, locales } from '../../../i18n/utils';
-
-export function getStaticPaths() {
-  return locales.map(l => ({ params: { locale: l } }));
-}
+import { getLocaleStaticPaths } from '../../../i18n/routing.ts';
+import { getLocaleFromUrl, getLocalizedPath } from '../../../i18n/utils';
+export const getStaticPaths = getLocaleStaticPaths;
 
 const locale = getLocaleFromUrl(Astro.url);
 const lp = (path: string) => getLocalizedPath(path, locale);

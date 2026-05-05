@@ -102,14 +102,14 @@ const sidebar = [
   <p>Subscribe to real-time events via Server-Sent Events:</p>
 
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-accent">GET</span> /v1/events?workspaceId=my-team
+    <pre class="code-block"><code>{`GET /v1/events?workspaceId=my-team
 
-<span class="text-muted">Response (SSE stream):</span>
+Response (SSE stream):
 event: SessionMutated
 data: {"channel":"feat/auth","rev":15,"agent":"cursor"}
 
 event: KnowledgeRemembered
-data: {"fact":"JWT with RS256","quality":0.95}</code></pre>
+data: {"fact":"JWT with RS256","quality":0.95}`}</code></pre>
   </div>
 
   <h3>Knowledge Base</h3>
@@ -220,21 +220,21 @@ try {'{'}
 
   <h3>Direct curl Examples</h3>
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-muted"># Start server on loopback (no auth required)</span>
-<span class="text-accent">lean-ctx</span> serve --host 127.0.0.1 --port 8080
+    <pre class="code-block"><code>{`# Start server on loopback (no auth required)
+lean-ctx serve --host 127.0.0.1 --port 8080
 
-<span class="text-muted"># Health check</span>
+# Health check
 curl http://127.0.0.1:8080/health
 
-<span class="text-muted"># Manifest + tool list</span>
+# Manifest + tool list
 curl http://127.0.0.1:8080/v1/manifest
-curl "http://127.0.0.1:8080/v1/tools?offset=0&amp;limit=50"
+curl "http://127.0.0.1:8080/v1/tools?offset=0&limit=50"
 
-<span class="text-muted"># Call a tool</span>
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"name":"ctx_tree","arguments":{"path":".","depth":2}}' \
-  http://127.0.0.1:8080/v1/tools/call</code></pre>
+# Call a tool
+curl -X POST \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"ctx_tree","arguments":{"path":".","depth":2}}' \\
+  http://127.0.0.1:8080/v1/tools/call`}</code></pre>
   </div>
 
 </DocsLayout>

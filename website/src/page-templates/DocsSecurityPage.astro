@@ -99,14 +99,14 @@ const sidebar = [
   </ul>
 
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-accent">[redaction]</span>
+    <pre class="code-block"><code>{`[redaction]
 enabled = true
-level = "standard"  <span class="text-muted"># "off", "standard", "strict"</span>
+level = "standard"  # "off", "standard", "strict"
 
-<span class="text-accent">[[redaction.patterns]]</span>
+[[redaction.patterns]]
 name = "internal-api-keys"
 regex = "sk_live_[a-zA-Z0-9]{24,}"
-replacement = "[REDACTED_API_KEY]"</code></pre>
+replacement = "[REDACTED_API_KEY]"`}</code></pre>
   </div>
 
   <h2 id="secrets">Secret Leak Prevention</h2>
