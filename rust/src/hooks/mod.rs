@@ -8,7 +8,7 @@ use agents::{
     install_crush_hook, install_cursor_hook, install_cursor_hook_config,
     install_cursor_hook_scripts, install_gemini_hook, install_gemini_hook_config,
     install_gemini_hook_scripts, install_hermes_hook, install_jetbrains_hook, install_kiro_hook,
-    install_opencode_hook, install_pi_hook, install_windsurf_rules,
+    install_opencode_hook, install_pi_hook, install_qoder_hook, install_windsurf_rules,
 };
 use support::{
     ensure_codex_hooks_enabled, install_codex_instruction_docs, install_named_json_server,
@@ -443,6 +443,8 @@ pub fn install_agent_hook(agent: &str, global: bool) {
         "cline" | "roo" => install_cline_rules(global),
         "copilot" => install_copilot_hook(global),
         "pi" => install_pi_hook(global),
+        "qoder" => install_qoder_hook(),
+        "qoderwork" | "qoderworks" => {}
         "qwen" => install_mcp_json_agent(
             "Qwen Code",
             "~/.qwen/mcp.json",
@@ -470,7 +472,7 @@ pub fn install_agent_hook(agent: &str, global: bool) {
         "hermes" => install_hermes_hook(global),
         _ => {
             eprintln!("Unknown agent: {agent}");
-            eprintln!("  Supported: claude, cursor, gemini, codex, windsurf, cline, roo, copilot, pi, qwen, trae, amazonq, jetbrains, kiro, verdent, opencode, aider, amp, crush, antigravity, hermes");
+            eprintln!("  Supported: claude, cursor, gemini, codex, windsurf, cline, roo, copilot, pi, qoder, qoderwork, qwen, trae, amazonq, jetbrains, kiro, verdent, opencode, aider, amp, crush, antigravity, hermes");
             std::process::exit(1);
         }
     }

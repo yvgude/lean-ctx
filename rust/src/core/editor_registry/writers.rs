@@ -52,6 +52,7 @@ pub fn write_config_with_options(
         ConfigType::Amp => write_amp_config(target, binary, opts),
         ConfigType::HermesYaml => write_hermes_yaml(target, binary, opts),
         ConfigType::GeminiSettings => write_gemini_settings(target, binary, opts),
+        ConfigType::QoderMcp => write_qoder_mcp_config(target, binary, opts),
     }
 }
 
@@ -440,6 +441,86 @@ fn write_vscode_mcp_fresh(
         .unwrap_or_default();
     let content = serde_json::to_string_pretty(&serde_json::json!({
         "servers": { "lean-ctx": { "type": "stdio", "command": binary, "args": [], "env": { "LEAN_CTX_DATA_DIR": data_dir } } }
+    }))
+    .map_err(|e| e.to_string())?;
+    crate::config_io::write_atomic_with_backup(path, &content)?;
+    Ok(WriteResult {
+        action: if note.is_some() {
+            WriteAction::Updated
+        } else {
+            WriteAction::Created
+        },
+        note,
+    })
+}
+
+fn write_qoder_mcp_config(
+    target: &EditorTarget,
+    binary: &str,
+    opts: WriteOptions,
+) -> Result<WriteResult, String> {
+    let data_dir = default_data_dir()?;
+    let desired = serde_json::json!({
+        "command": binary,
+        "args": [],
+        "env": {
+            "LEAN_CTX_DATA_DIR": data_dir
+        }
+    });
+
+    if target.config_path.exists() {
+        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
+        let mut json = match crate::core::jsonc::parse_jsonc(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                if !opts.overwrite_invalid {
+                    return Err(e.to_string());
+                }
+                backup_invalid_file(&target.config_path)?;
+                return write_qoder_mcp_fresh(
+                    &target.config_path,
+                    &desired,
+                    Some("overwrote invalid JSON".to_string()),
+                );
+            }
+        };
+        let obj = json
+            .as_object_mut()
+            .ok_or_else(|| "root JSON must be an object".to_string())?;
+        let servers = obj
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        let servers_obj = servers
+            .as_object_mut()
+            .ok_or_else(|| "\"mcpServers\" must be an object".to_string())?;
+
+        let existing = servers_obj.get("lean-ctx").cloned();
+        if existing.as_ref() == Some(&desired) {
+            return Ok(WriteResult {
+                action: WriteAction::Already,
+                note: None,
+            });
+        }
+        servers_obj.insert("lean-ctx".to_string(), desired);
+
+        let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
+        crate::config_io::write_atomic_with_backup(&target.config_path, &formatted)?;
+        return Ok(WriteResult {
+            action: WriteAction::Updated,
+            note: None,
+        });
+    }
+
+    write_qoder_mcp_fresh(&target.config_path, &desired, None)
+}
+
+fn write_qoder_mcp_fresh(
+    path: &std::path::Path,
+    desired: &Value,
+    note: Option<String>,
+) -> Result<WriteResult, String> {
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "mcpServers": { "lean-ctx": desired }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;
@@ -1118,6 +1199,48 @@ args = ["x"]
         assert!(tools.contains(&"ctx_search"));
         assert!(tools.contains(&"ctx_workflow"));
         assert!(tools.contains(&"ctx_cost"));
+    }
+
+    #[test]
+    fn qoder_mcp_config_preserves_probe_and_upserts_lean_ctx() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp.json");
+        std::fs::write(
+            &path,
+            r#"{ "mcpServers": { "lean-ctx-probe": { "command": "cmd", "args": ["/C", "echo", "lean-ctx-probe"] } } }"#,
+        )
+        .unwrap();
+
+        let t = target(path.clone(), ConfigType::QoderMcp);
+        let res = write_qoder_mcp_config(&t, "lean-ctx", WriteOptions::default()).unwrap();
+        assert_eq!(res.action, WriteAction::Updated);
+
+        let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(json["mcpServers"]["lean-ctx-probe"]["command"], "cmd");
+        assert_eq!(json["mcpServers"]["lean-ctx"]["command"], "lean-ctx");
+        assert_eq!(
+            json["mcpServers"]["lean-ctx"]["args"],
+            serde_json::json!([])
+        );
+        assert!(json["mcpServers"]["lean-ctx"]["env"]["LEAN_CTX_DATA_DIR"]
+            .as_str()
+            .is_some_and(|s| !s.trim().is_empty()));
+        assert!(json["mcpServers"]["lean-ctx"]["identifier"].is_null());
+        assert!(json["mcpServers"]["lean-ctx"]["source"].is_null());
+        assert!(json["mcpServers"]["lean-ctx"]["version"].is_null());
+    }
+
+    #[test]
+    fn qoder_mcp_config_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp.json");
+        let t = target(path.clone(), ConfigType::QoderMcp);
+
+        let first = write_qoder_mcp_config(&t, "lean-ctx", WriteOptions::default()).unwrap();
+        let second = write_qoder_mcp_config(&t, "lean-ctx", WriteOptions::default()).unwrap();
+
+        assert_eq!(first.action, WriteAction::Created);
+        assert_eq!(second.action, WriteAction::Already);
     }
 
     #[test]

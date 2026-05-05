@@ -11,6 +11,7 @@ mod jetbrains;
 mod kiro;
 mod opencode;
 mod pi;
+mod qoder;
 mod shared;
 mod windsurf;
 
@@ -33,4 +34,5 @@ pub(super) use jetbrains::install_jetbrains_hook;
 pub(super) use kiro::install_kiro_hook;
 pub(super) use opencode::install_opencode_hook;
 pub(super) use pi::install_pi_hook;
+pub use qoder::install_qoder_hook;
 pub(super) use windsurf::install_windsurf_rules;

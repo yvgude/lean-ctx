@@ -39,6 +39,23 @@ pub fn vscode_mcp_path() -> PathBuf {
     }
 }
 
+pub fn qoder_mcp_path(home: &Path) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return PathBuf::from(appdata)
+                .join("Qoder")
+                .join("SharedClientCache")
+                .join("mcp.json");
+        }
+    }
+    home.join(".qoder").join("mcp.json")
+}
+
+pub fn qoderwork_mcp_path(home: &Path) -> PathBuf {
+    home.join(".qoderwork").join("mcp.json")
+}
+
 #[allow(unreachable_code)]
 pub fn cline_mcp_path() -> PathBuf {
     #[cfg(target_os = "windows")]

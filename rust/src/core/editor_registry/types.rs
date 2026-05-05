@@ -21,4 +21,5 @@ pub enum ConfigType {
     Amp,
     HermesYaml,
     GeminiSettings,
+    QoderMcp,
 }

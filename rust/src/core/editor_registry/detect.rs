@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::paths::{
-    claude_mcp_json_path, cline_mcp_path, roo_mcp_path, vscode_mcp_path, zed_config_dir,
-    zed_settings_path,
+    claude_mcp_json_path, cline_mcp_path, qoder_mcp_path, qoderwork_mcp_path, roo_mcp_path,
+    vscode_mcp_path, zed_config_dir, zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -21,8 +21,7 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
     #[cfg(windows)]
     let opencode_detect = opencode_cfg
         .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| home.join(".config/opencode"));
+        .map_or_else(|| home.join(".config/opencode"), Path::to_path_buf);
     #[cfg(not(windows))]
     let opencode_detect = home.join(".config/opencode");
 
@@ -96,6 +95,20 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             config_path: home.join(".qwen/mcp.json"),
             detect_path: home.join(".qwen"),
             config_type: ConfigType::McpJson,
+        },
+        EditorTarget {
+            name: "Qoder",
+            agent_key: "qoder".to_string(),
+            config_path: qoder_mcp_path(home),
+            detect_path: detect_qoder_path(home),
+            config_type: ConfigType::QoderMcp,
+        },
+        EditorTarget {
+            name: "QoderWork",
+            agent_key: "qoderwork".to_string(),
+            config_path: qoderwork_mcp_path(home),
+            detect_path: detect_qoderwork_path(home),
+            config_type: ConfigType::QoderMcp,
         },
         EditorTarget {
             name: "Trae",
@@ -182,6 +195,40 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             config_type: ConfigType::HermesYaml,
         },
     ]
+}
+
+pub fn detect_qoder_path(home: &Path) -> PathBuf {
+    let qoder_dir = home.join(".qoder");
+    if qoder_dir.exists() {
+        return qoder_dir;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let app_dir = PathBuf::from(appdata).join("Qoder");
+            if app_dir.exists() {
+                return app_dir;
+            }
+        }
+    }
+    PathBuf::from("/nonexistent")
+}
+
+pub fn detect_qoderwork_path(home: &Path) -> PathBuf {
+    let qoderwork_dir = home.join(".qoderwork");
+    if qoderwork_dir.exists() {
+        return qoderwork_dir;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let app_dir = PathBuf::from(appdata).join("QoderWork");
+            if app_dir.exists() {
+                return app_dir;
+            }
+        }
+    }
+    PathBuf::from("/nonexistent")
 }
 
 pub fn detect_claude_path() -> PathBuf {

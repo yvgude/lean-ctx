@@ -462,7 +462,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     }
     steps.push(rules_step);
 
-    // Step: Agent-specific hooks (Codex, Cursor)
+    // Step: Agent-specific hooks
     let mut hooks_step = SetupStepReport {
         name: "agent_hooks".to_string(),
         ok: true,
@@ -498,6 +498,15 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                         note: None,
                     });
                 }
+            }
+            "qoder" => {
+                crate::hooks::agents::install_qoder_hook();
+                hooks_step.items.push(SetupItem {
+                    name: "Qoder hooks".to_string(),
+                    status: "installed".to_string(),
+                    path: Some("~/.qoder/settings.json".to_string()),
+                    note: Some("Installs PreToolUse shell rewrite hooks.".to_string()),
+                });
             }
             _ => {}
         }
@@ -651,6 +660,18 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             "Pi Coding Agent",
             home.join(".pi/agent/mcp.json"),
             ConfigType::McpJson,
+        ),
+        "qoder" => push(
+            &mut targets,
+            "Qoder",
+            crate::core::editor_registry::qoder_mcp_path(&home),
+            ConfigType::QoderMcp,
+        ),
+        "qoderwork" | "qoderworks" => push(
+            &mut targets,
+            "QoderWork",
+            crate::core::editor_registry::qoderwork_mcp_path(&home),
+            ConfigType::QoderMcp,
         ),
         "cline" => push(
             &mut targets,

@@ -133,7 +133,7 @@ For first-class integration, run:
 lean-ctx init --agent <tool>
 ```
 
-Supported `<tool>` values (24):
+Supported `<tool>` values (26):
 
 <details>
 <summary><strong>Show full list</strong></summary>
@@ -152,6 +152,8 @@ Supported `<tool>` values (24):
 - AWS Kiro (`kiro`)
 - Antigravity (`antigravity`)
 - Hermes (`hermes`)
+- Qoder (`qoder`)
+- QoderWork (`qoderwork`, `qoderworks`; MCP only)
 - Qwen (`qwen`)
 - Trae (`trae`)
 - Verdent (`verdent`)
