@@ -21,11 +21,14 @@ const mcpTools = [
   { name: 'Emacs', setup: 'lean-ctx init --agent emacs' },
   { name: 'Gemini CLI', setup: 'lean-ctx init --agent gemini' },
   { name: 'GitHub Copilot', setup: 'lean-ctx init --agent copilot' },
+  { name: 'Hermes Agent', setup: 'lean-ctx init --agent hermes' },
   { name: 'JetBrains IDEs', setup: 'lean-ctx init --agent jetbrains' },
   { name: 'Neovim', setup: 'lean-ctx init --agent neovim' },
   { name: 'OpenAI Codex', setup: 'lean-ctx init --agent codex' },
   { name: 'OpenCode', setup: 'lean-ctx init --agent opencode' },
   { name: 'Pi', setup: 'lean-ctx init --agent pi' },
+  { name: 'Qoder', setup: 'lean-ctx init --agent qoder' },
+  { name: 'QoderWork', setup: 'lean-ctx init --agent qoderwork' },
   { name: 'Qwen Code', setup: 'lean-ctx init --agent qwen' },
   { name: 'Roo Code', setup: 'lean-ctx init --agent roo' },
   { name: 'Sublime Text', setup: 'lean-ctx init --agent sublime' },
@@ -71,7 +74,7 @@ const shellOnlyTools = [
         <div class="card p-6 animate-entrance">
           <div class="flex items-start justify-between mb-4">
             <h3 class="fluid-h3 font-semibold font-display text-text-bright">{tool.name}</h3>
-            <span class="text-[9px] font-mono px-2 py-1 rounded-full bg-accent/8 text-accent border border-accent/15 whitespace-nowrap">MCP + Shell Hook</span>
+            <span class="text-[9px] font-mono px-2 py-1 rounded-full bg-accent/8 text-accent border border-accent/15 whitespace-nowrap">Mode-based (CLI-first / MCP / Hybrid)</span>
           </div>
           <div class="flex items-center gap-2">
             <code class="text-[11px] font-mono text-muted bg-surface-2 px-2.5 py-1 rounded-md border border-border/50">{tool.setup}</code>
@@ -153,7 +156,7 @@ const shellOnlyTools = [
           <p><span class="text-accent">✓</span> <span class="text-muted">Hook installed:</span> <span class="text-text-bright">~/.zshrc</span></p>
           <p>&nbsp;</p>
           <p><span class="text-accent">✓</span> <span class="text-muted">AI tool detected:</span> <span class="text-text-bright">Cursor</span></p>
-          <p><span class="text-accent">✓</span> <span class="text-muted">MCP config written:</span> <span class="text-text-bright">~/.cursor/mcp.json</span></p>
+          <p><span class="text-accent">✓</span> <span class="text-muted">Hooks installed:</span> <span class="text-text-bright">~/.cursor/hooks.json</span></p>
           <p>&nbsp;</p>
           <p><span class="text-accent">✓</span> <span class="text-muted">AI tool detected:</span> <span class="text-text-bright">Claude Code</span></p>
           <p><span class="text-accent">✓</span> <span class="text-muted">MCP server added:</span> <span class="text-text-bright">claude mcp add</span></p>

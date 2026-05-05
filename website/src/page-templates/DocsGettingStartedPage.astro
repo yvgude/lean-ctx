@@ -69,7 +69,12 @@ const sidebar = [
           <button data-v="crush" class="pg-btn">Crush</button>
           <button data-v="gemini" class="pg-btn">Gemini</button>
           <button data-v="antigravity" class="pg-btn">Antigravity</button>
+          <button data-v="hermes" class="pg-btn">Hermes</button>
           <button data-v="zed" class="pg-btn">Zed</button>
+          <button data-v="cline" class="pg-btn">Cline</button>
+          <button data-v="roo" class="pg-btn">Roo</button>
+          <button data-v="opencode" class="pg-btn">OpenCode</button>
+          <button data-v="amp" class="pg-btn">Amp</button>
           <button data-v="qwen" class="pg-btn">Qwen</button>
           <button data-v="trae" class="pg-btn">Trae</button>
           <button data-v="amazonq" class="pg-btn">Amazon Q</button>
@@ -77,6 +82,17 @@ const sidebar = [
           <button data-v="kiro" class="pg-btn">Kiro</button>
           <button data-v="verdent" class="pg-btn">Verdent</button>
           <button data-v="pi" class="pg-btn">Pi</button>
+          <button data-v="qoder" class="pg-btn">Qoder</button>
+          <button data-v="qoderwork" class="pg-btn">QoderWork</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5">Integration</label>
+        <div class="flex gap-1" id="pg-mode">
+          <button data-v="auto" class="pg-btn active">Auto</button>
+          <button data-v="cli-redirect" class="pg-btn">CLI-first</button>
+          <button data-v="hybrid" class="pg-btn">Hybrid</button>
+          <button data-v="mcp" class="pg-btn">MCP</button>
         </div>
       </div>
     </div>
@@ -113,7 +129,7 @@ const sidebar = [
 
   <script is:inline>
   (function() {
-    var os = 'macos', ed = 'cursor';
+    var os = 'macos', ed = 'cursor', mode = 'auto';
 
     var installs = {
       macos: 'brew tap yvgude/lean-ctx && brew install lean-ctx',
@@ -130,23 +146,23 @@ const sidebar = [
     var editors = {
       cursor: {
         name: 'Cursor',
-        note: 'lean-ctx setup auto-detects Cursor and creates ~/.cursor/mcp.json for you.',
+        note: 'lean-ctx auto-detects Cursor. In Auto mode it prefers CLI-first hooks (shell rewrite) to avoid MCP schema overhead. You can force MCP/Hybrid with --mode.',
         manual: [
-          'If auto-setup fails, create ~/.cursor/mcp.json manually:',
+          'MCP fallback (only if you chose MCP/Hybrid): create ~/.cursor/mcp.json manually:',
           '{',
           '  "mcpServers": {',
           '    "lean-ctx": { "command": "lean-ctx" }',
           '  }',
           '}'
         ],
-        agent: 'lean-ctx init --agent cursor',
+        agentKey: 'cursor',
         restart: 'Restart Cursor completely (Cmd+Q / Ctrl+Q, then reopen).'
       },
       claude: {
         name: 'Claude Code',
         note: 'lean-ctx setup auto-detects Claude Code and configures it.',
         manual: ['Or manually: claude mcp add lean-ctx lean-ctx'],
-        agent: 'lean-ctx init --agent claude',
+        agentKey: 'claude',
         restart: 'Restart Claude Code.'
       },
       copilot: {
@@ -160,7 +176,7 @@ const sidebar = [
           '  }',
           '}'
         ],
-        agent: 'lean-ctx init --agent copilot',
+        agentKey: 'copilot',
         restart: 'Restart VS Code.'
       },
       windsurf: {
@@ -175,14 +191,14 @@ const sidebar = [
           '}',
           '(Get path from: which lean-ctx)'
         ],
-        agent: '',
+        agentKey: 'windsurf',
         restart: 'Restart Windsurf completely.'
       },
       codex: {
         name: 'OpenAI Codex',
         note: 'lean-ctx setup auto-detects Codex CLI.',
         manual: ['Or manually: codex mcp add lean-ctx'],
-        agent: 'lean-ctx init --agent codex',
+        agentKey: 'codex',
         restart: 'Restart Codex CLI.'
       },
       crush: {
@@ -199,21 +215,19 @@ const sidebar = [
           '  }',
           '}'
         ],
-        agent: 'lean-ctx init --agent crush',
+        agentKey: 'crush',
         restart: 'Restart Crush.'
       },
       gemini: {
         name: 'Gemini CLI',
-        note: 'lean-ctx setup auto-detects Gemini CLI.',
+        note: 'lean-ctx auto-detects Gemini CLI. Gemini uses ~/.gemini/settings.json (not mcp.json). In Auto mode, lean-ctx can run CLI-first or MCP depending on your setup; override with --mode.',
         manual: [
-          'If auto-setup fails, create ~/.gemini/settings/mcp.json:',
+          'MCP fallback: ensure ~/.gemini/settings.json contains an MCP server entry:',
           '{',
-          '  "mcpServers": {',
-          '    "lean-ctx": { "command": "lean-ctx" }',
-          '  }',
+          '  "mcpServers": { "lean-ctx": { "command": "lean-ctx" } }',
           '}'
         ],
-        agent: '',
+        agentKey: 'gemini',
         restart: 'Restart Gemini CLI.'
       },
       antigravity: {
@@ -228,8 +242,22 @@ const sidebar = [
           '}',
           '(Get path from: which lean-ctx)'
         ],
-        agent: '',
+        agentKey: 'antigravity',
         restart: 'Restart Antigravity IDE.'
+      },
+      hermes: {
+        name: 'Hermes Agent',
+        note: 'Hermes supports MCP via ~/.hermes/config.yaml. Use MCP or Hybrid; CLI-first is possible but MCP is usually the simplest.',
+        manual: [
+          'If auto-setup fails, add to ~/.hermes/config.yaml:',
+          'mcp_servers:',
+          '  lean-ctx:',
+          '    command: "lean-ctx"',
+          '    env:',
+          '      LEAN_CTX_DATA_DIR: "~/.lean-ctx"'
+        ],
+        agentKey: 'hermes',
+        restart: 'Restart Hermes.'
       },
       zed: {
         name: 'Zed',
@@ -244,14 +272,42 @@ const sidebar = [
           '  }',
           '}'
         ],
-        agent: '',
+        agentKey: '',
         restart: 'Zed auto-restarts MCP servers after saving.'
+      },
+      cline: {
+        name: 'Cline',
+        note: 'Cline (VS Code) supports MCP + terminal execution. Use Hybrid if you want both CLI-first shell compression and MCP tools.',
+        manual: ['Run: lean-ctx init --agent cline (writes VS Code globalStorage MCP settings and installs .clinerules).'],
+        agentKey: 'cline',
+        restart: 'Restart VS Code.'
+      },
+      roo: {
+        name: 'Roo Code',
+        note: 'Roo Code (VS Code) supports MCP + terminal execution. Use Hybrid if you want both paths.',
+        manual: ['Run: lean-ctx init --agent roo (writes VS Code globalStorage MCP settings and installs .clinerules).'],
+        agentKey: 'roo',
+        restart: 'Restart VS Code.'
+      },
+      opencode: {
+        name: 'OpenCode',
+        note: 'OpenCode uses ~/.config/opencode/opencode.json with an "mcp" root key.',
+        manual: ['Run: lean-ctx init --agent opencode (writes config + installs rules).'],
+        agentKey: 'opencode',
+        restart: 'Restart OpenCode.'
+      },
+      amp: {
+        name: 'Amp',
+        note: 'Amp supports MCP configuration via ~/.config/amp/settings.json.',
+        manual: ['Run: lean-ctx init --agent amp'],
+        agentKey: 'amp',
+        restart: 'Restart Amp.'
       },
       qwen: {
         name: 'Qwen Code',
         note: 'Configure via lean-ctx init --agent qwen.',
         manual: [
-          'If auto-setup fails, create ~/.qwen/mcp.json:',
+          'If auto-setup fails, create ~/.qwen/settings.json:',
           '{',
           '  "mcpServers": {',
           '    "lean-ctx": { "command": "lean-ctx" }',
@@ -259,7 +315,7 @@ const sidebar = [
           '}',
           '(Get path from: which lean-ctx)'
         ],
-        agent: 'qwen',
+        agentKey: 'qwen',
         restart: 'Restart Qwen Code.'
       },
       trae: {
@@ -274,14 +330,14 @@ const sidebar = [
           '}',
           '(Get path from: which lean-ctx)'
         ],
-        agent: 'trae',
+        agentKey: 'trae',
         restart: 'Restart Trae.'
       },
       amazonq: {
         name: 'Amazon Q Developer',
         note: 'Configure via lean-ctx init --agent amazonq.',
         manual: [
-          'If auto-setup fails, create ~/.aws/amazonq/mcp.json:',
+          'If auto-setup fails, create ~/.aws/amazonq/default.json:',
           '{',
           '  "mcpServers": {',
           '    "lean-ctx": { "command": "lean-ctx" }',
@@ -289,7 +345,7 @@ const sidebar = [
           '}',
           '(Get path from: which lean-ctx)'
         ],
-        agent: 'amazonq',
+        agentKey: 'amazonq',
         restart: 'Restart Amazon Q Developer.'
       },
       jetbrains: {
@@ -304,7 +360,7 @@ const sidebar = [
           '}',
           '(Get path from: which lean-ctx)'
         ],
-        agent: 'jetbrains',
+        agentKey: 'jetbrains',
         restart: 'Restart your JetBrains IDE.'
       },
       kiro: {
@@ -321,7 +377,7 @@ const sidebar = [
           'https://github.com/yvgude/lean-ctx (see KIRO_STEERING_TEMPLATE in hooks.rs)',
           '(The steering file is REQUIRED for Kiro to use lean-ctx tools)'
         ],
-        agent: 'kiro',
+        agentKey: 'kiro',
         restart: 'Restart Kiro.'
       },
       verdent: {
@@ -336,7 +392,7 @@ const sidebar = [
           '}',
           '(Get path from: which lean-ctx)'
         ],
-        agent: 'verdent',
+        agentKey: 'verdent',
         restart: 'Restart Verdent.'
       },
       pi: {
@@ -353,13 +409,42 @@ const sidebar = [
           '  }',
           '}'
         ],
-        agent: 'lean-ctx init --agent pi',
+        agentKey: 'pi',
         restart: 'Restart Pi.'
+      },
+      qoder: {
+        name: 'Qoder',
+        note: 'Qoder supports PreToolUse hooks. In CLI-first mode lean-ctx installs shell rewrite hooks in ~/.qoder/settings.json. MCP is optional via ~/.qoder/mcp.json (and additional macOS locations).',
+        manual: [
+          'Run: lean-ctx init --agent qoder',
+          'Hooks: ~/.qoder/settings.json',
+          'Optional MCP (mode mcp/hybrid): ~/.qoder/mcp.json'
+        ],
+        agentKey: 'qoder',
+        restart: 'Restart Qoder.'
+      },
+      qoderwork: {
+        name: 'QoderWork',
+        note: 'QoderWork is MCP-only. lean-ctx writes ~/.qoderwork/mcp.json.',
+        manual: [
+          'If auto-setup fails, create ~/.qoderwork/mcp.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}'
+        ],
+        agentKey: 'qoderwork',
+        restart: 'Restart QoderWork.'
       }
     };
 
     function gen() {
       var e = editors[ed], s = shells[os], step = 1;
+      var agentCmd = '';
+      if (e && e.agentKey) {
+        agentCmd = 'lean-ctx init --agent ' + e.agentKey + (mode !== 'auto' ? (' --mode ' + mode) : '');
+      }
       var lines = [
         'Install and configure lean-ctx on my machine. Follow these exact steps:',
         '',
@@ -370,22 +455,30 @@ const sidebar = [
       step++;
       lines.push(step + '. VERIFY:');
       lines.push('   lean-ctx --version');
-      lines.push('   (Expected: lean-ctx 2.14.3 or newer)');
+      lines.push('   (Expected: lean-ctx 3.4.7 or newer)');
       lines.push('');
       step++;
       lines.push(step + '. ONE-COMMAND SETUP (shell hooks + editor config):');
       for (var i = 0; i < s.length; i++) lines.push('   ' + s[i]);
+      if (agentCmd) {
+        lines.push('   ' + agentCmd + (mode === 'auto' ? '   # optional: re-run to force a mode' : ''));
+      }
       lines.push('');
       lines.push('   ' + e.note);
       lines.push('');
       step++;
       lines.push(step + '. MANUAL FALLBACK (only if step 3 did not configure ' + e.name + '):');
+      if (mode === 'cli-redirect') {
+        lines.push('   NOTE: CLI-first mode focuses on lean-ctx CLI + shell rewrite hooks (no MCP schema overhead).');
+        lines.push('   If you prefer MCP tools, re-run: ' + (agentCmd ? agentCmd.replace(' --mode cli-redirect', ' --mode mcp') : 'lean-ctx init --agent <tool> --mode mcp'));
+        lines.push('');
+      }
       for (var j = 0; j < e.manual.length; j++) lines.push('   ' + e.manual[j]);
       lines.push('');
-      if (e.agent) {
+      if (agentCmd) {
         step++;
         lines.push(step + '. INSTALL AGENT INSTRUCTIONS:');
-        lines.push('   ' + e.agent);
+        lines.push('   ' + agentCmd);
         lines.push('');
       }
       step++;
@@ -409,7 +502,8 @@ const sidebar = [
             for (var j = 0; j < btns.length; j++) btns[j].classList.remove('active');
             btn.classList.add('active');
             if (key === 'os') os = btn.getAttribute('data-v');
-            else ed = btn.getAttribute('data-v');
+            else if (key === 'ed') ed = btn.getAttribute('data-v');
+            else if (key === 'mode') mode = btn.getAttribute('data-v');
             gen();
           });
         })(btns[i]);
@@ -418,6 +512,7 @@ const sidebar = [
 
     bind('pg-os', 'os');
     bind('pg-ed', 'ed');
+    bind('pg-mode', 'mode');
 
     var copyBtn = document.getElementById('pg-copy');
     if (copyBtn) {
@@ -737,7 +832,7 @@ RUN curl -fsSL \
   <h2 id="editor-setup">{t('docs.gettingStarted.step3Title')}</h2>
   <ol>
     <li>{t('docs.gettingStarted.verifyStep1')}
-      <pre><code>lean-ctx --version   # → lean-ctx 2.14.3
+      <pre><code>lean-ctx --version   # → lean-ctx 3.4.7
 lean-ctx doctor      # checks PATH, config, aliases, MCP</code></pre>
     </li>
     <li>{t('docs.gettingStarted.verifyStep2')}
@@ -920,12 +1015,12 @@ args = []</code></pre>
   <ol>
     <li><span set:html={t('docs.gettingStarted.editorGeminiStep1')} />
       <pre><code># macOS / Linux:
-mkdir -p ~/.gemini/settings
-nano ~/.gemini/settings/mcp.json
+mkdir -p ~/.gemini
+nano ~/.gemini/settings.json
 
 # Windows (PowerShell):
-mkdir -Force "$env:USERPROFILE\.gemini\settings"
-notepad "$env:USERPROFILE\.gemini\settings\mcp.json"</code></pre>
+mkdir -Force "$env:USERPROFILE\.gemini"
+notepad "$env:USERPROFILE\.gemini\settings.json"</code></pre>
     </li>
     <li><span set:html={t('docs.gettingStarted.editorGeminiStep2')} />
       <pre><code>{`{
@@ -1094,11 +1189,18 @@ lean-ctx benchmark run</code></pre>
 
   <h2 id="agent-hooks">{t('docs.gettingStarted.hooksTitle')}</h2>
   <p>{t('docs.gettingStarted.hooksDesc')}</p>
-  <pre><code># Configure MCP for a specific editor
+  <pre><code># Configure a specific AI tool (mode auto-detected; override with --mode)
 lean-ctx init --agent cursor
 lean-ctx init --agent claude
 lean-ctx init --agent codex
+lean-ctx init --agent gemini
+lean-ctx init --agent hermes
 lean-ctx init --agent pi            # or: pi install npm:pi-lean-ctx
+lean-ctx init --agent qoder
+lean-ctx init --agent qoderwork
+
+# Force MCP tools if you prefer ctx_* calls
+lean-ctx init --agent cursor --mode mcp
 
 # Run diagnostics and auto-fix issues
 lean-ctx doctor --fix
@@ -1198,6 +1300,7 @@ source ~/.zshrc          # restart shell</code></pre>
       <tr><td>Zed</td><td><code>~/.config/zed/rules/lean-ctx.md</code></td></tr>
       <tr><td>OpenCode</td><td><code>~/.config/opencode/rules/lean-ctx.md</code></td></tr>
       <tr><td>Pi</td><td><code>pi-lean-ctx</code> package (built-in via <a href="https://pi.dev/packages/pi-lean-ctx">pi.dev</a>)</td></tr>
+      <tr><td>Qoder</td><td><code>~/.qoder/settings.json</code> (PreToolUse hooks)</td></tr>
     </tbody>
   </table>
 
@@ -1205,14 +1308,22 @@ source ~/.zshrc          # restart shell</code></pre>
   <p>{t('docs.gettingStarted.manualFallbackDesc')}</p>
   <pre><code>{`# lean-ctx - Context Engineering Layer
 
-Always use lean-ctx MCP tools instead of native equivalents:
-- ctx_read instead of Read/cat for file reads
-- ctx_shell instead of Shell/bash for commands
-- ctx_search instead of Grep/search for code search
-- ctx_tree instead of ls/find for directory listing
+Default (CLI-first):
+- Use lean-ctx CLI commands for reads/search:
+  - lean-ctx read <path> [-m mode]
+  - lean-ctx grep <pattern> <path>
+  - lean-ctx ls <path>
+- Use lean-ctx -c "<cmd>" for compressed shell output
+
+If you're running in MCP/Hybrid mode:
+- Prefer ctx_* tools instead of native equivalents:
+  - ctx_read instead of Read/cat for file reads
+  - ctx_shell instead of Shell/bash for commands
+  - ctx_search instead of Grep/search for code search
+  - ctx_tree instead of ls/find for directory listing
 
 Keep using native tools for: Write, StrReplace, Delete, Glob (no lean-ctx replacement).
-Do NOT fall back to native tools for reading, shell, search, or tree operations.`}</code></pre>
+Do NOT fall back to native tools for reading/shell/search/tree when a lean-ctx path is available.`}</code></pre>
   <p set:html={t('docs.gettingStarted.manualFallbackCursorNote')} />
 
   <h2 id="troubleshooting">{t('docs.gettingStarted.troubleshootingTitle')}</h2>

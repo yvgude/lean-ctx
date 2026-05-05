@@ -65,11 +65,26 @@ const sidebar = [
   sidebar={sidebar}
 >
   <p>
-    lean-ctx integrates with <strong>22+ AI coding agents and editors</strong> via the
-    <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a>.
-    Each integration is auto-configured by <code>lean-ctx init</code> - or you can set it up manually
-    using the guides below.
+    lean-ctx integrates with <strong>24+ AI coding agents and editors</strong> using a combination of
+    <strong>CLI-first hooks</strong> (where the client supports hook interception / a reliable terminal tool)
+    and <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> (when you want explicit <code>ctx_*</code> tools).
+    Each integration is auto-configured by <code>lean-ctx init</code> — or you can set it up manually using the guides below.
   </p>
+  <p>
+    <strong>Modes:</strong> Every integration supports <code>--mode</code>:
+    <code>auto</code> (recommended), <code>cli-redirect</code> (CLI-first), <code>mcp</code> (MCP tools), <code>hybrid</code> (both).
+  </p>
+  <pre><code>{`# Recommended (auto-detect best mode per tool)
+lean-ctx init --agent cursor
+
+# Force MCP tools (ctx_read, ctx_shell, ...)
+lean-ctx init --agent cursor --mode mcp
+
+# Force CLI-first (shell rewrite hooks + prefer lean-ctx read/grep/ls)
+lean-ctx init --agent cursor --mode cli-redirect
+
+# Combine both (fallback path available)
+lean-ctx init --agent cursor --mode hybrid`}</code></pre>
 
   <!-- ─── Universal Setup ─── -->
 
@@ -100,10 +115,10 @@ lean-ctx init --agent copilot`}</code></pre>
     </thead>
     <tbody>
       <tr><td><code>claude</code></td><td>Claude Code</td><td><code>~/.claude.json</code></td></tr>
-      <tr><td><code>cursor</code></td><td>Cursor</td><td><code>~/.cursor/mcp.json</code></td></tr>
+      <tr><td><code>cursor</code></td><td>Cursor</td><td><code>~/.cursor/hooks.json</code> <span class="text-muted">(CLI-first)</span> / <code>~/.cursor/mcp.json</code> <span class="text-muted">(MCP/Hybrid)</span></td></tr>
       <tr><td><code>codex</code></td><td>Codex CLI</td><td><code>~/.codex/config.toml</code></td></tr>
       <tr><td><code>gemini</code></td><td>Gemini CLI / Antigravity</td><td><code>~/.gemini/settings.json</code></td></tr>
-      <tr><td><code>copilot</code></td><td>GitHub Copilot (VS Code)</td><td><code>.vscode/mcp.json</code></td></tr>
+      <tr><td><code>copilot</code></td><td>GitHub Copilot (VS Code)</td><td><code>.vscode/mcp.json</code> <span class="text-muted">(+</span> <code>.github/hooks/hooks.json</code><span class="text-muted">)</span></td></tr>
       <tr><td><code>windsurf</code></td><td>Windsurf</td><td><code>~/.codeium/windsurf/mcp_config.json</code></td></tr>
       <tr><td><code>cline</code></td><td>Cline</td><td>VS Code globalStorage MCP settings</td></tr>
       <tr><td><code>roo</code></td><td>Roo Code</td><td>VS Code globalStorage MCP settings</td></tr>
@@ -116,9 +131,11 @@ lean-ctx init --agent copilot`}</code></pre>
       <tr><td><code>crush</code></td><td>Crush</td><td><code>~/.config/crush/crush.json</code></td></tr>
       <tr><td><code>aider</code></td><td>Aider</td><td><code>~/.aider/mcp.json</code></td></tr>
       <tr><td><code>verdent</code></td><td>Verdent</td><td><code>~/.verdent/mcp.json</code></td></tr>
-      <tr><td><code>qwen</code></td><td>Qwen Code</td><td><code>~/.qwen/mcp.json</code></td></tr>
+      <tr><td><code>qoder</code></td><td>Qoder</td><td><code>~/.qoder/settings.json</code> <span class="text-muted">(hooks)</span> / <code>~/.qoder/mcp.json</code> <span class="text-muted">(MCP/Hybrid)</span></td></tr>
+      <tr><td><code>qoderwork</code></td><td>QoderWork</td><td><code>~/.qoderwork/mcp.json</code></td></tr>
+      <tr><td><code>qwen</code></td><td>Qwen Code</td><td><code>~/.qwen/settings.json</code></td></tr>
       <tr><td><code>trae</code></td><td>Trae</td><td><code>~/.trae/mcp.json</code></td></tr>
-      <tr><td><code>amazonq</code></td><td>Amazon Q Developer</td><td><code>~/.aws/amazonq/mcp.json</code></td></tr>
+      <tr><td><code>amazonq</code></td><td>Amazon Q Developer</td><td><code>~/.aws/amazonq/default.json</code></td></tr>
     </tbody>
   </table>
 
@@ -128,19 +145,19 @@ lean-ctx init --agent copilot`}</code></pre>
   <p>lean-ctx integrates with editors at three levels:</p>
   <ol>
     <li>
-      <strong>MCP Server</strong> - lean-ctx runs as a stdio-based MCP server, exposing 46+ tools
-      (<code>ctx_read</code>, <code>ctx_shell</code>, <code>ctx_search</code>, etc.) that replace
-      native file/shell operations with compressed equivalents.
+      <strong>CLI-first (recommended where supported)</strong> - hook interception rewrites common
+      shell commands to <code>lean-ctx -c</code>, and agent rules prefer <code>lean-ctx read/grep/ls</code>
+      for file operations (no MCP schema overhead).
     </li>
     <li>
-      <strong>Rules Injection</strong> - Editor-specific rule files (e.g. <code>.cursor/rules/lean-ctx.mdc</code>,
-      <code>CLAUDE.md</code>, <code>AGENTS.md</code>) instruct the AI agent to prefer lean-ctx tools
-      over native ones.
+      <strong>MCP Server (optional)</strong> - lean-ctx can also run as a stdio-based MCP server,
+      exposing <code>ctx_read</code>, <code>ctx_shell</code>, <code>ctx_search</code>, etc.
+      Use <code>--mode mcp</code> or <code>--mode hybrid</code> when you want explicit MCP tools.
     </li>
     <li>
-      <strong>Hook Scripts</strong> - For editors that support hooks (Claude Code, Cursor, Codex,
-      Gemini, Copilot), <code>PreToolUse</code> hooks intercept native tool calls and
-      transparently rewrite them to lean-ctx equivalents.
+      <strong>Rules + Hook Scripts</strong> - editor-specific rule files (e.g. <code>.cursor/rules/lean-ctx.mdc</code>,
+      <code>CLAUDE.md</code>, <code>AGENTS.md</code>) set tool preferences, and hook scripts
+      (Claude Code, Cursor, Codex, Gemini, Copilot, Qoder) can rewrite terminal commands transparently.
     </li>
   </ol>
 
@@ -150,7 +167,7 @@ lean-ctx init --agent copilot`}</code></pre>
 
   <div class="tier-divider">
     <h2 id="tier-1">Tier 1 - Full Setup Guides</h2>
-    <p>Editors with deep integration: MCP server + rule injection + hook scripts.</p>
+    <p>Editors with deep integration: hook scripts + rule injection (+ optional MCP via <code>--mode mcp</code>/<code>--mode hybrid</code>).</p>
   </div>
 
   <!-- ─── Claude Code ─── -->
@@ -163,7 +180,11 @@ lean-ctx init --agent copilot`}</code></pre>
   </p>
 
   <h4>Auto Setup</h4>
-  <pre><code>{`lean-ctx init --agent claude`}</code></pre>
+  <pre><code>{`# Auto (recommended)
+lean-ctx init --agent claude
+
+# Force MCP tools
+lean-ctx init --agent claude --mode mcp`}</code></pre>
 
   <h4>What Gets Configured</h4>
   <table>
@@ -180,7 +201,7 @@ lean-ctx init --agent copilot`}</code></pre>
     </tbody>
   </table>
 
-  <h4>MCP Configuration</h4>
+  <h4>MCP Configuration <span class="text-muted">(only in MCP/Hybrid mode)</span></h4>
   <p>In <code>~/.claude.json</code> (managed via <code>claude mcp add-json</code> when available):</p>
   <pre><code>{`{
   "mcpServers": {
@@ -224,9 +245,10 @@ lean-ctx init --agent copilot`}</code></pre>
 
   <p>
     The <strong>rewrite</strong> hook intercepts shell commands and wraps them with
-    <code>lean-ctx -c</code> for output compression. The <strong>redirect</strong> hook
-    intercepts read/search operations and routes them through <code>ctx_read</code> /
-    <code>ctx_search</code>.
+    <code>lean-ctx -c</code> for output compression.
+    The <strong>redirect</strong> hook is intentionally a <em>pass-through</em> (native tools remain available,
+    which is required for reliable edits in many clients). Tool preference comes from injected rules:
+    use <code>ctx_*</code> tools in <code>--mode mcp</code>/<code>--mode hybrid</code>, or use <code>lean-ctx</code> CLI commands in <code>--mode cli-redirect</code>.
   </p>
 
   <h4>Project-Level Hooks</h4>
@@ -245,7 +267,7 @@ lean-ctx init --agent claude --project`}</code></pre>
 
   <h3 id="cursor">Cursor</h3>
   <p>
-    Cursor integrates via MCP server, project rules, and PreToolUse hooks.
+    Cursor integrates via PreToolUse hooks and project rules. MCP is optional (use <code>--mode mcp</code> or <code>--mode hybrid</code>).
   </p>
 
   <h4>Auto Setup</h4>
@@ -257,13 +279,13 @@ lean-ctx init --agent claude --project`}</code></pre>
       <tr><th>File</th><th>Purpose</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>~/.cursor/mcp.json</code></td><td>Global MCP server entry</td></tr>
+      <tr><td><code>~/.cursor/mcp.json</code></td><td>MCP server entry <span class="text-muted">(only in MCP/Hybrid mode)</span></td></tr>
       <tr><td><code>.cursor/rules/lean-ctx.mdc</code></td><td>Project rules (tool preferences + CEP protocol)</td></tr>
       <tr><td><code>~/.cursor/hooks.json</code></td><td>PreToolUse hook configuration</td></tr>
     </tbody>
   </table>
 
-  <h4>MCP Configuration</h4>
+  <h4>MCP Configuration <span class="text-muted">(only in MCP/Hybrid mode)</span></h4>
   <p>In <code>~/.cursor/mcp.json</code>:</p>
   <pre><code>{`{
   "mcpServers": {
@@ -281,8 +303,9 @@ lean-ctx init --agent claude --project`}</code></pre>
   <p>
     The file <code>.cursor/rules/lean-ctx.mdc</code> is created in your project directory.
     It contains the full lean-ctx instruction set including tool mapping, CEP protocol,
-    and CRP mode directives. This file tells Cursor's AI to prefer lean-ctx MCP tools
-    over native equivalents.
+    and CRP mode directives. In CLI-first mode it tells Cursor's AI to prefer lean-ctx CLI commands
+    (<code>lean-ctx read</code>, <code>lean-ctx grep</code>, <code>lean-ctx ls</code>, <code>lean-ctx -c</code>)
+    over native equivalents. In MCP/Hybrid mode it can also prefer <code>ctx_*</code> tools.
   </p>
 
   <h4>PreToolUse Hooks</h4>
@@ -306,7 +329,7 @@ lean-ctx init --agent claude --project`}</code></pre>
   <h4>Quirks &amp; Notes</h4>
   <ul>
     <li>The <code>.mdc</code> rule file is Cursor-specific Markdown with metadata headers.</li>
-    <li>Restart Cursor after running <code>lean-ctx init --agent cursor</code> to activate the MCP server.</li>
+    <li>Restart Cursor after running <code>lean-ctx init --agent cursor</code> to activate hooks and rules (and MCP if you enabled it via <code>--mode mcp</code>/<code>--mode hybrid</code>).</li>
     <li>If you use Cursor in multiple projects, the MCP config is global but rules are per-project.</li>
   </ul>
 
@@ -778,9 +801,9 @@ lean-ctx init --agent roo`}</code></pre>
       <tr><td>Verdent</td><td><code>verdent</code></td><td><code>~/.verdent/mcp.json</code></td></tr>
       <tr><td>Aider</td><td><code>aider</code></td><td><code>~/.aider/mcp.json</code></td></tr>
       <tr><td>Crush</td><td><code>crush</code></td><td><code>~/.config/crush/crush.json</code> (<code>mcp</code> key)</td></tr>
-      <tr><td>Qwen Code</td><td><code>qwen</code></td><td><code>~/.qwen/mcp.json</code></td></tr>
+      <tr><td>Qwen Code</td><td><code>qwen</code></td><td><code>~/.qwen/settings.json</code></td></tr>
       <tr><td>Trae</td><td><code>trae</code></td><td><code>~/.trae/mcp.json</code></td></tr>
-      <tr><td>Amazon Q Developer</td><td><code>amazonq</code></td><td><code>~/.aws/amazonq/mcp.json</code></td></tr>
+      <tr><td>Amazon Q Developer</td><td><code>amazonq</code></td><td><code>~/.aws/amazonq/default.json</code></td></tr>
     </tbody>
   </table>
 

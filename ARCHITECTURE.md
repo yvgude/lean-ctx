@@ -8,11 +8,13 @@ lean-ctx is a single Rust binary that serves as both a **shell hook** (CLI compr
 flowchart TD
     subgraph input [Input Sources]
         ShellCmd["Shell Command (git, cargo, ...)"]
+        IdeBash["IDE Bash Tool Call (Cursor/Claude/Gemini/...)"]
         McpReq["MCP Tool Call (ctx_read, ctx_shell, ...)"]
         CliCmd["CLI Command (lean-ctx gain, doctor, ...)"]
     end
 
     subgraph processing [Processing Layer]
+        HookRewrite["Hook Rewrite (lean-ctx hook rewrite)"]
         PatternEngine["Pattern Engine (90+ patterns)"]
         ContextServer["Context Server (49 tools)"]
         CliRouter["CLI Router"]
@@ -33,6 +35,8 @@ flowchart TD
     end
 
     ShellCmd --> PatternEngine
+    IdeBash --> HookRewrite
+    HookRewrite --> CliCmd
     McpReq --> ContextServer
     CliCmd --> CliRouter
 

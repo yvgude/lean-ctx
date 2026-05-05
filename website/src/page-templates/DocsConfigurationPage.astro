@@ -329,6 +329,24 @@ redirect_exclude = [".wolf/**", ".claude/**", "*.json", "CLAUDE.md"]</code></pre
   <pre><code># Or via environment variable (takes precedence)
 export LEAN_CTX_HOOK_EXCLUDE=".wolf/**,.claude/**,*.json"</code></pre>
 
+  <h3 id="agent-modes">Agent Integration Modes</h3>
+  <p>
+    <code>lean-ctx init --agent &lt;tool&gt;</code> supports three integration modes:
+    <code>cli-redirect</code> (CLI-first), <code>mcp</code> (explicit <code>ctx_*</code> tools), and <code>hybrid</code> (both).
+    <code>auto</code> selects the best default per tool.
+  </p>
+  <pre><code>{`# Auto (recommended)
+lean-ctx init --agent cursor
+
+# Force MCP tools
+lean-ctx init --agent cursor --mode mcp
+
+# Force CLI-first
+lean-ctx init --agent cursor --mode cli-redirect
+
+# Best of both worlds
+lean-ctx init --agent cursor --mode hybrid`}</code></pre>
+
   <h3>Binary File Passthrough (v2.21.0)</h3>
   <p>
     The hook redirect automatically detects binary files (images, PDFs, archives, fonts, videos,
