@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 56,
+    "granular": 50,
     "unified": 5
   },
   "read_modes": {
@@ -22,7 +22,7 @@
   "tools": {
     "granular": [
       {
-        "description": "Multi-agent coordination (shared message bus + persistent diaries). Actions: register (join with agent_type+role), post (broadcast or direct message with category), read (poll messages), status (update state: active|idle|finished), handoff (transfer task to another agent with summary), sync (overview of all agents + pending messages + shared contexts), diary (log discovery/decision/blocker/progress/insight - persisted across sessions), recall_diary (read agent diary), diaries (list all agent diaries), list, info.",
+        "description": "Multi-agent coordination (shared message bus + persistent diaries). Actions: register (join with agent_type+role), post (broadcast or direct message with category), read (poll messages), status (update state: active|idle|finished), handoff (transfer task to another agent with summary), sync (overview of all agents + pending messages + shared contexts), diary (log discovery/decision/blocker/progress/insight — persisted across sessions), recall_diary (read agent diary), diaries (list all agent diaries), list, info.",
         "input_schema": {
           "properties": {
             "action": {
@@ -83,7 +83,7 @@
         "schema_md5": "8e5656acf265ba8edbb16467198fea7f"
       },
       {
-        "description": "Entropy analysis - recommends optimal compression mode for a file.",
+        "description": "Entropy analysis — recommends optimal compression mode for a file.",
         "input_schema": {
           "properties": {
             "path": {
@@ -128,55 +128,6 @@
         },
         "name": "ctx_architecture",
         "schema_md5": "3dd5e6f06ff0f8720cbaa1c1215e37ee"
-      },
-      {
-        "description": "Context artifact registry + BM25 index. Actions: list|status|index|reindex|search|remove.",
-        "input_schema": {
-          "properties": {
-            "action": {
-              "description": "Artifact action",
-              "enum": [
-                "list",
-                "status",
-                "index",
-                "reindex",
-                "search",
-                "remove"
-              ],
-              "type": "string"
-            },
-            "format": {
-              "description": "Output format (default: json)",
-              "enum": [
-                "json",
-                "markdown"
-              ],
-              "type": "string"
-            },
-            "name": {
-              "description": "Artifact name (required for action=remove)",
-              "type": "string"
-            },
-            "project_root": {
-              "description": "Project root (default: session project root)",
-              "type": "string"
-            },
-            "query": {
-              "description": "Search query (required for action=search)",
-              "type": "string"
-            },
-            "top_k": {
-              "description": "Max results (default: 10, max: 50)",
-              "type": "integer"
-            }
-          },
-          "required": [
-            "action"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_artifacts",
-        "schema_md5": "b79efbacf0af5cc1f2c6e393ae1330d9"
       },
       {
         "description": "Benchmark compression modes for a file or project.",
@@ -352,7 +303,7 @@
         "schema_md5": "82f50feed0439dd2264d45f470bc2a5a"
       },
       {
-        "description": "Session context overview - cached files, seen files, session state.",
+        "description": "Session context overview — cached files, seen files, session state.",
         "input_schema": {
           "properties": {},
           "type": "object"
@@ -406,7 +357,7 @@
         "schema_md5": "05554f176d4289b9b9f41f48314e86fc"
       },
       {
-        "description": "Incremental diff - sends only changed lines since last read.",
+        "description": "Incremental diff — sends only changed lines since last read.",
         "input_schema": {
           "properties": {
             "path": {
@@ -477,7 +428,7 @@
         "input_schema": {
           "properties": {
             "action": {
-              "description": "batch - execute multiple scripts. Provide items as JSON array [{language, code}]",
+              "description": "batch — execute multiple scripts. Provide items as JSON array [{language, code}]",
               "type": "string"
             },
             "code": {
@@ -602,7 +553,7 @@
         "schema_md5": "c8f0abaf207d048062889c97b9214537"
       },
       {
-        "description": "Budget-aware context fill - auto-selects compression per file within token limit.",
+        "description": "Budget-aware context fill — auto-selects compression per file within token limit.",
         "input_schema": {
           "properties": {
             "budget": {
@@ -835,33 +786,7 @@
         "schema_md5": "d003c71639c192aca0ded2bb087aba14"
       },
       {
-        "description": "Index orchestration. Actions: status|build|build-full.",
-        "input_schema": {
-          "properties": {
-            "action": {
-              "description": "Index action",
-              "enum": [
-                "status",
-                "build",
-                "build-full"
-              ],
-              "type": "string"
-            },
-            "project_root": {
-              "description": "Project root (default: session project root)",
-              "type": "string"
-            }
-          },
-          "required": [
-            "action"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_index",
-        "schema_md5": "5da09d2467261816c9812fa1d9faca43"
-      },
-      {
-        "description": "Structured intent input (optional) - submit compact JSON or short text; server also infers intents automatically from tool calls.",
+        "description": "Structured intent input (optional) — submit compact JSON or short text; server also infers intents automatically from tool calls.",
         "input_schema": {
           "properties": {
             "project_root": {
@@ -888,7 +813,6 @@
             "action": {
               "description": "Knowledge operation to perform.",
               "enum": [
-                "policy",
                 "remember",
                 "recall",
                 "pattern",
@@ -898,8 +822,8 @@
                 "relations",
                 "relations_diagram",
                 "consolidate",
+                "gotcha",
                 "status",
-                "health",
                 "remove",
                 "export",
                 "timeline",
@@ -977,7 +901,7 @@
           "type": "object"
         },
         "name": "ctx_knowledge",
-        "schema_md5": "484183a03fe3c634a0b8bfaa7a31bbc5"
+        "schema_md5": "465b6e28ea3f9a22a9bce77fdc9f0746"
       },
       {
         "description": "Session token stats, cache rates, per-tool savings.",
@@ -1034,7 +958,7 @@
         "schema_md5": "d5c2e2a1091f6b9ad00400a547063ada"
       },
       {
-        "description": "Task-relevant project map - use at session start.",
+        "description": "Task-relevant project map — use at session start.",
         "input_schema": {
           "properties": {
             "path": {
@@ -1052,51 +976,7 @@
         "schema_md5": "60d1fbc945e30b0b835c1a55f2fef00e"
       },
       {
-        "description": "PR Context Pack. action=pr yields changed files, related tests, impact summary, and relevant context artifacts.",
-        "input_schema": {
-          "properties": {
-            "action": {
-              "description": "Pack action",
-              "enum": [
-                "pr"
-              ],
-              "type": "string"
-            },
-            "base": {
-              "description": "Git base ref (default: auto-detect or HEAD~1)",
-              "type": "string"
-            },
-            "depth": {
-              "description": "Impact depth (default: 3)",
-              "type": "integer"
-            },
-            "diff": {
-              "description": "Optional git diff --name-status text. If omitted, computed via git.",
-              "type": "string"
-            },
-            "format": {
-              "description": "Output format (default: markdown)",
-              "enum": [
-                "markdown",
-                "json"
-              ],
-              "type": "string"
-            },
-            "project_root": {
-              "description": "Project root (default: session project root)",
-              "type": "string"
-            }
-          },
-          "required": [
-            "action"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_pack",
-        "schema_md5": "de0b2c71470713edf13051183266ab9c"
-      },
-      {
-        "description": "Predictive prefetch - prewarm cache for blast radius files (graph + task signals) within budgets.",
+        "description": "Predictive prefetch — prewarm cache for blast radius files (graph + task signals) within budgets.",
         "input_schema": {
           "properties": {
             "budget_tokens": {
@@ -1129,7 +1009,7 @@
         "schema_md5": "a861285ce8f2a416a04d44ecbedd823c"
       },
       {
-        "description": "Proactive context loader - caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
+        "description": "Proactive context loader — caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
         "input_schema": {
           "properties": {
             "path": {
@@ -1148,90 +1028,6 @@
         },
         "name": "ctx_preload",
         "schema_md5": "d72370b88a54db91288f2dd7981e3bc7"
-      },
-      {
-        "description": "Export a machine-readable ContextProofV1 (Verifier + SLO + Pipeline + Provenance). Writes to .lean-ctx/proofs/ by default.",
-        "input_schema": {
-          "properties": {
-            "action": {
-              "description": "export (required)",
-              "type": "string"
-            },
-            "filename": {
-              "description": "Optional output filename (default: timestamped context-proof-v1_*.json)",
-              "type": "string"
-            },
-            "format": {
-              "description": "json|summary|both (default: json)",
-              "type": "string"
-            },
-            "max_evidence": {
-              "description": "Max tool receipts to include (default: 50)",
-              "type": "integer"
-            },
-            "max_ledger_files": {
-              "description": "Max context ledger top files to include (default: 10)",
-              "type": "integer"
-            },
-            "project_root": {
-              "description": "Project root for proof output (default: .)",
-              "type": "string"
-            },
-            "write": {
-              "description": "Write proof file under .lean-ctx/proofs/ (default: true)",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "action"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_proof",
-        "schema_md5": "2415518cb6999997856cf543d5acb609"
-      },
-      {
-        "description": "External context provider (GitLab-first). Actions: gitlab_issues (list), gitlab_issue (show by iid), gitlab_mrs (list MRs), gitlab_pipelines (list pipelines). Requires GITLAB_TOKEN or LEAN_CTX_GITLAB_TOKEN.",
-        "input_schema": {
-          "properties": {
-            "action": {
-              "description": "Provider action",
-              "enum": [
-                "gitlab_issues",
-                "gitlab_issue",
-                "gitlab_mrs",
-                "gitlab_pipelines"
-              ],
-              "type": "string"
-            },
-            "iid": {
-              "description": "Issue/MR IID for single-item lookup",
-              "type": "integer"
-            },
-            "labels": {
-              "description": "Comma-separated labels filter",
-              "type": "string"
-            },
-            "limit": {
-              "description": "Max results (default 20, max 100)",
-              "type": "integer"
-            },
-            "state": {
-              "description": "Filter by state (opened, closed, merged, all)",
-              "type": "string"
-            },
-            "status": {
-              "description": "Pipeline status filter (running, success, failed)",
-              "type": "string"
-            }
-          },
-          "required": [
-            "action"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_provider",
-        "schema_md5": "db32dffd7bd8cc45b854d0a1785aefe9"
       },
       {
         "description": "Read file (cached, compressed). Cached re-reads can be ~13 tok when unchanged. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true forces a disk re-read.",
@@ -1328,7 +1124,7 @@
         "schema_md5": "122d1b755aba8e0664e4d6f7eb54f2af"
       },
       {
-        "description": "Regex code search (.gitignore aware, compact results). Deterministic ordering. Secret-like files (e.g. .env, *.pem) are skipped unless role allows. ignore_gitignore requires explicit policy.",
+        "description": "Regex code search (.gitignore aware, compact results).",
         "input_schema": {
           "properties": {
             "ext": {
@@ -1336,7 +1132,7 @@
               "type": "string"
             },
             "ignore_gitignore": {
-              "description": "Set true to scan ALL files including .gitignore'd paths (default: false). Requires role policy (e.g. admin).",
+              "description": "Set true to scan ALL files including .gitignore'd paths (default: false)",
               "type": "boolean"
             },
             "max_results": {
@@ -1358,7 +1154,7 @@
           "type": "object"
         },
         "name": "ctx_search",
-        "schema_md5": "f71684cbaca988e1999d3a2ff4c1ddf3"
+        "schema_md5": "96a35db29cc52cd209a240f3fa446f75"
       },
       {
         "description": "Semantic code search (BM25 + optional embeddings/hybrid). action=reindex to rebuild.",
@@ -1492,7 +1288,7 @@
         "schema_md5": "60408629ab4dfbd4954c4e094cc67148"
       },
       {
-        "description": "Run shell command (compressed output, 95+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking). Output redaction is on by default for non-admin roles (admin can disable).",
+        "description": "Run shell command (compressed output, 90+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking).",
         "input_schema": {
           "properties": {
             "command": {
@@ -1504,7 +1300,7 @@
               "type": "string"
             },
             "raw": {
-              "description": "Skip compression, return full uncompressed output. Redaction still applies by default for non-admin roles.",
+              "description": "Skip compression, return full uncompressed output. Use for small outputs or when full detail is critical.",
               "type": "boolean"
             }
           },
@@ -1514,7 +1310,7 @@
           "type": "object"
         },
         "name": "ctx_shell",
-        "schema_md5": "ffeb1f06fdeb7c9a59cfede26a0593ef"
+        "schema_md5": "9548c197b405ed267a1881bbb8e07a97"
       },
       {
         "description": "Auto-select optimal read mode for a file.",
@@ -1625,24 +1421,6 @@
         },
         "name": "ctx_tree",
         "schema_md5": "08acd62450b0984d0931f74985fd5514"
-      },
-      {
-        "description": "Verification observability snapshot. Action stats returns versioned JSON or compact summary (no raw content).",
-        "input_schema": {
-          "properties": {
-            "action": {
-              "description": "stats (default)",
-              "type": "string"
-            },
-            "format": {
-              "description": "summary|json|both (default: summary)",
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        "name": "ctx_verify",
-        "schema_md5": "d7ad4e0c917bd871d2f99164ab2a823e"
       },
       {
         "description": "Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.",
