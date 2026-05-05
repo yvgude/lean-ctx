@@ -54,6 +54,9 @@ const memoryIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" 
 const shieldIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
 const checkIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>';
 const plugIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>';
+const shareIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
+const busIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+const codeIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
 
 const featureIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>';
 
@@ -244,12 +247,16 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.governance.feature2Title', descKey: 'pillar.governance.feature2Desc', icon: featureIcon },
       { titleKey: 'pillar.governance.feature3Title', descKey: 'pillar.governance.feature3Desc', icon: featureIcon },
       { titleKey: 'pillar.governance.feature4Title', descKey: 'pillar.governance.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.governance.feature5Title', descKey: 'pillar.governance.feature5Desc', icon: featureIcon },
+      { titleKey: 'pillar.governance.feature6Title', descKey: 'pillar.governance.feature6Desc', icon: featureIcon },
+      { titleKey: 'pillar.governance.feature7Title', descKey: 'pillar.governance.feature7Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.governanceRoles', anchor: '#roles' },
       { labelKey: 'nav.pillars.governanceWorkflows', anchor: '#workflows' },
       { labelKey: 'nav.pillars.governanceBudgets', anchor: '#budgets' },
       { labelKey: 'nav.pillars.governanceTeam', anchor: '#team' },
+      { labelKey: 'nav.pillars.governanceSecurity', anchor: '#security' },
     ],
     tools: [
       'ctx_workflow', 'ctx_cost', 'ctx_review', 'ctx_wrapped', 'ctx_execute',
@@ -345,12 +352,15 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.integrations.feature2Title', descKey: 'pillar.integrations.feature2Desc', icon: featureIcon },
       { titleKey: 'pillar.integrations.feature3Title', descKey: 'pillar.integrations.feature3Desc', icon: featureIcon },
       { titleKey: 'pillar.integrations.feature4Title', descKey: 'pillar.integrations.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.integrations.feature5Title', descKey: 'pillar.integrations.feature5Desc', icon: featureIcon },
+      { titleKey: 'pillar.integrations.feature6Title', descKey: 'pillar.integrations.feature6Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.integrationsMcp', anchor: '#mcp' },
       { labelKey: 'nav.pillars.integrationsHttp', anchor: '#http' },
       { labelKey: 'nav.pillars.integrationsIdes', anchor: '#ides' },
       { labelKey: 'nav.pillars.integrationsCloud', anchor: '#cloud' },
+      { labelKey: 'nav.pillars.integrationsGateway', anchor: '#gateway' },
     ],
     tools: [
       'ctx_call', 'ctx_provider', 'ctx_index', 'ctx_pack',
@@ -363,6 +373,153 @@ export const pillars: Pillar[] = [
       '/docs/team-server',
       '/docs/remote-setup',
       '/docs/cloud',
+    ],
+  },
+  {
+    id: 'shared-sessions',
+    slug: 'shared-sessions',
+    titleKey: 'pillar.sharedSessions.title',
+    headlineKey: 'pillar.sharedSessions.headline',
+    solutionKey: 'pillar.sharedSessions.solution',
+    ctaKey: 'pillar.sharedSessions.cta',
+    icon: shareIcon,
+    navDescKey: 'nav.pillars.sharedSessionsDesc',
+    problemTitleKey: 'pillar.sharedSessions.problemTitle',
+    problemKey: 'pillar.sharedSessions.problem',
+    metaTitleKey: 'pillar.sharedSessions.metaTitle',
+    metaDescKey: 'pillar.sharedSessions.metaDesc',
+    demoDescKey: 'pillar.sharedSessions.demoDesc',
+    demoCommands: [
+      { tool: 'lean-ctx', args: 'session list --workspace my-team', output: [
+        'workspace: my-team',
+        'channel: feat/auth-refactor  rev:14  agents: cursor, claude-code',
+        'channel: fix/api-timeout     rev:7   agents: windsurf',
+        'channel: main                rev:42  agents: copilot, kiro',
+      ] },
+    ],
+    stats: [
+      { valueKey: 'pillar.sharedSessions.stat1Value', labelKey: 'pillar.sharedSessions.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.sharedSessions.stat2Value', labelKey: 'pillar.sharedSessions.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.sharedSessions.stat3Value', labelKey: 'pillar.sharedSessions.stat3Label', tone: 'accent-3' },
+    ],
+    features: [
+      { titleKey: 'pillar.sharedSessions.feature1Title', descKey: 'pillar.sharedSessions.feature1Desc', icon: featureIcon },
+      { titleKey: 'pillar.sharedSessions.feature2Title', descKey: 'pillar.sharedSessions.feature2Desc', icon: featureIcon },
+      { titleKey: 'pillar.sharedSessions.feature3Title', descKey: 'pillar.sharedSessions.feature3Desc', icon: featureIcon },
+      { titleKey: 'pillar.sharedSessions.feature4Title', descKey: 'pillar.sharedSessions.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.sharedSessions.feature5Title', descKey: 'pillar.sharedSessions.feature5Desc', icon: featureIcon },
+    ],
+    navItems: [
+      { labelKey: 'nav.pillars.sharedSessionsWorkspaces', anchor: '#workspaces' },
+      { labelKey: 'nav.pillars.sharedSessionsChannels', anchor: '#channels' },
+      { labelKey: 'nav.pillars.sharedSessionsCas', anchor: '#cas' },
+      { labelKey: 'nav.pillars.sharedSessionsSync', anchor: '#sync' },
+    ],
+    tools: [
+      'ctx_session', 'ctx_handoff', 'ctx_agent', 'ctx_share',
+    ],
+    docsLinks: [
+      '/docs/concepts/multi-agent',
+      '/docs/team-server',
+    ],
+  },
+  {
+    id: 'context-bus',
+    slug: 'context-bus',
+    titleKey: 'pillar.contextBus.title',
+    headlineKey: 'pillar.contextBus.headline',
+    solutionKey: 'pillar.contextBus.solution',
+    ctaKey: 'pillar.contextBus.cta',
+    icon: busIcon,
+    navDescKey: 'nav.pillars.contextBusDesc',
+    problemTitleKey: 'pillar.contextBus.problemTitle',
+    problemKey: 'pillar.contextBus.problem',
+    metaTitleKey: 'pillar.contextBus.metaTitle',
+    metaDescKey: 'pillar.contextBus.metaDesc',
+    demoDescKey: 'pillar.contextBus.demoDesc',
+    demoCommands: [
+      { tool: 'curl', args: '-N http://localhost:7700/v1/events?workspaceId=my-team', output: [
+        'event: SessionMutated',
+        'data: {"channel":"feat/auth","rev":15,"agent":"cursor"}',
+        '',
+        'event: KnowledgeRemembered',
+        'data: {"fact":"JWT with RS256","quality":0.95}',
+      ] },
+    ],
+    stats: [
+      { valueKey: 'pillar.contextBus.stat1Value', labelKey: 'pillar.contextBus.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.contextBus.stat2Value', labelKey: 'pillar.contextBus.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.contextBus.stat3Value', labelKey: 'pillar.contextBus.stat3Label', tone: 'accent-3' },
+    ],
+    features: [
+      { titleKey: 'pillar.contextBus.feature1Title', descKey: 'pillar.contextBus.feature1Desc', icon: featureIcon },
+      { titleKey: 'pillar.contextBus.feature2Title', descKey: 'pillar.contextBus.feature2Desc', icon: featureIcon },
+      { titleKey: 'pillar.contextBus.feature3Title', descKey: 'pillar.contextBus.feature3Desc', icon: featureIcon },
+      { titleKey: 'pillar.contextBus.feature4Title', descKey: 'pillar.contextBus.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.contextBus.feature5Title', descKey: 'pillar.contextBus.feature5Desc', icon: featureIcon },
+    ],
+    navItems: [
+      { labelKey: 'nav.pillars.contextBusEvents', anchor: '#events' },
+      { labelKey: 'nav.pillars.contextBusSse', anchor: '#sse' },
+      { labelKey: 'nav.pillars.contextBusBackpressure', anchor: '#backpressure' },
+      { labelKey: 'nav.pillars.contextBusAudit', anchor: '#audit' },
+    ],
+    tools: [
+      'ctx_workflow', 'ctx_cost',
+    ],
+    docsLinks: [
+      '/docs/team-server',
+      '/docs/concepts/multi-agent',
+    ],
+  },
+  {
+    id: 'sdk',
+    slug: 'sdk',
+    titleKey: 'pillar.sdk.title',
+    headlineKey: 'pillar.sdk.headline',
+    solutionKey: 'pillar.sdk.solution',
+    ctaKey: 'pillar.sdk.cta',
+    icon: codeIcon,
+    navDescKey: 'nav.pillars.sdkDesc',
+    problemTitleKey: 'pillar.sdk.problemTitle',
+    problemKey: 'pillar.sdk.problem',
+    metaTitleKey: 'pillar.sdk.metaTitle',
+    metaDescKey: 'pillar.sdk.metaDesc',
+    demoDescKey: 'pillar.sdk.demoDesc',
+    demoCommands: [
+      { tool: 'typescript', args: '', output: [
+        'import { LeanCtx } from "@anthropic/lean-ctx-sdk";',
+        '',
+        'const ctx = new LeanCtx({',
+        '  baseUrl: "http://localhost:7700",',
+        '  workspace: "my-team",',
+        '});',
+        '',
+        'for await (const ev of ctx.subscribe("feat/auth")) {',
+        '  console.log(ev.type, ev.data);',
+        '}',
+      ] },
+    ],
+    stats: [
+      { valueKey: 'pillar.sdk.stat1Value', labelKey: 'pillar.sdk.stat1Label', tone: 'accent' },
+      { valueKey: 'pillar.sdk.stat2Value', labelKey: 'pillar.sdk.stat2Label', tone: 'accent-2' },
+      { valueKey: 'pillar.sdk.stat3Value', labelKey: 'pillar.sdk.stat3Label', tone: 'accent-3' },
+    ],
+    features: [
+      { titleKey: 'pillar.sdk.feature1Title', descKey: 'pillar.sdk.feature1Desc', icon: featureIcon },
+      { titleKey: 'pillar.sdk.feature2Title', descKey: 'pillar.sdk.feature2Desc', icon: featureIcon },
+      { titleKey: 'pillar.sdk.feature3Title', descKey: 'pillar.sdk.feature3Desc', icon: featureIcon },
+      { titleKey: 'pillar.sdk.feature4Title', descKey: 'pillar.sdk.feature4Desc', icon: featureIcon },
+    ],
+    navItems: [
+      { labelKey: 'nav.pillars.sdkClient', anchor: '#client' },
+      { labelKey: 'nav.pillars.sdkSubscribe', anchor: '#subscribe' },
+      { labelKey: 'nav.pillars.sdkRest', anchor: '#rest' },
+      { labelKey: 'nav.pillars.sdkAuth', anchor: '#auth' },
+    ],
+    tools: [],
+    docsLinks: [
+      '/docs/team-server',
     ],
   },
 ];

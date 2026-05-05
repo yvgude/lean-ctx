@@ -3,24 +3,44 @@ import MegaDropdown from './MegaDropdown.astro';
 import SearchModal from './SearchModal.astro';
 import LanguageSwitcher from './LanguageSwitcher.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
-import { getMcpManifest } from '../lib/mcpManifest';
-import { contextOsDropdownColumns } from '../lib/contextOsIa';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const currentPath = Astro.url.pathname;
-const toolCount = getMcpManifest().counts.granular;
 
-const contextOsColumns = contextOsDropdownColumns.map((col) => ({
-  title: t(col.titleKey),
-  items: col.items.map((item) => ({
-    label: t(item.labelKey),
-    href: lp(item.href),
-    description: item.descriptionKey ? t(item.descriptionKey) : '',
-    icon: item.icon || '',
-  })),
-}));
+const contextOsColumns = [
+  {
+    title: t('nav.pillars.smartIo'),
+    items: [
+      { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>' },
+      { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/></svg>' },
+    ],
+  },
+  {
+    title: t('nav.pillars.memory'),
+    items: [
+      { label: t('nav.pillars.memorySessions'), href: lp('/context-os/memory'), description: t('nav.pillars.memoryDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20"/><path d="M17 2v20"/><path d="M2 12h20"/></svg>' },
+      { label: t('nav.pillars.governance'), href: lp('/context-os/governance'), description: t('nav.pillars.governanceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' },
+    ],
+  },
+  {
+    title: t('nav.pillars.verification'),
+    items: [
+      { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
+      { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>' },
+      { label: t('nav.product.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.product.benchmarkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>' },
+    ],
+  },
+  {
+    title: t('nav.pillars.multiAgent'),
+    items: [
+      { label: t('nav.pillars.sharedSessions'), href: lp('/context-os/shared-sessions'), description: t('nav.pillars.sharedSessionsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>' },
+      { label: t('nav.pillars.contextBus'), href: lp('/context-os/context-bus'), description: t('nav.pillars.contextBusDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' },
+      { label: t('nav.pillars.sdk'), href: lp('/context-os/sdk'), description: t('nav.pillars.sdkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>' },
+    ],
+  },
+];
 
 const docsColumns = [
   {
@@ -43,7 +63,7 @@ const docsColumns = [
   {
     title: t('nav.docs.reference'),
     items: [
-      { label: `${t('nav.docs.toolApi')} (${toolCount})`, href: lp('/docs/tools'), description: t('nav.docs.toolApiDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' },
+      { label: t('nav.docs.toolApi'), href: lp('/docs/tools'), description: t('nav.docs.toolApiDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' },
       { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8l4 4-4 4"/><line x1="13" y1="16" x2="17" y2="16"/></svg>' },
       { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' },
       { label: t('nav.docs.verification'), href: lp('/docs/verification'), description: t('nav.docs.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
@@ -177,18 +197,6 @@ const docsColumns = [
         <a href={lp('/docs/quick-reference')} class="mobile-nav-link">{t('nav.docs.quickReference')}</a>
         <a href={lp('/docs/verification')} class="mobile-nav-link">{t('nav.docs.verification')}</a>
         <a href={lp('/docs/ide-setup')} class="mobile-nav-link">{t('nav.docs.ideSetup')}</a>
-        <a href={lp('/docs/tree-sitter')} class="mobile-nav-link">{t('nav.docs.treeSitter')}</a>
-      </div>
-
-      <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.product.ecosystem')}</span>
-        <a href={lp('/mcp-server')} class="mobile-nav-link">{t('nav.product.contextServer')}</a>
-        <a href={lp('/shell-hook')} class="mobile-nav-link">{t('nav.product.shellHook')}</a>
-        <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.howItWorks')}</a>
-        <a href={lp('/compatibility')} class="mobile-nav-link">{t('nav.product.compatibility')}</a>
-        <a href={lp('/safety')} class="mobile-nav-link">{t('nav.product.safety')}</a>
-        <a href={lp('/limitations')} class="mobile-nav-link">{t('nav.product.limitations')}</a>
-        <a href="https://leanctl.com" target="_blank" rel="noopener" class="mobile-nav-link">{t('nav.product.leanctl')}</a>
       </div>
 
       <div class="mobile-section mobile-top-links">
