@@ -4,6 +4,7 @@ interface DropdownItem {
   href: string;
   description: string;
   icon: string;
+  badge?: string;
 }
 
 interface DropdownColumn {
@@ -44,7 +45,10 @@ const { id, label, columns } = Astro.props;
                 <a href={item.href} class="mega-dd-item" role="menuitem">
                   <span class="mega-dd-icon" set:html={item.icon} />
                   <div>
-                    <span class="mega-dd-item-label">{item.label}</span>
+                    <span class="mega-dd-item-label">
+                      {item.label}
+                      {item.badge && <span class="mega-dd-badge">{item.badge}</span>}
+                    </span>
                     <span class="mega-dd-item-desc">{item.description}</span>
                   </div>
                 </a>
@@ -191,5 +195,19 @@ const { id, label, columns } = Astro.props;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 22ch;
+  }
+
+  .mega-dd-badge {
+    display: inline-block;
+    font-size: 0.5625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+    color: var(--color-accent);
+    margin-inline-start: 6px;
+    vertical-align: middle;
   }
 </style>

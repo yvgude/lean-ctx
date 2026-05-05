@@ -46,6 +46,8 @@ export interface Pillar {
   };
   tools: string[];
   docsLinks: string[];
+  requiresTeamServer?: boolean;
+  relatedPillars?: string[];
 }
 
 const serverIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>';
@@ -422,6 +424,8 @@ export const pillars: Pillar[] = [
       '/docs/concepts/multi-agent',
       '/docs/team-server',
     ],
+    requiresTeamServer: true,
+    relatedPillars: ['context-bus', 'sdk'],
   },
   {
     id: 'context-bus',
@@ -471,6 +475,8 @@ export const pillars: Pillar[] = [
       '/docs/team-server',
       '/docs/concepts/multi-agent',
     ],
+    requiresTeamServer: true,
+    relatedPillars: ['shared-sessions', 'sdk'],
   },
   {
     id: 'sdk',
@@ -520,7 +526,10 @@ export const pillars: Pillar[] = [
     tools: [],
     docsLinks: [
       '/docs/team-server',
+      '/docs/api-reference',
     ],
+    requiresTeamServer: true,
+    relatedPillars: ['shared-sessions', 'context-bus'],
   },
 ];
 

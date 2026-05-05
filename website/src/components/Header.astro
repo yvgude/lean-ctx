@@ -11,25 +11,19 @@ const currentPath = Astro.url.pathname;
 
 const contextOsColumns = [
   {
-    title: t('nav.pillars.smartIo'),
+    title: 'Core',
     items: [
-      { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>' },
-      { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/></svg>' },
-    ],
-  },
-  {
-    title: t('nav.pillars.memory'),
-    items: [
+      { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>', badge: 'Start here' },
       { label: t('nav.pillars.memorySessions'), href: lp('/context-os/memory'), description: t('nav.pillars.memoryDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20"/><path d="M17 2v20"/><path d="M2 12h20"/></svg>' },
       { label: t('nav.pillars.governance'), href: lp('/context-os/governance'), description: t('nav.pillars.governanceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' },
     ],
   },
   {
-    title: t('nav.pillars.verification'),
+    title: 'Advanced',
     items: [
       { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' },
+      { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/></svg>' },
       { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>' },
-      { label: t('nav.product.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.product.benchmarkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>' },
     ],
   },
   {
@@ -38,6 +32,7 @@ const contextOsColumns = [
       { label: t('nav.pillars.sharedSessions'), href: lp('/context-os/shared-sessions'), description: t('nav.pillars.sharedSessionsDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>' },
       { label: t('nav.pillars.contextBus'), href: lp('/context-os/context-bus'), description: t('nav.pillars.contextBusDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' },
       { label: t('nav.pillars.sdk'), href: lp('/context-os/sdk'), description: t('nav.pillars.sdkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>' },
+      { label: t('nav.product.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.product.benchmarkDesc'), icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>' },
     ],
   },
 ];

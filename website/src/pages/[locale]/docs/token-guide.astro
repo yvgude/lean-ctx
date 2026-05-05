@@ -1,6 +1,13 @@
 ---
-import DocsTokenGuidePage from '../../../page-templates/DocsTokenGuidePage.astro';
-import { getLocaleStaticPaths } from '../../../i18n/routing.ts';
-export const getStaticPaths = getLocaleStaticPaths;
+import { getLocaleFromUrl, getLocalizedPath, locales } from '../../../i18n/utils';
+
+export function getStaticPaths() {
+  return locales.map(l => ({ params: { locale: l } }));
+}
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+return Astro.redirect(lp('/docs/concepts/token-savings'), 301);
 ---
-<DocsTokenGuidePage />
+<!-- redirect -->

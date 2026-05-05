@@ -945,6 +945,19 @@ pre code {
   }
 }
 
+@media (max-width: 767px) {
+  .split,
+  .split--visual-wide {
+    grid-template-columns: 1fr !important;
+    align-items: start;
+  }
+
+  .hero-split {
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+}
+
 @media (max-width: 640px) {
   .btn-primary,
   .btn-outline {
@@ -956,6 +969,7 @@ pre code {
   .split,
   .split--visual-wide {
     grid-template-columns: 1fr !important;
+    align-items: start;
   }
 
   .content-grid,

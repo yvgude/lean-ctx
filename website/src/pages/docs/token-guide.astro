@@ -1,4 +1,9 @@
 ---
-import DocsTokenGuidePage from '../../page-templates/DocsTokenGuidePage.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+return Astro.redirect(lp('/docs/concepts/token-savings'), 301);
 ---
-<DocsTokenGuidePage />
+<!-- redirect -->

@@ -1,0 +1,134 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Security',
+    items: [
+      { label: 'Overview', href: lp('/docs/security') },
+      { label: 'Data Privacy', href: lp('/docs/security#privacy') },
+      { label: 'PathJail Sandbox', href: lp('/docs/security#pathjail') },
+      { label: 'Token Scopes & ACL', href: lp('/docs/security#scopes') },
+      { label: 'Audit Trail', href: lp('/docs/security#audit') },
+      { label: 'Redaction Policies', href: lp('/docs/security#redaction') },
+      { label: 'Secret Leak Prevention', href: lp('/docs/security#secrets') },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('docs.sidebarTeamServer'), href: lp('/docs/team-server') },
+      { label: 'API Reference', href: lp('/docs/api-reference') },
+      { label: t('docs.sidebarVerification'), href: lp('/docs/verification') },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Security — LeanCTX" description="Security architecture of LeanCTX: data privacy, PathJail sandbox, token scopes, audit trail, redaction policies, and secret leak prevention." sidebar={sidebar}>
+
+  <p>LeanCTX is designed with security as a first-class concern. Everything runs locally by default, there is zero telemetry, and the entire codebase is open source and auditable.</p>
+
+  <h2 id="privacy">Data Privacy</h2>
+  <ul>
+    <li><strong>Local-first:</strong> All processing happens on your machine. No data leaves your network unless you explicitly configure a Team Server.</li>
+    <li><strong>Zero telemetry:</strong> LeanCTX does not collect, send, or store any usage data, analytics, or crash reports.</li>
+    <li><strong>No cloud dependency:</strong> The binary runs entirely offline. Cloud sync is opt-in and self-hosted.</li>
+    <li><strong>Open source:</strong> MIT + Apache-2.0 dual license. Full source code available for audit at any time.</li>
+  </ul>
+
+  <h2 id="pathjail">PathJail Sandbox</h2>
+  <p>Every file operation is sandboxed by PathJail, which prevents AI agents from accessing files outside the project directory:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">// PathJail enforces these rules:</span>
+<span class="text-accent">✓</span> src/lib/auth.ts          <span class="text-muted">→ inside project root</span>
+<span class="text-accent">✓</span> ../shared-lib/utils.ts   <span class="text-muted">→ resolved, still in workspace</span>
+<span class="text-danger">✗</span> /etc/passwd              <span class="text-muted">→ BLOCKED: outside project root</span>
+<span class="text-danger">✗</span> ../../secrets/.env       <span class="text-muted">→ BLOCKED: path traversal</span>
+<span class="text-danger">✗</span> ~/.ssh/id_rsa            <span class="text-muted">→ BLOCKED: outside project root</span></code></pre>
+  </div>
+
+  <p>PathJail is always active and cannot be disabled. It resolves symlinks before checking, preventing bypass via symbolic links.</p>
+
+  <h2 id="scopes">Token Scopes & ACL</h2>
+  <p>When using the Team Server, every API token has explicit scopes that limit what it can do:</p>
+
+  <table>
+    <thead><tr><th>Scope</th><th>Permissions</th><th>Use Case</th></tr></thead>
+    <tbody>
+      <tr><td><code>read</code></td><td>Read sessions, knowledge, events</td><td>Read-only agents, monitoring</td></tr>
+      <tr><td><code>write</code></td><td>Mutate sessions, store knowledge, execute tools</td><td>Active development agents</td></tr>
+      <tr><td><code>admin</code></td><td>Manage tokens, workspaces, server config</td><td>Team leads, CI/CD</td></tr>
+      <tr><td><code>events</code></td><td>Subscribe to SSE event stream</td><td>Dashboards, automation</td></tr>
+    </tbody>
+  </table>
+
+  <p>Create scoped tokens with the CLI:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope read --name "dashboard"
+<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope read,write --name "developer"
+<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope admin --name "ops"</code></pre>
+  </div>
+
+  <h2 id="audit">Audit Trail</h2>
+  <p>The Team Server logs every tool execution, session mutation, and knowledge operation with full attribution:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">[2025-01-15 14:32:01]</span> agent=cursor token=alice tool=ctx_read path=src/auth.ts tokens=180
+<span class="text-muted">[2025-01-15 14:32:05]</span> agent=claude token=bob tool=ctx_knowledge action=remember fact="JWT RS256"
+<span class="text-muted">[2025-01-15 14:32:12]</span> agent=cursor token=alice tool=ctx_session action=mutate channel=feat/auth rev=15</code></pre>
+  </div>
+
+  <p>Audit logs include: timestamp, agent identity, token name, tool called, arguments (redacted), result status, and token cost.</p>
+
+  <h2 id="redaction">Redaction Policies</h2>
+  <p>LeanCTX automatically redacts sensitive patterns from tool outputs before they reach the AI agent:</p>
+
+  <ul>
+    <li><strong>Environment variables:</strong> <code>$SECRET_KEY</code>, <code>$API_TOKEN</code>, etc.</li>
+    <li><strong>Connection strings:</strong> Database URLs, Redis URLs with credentials</li>
+    <li><strong>Private keys:</strong> SSH keys, PEM certificates, JWT secrets</li>
+    <li><strong>Custom patterns:</strong> Define your own regex patterns in <code>.lean-ctx/config.toml</code></li>
+  </ul>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">[redaction]</span>
+enabled = true
+level = "standard"  <span class="text-muted"># "off", "standard", "strict"</span>
+
+<span class="text-accent">[[redaction.patterns]]</span>
+name = "internal-api-keys"
+regex = "sk_live_[a-zA-Z0-9]{24,}"
+replacement = "[REDACTED_API_KEY]"</code></pre>
+  </div>
+
+  <h2 id="secrets">Secret Leak Prevention</h2>
+  <p>The verification pipeline scans all tool outputs for potential secret leaks before delivering them to the AI agent:</p>
+
+  <ul>
+    <li>AWS access keys and secret keys</li>
+    <li>GitHub/GitLab personal access tokens</li>
+    <li>Stripe, Twilio, SendGrid API keys</li>
+    <li>Generic high-entropy strings matching key patterns</li>
+    <li>Private keys (RSA, ECDSA, Ed25519)</li>
+  </ul>
+
+  <p>When a secret is detected, the verification step replaces it with <code>[REDACTED]</code> and logs a warning in the audit trail. This protection is enabled by default and works with all integration modes (CLI, Hybrid, MCP).</p>
+
+  <h2>Open Source Audit</h2>
+  <p>LeanCTX is fully open source. You can audit the security implementation yourself:</p>
+  <ul>
+    <li><a href="https://github.com/yvgude/lean-ctx/tree/main/rust/src/core/pathjail.rs">PathJail implementation</a></li>
+    <li><a href="https://github.com/yvgude/lean-ctx/tree/main/rust/src/core/redaction.rs">Redaction engine</a></li>
+    <li><a href="https://github.com/yvgude/lean-ctx/tree/main/rust/src/http_server/team.rs">Team Server authentication</a></li>
+    <li><a href="https://github.com/yvgude/lean-ctx/tree/main/rust/tests/security_resolve_path_guard.rs">Security tests</a></li>
+  </ul>
+
+</DocsLayout>

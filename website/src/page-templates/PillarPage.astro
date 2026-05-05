@@ -5,7 +5,7 @@ import SectionHeading from '../components/SectionHeading.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
 import ProofArtifacts from '../components/ProofArtifacts.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
-import { getPillarById, type Pillar } from '../lib/contextOsPillars';
+import { getPillarById, pillars, type Pillar } from '../lib/contextOsPillars';
 import { getMcpManifest, getToolEnrichments, toolNameToSlug } from '../lib/mcpManifest';
 import '../styles/index.css';
 
@@ -26,6 +26,9 @@ const pillarTools = pillar.tools
   .filter(Boolean);
 
 const accentTones = ['accent', 'accent-2', 'accent-3'];
+const relatedPillars = (pillar.relatedPillars ?? [])
+  .map(id => pillars.find(p => p.id === id))
+  .filter(Boolean) as Pillar[];
 ---
 
 <BaseLayout
@@ -67,6 +70,15 @@ const accentTones = ['accent', 'accent-2', 'accent-3'];
     </a>
   </Fragment>
 </PageHero>
+
+{pillar.requiresTeamServer && (
+  <div class="content-grid" style="margin-top: -1rem; margin-bottom: 1rem;">
+    <div class="animate-entrance" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 8px; background: color-mix(in srgb, var(--color-accent-2) 8%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-accent-2) 20%, var(--color-border)); font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+      <svg class="w-4 h-4" style="color: var(--color-accent-2);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3"/></svg>
+      <span class="text-muted">{t('pillar.requiresTeamServer')}</span>
+    </div>
+  </div>
+)}
 
 <div class="section-divider content-grid"></div>
 
@@ -320,6 +332,33 @@ const accentTones = ['accent', 'accent-2', 'accent-3'];
     </div>
   </div>
 </section>
+
+{relatedPillars.length > 0 && (
+  <>
+    <div class="section-divider content-grid"></div>
+    <section class="section-y">
+      <div class="content-grid">
+        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+          <span class="kicker-pill">Related</span>
+        </div>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+          Related Pillars
+        </h2>
+        <div class="grid md:grid-cols-2 animate-entrance stagger-2" style="gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          {relatedPillars.map(rp => (
+            <a href={lp(`/context-os/${rp.slug}`)} class="pillar-card-home" style="display: flex; align-items: flex-start; gap: 1rem;">
+              <span class="pillar-card-icon" set:html={rp.icon} style="flex-shrink: 0;" />
+              <div>
+                <h3 class="pillar-card-name" style="margin: 0 0 0.375rem;">{t(rp.titleKey)}</h3>
+                <p class="pillar-card-desc" style="margin: 0;">{t(rp.navDescKey)}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+    </section>
+  </>
+)}
 
 <div class="section-divider content-grid"></div>
 

@@ -25,55 +25,59 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <div class="section-divider content-grid"></div>
 
 
-<!-- ═══════ CEP ═══════ -->
-<section class="section-y">
+<!-- ═══════════════════════════════════════════════════════════
+     CEP — Context Efficiency Protocol
+     ═══════════════════════════════════════════════════════════ -->
+<section class="section-y" id="cep">
   <div class="content-grid">
-    <a href={lp('/protocols/cep')} class="proto-card card animate-entrance" style="--proto-color: var(--color-accent); --proto-color-rgb: 52, 211, 153;">
-      <div class="proto-badge" style="border-color: rgba(52,211,153,0.25); color: var(--color-accent);">CEP</div>
+    <details class="proto-details animate-entrance" style="--proto-color: var(--color-accent); --proto-color-rgb: 52, 211, 153;">
+      <summary class="proto-summary card">
+        <div class="proto-badge" style="border-color: rgba(52,211,153,0.25); color: var(--color-accent);">CEP</div>
 
-      <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
-        <div>
-          <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
-            {t('protocolsIndex.cepTitle')}
-          </h2>
-          <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
-            {t('protocolsIndex.cepDesc')}
-          </p>
+        <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
+          <div>
+            <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+              {t('protocolsIndex.cepTitle')}
+            </h2>
+            <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+              {t('protocolsIndex.cepDesc')}
+            </p>
 
-          <div class="grid grid-cols-2" style="gap: clamp(0.5rem, 0.25rem + 0.5vw, 0.75rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
-            <div class="proto-dim-card">
-              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimCache')}</span>
-              <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimCacheDesc')}</span>
+            <div class="grid grid-cols-2" style="gap: clamp(0.5rem, 0.25rem + 0.5vw, 0.75rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+              <div class="proto-dim-card">
+                <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimCache')}</span>
+                <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimCacheDesc')}</span>
+              </div>
+              <div class="proto-dim-card">
+                <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimModes')}</span>
+                <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimModesDesc')}</span>
+              </div>
+              <div class="proto-dim-card">
+                <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimCompress')}</span>
+                <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimCompressDesc')}</span>
+              </div>
+              <div class="proto-dim-card">
+                <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimAction')}</span>
+                <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimActionDesc')}</span>
+              </div>
             </div>
-            <div class="proto-dim-card">
-              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimModes')}</span>
-              <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimModesDesc')}</span>
-            </div>
-            <div class="proto-dim-card">
-              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimCompress')}</span>
-              <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimCompressDesc')}</span>
-            </div>
-            <div class="proto-dim-card">
-              <span class="text-accent font-bold font-display" style="font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);">{t('protocolsIndex.cepDimAction')}</span>
-              <span class="fluid-sm text-muted">{t('protocolsIndex.cepDimActionDesc')}</span>
-            </div>
+
+            <span class="proto-toggle text-accent">
+              <span class="proto-toggle-open">{t('protocolsIndex.cepLink')}</span>
+              <span class="proto-toggle-close">{t('protocolsIndex.collapseLabel') || 'Collapse'}</span>
+              <svg class="proto-chevron w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </span>
           </div>
 
-          <span class="proto-link text-accent">
-            {t('protocolsIndex.cepLink')}
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-          </span>
-        </div>
-
-        <div class="terminal-chrome">
-          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
-            <span class="terminal-dot bg-[#ff5f57]"></span>
-            <span class="terminal-dot bg-[#febc2e]"></span>
-            <span class="terminal-dot bg-[#28c840]"></span>
-            <span class="ml-3 text-xs text-muted font-mono">CEP Score</span>
-          </div>
-          <div class="px-4 sm:px-6 py-4 sm:py-5">
-            <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-accent font-bold">CEP Score: 87/100</span>
+          <div class="terminal-chrome">
+            <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+              <span class="terminal-dot bg-[#ff5f57]"></span>
+              <span class="terminal-dot bg-[#febc2e]"></span>
+              <span class="terminal-dot bg-[#28c840]"></span>
+              <span class="ml-3 text-xs text-muted font-mono">CEP Score</span>
+            </div>
+            <div class="px-4 sm:px-6 py-4 sm:py-5">
+              <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-accent font-bold">CEP Score: 87/100</span>
 
 <span class="text-muted/60">Dimensions:</span>
   Cache hits      <span class="text-accent">████████░░</span> 82%
@@ -83,10 +87,243 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
 <span class="text-muted/60">Task complexity:</span> <span class="text-accent-2">Standard</span>
 <span class="text-muted/50">Instruction: BRIEF DELTA NOREPEAT STRUCT</span></pre>
+            </div>
           </div>
         </div>
+      </summary>
+
+      <!-- ── CEP Deep Dive ──────────────────────────────── -->
+      <div class="proto-detail-body">
+
+        <!-- What CEP Does -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCep.whatLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCep.whatTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;">
+            {t('protocolsCep.whatDesc')}
+          </p>
+
+          <div class="grid sm:grid-cols-2 lg:grid-cols-4" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+            <div class="cep-how-card">
+              <span class="cep-how-number font-display text-accent">01</span>
+              <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.step1Title')}</p>
+              <p class="fluid-sm text-muted">{t('protocolsCep.step1Desc')}</p>
+            </div>
+            <div class="cep-how-card">
+              <span class="cep-how-number font-display text-accent">02</span>
+              <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.step2Title')}</p>
+              <p class="fluid-sm text-muted">{t('protocolsCep.step2Desc')}</p>
+            </div>
+            <div class="cep-how-card">
+              <span class="cep-how-number font-display text-accent">03</span>
+              <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.step3Title')}</p>
+              <p class="fluid-sm text-muted">{t('protocolsCep.step3Desc')}</p>
+            </div>
+            <div class="cep-how-card">
+              <span class="cep-how-number font-display text-accent">04</span>
+              <p class="fluid-sm text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.step4Title')}</p>
+              <p class="fluid-sm text-muted">{t('protocolsCep.step4Desc')}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- The Four Dimensions -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCep.scoringLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCep.scoringTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;">
+            {t('protocolsCep.scoringDesc')}
+          </p>
+
+          <div class="grid sm:grid-cols-2" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+            <div class="cep-dim-card">
+              <div class="cep-dim-header">
+                <span class="cep-dim-icon text-accent">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
+                </span>
+                <h4 class="font-display fluid-h3 font-semibold text-text-bright">{t('protocolsCep.dimCacheTitle')}</h4>
+              </div>
+              <p class="fluid-sm text-muted" style="margin-top: 0.5rem;">{t('protocolsCep.dimCacheDesc')}</p>
+              <p class="cep-dim-metric font-mono text-accent">{t('protocolsCep.dimCacheMetric')}</p>
+            </div>
+
+            <div class="cep-dim-card">
+              <div class="cep-dim-header">
+                <span class="cep-dim-icon text-accent-2">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+                </span>
+                <h4 class="font-display fluid-h3 font-semibold text-text-bright">{t('protocolsCep.dimModesTitle')}</h4>
+              </div>
+              <p class="fluid-sm text-muted" style="margin-top: 0.5rem;" set:html={t('protocolsCep.dimModesDesc')} />
+              <p class="cep-dim-metric font-mono text-accent-2">{t('protocolsCep.dimModesMetric')}</p>
+            </div>
+
+            <div class="cep-dim-card">
+              <div class="cep-dim-header">
+                <span class="cep-dim-icon text-accent-3">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4.5h14.25M3 9h9.75M3 13.5h9.75m4.5-4.5v12m0 0l-3.75-3.75M17.25 21l3.75-3.75"/></svg>
+                </span>
+                <h4 class="font-display fluid-h3 font-semibold text-text-bright">{t('protocolsCep.dimCompressTitle')}</h4>
+              </div>
+              <p class="fluid-sm text-muted" style="margin-top: 0.5rem;">{t('protocolsCep.dimCompressDesc')}</p>
+              <p class="cep-dim-metric font-mono text-accent-3">{t('protocolsCep.dimCompressMetric')}</p>
+            </div>
+
+            <div class="cep-dim-card">
+              <div class="cep-dim-header">
+                <span class="cep-dim-icon" style="color: var(--color-text-bright);">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+                </span>
+                <h4 class="font-display fluid-h3 font-semibold text-text-bright">{t('protocolsCep.dimActionTitle')}</h4>
+              </div>
+              <p class="fluid-sm text-muted" style="margin-top: 0.5rem;">{t('protocolsCep.dimActionDesc')}</p>
+              <p class="cep-dim-metric font-mono text-text-bright">{t('protocolsCep.dimActionMetric')}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Complexity Levels -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCep.complexityLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCep.complexityTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;">
+            {t('protocolsCep.complexityDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+            <div class="cep-level-card">
+              <span class="cep-level-dot" style="background: var(--color-accent);"></span>
+              <h4 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.375rem;">{t('protocolsCep.mechanicalTitle')}</h4>
+              <p class="fluid-sm text-muted" style="margin-bottom: 1rem;">{t('protocolsCep.mechanicalDesc')}</p>
+              <div class="cep-level-instruction font-mono">
+                <span class="text-accent">ACT1</span> <span class="text-muted">&middot;</span> <span class="text-accent">DELTA</span> <span class="text-muted">&middot;</span> <span class="text-accent">1LINE</span>
+              </div>
+            </div>
+            <div class="cep-level-card">
+              <span class="cep-level-dot" style="background: var(--color-accent-2);"></span>
+              <h4 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.375rem;">{t('protocolsCep.standardTitle')}</h4>
+              <p class="fluid-sm text-muted" style="margin-bottom: 1rem;">{t('protocolsCep.standardDesc')}</p>
+              <div class="cep-level-instruction font-mono">
+                <span class="text-accent-2">BRIEF</span> <span class="text-muted">&middot;</span> <span class="text-accent-2">DELTA</span> <span class="text-muted">&middot;</span> <span class="text-accent-2">NOREPEAT</span> <span class="text-muted">&middot;</span> <span class="text-accent-2">STRUCT</span>
+              </div>
+            </div>
+            <div class="cep-level-card">
+              <span class="cep-level-dot" style="background: var(--color-accent-3);"></span>
+              <h4 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0.75rem 0 0.375rem;">{t('protocolsCep.architecturalTitle')}</h4>
+              <p class="fluid-sm text-muted" style="margin-bottom: 1rem;">{t('protocolsCep.architecturalDesc')}</p>
+              <div class="cep-level-instruction font-mono">
+                <span class="text-accent-3">FULL</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">QUALITY</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">NOREPEAT</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">STRUCT</span> <span class="text-muted">&middot;</span> <span class="text-accent-3">FREF</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Instruction Codes -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCep.refLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCep.refTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;">
+            {t('protocolsCep.refDesc')}
+          </p>
+
+          <div class="cep-table-wrap">
+            <table class="cep-table">
+              <thead>
+                <tr>
+                  <th>{t('protocolsCep.thCode')}</th>
+                  <th>{t('protocolsCep.thDescription')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code class="cep-code text-accent">ACT1</code></td><td>{t('protocolsCep.codeACT1')}</td></tr>
+                <tr><td><code class="cep-code text-accent">BRIEF</code></td><td>{t('protocolsCep.codeBRIEF')}</td></tr>
+                <tr><td><code class="cep-code text-accent">FULL</code></td><td>{t('protocolsCep.codeFULL')}</td></tr>
+                <tr><td><code class="cep-code text-accent">DELTA</code></td><td>{t('protocolsCep.codeDELTA')}</td></tr>
+                <tr><td><code class="cep-code text-accent">NOREPEAT</code></td><td>{t('protocolsCep.codeNOREPEAT')}</td></tr>
+                <tr><td><code class="cep-code text-accent">STRUCT</code></td><td>{t('protocolsCep.codeSTRUCT')}</td></tr>
+                <tr><td><code class="cep-code text-accent">1LINE</code></td><td>{t('protocolsCep.code1LINE')}</td></tr>
+                <tr><td><code class="cep-code text-accent">NODOC</code></td><td>{t('protocolsCep.codeNODOC')}</td></tr>
+                <tr><td><code class="cep-code text-accent">ACTFIRST</code></td><td>{t('protocolsCep.codeACTFIRST')}</td></tr>
+                <tr><td><code class="cep-code text-accent">QUALITY</code></td><td>{t('protocolsCep.codeQUALITY')}</td></tr>
+                <tr><td><code class="cep-code text-accent">NOMOCK</code></td><td>{t('protocolsCep.codeNOMOCK')}</td></tr>
+                <tr><td><code class="cep-code text-accent">FREF</code></td><td>{t('protocolsCep.codeFREF')}</td></tr>
+                <tr><td><code class="cep-code text-accent">DIFF</code></td><td>{t('protocolsCep.codeDIFF')}</td></tr>
+                <tr><td><code class="cep-code text-accent">ABBREV</code></td><td>{t('protocolsCep.codeABBREV')}</td></tr>
+                <tr><td><code class="cep-code text-accent">SYMBOLS</code></td><td>{t('protocolsCep.codeSYMBOLS')}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Communication Rules -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCep.rulesLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCep.rulesTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;">
+            {t('protocolsCep.rulesDesc')}
+          </p>
+
+          <div class="cep-rules-list">
+            <div class="cep-rule-item">
+              <span class="cep-rule-num font-display text-accent">1</span>
+              <div>
+                <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.rule1Title')}</p>
+                <p class="fluid-sm text-muted">{t('protocolsCep.rule1Desc')}</p>
+              </div>
+            </div>
+            <div class="cep-rule-item">
+              <span class="cep-rule-num font-display text-accent">2</span>
+              <div>
+                <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.rule2Title')}</p>
+                <p class="fluid-sm text-muted" set:html={t('protocolsCep.rule2Desc')} />
+              </div>
+            </div>
+            <div class="cep-rule-item">
+              <span class="cep-rule-num font-display text-accent">3</span>
+              <div>
+                <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.rule3Title')}</p>
+                <p class="fluid-sm text-muted" set:html={t('protocolsCep.rule3Desc')} />
+              </div>
+            </div>
+            <div class="cep-rule-item">
+              <span class="cep-rule-num font-display text-accent">4</span>
+              <div>
+                <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.rule4Title')}</p>
+                <p class="fluid-sm text-muted">{t('protocolsCep.rule4Desc')}</p>
+              </div>
+            </div>
+            <div class="cep-rule-item">
+              <span class="cep-rule-num font-display text-accent">5</span>
+              <div>
+                <p class="fluid-body text-text-bright font-medium" style="margin-bottom: 0.25rem;">{t('protocolsCep.rule5Title')}</p>
+                <p class="fluid-sm text-muted">{t('protocolsCep.rule5Desc')}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
-    </a>
+    </details>
   </div>
 </section>
 
@@ -94,47 +331,51 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <div class="section-divider content-grid"></div>
 
 
-<!-- ═══════ CCP ═══════ -->
-<section class="section-y">
+<!-- ═══════════════════════════════════════════════════════════
+     CCP — Context Continuity Protocol
+     ═══════════════════════════════════════════════════════════ -->
+<section class="section-y" id="ccp">
   <div class="content-grid">
-    <a href={lp('/protocols/ccp')} class="proto-card card animate-entrance" style="--proto-color: var(--color-accent-2); --proto-color-rgb: 129, 140, 248;">
-      <div class="proto-badge" style="border-color: rgba(129,140,248,0.25); color: var(--color-accent-2);">CCP</div>
+    <details class="proto-details animate-entrance" style="--proto-color: var(--color-accent-2); --proto-color-rgb: 129, 140, 248;">
+      <summary class="proto-summary card">
+        <div class="proto-badge" style="border-color: rgba(129,140,248,0.25); color: var(--color-accent-2);">CCP</div>
 
-      <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
-        <div>
-          <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
-            {t('protocolsIndex.ccpTitle')}
-          </h2>
-          <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
-            {t('protocolsIndex.ccpDesc')}
-          </p>
+        <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
+          <div>
+            <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+              {t('protocolsIndex.ccpTitle')}
+            </h2>
+            <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+              {t('protocolsIndex.ccpDesc')}
+            </p>
 
-          <div class="grid grid-cols-2" style="gap: clamp(0.5rem, 0.25rem + 0.5vw, 0.75rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
-            <div class="proto-dim-card">
-              <span class="text-accent-2 font-bold font-display" style="font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);">~400</span>
-              <span class="fluid-sm text-muted">{t('protocolsIndex.ccpStatTokens')}</span>
+            <div class="grid grid-cols-2" style="gap: clamp(0.5rem, 0.25rem + 0.5vw, 0.75rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+              <div class="proto-dim-card">
+                <span class="text-accent-2 font-bold font-display" style="font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);">~400</span>
+                <span class="fluid-sm text-muted">{t('protocolsIndex.ccpStatTokens')}</span>
+              </div>
+              <div class="proto-dim-card">
+                <span class="text-accent-2 font-bold font-display" style="font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);">~50K</span>
+                <span class="fluid-sm text-muted">{t('protocolsIndex.ccpStatSaved')}</span>
+              </div>
             </div>
-            <div class="proto-dim-card">
-              <span class="text-accent-2 font-bold font-display" style="font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);">~50K</span>
-              <span class="fluid-sm text-muted">{t('protocolsIndex.ccpStatSaved')}</span>
-            </div>
+
+            <span class="proto-toggle text-accent-2">
+              <span class="proto-toggle-open">{t('protocolsIndex.ccpLink')}</span>
+              <span class="proto-toggle-close">{t('protocolsIndex.collapseLabel') || 'Collapse'}</span>
+              <svg class="proto-chevron w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </span>
           </div>
 
-          <span class="proto-link text-accent-2">
-            {t('protocolsIndex.ccpLink')}
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-          </span>
-        </div>
-
-        <div class="terminal-chrome">
-          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
-            <span class="terminal-dot bg-[#ff5f57]"></span>
-            <span class="terminal-dot bg-[#febc2e]"></span>
-            <span class="terminal-dot bg-[#28c840]"></span>
-            <span class="ml-3 text-xs text-muted font-mono">ctx_session load</span>
-          </div>
-          <div class="px-4 sm:px-6 py-4 sm:py-5">
-            <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-accent-2 font-bold">SESSION RESTORED</span> v147 | 892 calls
+          <div class="terminal-chrome">
+            <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+              <span class="terminal-dot bg-[#ff5f57]"></span>
+              <span class="terminal-dot bg-[#febc2e]"></span>
+              <span class="terminal-dot bg-[#28c840]"></span>
+              <span class="ml-3 text-xs text-muted font-mono">ctx_session load</span>
+            </div>
+            <div class="px-4 sm:px-6 py-4 sm:py-5">
+              <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-accent-2 font-bold">SESSION RESTORED</span> v147 | 892 calls
 
 <span class="text-muted/60">Task:</span> Auth refactor - JWT → session tokens
 <span class="text-muted/60">Findings:</span>
@@ -146,10 +387,250 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   Keep JWT for API-only routes
 
 <span class="text-muted/50">[~49,600 tokens saved vs cold start]</span></pre>
+            </div>
           </div>
         </div>
+      </summary>
+
+      <!-- ── CCP Deep Dive ──────────────────────────────── -->
+      <div class="proto-detail-body">
+
+        <!-- The Cold Start Problem -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCcp.problemLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCcp.problemTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsCcp.problemDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+            <div class="ccp-problem-card">
+              <div class="ccp-problem-header ccp-problem-header--bad">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                {t('protocolsCcp.traditionalApproach')}
+              </div>
+              <div class="ccp-problem-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+                <div class="ccp-problem-line"><span class="text-muted">{t('protocolsCcp.tradLine1')}</span></div>
+                <div class="ccp-problem-line"><span class="text-danger">{t('protocolsCcp.tradLine2')}</span></div>
+                <div class="ccp-problem-line"><span class="text-muted">{t('protocolsCcp.tradLine3')}</span></div>
+                <div class="ccp-problem-line"><span class="text-danger">{t('protocolsCcp.tradLine4')}</span></div>
+                <div class="ccp-problem-line"><span class="text-muted">{t('protocolsCcp.tradLine5')}</span></div>
+              </div>
+            </div>
+            <div class="ccp-problem-card">
+              <div class="ccp-problem-header ccp-problem-header--good">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                {t('protocolsCcp.withCcp')}
+              </div>
+              <div class="ccp-problem-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+                <div class="ccp-problem-line"><span class="text-muted">{t('protocolsCcp.ccpLine1')}</span></div>
+                <div class="ccp-problem-line"><span class="text-accent">{t('protocolsCcp.ccpLine2')}</span></div>
+                <div class="ccp-problem-line"><span class="text-muted">{t('protocolsCcp.ccpLine3')}</span></div>
+                <div class="ccp-problem-line"><span class="text-accent">{t('protocolsCcp.ccpLine4')}</span></div>
+                <div class="ccp-problem-line"><span class="text-muted">{t('protocolsCcp.ccpLine5')}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session Commands -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCcp.commandsLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCcp.commandsTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsCcp.commandsDesc')}
+          </p>
+
+          <div class="ccp-table-wrapper">
+            <table class="ccp-table">
+              <thead>
+                <tr>
+                  <th class="text-text-bright">{t('protocolsCcp.thCommand')}</th>
+                  <th class="text-text-bright">{t('protocolsCcp.thDescription')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code class="ccp-code">ctx_session status</code></td><td class="text-muted">{t('protocolsCcp.cmdStatusDesc')}</td></tr>
+                <tr><td><code class="ccp-code">ctx_session load</code></td><td class="text-muted">{t('protocolsCcp.cmdLoadDesc')}</td></tr>
+                <tr><td><code class="ccp-code">ctx_session task "description"</code></td><td class="text-muted">{t('protocolsCcp.cmdTaskDesc')}</td></tr>
+                <tr><td><code class="ccp-code">ctx_session finding "file:line - summary"</code></td><td class="text-muted">{t('protocolsCcp.cmdFindingDesc')}</td></tr>
+                <tr><td><code class="ccp-code">ctx_session decision "summary"</code></td><td class="text-muted">{t('protocolsCcp.cmdDecisionDesc')}</td></tr>
+                <tr><td><code class="ccp-code">ctx_session save</code></td><td class="text-muted">{t('protocolsCcp.cmdSaveDesc')}</td></tr>
+                <tr><td><code class="ccp-code">ctx_wrapped [period]</code></td><td class="text-muted">{t('protocolsCcp.cmdWrappedDesc')}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- LitM-Aware Positioning -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCcp.litmLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCcp.litmTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsCcp.litmDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+            <div class="card ccp-position-card">
+              <div class="ccp-position-label" style="color: var(--color-accent);">{t('protocolsCcp.beginPosition')}</div>
+              <div class="ccp-position-alpha font-display font-bold" style="color: var(--color-accent);">alpha = 0.9</div>
+              <p class="fluid-sm text-muted" style="margin-top: 0.75rem;">{t('protocolsCcp.beginDesc')}</p>
+            </div>
+            <div class="card ccp-position-card">
+              <div class="ccp-position-label" style="color: var(--color-accent-3);">{t('protocolsCcp.middlePosition')}</div>
+              <div class="ccp-position-alpha font-display font-bold" style="color: var(--color-accent-3);">beta = 0.55</div>
+              <p class="fluid-sm text-muted" style="margin-top: 0.75rem;">{t('protocolsCcp.middleDesc')}</p>
+            </div>
+            <div class="card ccp-position-card">
+              <div class="ccp-position-label" style="color: var(--color-accent-2);">{t('protocolsCcp.endPosition')}</div>
+              <div class="ccp-position-alpha font-display font-bold" style="color: var(--color-accent-2);">gamma = 0.85</div>
+              <p class="fluid-sm text-muted" style="margin-top: 0.75rem;">{t('protocolsCcp.endDesc')}</p>
+            </div>
+          </div>
+
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCcp.modelProfiles')}
+          </p>
+          <div class="ccp-table-wrapper">
+            <table class="ccp-table">
+              <thead>
+                <tr>
+                  <th class="text-text-bright">{t('protocolsCcp.thModel')}</th>
+                  <th class="text-text-bright">{t('protocolsCcp.thAlphaBegin')}</th>
+                  <th class="text-text-bright">{t('protocolsCcp.thBetaMiddle')}</th>
+                  <th class="text-text-bright">{t('protocolsCcp.thGammaEnd')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-text-bright font-medium">Claude</td>
+                  <td><span class="text-accent font-mono">0.92</span></td>
+                  <td><span class="text-accent-3 font-mono">0.50</span></td>
+                  <td><span class="text-accent-2 font-mono">0.88</span></td>
+                </tr>
+                <tr>
+                  <td class="text-text-bright font-medium">GPT</td>
+                  <td><span class="text-accent font-mono">0.90</span></td>
+                  <td><span class="text-accent-3 font-mono">0.55</span></td>
+                  <td><span class="text-accent-2 font-mono">0.85</span></td>
+                </tr>
+                <tr>
+                  <td class="text-text-bright font-medium">Gemini</td>
+                  <td><span class="text-accent font-mono">0.88</span></td>
+                  <td><span class="text-accent-3 font-mono">0.60</span></td>
+                  <td><span class="text-accent-2 font-mono">0.82</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Auto-Checkpoint System -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCcp.checkpointLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCcp.checkpointTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsCcp.checkpointDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.every15Calls')}</h4>
+              <p class="fluid-sm text-muted">{t('protocolsCcp.every15Desc')}</p>
+            </div>
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.configurableInterval')}</h4>
+              <p class="fluid-sm text-muted" set:html={t('protocolsCcp.configurableDesc')} />
+            </div>
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.keepsCompact')}</h4>
+              <p class="fluid-sm text-muted">{t('protocolsCcp.keepsCompactDesc')}</p>
+            </div>
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.zeroIntervention')}</h4>
+              <p class="fluid-sm text-muted">{t('protocolsCcp.zeroInterventionDesc')}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Idle Cache TTL -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCcp.cacheLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCcp.cacheTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsCcp.cacheDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.fiveMinTtl')}</h4>
+              <p class="fluid-sm text-muted">{t('protocolsCcp.fiveMinDesc')}</p>
+            </div>
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.sessionPreserved')}</h4>
+              <p class="fluid-sm text-muted" set:html={t('protocolsCcp.sessionPreservedDesc')} />
+            </div>
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.configurable')}</h4>
+              <p class="fluid-sm text-muted" set:html={t('protocolsCcp.configurableCacheDesc')} />
+            </div>
+            <div class="card ccp-feature-card">
+              <h4 class="fluid-h3 font-display font-semibold text-text-bright" style="margin-bottom: 0.5rem;">{t('protocolsCcp.cleanBoundary')}</h4>
+              <p class="fluid-sm text-muted">{t('protocolsCcp.cleanBoundaryDesc')}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subagent Isolation -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsCcp.isolationLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsCcp.isolationTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsCcp.isolationDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+            <div class="card ccp-feature-card">
+              <div class="ccp-code-badge font-mono" style="margin-bottom: 0.75rem;">fresh=true</div>
+              <p class="fluid-sm text-muted" set:html={t('protocolsCcp.freshTrueDesc')} />
+            </div>
+            <div class="card ccp-feature-card">
+              <div class="ccp-code-badge font-mono" style="margin-bottom: 0.75rem;">ctx_cache clear</div>
+              <p class="fluid-sm text-muted">{t('protocolsCcp.cacheClearDesc')}</p>
+            </div>
+            <div class="card ccp-feature-card">
+              <div class="ccp-code-badge font-mono" style="margin-bottom: 0.75rem;">ctx_cache invalidate</div>
+              <p class="fluid-sm text-muted">{t('protocolsCcp.cacheInvalidateDesc')}</p>
+            </div>
+          </div>
+        </div>
+
       </div>
-    </a>
+    </details>
   </div>
 </section>
 
@@ -157,46 +638,50 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <div class="section-divider content-grid"></div>
 
 
-<!-- ═══════ TDD ═══════ -->
-<section class="section-y">
+<!-- ═══════════════════════════════════════════════════════════
+     TDD — Token-Dense Dialect
+     ═══════════════════════════════════════════════════════════ -->
+<section class="section-y" id="tdd">
   <div class="content-grid">
-    <a href={lp('/protocols/tdd')} class="proto-card card animate-entrance" style="--proto-color: var(--color-accent-3); --proto-color-rgb: 192, 132, 252;">
-      <div class="proto-badge" style="border-color: rgba(192,132,252,0.25); color: var(--color-accent-3);">TDD</div>
+    <details class="proto-details animate-entrance" style="--proto-color: var(--color-accent-3); --proto-color-rgb: 192, 132, 252;">
+      <summary class="proto-summary card">
+        <div class="proto-badge" style="border-color: rgba(192,132,252,0.25); color: var(--color-accent-3);">TDD</div>
 
-      <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
-        <div>
-          <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
-            {t('protocolsIndex.tddTitle')}
-          </h2>
-          <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
-            {t('protocolsIndex.tddDesc')}
-          </p>
+        <div class="grid lg:grid-cols-[1fr_1.1fr]" style="gap: clamp(1.5rem, 1rem + 1.25vw, 2.5rem);">
+          <div>
+            <h2 class="fluid-h2 font-bold font-display text-text-bright" style="margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+              {t('protocolsIndex.tddTitle')}
+            </h2>
+            <p class="fluid-body text-muted" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+              {t('protocolsIndex.tddDesc')}
+            </p>
 
-          <div class="flex flex-wrap" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
-            <span class="proto-symbol"><span class="text-accent-3">λ</span> <span class="text-muted">=function</span></span>
-            <span class="proto-symbol"><span class="text-accent-3">§</span> <span class="text-muted">=module</span></span>
-            <span class="proto-symbol"><span class="text-accent-3">⊕</span> <span class="text-muted">=add</span></span>
-            <span class="proto-symbol"><span class="text-accent-3">⊖</span> <span class="text-muted">=remove</span></span>
-            <span class="proto-symbol"><span class="text-accent-3">∆</span> <span class="text-muted">=modify</span></span>
-            <span class="proto-symbol"><span class="text-accent-3">✓</span> <span class="text-muted">=ok</span></span>
-            <span class="proto-symbol"><span class="text-accent-3">✗</span> <span class="text-muted">=fail</span></span>
+            <div class="flex flex-wrap" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2rem);">
+              <span class="proto-symbol"><span class="text-accent-3">λ</span> <span class="text-muted">=function</span></span>
+              <span class="proto-symbol"><span class="text-accent-3">§</span> <span class="text-muted">=module</span></span>
+              <span class="proto-symbol"><span class="text-accent-3">⊕</span> <span class="text-muted">=add</span></span>
+              <span class="proto-symbol"><span class="text-accent-3">⊖</span> <span class="text-muted">=remove</span></span>
+              <span class="proto-symbol"><span class="text-accent-3">∆</span> <span class="text-muted">=modify</span></span>
+              <span class="proto-symbol"><span class="text-accent-3">✓</span> <span class="text-muted">=ok</span></span>
+              <span class="proto-symbol"><span class="text-accent-3">✗</span> <span class="text-muted">=fail</span></span>
+            </div>
+
+            <span class="proto-toggle text-accent-3">
+              <span class="proto-toggle-open">{t('protocolsIndex.tddLink')}</span>
+              <span class="proto-toggle-close">{t('protocolsIndex.collapseLabel') || 'Collapse'}</span>
+              <svg class="proto-chevron w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </span>
           </div>
 
-          <span class="proto-link text-accent-3">
-            {t('protocolsIndex.tddLink')}
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-          </span>
-        </div>
-
-        <div class="terminal-chrome">
-          <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
-            <span class="terminal-dot bg-[#ff5f57]"></span>
-            <span class="terminal-dot bg-[#febc2e]"></span>
-            <span class="terminal-dot bg-[#28c840]"></span>
-            <span class="ml-3 text-xs text-muted font-mono">TDD - Before &amp; After</span>
-          </div>
-          <div class="px-4 sm:px-6 py-4 sm:py-5">
-            <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">Without TDD (42 tokens):</span>
+          <div class="terminal-chrome">
+            <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+              <span class="terminal-dot bg-[#ff5f57]"></span>
+              <span class="terminal-dot bg-[#febc2e]"></span>
+              <span class="terminal-dot bg-[#28c840]"></span>
+              <span class="ml-3 text-xs text-muted font-mono">TDD - Before &amp; After</span>
+            </div>
+            <div class="px-4 sm:px-6 py-4 sm:py-5">
+              <pre class="text-[11px] sm:text-[12px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">Without TDD (42 tokens):</span>
 <span class="text-muted">"I've successfully read the auth.ts file</span>
 <span class="text-muted"> and found that the validateToken function</span>
 <span class="text-muted"> on line 42 has a bug where it compares</span>
@@ -207,10 +692,270 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <span class="text-accent-3">ERR F1:42 - UTC vs local timestamp</span>
 
 <span class="text-muted/50">[~30 tokens saved per interaction]</span></pre>
+            </div>
           </div>
         </div>
+      </summary>
+
+      <!-- ── TDD Deep Dive ──────────────────────────────── -->
+      <div class="proto-detail-body">
+
+        <!-- Why TDD Exists -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsTdd.problemLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsTdd.problemTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsTdd.problemDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+            <div class="tdd-insight-card card">
+              <div class="tdd-insight-header tdd-insight-header--low">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                {t('protocolsTdd.lowEntropy')}
+              </div>
+              <div class="tdd-insight-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+                <div class="tdd-insight-line"><span class="text-muted">{t('protocolsTdd.lowLine1')}</span></div>
+                <div class="tdd-insight-line"><span class="text-danger">{t('protocolsTdd.lowLine2')}</span></div>
+                <div class="tdd-insight-line"><span class="text-muted">{t('protocolsTdd.lowLine3')}</span></div>
+                <div class="tdd-insight-line"><span class="text-danger">{t('protocolsTdd.lowLine4')}</span></div>
+              </div>
+            </div>
+            <div class="tdd-insight-card card">
+              <div class="tdd-insight-header tdd-insight-header--high">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                {t('protocolsTdd.highEntropy')}
+              </div>
+              <div class="tdd-insight-body font-mono" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);">
+                <div class="tdd-insight-line"><span class="text-muted">{t('protocolsTdd.highLine1')}</span></div>
+                <div class="tdd-insight-line"><span class="text-accent">{t('protocolsTdd.highLine2')}</span></div>
+                <div class="tdd-insight-line"><span class="text-muted">{t('protocolsTdd.highLine3')}</span></div>
+                <div class="tdd-insight-line"><span class="text-accent">{t('protocolsTdd.highLine4')}</span></div>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-muted fluid-sm" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 44rem;">
+            {t('protocolsTdd.problemFootnote')}
+          </p>
+        </div>
+
+        <!-- Symbol Table -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsTdd.symbolLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsTdd.symbolTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsTdd.symbolDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-3" style="gap: clamp(1px, 0.1vw, 1px);">
+            <div class="tdd-table-card card">
+              <h4 class="tdd-table-heading">{t('protocolsTdd.structural')}</h4>
+              <table class="tdd-symbol-table">
+                <tbody>
+                  <tr><td class="tdd-symbol text-accent-3">λ</td><td class="tdd-meaning">function</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">§</td><td class="tdd-meaning">module / struct</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">∂</td><td class="tdd-meaning">interface / trait</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">τ</td><td class="tdd-meaning">type</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">ε</td><td class="tdd-meaning">enum</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="tdd-table-card card">
+              <h4 class="tdd-table-heading">{t('protocolsTdd.actions')}</h4>
+              <table class="tdd-symbol-table">
+                <tbody>
+                  <tr><td class="tdd-symbol text-accent-3">⊕</td><td class="tdd-meaning">add</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">⊖</td><td class="tdd-meaning">remove</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">∆</td><td class="tdd-meaning">modify</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">→</td><td class="tdd-meaning">returns</td></tr>
+                  <tr><td class="tdd-symbol text-accent-3">⇒</td><td class="tdd-meaning">implies</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="tdd-table-card card">
+              <h4 class="tdd-table-heading">{t('protocolsTdd.status')}</h4>
+              <table class="tdd-symbol-table">
+                <tbody>
+                  <tr><td class="tdd-symbol text-accent">✓</td><td class="tdd-meaning">ok</td></tr>
+                  <tr><td class="tdd-symbol text-danger">✗</td><td class="tdd-meaning">fail</td></tr>
+                  <tr><td class="tdd-symbol text-accent-2">⚠</td><td class="tdd-meaning">warning</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Change Notation -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsTdd.notationLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsTdd.notationTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsTdd.notationDesc')}
+          </p>
+
+          <div class="grid lg:grid-cols-2" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+            <div class="terminal-chrome">
+              <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+                <span class="terminal-dot bg-[#ff5f57]"></span>
+                <span class="terminal-dot bg-[#febc2e]"></span>
+                <span class="terminal-dot bg-[#28c840]"></span>
+                <span class="ml-3 text-xs text-muted font-mono">Change Notation</span>
+              </div>
+              <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.8;">
+                <div><span class="text-accent">⊕</span><span class="text-text-bright">F1:42</span> <span class="text-muted">param(timeout:Duration)</span></div>
+                <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">added parameter</div>
+                <div class="term-divider"></div>
+                <div><span class="text-danger">⊖</span><span class="text-text-bright">F1:10-15</span></div>
+                <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">removed lines</div>
+                <div class="term-divider"></div>
+                <div><span class="text-accent-2">∆</span><span class="text-text-bright">F1:42</span> <span class="text-muted">validate_token → verify_jwt</span></div>
+                <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">renamed / refactored</div>
+              </div>
+            </div>
+
+            <div class="terminal-chrome">
+              <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+                <span class="terminal-dot bg-[#ff5f57]"></span>
+                <span class="terminal-dot bg-[#febc2e]"></span>
+                <span class="terminal-dot bg-[#28c840]"></span>
+                <span class="ml-3 text-xs text-muted font-mono">Status Notation</span>
+              </div>
+              <div class="terminal-body px-5 py-5 font-mono space-y-3" style="font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); line-height: 1.8;">
+                <div>
+                  <span class="text-accent-3">ctx_read</span><span class="text-muted">(F1)</span>
+                  <span class="text-muted"> → </span>
+                  <span class="text-text-bright">808L</span>
+                  <span class="text-muted"> cached </span>
+                  <span class="text-accent">✓</span>
+                </div>
+                <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">file read - cached, 808 lines</div>
+                <div class="term-divider"></div>
+                <div>
+                  <span class="text-accent-3">cargo test</span>
+                  <span class="text-muted"> → </span>
+                  <span class="text-accent">82 passed</span>
+                  <span class="text-muted"> </span>
+                  <span class="text-accent">✓</span>
+                  <span class="text-muted"> 0 failed</span>
+                </div>
+                <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">test run - all green</div>
+                <div class="term-divider"></div>
+                <div>
+                  <span class="text-danger">ERR</span>
+                  <span class="text-text-bright"> F3:91</span>
+                  <span class="text-muted"> - missing return type</span>
+                </div>
+                <div class="text-muted/50" style="font-size: 0.7em; padding-left: 1rem;">error report - file, line, summary</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Response Rules -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsTdd.rulesLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsTdd.rulesTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsTdd.rulesDesc')}
+          </p>
+
+          <div class="tdd-rules-list">
+            <div class="tdd-rule-item card">
+              <span class="tdd-rule-number font-display text-accent-3">1</span>
+              <div>
+                <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">{t('protocolsTdd.rule1Title')}</p>
+                <p class="text-muted fluid-sm">{t('protocolsTdd.rule1Desc')}</p>
+              </div>
+            </div>
+            <div class="tdd-rule-item card">
+              <span class="tdd-rule-number font-display text-accent-3">2</span>
+              <div>
+                <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">{t('protocolsTdd.rule2Title')}</p>
+                <p class="text-muted fluid-sm">{t('protocolsTdd.rule2Desc')}</p>
+              </div>
+            </div>
+            <div class="tdd-rule-item card">
+              <span class="tdd-rule-number font-display text-accent-3">3</span>
+              <div>
+                <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">{t('protocolsTdd.rule3Title')}</p>
+                <p class="text-muted fluid-sm">{t('protocolsTdd.rule3Desc')}</p>
+              </div>
+            </div>
+            <div class="tdd-rule-item card">
+              <span class="tdd-rule-number font-display text-accent-3">4</span>
+              <div>
+                <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">{t('protocolsTdd.rule4Title')}</p>
+                <p class="text-muted fluid-sm">{t('protocolsTdd.rule4Desc')}</p>
+              </div>
+            </div>
+            <div class="tdd-rule-item card">
+              <span class="tdd-rule-number font-display text-accent-3">5</span>
+              <div>
+                <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">{t('protocolsTdd.rule5Title')}</p>
+                <p class="text-muted fluid-sm">{t('protocolsTdd.rule5Desc')}</p>
+              </div>
+            </div>
+            <div class="tdd-rule-item card">
+              <span class="tdd-rule-number font-display text-accent-3">6</span>
+              <div>
+                <p class="text-text-bright font-medium fluid-body" style="margin-bottom: 0.25rem;">{t('protocolsTdd.rule6Title')}</p>
+                <p class="text-muted fluid-sm font-mono" style="letter-spacing: 0.02em;">{t('protocolsTdd.rule6Desc')}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Reference System -->
+        <div class="proto-detail-section">
+          <p class="fluid-label text-muted" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            {t('protocolsTdd.fileRefLabel')}
+          </p>
+          <h3 class="font-display fluid-h3 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.5vw, 2rem);">
+            {t('protocolsTdd.fileRefTitle')}
+          </h3>
+          <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 44rem;">
+            {t('protocolsTdd.fileRefDesc')}
+          </p>
+
+          <div class="grid md:grid-cols-2 lg:grid-cols-4" style="gap: clamp(1px, 0.1vw, 1px);">
+            <div class="tdd-ref-card card">
+              <div class="tdd-ref-id font-display text-accent-3">F1, F2, F3</div>
+              <p class="text-muted fluid-sm">{t('protocolsTdd.fileRefIds')}</p>
+            </div>
+            <div class="tdd-ref-card card">
+              <div class="tdd-ref-id font-display text-accent-3">Session</div>
+              <p class="text-muted fluid-sm">{t('protocolsTdd.fileRefSession')}</p>
+            </div>
+            <div class="tdd-ref-card card">
+              <div class="tdd-ref-id font-display text-accent">~13 tok</div>
+              <p class="text-muted fluid-sm">{t('protocolsTdd.fileRefReread')}</p>
+            </div>
+            <div class="tdd-ref-card card">
+              <div class="tdd-ref-id font-display text-accent-2">&#167;MAP</div>
+              <p class="text-muted fluid-sm">{t('protocolsTdd.fileRefMap')}</p>
+            </div>
+          </div>
+        </div>
+
       </div>
-    </a>
+    </details>
   </div>
 </section>
 
@@ -233,18 +978,18 @@ const lp = (path: string) => getLocalizedPath(path, locale);
               {t('protocolsIndex.autoDesc')}
             </p>
             <div class="flex flex-wrap gap-3 fluid-sm">
-              <span class="flex items-center gap-1.5">
+              <a href="#cep" class="flex items-center gap-1.5 proto-auto-link">
                 <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent"></span>
                 <span class="text-text-bright">CEP</span> <span class="text-muted">- {t('protocolsIndex.autoActive')}</span>
-              </span>
-              <span class="flex items-center gap-1.5">
+              </a>
+              <a href="#ccp" class="flex items-center gap-1.5 proto-auto-link">
                 <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent-2"></span>
                 <span class="text-text-bright">CCP</span> <span class="text-muted">- {t('protocolsIndex.autoActive')}</span>
-              </span>
-              <span class="flex items-center gap-1.5">
+              </a>
+              <a href="#tdd" class="flex items-center gap-1.5 proto-auto-link">
                 <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent-3"></span>
                 <span class="text-text-bright">TDD</span> <span class="text-muted">- {t('protocolsIndex.autoActive')}</span>
-              </span>
+              </a>
             </div>
           </div>
         </div>
@@ -283,20 +1028,63 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
 
 <style>
-  .proto-card {
+  /* ═══════ Details / Expand / Collapse ═══════════════════ */
+  .proto-details {
+    border-radius: clamp(10px, 0.8vw, 14px);
+  }
+  .proto-summary {
     display: block;
+    cursor: pointer;
     padding: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
     position: relative;
     text-decoration: none;
     transition: border-color 0.25s ease;
+    list-style: none;
   }
-  .proto-card:hover {
+  .proto-summary::-webkit-details-marker,
+  .proto-summary::marker {
+    display: none;
+  }
+  .proto-summary:hover {
     border-color: rgba(var(--proto-color-rgb), 0.2);
   }
-  .proto-card:hover .proto-link {
+
+  .proto-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+    font-weight: 500;
+    transition: gap 0.2s ease;
+  }
+  .proto-summary:hover .proto-toggle {
     gap: 0.625rem;
   }
+  .proto-chevron {
+    transition: transform 0.3s ease;
+  }
+  .proto-details[open] .proto-chevron {
+    transform: rotate(180deg);
+  }
+  .proto-toggle-close { display: none; }
+  .proto-details[open] .proto-toggle-open { display: none; }
+  .proto-details[open] .proto-toggle-close { display: inline; }
 
+  .proto-detail-body {
+    padding: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
+    padding-top: 0;
+    border-top: 1px solid var(--color-border);
+    margin-top: clamp(1.5rem, 1rem + 1vw, 2rem);
+  }
+  .proto-detail-section {
+    padding-top: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);
+  }
+  .proto-detail-section + .proto-detail-section {
+    border-top: 1px solid var(--color-border);
+    margin-top: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);
+  }
+
+  /* ═══════ Overview Cards (shared) ══════════════════════ */
   .proto-badge {
     position: absolute;
     top: -12px;
@@ -321,15 +1109,6 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     background: var(--color-surface);
   }
 
-  .proto-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
-    font-weight: 500;
-    transition: gap 0.2s ease;
-  }
-
   .proto-symbol {
     font-family: var(--font-mono);
     font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
@@ -347,12 +1126,339 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     margin-top: 2px;
   }
 
+  .proto-auto-link {
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+  }
+  .proto-auto-link:hover { opacity: 0.8; }
+
   @media (max-width: 640px) {
-    .proto-card { padding: clamp(1.25rem, 1rem + 0.5vw, 1.5rem); }
+    .proto-summary { padding: clamp(1.25rem, 1rem + 0.5vw, 1.5rem); }
+    .proto-detail-body { padding: clamp(1.25rem, 1rem + 0.5vw, 1.5rem); padding-top: 0; }
+  }
+  @media (min-width: 1024px) {
+    .proto-summary { padding: clamp(2rem, 1.5rem + 1vw, 2.5rem); }
+    .proto-detail-body { padding: clamp(2rem, 1.5rem + 1vw, 2.5rem); padding-top: 0; }
   }
 
+  /* ═══════ CEP Styles ═══════════════════════════════════ */
+  .cep-how-card {
+    padding: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+  }
+  .cep-how-number {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+  .cep-dim-card {
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+  }
+  .cep-dim-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  .cep-dim-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .cep-dim-metric {
+    margin-top: 1rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .cep-level-card {
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+  }
+  .cep-level-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .cep-level-instruction {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+  }
+  .cep-table-wrap {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .cep-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+  }
+  .cep-table thead { background: var(--color-surface); }
+  .cep-table th {
+    padding: 0.75rem 1.25rem;
+    text-align: start;
+    font-weight: 600;
+    color: var(--color-text-bright);
+    border-bottom: 1px solid var(--color-border);
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .cep-table td {
+    padding: 0.625rem 1.25rem;
+    color: var(--color-muted);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .cep-table tr:last-child td { border-bottom: none; }
+  .cep-table tr:hover td { background: var(--color-surface); }
+  .cep-code {
+    font-family: var(--font-mono);
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .cep-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    max-width: 48rem;
+  }
+  .cep-rule-item {
+    display: flex;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    align-items: flex-start;
+  }
+  .cep-rule-num {
+    font-size: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 2rem;
+    padding-top: 0.125rem;
+  }
+
+  /* ═══════ CCP Styles ═══════════════════════════════════ */
+  .ccp-problem-card {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .ccp-problem-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .ccp-problem-header--bad {
+    background: rgba(248, 113, 113, 0.04);
+    color: var(--color-danger);
+  }
+  .ccp-problem-header--good {
+    background: rgba(52, 211, 153, 0.04);
+    color: var(--color-accent);
+  }
+  .ccp-problem-body {
+    padding: 1.25rem;
+    background: var(--color-surface);
+  }
+  .ccp-problem-line { padding: 0.3rem 0; }
+  .ccp-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+  }
+  .ccp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+  }
+  .ccp-table thead { border-bottom: 1px solid var(--color-border); }
+  .ccp-table th {
+    text-align: start;
+    padding: 0.875rem 1.25rem;
+    font-weight: 600;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--color-surface);
+  }
+  .ccp-table td {
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--color-border);
+    vertical-align: top;
+  }
+  .ccp-table tbody tr:first-child td { border-top: none; }
+  .ccp-table tbody tr { transition: background 0.15s ease; }
+  .ccp-table tbody tr:hover { background: var(--color-surface); }
+  .ccp-code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    padding: 0.15em 0.45em;
+    border-radius: 4px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-accent-2);
+    white-space: nowrap;
+  }
+  .ccp-code-badge {
+    display: inline-block;
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    background: rgba(129, 140, 248, 0.08);
+    border: 1px solid rgba(129, 140, 248, 0.15);
+    color: var(--color-accent-2);
+  }
+  .ccp-position-card { padding: clamp(1.25rem, 1rem + 0.75vw, 2rem); }
+  .ccp-position-label {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.25rem;
+  }
+  .ccp-position-alpha { font-size: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); }
+  .ccp-feature-card { padding: clamp(1.25rem, 1rem + 0.75vw, 2rem); }
+
+  /* ═══════ TDD Styles ═══════════════════════════════════ */
+  .tdd-insight-card {
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    overflow: hidden;
+  }
+  .tdd-insight-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .tdd-insight-header--low {
+    background: rgba(248, 113, 113, 0.04);
+    color: var(--color-danger);
+  }
+  .tdd-insight-header--high {
+    background: rgba(192, 132, 252, 0.04);
+    color: var(--color-accent-3);
+  }
+  .tdd-insight-body { padding: 1.25rem; background: var(--color-surface); }
+  .tdd-insight-line { padding: 0.3rem 0; }
+  .tdd-table-card {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+  .tdd-table-card:first-child { border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0; }
+  .tdd-table-card:last-child { border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px); }
+  .tdd-table-card + .tdd-table-card { border-top: none; }
+  @media (min-width: 768px) {
+    .tdd-table-card:first-child { border-radius: clamp(10px, 0.8vw, 14px) 0 0 clamp(10px, 0.8vw, 14px); }
+    .tdd-table-card:last-child { border-radius: 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0; }
+    .tdd-table-card + .tdd-table-card { border-top: 1px solid var(--color-border); border-left: none; }
+  }
+  .tdd-table-heading {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+    margin-bottom: 1rem;
+  }
+  .tdd-symbol-table { width: 100%; border-collapse: collapse; }
+  .tdd-symbol-table tr + tr { border-top: 1px solid var(--color-border); }
+  .tdd-symbol {
+    font-family: var(--font-mono);
+    font-size: clamp(1rem, 0.9rem + 0.25vw, 1.25rem);
+    font-weight: 600;
+    padding: 0.5rem 0.75rem 0.5rem 0;
+    width: 2.5rem;
+    vertical-align: middle;
+  }
+  .tdd-meaning {
+    font-family: var(--font-mono);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);
+    color: var(--color-text);
+    padding: 0.5rem 0;
+    vertical-align: middle;
+  }
+  .term-divider { height: 1px; background: var(--color-border); }
+  .tdd-rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(0.5rem, 0.35rem + 0.35vw, 0.75rem);
+  }
+  .tdd-rule-item {
+    display: flex;
+    align-items: flex-start;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    padding: clamp(1rem, 0.85rem + 0.5vw, 1.5rem) clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
+    border: 1px solid var(--color-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+    transition: background 0.15s ease;
+  }
+  .tdd-rule-item:hover { background: var(--color-surface); }
+  .tdd-rule-number {
+    font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.75rem);
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    min-width: 1.5rem;
+    padding-top: 0.15rem;
+  }
+  .tdd-ref-card {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+  .tdd-ref-card:first-child { border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0; }
+  .tdd-ref-card:last-child { border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px); }
+  .tdd-ref-card + .tdd-ref-card { border-top: none; }
+  @media (min-width: 768px) {
+    .tdd-ref-card:nth-child(1) { border-radius: clamp(10px, 0.8vw, 14px) 0 0 0; }
+    .tdd-ref-card:nth-child(2) { border-radius: 0; }
+    .tdd-ref-card:nth-child(3) { border-radius: 0; }
+    .tdd-ref-card:nth-child(4) { border-radius: 0 clamp(10px, 0.8vw, 14px) 0 0; }
+    .tdd-ref-card + .tdd-ref-card { border-top: 1px solid var(--color-border); border-left: none; }
+  }
   @media (min-width: 1024px) {
-    .proto-card { padding: clamp(2rem, 1.5rem + 1vw, 2.5rem); }
+    .tdd-ref-card:nth-child(1) { border-radius: clamp(10px, 0.8vw, 14px) 0 0 clamp(10px, 0.8vw, 14px); }
+    .tdd-ref-card:nth-child(4) { border-radius: 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0; }
+  }
+  .tdd-ref-id {
+    font-size: clamp(1.125rem, 1rem + 0.5vw, 1.5rem);
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
   }
 </style>
 

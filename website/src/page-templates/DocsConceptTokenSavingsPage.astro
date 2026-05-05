@@ -27,7 +27,7 @@ const sidebar = [
       { label: 'ctx_benchmark', href: lp('/docs/tools/ctx-benchmark') },
       { label: 'ctx_metrics', href: lp('/docs/tools/ctx-metrics') },
       { label: 'ctx_cost', href: lp('/docs/tools/ctx-cost') },
-      { label: 'Token Guide', href: lp('/docs/token-guide') },
+      { label: 'General Optimization', href: lp('/docs/concepts/token-savings') + '#beyond-leanctx' },
     ],
   },
 ];
@@ -303,4 +303,32 @@ export LCTX_TERSE_LEVEL=full`}</code></pre>
       function in a large file, read just those lines.
     </li>
   </ol>
+
+  <h2 id="beyond-leanctx">Beyond LeanCTX: General Token Optimization</h2>
+  <p>
+    LeanCTX optimizes tool outputs (file reads, shell commands, search results). But most tokens
+    are consumed elsewhere. Here's a breakdown of a typical AI coding session:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Category</th><th>% of Total</th><th>Controllable?</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Thinking tokens</strong></td><td>60-80%</td><td>Model choice, thinking budgets</td></tr>
+      <tr><td>Conversation history</td><td>10-15%</td><td>Start fresh chats for new tasks</td></tr>
+      <tr><td>System prompt / rules</td><td>3-5%</td><td>Keep rules concise</td></tr>
+      <tr><td>Open files (IDE)</td><td>2-5%</td><td>Close irrelevant tabs</td></tr>
+      <tr><td>Subagent overhead</td><td>5-15%</td><td>Use fewer, targeted subagents</td></tr>
+      <tr><td>Tool outputs (LeanCTX)</td><td>3-5%</td><td>Fully optimized by LeanCTX</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Quick wins</h3>
+  <ul>
+    <li><strong>Choose the right model:</strong> <code>composer-2-fast</code> (1x cost, minimal thinking) for simple tasks. <code>claude-4.5-sonnet</code> (3x) for standard work. Reserve <code>claude-4.6-opus-high-thinking</code> (10-20x) for architecture decisions.</li>
+    <li><strong>Close irrelevant files:</strong> Many IDEs attach open file contents to every request. Close tabs you're not editing.</li>
+    <li><strong>Start fresh chats:</strong> Long conversations accumulate history. Start a new chat when switching tasks.</li>
+    <li><strong>Minimize subagents:</strong> Each subagent duplicates the full system prompt and context. Use them only when parallel work is needed.</li>
+    <li><strong>Keep rules files lean:</strong> Every rule in <code>.cursorrules</code> or <code>AGENTS.md</code> is sent with every request.</li>
+  </ul>
 </DocsLayout>

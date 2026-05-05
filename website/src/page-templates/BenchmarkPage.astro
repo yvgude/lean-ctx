@@ -501,7 +501,54 @@ const realWorldExamples = [
 
 <div class="section-divider content-grid"></div>
 
-<!-- ═══════ 9. CTA ═══════ -->
+<!-- ═══════ 9. METHODOLOGY ═══════ -->
+<section class="section-y" id="methodology">
+  <div class="content-grid">
+    <SectionHeading
+      label="Transparency"
+      title="Benchmark"
+      highlight="Methodology"
+      description="Every number on this page is reproducible. Here's exactly how we measure."
+      variant="full"
+    />
+
+    <div class="grid md:grid-cols-2 animate-entrance stagger-2" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem); max-width: 56rem; margin: 0 auto;">
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Tokenizer</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          All token counts use <strong>tiktoken</strong> with the <code>o200k_base</code> encoding — the same
+          tokenizer used by GPT-4o, Claude, and modern LLMs. No estimates or approximations.
+        </p>
+      </div>
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Quality Threshold</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          Compressed output is only used if the composite quality score stays at or above <strong>95%</strong>.
+          Composite = AST preservation (50%) + identifier preservation (30%) + line coverage (20%).
+        </p>
+      </div>
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Reproduce Locally</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          Run <code>lean-ctx benchmark run src/</code> on your own codebase. The output shows exact token counts
+          for each compression mode, savings percentage, and quality preservation scores.
+        </p>
+      </div>
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Disclaimer</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          Results vary by file type, size, language, and read mode. The "60-99%" range reflects real-world
+          variance: small structured files compress more, large unstructured files compress less.
+          Cached re-reads (~13 tokens) represent the best case.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 10. CTA ═══════ -->
 <section class="relative section-y">
   <div class="content-grid" style="text-align: center;">
     <SectionHeading

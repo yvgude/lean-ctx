@@ -1,12 +1,8 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
-import StackExplorer from '../components/StackExplorer.astro';
-import ProofArtifacts from '../components/ProofArtifacts.astro';
-import PowerFeatures from '../components/PowerFeatures.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
-import { pillars } from '../lib/contextOsPillars';
 import '../styles/index.css';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -22,8 +18,6 @@ const tRead = pickTool('ctx_read', 0);
 const tSearch = pickTool('ctx_search', 1);
 const tShell = pickTool('ctx_shell', 2);
 
-
-
 const faqJsonLd = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
@@ -38,7 +32,7 @@ const faqJsonLd = JSON.stringify({
 <BaseLayout title={t('index.title')} description={t('index.metaDesc')} extraJsonLd={faqJsonLd}>
 
 <!-- ═══════════════════════════════════════════════════════
-     HERO
+     1. HERO
      ═══════════════════════════════════════════════════════ -->
 <section class="section-hero hero-split" data-hero>
   <div class="content-grid-wide">
@@ -53,10 +47,6 @@ const faqJsonLd = JSON.stringify({
 
         <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-top: clamp(1.25rem, 1rem + 1vw, 2rem); max-width: 46rem;">
           {t('index.heroSubline')}
-        </p>
-
-        <p class="fluid-sm text-muted animate-entrance stagger-1" style="margin-top: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); max-width: 46rem; font-style: italic;">
-          {t('index.heroProblem')}
         </p>
 
         <div class="flex flex-wrap items-center animate-entrance stagger-2" style="margin-top: clamp(1.5rem, 1rem + 1.25vw, 2.5rem); gap: clamp(0.5rem, 0.375rem + 0.5vw, 1rem);">
@@ -149,27 +139,7 @@ const faqJsonLd = JSON.stringify({
 
 
 <!-- ═══════════════════════════════════════════════════════
-     SIX PILLARS
-     ═══════════════════════════════════════════════════════ -->
-<section class="pillars-section content-grid">
-  <div class="pillars-header">
-    <h2 class="pillars-title">{t('index.sixPillarsTitle')}</h2>
-    <p class="pillars-sub">{t('index.sixPillarsSubline')}</p>
-  </div>
-  <div class="pillars-grid">
-    {pillars.map(p => (
-      <a href={lp(`/context-os/${p.slug}`)} class="pillar-card-home">
-        <span class="pillar-card-icon" set:html={p.icon} />
-        <h3 class="pillar-card-name">{t(p.titleKey)}</h3>
-        <p class="pillar-card-desc">{t(p.navDescKey)}</p>
-      </a>
-    ))}
-  </div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════
-     PROBLEM / WHAT HAPPENS
+     2. PROBLEM — Before / After
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid-wide">
@@ -223,7 +193,66 @@ const faqJsonLd = JSON.stringify({
 
 
 <!-- ═══════════════════════════════════════════════════════
-     LIVE PREVIEW: How it works
+     3. HOW IT WORKS — Four capabilities
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('index.howItWorksLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
+      {t('index.howItWorksTitle')} <span class="italic-accent">{t('index.howItWorksTitleHighlight')}</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
+      {t('index.howItWorksDesc')}
+    </p>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-3" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);">
+      <a href={lp('/context-os/smart-io')} class="what-card group" style="text-decoration: none;">
+        <div class="what-icon" style="color: var(--color-accent);">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks1Title')}</h3>
+        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks1Desc')}</p>
+      </a>
+
+      <a href={lp('/context-os/memory')} class="what-card group" style="text-decoration: none;">
+        <div class="what-icon" style="color: var(--color-accent-2);">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks2Title')}</h3>
+        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks2Desc')}</p>
+      </a>
+
+      <a href={lp('/context-os/governance')} class="what-card group" style="text-decoration: none;">
+        <div class="what-icon" style="color: var(--color-accent-3);">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks3Title')}</h3>
+        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks3Desc')}</p>
+      </a>
+
+      <a href={lp('/context-os/verification')} class="what-card group" style="text-decoration: none;">
+        <div class="what-icon" style="color: var(--color-accent);">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.745 3.745 0 011.043 3.296A3.745 3.745 0 0121 12z"/></svg>
+        </div>
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks4Title')}</h3>
+        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks4Desc')}</p>
+      </a>
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2.5rem, 2rem + 1.5vw, 4rem);">
+      <a href={lp('/context-os')} class="fluid-sm text-muted hover:text-text-bright transition-colors inline-flex items-center gap-1.5">
+        {t('index.heroCtaSecondary')}
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     4. LIVE DEMO — Terminal preview
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y" data-preview style="--pp: 0;">
   <div class="content-grid-wide">
@@ -263,94 +292,7 @@ const faqJsonLd = JSON.stringify({
 
 
 <!-- ═══════════════════════════════════════════════════════
-     WHAT IS LEANCTX
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('index.whatLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
-      {t('index.whatTitle')} <span class="italic-accent">{t('index.whatTitleHighlight')}</span>
-    </h2>
-
-    <div class="grid md:grid-cols-3 animate-entrance stagger-2" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);">
-      <div class="what-card">
-        <div class="what-icon" style="color: var(--color-accent);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.whatCard1Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.whatCard1Desc')}</p>
-      </div>
-
-      <div class="what-card">
-        <div class="what-icon" style="color: var(--color-accent-2);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.whatCard2Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.whatCard2Desc')}</p>
-      </div>
-
-      <div class="what-card">
-        <div class="what-icon" style="color: var(--color-accent-3);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.whatCard3Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.whatCard3Desc')}</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════
-     FOUR DIMENSIONS
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('index.dimensionsLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 56rem;">
-      {t('index.dimensionsTitle')} <span class="italic-accent">{t('index.dimensionsTitleHighlight')}</span>
-    </h2>
-
-    <div class="dimensions-grid animate-entrance stagger-2">
-      <div class="dimension-item">
-        <span class="dimension-number text-accent font-display">01</span>
-        <div>
-          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim1Title')}</h3>
-          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim1Desc')}</p>
-        </div>
-      </div>
-      <div class="dimension-item">
-        <span class="dimension-number text-accent-2 font-display">02</span>
-        <div>
-          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim2Title')}</h3>
-          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim2Desc')}</p>
-        </div>
-      </div>
-      <div class="dimension-item">
-        <span class="dimension-number text-accent-3 font-display">03</span>
-        <div>
-          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim3Title')}</h3>
-          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim3Desc')}</p>
-        </div>
-      </div>
-      <div class="dimension-item">
-        <span class="dimension-number text-accent font-display">04</span>
-        <div>
-          <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">{t('index.dim4Title')}</h3>
-          <p class="fluid-sm text-muted leading-relaxed">{t('index.dim4Desc')}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════
-     NUMBERS STRIP
+     5. NUMBERS STRIP
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y-sm">
   <div class="content-grid">
@@ -358,6 +300,7 @@ const faqJsonLd = JSON.stringify({
       <div class="stat-panel">
         <span class="stat-number text-accent">60–99%</span>
         <span class="stat-desc">{t('index.statsReduction')}</span>
+        <a href={lp('/benchmark')} class="stat-methodology-link">See methodology</a>
       </div>
       <div class="stat-panel">
         <span class="stat-number">{manifest.counts.granular}</span>
@@ -376,182 +319,8 @@ const faqJsonLd = JSON.stringify({
 </section>
 
 
- <!-- ═══════════════════════════════════════════════════════
-      ARCHITECTURE (3 components)
-      ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('index.archLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('index.archTitle')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 42rem;">
-      {t('index.archDesc')}
-    </p>
-
-    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1px, 0.1vw, 1px);">
-      <a href={lp('/mcp-server')} class="layer-card group">
-        <div class="layer-icon" style="color: var(--color-accent);">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008V18m-3 0h.008v.008h-.008V18m-3 0h.008v.008h-.008V18"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1rem 0;">{t('index.archServerTitle')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin-bottom: 2rem;">{t('index.archServerDesc')}</p>
-        <span class="layer-link text-accent">
-          {t('index.archServerLink')}
-          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </span>
-      </a>
-
-      <a href={lp('/shell-hook')} class="layer-card group">
-        <div class="layer-icon" style="color: var(--color-accent-2);">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1rem 0;">{t('index.archHookTitle')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin-bottom: 2rem;">{t('index.archHookDesc')}</p>
-        <span class="layer-link text-accent-2">
-          {t('index.archHookLink')}
-          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </span>
-      </a>
-
-      <a href={lp('/protocols')} class="layer-card group">
-        <div class="layer-icon" style="color: var(--color-accent-3);">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1rem 0;">{t('index.archProtocolsTitle')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin-bottom: 2rem;">{t('index.archProtocolsDesc')}</p>
-        <span class="layer-link text-accent-3">
-          {t('index.archProtocolsLink')}
-          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </span>
-      </a>
-    </div>
-  </div>
-</section>
-
-
 <!-- ═══════════════════════════════════════════════════════
-     STACK (Deterministic runtime)
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('index.stackLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem; max-width: 60rem;">
-      {t('index.stackTitle')} <span class="italic-accent">{t('index.stackTitleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 56rem;">
-      {t('index.stackDesc')}
-    </p>
-
-    <div class="animate-entrance stagger-3">
-      <StackExplorer />
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- ═══════════════════════════════════════════════════════
-     CONTEXT AS CODE
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="grid lg:grid-cols-2 animate-entrance" style="gap: clamp(4rem, 3rem + 4vw, 8rem); align-items: center;">
-      <div>
-        <div style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          <span class="kicker-pill">{t('index.profilesLabel')}</span>
-        </div>
-        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          {t('index.profilesTitle')} <span class="italic-accent">{t('index.profilesTitleHighlight')}</span>
-        </h2>
-        <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
-          {t('index.profilesDesc')}
-        </p>
-        <a href={lp('/docs/profiles')} class="inline-flex items-center gap-2 text-accent hover:text-accent-bright transition-colors font-medium" style="font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
-          {t('index.profilesCta')}
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </a>
-      </div>
-      <div class="profile-demo">
-        <div class="profile-demo-header">.lean-ctx/profiles/review.toml</div>
-        <pre class="profile-demo-code"><code class="text-muted"><span class="text-accent">[profile]</span>
-name = <span class="text-accent-2">"review"</span>
-description = <span class="text-accent-2">"Code review with broad context"</span>
-
-<span class="text-accent">[read]</span>
-default_mode = <span class="text-accent-2">"map"</span>
-max_tokens_per_file = <span class="text-accent-3">80000</span>
-
-<span class="text-accent">[budget]</span>
-max_context_tokens = <span class="text-accent-3">150000</span>
-max_cost_usd = <span class="text-accent-3">2.0</span>
-
-<span class="text-accent">[verification]</span>
-strict_mode = <span class="text-accent-3">true</span></code></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════
-     AGENT GOVERNANCE
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="grid lg:grid-cols-2 animate-entrance" style="gap: clamp(4rem, 3rem + 4vw, 8rem); align-items: center;">
-      <div class="governance-features lg:order-2">
-        <div class="governance-feature">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>
-          {t('index.governanceFeature1')}
-        </div>
-        <div class="governance-feature">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"/></svg>
-          {t('index.governanceFeature2')}
-        </div>
-        <div class="governance-feature">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
-          {t('index.governanceFeature3')}
-        </div>
-        <div class="governance-feature">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-          {t('index.governanceFeature4')}
-        </div>
-      </div>
-      <div class="lg:order-1">
-        <div style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          <span class="kicker-pill">{t('index.governanceLabel')}</span>
-        </div>
-        <h2 class="font-display fluid-h2 font-bold text-text-bright" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          {t('index.governanceTitle')} <span class="italic-accent">{t('index.governanceTitleHighlight')}</span>
-        </h2>
-        <p class="text-muted fluid-body" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
-          {t('index.governanceDesc')}
-        </p>
-        <a href={lp('/docs/agent-harness')} class="inline-flex items-center gap-2 text-accent-2 hover:text-accent-2-bright transition-colors font-medium" style="font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
-          {t('index.governanceCta')}
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </a>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-
-
-<!-- ═══════════════════════════════════════════════════════
-     POWER FEATURES (Graph Explorer, Team Server)
-     ═══════════════════════════════════════════════════════ -->
-<div class="section-divider content-grid"></div>
-<PowerFeatures />
-
-<!-- ═══════════════════════════════════════════════════════
-     COMPATIBILITY
+     6. COMPATIBILITY
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid">
@@ -587,86 +356,7 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 
 
 <!-- ═══════════════════════════════════════════════════════
-     TESTIMONIALS
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('artifacts.label')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem; max-width: 58rem;">
-      {t('artifacts.title')} <span class="italic-accent">{t('artifacts.titleHighlight')}</span>
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 56rem;">
-      {t('artifacts.desc')}
-    </p>
-    <div class="animate-entrance stagger-3">
-      <ProofArtifacts />
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('index.testimonialLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem);">
-      {t('index.testimonialTitle')}
-    </h2>
-
-    <div class="testimonial-list animate-entrance stagger-2">
-      <blockquote class="testimonial-quote">
-        <p class="testimonial-text">&ldquo;{t('index.testimonial1Text')}&rdquo;</p>
-        <footer class="testimonial-attribution">
-          <strong class="text-text-bright">Sebastian</strong>
-          <span class="text-muted">TypeScript / React</span>
-        </footer>
-      </blockquote>
-      <blockquote class="testimonial-quote">
-        <p class="testimonial-text">&ldquo;{t('index.testimonial2Text')}&rdquo;</p>
-        <footer class="testimonial-attribution">
-          <strong class="text-text-bright">Marco</strong>
-          <span class="text-muted">SaaS Builder</span>
-        </footer>
-      </blockquote>
-      <blockquote class="testimonial-quote">
-        <p class="testimonial-text">&ldquo;{t('index.testimonial3Text')}&rdquo;</p>
-        <footer class="testimonial-attribution">
-          <strong class="text-text-bright">Jay</strong>
-          <span class="text-muted">AI Tools Enthusiast</span>
-        </footer>
-      </blockquote>
-      <blockquote class="testimonial-quote">
-        <p class="testimonial-text">&ldquo;{t('index.testimonial4Text')}&rdquo;</p>
-        <footer class="testimonial-attribution">
-          <strong class="text-text-bright">Erik</strong>
-          <span class="text-muted">Platform Engineer</span>
-        </footer>
-      </blockquote>
-      <blockquote class="testimonial-quote">
-        <p class="testimonial-text">&ldquo;{t('index.testimonial5Text')}&rdquo;</p>
-        <footer class="testimonial-attribution">
-          <strong class="text-text-bright">Radmar</strong>
-          <span class="text-muted">Open Source Contributor</span>
-        </footer>
-      </blockquote>
-      <blockquote class="testimonial-quote">
-        <p class="testimonial-text">&ldquo;{t('index.testimonial6Text')}&rdquo;</p>
-        <footer class="testimonial-attribution">
-          <strong class="text-text-bright">Daniel</strong>
-          <span class="text-muted">Go / Rust Developer</span>
-        </footer>
-      </blockquote>
-    </div>
-  </div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════
-     FAQ (SEO + Rich Results)
+     7. FAQ (SEO + Rich Results)
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y" id="faq">
   <div class="content-grid">
@@ -694,7 +384,7 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
 
 
 <!-- ═══════════════════════════════════════════════════════
-     CTA
+     8. CTA
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid">
@@ -800,6 +490,18 @@ strict_mode = <span class="text-accent-3">true</span></code></pre>
     letter-spacing: -0.04em;
     text-wrap: balance;
     max-width: 14ch;
+  }
+  .stat-methodology-link {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    color: var(--color-accent);
+    text-decoration: none;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+  }
+  .stat-methodology-link:hover {
+    opacity: 1;
   }
 </style>
 
