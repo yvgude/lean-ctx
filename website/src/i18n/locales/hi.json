@@ -4708,5 +4708,12 @@
   "nav.contextOs.contextPkgLabel": "संदर्भ पैकेज",
   "nav.contextOs.contextPkgNavDesc": "संदर्भ को पैकेज, साझा और संस्करण करें",
   "nav.docs.contextPackages": "संदर्भ पैकेज",
-  "nav.docs.contextPackagesDesc": "परतें, CLI कमांड, ऑटो-लोड, अखंडता"
+  "nav.docs.contextPackagesDesc": "परतें, CLI कमांड, ऑटो-लोड, अखंडता",
+  "nav.tools.analysisTools": "विश्लेषण",
+  "nav.tools.analysisToolsDesc": "वास्तुकला, प्रभाव और कोड ग्राफ उपकरण",
+  "nav.tools.sessionTools": "सत्र",
+  "nav.tools.sessionToolsDesc": "क्रॉस-सत्र स्मृति, हैंडऑफ, प्रमाण",
+  "docs.sidebarGraph": "प्रॉपर्टी ग्राफ",
+  "docs.sidebarAgentHarness": "एजेंट हार्नेस",
+  "docs.sidebarObservability": "अवलोकनीयता"
 }

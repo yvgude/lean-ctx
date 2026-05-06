@@ -4708,5 +4708,12 @@
   "nav.contextOs.contextPkgLabel": "Context Packages",
   "nav.contextOs.contextPkgNavDesc": "Empacotar, compartilhar e versionar contexto",
   "nav.docs.contextPackages": "Context Packages",
-  "nav.docs.contextPackagesDesc": "Camadas, comandos CLI, auto-load, integridade"
+  "nav.docs.contextPackagesDesc": "Camadas, comandos CLI, auto-load, integridade",
+  "nav.tools.analysisTools": "Análise",
+  "nav.tools.analysisToolsDesc": "Ferramentas de arquitetura, impacto e grafo de código",
+  "nav.tools.sessionTools": "Sessão",
+  "nav.tools.sessionToolsDesc": "Memória entre sessões, handoffs, provas",
+  "docs.sidebarGraph": "Property Graph",
+  "docs.sidebarAgentHarness": "Agent Harness",
+  "docs.sidebarObservability": "Observabilidade"
 }

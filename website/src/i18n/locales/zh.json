@@ -4708,5 +4708,12 @@
   "nav.contextOs.contextPkgLabel": "上下文包",
   "nav.contextOs.contextPkgNavDesc": "打包、共享和版本化上下文",
   "nav.docs.contextPackages": "上下文包",
-  "nav.docs.contextPackagesDesc": "层次、CLI命令、自动加载、完整性"
+  "nav.docs.contextPackagesDesc": "层次、CLI命令、自动加载、完整性",
+  "nav.tools.analysisTools": "分析",
+  "nav.tools.analysisToolsDesc": "架构、影响和代码图工具",
+  "nav.tools.sessionTools": "会话",
+  "nav.tools.sessionToolsDesc": "跨会话记忆、交接、证明",
+  "docs.sidebarGraph": "属性图",
+  "docs.sidebarAgentHarness": "Agent Harness",
+  "docs.sidebarObservability": "可观测性"
 }

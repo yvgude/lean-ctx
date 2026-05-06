@@ -4708,5 +4708,12 @@
   "nav.contextOs.contextPkgLabel": "حزم السياق",
   "nav.contextOs.contextPkgNavDesc": "تجميع السياق ومشاركته وإصدار نسخ منه",
   "nav.docs.contextPackages": "حزم السياق",
-  "nav.docs.contextPackagesDesc": "الطبقات، أوامر CLI، التحميل التلقائي، التكامل"
+  "nav.docs.contextPackagesDesc": "الطبقات، أوامر CLI، التحميل التلقائي، التكامل",
+  "nav.tools.analysisTools": "التحليل",
+  "nav.tools.analysisToolsDesc": "أدوات البنية والتأثير ورسم الكود",
+  "nav.tools.sessionTools": "الجلسة",
+  "nav.tools.sessionToolsDesc": "ذاكرة عبر الجلسات، التسليم، الإثباتات",
+  "docs.sidebarGraph": "رسم الخصائص",
+  "docs.sidebarAgentHarness": "حزام الوكيل",
+  "docs.sidebarObservability": "المراقبة"
 }

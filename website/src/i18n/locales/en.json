@@ -4708,5 +4708,12 @@
   "nav.contextOs.contextPkgLabel": "Context Packages",
   "nav.contextOs.contextPkgNavDesc": "Package, share, and version context bundles",
   "nav.docs.contextPackages": "Context Packages",
-  "nav.docs.contextPackagesDesc": "Layers, CLI commands, auto-load, integrity"
+  "nav.docs.contextPackagesDesc": "Layers, CLI commands, auto-load, integrity",
+  "nav.tools.analysisTools": "Analysis",
+  "nav.tools.analysisToolsDesc": "Architecture, impact, code graph tools",
+  "nav.tools.sessionTools": "Session",
+  "nav.tools.sessionToolsDesc": "Cross-session memory, handoffs, proofs",
+  "docs.sidebarGraph": "Property Graph",
+  "docs.sidebarAgentHarness": "Agent Harness",
+  "docs.sidebarObservability": "Observability"
 }

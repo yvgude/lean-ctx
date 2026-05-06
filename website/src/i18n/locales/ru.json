@@ -4708,5 +4708,12 @@
   "nav.contextOs.contextPkgLabel": "Context Packages",
   "nav.contextOs.contextPkgNavDesc": "Упаковка, обмен и версионирование контекста",
   "nav.docs.contextPackages": "Context Packages",
-  "nav.docs.contextPackagesDesc": "Слои, CLI-команды, автозагрузка, целостность"
+  "nav.docs.contextPackagesDesc": "Слои, CLI-команды, автозагрузка, целостность",
+  "nav.tools.analysisTools": "Анализ",
+  "nav.tools.analysisToolsDesc": "Инструменты архитектуры, воздействия и графа кода",
+  "nav.tools.sessionTools": "Сессия",
+  "nav.tools.sessionToolsDesc": "Межсессионная память, передачи, доказательства",
+  "docs.sidebarGraph": "Граф свойств",
+  "docs.sidebarAgentHarness": "Agent Harness",
+  "docs.sidebarObservability": "Наблюдаемость"
 }

@@ -4708,5 +4708,12 @@
   "nav.contextOs.contextPkgLabel": "কনটেক্সট প্যাকেজ",
   "nav.contextOs.contextPkgNavDesc": "কনটেক্সট প্যাকেজ, শেয়ার এবং সংস্করণ করুন",
   "nav.docs.contextPackages": "কনটেক্সট প্যাকেজ",
-  "nav.docs.contextPackagesDesc": "স্তর, CLI কমান্ড, অটো-লোড, অখণ্ডতা"
+  "nav.docs.contextPackagesDesc": "স্তর, CLI কমান্ড, অটো-লোড, অখণ্ডতা",
+  "nav.tools.analysisTools": "বিশ্লেষণ",
+  "nav.tools.analysisToolsDesc": "আর্কিটেকচার, প্রভাব এবং কোড গ্রাফ টুল",
+  "nav.tools.sessionTools": "সেশন",
+  "nav.tools.sessionToolsDesc": "ক্রস-সেশন মেমরি, হ্যান্ডঅফ, প্রমাণ",
+  "docs.sidebarGraph": "প্রপার্টি গ্রাফ",
+  "docs.sidebarAgentHarness": "এজেন্ট হার্নেস",
+  "docs.sidebarObservability": "পর্যবেক্ষণযোগ্যতা"
 }
