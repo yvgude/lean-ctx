@@ -167,14 +167,12 @@ const sidebar = [
       },
       copilot: {
         name: 'GitHub Copilot',
-        note: 'Copilot: create .github/copilot/mcp.json per project (below). lean-ctx init --agent copilot also creates .vscode/mcp.json for VS Code native MCP support.',
+        note: 'lean-ctx init --agent copilot creates both .github/mcp.json (Copilot CLI) and .vscode/mcp.json (VS Code Copilot).',
         manual: [
-          'Create .github/copilot/mcp.json in your project:',
-          '{',
-          '  "servers": {',
-          '    "lean-ctx": { "command": "lean-ctx" }',
-          '  }',
-          '}'
+          'Option A — Copilot CLI (.github/mcp.json):',
+          '{ "mcpServers": { "lean-ctx": { "command": "lean-ctx" } } }',
+          'Option B — VS Code Copilot (.vscode/mcp.json):',
+          '{ "servers": { "lean-ctx": { "type": "stdio", "command": "lean-ctx" } } }'
         ],
         agentKey: 'copilot',
         restart: 'Restart VS Code.'
@@ -907,21 +905,36 @@ lean-ctx init --agent claude
   <p set:html={t('docs.gettingStarted.claude2048Manual')} />
 
   <h3 id="editor-copilot">{t('docs.gettingStarted.editorCopilotTitle')}</h3>
+
+  <h4>Option A: Copilot CLI (<code>.github/mcp.json</code>)</h4>
   <ol>
-    <li><span set:html={t('docs.gettingStarted.editorCopilotStep1')} />
-      <pre><code>mkdir -p .github/copilot</code></pre>
-    </li>
-    <li>{t('docs.gettingStarted.editorCopilotStep2')}
+    <li>Create <code>.github/mcp.json</code> in your project root:
       <pre><code>{`{
-  "servers": {
+  "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx"
     }
   }
 }`}</code></pre>
     </li>
-    <li>{t('docs.gettingStarted.editorCopilotStep3')}</li>
+    <li>Restart VS Code / Copilot CLI.</li>
   </ol>
+
+  <h4>Option B: VS Code Copilot (<code>.vscode/mcp.json</code>)</h4>
+  <ol>
+    <li>Create <code>.vscode/mcp.json</code> in your project root:
+      <pre><code>{`{
+  "servers": {
+    "lean-ctx": {
+      "type": "stdio",
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+    </li>
+    <li>Restart VS Code.</li>
+  </ol>
+  <p><strong>Tip:</strong> <code>lean-ctx init --agent copilot</code> creates both files automatically.</p>
   <p set:html={t('docs.gettingStarted.editorCopilotNote')} />
   <p set:html={t('docs.gettingStarted.editorCopilotPerProject')} />
 

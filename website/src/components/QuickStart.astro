@@ -13,12 +13,25 @@ const editorConfigs = [
 }`,
   },
   {
-    id: 'copilot',
-    label: 'GitHub Copilot',
-    file: '.github/copilot/mcp.json',
+    id: 'copilot-cli',
+    label: 'Copilot CLI',
+    file: '.github/mcp.json',
+    code: `{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`,
+  },
+  {
+    id: 'copilot-vscode',
+    label: 'VS Code Copilot',
+    file: '.vscode/mcp.json',
     code: `{
   "servers": {
     "lean-ctx": {
+      "type": "stdio",
       "command": "lean-ctx"
     }
   }
