@@ -4702,5 +4702,11 @@
   "docs.sidebarGuides": "أدلة",
   "docs.sidebarAdvanced": "متقدم",
   "contextOs.title": "Context OS — LeanCTX",
-  "contextOs.statContextFields": "أبعاد السياق"
+  "contextOs.statContextFields": "أبعاد السياق",
+  "nav.contextOs.overviewLabel": "نظرة عامة",
+  "nav.contextOs.overviewDesc": "بيئة التشغيل الكاملة للسياق — الركائز والبنية والخط الأنبوبي",
+  "nav.contextOs.contextPkgLabel": "حزم السياق",
+  "nav.contextOs.contextPkgNavDesc": "تجميع السياق ومشاركته وإصدار نسخ منه",
+  "nav.docs.contextPackages": "حزم السياق",
+  "nav.docs.contextPackagesDesc": "الطبقات، أوامر CLI، التحميل التلقائي، التكامل"
 }

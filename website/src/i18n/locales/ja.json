@@ -4702,5 +4702,11 @@
   "docs.sidebarGuides": "ガイド",
   "docs.sidebarAdvanced": "高度",
   "contextOs.title": "Context OS — LeanCTX",
-  "contextOs.statContextFields": "コンテキスト次元"
+  "contextOs.statContextFields": "コンテキスト次元",
+  "nav.contextOs.overviewLabel": "概要",
+  "nav.contextOs.overviewDesc": "完全なコンテキストランタイム — ピラー、パイプライン、アーキテクチャ",
+  "nav.contextOs.contextPkgLabel": "コンテキストパッケージ",
+  "nav.contextOs.contextPkgNavDesc": "コンテキストのパッケージ化、共有、バージョン管理",
+  "nav.docs.contextPackages": "コンテキストパッケージ",
+  "nav.docs.contextPackagesDesc": "レイヤー、CLIコマンド、自動読み込み、整合性"
 }

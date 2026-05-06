@@ -4702,5 +4702,11 @@
   "docs.sidebarGuides": "Guías",
   "docs.sidebarAdvanced": "Avanzado",
   "contextOs.title": "Context OS — LeanCTX",
-  "contextOs.statContextFields": "Dimensiones de Contexto"
+  "contextOs.statContextFields": "Dimensiones de Contexto",
+  "nav.contextOs.overviewLabel": "Resumen",
+  "nav.contextOs.overviewDesc": "El runtime de contexto completo — pilares, pipeline, arquitectura",
+  "nav.contextOs.contextPkgLabel": "Context Packages",
+  "nav.contextOs.contextPkgNavDesc": "Empaquetar, compartir y versionar contexto",
+  "nav.docs.contextPackages": "Context Packages",
+  "nav.docs.contextPackagesDesc": "Capas, comandos CLI, auto-carga, integridad"
 }

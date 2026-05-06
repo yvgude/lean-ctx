@@ -4702,5 +4702,11 @@
   "docs.sidebarGuides": "गाइड",
   "docs.sidebarAdvanced": "उन्नत",
   "contextOs.title": "Context OS — LeanCTX",
-  "contextOs.statContextFields": "संदर्भ आयाम"
+  "contextOs.statContextFields": "संदर्भ आयाम",
+  "nav.contextOs.overviewLabel": "अवलोकन",
+  "nav.contextOs.overviewDesc": "पूर्ण संदर्भ रनटाइम — स्तंभ, पाइपलाइन, वास्तुकला",
+  "nav.contextOs.contextPkgLabel": "संदर्भ पैकेज",
+  "nav.contextOs.contextPkgNavDesc": "संदर्भ को पैकेज, साझा और संस्करण करें",
+  "nav.docs.contextPackages": "संदर्भ पैकेज",
+  "nav.docs.contextPackagesDesc": "परतें, CLI कमांड, ऑटो-लोड, अखंडता"
 }

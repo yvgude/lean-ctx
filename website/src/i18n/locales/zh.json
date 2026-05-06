@@ -4702,5 +4702,11 @@
   "docs.sidebarGuides": "指南",
   "docs.sidebarAdvanced": "高级",
   "contextOs.title": "Context OS — LeanCTX",
-  "contextOs.statContextFields": "上下文维度"
+  "contextOs.statContextFields": "上下文维度",
+  "nav.contextOs.overviewLabel": "概览",
+  "nav.contextOs.overviewDesc": "完整的上下文运行时 — 支柱、管道、架构",
+  "nav.contextOs.contextPkgLabel": "上下文包",
+  "nav.contextOs.contextPkgNavDesc": "打包、共享和版本化上下文",
+  "nav.docs.contextPackages": "上下文包",
+  "nav.docs.contextPackagesDesc": "层次、CLI命令、自动加载、完整性"
 }

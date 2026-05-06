@@ -4702,5 +4702,11 @@
   "trust.verifyDesc": "LeanCTX পরীক্ষা এবং উদাহরণ প্রদান করে যাতে আপনি আপনার রিপো এবং CI-তে আচরণ যাচাই করতে পারেন।",
   "trust.verifyLabel": "কিভাবে যাচাই করবেন",
   "trust.verifyTitle": "বিশ্বাস করো না। যাচাই করো।",
-  "contextOs.statContextFields": "প্রসঙ্গ মাত্রা"
+  "contextOs.statContextFields": "প্রসঙ্গ মাত্রা",
+  "nav.contextOs.overviewLabel": "সংক্ষিপ্ত বিবরণ",
+  "nav.contextOs.overviewDesc": "সম্পূর্ণ কনটেক্সট রানটাইম — স্তম্ভ, পাইপলাইন, স্থাপত্য",
+  "nav.contextOs.contextPkgLabel": "কনটেক্সট প্যাকেজ",
+  "nav.contextOs.contextPkgNavDesc": "কনটেক্সট প্যাকেজ, শেয়ার এবং সংস্করণ করুন",
+  "nav.docs.contextPackages": "কনটেক্সট প্যাকেজ",
+  "nav.docs.contextPackagesDesc": "স্তর, CLI কমান্ড, অটো-লোড, অখণ্ডতা"
 }

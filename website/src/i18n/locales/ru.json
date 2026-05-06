@@ -4702,5 +4702,11 @@
   "docs.sidebarGuides": "Руководства",
   "docs.sidebarAdvanced": "Продвинуто",
   "contextOs.title": "Context OS — LeanCTX",
-  "contextOs.statContextFields": "Измерения контекста"
+  "contextOs.statContextFields": "Измерения контекста",
+  "nav.contextOs.overviewLabel": "Обзор",
+  "nav.contextOs.overviewDesc": "Полная среда выполнения контекста — опоры, конвейер, архитектура",
+  "nav.contextOs.contextPkgLabel": "Context Packages",
+  "nav.contextOs.contextPkgNavDesc": "Упаковка, обмен и версионирование контекста",
+  "nav.docs.contextPackages": "Context Packages",
+  "nav.docs.contextPackagesDesc": "Слои, CLI-команды, автозагрузка, целостность"
 }

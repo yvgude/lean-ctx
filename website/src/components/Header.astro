@@ -69,6 +69,7 @@ const contextOsColumns = [
   {
     title: 'Core',
     items: [
+      { label: t('nav.contextOs.overviewLabel'), href: lp('/context-os'), description: t('nav.contextOs.overviewDesc'), icon: ico.grid, badge: 'Start' },
       { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: ico.doc },
       { label: t('nav.pillars.memorySessions'), href: lp('/context-os/memory'), description: t('nav.pillars.memoryDesc'), icon: ico.grid },
       { label: t('nav.pillars.governance'), href: lp('/context-os/governance'), description: t('nav.pillars.governanceDesc'), icon: ico.shield },
@@ -80,6 +81,7 @@ const contextOsColumns = [
       { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: ico.check },
       { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: ico.bulb },
       { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: ico.server },
+      { label: t('nav.contextOs.contextPkgLabel'), href: lp('/docs/context-packages'), description: t('nav.contextOs.contextPkgNavDesc'), icon: ico.share },
     ],
   },
   {
@@ -100,6 +102,7 @@ const docsColumns = [
       { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols'), description: t('nav.docs.concepts.protocolsDesc'), icon: ico.flow },
       { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: ico.dollar },
       { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: ico.term },
+      { label: t('cft.heroLabel'), href: lp('/docs/context-field-theory'), description: t('cft.metaDesc').slice(0, 60) + '...', icon: ico.flow },
     ],
   },
   {
@@ -107,6 +110,7 @@ const docsColumns = [
     items: [
       { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
       { label: 'API Reference', href: lp('/docs/api-reference'), description: 'REST endpoints & SDK', icon: ico.code },
+      { label: t('nav.docs.contextPackages'), href: lp('/docs/context-packages'), description: t('nav.docs.contextPackagesDesc'), icon: ico.share },
       { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
       { label: 'Security', href: lp('/docs/security'), description: 'PathJail, scopes, audit trail', icon: ico.shield },
     ],
@@ -235,17 +239,20 @@ const toolsColumns = [
 
       <div class="mobile-section">
         <span class="mobile-section-title">{t('nav.contextOs')}</span>
-        <a href={lp('/context-os')} class="mobile-nav-link">{t('nav.contextOs')}</a>
+        <a href={lp('/context-os')} class="mobile-nav-link">{t('nav.contextOs.overviewLabel')}</a>
         <a href={lp('/context-os/smart-io')} class="mobile-nav-link">{t('nav.pillars.smartIo')}</a>
         <a href={lp('/context-os/memory')} class="mobile-nav-link">{t('nav.pillars.memory')}</a>
         <a href={lp('/context-os/governance')} class="mobile-nav-link">{t('nav.pillars.governance')}</a>
         <a href={lp('/context-os/verification')} class="mobile-nav-link">{t('nav.pillars.verification')}</a>
         <a href={lp('/context-os/intelligence')} class="mobile-nav-link">{t('nav.pillars.intelligence')}</a>
+        <a href={lp('/docs/context-packages')} class="mobile-nav-link">{t('nav.contextOs.contextPkgLabel')}</a>
       </div>
 
       <div class="mobile-section">
         <span class="mobile-section-title">{t('nav.docs')}</span>
         <a href={lp('/docs/concepts/read-modes')} class="mobile-nav-link">{t('nav.docs.concepts.readModes')}</a>
+        <a href={lp('/docs/context-field-theory')} class="mobile-nav-link">{t('nav.pillars.intelligenceCft')}</a>
+        <a href={lp('/docs/context-packages')} class="mobile-nav-link">{t('nav.docs.contextPackages')}</a>
         <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
         <a href={lp('/docs/api-reference')} class="mobile-nav-link">API Reference</a>
         <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>

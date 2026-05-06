@@ -4702,5 +4702,11 @@
   "docs.sidebarCliReference": "CLI Reference",
   "docs.sidebarGuides": "Guides",
   "docs.sidebarAdvanced": "Advanced",
-  "contextOs.title": "Context OS — LeanCTX"
+  "contextOs.title": "Context OS — LeanCTX",
+  "nav.contextOs.overviewLabel": "Overview",
+  "nav.contextOs.overviewDesc": "The full context runtime — pillars, pipeline, architecture",
+  "nav.contextOs.contextPkgLabel": "Context Packages",
+  "nav.contextOs.contextPkgNavDesc": "Package, share, and version context bundles",
+  "nav.docs.contextPackages": "Context Packages",
+  "nav.docs.contextPackagesDesc": "Layers, CLI commands, auto-load, integrity"
 }

@@ -4702,5 +4702,11 @@
   "trust.verifyDesc": "LeanCTX fornece verificações e exemplos para que você possa validar comportamento no seu repo e em CI.",
   "trust.verifyLabel": "Como verificar",
   "trust.verifyTitle": "Não confie. Verifique.",
-  "contextOs.statContextFields": "Dimensões de Contexto"
+  "contextOs.statContextFields": "Dimensões de Contexto",
+  "nav.contextOs.overviewLabel": "Visão Geral",
+  "nav.contextOs.overviewDesc": "O runtime de contexto completo — pilares, pipeline, arquitetura",
+  "nav.contextOs.contextPkgLabel": "Context Packages",
+  "nav.contextOs.contextPkgNavDesc": "Empacotar, compartilhar e versionar contexto",
+  "nav.docs.contextPackages": "Context Packages",
+  "nav.docs.contextPackagesDesc": "Camadas, comandos CLI, auto-load, integridade"
 }
