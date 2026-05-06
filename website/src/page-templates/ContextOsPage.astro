@@ -384,6 +384,118 @@ const stats = [
 
 <div class="section-divider content-grid"></div>
 
+<!-- 4c. CONTEXT FIELD THEORY -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('contextOs.cftLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+      {t('contextOs.cftTitle')}
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      {t('contextOs.cftDesc')}
+    </p>
+
+    <!-- Phi Formula Card -->
+    <div class="card animate-entrance stagger-3" style="padding: clamp(1.5rem, 1.25rem + 0.75vw, 2.25rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));">
+      <h3 class="font-display fluid-h3 font-semibold text-accent" style="margin: 0 0 1rem 0;">
+        {t('contextOs.cftPhiTitle')}
+      </h3>
+      <div class="font-mono text-accent fluid-sm" style="margin-bottom: 1.25rem; padding: 1rem; background: var(--color-bg); border-radius: 0.5rem; border: 1px solid var(--color-border); overflow-x: auto; white-space: nowrap;">
+        {t('contextOs.cftPhiFormula')}
+      </div>
+      <p class="text-muted fluid-sm" style="margin: 0 0 1rem 0;">
+        {t('contextOs.cftPhiDesc')}
+      </p>
+      <div class="grid md:grid-cols-2" style="gap: 0.5rem;">
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">R</span>
+          <span class="fluid-sm text-muted">{t('contextOs.cftPhiR')}</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">S</span>
+          <span class="fluid-sm text-muted">{t('contextOs.cftPhiS')}</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">G</span>
+          <span class="fluid-sm text-muted">{t('contextOs.cftPhiG')}</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">H</span>
+          <span class="fluid-sm text-muted">{t('contextOs.cftPhiH')}</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">C</span>
+          <span class="fluid-sm text-muted">{t('contextOs.cftPhiC')}</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">D</span>
+          <span class="fluid-sm text-muted">{t('contextOs.cftPhiD')}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Three CFT Pillars -->
+    <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="card animate-entrance stagger-4" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
+          {t('contextOs.cftHandlesTitle')}
+        </h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
+          {t('contextOs.cftHandlesDesc')}
+        </p>
+      </div>
+      <div class="card animate-entrance stagger-5" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
+          {t('contextOs.cftOverlaysTitle')}
+        </h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
+          {t('contextOs.cftOverlaysDesc')}
+        </p>
+      </div>
+      <div class="card animate-entrance stagger-6" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
+          {t('contextOs.cftCompilerTitle')}
+        </h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
+          {t('contextOs.cftCompilerDesc')}
+        </p>
+      </div>
+    </div>
+
+    <!-- Policy Engine + CLI + Context Packages -->
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card animate-entrance stagger-7" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
+          {t('contextOs.cftPolicyTitle')}
+        </h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
+          {t('contextOs.cftPolicyDesc')}
+        </p>
+      </div>
+      <div class="card animate-entrance stagger-8" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
+          {t('contextOs.cftCliTitle')}
+        </h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
+          {t('contextOs.cftCliDesc')}
+        </p>
+      </div>
+      <a href={lp('/docs/context-packages')} class="card group animate-entrance stagger-9" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease;">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
+          {t('contextOs.contextPkgTitle')}
+        </h3>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
+          {t('contextOs.contextPkgDesc')}
+        </p>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
 <!-- 5. SIX PILLARS -->
 <section class="section-y">
   <div class="content-grid">

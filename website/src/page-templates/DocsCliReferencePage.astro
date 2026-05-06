@@ -34,6 +34,7 @@ const sidebar = [
       { label: 'Gotchas', href: lp('/docs/cli-reference#gotchas') },
       { label: 'Buddy', href: lp('/docs/cli-reference#buddy') },
       { label: 'Instructions', href: lp('/docs/cli-reference#instructions') },
+      { label: t('docs.cliReference.sidebarPack'), href: lp('/docs/cli-reference#context-packages') },
     ],
   },
   {
@@ -828,6 +829,54 @@ lean-ctx bugs clear</code></pre>
 lean-ctx buddy on              # enable buddy
 lean-ctx buddy name Ferris     # name your buddy
 lean-ctx pet off               # alias - disable buddy</code></pre>
+
+  <hr />
+
+  <h2 id="context-packages">{t('docs.cliReference.packTitle')}</h2>
+
+  <p><Fragment set:html={t('docs.cliReference.packDesc')} /></p>
+
+  <h3 id="pack-create"><code>lean-ctx pack create --name &lt;name&gt; [--layers &lt;layers&gt;]</code></h3>
+  <p>
+    Create a context package from the current project. Layers default to all available
+    (<code>knowledge,graph,session,patterns,gotchas</code>).
+  </p>
+  <pre><code>lean-ctx pack create --name my-pkg
+lean-ctx pack create --name api-knowledge --layers knowledge,gotchas
+lean-ctx pack create --name full-snapshot --version 2.0.0</code></pre>
+
+  <h3 id="pack-list"><code>lean-ctx pack list</code></h3>
+  <p>List all installed packages with version and auto-load status.</p>
+  <pre><code>lean-ctx pack list</code></pre>
+
+  <h3 id="pack-info"><code>lean-ctx pack info &lt;name&gt;</code></h3>
+  <p>Show detailed metadata, layers, stats, and integrity hash for a package.</p>
+  <pre><code>lean-ctx pack info my-pkg</code></pre>
+
+  <h3 id="pack-export"><code>lean-ctx pack export &lt;name&gt; [-o &lt;file&gt;]</code></h3>
+  <p>Export a package to a portable <code>.lctxpkg</code> file. Default output is <code>&lt;name&gt;.lctxpkg</code>.</p>
+  <pre><code>lean-ctx pack export my-pkg
+lean-ctx pack export my-pkg -o shared/my-pkg.lctxpkg</code></pre>
+
+  <h3 id="pack-import"><code>lean-ctx pack import &lt;file&gt;</code></h3>
+  <p>Import a package from a <code>.lctxpkg</code> file. Verifies SHA-256 integrity before installing.</p>
+  <pre><code>lean-ctx pack import my-pkg.lctxpkg</code></pre>
+
+  <h3 id="pack-install"><code>lean-ctx pack install &lt;name&gt;</code></h3>
+  <p>Merge a package's context into the current project — knowledge facts, graph nodes, and gotchas.</p>
+  <pre><code>lean-ctx pack install my-pkg</code></pre>
+
+  <h3 id="pack-remove"><code>lean-ctx pack remove &lt;name&gt;</code></h3>
+  <p>Remove a package from the local registry.</p>
+  <pre><code>lean-ctx pack remove my-pkg</code></pre>
+
+  <h3 id="pack-auto-load"><code>lean-ctx pack auto-load &lt;name&gt; &lt;on|off&gt;</code></h3>
+  <p>
+    Enable or disable auto-loading. When enabled, the package is merged into the project
+    context automatically when <code>ctx_overview</code> runs at session start.
+  </p>
+  <pre><code>lean-ctx pack auto-load my-pkg on
+lean-ctx pack auto-load my-pkg off</code></pre>
 
   <hr />
 
