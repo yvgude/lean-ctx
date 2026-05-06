@@ -4701,5 +4701,6 @@
   "docs.sidebarCliReference": "CLIリファレンス",
   "docs.sidebarGuides": "ガイド",
   "docs.sidebarAdvanced": "高度",
-  "contextOs.title": "Context OS — LeanCTX"
+  "contextOs.title": "Context OS — LeanCTX",
+  "contextOs.statContextFields": "コンテキスト次元"
 }

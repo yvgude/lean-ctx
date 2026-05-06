@@ -4701,5 +4701,6 @@
   "docs.sidebarCliReference": "Referencia de CLI",
   "docs.sidebarGuides": "Guías",
   "docs.sidebarAdvanced": "Avanzado",
-  "contextOs.title": "Context OS — LeanCTX"
+  "contextOs.title": "Context OS — LeanCTX",
+  "contextOs.statContextFields": "Dimensiones de Contexto"
 }

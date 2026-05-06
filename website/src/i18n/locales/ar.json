@@ -4701,5 +4701,6 @@
   "docs.sidebarCliReference": "مرجع CLI",
   "docs.sidebarGuides": "أدلة",
   "docs.sidebarAdvanced": "متقدم",
-  "contextOs.title": "Context OS — LeanCTX"
+  "contextOs.title": "Context OS — LeanCTX",
+  "contextOs.statContextFields": "أبعاد السياق"
 }

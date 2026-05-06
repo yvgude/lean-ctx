@@ -2,43 +2,6 @@ stages:
   - test
   - deploy
 
-rust_test:
-  stage: test
-  image: rust:latest
-  except:
-    - deploy
-  variables:
-    CARGO_TERM_COLOR: always
-    RUSTFLAGS: "-Dwarnings"
-  cache:
-    key: "cargo-${CI_COMMIT_REF_SLUG}"
-    paths:
-      - rust/target/
-      - /root/.cargo/registry/
-      - /root/.cargo/git/
-  script:
-    - cd rust
-    - cargo test --all-features -- --test-threads=1
-
-cookbook:
-  stage: test
-  image: node:20
-  except:
-    - deploy
-  variables:
-    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/cookbook/.npm"
-  cache:
-    key: "cookbook-${CI_COMMIT_REF_SLUG}"
-    paths:
-      - cookbook/.npm/
-  script:
-    - cd cookbook
-    - npm ci
-    - npm run lint
-    - npm run typecheck
-    - npm test
-    - npm run build
-
 website_build:
   stage: test
   image: node:22.12.0

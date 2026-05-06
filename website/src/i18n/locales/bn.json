@@ -4701,5 +4701,6 @@
   "trust.verifyCard2Title": "Cookbook: বাস্তব ইন্টিগ্রেশন",
   "trust.verifyDesc": "LeanCTX পরীক্ষা এবং উদাহরণ প্রদান করে যাতে আপনি আপনার রিপো এবং CI-তে আচরণ যাচাই করতে পারেন।",
   "trust.verifyLabel": "কিভাবে যাচাই করবেন",
-  "trust.verifyTitle": "বিশ্বাস করো না। যাচাই করো।"
+  "trust.verifyTitle": "বিশ্বাস করো না। যাচাই করো।",
+  "contextOs.statContextFields": "প্রসঙ্গ মাত্রা"
 }

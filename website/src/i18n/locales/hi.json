@@ -4701,5 +4701,6 @@
   "docs.sidebarCliReference": "CLI संदर्भ",
   "docs.sidebarGuides": "गाइड",
   "docs.sidebarAdvanced": "उन्नत",
-  "contextOs.title": "Context OS — LeanCTX"
+  "contextOs.title": "Context OS — LeanCTX",
+  "contextOs.statContextFields": "संदर्भ आयाम"
 }
