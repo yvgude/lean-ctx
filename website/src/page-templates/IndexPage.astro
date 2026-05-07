@@ -64,29 +64,7 @@ const faqJsonLd = JSON.stringify({
           </a>
         </div>
 
-        <!-- Entry Points -->
-        <div class="grid" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem); gap: clamp(0.5rem, 0.375rem + 0.25vw, 0.75rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));">
-          <a href={lp('/context-os/intelligence')} class="card group animate-entrance stagger-2" style="padding: 0.75rem 1rem; text-decoration: none; transition: border-color 0.2s ease;">
-            <span class="flex items-center gap-2">
-              <span class="text-accent font-mono fluid-label">01</span>
-              <span class="font-display font-semibold text-text-bright fluid-sm">{t('index.entryIntelligence')}</span>
-            </span>
-          </a>
-          <a href={lp('/context-os/governance')} class="card group animate-entrance stagger-3" style="padding: 0.75rem 1rem; text-decoration: none; transition: border-color 0.2s ease;">
-            <span class="flex items-center gap-2">
-              <span class="text-accent-2 font-mono fluid-label">02</span>
-              <span class="font-display font-semibold text-text-bright fluid-sm">{t('index.entryGovernance')}</span>
-            </span>
-          </a>
-          <a href={lp('/docs/context-field-theory')} class="card group animate-entrance stagger-4" style="padding: 0.75rem 1rem; text-decoration: none; transition: border-color 0.2s ease;">
-            <span class="flex items-center gap-2">
-              <span class="text-accent-3 font-mono fluid-label">03</span>
-              <span class="font-display font-semibold text-text-bright fluid-sm">{t('index.entryCft')}</span>
-            </span>
-          </a>
-        </div>
-
-        <div class="hero-proof animate-entrance stagger-3" style="margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+        <div class="hero-proof animate-entrance stagger-2" style="margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
           <div class="hero-proof-item">
             <span class="hero-proof-number font-display" id="install-count">-</span>
             <span class="hero-proof-label">{t('index.heroProofInstalls')}</span>
