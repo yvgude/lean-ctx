@@ -40,7 +40,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           {t('protocolsIndex.cepDesc')}
         </p>
         <a href={lp('/docs/concepts/protocols#cep')} class="proto-card-link text-accent">
-          Learn more <span aria-hidden="true">→</span>
+          {t('protocolsIndex.learnMore')} <span aria-hidden="true">→</span>
         </a>
       </div>
 
@@ -54,7 +54,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           {t('protocolsIndex.ccpDesc')}
         </p>
         <a href={lp('/docs/concepts/protocols#ccp')} class="proto-card-link text-accent-2">
-          Learn more <span aria-hidden="true">→</span>
+          {t('protocolsIndex.learnMore')} <span aria-hidden="true">→</span>
         </a>
       </div>
 
@@ -62,13 +62,13 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       <div class="proto-card card animate-entrance" id="tdd">
         <div class="proto-card-badge" style="color: var(--color-accent-3); border-color: rgba(192,132,252,0.25);">TDD</div>
         <h3 class="fluid-h3 font-bold font-display text-text-bright" style="margin: 0.75rem 0 0.5rem;">
-          Token Dense Dialect
+          {t('protocolsIndex.tddTitle')}
         </h3>
         <p class="fluid-sm text-muted" style="margin-bottom: 1.25rem;">
           {t('protocolsIndex.tddDesc')}
         </p>
         <a href={lp('/docs/concepts/protocols#tdd')} class="proto-card-link text-accent-3">
-          Learn more <span aria-hidden="true">→</span>
+          {t('protocolsIndex.learnMore')} <span aria-hidden="true">→</span>
         </a>
       </div>
 
@@ -76,15 +76,13 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       <div class="proto-card card animate-entrance" id="clp">
         <div class="proto-card-badge" style="color: var(--color-accent); border-color: rgba(52,211,153,0.25);">CLP</div>
         <h3 class="fluid-h3 font-bold font-display text-text-bright" style="margin: 0.75rem 0 0.5rem;">
-          Context Layered Preload
+          {t('protocolsIndex.clpTitle')}
         </h3>
         <p class="fluid-sm text-muted" style="margin-bottom: 1.25rem;">
-          CLP pre-loads the most relevant files at session start based on your task description.
-          Files are loaded in three layers — entry (full), context (map), and reference — so the
-          AI starts with the right context at a fraction of the token cost.
+          {t('protocolsIndex.clpDesc')}
         </p>
         <a href={lp('/docs/concepts/protocols#clp')} class="proto-card-link text-accent">
-          Learn more <span aria-hidden="true">→</span>
+          {t('protocolsIndex.learnMore')} <span aria-hidden="true">→</span>
         </a>
       </div>
 
@@ -92,15 +90,13 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       <div class="proto-card card animate-entrance" id="a2a">
         <div class="proto-card-badge" style="color: var(--color-accent-2); border-color: rgba(129,140,248,0.25);">A2A</div>
         <h3 class="fluid-h3 font-bold font-display text-text-bright" style="margin: 0.75rem 0 0.5rem;">
-          Agent-to-Agent
+          {t('protocolsIndex.a2aTitle')}
         </h3>
         <p class="fluid-sm text-muted" style="margin-bottom: 1.25rem;">
-          A2A coordinates multiple AI agents on the same project. It provides an agent registry,
-          message bus, task delegation, shared cache, and persistent diaries — everything needed
-          for multi-agent workflows on a single codebase.
+          {t('protocolsIndex.a2aDesc')}
         </p>
         <a href={lp('/docs/concepts/multi-agent')} class="proto-card-link text-accent-2">
-          Learn more <span aria-hidden="true">→</span>
+          {t('protocolsIndex.learnMore')} <span aria-hidden="true">→</span>
         </a>
       </div>
 

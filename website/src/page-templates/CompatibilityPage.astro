@@ -74,7 +74,7 @@ const shellOnlyTools = [
         <div class="card p-6 animate-entrance">
           <div class="flex items-start justify-between mb-4">
             <h3 class="fluid-h3 font-semibold font-display text-text-bright">{tool.name}</h3>
-            <span class="text-[9px] font-mono px-2 py-1 rounded-full bg-accent/8 text-accent border border-accent/15 whitespace-nowrap">Mode-based (CLI-first / MCP / Hybrid)</span>
+            <span class="text-[9px] font-mono px-2 py-1 rounded-full bg-accent/8 text-accent border border-accent/15 whitespace-nowrap">{t('compatibility.modeBadge')}</span>
           </div>
           <div class="flex items-center gap-2">
             <code class="text-[11px] font-mono text-muted bg-surface-2 px-2.5 py-1 rounded-md border border-border/50">{tool.setup}</code>
@@ -240,9 +240,9 @@ const shellOnlyTools = [
 <section class="relative section-y" id="contracts">
   <div class="content-grid">
     <SectionHeading
-      label="Stability"
-      title="Contract Versioning"
-      highlight="& Stability"
+      label={t('compatibility.contractsLabel')}
+      title={t('compatibility.contractsTitle')}
+      highlight={t('compatibility.contractsHighlight')}
       variant="full"
       breakHighlight={false}
       titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
@@ -250,34 +250,33 @@ const shellOnlyTools = [
       descMaxWidth="44rem"
     />
     <p class="fluid-body text-muted" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); max-width: 48rem;">
-      LeanCTX is infrastructure. Contracts are stable promises across tool schemas, proof artifacts, and delivery APIs.
-      When a breaking change happens, we bump the relevant contract version and ship migration notes.
+      {t('compatibility.contractsDesc')}
     </p>
 
     <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
       <div class="card p-6 animate-entrance">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-3">Versioning Rules</h3>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-3">{t('compatibility.versioningRulesTitle')}</h3>
         <ul class="space-y-2 fluid-sm text-muted">
-          <li><strong class="text-text-bright">Schema versions are integers</strong> &mdash; <code class="text-xs font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-border/50">schema_version</code> / <code class="text-xs font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-border/50">contract_version</code></li>
-          <li><strong class="text-text-bright">Breaking change</strong> &mdash; bumps version + migration notes</li>
-          <li><strong class="text-text-bright">Non-breaking change</strong> &mdash; version stays, additive changes documented</li>
+          <li set:html={t('compatibility.versionRule1')} />
+          <li set:html={t('compatibility.versionRule2')} />
+          <li set:html={t('compatibility.versionRule3')} />
         </ul>
       </div>
       <div class="card p-6 animate-entrance">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-3">CI Gates</h3>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-3">{t('compatibility.ciGatesTitle')}</h3>
         <ul class="space-y-2 fluid-sm text-muted">
-          <li><code class="text-xs font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-border/50">contracts_md_up_to_date</code> ensures CONTRACTS.md stays in sync with runtime versions</li>
-          <li><code class="text-xs font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-border/50">manifest_drift_gate</code> ensures the tool manifest stays SSOT</li>
+          <li set:html={t('compatibility.ciGate1')} />
+          <li set:html={t('compatibility.ciGate2')} />
         </ul>
       </div>
       <div class="card p-6 animate-entrance">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-3">Related Contracts</h3>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-3">{t('compatibility.relatedContractsTitle')}</h3>
         <ul class="space-y-2 fluid-sm">
-          <li><a href={lp('/docs/api-reference#http-mcp')} class="text-accent hover:underline">HTTP MCP Contract v1</a></li>
-          <li><a href={lp('/docs/team-server')} class="text-accent hover:underline">Team Server Contract v1</a></li>
+          <li><a href={lp('/docs/api-reference#http-mcp')} class="text-accent hover:underline">{t('compatibility.relatedHttp')}</a></li>
+          <li><a href={lp('/docs/team-server')} class="text-accent hover:underline">{t('compatibility.relatedTeam')}</a></li>
           <li>
             <a href="https://github.com/yvgude/lean-ctx/blob/main/CONTRACTS.md" target="_blank" rel="noopener" class="text-accent hover:underline inline-flex items-center gap-1">
-              CONTRACTS.md on GitHub
+              {t('compatibility.relatedGithub')}
               <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
             </a>
           </li>

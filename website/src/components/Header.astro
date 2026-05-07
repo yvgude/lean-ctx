@@ -39,7 +39,7 @@ const learnColumns = [
   {
     title: t('nav.learn.getStarted'),
     items: [
-      { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: 'Start here' },
+      { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: t('nav.learn.startHereBadge') },
       { label: t('nav.learn.firstSession'), href: lp('/docs/guides/first-session'), description: t('nav.learn.firstSessionDesc'), icon: ico.clock },
       { label: t('nav.learn.quickReference'), href: lp('/docs/quick-reference'), description: t('nav.learn.quickReferenceDesc'), icon: ico.list },
       { label: t('nav.learn.ideSetup'), href: lp('/docs/guides/editor-integrations'), description: t('nav.learn.ideSetupDesc'), icon: ico.gear },
@@ -66,7 +66,7 @@ const learnColumns = [
 
 const contextOsColumns = [
   {
-    title: 'Core',
+    title: t('nav.contextOs.coreTitle'),
     items: [
       { label: t('nav.contextOs.overviewLabel'), href: lp('/context-os'), description: t('nav.contextOs.overviewDesc'), icon: ico.grid, badge: 'Start' },
       { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: ico.doc },
@@ -75,7 +75,7 @@ const contextOsColumns = [
     ],
   },
   {
-    title: 'Advanced',
+    title: t('nav.contextOs.advancedTitle'),
     items: [
       { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: ico.check },
       { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: ico.bulb },
@@ -107,11 +107,11 @@ const docsColumns = [
     title: t('nav.docs.reference'),
     items: [
       { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
-      { label: 'API Reference', href: lp('/docs/api-reference'), description: 'REST endpoints & SDK', icon: ico.code },
+      { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference'), description: t('nav.docs.apiReferenceDesc'), icon: ico.code },
       { label: t('nav.docs.contextPackages'), href: lp('/docs/context-packages'), description: t('nav.docs.contextPackagesDesc'), icon: ico.share },
       { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
-      { label: t('docs.sidebarGraph'), href: lp('/docs/graph'), description: 'Context graph visualization', icon: ico.graph },
-      { label: 'Security', href: lp('/docs/security'), description: 'PathJail, scopes, audit trail', icon: ico.shield },
+      { label: t('docs.sidebarGraph'), href: lp('/docs/graph'), description: t('nav.docs.graphDesc'), icon: ico.graph },
+      { label: t('nav.docs.security'), href: lp('/docs/security'), description: t('nav.docs.securityDesc'), icon: ico.shield },
     ],
   },
 ];
@@ -120,7 +120,7 @@ const toolsColumns = [
   {
     title: t('nav.tools.browse'),
     items: [
-      { label: t('nav.tools.allTools'), href: lp('/docs/tools'), description: t('nav.tools.allToolsDesc'), icon: ico.wrench, badge: '56 tools' },
+      { label: t('nav.tools.allTools'), href: lp('/docs/tools'), description: t('nav.tools.allToolsDesc'), icon: ico.wrench, badge: t('nav.tools.toolsBadge') },
     ],
   },
   {
@@ -256,7 +256,7 @@ const toolsColumns = [
         <a href={lp('/docs/context-packages')} class="mobile-nav-link">{t('nav.docs.contextPackages')}</a>
         <a href={lp('/docs/graph')} class="mobile-nav-link">{t('docs.sidebarGraph')}</a>
         <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
-        <a href={lp('/docs/api-reference')} class="mobile-nav-link">API Reference</a>
+        <a href={lp('/docs/api-reference')} class="mobile-nav-link">{t('nav.docs.apiReference')}</a>
         <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>
       </div>
 
