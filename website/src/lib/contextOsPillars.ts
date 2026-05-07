@@ -46,7 +46,7 @@ export interface Pillar {
   };
   tools: string[];
   docsLinks: string[];
-  requiresTeamServer?: boolean;
+  /** @deprecated removed — all features work locally */
   relatedPillars?: string[];
 }
 
@@ -147,12 +147,16 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.intelligence.feature6Title', descKey: 'pillar.intelligence.feature6Desc', icon: featureIcon },
       { titleKey: 'pillar.intelligence.feature7Title', descKey: 'pillar.intelligence.feature7Desc', icon: featureIcon },
       { titleKey: 'pillar.intelligence.feature8Title', descKey: 'pillar.intelligence.feature8Desc', icon: featureIcon },
+      { titleKey: 'pillar.intelligence.feature9Title', descKey: 'pillar.intelligence.feature9Desc', icon: featureIcon },
+      { titleKey: 'pillar.intelligence.feature10Title', descKey: 'pillar.intelligence.feature10Desc', icon: featureIcon },
+      { titleKey: 'pillar.intelligence.feature11Title', descKey: 'pillar.intelligence.feature11Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.intelligenceRouting', anchor: '#routing' },
       { labelKey: 'nav.pillars.intelligenceModes', anchor: '#modes' },
       { labelKey: 'nav.pillars.intelligenceBudgets', anchor: '#budgets' },
       { labelKey: 'nav.pillars.intelligenceCep', anchor: '#cep' },
+      { labelKey: 'nav.pillars.intelligenceCft', anchor: '#cft' },
     ],
     protocol: {
       titleKey: 'pillar.intelligence.protocolTitle',
@@ -162,7 +166,7 @@ export const pillars: Pillar[] = [
     tools: [
       'ctx_intent', 'ctx_overview', 'ctx_preload', 'ctx_prefetch',
       'ctx_dedup', 'ctx_response', 'ctx_benchmark', 'ctx_context',
-      'ctx_routes', 'ctx_feedback',
+      'ctx_routes', 'ctx_feedback', 'ctx_control', 'ctx_compile', 'ctx_plan',
     ],
     docsLinks: [
       '/docs/intelligence-layer',
@@ -252,6 +256,8 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.governance.feature5Title', descKey: 'pillar.governance.feature5Desc', icon: featureIcon },
       { titleKey: 'pillar.governance.feature6Title', descKey: 'pillar.governance.feature6Desc', icon: featureIcon },
       { titleKey: 'pillar.governance.feature7Title', descKey: 'pillar.governance.feature7Desc', icon: featureIcon },
+      { titleKey: 'pillar.governance.feature8Title', descKey: 'pillar.governance.feature8Desc', icon: featureIcon },
+      { titleKey: 'pillar.governance.feature9Title', descKey: 'pillar.governance.feature9Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.governanceRoles', anchor: '#roles' },
@@ -259,9 +265,10 @@ export const pillars: Pillar[] = [
       { labelKey: 'nav.pillars.governanceBudgets', anchor: '#budgets' },
       { labelKey: 'nav.pillars.governanceTeam', anchor: '#team' },
       { labelKey: 'nav.pillars.governanceSecurity', anchor: '#security' },
+      { labelKey: 'nav.pillars.governanceOverlays', anchor: '#overlays' },
     ],
     tools: [
-      'ctx_workflow', 'ctx_cost', 'ctx_review', 'ctx_wrapped', 'ctx_execute',
+      'ctx_workflow', 'ctx_cost', 'ctx_review', 'ctx_wrapped', 'ctx_execute', 'ctx_control',
     ],
     docsLinks: [
       '/docs/agent-harness',
@@ -424,7 +431,6 @@ export const pillars: Pillar[] = [
       '/docs/concepts/multi-agent',
       '/docs/team-server',
     ],
-    requiresTeamServer: true,
     relatedPillars: ['context-bus', 'sdk'],
   },
   {
@@ -475,7 +481,6 @@ export const pillars: Pillar[] = [
       '/docs/team-server',
       '/docs/concepts/multi-agent',
     ],
-    requiresTeamServer: true,
     relatedPillars: ['shared-sessions', 'sdk'],
   },
   {
@@ -528,7 +533,6 @@ export const pillars: Pillar[] = [
       '/docs/team-server',
       '/docs/api-reference',
     ],
-    requiresTeamServer: true,
     relatedPillars: ['shared-sessions', 'context-bus'],
   },
 ];

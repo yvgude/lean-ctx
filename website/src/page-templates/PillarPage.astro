@@ -71,15 +71,6 @@ const relatedPillars = (pillar.relatedPillars ?? [])
   </Fragment>
 </PageHero>
 
-{pillar.requiresTeamServer && (
-  <div class="content-grid" style="margin-top: -1rem; margin-bottom: 1rem;">
-    <div class="animate-entrance" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 8px; background: color-mix(in srgb, var(--color-accent-2) 8%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-accent-2) 20%, var(--color-border)); font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-      <svg class="w-4 h-4" style="color: var(--color-accent-2);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3"/></svg>
-      <span class="text-muted">{t('pillar.requiresTeamServer')}</span>
-    </div>
-  </div>
-)}
-
 <div class="section-divider content-grid"></div>
 
 <!-- 2. PROBLEM / SOLUTION SPLIT with Terminal Demo -->

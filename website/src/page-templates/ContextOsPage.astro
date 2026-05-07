@@ -509,43 +509,12 @@ const stats = [
       {t('index.sixPillarsSubline')}
     </p>
 
-    <h3 class="font-display fluid-h3 font-semibold text-muted animate-entrance stagger-2" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-transform: uppercase; letter-spacing: 0.05em; font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">Core</h3>
     <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-      {pillars.filter(p => !p.requiresTeamServer).map((p, i) => (
+      {pillars.map((p, i) => (
         <a
           href={lp(`/context-os/${p.slug}`)}
           class={`card group animate-entrance stagger-${1 + i}`}
           style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;"
-        >
-          <div class="flex items-center gap-3" style="margin-bottom: 0.75rem;">
-            <div class="w-9 h-9 rounded-lg flex items-center justify-center bg-accent/10" style="border: 1px solid var(--color-border);">
-              <span class="text-accent" set:html={p.icon} />
-            </div>
-            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">
-              {t(p.titleKey)}
-            </h3>
-          </div>
-          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.75rem 0;">
-            {t(p.navDescKey)}
-          </p>
-          <div class="flex items-center justify-between">
-            <span class="inline-flex items-center gap-2 text-accent font-medium fluid-label">
-              {p.tools.length} {t('contextOs.toolsLabel')}
-              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-            </span>
-            <span class="fluid-label text-muted">{p.features.length} {t('contextOs.featuresLabel')}</span>
-          </div>
-        </a>
-      ))}
-    </div>
-
-    <h3 class="font-display fluid-h3 font-semibold text-muted animate-entrance" style="margin-top: clamp(2.5rem, 2rem + 1.5vw, 4rem); margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-transform: uppercase; letter-spacing: 0.05em; font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">Multi-Agent</h3>
-    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-      {pillars.filter(p => p.requiresTeamServer).map((p, i) => (
-        <a
-          href={lp(`/context-os/${p.slug}`)}
-          class={`card group animate-entrance stagger-${1 + i}`}
-          style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease; border-color: color-mix(in srgb, var(--color-accent) 20%, var(--color-border));"
         >
           <div class="flex items-center gap-3" style="margin-bottom: 0.75rem;">
             <div class="w-9 h-9 rounded-lg flex items-center justify-center bg-accent/10" style="border: 1px solid var(--color-border);">
