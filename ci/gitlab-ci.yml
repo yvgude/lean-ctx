@@ -1,42 +1,18 @@
+# GitLab CI — Website deployment only
+# All Rust CI (test, clippy, fmt, benchmarks, coverage) runs on GitHub Actions.
+# This pipeline is only active on the `deploy` branch for website builds.
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "deploy"
+    - when: never
+
 stages:
-  - test
+  - build
   - deploy
 
-rust_test:
-  stage: test
-  image: rust:latest
-  variables:
-    CARGO_TERM_COLOR: always
-    RUSTFLAGS: "-Dwarnings"
-  cache:
-    key: "cargo-${CI_COMMIT_REF_SLUG}"
-    paths:
-      - rust/target/
-      - /root/.cargo/registry/
-      - /root/.cargo/git/
-  script:
-    - cd rust
-    - cargo test --all-features -- --test-threads=1
-
-cookbook:
-  stage: test
-  image: node:20
-  variables:
-    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/cookbook/.npm"
-  cache:
-    key: "cookbook-${CI_COMMIT_REF_SLUG}"
-    paths:
-      - cookbook/.npm/
-  script:
-    - cd cookbook
-    - npm ci
-    - npm run lint
-    - npm run typecheck
-    - npm test
-    - npm run build
-
 website_build:
-  stage: test
+  stage: build
   image: node:22.12.0
   variables:
     NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/website/.npm"
@@ -53,8 +29,6 @@ deploy_website:
   stage: deploy
   image: docker:24
   needs: []
-  only:
-    - deploy
   variables:
     CONTAINER_NAME: leanctx-web
     IMAGE_NAME: lean-ctx-web
@@ -78,4 +52,3 @@ deploy_website:
     - sleep 2
     - docker ps --filter name=${CONTAINER_NAME} --format "{{.Status}}"
     - echo "Deploy complete!"
-
