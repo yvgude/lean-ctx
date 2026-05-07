@@ -9,7 +9,6 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
-const mcpToolMore = Math.max(0, manifest.counts.granular - 3);
 
 const faqSchema = JSON.stringify({
   '@context': 'https://schema.org',
@@ -224,213 +223,20 @@ const faqSchema = JSON.stringify({
 <div class="section-divider content-grid"></div>
 
 
-<!-- ═══════ THREE LAYERS ═══════ -->
+<!-- ═══════ ARCHITECTURE CTA ═══════ -->
 <section class="relative section-y">
   <div class="content-grid">
-    <SectionHeading
-      label={t('howItWorks.layersLabel')}
-      title={t('howItWorks.layersTitle')}
-      highlight={t('howItWorks.layersTitleHighlight')}
-      description={t('howItWorks.layersDesc')}
-      variant="full"
-      breakHighlight={false}
-      descMaxWidth="48rem"
-      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
-    />
-
-    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-
-      <a href={lp('/mcp-server')} class="hiw-layer-link card animate-entrance">
-        <div class="hiw-layer-badge">{t('howItWorks.layer1Badge')}</div>
-        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-2">{t('howItWorks.layer1Title')}</h3>
-        <p class="fluid-sm text-muted mb-4">{t('howItWorks.layer1Desc')}</p>
-        <div class="flex flex-wrap gap-1.5 mb-4">
-          <span class="hiw-tool-tag">ctx_read</span>
-          <span class="hiw-tool-tag">ctx_shell</span>
-          <span class="hiw-tool-tag">ctx_search</span>
-          <span class="hiw-tool-tag text-muted/50">+{mcpToolMore}</span>
-        </div>
-        <span class="hiw-layer-cta">
-          {t('howItWorks.layer1Cta')}
-          <svg class="w-3.5 h-3.5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </span>
+    <div class="card animate-entrance" style="padding: clamp(2rem, 1.5rem + 1vw, 3rem); border-color: color-mix(in srgb, var(--color-accent) 22%, transparent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));">
+      <h3 class="fluid-h2 font-bold font-display text-text-bright" style="margin: 0 0 0.75rem 0;">
+        {t('howItWorks.archCtaTitle')}
+      </h3>
+      <p class="fluid-sm text-muted" style="margin: 0 0 1.5rem 0; max-width: 44rem;">
+        {t('howItWorks.archCtaDesc')}
+      </p>
+      <a href={lp('/context-os')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.6rem, 0.5rem + 0.25vw, 0.8rem) clamp(1.25rem, 0.9rem + 0.6vw, 1.75rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('howItWorks.archCtaLink')}
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
-
-      <a href={lp('/shell-hook')} class="hiw-layer-link card animate-entrance">
-        <div class="hiw-layer-badge">{t('howItWorks.layer2Badge')}</div>
-        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-2">{t('howItWorks.layer2Title')}</h3>
-        <p class="fluid-sm text-muted mb-4">{t('howItWorks.layer2Desc')}</p>
-        <div class="flex flex-wrap gap-1.5 mb-4">
-          <span class="hiw-tool-tag">git</span>
-          <span class="hiw-tool-tag">npm</span>
-          <span class="hiw-tool-tag">cargo</span>
-          <span class="hiw-tool-tag text-muted/50">+87</span>
-        </div>
-        <span class="hiw-layer-cta">
-          {t('howItWorks.layer2Cta')}
-          <svg class="w-3.5 h-3.5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </span>
-      </a>
-
-      <a href={lp('/protocols')} class="hiw-layer-link card animate-entrance">
-        <div class="hiw-layer-badge">{t('howItWorks.layer3Badge')}</div>
-        <h3 class="fluid-h3 font-bold font-display text-text-bright mb-2">{t('howItWorks.layer3Title')}</h3>
-        <p class="fluid-sm text-muted mb-4">{t('howItWorks.layer3Desc')}</p>
-        <div class="flex flex-wrap gap-1.5 mb-4">
-          <span class="hiw-tool-tag">CEP</span>
-          <span class="hiw-tool-tag">CCP</span>
-          <span class="hiw-tool-tag">TDD</span>
-        </div>
-        <p class="fluid-sm text-muted mt-2">{t('howItWorks.layer3Explanation')}</p>
-        <span class="hiw-layer-cta">
-          {t('howItWorks.layer3Cta')}
-          <svg class="w-3.5 h-3.5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        </span>
-      </a>
-
-    </div>
-  </div>
-</section>
-
-
-<div class="section-divider content-grid"></div>
-
-
-<!-- ═══════ SCIENTIFIC COMPRESSION ═══════ -->
-<section class="relative section-y">
-  <div class="content-grid">
-    <SectionHeading
-      label={t('howItWorks.scienceLabel')}
-      title={t('howItWorks.scienceTitle')}
-      highlight={t('howItWorks.scienceTitleHighlight')}
-      description={t('howItWorks.scienceDesc')}
-      variant="full"
-      breakHighlight={false}
-      descMaxWidth="48rem"
-      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
-    />
-
-    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-      <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('howItWorks.alg1Title')}</h3>
-        <p class="fluid-sm text-muted">{t('howItWorks.alg1Desc')}</p>
-      </div>
-      <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('howItWorks.alg2Title')}</h3>
-        <p class="fluid-sm text-muted">{t('howItWorks.alg2Desc')}</p>
-      </div>
-      <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('howItWorks.alg3Title')}</h3>
-        <p class="fluid-sm text-muted">{t('howItWorks.alg3Desc')}</p>
-      </div>
-      <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('howItWorks.alg4Title')}</h3>
-        <p class="fluid-sm text-muted">{t('howItWorks.alg4Desc')}</p>
-      </div>
-      <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('howItWorks.alg5Title')}</h3>
-        <p class="fluid-sm text-muted">{t('howItWorks.alg5Desc')}</p>
-      </div>
-      <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('howItWorks.alg6Title')}</h3>
-        <p class="fluid-sm text-muted">{t('howItWorks.alg6Desc')}</p>
-      </div>
-    </div>
-
-    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
-      <a href={lp('/docs/intelligence-layer')} class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium">
-        {t('howItWorks.scienceLink')}
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-      </a>
-    </div>
-
-    <div class="animate-entrance" style="margin-top: clamp(3rem, 2rem + 2vw, 5rem);">
-      <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2" set:html={t('howItWorks.advancedPipelineTitle')} />
-      <p class="fluid-sm text-muted mb-4" set:html={t('howItWorks.advancedPipelineDesc')} />
-
-      <div class="rounded-lg border border-border overflow-hidden">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="bg-surface-2">
-              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('howItWorks.advPipelineComponent')}</th>
-              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('howItWorks.advPipelineRole')}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border/30">
-            <tr>
-              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Thompson Sampling Bandit</td>
-              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advThompson')} />
-            </tr>
-            <tr>
-              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Tree-sitter AST Pruning</td>
-              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advTreeSitter')} />
-            </tr>
-            <tr>
-              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">IDF Deduplication</td>
-              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advIdf')} />
-            </tr>
-            <tr>
-              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Information-Bottleneck Filter</td>
-              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advIbFilter')} />
-            </tr>
-            <tr>
-              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">Verbatim Compaction</td>
-              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm" set:html={t('howItWorks.advVerbatim')} />
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<div class="section-divider content-grid"></div>
-
-
-<!-- ═══════ COMPRESSION QUALITY ═══════ -->
-<section class="relative section-y">
-  <div class="content-grid">
-    <SectionHeading
-      label={t('howItWorks.qualityLabel')}
-      title={t('howItWorks.qualityTitle')}
-      highlight={t('howItWorks.qualityTitleHighlight')}
-      description={t('howItWorks.qualityDesc')}
-      variant="full"
-      breakHighlight={false}
-      descMaxWidth="48rem"
-      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
-    />
-
-    <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent">98%</span>
-        <span class="stat-desc">{t('howItWorks.stat1Desc')}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent-2">97%</span>
-        <span class="stat-desc">{t('howItWorks.stat2Desc')}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent-3">96%</span>
-        <span class="stat-desc">{t('howItWorks.stat3Desc')}</span>
-      </div>
-    </div>
-
-    <div class="animate-entrance">
-      <div class="compare-card">
-        <div class="compare-header compare-header--good">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-          {t('howItWorks.verifyTitle')}
-        </div>
-        <div class="compare-body" style="padding: 1.25rem;">
-          <p class="fluid-sm text-muted" style="margin-bottom: 0.75rem;" set:html={t('howItWorks.verifyDesc')} />
-          <a href={lp('/context-os/benchmark')} class="inline-flex items-center fluid-sm text-accent hover:underline font-medium" style="gap: 0.375rem;">
-            {t('howItWorks.verifyLink')}
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-          </a>
-        </div>
-      </div>
     </div>
   </div>
 </section>
@@ -494,20 +300,6 @@ const faqSchema = JSON.stringify({
   .hiw-step-card { padding: 1.5rem; }
   .hiw-step-num { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-accent); opacity: 0.3; line-height: 1; margin-bottom: 0.75rem; }
   .hiw-step-code { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent); border-radius: 8px; padding: 8px 12px; }
-  .hiw-layer-link { display: flex; flex-direction: column; padding: 1.75rem 1.5rem 1.5rem; position: relative; text-decoration: none; }
-  .hiw-layer-link:hover .hiw-layer-cta { color: var(--color-accent); }
-  .hiw-layer-badge { position: absolute; top: -10px; left: 20px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--color-accent); background: var(--color-bg); border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent); border-radius: 6px; padding: 2px 10px; letter-spacing: 0.05em; text-transform: uppercase; }
-  .hiw-layer-cta { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--color-muted); margin-top: auto; transition: color 0.2s ease; }
-  .hiw-tool-tag { font-family: var(--font-mono); font-size: 11px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; padding: 4px 10px; }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
-  .stat-item { display: flex; flex-direction: column; padding: clamp(1.25rem, 1rem + 1vw, 2rem); background: var(--color-bg); }
-  .stat-number { font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin-bottom: 0.625rem; }
-  .stat-desc { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); color: var(--color-muted); line-height: 1.5; }
-  @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
-  .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
-  .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
-  .compare-header--good { background: rgba(52, 211, 153, 0.04); color: var(--color-accent); }
-  .compare-body { padding: 1.25rem; background: var(--color-surface); }
   .layer-card { display: flex; flex-direction: column; padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem); border: 1px solid var(--color-border); background: var(--color-bg); transition: background 0.2s ease; }
   .layer-card:first-child { border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0; }
   .layer-card:last-child { border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px); }

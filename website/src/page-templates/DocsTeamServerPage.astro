@@ -12,13 +12,19 @@ const sidebar = [
     items: [
       { label: t('docsTeam.sidebarOverview'), href: lp('/docs/team-server') },
       { label: t('docsTeam.sidebarQuickstart'), href: lp('/docs/team-server') + '#quickstart' },
+      { label: t('docsTeam.sidebarDocker'), href: lp('/docs/team-server') + '#docker' },
       { label: t('docsTeam.sidebarConfig'), href: lp('/docs/team-server') + '#configuration' },
       { label: t('docsTeam.sidebarTokens'), href: lp('/docs/team-server') + '#tokens' },
+      { label: t('docsTeam.sidebarConnect'), href: lp('/docs/team-server') + '#connecting' },
       { label: t('docsTeam.sidebarWorkspaces'), href: lp('/docs/team-server') + '#workspaces' },
+      { label: t('docsTeam.sidebarSessions'), href: lp('/docs/team-server') + '#sessions' },
+      { label: t('docsTeam.sidebarGovernance'), href: lp('/docs/team-server') + '#governance' },
+      { label: t('docsTeam.sidebarMonitoring'), href: lp('/docs/team-server') + '#monitoring' },
       { label: t('docsTeam.sidebarAuth'), href: lp('/docs/team-server') + '#authentication' },
       { label: t('docsTeam.sidebarRateLimits'), href: lp('/docs/team-server') + '#rate-limits' },
       { label: t('docsTeam.sidebarAudit'), href: lp('/docs/team-server') + '#audit-log' },
       { label: t('docsTeam.sidebarSync'), href: lp('/docs/team-server') + '#sync' },
+      { label: t('docsTeam.sidebarNextSteps'), href: lp('/docs/team-server') + '#next-steps' },
     ],
   },
   {
@@ -26,6 +32,8 @@ const sidebar = [
     items: [
       { label: t('docsTeam.sidebarRemoteSetup'), href: lp('/docs/remote-setup') },
       { label: t('docsTeam.sidebarSafety'), href: lp('/safety') },
+      { label: t('docsTeam.sidebarApiRef'), href: lp('/docs/api-reference') },
+      { label: t('docsTeam.sidebarProfiles'), href: lp('/docs/profiles') },
       { label: t('docsTeam.sidebarTools'), href: lp('/docs/tools') },
     ],
   },
@@ -36,6 +44,16 @@ const sidebar = [
   <div class="docs-content">
     <h1>{t('docsTeam.heading')}</h1>
     <p class="lead">{t('docsTeam.intro')}</p>
+
+    <!-- Prerequisites -->
+    <section id="prerequisites">
+      <h2>{t('docsTeam.prereqsTitle')}</h2>
+      <ul>
+        <li>LeanCTX installed on each developer's machine (<a href={lp('/docs/getting-started')}>Installation Guide</a>)</li>
+        <li>Docker (for containerized deployment) or a Linux/macOS server</li>
+        <li>Network connectivity between developer machines and the server</li>
+      </ul>
+    </section>
 
     <!-- Quick Start -->
     <section id="quickstart">
@@ -98,7 +116,28 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \\
   http://your-server:9877/v1/tools/call`}</code></pre>
     </section>
 
-    <!-- Configuration -->
+    <!-- Docker Deployment -->
+    <section id="docker">
+      <h2>{t('docsTeam.dockerTitle')}</h2>
+      <p>{t('docsTeam.dockerDesc')}</p>
+
+      <pre><code class="language-bash">{`docker run -d --name leanctx-team \\
+  -p 7700:7700 \\
+  -v leanctx-data:/data \\
+  ghcr.io/yvgude/lean-ctx:latest \\
+  serve --team --data-dir /data`}</code></pre>
+
+      <p>Or run directly from the binary:</p>
+
+      <pre><code class="language-bash">{`lean-ctx serve --team --bind 0.0.0.0:7700 --data-dir ./team-data`}</code></pre>
+
+      <p>Verify the server is running:</p>
+
+      <pre><code class="language-bash">{`curl http://your-server:7700/healthz
+# {"status":"ok","version":"3.5.1","uptime":"2m"}`}</code></pre>
+    </section>
+
+    <!-- Configuration Reference -->
     <section id="configuration">
       <h2>{t('docsTeam.configTitle')}</h2>
       <p>{t('docsTeam.configDesc')}</p>
@@ -121,7 +160,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \\
       </table>
     </section>
 
-    <!-- Tokens -->
+    <!-- Token Management -->
     <section id="tokens">
       <h2>{t('docsTeam.tokensTitle')}</h2>
       <p>{t('docsTeam.tokensDesc')}</p>
@@ -147,8 +186,32 @@ lean-ctx team token create \\
 lean-ctx team token create \\
   --config team.json \\
   --id reviewer \\
-  --scopes search,graph`}</code></pre>
+  --scopes search,graph
+
+# Create per-developer tokens with read+write access
+lean-ctx team token create --scope read,write --name "alice"
+# → Token: lctx_t_alice_a3f8...
+
+lean-ctx team token create --scope read,write,admin --name "team-lead"
+# → Token: lctx_t_lead_b7c1...`}</code></pre>
       <p>{t('docsTeam.tokensNote')}</p>
+    </section>
+
+    <!-- Connecting Agents -->
+    <section id="connecting">
+      <h2>{t('docsTeam.connectTitle')}</h2>
+      <p>{t('docsTeam.connectDesc')}</p>
+
+      <p>Add to <code>.lean-ctx/config.toml</code>:</p>
+      <pre><code class="language-toml">{`[team]
+server = "http://your-server:7700"
+token = "lctx_t_alice_a3f8..."
+workspace = "my-team"`}</code></pre>
+
+      <p>Or set via environment variables:</p>
+      <pre><code class="language-bash">{`export LEANCTX_TEAM_SERVER="http://your-server:7700"
+export LEANCTX_TEAM_TOKEN="lctx_t_alice_a3f8..."
+export LEANCTX_WORKSPACE="my-team"`}</code></pre>
     </section>
 
     <!-- Workspaces -->
@@ -164,6 +227,43 @@ lean-ctx team token create \\
   "defaultWorkspaceId": "frontend"
 }`}</code></pre>
       <p>{t('docsTeam.workspacesSwitch')}</p>
+    </section>
+
+    <!-- Team Scenarios -->
+    <section id="sessions">
+      <h2>{t('docsTeam.sessionsTitle')}</h2>
+      <p>{t('docsTeam.sessionsDesc')}</p>
+
+      <pre><code class="language-bash">{`lean-ctx session list --workspace my-team
+
+# workspace: my-team
+# channel: feat/auth-refactor  rev:14  agents: cursor, claude-code
+# channel: fix/api-timeout     rev:7   agents: windsurf
+# channel: main                rev:42  agents: copilot, kiro`}</code></pre>
+    </section>
+
+    <section id="governance">
+      <h2>{t('docsTeam.governanceTitle')}</h2>
+      <p>{t('docsTeam.governanceDesc')}</p>
+
+      <pre><code class="language-toml">{`[budget]
+max_context_tokens = 200000
+max_cost_usd = 5.0
+alert_threshold = 0.8
+
+[roles]
+default = "developer"
+
+[roles.ci]
+scope = "read"
+max_cost_usd = 1.0`}</code></pre>
+    </section>
+
+    <section id="monitoring">
+      <h2>{t('docsTeam.monitoringTitle')}</h2>
+      <p>{t('docsTeam.monitoringDesc')}</p>
+
+      <pre><code class="language-bash">{`lean-ctx observatory --open`}</code></pre>
     </section>
 
     <!-- Authentication -->
@@ -214,6 +314,19 @@ lean-ctx team sync --config team.json
 
 # Sync a specific workspace
 lean-ctx team sync --config team.json --workspace backend`}</code></pre>
+    </section>
+
+    <!-- Next Steps -->
+    <section id="next-steps">
+      <h2>{t('docsTeam.nextStepsTitle')}</h2>
+      <ul>
+        <li><a href={lp('/docs/api-reference')}>API Reference</a> — REST endpoints and SDK</li>
+        <li><a href={lp('/docs/profiles')}>Profiles</a> — Preconfigured governance presets</li>
+        <li><a href={lp('/context-os/shared-sessions')}>Shared Sessions</a> — Deep dive into session sharing</li>
+        <li><a href={lp('/context-os/context-bus')}>Context Bus</a> — Event-driven multi-agent coordination</li>
+        <li><a href={lp('/docs/remote-setup')}>Remote Setup</a> — Advanced remote deployment options</li>
+        <li><a href={lp('/docs/guides/observatory')}>Observatory</a> — Dashboard & monitoring</li>
+      </ul>
     </section>
   </div>
 </DocsLayout>

@@ -1,6 +1,9 @@
 ---
-import DocsContractVersioningPage from '../../page-templates/DocsContractVersioningPage.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+return Astro.redirect(lp('/compatibility#contracts'), 301);
 ---
-
-<DocsContractVersioningPage />
-
+<!-- redirect -->

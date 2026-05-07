@@ -48,10 +48,17 @@ const sidebar = [
     ],
   },
   {
+    title: 'Quick Start',
+    items: [
+      { label: 'One-Shot Fix', href: lp('/docs/guides/editor-integrations') + '#one-shot-fix' },
+      { label: 'IDE Matrix', href: lp('/docs/guides/editor-integrations') + '#ide-matrix' },
+      { label: 'Troubleshooting', href: lp('/docs/guides/editor-integrations') + '#troubleshooting' },
+    ],
+  },
+  {
     title: 'Related',
     items: [
       { label: 'Getting Started', href: lp('/docs/getting-started') },
-      { label: 'IDE Setup', href: lp('/docs/ide-setup') },
       { label: 'Configuration', href: lp('/docs/configuration') },
       { label: 'First Session', href: lp('/docs/guides/first-session') },
     ],
@@ -64,6 +71,60 @@ const sidebar = [
   description="Set up lean-ctx with 22+ AI coding agents and editors. Full configuration guides for Claude Code, Cursor, Codex, Gemini, Copilot, and more."
   sidebar={sidebar}
 >
+  <!-- ─── Quick Start ─── -->
+
+  <h2 id="one-shot-fix">One-Shot Fix</h2>
+  <p>If something broke after an update, run these commands in order:</p>
+  <pre><code>lean-ctx init --global
+lean-ctx init --agent cursor
+lean-ctx doctor</code></pre>
+  <p>After configuring an IDE, <strong>restart the IDE completely</strong> so it reconnects to MCP. MCP changes do not apply to an already running process.</p>
+
+  <h2 id="ide-matrix">IDE Matrix</h2>
+  <p>Common MCP config locations and the fastest command to fix them:</p>
+
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>MCP config</th><th>Fix command</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Cursor</td><td><code>~/.cursor/mcp.json</code></td><td><code>lean-ctx init --agent cursor</code></td></tr>
+      <tr><td>Claude Code</td><td><code>~/.claude.json</code></td><td><code>lean-ctx init --agent claude</code></td></tr>
+      <tr><td>Windsurf</td><td><code>~/.codeium/windsurf/mcp_config.json</code></td><td><code>lean-ctx init --agent windsurf</code></td></tr>
+      <tr><td>VS Code / Copilot</td><td><code>.../Code/User/mcp.json</code></td><td><code>lean-ctx init --agent copilot</code></td></tr>
+      <tr><td>Zed</td><td><code>.../zed/settings.json</code></td><td><code>lean-ctx setup</code></td></tr>
+      <tr><td>OpenCode</td><td><code>~/.config/opencode/opencode.json</code></td><td><code>lean-ctx setup</code></td></tr>
+      <tr><td>Pi Coding Agent</td><td><code>~/.pi/agent/mcp.json</code></td><td><code>lean-ctx init --agent pi</code></td></tr>
+      <tr><td>Gemini CLI</td><td><code>~/.gemini/settings.json</code></td><td><code>lean-ctx init --agent gemini</code></td></tr>
+      <tr><td>Hermes Agent</td><td><code>~/.hermes/config.yaml</code></td><td><code>lean-ctx init --agent hermes</code></td></tr>
+    </tbody>
+  </table>
+  <p class="text-sm text-muted mt-2">If you are unsure, run <code>lean-ctx doctor</code> — it prints what it detected and what to fix.</p>
+
+  <hr />
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>It shows 0 tokens saved</h3>
+  <p>This usually means MCP tools are not being used yet, or not enough commands were executed since last reset:</p>
+  <pre><code>lean-ctx doctor
+lean-ctx gain --reset
+lean-ctx gain</code></pre>
+
+  <h3>MCP config points to an old binary path</h3>
+  <p>If you switched install method (Homebrew / cargo / install.sh), update the MCP entry:</p>
+  <pre><code>lean-ctx init --agent cursor
+lean-ctx init --agent claude
+lean-ctx setup</code></pre>
+
+  <h3>Homebrew link fails (binary already exists)</h3>
+  <p>If you previously installed via <code>cargo install</code>, Homebrew may fail to link:</p>
+  <pre><code>brew unlink lean-ctx || true
+brew link --overwrite lean-ctx
+lean-ctx --version</code></pre>
+
+  <hr />
+
   <p>
     lean-ctx integrates with <strong>24+ AI coding agents and editors</strong> using a combination of
     <strong>CLI-first hooks</strong> (where the client supports hook interception / a reliable terminal tool)

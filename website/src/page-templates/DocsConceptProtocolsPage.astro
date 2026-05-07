@@ -150,15 +150,12 @@ const sidebar = [
   <h2 id="a2a">A2A - Agent-to-Agent Protocol</h2>
   <p>
     A2A enables coordination between multiple AI agents working on the same project.
-    Built on <code>ctx_agent</code>, <code>ctx_share</code>, <code>ctx_task</code>, and the shared session cache.
+    It provides an agent registry, message bus, task delegation, shared cache, and persistent diaries —
+    everything needed for multi-agent workflows on a single codebase.
   </p>
-  <h3>Capabilities</h3>
-  <ul>
-    <li><strong>Agent Registry:</strong> Agents register with type (cursor, claude, codex, gemini, pi) and role (dev, review, test, plan)</li>
-    <li><strong>Message Bus:</strong> Broadcast or direct messages between agents with categories (finding, warning, request, status)</li>
-    <li><strong>Task Delegation:</strong> Assign tasks to specific agents with descriptions and track completion</li>
-    <li><strong>Shared Cache:</strong> All agents share the session file cache - no duplicate reads</li>
-    <li><strong>Persistent Diaries:</strong> Agents log discoveries, decisions, blockers, and progress that persist across sessions</li>
-    <li><strong>Context Handoff:</strong> Transfer full working context (files, knowledge, workflow state) between agents or sessions</li>
-  </ul>
+  <p>
+    <a href={lp('/docs/concepts/multi-agent')} class="inline-flex items-center gap-1 font-medium">
+      Full multi-agent documentation →
+    </a>
+  </p>
 </DocsLayout>
