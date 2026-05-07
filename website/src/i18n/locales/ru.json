@@ -4322,7 +4322,7 @@
   "contextOs.modesDesc": "lean-ctx автоматически выбирает оптимальный режим интеграции для каждого агента. CLI-Redirect полностью устраняет накладные расходы MCP-схемы, Hybrid сочетает лучшее из обоих, а Full MCP обеспечивает максимальный доступ к инструментам.",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeCliDesc": "Нулевые накладные расходы MCP. Агент вызывает lean-ctx напрямую через shell — самый быстрый режим с полным сжатием.",
-  "contextOs.modeCliTag": "По умолчанию для Cursor, Claude Code, Codex",
+  "contextOs.modeCliTag": "По умолчанию для Cursor, Codex, Gemini CLI",
   "contextOs.modeHybridTitle": "Hybrid",
   "contextOs.modeHybridDesc": "MCP для кэшированного чтения (13 токенов), CLI для shell-команд и поиска — лучшее из обоих миров.",
   "contextOs.modeHybridTag": "Для Windsurf, Amp, Antigravity",

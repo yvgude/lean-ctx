@@ -4257,7 +4257,7 @@
   "contextOs.modesDesc": "lean-ctx स्वचालित रूप से प्रत्येक एजेंट के लिए इष्टतम इंटीग्रेशन मोड चुनता है। CLI-Redirect MCP स्कीमा ओवरहेड को पूरी तरह समाप्त करता है, Hybrid दोनों का सर्वश्रेष्ठ जोड़ता है, और Full MCP अधिकतम टूल एक्सेस प्रदान करता है।",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeCliDesc": "शून्य MCP ओवरहेड। एजेंट सीधे Shell के माध्यम से lean-ctx कॉल करता है — पूर्ण कंप्रेशन के साथ सबसे तेज़ मोड।",
-  "contextOs.modeCliTag": "Cursor, Claude Code, Codex के लिए डिफ़ॉल्ट",
+  "contextOs.modeCliTag": "Cursor, Codex, Gemini CLI के लिए डिफ़ॉल्ट",
   "contextOs.modeHybridTitle": "Hybrid",
   "contextOs.modeHybridDesc": "कैश्ड रीड के लिए MCP (13 टोकन), Shell कमांड और खोज के लिए CLI — दोनों दुनिया का सर्वश्रेष्ठ।",
   "contextOs.modeHybridTag": "Windsurf, Amp, Antigravity के लिए",

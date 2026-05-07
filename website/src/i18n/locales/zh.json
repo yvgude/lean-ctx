@@ -4257,7 +4257,7 @@
   "contextOs.modesDesc": "lean-ctx 自动为每个代理选择最佳集成模式。CLI-Redirect 完全消除 MCP schema 开销，Hybrid 结合两者优势，Full MCP 提供最大工具访问。",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeCliDesc": "零 MCP 开销。代理直接通过 shell 调用 lean-ctx — 最快模式，完全压缩。",
-  "contextOs.modeCliTag": "Cursor、Claude Code、Codex 默认",
+  "contextOs.modeCliTag": "Cursor、Codex、Gemini CLI 默认",
   "contextOs.modeHybridTitle": "Hybrid",
   "contextOs.modeHybridDesc": "MCP 用于缓存读取（13 tokens），CLI 用于 shell 命令和搜索 — 两全其美。",
   "contextOs.modeHybridTag": "适用于 Windsurf、Amp、Antigravity",

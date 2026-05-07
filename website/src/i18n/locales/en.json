@@ -4258,7 +4258,7 @@
   "contextOs.modesDesc": "lean-ctx automatically selects the optimal integration mode for each agent. CLI-Redirect eliminates MCP schema overhead entirely, Hybrid combines the best of both, and full MCP provides maximum tool access.",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeCliDesc": "Zero MCP overhead. The agent calls lean-ctx directly via shell — fastest mode with full compression.",
-  "contextOs.modeCliTag": "Default for Cursor, Claude Code, Codex",
+  "contextOs.modeCliTag": "Default for Cursor, Codex, Gemini CLI",
   "contextOs.modeHybridTitle": "Hybrid",
   "contextOs.modeHybridDesc": "MCP for cached reads (13 tokens), CLI for shell commands and searches — best of both worlds.",
   "contextOs.modeHybridTag": "For Windsurf, Amp, Antigravity",

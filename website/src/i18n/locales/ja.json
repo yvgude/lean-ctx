@@ -4257,7 +4257,7 @@
   "contextOs.modesDesc": "lean-ctxは各エージェントに最適な統合モードを自動選択します。CLI-RedirectはMCPスキーマのオーバーヘッドを完全に排除し、Hybridは両方の長所を組み合わせ、Full MCPは最大のツールアクセスを提供します。",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeCliDesc": "MCPオーバーヘッドゼロ。エージェントがshell経由でlean-ctxを直接呼び出す — 完全圧縮の最速モード。",
-  "contextOs.modeCliTag": "Cursor、Claude Code、Codexのデフォルト",
+  "contextOs.modeCliTag": "Cursor、Codex、Gemini CLIのデフォルト",
   "contextOs.modeHybridTitle": "Hybrid",
   "contextOs.modeHybridDesc": "キャッシュ読み取りにMCP（13トークン）、shellコマンドと検索にCLI — 両方の良いとこ取り。",
   "contextOs.modeHybridTag": "Windsurf、Amp、Antigravity向け",

@@ -635,7 +635,7 @@
   "contextOs.metaDesc": "Context OS পরিচালনা করে আপনার AI কী দেখে, মনে রাখে এবং যাচাই করে। ৫৬টি MCP টুল, ১০টি রিড মোড, ৯৫+ শেল প্যাটার্ন, গ্রাফ-চালিত বুদ্ধিমত্তা। CLI-first, ওপেন সোর্স।",
   "contextOs.metaTitle": "AI ডেভেলপমেন্টের জন্য Context OS — LeanCTX",
   "contextOs.modeCliDesc": "শূন্য MCP ওভারহেড। এজেন্ট সরাসরি Shell-এর মাধ্যমে lean-ctx কল করে — সম্পূর্ণ কম্প্রেশন সহ দ্রুততম মোড।",
-  "contextOs.modeCliTag": "Cursor, Claude Code, Codex-এর জন্য ডিফল্ট",
+  "contextOs.modeCliTag": "Cursor, Codex, Gemini CLI-এর জন্য ডিফল্ট",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeHybridDesc": "ক্যাশড রিডের জন্য MCP (১৩ টোকেন), Shell কমান্ড এবং সার্চের জন্য CLI — উভয় জগতের সেরা।",
   "contextOs.modeHybridTag": "Windsurf, Amp, Antigravity-এর জন্য",

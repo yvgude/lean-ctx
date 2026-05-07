@@ -635,7 +635,7 @@
   "contextOs.metaDesc": "O Context OS gerencia o que sua IA vê, lembra e verifica. 56 ferramentas MCP, 10 modos de leitura, 95+ padrões de shell, inteligência baseada em grafos. CLI-first, código aberto.",
   "contextOs.metaTitle": "Context OS para desenvolvimento com IA — LeanCTX",
   "contextOs.modeCliDesc": "Zero sobrecarga MCP. O agente chama lean-ctx diretamente via shell — modo mais rápido com compressão completa.",
-  "contextOs.modeCliTag": "Padrão para Cursor, Claude Code, Codex",
+  "contextOs.modeCliTag": "Padrão para Cursor, Codex, Gemini CLI",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeHybridDesc": "MCP para leituras em cache (13 tokens), CLI para comandos shell e buscas — o melhor dos dois mundos.",
   "contextOs.modeHybridTag": "Para Windsurf, Amp, Antigravity",

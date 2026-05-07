@@ -4257,7 +4257,7 @@
   "contextOs.modesDesc": "يختار lean-ctx تلقائياً وضع التكامل الأمثل لكل وكيل. CLI-Redirect يزيل عبء مخطط MCP بالكامل، Hybrid يجمع أفضل ما في الاثنين، وFull MCP يوفر أقصى وصول للأدوات.",
   "contextOs.modeCliTitle": "CLI-Redirect",
   "contextOs.modeCliDesc": "صفر عبء MCP. يستدعي الوكيل lean-ctx مباشرة عبر الشل — أسرع وضع مع ضغط كامل.",
-  "contextOs.modeCliTag": "افتراضي لـ Cursor و Claude Code و Codex",
+  "contextOs.modeCliTag": "افتراضي لـ Cursor و Codex و Gemini CLI",
   "contextOs.modeHybridTitle": "Hybrid",
   "contextOs.modeHybridDesc": "MCP للقراءات المخزنة مؤقتاً (13 رمز)، CLI لأوامر الشل والبحث — أفضل ما في العالمين.",
   "contextOs.modeHybridTag": "لـ Windsurf و Amp و Antigravity",
