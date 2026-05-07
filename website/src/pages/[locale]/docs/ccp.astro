@@ -6,6 +6,6 @@ export const getStaticPaths = getLocaleStaticPaths;
 const locale = getLocaleFromUrl(Astro.url);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-return Astro.redirect(lp('/protocols') + '#ccp', 301);
+return Astro.redirect(lp('/context-os/memory#ccp'), 301);
 ---
 <!-- redirect -->

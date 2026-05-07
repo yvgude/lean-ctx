@@ -6,6 +6,6 @@ export const getStaticPaths = getLocaleStaticPaths;
 const locale = getLocaleFromUrl(Astro.url);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-return Astro.redirect(lp('/protocols') + '#tdd', 301);
+return Astro.redirect(lp('/context-os/smart-io#tdd'), 301);
 ---
 <!-- redirect -->
