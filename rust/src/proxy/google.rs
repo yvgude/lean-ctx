@@ -10,13 +10,20 @@ use super::compress::compress_tool_result;
 use super::forward;
 use super::ProxyState;
 
-const UPSTREAM: &str = "https://generativelanguage.googleapis.com";
+const DEFAULT_UPSTREAM: &str = "https://generativelanguage.googleapis.com";
+const UPSTREAM_ENV: &str = "LEAN_CTX_GEMINI_UPSTREAM";
 
 pub async fn handler(state: State<ProxyState>, req: Request<Body>) -> Result<Response, StatusCode> {
+    let config = crate::core::config::Config::load();
+    let upstream = forward::upstream_from_env_or_config(
+        UPSTREAM_ENV,
+        config.proxy.gemini_upstream.as_deref(),
+        DEFAULT_UPSTREAM,
+    );
     forward::forward_request(
         state,
         req,
-        UPSTREAM,
+        &upstream,
         "/",
         compress_request_body,
         "Gemini",

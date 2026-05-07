@@ -128,6 +128,8 @@ pub struct Config {
     pub cloud: CloudConfig,
     #[serde(default)]
     pub autonomy: AutonomyConfig,
+    #[serde(default)]
+    pub proxy: ProxyConfig,
     #[serde(default = "default_buddy_enabled")]
     pub buddy_enabled: bool,
     #[serde(default)]
@@ -201,6 +203,15 @@ impl Default for ArchiveConfig {
             max_disk_mb: 500,
         }
     }
+}
+
+/// API proxy upstreams. Empty values use provider defaults.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProxyConfig {
+    pub anthropic_upstream: Option<String>,
+    pub openai_upstream: Option<String>,
+    pub gemini_upstream: Option<String>,
 }
 
 fn default_buddy_enabled() -> bool {
@@ -390,6 +401,7 @@ impl Default for Config {
             theme: default_theme(),
             cloud: CloudConfig::default(),
             autonomy: AutonomyConfig::default(),
+            proxy: ProxyConfig::default(),
             buddy_enabled: default_buddy_enabled(),
             redirect_exclude: Vec::new(),
             disabled_tools: Vec::new(),
@@ -693,6 +705,45 @@ mod loop_detection_config_tests {
     }
 }
 
+#[cfg(test)]
+mod proxy_config_tests {
+    use super::*;
+
+    #[test]
+    fn proxy_config_defaults_to_no_custom_upstreams() {
+        let cfg = Config::default();
+        assert!(cfg.proxy.anthropic_upstream.is_none());
+        assert!(cfg.proxy.openai_upstream.is_none());
+        assert!(cfg.proxy.gemini_upstream.is_none());
+    }
+
+    #[test]
+    fn proxy_config_deserializes_from_toml() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [proxy]
+            anthropic_upstream = "https://gateway.example.test/anthropic"
+            openai_upstream = "https://gateway.example.test/openai"
+            gemini_upstream = "https://gateway.example.test/gemini"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.proxy.anthropic_upstream.as_deref(),
+            Some("https://gateway.example.test/anthropic")
+        );
+        assert_eq!(
+            cfg.proxy.openai_upstream.as_deref(),
+            Some("https://gateway.example.test/openai")
+        );
+        assert_eq!(
+            cfg.proxy.gemini_upstream.as_deref(),
+            Some("https://gateway.example.test/gemini")
+        );
+    }
+}
+
 impl Config {
     /// Returns the path to the global config file (`~/.lean-ctx/config.toml`).
     pub fn path() -> Option<PathBuf> {
@@ -795,6 +846,18 @@ impl Config {
         cfg
     }
 
+    /// Loads only the global config file, without merging project-local overrides.
+    pub fn load_global() -> Self {
+        let Some(path) = Self::path() else {
+            return Self::default();
+        };
+
+        match std::fs::read_to_string(&path) {
+            Ok(content) => toml::from_str(&content).unwrap_or_default(),
+            Err(_) => Self::default(),
+        }
+    }
+
     fn merge_local(&mut self, local_toml: &str) {
         let local: Config = match toml::from_str(local_toml) {
             Ok(c) => c,
@@ -842,6 +905,15 @@ impl Config {
         }
         if local.rules_scope.is_some() {
             self.rules_scope = local.rules_scope;
+        }
+        if local.proxy.anthropic_upstream.is_some() {
+            self.proxy.anthropic_upstream = local.proxy.anthropic_upstream;
+        }
+        if local.proxy.openai_upstream.is_some() {
+            self.proxy.openai_upstream = local.proxy.openai_upstream;
+        }
+        if local.proxy.gemini_upstream.is_some() {
+            self.proxy.gemini_upstream = local.proxy.gemini_upstream;
         }
         if !local.autonomy.enabled {
             self.autonomy.enabled = false;
@@ -987,6 +1059,31 @@ impl Config {
         );
         let content = toml::to_string_pretty(self).unwrap_or_default();
         let mut out = format!("Global config: {global_path}\n\n{content}");
+        out.push_str("\nEffective proxy upstreams:\n");
+        out.push_str(&format!(
+            "  anthropic: {}\n",
+            proxy_upstream_display(
+                "LEAN_CTX_ANTHROPIC_UPSTREAM",
+                self.proxy.anthropic_upstream.as_deref(),
+                "https://api.anthropic.com",
+            )
+        ));
+        out.push_str(&format!(
+            "  openai: {}\n",
+            proxy_upstream_display(
+                "LEAN_CTX_OPENAI_UPSTREAM",
+                self.proxy.openai_upstream.as_deref(),
+                "https://api.openai.com",
+            )
+        ));
+        out.push_str(&format!(
+            "  gemini: {}\n",
+            proxy_upstream_display(
+                "LEAN_CTX_GEMINI_UPSTREAM",
+                self.proxy.gemini_upstream.as_deref(),
+                "https://generativelanguage.googleapis.com",
+            )
+        ));
 
         if let Some(root) = Self::find_project_root() {
             let local = Self::local_path(&root);
@@ -1001,4 +1098,20 @@ impl Config {
         }
         out
     }
+}
+
+fn proxy_upstream_display(env_name: &str, config_value: Option<&str>, default: &str) -> String {
+    if let Ok(value) = std::env::var(env_name) {
+        let trimmed = value.trim().trim_end_matches('/');
+        if !trimmed.is_empty() {
+            return format!("{trimmed} (env)");
+        }
+    }
+    if let Some(value) = config_value {
+        let trimmed = value.trim().trim_end_matches('/');
+        if !trimmed.is_empty() {
+            return format!("{trimmed} (config)");
+        }
+    }
+    format!("{default} (default)")
 }

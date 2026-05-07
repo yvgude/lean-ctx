@@ -80,6 +80,15 @@ pub fn cmd_config(args: &[String]) {
                         std::process::exit(1);
                     }
                 },
+                "proxy.anthropic_upstream" => {
+                    cfg.proxy.anthropic_upstream = normalize_optional_url(val);
+                }
+                "proxy.openai_upstream" => {
+                    cfg.proxy.openai_upstream = normalize_optional_url(val);
+                }
+                "proxy.gemini_upstream" => {
+                    cfg.proxy.gemini_upstream = normalize_optional_url(val);
+                }
                 _ => {
                     eprintln!("Unknown config key: {key}");
                     std::process::exit(1);
@@ -94,6 +103,15 @@ pub fn cmd_config(args: &[String]) {
             eprintln!("Usage: lean-ctx config [init|set <key> <value>]");
             std::process::exit(1);
         }
+    }
+}
+
+fn normalize_optional_url(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 

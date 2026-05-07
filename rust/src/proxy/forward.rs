@@ -11,6 +11,26 @@ const MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
 
 pub type CompressFn = fn(&[u8]) -> (Vec<u8>, usize, usize);
 
+pub(crate) fn upstream_from_env_or_config(
+    var_name: &str,
+    config_value: Option<&str>,
+    default: &str,
+) -> String {
+    std::env::var(var_name)
+        .ok()
+        .and_then(|value| normalize_upstream(&value))
+        .or_else(|| config_value.and_then(normalize_upstream))
+        .unwrap_or_else(|| default.trim_end_matches('/').to_string())
+}
+
+fn normalize_upstream(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 pub async fn forward_request(
     State(state): State<ProxyState>,
     req: Request<Body>,
@@ -122,4 +142,77 @@ async fn build_response(
     }
     resp.body(Body::from(resp_bytes))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_upstream, upstream_from_env_or_config};
+
+    #[test]
+    fn normalizes_configured_upstream() {
+        assert_eq!(
+            normalize_upstream(" https://example.test/api/code/ "),
+            Some("https://example.test/api/code".to_string())
+        );
+        assert_eq!(normalize_upstream("   "), None);
+    }
+
+    #[test]
+    fn upstream_from_env_or_config_uses_default_when_unset_or_empty() {
+        let var_name = "LEAN_CTX_TEST_UPSTREAM_FROM_ENV";
+        std::env::remove_var(var_name);
+        assert_eq!(
+            upstream_from_env_or_config(var_name, None, "https://api.example.test/"),
+            "https://api.example.test"
+        );
+
+        std::env::set_var(var_name, "   ");
+        assert_eq!(
+            upstream_from_env_or_config(var_name, None, "https://api.example.test/"),
+            "https://api.example.test"
+        );
+        std::env::remove_var(var_name);
+    }
+
+    #[test]
+    fn upstream_from_env_prefers_configured_value() {
+        let var_name = "LEAN_CTX_TEST_CONFIGURED_UPSTREAM";
+        std::env::set_var(var_name, "https://gateway.example.test/api/code/");
+        assert_eq!(
+            upstream_from_env_or_config(var_name, None, "https://api.example.test"),
+            "https://gateway.example.test/api/code"
+        );
+        std::env::remove_var(var_name);
+    }
+
+    #[test]
+    fn upstream_from_env_or_config_prefers_env_then_config_then_default() {
+        let _guard = crate::core::data_dir::test_env_lock();
+        let var_name = "LEAN_CTX_TEST_CONFIG_PRECEDENCE_UPSTREAM";
+
+        std::env::set_var(var_name, "https://env.example.test/");
+        assert_eq!(
+            upstream_from_env_or_config(
+                var_name,
+                Some("https://config.example.test/"),
+                "https://default.example.test/"
+            ),
+            "https://env.example.test"
+        );
+
+        std::env::remove_var(var_name);
+        assert_eq!(
+            upstream_from_env_or_config(
+                var_name,
+                Some("https://config.example.test/"),
+                "https://default.example.test/"
+            ),
+            "https://config.example.test"
+        );
+
+        assert_eq!(
+            upstream_from_env_or_config(var_name, Some("   "), "https://default.example.test/"),
+            "https://default.example.test"
+        );
+    }
 }

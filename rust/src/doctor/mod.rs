@@ -655,7 +655,7 @@ fn docker_env_outcomes() -> Vec<Outcome> {
 /// Run diagnostic checks and print colored results to stdout.
 pub fn run() {
     let mut passed = 0u32;
-    let total = 9u32;
+    let total = 11u32;
 
     println!("{BOLD}{WHITE}lean-ctx doctor{RST}  {DIM}diagnostics{RST}\n");
 
@@ -807,14 +807,21 @@ pub fn run() {
     };
     print_check(&config_outcome);
 
-    // 6) Shell aliases
+    // 6) API proxy upstream
+    let proxy_upstream = proxy_upstream_outcome();
+    if proxy_upstream.ok {
+        passed += 1;
+    }
+    print_check(&proxy_upstream);
+
+    // 7) Shell aliases
     let aliases = shell_aliases_outcome();
     if aliases.ok {
         passed += 1;
     }
     print_check(&aliases);
 
-    // 7) MCP
+    // 8) MCP
     let mcp = mcp_config_outcome();
     if mcp.ok {
         passed += 1;
@@ -865,14 +872,14 @@ pub fn run() {
     }
     print_check(&daemon_outcome);
 
-    // 9) Session state (project_root + shell_cwd)
+    // Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
     if session_outcome.ok {
         passed += 1;
     }
     print_check(&session_outcome);
 
-    // 10) Docker env vars (optional, only in containers)
+    // Docker env vars (optional, only in containers)
     let docker_outcomes = docker_env_outcomes();
     for docker_check in &docker_outcomes {
         if docker_check.ok {
@@ -881,7 +888,7 @@ pub fn run() {
         print_check(docker_check);
     }
 
-    // 11) Pi Coding Agent (optional)
+    // Pi Coding Agent (optional)
     let pi = pi_outcome();
     if let Some(ref pi_check) = pi {
         if pi_check.ok {
@@ -890,7 +897,7 @@ pub fn run() {
         print_check(pi_check);
     }
 
-    // 12) Build integrity (canary / origin check)
+    // Build integrity (canary / origin check)
     let integrity = crate::core::integrity::check();
     let integrity_ok = integrity.seed_ok && integrity.origin_ok;
     if integrity_ok {
@@ -912,14 +919,14 @@ pub fn run() {
         line: integrity_line,
     });
 
-    // 13) Cache safety
+    // Cache safety
     let cache_safety = cache_safety_outcome();
     if cache_safety.ok {
         passed += 1;
     }
     print_check(&cache_safety);
 
-    // 14) Claude Code instruction truncation guard
+    // Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
         if ct.ok {
@@ -982,6 +989,271 @@ fn skill_files_outcome() -> Outcome {
             ),
         }
     }
+}
+
+fn proxy_upstream_outcome() -> Outcome {
+    let cfg = crate::core::config::Config::load();
+    let local_proxy_clients = local_proxy_clients_using_provider_defaults(&cfg);
+    proxy_upstream_outcome_with_clients(&cfg, &local_proxy_clients)
+}
+
+#[derive(Clone, Copy)]
+struct LocalProxyClient {
+    client: &'static str,
+    provider: &'static str,
+}
+
+#[cfg(test)]
+fn proxy_upstream_outcome_for_config(cfg: &crate::core::config::Config) -> Outcome {
+    proxy_upstream_outcome_with_clients(cfg, &[])
+}
+
+fn proxy_upstream_outcome_with_clients(
+    cfg: &crate::core::config::Config,
+    local_default_clients: &[LocalProxyClient],
+) -> Outcome {
+    let providers = [
+        (
+            "Anthropic",
+            "proxy.anthropic_upstream",
+            cfg.proxy.anthropic_upstream.as_deref(),
+        ),
+        (
+            "OpenAI",
+            "proxy.openai_upstream",
+            cfg.proxy.openai_upstream.as_deref(),
+        ),
+        (
+            "Gemini",
+            "proxy.gemini_upstream",
+            cfg.proxy.gemini_upstream.as_deref(),
+        ),
+    ];
+
+    let mut configured = Vec::new();
+    for (label, key, value) in providers {
+        let Some(value) = value else {
+            continue;
+        };
+        if value.trim().is_empty() {
+            continue;
+        }
+        let normalized = normalize_doctor_url(value);
+        if !is_http_url(&normalized) {
+            return Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Proxy upstream{RST}  {RED}invalid {label} upstream{RST}  {YELLOW}set {key} to an http(s) URL{RST}"
+                ),
+            };
+        }
+        if is_local_proxy_url(&normalized) {
+            return Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Proxy upstream{RST}  {RED}{label} upstream points back to local proxy{RST}  {YELLOW}run: lean-ctx config set {key} <url>{RST}"
+                ),
+            };
+        }
+        configured.push(format!("{label}={normalized}"));
+    }
+
+    let default_clients = local_default_clients
+        .iter()
+        .map(|client| format!("{}/{}", client.client, client.provider))
+        .collect::<Vec<_>>();
+
+    if !configured.is_empty() {
+        let mut details = vec![format!("configured: {}", configured.join(", "))];
+        if !default_clients.is_empty() {
+            details.push(format!("provider defaults: {}", default_clients.join(", ")));
+        }
+
+        return Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Proxy upstream{RST}  {GREEN}custom upstream configured{RST}  {DIM}{}{RST}",
+                details.join("; ")
+            ),
+        };
+    }
+
+    if !default_clients.is_empty() {
+        let clients = default_clients.join(", ");
+
+        return Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Proxy upstream{RST}  {GREEN}provider defaults{RST}  {DIM}active local proxy clients: {clients}{RST}"
+            ),
+        };
+    }
+
+    Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}Proxy upstream{RST}  {GREEN}provider defaults{RST}  {DIM}(override keys: proxy.anthropic_upstream, proxy.openai_upstream, proxy.gemini_upstream){RST}"
+        ),
+    }
+}
+
+fn local_proxy_clients_using_provider_defaults(
+    cfg: &crate::core::config::Config,
+) -> Vec<LocalProxyClient> {
+    let mut clients = Vec::new();
+
+    if !proxy_upstream_override_present(
+        "LEAN_CTX_ANTHROPIC_UPSTREAM",
+        cfg.proxy.anthropic_upstream.as_deref(),
+    ) && url_is_local_proxy(claude_code_anthropic_base().as_deref())
+    {
+        clients.push(LocalProxyClient {
+            client: "Claude Code",
+            provider: "Anthropic",
+        });
+    }
+
+    if !proxy_upstream_override_present(
+        "LEAN_CTX_OPENAI_UPSTREAM",
+        cfg.proxy.openai_upstream.as_deref(),
+    ) && url_is_local_proxy(codex_openai_base().as_deref())
+    {
+        clients.push(LocalProxyClient {
+            client: "Codex",
+            provider: "OpenAI",
+        });
+    }
+
+    if !proxy_upstream_override_present(
+        "LEAN_CTX_GEMINI_UPSTREAM",
+        cfg.proxy.gemini_upstream.as_deref(),
+    ) && url_is_local_proxy(gemini_api_base().as_deref())
+    {
+        clients.push(LocalProxyClient {
+            client: "Gemini",
+            provider: "Gemini",
+        });
+    }
+
+    clients
+}
+
+fn proxy_upstream_override_present(env_name: &str, config_value: Option<&str>) -> bool {
+    nonempty_env_var(env_name).is_some()
+        || config_value.is_some_and(|value| !normalize_doctor_url(value).is_empty())
+}
+
+fn claude_code_anthropic_base() -> Option<String> {
+    nonempty_env_var("ANTHROPIC_BASE_URL").or_else(claude_settings_anthropic_base)
+}
+
+fn codex_openai_base() -> Option<String> {
+    nonempty_env_var("OPENAI_BASE_URL").or_else(codex_config_openai_base)
+}
+
+fn gemini_api_base() -> Option<String> {
+    nonempty_env_var("GEMINI_API_BASE_URL").or_else(shell_gemini_api_base)
+}
+
+fn nonempty_env_var(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| normalize_doctor_url(&value))
+        .filter(|value| !value.is_empty())
+}
+
+fn claude_settings_anthropic_base() -> Option<String> {
+    let home = dirs::home_dir()?;
+    let settings_path = crate::core::editor_registry::claude_state_dir(&home).join("settings.json");
+    let content = std::fs::read_to_string(settings_path).ok()?;
+    let doc: serde_json::Value = serde_json::from_str(&content).ok()?;
+    doc.get("env")?
+        .get("ANTHROPIC_BASE_URL")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn codex_config_openai_base() -> Option<String> {
+    let home = dirs::home_dir()?;
+    let content = std::fs::read_to_string(home.join(".codex").join("config.toml")).ok()?;
+    let doc: toml::Value = toml::from_str(&content).ok()?;
+    doc.get("env")?
+        .get("OPENAI_BASE_URL")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn shell_gemini_api_base() -> Option<String> {
+    let home = dirs::home_dir()?;
+    for rc in [home.join(".zshrc"), home.join(".bashrc")] {
+        let Ok(content) = std::fs::read_to_string(rc) else {
+            continue;
+        };
+        if let Some(value) = extract_shell_assignment(&content, "GEMINI_API_BASE_URL") {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn extract_shell_assignment(content: &str, key: &str) -> Option<String> {
+    for line in content.lines() {
+        let mut trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("export ") {
+            trimmed = rest.trim_start();
+        }
+        let Some(rest) = trimmed.strip_prefix(key) else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(value) = rest.strip_prefix('=') else {
+            continue;
+        };
+        let value = strip_matching_shell_quotes(value.trim());
+        if !value.is_empty() {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+fn strip_matching_shell_quotes(value: &str) -> &str {
+    if let Some(inner) = value
+        .strip_prefix('"')
+        .and_then(|unquoted| unquoted.strip_suffix('"'))
+    {
+        return inner;
+    }
+    if let Some(inner) = value
+        .strip_prefix('\'')
+        .and_then(|unquoted| unquoted.strip_suffix('\''))
+    {
+        return inner;
+    }
+    value
+}
+
+fn normalize_doctor_url(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_string()
+}
+
+fn is_http_url(value: &str) -> bool {
+    value.starts_with("http://") || value.starts_with("https://")
+}
+
+fn is_local_proxy_url(value: &str) -> bool {
+    value.starts_with("http://127.0.0.1:")
+        || value.starts_with("http://localhost:")
+        || value.starts_with("http://[::1]:")
+}
+
+fn url_is_local_proxy(value: Option<&str>) -> bool {
+    value
+        .map(normalize_doctor_url)
+        .is_some_and(|url| is_local_proxy_url(&url))
 }
 
 fn cache_safety_outcome() -> Outcome {
@@ -1167,4 +1439,66 @@ pub(super) fn print_compact_status(passed: u32, total: u32) {
         format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}lean-ctx doctor{RST} for details")
     };
     println!("  {status}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proxy_upstream_outcome_accepts_custom_anthropic_upstream() {
+        let mut cfg = crate::core::config::Config::default();
+        cfg.proxy.anthropic_upstream = Some("https://gateway.example.test/api/code".to_string());
+
+        let outcome = proxy_upstream_outcome_for_config(&cfg);
+        assert!(outcome.ok);
+        assert!(outcome.line.contains("custom upstream configured"));
+        assert!(outcome
+            .line
+            .contains("Anthropic=https://gateway.example.test/api/code"));
+    }
+
+    #[test]
+    fn proxy_upstream_outcome_rejects_local_proxy_loop() {
+        let mut cfg = crate::core::config::Config::default();
+        cfg.proxy.anthropic_upstream = Some("http://127.0.0.1:4444".to_string());
+
+        let outcome = proxy_upstream_outcome_for_config(&cfg);
+        assert!(!outcome.ok);
+        assert!(outcome.line.contains("points back to local proxy"));
+    }
+
+    #[test]
+    fn proxy_upstream_outcome_rejects_invalid_openai_upstream() {
+        let mut cfg = crate::core::config::Config::default();
+        cfg.proxy.openai_upstream = Some("not-a-url".to_string());
+
+        let outcome = proxy_upstream_outcome_for_config(&cfg);
+        assert!(!outcome.ok);
+        assert!(outcome.line.contains("invalid OpenAI upstream"));
+    }
+
+    #[test]
+    fn proxy_upstream_outcome_accepts_multiple_custom_upstreams() {
+        let mut cfg = crate::core::config::Config::default();
+        cfg.proxy.openai_upstream = Some("https://openai.example.test".to_string());
+        cfg.proxy.gemini_upstream = Some("https://gemini.example.test".to_string());
+
+        let outcome = proxy_upstream_outcome_for_config(&cfg);
+        assert!(outcome.ok);
+        assert!(outcome.line.contains("OpenAI=https://openai.example.test"));
+        assert!(outcome.line.contains("Gemini=https://gemini.example.test"));
+    }
+
+    #[test]
+    fn extract_shell_assignment_reads_exported_gemini_base() {
+        let content = r#"
+export OTHER=value
+export GEMINI_API_BASE_URL="http://127.0.0.1:4444"
+"#;
+
+        let value = extract_shell_assignment(content, "GEMINI_API_BASE_URL");
+
+        assert_eq!(value.as_deref(), Some("http://127.0.0.1:4444"));
+    }
 }

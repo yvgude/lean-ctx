@@ -10,13 +10,20 @@ use super::compress::compress_tool_result;
 use super::forward;
 use super::ProxyState;
 
-const UPSTREAM: &str = "https://api.openai.com";
+const DEFAULT_UPSTREAM: &str = "https://api.openai.com";
+const UPSTREAM_ENV: &str = "LEAN_CTX_OPENAI_UPSTREAM";
 
 pub async fn handler(state: State<ProxyState>, req: Request<Body>) -> Result<Response, StatusCode> {
+    let config = crate::core::config::Config::load();
+    let upstream = forward::upstream_from_env_or_config(
+        UPSTREAM_ENV,
+        config.proxy.openai_upstream.as_deref(),
+        DEFAULT_UPSTREAM,
+    );
     forward::forward_request(
         state,
         req,
-        UPSTREAM,
+        &upstream,
         "/v1/chat/completions",
         compress_request_body,
         "OpenAI",
