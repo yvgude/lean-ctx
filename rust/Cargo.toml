@@ -125,7 +125,7 @@ glob = "0.3.3"
 urlencoding = "2"
 ratatui = "0.30"
 crossterm = "0.28"
-rpassword = "7.4.0"
+rpassword = "7.5.0"
 getrandom = "0.3"
 reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream", "json"], optional = true }
 bytecount = "0.6.9"
