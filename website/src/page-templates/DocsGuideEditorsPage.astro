@@ -392,12 +392,12 @@ lean-ctx init --agent claude --project`}</code></pre>
     <li>If you use Cursor in multiple projects, the MCP config is global but rules are per-project.</li>
   </ul>
 
-  <!-- ─── Codex CLI ─── -->
+  <!-- ─── Codex ─── -->
 
-  <h3 id="codex">Codex CLI</h3>
+  <h3 id="codex">OpenAI Codex</h3>
   <p>
-    Codex CLI uses TOML configuration, AGENTS.md for instructions, and
-    <code>SessionStart</code> / <code>PreToolUse</code> hooks.
+    Codex runs in <strong>Hybrid mode</strong>: MCP for Desktop and Cloud variants,
+    plus CLI hooks for the terminal variant. All three share <code>~/.codex/config.toml</code>.
   </p>
 
   <h4>Auto Setup</h4>
