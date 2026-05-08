@@ -81,7 +81,7 @@ const sidebar = [
 TOKEN="$(lean-ctx team token create \\
   --config team.json \\
   --id dev-alice \\
-  --scopes search,graph,artifacts,index
+  --scopes search,graph,artifacts,index,events,sessionMutations,knowledge
 )"
 
 # TOKEN is the Bearer token (printed once; config stores only sha256Hex).`}</code></pre>
@@ -169,10 +169,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \\
       <table class="config-table">
         <thead><tr><th>{t('docsTeam.scopeCol')}</th><th>{t('docsTeam.descCol')}</th></tr></thead>
         <tbody>
-          <tr><td><code>Search</code></td><td>{t('docsTeam.scopeSearch')}</td></tr>
-          <tr><td><code>Graph</code></td><td>{t('docsTeam.scopeGraph')}</td></tr>
-          <tr><td><code>Artifacts</code></td><td>{t('docsTeam.scopeArtifacts')}</td></tr>
-          <tr><td><code>Index</code></td><td>{t('docsTeam.scopeIndex')}</td></tr>
+          <tr><td><code>search</code></td><td>{t('docsTeam.scopeSearch')}</td></tr>
+          <tr><td><code>graph</code></td><td>{t('docsTeam.scopeGraph')}</td></tr>
+          <tr><td><code>artifacts</code></td><td>{t('docsTeam.scopeArtifacts')}</td></tr>
+          <tr><td><code>index</code></td><td>{t('docsTeam.scopeIndex')}</td></tr>
+          <tr><td><code>events</code></td><td>{t('docsTeam.scopeEvents')}</td></tr>
+          <tr><td><code>sessionMutations</code></td><td>{t('docsTeam.scopeSessionMutations')}</td></tr>
+          <tr><td><code>knowledge</code></td><td>{t('docsTeam.scopeKnowledge')}</td></tr>
+          <tr><td><code>audit</code></td><td>{t('docsTeam.scopeAudit')}</td></tr>
         </tbody>
       </table>
 
@@ -180,7 +184,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \\
 lean-ctx team token create \\
   --config team.json \\
   --id ci-bot \\
-  --scopes search,graph,artifacts,index
+  --scopes search,graph,artifacts,index,events,sessionMutations,knowledge,audit
 
 # Create read-only token (search + graph only)
 lean-ctx team token create \\
@@ -188,12 +192,11 @@ lean-ctx team token create \\
   --id reviewer \\
   --scopes search,graph
 
-# Create per-developer tokens with read+write access
-lean-ctx team token create --scope read,write --name "alice"
-# → Token: lctx_t_alice_a3f8...
-
-lean-ctx team token create --scope read,write,admin --name "team-lead"
-# → Token: lctx_t_lead_b7c1...`}</code></pre>
+# Create agent token (read + write + events)
+lean-ctx team token create \\
+  --config team.json \\
+  --id agent-alice \\
+  --scopes search,graph,events,sessionMutations,knowledge`}</code></pre>
       <p>{t('docsTeam.tokensNote')}</p>
     </section>
 

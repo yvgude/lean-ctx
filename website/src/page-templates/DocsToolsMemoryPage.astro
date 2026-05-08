@@ -173,6 +173,18 @@ ctx_knowledge action=embeddings_reindex
 
   <a href={lp('/docs/tools/ctx-knowledge')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 
+  <h3>{t('docsToolsMemory.knowledgeCliTitle')}</h3>
+  <p>{t('docsToolsMemory.knowledgeCliDesc')}</p>
+  <pre><code>lean-ctx knowledge remember "Uses JWT" --category auth --key token-type
+lean-ctx knowledge recall "authentication"
+lean-ctx knowledge search "database"
+lean-ctx knowledge export --format jsonl --output backup.jsonl
+lean-ctx knowledge import backup.json --merge skip-existing --dry-run
+lean-ctx knowledge remove --category auth --key token-type
+lean-ctx knowledge status
+lean-ctx knowledge health</code></pre>
+  <p><Fragment set:html={t('docsToolsMemory.knowledgeCliFormats')} /></p>
+
   <h2 id="ctx_agent">ctx_agent - Multi-Agent Coordination & Diaries</h2>
   <p>
     Coordinates multiple concurrent AI agents working on the same project.

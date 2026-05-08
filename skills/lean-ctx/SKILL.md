@@ -90,6 +90,20 @@ MCP tools:
 - `ctx_knowledge(action="remember", category, key, value)` — persistent cross-session project knowledge store
 - `ctx_knowledge(action="recall", query)` — search stored facts by text or category
 - `ctx_knowledge(action="consolidate")` — extract session findings into permanent knowledge
+- `ctx_knowledge(action="export")` — export knowledge to timestamped JSON backup
+- `ctx_knowledge(action="remove", category, key)` — remove a fact
+
+CLI (full parity):
+```bash
+lean-ctx knowledge remember "value" --category <c> --key <k>
+lean-ctx knowledge recall "query"
+lean-ctx knowledge search "query"
+lean-ctx knowledge export [--format json|jsonl|simple] [--output <path>]
+lean-ctx knowledge import <path> [--merge replace|append|skip-existing] [--dry-run]
+lean-ctx knowledge remove --category <c> --key <k>
+lean-ctx knowledge status
+lean-ctx knowledge health
+```
 - `ctx_agent(action="register", agent_type, role)` — multi-agent context sharing with scratchpad messaging
 - `ctx_agent(action="post", message, tags)` — share findings/warnings between concurrent agents
 - `ctx_agent(action="read")` — read messages from other agents

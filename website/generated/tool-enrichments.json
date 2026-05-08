@@ -254,7 +254,7 @@
         "ctx_feedback"
       ],
       "token_impact": "Knowledge recall costs ~20-50 tokens. Saves full re-discovery across sessions.",
-      "cli_equivalent": "lean-ctx gotchas"
+      "cli_equivalent": "lean-ctx knowledge remember/recall/search/export/import/remove/status/health"
     },
     "ctx_callgraph": {
       "when_to_use": "Unified entry point for caller/callee analysis when tracing impact of code changes.",

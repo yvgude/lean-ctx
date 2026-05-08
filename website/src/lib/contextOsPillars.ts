@@ -449,11 +449,18 @@ export const pillars: Pillar[] = [
     demoDescKey: 'pillar.contextBus.demoDesc',
     demoCommands: [
       { tool: 'curl', args: '-N http://localhost:7700/v1/events?workspaceId=my-team', output: [
-        'event: SessionMutated',
-        'data: {"channel":"feat/auth","rev":15,"agent":"cursor"}',
+        'id: 42',
+        'event: session_mutated',
+        'data: {"id":42,"workspaceId":"my-team","channelId":"feat/auth",',
+        '  "kind":"session_mutated","version":42,"consistencyLevel":"strong",',
+        '  "actor":"cursor","payload":{"tool":"ctx_session","action":"save"}}',
         '',
-        'event: KnowledgeRemembered',
-        'data: {"fact":"JWT with RS256","quality":0.95}',
+        'id: 43',
+        'event: knowledge_remembered',
+        'data: {"id":43,"workspaceId":"my-team","channelId":"feat/auth",',
+        '  "kind":"knowledge_remembered","version":43,"parentId":42,',
+        '  "consistencyLevel":"eventual","actor":"claude","payload":{',
+        '  "tool":"ctx_knowledge","key":"auth/strategy"}}',
       ] },
     ],
     stats: [

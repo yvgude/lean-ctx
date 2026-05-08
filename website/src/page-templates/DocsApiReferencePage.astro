@@ -51,10 +51,14 @@ const sidebar = [
   <table>
     <thead><tr><th>Scope</th><th>Access</th></tr></thead>
     <tbody>
-      <tr><td><code>read</code></td><td>Read sessions, knowledge, events</td></tr>
-      <tr><td><code>write</code></td><td>Mutate sessions, store knowledge</td></tr>
-      <tr><td><code>admin</code></td><td>Manage tokens, workspaces, configuration</td></tr>
+      <tr><td><code>search</code></td><td>Read tools: <code>ctx_read</code>, <code>ctx_search</code>, <code>ctx_tree</code>, <code>ctx_overview</code>, etc.</td></tr>
+      <tr><td><code>graph</code></td><td>Graph tools: <code>ctx_graph</code>, <code>ctx_impact</code>, <code>ctx_callgraph</code>, etc.</td></tr>
+      <tr><td><code>artifacts</code></td><td><code>ctx_artifacts</code>, <code>ctx_semantic_search</code> with artifacts</td></tr>
+      <tr><td><code>index</code></td><td>Graph index builds, semantic reindex</td></tr>
       <tr><td><code>events</code></td><td>Subscribe to SSE event stream</td></tr>
+      <tr><td><code>sessionMutations</code></td><td><code>ctx_session</code> writes, <code>ctx_handoff</code>, <code>ctx_workflow</code></td></tr>
+      <tr><td><code>knowledge</code></td><td><code>ctx_knowledge</code> writes, <code>ctx_knowledge_relations</code></td></tr>
+      <tr><td><code>audit</code></td><td>Metrics, full-payload events, audit log</td></tr>
     </tbody>
   </table>
 
@@ -68,11 +72,13 @@ const sidebar = [
 
 <span class="text-muted">Request:</span>
 {'{'}
-  "tool": "ctx_read",
+  "name": "ctx_read",
   "arguments": {'{'}
     "path": "src/lib/auth.ts",
     "mode": "map"
-  {'}'}
+  {'}'},
+  "workspaceId": "my-team",
+  "channelId": "feat/auth"
 {'}'}
 
 <span class="text-muted">Response:</span>
@@ -99,33 +105,52 @@ const sidebar = [
   </div>
 
   <h3>Event Stream (SSE)</h3>
-  <p>Subscribe to real-time events via Server-Sent Events:</p>
+  <p>Subscribe to real-time events via Server-Sent Events. Events include versioning, causal lineage, and consistency levels:</p>
 
   <div class="not-prose">
-    <pre class="code-block"><code>{`GET /v1/events?workspaceId=my-team
+    <pre class="code-block"><code>{`GET /v1/events?workspaceId=my-team&channelId=feat/auth&since=0
 
 Response (SSE stream):
-event: SessionMutated
-data: {"channel":"feat/auth","rev":15,"agent":"cursor"}
+id: 42
+event: tool_call_recorded
+data: {"id":42,"workspaceId":"my-team","channelId":"feat/auth","kind":"tool_call_recorded","actor":"cursor","timestamp":"2026-05-05T13:00:00Z","version":42,"parentId":null,"consistencyLevel":"local","payload":{"tool":"ctx_read"}}
 
-event: KnowledgeRemembered
-data: {"fact":"JWT with RS256","quality":0.95}`}</code></pre>
+id: 43
+event: session_mutated
+data: {"id":43,"workspaceId":"my-team","channelId":"feat/auth","kind":"session_mutated","actor":"cursor","timestamp":"2026-05-05T13:00:01Z","version":43,"parentId":42,"consistencyLevel":"strong","payload":{"tool":"ctx_session","action":"save","reasoning":"Auth refactor checkpoint"}}`}</code></pre>
   </div>
 
-  <h3>Knowledge Base</h3>
+  <h4>Event Types</h4>
+  <table>
+    <thead><tr><th>Kind</th><th>Consistency</th><th>Trigger</th></tr></thead>
+    <tbody>
+      <tr><td><code>tool_call_recorded</code></td><td>local</td><td>Any tool invocation completes</td></tr>
+      <tr><td><code>session_mutated</code></td><td>strong</td><td>Session state modified</td></tr>
+      <tr><td><code>knowledge_remembered</code></td><td>eventual</td><td>Knowledge fact written</td></tr>
+      <tr><td><code>artifact_stored</code></td><td>eventual</td><td>Artifact persisted</td></tr>
+      <tr><td><code>graph_built</code></td><td>local</td><td>Graph index updated</td></tr>
+      <tr><td><code>proof_added</code></td><td>strong</td><td>Evidence ledger appended</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Context Summary</h3>
 
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-accent">POST</span> /v1/knowledge/remember
-<span class="text-accent">GET</span>  /v1/knowledge/search?query=auth+architecture
-<span class="text-accent">GET</span>  /v1/knowledge/list</code></pre>
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/context/summary?workspaceId=my-team  <span class="text-muted"># Materialized view: agents, decisions, conflicts</span></code></pre>
+  </div>
+
+  <h3>Event Search & Lineage</h3>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/events/search?q=auth+strategy&workspaceId=my-team  <span class="text-muted"># FTS5 full-text search</span>
+<span class="text-accent">GET</span>  /v1/events/lineage?id=42&depth=10                      <span class="text-muted"># Causal chain traversal</span></code></pre>
   </div>
 
   <h3>Health & Metrics</h3>
 
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-accent">GET</span> /healthz          <span class="text-muted"># Health check</span>
-<span class="text-accent">GET</span> /v1/metrics        <span class="text-muted"># Prometheus metrics</span>
-<span class="text-accent">GET</span> /v1/status         <span class="text-muted"># Server status + connected agents</span></code></pre>
+    <pre class="code-block"><code><span class="text-accent">GET</span> /health            <span class="text-muted"># Health check</span>
+<span class="text-accent">GET</span> /v1/metrics        <span class="text-muted"># JSON metrics snapshot (requires audit scope)</span></code></pre>
   </div>
 
   <h2 id="rate-limiting">Rate Limiting</h2>

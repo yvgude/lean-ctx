@@ -468,6 +468,50 @@ lean-ctx sessions cleanup</code></pre>
 
   <hr />
 
+  <h2 id="knowledge">{t('docs.cliReference.knowledgeTitle')}</h2>
+  <p>{t('docs.cliReference.knowledgeDesc')}</p>
+
+  <h3 id="knowledge-remember"><code>lean-ctx knowledge remember &lt;value&gt; --category &lt;c&gt; --key &lt;k&gt;</code></h3>
+  <p>{t('docs.cliReference.knowledgeRememberDesc')}</p>
+  <pre><code>lean-ctx knowledge remember "Uses JWT for auth" --category auth --key token-type
+lean-ctx knowledge remember "PostgreSQL 16" --category arch --key database --confidence 0.95</code></pre>
+
+  <h3 id="knowledge-recall"><code>lean-ctx knowledge recall [query] [--category &lt;c&gt;] [--mode auto|semantic|hybrid]</code></h3>
+  <p>{t('docs.cliReference.knowledgeRecallDesc')}</p>
+  <pre><code>lean-ctx knowledge recall "authentication"
+lean-ctx knowledge recall --category security
+lean-ctx knowledge recall "auth" --mode semantic</code></pre>
+
+  <h3 id="knowledge-search"><code>lean-ctx knowledge search &lt;query&gt;</code></h3>
+  <p>{t('docs.cliReference.knowledgeSearchDesc')}</p>
+  <pre><code>lean-ctx knowledge search "database migration"</code></pre>
+
+  <h3 id="knowledge-export"><code>lean-ctx knowledge export [--format json|jsonl|simple] [--output &lt;path&gt;]</code></h3>
+  <p><Fragment set:html={t('docs.cliReference.knowledgeExportDesc')} /></p>
+  <pre><code>lean-ctx knowledge export                                  # full JSON to stdout
+lean-ctx knowledge export --format jsonl --output backup.jsonl  # JSONL to file
+lean-ctx knowledge export --format simple | jq '.[].key'   # pipe-friendly</code></pre>
+
+  <h3 id="knowledge-import"><code>lean-ctx knowledge import &lt;path&gt; [--merge replace|append|skip-existing] [--dry-run]</code></h3>
+  <p><Fragment set:html={t('docs.cliReference.knowledgeImportDesc')} /></p>
+  <pre><code>lean-ctx knowledge import backup.json --dry-run             # preview changes
+lean-ctx knowledge import facts.jsonl --merge replace        # overwrite existing
+lean-ctx knowledge import migration.json --merge skip-existing</code></pre>
+
+  <h3 id="knowledge-remove"><code>lean-ctx knowledge remove --category &lt;c&gt; --key &lt;k&gt;</code></h3>
+  <p>{t('docs.cliReference.knowledgeRemoveDesc')}</p>
+  <pre><code>lean-ctx knowledge remove --category auth --key token-type</code></pre>
+
+  <h3 id="knowledge-status"><code>lean-ctx knowledge status</code></h3>
+  <p>{t('docs.cliReference.knowledgeStatusDesc')}</p>
+  <pre><code>lean-ctx knowledge status</code></pre>
+
+  <h3 id="knowledge-health"><code>lean-ctx knowledge health</code></h3>
+  <p>{t('docs.cliReference.knowledgeHealthDesc')}</p>
+  <pre><code>lean-ctx knowledge health</code></pre>
+
+  <hr />
+
   <h2 id="benchmarking">{t('docs.cliReference.benchmarkingTitle')}</h2>
 
   <h3 id="benchmark-run"><code>lean-ctx benchmark run [path] [--json]</code></h3>

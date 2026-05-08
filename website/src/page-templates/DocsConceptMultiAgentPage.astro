@@ -13,7 +13,10 @@ const sidebar = [
       { label: 'Overview', href: lp('/docs/concepts/multi-agent') },
       { label: 'Agent Registry', href: lp('/docs/concepts/multi-agent') + '#registry' },
       { label: 'Message Bus', href: lp('/docs/concepts/multi-agent') + '#message-bus' },
+      { label: 'Selective Routing', href: lp('/docs/concepts/multi-agent') + '#selective-routing' },
       { label: 'Task Delegation', href: lp('/docs/concepts/multi-agent') + '#tasks' },
+      { label: 'A2A Transport', href: lp('/docs/concepts/multi-agent') + '#a2a-transport' },
+      { label: 'Google A2A Compat', href: lp('/docs/concepts/multi-agent') + '#google-a2a' },
       { label: 'Shared Cache', href: lp('/docs/concepts/multi-agent') + '#shared-cache' },
       { label: 'Diaries', href: lp('/docs/concepts/multi-agent') + '#diaries' },
       { label: 'Context Handoff', href: lp('/docs/concepts/multi-agent') + '#handoff' },
@@ -102,6 +105,55 @@ ctx_agent action="read"
 → 2 new messages:
   [finding] from cursor-dev-1: Auth token expiry is hardcoded at 3600s
   [status] from codex-test: All 42 tests passing`}</code></pre>
+
+  <h2 id="selective-routing">Selective Routing</h2>
+  <p>
+    Instead of full broadcast, agents subscribe with <strong>TopicFilters</strong> to receive only relevant events.
+    Filters support event kind, actor, consistency level, and agent identity. <strong>Directed events</strong>
+    target specific agents, reducing noise and saving tokens.
+  </p>
+  <pre><code>{`# Poll events with filtering (via ctx_agent)
+ctx_agent action="poll_events" category="default" message="0"
+→ Events (3, since=0):
+  #1 [session_mutated] actor=cursor-dev cl=strong (14:30:12)
+  #2 [knowledge_remembered] actor=codex-test cl=eventual (14:31:05)
+cursor=2`}</code></pre>
+
+  <h2 id="a2a-transport">A2A Transport</h2>
+  <p>
+    <strong>TransportEnvelopeV1</strong> enables cross-machine agent handoffs. Context packages and
+    handoff bundles are wrapped with agent identity and HMAC-SHA256 signatures for integrity.
+  </p>
+  <pre><code>{`# Send a context package to a remote daemon
+lean-ctx pack send myproject.lctxpkg --target=http://remote:3344 --secret=mykey
+
+# Receive and verify on the other end
+lean-ctx pack receive envelope.json --secret=mykey --apply`}</code></pre>
+  <p>
+    HTTP endpoint: <code>POST /v1/a2a/handoff</code> accepts TransportEnvelopes directly.
+    Agent discovery: <code>GET /.well-known/agent.json</code> returns the A2A v1.0 Agent Card.
+  </p>
+
+  <h2 id="google-a2a">Google A2A Compatibility</h2>
+  <p>
+    LeanCTX exposes a JSON-RPC 2.0 endpoint at <code>/a2a</code> compatible with the
+    <a href="https://google.github.io/A2A/" target="_blank">Google A2A Protocol</a>.
+    Supported operations: <code>tasks/send</code>, <code>tasks/get</code>, <code>tasks/cancel</code>.
+  </p>
+  <pre><code>{`# JSON-RPC request to create a task
+POST /a2a
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tasks/send",
+  "params": {
+    "to": "lean-ctx",
+    "message": {
+      "role": "user",
+      "parts": [{"type": "text", "text": "Fix the auth bug"}]
+    }
+  }
+}`}</code></pre>
 
   <h2 id="tasks">Task Delegation</h2>
   <p>
