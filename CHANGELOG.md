@@ -3,6 +3,210 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+## [3.5.8] — 2026-05-08
+
+### Security
+
+- **CodeQL #40 (High): XSS in dashboard search** — `cockpit-search.js` fallback `esc()` function was `function(s) { return String(s); }` — no HTML escaping. Replaced with safe `textContent`→`innerHTML` implementation matching `format.js`.
+- **CodeQL #38/#39 (Medium): Unpinned GitHub Actions** — `codecov/codecov-action@v4` and `EmbarkStudios/cargo-deny-action@v2` are now pinned to commit SHAs (`b9fd7d16…`, `5bb39ff5…`) in `ci.yml`.
+
+### Fixed
+
+- **Codex config corruption on mode change (GitHub #189)** — When `lean-ctx setup` or `lean-ctx update` ran with v3.5.6 (where Codex was CLI-Redirect mode), `remove_codex_toml_section` removed the `[mcp_servers.lean-ctx]` parent section but left orphaned sub-tables like `[mcp_servers.lean-ctx.env]`, causing Codex to fail with "invalid transport in mcp_servers.lean-ctx".
+  - `remove_codex_toml_section` now removes **all** TOML sub-tables via prefix matching when removing a parent section.
+  - `ensure_codex_mcp_server` now detects orphaned sub-tables and inserts the parent section **before** them instead of appending at the end.
+  - `ensure_codex_mcp_server` now uses `toml_quote_value` for Windows backslash-safe TOML quoting (was using raw `format!` with double quotes).
+
+## [3.5.7] — 2026-05-08
+
+### Security
+
+- **BM25 index memory balloon fix (GitHub #188)** — Oversized BM25 cache files (observed up to 50 GB in monorepos with vendor/generated code) could cause the daemon to allocate unbounded memory on startup, leading to system-wide swapping and OOM conditions. This release implements an 8-layer defense:
+  1. **Load-time size guard** — `BM25Index::load()` now checks file metadata before reading. Indexes exceeding the configurable limit (default 512 MB) are quarantined by renaming to `.quarantined` and skipped.
+  2. **Save-time size guard** — `BM25Index::save()` refuses to persist serialized data exceeding the limit, preventing bloated indexes from being written in the first place.
+  3. **Chunk count warning** — Indexes with >50,000 chunks trigger a `tracing::warn` suggesting `extra_ignore_patterns` in `config.toml`.
+  4. **Default vendor/build ignores** — 14 glob patterns (`vendor/**`, `dist/**`, `build/**`, `.next/**`, `__pycache__/**`, `*.min.js`, `*.bundle.js`, etc.) are now excluded from BM25 indexing by default.
+  5. **File count cap** — `list_code_files()` stops collecting after 5,000 files per project, preventing runaway indexing in massive repos.
+  6. **Configurable limit** — New `bm25_max_cache_mb` setting in `config.toml` (default: 512). Override per-project or via `LEAN_CTX_BM25_MAX_CACHE_MB` env var.
+  7. **Project root marker** — `save()` writes a `project_root.txt` file alongside each index, enabling orphan detection when the original project directory is deleted.
+  8. **`lean-ctx doctor` BM25 health check** — Doctor now scans all vector directories, warns about large indexes (>100 MB), and fails for oversized indexes. `lean-ctx doctor --fix` automatically prunes quarantined, oversized, and orphaned caches.
+
+### Fixed
+
+- **Codex integration mode changed from CLI-Redirect to Hybrid** — Codex exists in three variants (CLI, Desktop App, Cloud Agent) that share `~/.codex/config.toml`. Only the CLI variant has reliable shell hooks; Desktop and Cloud require MCP. lean-ctx now treats Codex as **Hybrid** (MCP + CLI hooks where available) instead of CLI-Redirect, ensuring all three variants work correctly.
+- **Codex hook installer now writes MCP server entry** — `lean-ctx init --agent codex` now ensures `[mcp_servers.lean-ctx]` exists in `~/.codex/config.toml`. Previously, only CLI hooks and `codex_hooks = true` were written, leaving Desktop/Cloud variants without MCP access.
+- **Codex LEAN-CTX.md upgrade detection** — `install_codex_instruction_docs()` now compares file content instead of just checking for the string "lean-ctx". This ensures the instruction file is updated when the template changes (e.g., CLI-only → Hybrid mode), instead of being silently skipped on every subsequent install.
+- **Dashboard HTTP parser handles large POST bodies** — The dashboard TCP handler now reads complete HTTP messages using `Content-Length` header parsing instead of assuming the entire request fits in the first read. POST requests to API endpoints (e.g., knowledge CRUD, memory management) no longer fail silently when the body exceeds 8 KB. Maximum message size enforced at 2 MB.
+
+### Added
+
+- **Cockpit dashboard (complete rewrite)** — The localhost dashboard has been rebuilt from scratch as a modular single-page application:
+  - **12 Web Components**: Overview, Live Activity, Context Explorer, Knowledge Base, Graph Visualizer, Agent Sessions, Memory Inspector, Compression Stats, Health Monitor, Search, Remaining Token Budget, Navigation.
+  - **Modular Rust backend**: Monolithic route handler (~1,200 lines) replaced with 10 focused route modules (`routes/agents.rs`, `context.rs`, `graph.rs`, `knowledge.rs`, `memory.rs`, `stats.rs`, `system.rs`, `tools.rs`, `helpers.rs`, `mod.rs`).
+  - **Shared JS libraries**: `api.js` (fetch wrapper with token auth), `charts.js` (SVG charting), `format.js` (number/byte/duration formatting), `router.js` (hash-based SPA routing), `shared.js` (common utilities).
+  - **Full CSS redesign**: 800+ lines of modern CSS with dark theme, responsive layout, data tables, card grids, and chart containers.
+  - Legacy dashboard preserved at `/legacy` route for backwards compatibility.
+- **`lean-ctx cache prune` command** — New CLI command to scan `~/.lean-ctx/vectors/`, remove quarantined (`.quarantined`) files, oversized indexes, and orphaned directories (project root no longer exists). Reports count and freed space.
+- **`lean-ctx doctor` BM25 cache health check** — Proactive diagnostics for BM25 index health, integrated into the standard doctor report. `--fix` auto-prunes.
+
+### Improved
+
+- **Codex instruction docs now document Hybrid mode** — `~/.codex/LEAN-CTX.md` now includes both MCP tool table (ctx_read, ctx_shell, ctx_search, ctx_tree) and CLI fallback instructions, with guidance on when to use which path depending on the Codex variant.
+- **Website: Codex moved to Hybrid in Context OS table** — All 11 locale files and the ContextOsPage agent table updated. Codex now correctly appears under Hybrid mode instead of CLI-Redirect.
+- **Website: Codex editor guide updated** — DocsGuideEditorsPage now describes Codex as running in Hybrid mode across CLI, Desktop, and Cloud variants.
+
+## [3.5.6] — 2026-05-08
+
+### Fixed
+
+- **Daemon auto-restart on setup and update** — `lean-ctx setup` and `lean-ctx update` now automatically stop and restart the daemon with the current binary. Previously, a running daemon would be left untouched, causing stale-binary mismatches after updates. Both interactive and non-interactive (`--yes`) flows are covered.
+- **Proactive stale daemon cleanup** — `is_daemon_running()` now removes orphaned PID and socket files when the referenced process is dead. This prevents connection attempts to stale Unix Domain Sockets after crashes or reboots.
+- **UDS connection timeouts** — All daemon socket connections now have a 3-second connect timeout and 10-second I/O timeout. Previously, connections to a stale or unresponsive socket could block indefinitely, cascading into system-wide hangs.
+- **Daemon readiness wait reduced** — The CLI auto-start readiness loop was reduced from 12 seconds to 3 seconds, keeping CLI commands responsive even when the daemon is slow to start.
+
+### Improved
+
+- **Website navigation completeness** — Added `/docs/concepts/multi-agent` to the Docs mega dropdown. Mobile navigation now includes all Context OS pages (Integrations, Shared Sessions, Context Bus, SDK) that were previously desktop-only.
+- **Daemon documentation updated** — Integrations pillar and Context OS overview pages now document auto-restart on update, stale-file cleanup, and connection timeouts across all 11 languages.
+
+## [3.5.5] — 2026-05-08
+
+### Fixed
+
+- **Search command compression blocked by auth-flow false positive** — `rg`, `grep`, `find`, `fd`, `ag`, and `ack` outputs were silently skipped by the compression pipeline whenever the search results contained OAuth-related strings (`device_code`, `user_code`, `verification_uri`, etc.) anywhere in the matched source code. This caused 0% savings for any `rg` search over a codebase that implements or references OAuth device-code flows — even though the output was search results, not an actual auth prompt. The fix skips the `contains_auth_flow` guard for search commands in both the CLI (`shell/compress.rs`) and MCP (`ctx_shell`) paths. Real auth flows (e.g. `az login`, `gh auth login`) are still preserved verbatim for non-search commands. Reported by aguarella (Discord).
+- **Central `shorter_only` guard for all shell patterns** — Added a centralized length check in `patterns/mod.rs` that wraps every compressor (`FilterEngine`, `try_specific_pattern`, `json_schema`, `log_dedup`, `test`). No pattern can return `Some(result)` unless `result` is strictly shorter than the original output. Eliminates a class of bugs where patterns claimed compression without actually reducing size.
+- **`grep` compressor removes verbatim threshold** — Removed the `<= 100 lines` early return that passed small `rg`/`grep` outputs through uncompressed. All search outputs are now grouped by file with per-file match limits, regardless of size. Combined with the `shorter_only` guard, small outputs that can't be meaningfully compressed correctly return `None` instead of faking 0% savings.
+- **`gh` CLI verbatim returns replaced with `None`** — `gh pr diff`, `gh api`, `gh search`, `gh workflow`, and unknown `gh` subcommands no longer return `Some(output.to_string())` (which falsely claimed compression). They now return `None`, allowing fallback compressors or the caller to handle the output appropriately.
+- **`safeguard_ratio` aligned with CLI behavior** — The MCP compression guard now uses a 5% floor only for small outputs (<2,000 tokens) and allows aggressive compression for large outputs, matching the CLI pipeline behavior.
+- **`ctx_shell` search command inflation guard** — For search commands (`rg`, `grep`, etc.), the MCP handler now explicitly checks `c.len() <= output.len()` before using the compressed result, preventing any inflation from reaching the agent.
+- **Codex `AGENTS.md` overwrite** — `install_codex_instruction_docs` now uses marked-block insertion (`<!-- lean-ctx -->...<!-- /lean-ctx -->`) instead of overwriting `~/.codex/AGENTS.md`, preserving user instructions. Reported by Vitu (Discord).
+
+### Added
+
+- **Knowledge CLI: export/import/remove** — Full CLI parity with MCP `ctx_knowledge`:
+  - `lean-ctx knowledge export [--format json|jsonl|simple] [--output <path>]`
+  - `lean-ctx knowledge import <path> [--merge replace|append|skip-existing] [--dry-run]`
+  - `lean-ctx knowledge remove --category <cat> --key <key>`
+  - Core: `import_facts()` with merge strategies, `export_simple()` for interop, `parse_import_data()` with auto-format detection.
+  - Context OS: knowledge `import` events tracked via `KnowledgeRemembered` bus event.
+- **Context OS optimizations** — Connection pooling for Context Bus R/W, broadcast channels replacing mutex-guarded Vec, inverted token index for BM25 search, LRU session eviction, metrics consolidation cleanup.
+
+### Fixed (cont.)
+
+- **Dashboard scroll after fullscreen** — `switchView()` now closes any active fullscreen before tab transitions, restoring scroll in all views. (GitHub #186)
+
+## [3.5.4] — 2026-05-07
+
+### Fixed
+
+- **`gh` CLI compression safety** — Unknown `gh` subcommands (`gh pr diff`, `gh api`, `gh search`, `gh workflow`, `gh auth`, `gh secret`, etc.) now pass through verbatim instead of being truncated to 10 lines. Previously, fallback compressors (JSON, log-dedup) could also strip content from `gh api` and `gh search` output. The fix returns `Some(output)` for unmatched commands (blocking fallback compression), matching the safe behavior already used by `git` and `glab` patterns.
+- **Uninstall proxy cleanup** — `lean-ctx uninstall` now cleans up Claude Code (`ANTHROPIC_BASE_URL` in `settings.json`) and Codex CLI (`OPENAI_BASE_URL` in `config.toml`) proxy settings. Previously only shell exports (Gemini) were removed, leaving Claude/Codex pointing at the dead local proxy after uninstall. If a saved upstream exists, Claude Code settings are restored to the original URL.
+- **CLI `ls`/`grep` daemon path resolution** — `lean-ctx ls .` and `lean-ctx grep <pattern> .` now resolve relative paths to absolute before sending to the daemon, fixing incorrect directory listings when the daemon's CWD differs from the CLI's CWD.
+
+### Added
+
+- **Context Bus v2: Multi-Agent Coordination** — Major upgrade to the event bus with versioned events, causal lineage, consistency levels, and multi-agent conflict detection.
+  - **Event versioning**: Every event now carries a monotonic `version` per (workspace, channel) and an optional `parentId` for causal chains.
+  - **Consistency levels**: Events classified as `local` (informational), `eventual` (shared, async), or `strong` (requires sync) — enables agents to prioritize reactions.
+  - **K-bounded staleness guard**: When a shared-mode agent falls behind by >10 events, tool responses include a `[CONTEXT STALE]` warning.
+  - **Knowledge conflict detection**: Concurrent writes to the same knowledge key by different agents inject `[CONFLICT]` warnings before proceeding.
+  - **Enriched payloads**: Event payloads now include `path`, `category`, `key`, and `reasoning` (from active session task) for richer observability.
+  - **SSE backfill on lag**: When a broadcast subscriber falls behind, missed events are automatically backfilled from SQLite instead of dropped.
+  - **New REST endpoints**: `GET /v1/context/summary` (materialized workspace view), `GET /v1/events/search` (FTS5 full-text search), `GET /v1/events/lineage` (causal chain traversal).
+  - **Team Server scopes expanded**: `ctx_session`, `ctx_knowledge`, `ctx_artifacts`, `ctx_proof`, `ctx_verify` mapped to `sessionMutations`, `knowledge`, `artifacts`, `search` scopes.
+  - **Session race fix**: `SharedSessionStore::get_or_load` uses atomic `entry` API to prevent TOCTOU races under concurrent agent loads.
+- **Configurable proxy upstreams** — Teams routing through custom API gateways can now set `proxy.anthropic_upstream`, `proxy.openai_upstream`, and `proxy.gemini_upstream` via `lean-ctx config set` or environment variables. Upstreams are resolved once at proxy startup (env > config > default).
+- **Proxy upstream diagnostics** — `lean-ctx doctor` validates proxy upstream URLs (self-referential loop detection, URL format) and reports which upstreams are active.
+- **6 new adversarial compression tests** — `gh pr diff`, `gh api`, `gh search`, `gh workflow` verbatim passthrough, plus shell-hook-level diff preservation test.
+
+### Changed
+
+- **Dry-run uninstall** — `lean-ctx uninstall --dry-run` now previews Claude Code and Codex proxy cleanup actions.
+
+## [3.5.3] — 2026-05-07
+
+### Fixed
+
+- **Dashboard command counter** — Shell commands in track-only mode (e.g. `git status`, `docker ps`) that use `exec_inherit` are now counted via `exec_inherit_tracked()`, and `record_shell_command` no longer skips zero-token commands. Previously many commands went unrecorded in the dashboard.
+- **SLO false positives** — `CompressionRatio` SLO now requires a minimum of 5,000 original tokens before evaluating, and the threshold was raised from 0.75 to 0.90. Eliminates constant "violated CompressionRatio" warnings caused by `full` mode reads.
+- **X11 clipboard in vim** — Removed explicit stripping of `DISPLAY`, `XAUTHORITY`, and `WAYLAND_DISPLAY` environment variables from `exec_buffered`, restoring X11 clipboard sync after exiting vim/vi in Claude Code.
+- **pack_cmd unwrap** — `LocalRegistry::open()` now returns a graceful error instead of panicking on IO failures.
+- **cursor.rs JSON type safety** — `merge_cursor_hooks` now validates JSON types before unwrapping, preventing panics when `hooks.json` contains unexpected structures.
+
+### Added
+
+- **Rules-staleness detection** — On the first MCP tool call of a session, lean-ctx checks whether the agent's rules file contains the current version marker. If outdated, a `[RULES OUTDATED]` warning is injected into the tool response, prompting the agent to re-read rules or run `lean-ctx setup`.
+
+### Changed
+
+- **Codebase maintainability** — Split `doctor.rs` (2,348 lines) into `doctor/{mod,integrations,fix}.rs` and `uninstall.rs` (1,859 lines) into `uninstall/{mod,agents,parsers}.rs` for better modularity.
+- **Cloud-server cleanup** — Removed unused `jwt_secret` field from cloud-server config and auth state.
+
+## [3.5.2] — 2026-05-07
+
+### Fixed
+
+- **Agent zombie cleanup** — `cleanup_stale()` now marks dead processes as `Finished` immediately regardless of age, fixing the "phantom agents" bug where terminated MCP sessions (e.g. from Claude Code subagents, `/superpowers`, `/gsd` plugins) stayed listed as "Active" in the Agent World dashboard indefinitely. Previously, agents were only cleaned up after 24 hours. Fixes the issue reported by daviddatu_.
+- **Dashboard live-filter** — `build_agents_json()` now calls `cleanup_stale()` on every API request and additionally filters by `is_process_alive()` as a safety net, ensuring the Agent World dashboard never shows zombie entries.
+- **CLI/MCP feature parity** — new `core::tool_lifecycle` module ensures CLI commands (`lean-ctx read`, `lean-ctx grep`, `lean-ctx ls`, `lean-ctx -c`) trigger the same side effects as MCP tools: session tracking, Context Ledger updates, heatmap recording, intent detection, and knowledge consolidation. Previously CLI-only users lost ~60% of Context OS features.
+- **Daemon double-recording bug** — CLI reads routed through the daemon no longer record a second `(sent, sent)` stats entry with 0% savings, which was diluting the overall savings rate on the dashboard.
+- **Search savings accuracy** — `ctx_search` now estimates native grep baseline cost at 2.5× raw match tokens (accounting for context lines, separators, and full paths), up from 1× which showed misleadingly low savings.
+- **Track-mode dilution** — Shell commands in track-only mode (no compression) no longer record `(0, 0)` token entries that inflated command counts without contributing savings, improving the dashboard savings rate from ~30% to 86%+.
+- **Crash-loop backoff guard** — MCP server startup now detects rapid restart loops (>5 starts in 30s) and applies exponential backoff (up to 60s), preventing system hangs during binary updates.
+- **Stats flush for short-lived CLI** — explicit `stats::flush()` calls after CLI `read`, `grep`, `ls`, `diff`, `deps` commands ensure token savings from hook subprocesses are persisted to disk immediately.
+
+### Changed
+
+- **Agent HookMode reclassification** — CRUSH, Hermes, OpenCode, Pi, and Qoder moved from `CliRedirect` to `Hybrid` mode because their hook mechanisms cannot guarantee full interception of all tool types. Only Cursor, Codex CLI, and Gemini CLI remain in pure CLI-redirect mode.
+- **Claude Code Hybrid mode** — Claude Code now uses Hybrid mode (MCP + hooks) instead of CLI-redirect. `lean-ctx init --agent claude` installs the MCP server entry in `~/.claude.json` and configures PreToolUse hooks for Bash compression. This ensures full functionality even in headless (`-p`) mode where PreToolUse hooks don't fire.
+- **Antigravity dedicated hook** — `lean-ctx init --agent antigravity` now has its own installation function (no longer shares with Gemini CLI), correctly configuring MCP at `~/.gemini/antigravity/mcp_config.json` and hook matchers for Antigravity's native tools (`run_command`, `view_file`, `grep_search`).
+
+## [3.5.1] — 2026-05-06
+
+### Fixed
+
+- **Tool Registry not initialized** — `ctx_tree`, `ctx_discover_tools`, and 23 other trait-based tools returned "Unknown tool" because the registry was never wired up at server startup. All 56 advertised tools are now dispatchable. Fixes #184.
+- **Copilot CLI MCP path** — `lean-ctx init --agent copilot` now creates `.github/mcp.json` with the correct `"mcpServers"` key (per GitHub Copilot CLI spec), in addition to `.vscode/mcp.json` with the VS Code `"servers"` key. Previously wrote to the wrong path (`.github/copilot/mcp.json`) with the wrong key format.
+- **Agent-scoped project rules** — `lean-ctx init --agent copilot` no longer creates `.cursorrules` or `.claude/rules/` files. Project rules are now scoped to the requested agent(s).
+- **SKILL.md for Copilot/VS Code** — `lean-ctx setup` now installs SKILL.md for GitHub Copilot / VS Code users, and `lean-ctx doctor` checks the correct path (`~/.vscode/skills/lean-ctx/SKILL.md`).
+
+## [3.5.0] — 2026-05-06
+
+### Added
+
+- **Context OS Runtime** — full integration of shared sessions, event bus, and SSE endpoints for real-time multi-agent collaboration. Agents can subscribe to context changes, broadcast events, and share session state across workspaces.
+- **Daemon Mode** — persistent background daemon with CLI-first dispatch. `lean-ctx daemon start/stop/status` manages the process. All CLI commands route through the daemon for sub-millisecond response times and shared state.
+- **Context Package System** — versioned, shareable context bundles with `lean-ctx pack create/list/info/export/import/install/remove/auto-load`. Package layers (knowledge, gotchas, config, graph) enable portable project intelligence.
+- **Context Field Theory (CFT)** — unified model for context management with Context Potential Function, Rich Context Ledger, Context Overlay System, Context Handles, and Context Compiler.
+- **Provider Framework** — pluggable provider system with GitLab integration and caching layer for external context sources.
+- **Autonomy Drivers** — configurable agent autonomy levels with intent routing and degradation policies.
+- **Context IR** — intermediate representation for context compilation, enabling cross-provider optimization.
+- **Instruction Compiler** — `lean-ctx instructions` command compiles project-specific rules into optimized agent instructions.
+- **Context Proof System** — `lean-ctx proof` generates verifiable context provenance chains for audit trails.
+- **Team Server: Context OS scopes** — `SessionMutations`, `Knowledge`, and `Audit` scopes for fine-grained team permissions via `lean-ctx team token create`.
+- **Qoder & QoderWork support** — new editor integration for Qoder IDE. PR #180 by @zsefvlol.
+- **56 MCP tools** — exposed all registered tools for installed agents, including new `ctx_verify`, `ctx_proof`, `ctx_provider`, `ctx_artifacts`, `ctx_index` tools. Fixes #176.
+- **38 Context OS integration tests** — comprehensive test suite covering multi-client concurrency, event bus, shared sessions, and SSE endpoints.
+- **Windows OpenCode guide** — step-by-step manual for OpenCode on Windows 10. PR #181 by @HamedEmine.
+
+### Changed
+
+- **CLI-First Architecture** — all new modules (daemon, providers, instruction compiler, proof, overview, knowledge, compress, verify) are accessible as CLI subcommands, reducing MCP schema overhead.
+- **Server Refactor** — modular tool registry with `ToolTrait`, pipeline stages, and per-tool dispatch for cleaner extensibility.
+- **A2A alignment** — `ScratchpadEntry` now aligns with `A2AMessage` types for cross-agent interoperability.
+- **HTTP-MCP contract** — extended with full Context OS API surface documentation.
+- **Shell pattern library** — expanded to 95+ output compression patterns including clang, fd, glab, just, ninja.
+- **Property Graph** — enhanced with metadata layer and reproducibility contract.
+
+### Fixed
+
+- **CLI relative path resolution** — paths are now resolved to absolute before sending to the daemon, preventing "file not found" errors when working directory differs.
+- **`install.sh` POSIX compliance** — rewritten as pure POSIX sh so `curl | sh` works on dash (Ubuntu/Debian default). PR #175 by @narthanaj.
+- **Qoder MCP config** — added `LEAN_CTX_FULL_TOOLS` to Qoder configuration for complete tool exposure. Includes clippy fixes.
+- **Team SSE endpoint** — removed dead code and properly wired `audit_event` into the SSE stream.
+
 ## [3.4.7] — 2026-05-01
 
 ### Added

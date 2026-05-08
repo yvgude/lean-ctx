@@ -1,8 +1,8 @@
 [package]
 name = "lean-ctx"
-version = "3.4.7"
+version = "3.5.8"
 edition = "2021"
-description = "Context Runtime for AI Agents with CCP. 49 MCP tools, 10 read modes, 90+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing + diaries, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24 AI tools. Reduces LLM token consumption by up to 99%."
+description = "Context Runtime for AI Agents with CCP. 57 MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing + diaries, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24 AI tools. Reduces LLM token consumption by up to 99%."
 license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
@@ -25,12 +25,13 @@ path = "src/cloud_server_main.rs"
 required-features = ["cloud-server"]
 
 [features]
-default = ["tree-sitter", "embeddings", "http-server"]
+default = ["tree-sitter", "embeddings", "http-server", "secure-update"]
 neural = ["dep:rten", "dep:rten-tensor"]
 embeddings = ["dep:rten", "dep:rten-tensor"]
 http-server = ["dep:axum", "dep:tower-http", "dep:reqwest"]
 qdrant = ["embeddings"]
-team-server = ["http-server", "dep:sha2"]
+team-server = ["http-server"]
+secure-update = []
 cloud-server = [
   "http-server",
   "dep:deadpool-postgres",
@@ -39,7 +40,6 @@ cloud-server = [
   "dep:jsonwebtoken",
   "dep:uuid",
   "dep:hex",
-  "dep:sha2",
   "dep:rand",
 ]
 tree-sitter = [
@@ -119,15 +119,18 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 jsonwebtoken = { version = "10.3", optional = true }
 uuid = { version = "1", features = ["v4", "serde"], optional = true }
 hex = { version = "0.4", optional = true }
-sha2 = { version = "0.10", optional = true }
+hmac = "0.12"
+sha2 = "0.10"
 rand = { version = "0.9.3", optional = true }
 glob = "0.3.3"
+urlencoding = "2"
 ratatui = "0.30"
 crossterm = "0.28"
 rpassword = "7.4.0"
 getrandom = "0.3"
 reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream", "json"], optional = true }
 bytecount = "0.6.9"
+libc = "0.2"
 
 [lints.rust]
 # CI coverage (cargo-tarpaulin) injects `--cfg tarpaulin`; declare it to avoid
