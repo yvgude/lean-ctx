@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [3.5.9] — 2026-05-09
+
+### Fixed
+
+- **Codex config corruption with tool approval entries (GitHub #191)** — When Codex auto-adds per-tool approval entries (`[mcp_servers.lean-ctx.tools.ctx_read]`, etc.) to `config.toml`, the parent `[mcp_servers.lean-ctx]` section could be missing (e.g. after a v3.5.6 upgrade removed it). `upsert_codex_toml` now detects orphaned `[mcp_servers.lean-ctx.*]` sub-tables and inserts the parent section **before** them instead of appending at the end, which Codex's TOML parser rejected with "invalid transport".
+- **AGENTS.md reference uses absolute path** — The lean-ctx block in `~/.codex/AGENTS.md` now references `` `~/.codex/LEAN-CTX.md` `` instead of `LEAN-CTX.md (same directory)`, preventing AI agents from misinterpreting the relative reference as the project working directory.
+
+### Security
+
+- **fast-uri 3.1.0 → 3.1.2 (VSCode extension)** — Fixes GHSA-v39h-62p7-jpjc (malformed fragment decoding) and GHSA-q3j6-qgpj-74h6 (URI parsing vulnerability).
+
+### Improved
+
+- **Dashboard cockpit polish** — Refined Context Explorer with improved layout, resizable panels, and better file tree navigation. Updated styling across all cockpit components for consistency. Improved graph visualization layout and memory inspector presentation.
+
 ## [3.5.8] — 2026-05-08
 
 ### Security

@@ -1,6 +1,6 @@
 {
   "name": "pi-lean-ctx",
-  "version": "3.5.8",
+  "version": "3.5.9",
   "description": "Pi Coding Agent extension (CLI-first) \u2014 routes bash/read/grep/find/ls through lean-ctx CLI for strong token savings. Optional MCP bridge can register advanced tools.",
   "keywords": [
     "pi-package",

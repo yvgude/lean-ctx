@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeanCTX Context Cockpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+/* Cockpit shell — works with tokens in style.css */
+.cockpit-shell-styles .topbar{
+  display:flex;align-items:center;gap:16px;
+  padding:12px 24px;
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.topbar-breadcrumb{
+  display:flex;align-items:center;gap:0;min-width:0;flex-shrink:0;
+}
+.breadcrumb-row{
+  font-size:13px;color:var(--muted);
+  display:flex;align-items:center;gap:6px;
+}
+.breadcrumb-row .bc-root{color:var(--muted);font-weight:400;font-size:13px}
+.breadcrumb-row .bc-sep{opacity:0.3;font-size:12px}
+.breadcrumb-row .bc-current{color:var(--text-bright);font-weight:600;font-size:14px}
+.topbar-center{
+  flex:1 1 200px;max-width:480px;margin:0 auto;
+}
+.global-search-wrap{position:relative;width:100%}
+.global-search-wrap kbd{
+  position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  font-size:9px;font-family:var(--mono);color:var(--muted);
+  border:1px solid var(--border);border-radius:4px;padding:2px 6px;pointer-events:none;
+  background:var(--surface-2);opacity:0.7;
+}
+.global-search{
+  width:100%;padding:8px 52px 8px 14px;
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:999px;color:var(--text);font-family:var(--font);font-size:12px;
+  outline:none;transition:all .2s;
+}
+.global-search:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(52,211,153,0.08);background:var(--surface)}
+.global-search::placeholder{color:var(--muted);font-size:12px}
+.topbar-right-cluster{
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
+}
+.topbar-status{
+  display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);
+  padding:5px 12px;background:var(--bg);border-radius:999px;border:1px solid var(--border);
+}
+.topbar-status .ts-item{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.topbar-status .ts-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.topbar-status .ts-dot.on{background:var(--green);box-shadow:0 0 6px rgba(52,211,153,0.5)}
+.topbar-status .ts-dot.off{background:var(--red);box-shadow:none;animation:none}
+.topbar-status .agent-badge{
+  font-size:10px;font-weight:600;font-family:var(--mono);
+  background:var(--purple-dim);color:var(--purple);
+  padding:1px 7px;border-radius:999px;
+}
+.topbar-status .session-pill{
+  max-width:140px;overflow:hidden;text-overflow:ellipsis;
+  font-size:10px;color:var(--text);opacity:0.8;
+}
+.topbar-status .ts-sep{width:1px;height:14px;background:var(--border);flex-shrink:0}
+.theme-toggle{
+  display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border-radius:999px;border:1px solid var(--border);
+  background:var(--bg);color:var(--muted);cursor:pointer;transition:.15s;
+}
+.theme-toggle:hover{border-color:var(--green);color:var(--green)}
+.cockpit-status-bar{
+  position:fixed;bottom:0;left:var(--sidebar-w);right:0;height:32px;z-index:250;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:0 16px 0 20px;
+  font-size:11px;font-family:var(--mono);color:var(--muted);
+  background:var(--surface);border-top:1px solid var(--border);
+  box-shadow:0 -2px 12px rgba(0,0,0,0.12);
+  transition:left .25s var(--ease-out);
+}
+.cockpit-status-bar .sb-l,.cockpit-status-bar .sb-c,.cockpit-status-bar .sb-r{
+  display:flex;align-items:center;gap:10px;min-width:0;
+}
+.cockpit-status-bar .sb-c{flex:1;justify-content:center;text-align:center}
+.cockpit-status-bar .sb-strong{color:var(--text-bright);font-weight:600}
+.cockpit-status-bar .sb-sep{opacity:0.35}
+.toast-host{
+  position:fixed;right:16px;bottom:40px;z-index:var(--z-modal);
+  display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none;
+  max-width:min(360px, calc(100vw - 32px));
+}
+.cockpit-toast{
+  pointer-events:auto;
+  padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.4;
+  border:1px solid var(--border);background:var(--surface);
+  color:var(--text);box-shadow:var(--shadow-md);
+  opacity:0;transform:translateX(12px);transition:opacity .25s var(--ease-out), transform .25s var(--ease-out);
+}
+.cockpit-toast.show{opacity:1;transform:translateX(0)}
+.cockpit-toast.toast-success{border-color:rgba(52,211,153,0.35);background:var(--green-dim);color:var(--green)}
+[data-theme="light"] .cockpit-toast.toast-success{border-color:rgba(5,150,105,0.35)}
+.cockpit-toast.toast-error{border-color:rgba(248,113,113,0.35);background:var(--red-dim);color:var(--red)}
+[data-theme="light"] .cockpit-toast.toast-error{border-color:rgba(220,38,38,0.35)}
+.cockpit-toast.toast-info{border-color:var(--border-light)}
+.detail-panel{
+  transform:translateX(8px);
+  transition:transform .35s var(--ease-out), right .35s var(--ease-out), box-shadow .35s ease;
+}
+.detail-panel.open{transform:translateX(0)}
+@media(max-width:768px){
+  .cockpit-status-bar{left:0;padding-left:12px}
+  .topbar-center{max-width:100%;order:3;flex-basis:100%}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js" defer></script>
+<script>
+(function(){
+  if (window.__LEAN_CTX_TOKEN__) {
+    try { sessionStorage.setItem('lctx_token', window.__LEAN_CTX_TOKEN__); } catch(e) {}
+  } else {
+    try { var st = sessionStorage.getItem('lctx_token'); if (st) window.__LEAN_CTX_TOKEN__ = st; } catch(e) {}
+  }
+  var _origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    if (window.__LEAN_CTX_TOKEN__ && typeof url === 'string' && url.startsWith('/api/')) {
+      opts = opts || {};
+      opts.headers = opts.headers || {};
+      opts.headers['Authorization'] = 'Bearer ' + window.__LEAN_CTX_TOKEN__;
+    }
+    return _origFetch.call(this, url, opts);
+  };
+})();
+</script>
+<script src="/static/lib/format.js" defer></script>
+<script src="/static/lib/shared.js" defer></script>
+<script type="module" src="/static/lib/api.js"></script>
+<script type="module" src="/static/lib/charts.js"></script>
+<script type="module" src="/static/lib/router.js"></script>
+<script type="module" src="/static/components/cockpit-nav.js"></script>
+<script type="module" src="/static/components/cockpit-context.js"></script>
+<script type="module" src="/static/components/cockpit-overview.js"></script>
+<script type="module" src="/static/components/cockpit-live.js"></script>
+<script type="module" src="/static/components/cockpit-knowledge.js"></script>
+<script type="module" src="/static/components/cockpit-agents.js"></script>
+<script type="module" src="/static/components/cockpit-memory.js"></script>
+<script type="module" src="/static/components/cockpit-search.js"></script>
+<script type="module" src="/static/components/cockpit-compression.js"></script>
+<script type="module" src="/static/components/cockpit-graph.js"></script>
+<script type="module" src="/static/components/cockpit-health.js"></script>
+<script type="module" src="/static/components/cockpit-remaining.js"></script>
+</head>
+<body class="cockpit-shell-styles">
+<div class="app-layout">
+  <cockpit-nav id="cockpitNav"></cockpit-nav>
+
+  <main class="main" id="mainContent">
+    <div class="content-container">
+    <div class="topbar" id="topbar">
+      <div class="topbar-breadcrumb">
+        <div class="breadcrumb-row" aria-label="Breadcrumb">
+          <span class="bc-root">Context Cockpit</span>
+          <span class="bc-sep">/</span>
+          <span class="bc-current" id="breadcrumbCurrent">Overview</span>
+        </div>
+      </div>
+      <div class="topbar-center">
+        <div class="global-search-wrap">
+          <input type="search" class="global-search" id="globalSearch" placeholder="Search… (Enter for Search Explorer)" autocomplete="off" aria-label="Global search">
+          <kbd>⌘K</kbd>
+        </div>
+      </div>
+      <div class="topbar-right-cluster">
+        <div class="topbar-status" id="topbarStatus" aria-live="polite">
+          <span class="ts-item" title="Daemon">
+            <span class="ts-dot on" id="daemonDotTop" aria-hidden="true"></span>
+            <span id="daemonLabelTop">Daemon</span>
+          </span>
+          <span class="ts-sep"></span>
+          <span class="agent-badge" id="agentCountBadge" title="Active agents">0</span>
+          <span class="ts-sep"></span>
+          <span class="session-pill" id="sessionInfoTop" title="Session">—</span>
+        </div>
+        <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle light and dark theme" title="Theme">
+          <svg id="themeIconSun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          <svg id="themeIconMoon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        </button>
+        <button class="theme-toggle" id="refreshBtn" type="button" title="Refresh data">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <section id="view-overview" class="view active">
+      <cockpit-overview id="overviewView"></cockpit-overview>
+    </section>
+    <section id="view-context" class="view">
+      <cockpit-context id="contextView"></cockpit-context>
+    </section>
+    <section id="view-live" class="view">
+      <cockpit-live id="liveView"></cockpit-live>
+    </section>
+    <section id="view-knowledge" class="view">
+      <cockpit-knowledge id="knowledgeView"></cockpit-knowledge>
+    </section>
+    <section id="view-deps" class="view">
+      <cockpit-graph id="depsView" data-tab="deps"></cockpit-graph>
+    </section>
+    <section id="view-compression" class="view">
+      <cockpit-compression id="compressionView"></cockpit-compression>
+    </section>
+    <section id="view-agents" class="view">
+      <cockpit-agents id="agentsView"></cockpit-agents>
+    </section>
+    <section id="view-memory" class="view">
+      <cockpit-memory id="memoryView"></cockpit-memory>
+    </section>
+    <section id="view-search" class="view">
+      <cockpit-search id="searchView"></cockpit-search>
+    </section>
+    <section id="view-learning" class="view">
+      <cockpit-learning id="learningView"></cockpit-learning>
+    </section>
+    <section id="view-symbols" class="view">
+      <cockpit-graph id="symbolsView" data-tab="symbols"></cockpit-graph>
+    </section>
+    <section id="view-callgraph" class="view">
+      <cockpit-graph id="callgraphView" data-tab="callgraph"></cockpit-graph>
+    </section>
+    <section id="view-routes" class="view">
+      <cockpit-routes id="routesView"></cockpit-routes>
+    </section>
+    <section id="view-contextlayer" class="view">
+      <cockpit-contextlayer id="contextlayerView"></cockpit-contextlayer>
+    </section>
+    <section id="view-health" class="view">
+      <cockpit-health id="healthView"></cockpit-health>
+    </section>
+    </div>
+  </main>
+</div>
+
+<footer class="cockpit-status-bar" id="cockpitStatusBar" role="status" aria-live="polite">
+  <div class="sb-l">
+    <span class="ts-dot on" id="daemonDotBar" aria-hidden="true"></span>
+    <span id="sbDaemonText">Connected</span>
+    <span class="sb-sep">·</span>
+    <span id="sbVersion">v---</span>
+  </div>
+  <div class="sb-c">
+    <span>Tokens saved</span>
+    <span class="sb-strong" id="sbTokensSaved">—</span>
+  </div>
+  <div class="sb-r">
+    <span id="sbCompression">Compression —</span>
+    <span class="sb-sep">·</span>
+    <span id="sbSession">No session</span>
+  </div>
+</footer>
+
+<div class="toast-host" id="toastHost" aria-live="polite" aria-relevant="additions"></div>
+
+<div class="detail-panel" id="detailPanel">
+  <button type="button" class="detail-panel-close" id="detailPanelClose" aria-label="Close panel">&times;</button>
+  <h3 class="detail-panel-title" id="detailPanelTitle"></h3>
+  <div id="detailPanelBody"></div>
+</div>
+
+<script type="module">
+function bootCockpit() {
+  var THEME_KEY = 'lctx_theme';
+
+  function getStoredTheme() {
+    try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; }
+  }
+
+  function systemPrefersLight() {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  }
+
+  function resolveTheme() {
+    var s = getStoredTheme();
+    if (s === 'light' || s === 'dark') return s;
+    return systemPrefersLight() ? 'light' : 'dark';
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    var sun = document.getElementById('themeIconSun');
+    var moon = document.getElementById('themeIconMoon');
+    var btn = document.getElementById('themeToggle');
+    if (theme === 'light') {
+      if (sun) sun.style.display = '';
+      if (moon) moon.style.display = 'none';
+      if (btn) btn.setAttribute('title', 'Switch to dark theme');
+    } else {
+      if (sun) sun.style.display = 'none';
+      if (moon) moon.style.display = '';
+      if (btn) btn.setAttribute('title', 'Switch to light theme');
+    }
+  }
+
+  applyTheme(resolveTheme());
+
+  try {
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () {
+      if (getStoredTheme()) return;
+      applyTheme(resolveTheme());
+    });
+  } catch (e) {}
+
+  var themeToggle = document.getElementById('themeToggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function () {
+      var cur = document.documentElement.getAttribute('data-theme') || resolveTheme();
+      var next = cur === 'light' ? 'dark' : 'light';
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      applyTheme(next);
+    });
+  }
+
+  var nav = document.getElementById('cockpitNav');
+  if (nav) {
+    nav.addEventListener('navigate', function (e) {
+      if (window.LctxRouter && e.detail && e.detail.viewId) {
+        window.LctxRouter.navigateTo(e.detail.viewId);
+      }
+    });
+  }
+
+  function escTitle(s) {
+    if (window.LctxFmt && typeof window.LctxFmt.esc === 'function') return window.LctxFmt.esc(String(s));
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  window.showDetail = function (title, html) {
+    var panel = document.getElementById('detailPanel');
+    var ht = document.getElementById('detailPanelTitle');
+    var body = document.getElementById('detailPanelBody');
+    if (ht) ht.innerHTML = escTitle(title || '');
+    if (body) body.innerHTML = html || '';
+    if (panel) panel.classList.add('open');
+  };
+
+  window.closeDetail = function () {
+    var panel = document.getElementById('detailPanel');
+    if (panel) panel.classList.remove('open');
+  };
+
+  window.showToast = function (message, type) {
+    var host = document.getElementById('toastHost');
+    if (!host) return;
+    var t = document.createElement('div');
+    t.className = 'cockpit-toast toast-' + String(type || 'info');
+    t.textContent = String(message || '');
+    host.appendChild(t);
+    requestAnimationFrame(function () { t.classList.add('show'); });
+    setTimeout(function () {
+      t.classList.remove('show');
+      setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 280);
+    }, 3000);
+  };
+
+  var closeBtn = document.getElementById('detailPanelClose');
+  if (closeBtn) closeBtn.addEventListener('click', window.closeDetail);
+
+  document.addEventListener('lctx:view', function (e) {
+    var label = e.detail && e.detail.label;
+    var el = document.getElementById('breadcrumbCurrent');
+    if (el && label) el.textContent = label;
+  });
+
+  var globalSearch = document.getElementById('globalSearch');
+  var searchKbd = document.querySelector('.global-search-wrap kbd');
+  if (searchKbd) {
+    searchKbd.textContent =
+      typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || '')
+        ? '⌘K'
+        : 'Ctrl+K';
+  }
+  if (globalSearch) {
+    globalSearch.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var q = globalSearch.value.trim();
+        try { sessionStorage.setItem('lctx_search_query', q); } catch (err) {}
+        document.dispatchEvent(new CustomEvent('lctx:search-submit', { detail: { query: q } }));
+        if (window.LctxRouter) window.LctxRouter.navigateTo('search');
+      }
+    });
+  }
+
+  document.addEventListener('keydown', function (e) {
+    var isK = e.key === 'k' || e.key === 'K';
+    if ((e.metaKey || e.ctrlKey) && isK) {
+      var gs = document.getElementById('globalSearch');
+      if (gs) {
+        e.preventDefault();
+        gs.focus();
+        gs.select();
+      }
+    }
+  });
+
+  var pulseHash = null;
+  var daemonUp = false;
+
+  function setDaemonConnected(up) {
+    daemonUp = !!up;
+    var dotTop = document.getElementById('daemonDotTop');
+    var dotBar = document.getElementById('daemonDotBar');
+    var lblTop = document.getElementById('daemonLabelTop');
+    var sbTxt = document.getElementById('sbDaemonText');
+    [dotTop, dotBar].forEach(function (d) {
+      if (!d) return;
+      d.classList.toggle('on', daemonUp);
+      d.classList.toggle('off', !daemonUp);
+    });
+    if (lblTop) lblTop.textContent = daemonUp ? 'Daemon' : 'Offline';
+    if (sbTxt) sbTxt.textContent = daemonUp ? 'Connected' : 'Offline';
+  }
+
+  function formatTok(n) {
+    if (window.LctxFmt && typeof window.LctxFmt.ff === 'function') return window.LctxFmt.ff(n);
+    return String(n);
+  }
+
+  function applyStatsToStatusBar(stats) {
+    var sbTok = document.getElementById('sbTokensSaved');
+    var sbComp = document.getElementById('sbCompression');
+    if (!stats) {
+      if (sbTok) sbTok.textContent = '—';
+      if (sbComp) sbComp.textContent = 'Compression —';
+      return;
+    }
+    var inp = Number(stats.total_input_tokens || 0);
+    var out = Number(stats.total_output_tokens || 0);
+    var saved = Math.max(0, inp - out);
+    var pct = inp > 0 ? Math.round(Math.min(100, (saved / inp) * 100)) : 0;
+    if (sbTok) sbTok.textContent = formatTok(saved);
+    if (sbComp) sbComp.textContent = 'Compression ' + pct + '%';
+  }
+
+  function applyAgentsToTop(agentsPayload) {
+    var badge = document.getElementById('agentCountBadge');
+    var n = agentsPayload && typeof agentsPayload.total_active === 'number' ? agentsPayload.total_active : 0;
+    if (badge) {
+      badge.textContent = String(n);
+      badge.title = n === 1 ? '1 active agent' : n + ' active agents';
+    }
+  }
+
+  function hasMeaningfulSession(sess) {
+    if (!sess) return false;
+    if (sess.task && sess.task.description) return true;
+    if (sess.files_touched && sess.files_touched.length) return true;
+    if (sess.findings && sess.findings.length) return true;
+    return false;
+  }
+
+  function sessionTopSummary(sess) {
+    if (!hasMeaningfulSession(sess)) return '—';
+    var t = sess.task && sess.task.description ? String(sess.task.description) : '';
+    if (t) return t.length > 48 ? t.slice(0, 45) + '…' : t;
+    var root = sess.project_root || sess.shell_cwd || '';
+    if (root) {
+      var parts = root.replace(/\/$/, '').split('/');
+      var leaf = parts[parts.length - 1] || root;
+      return leaf.length > 48 ? leaf.slice(0, 45) + '…' : leaf;
+    }
+    return 'Session';
+  }
+
+  function sessionBarLabel(sess) {
+    if (!hasMeaningfulSession(sess)) return 'No session';
+    var t = sessionTopSummary(sess);
+    return t === '—' ? 'No session' : 'Active · ' + t;
+  }
+
+  function applySessionUI(sess) {
+    var top = document.getElementById('sessionInfoTop');
+    var sb = document.getElementById('sbSession');
+    if (top) {
+      top.textContent = sessionTopSummary(sess);
+      top.title = sess && sess.task && sess.task.description ? sess.task.description : top.textContent;
+    }
+    if (sb) sb.textContent = sessionBarLabel(sess);
+  }
+
+  window.checkPulse = async function checkPulse() {
+    var refreshBtn = document.getElementById('refreshBtn');
+    try {
+      var res = await fetch('/api/pulse', { cache: 'no-store' });
+      if (!res.ok) throw new Error('pulse http');
+      var data = await res.json();
+      setDaemonConnected(true);
+      if (pulseHash !== null && data.hash !== pulseHash && refreshBtn) {
+        refreshBtn.classList.add('has-update');
+      }
+      pulseHash = data.hash;
+    } catch (e) {
+      setDaemonConnected(false);
+    }
+  };
+
+  async function refreshMetrics() {
+    var stats = null;
+    var agents = null;
+    var sess = null;
+    try {
+      stats = await fetch('/api/stats', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; });
+    } catch (e) { stats = null; }
+    try {
+      agents = await fetch('/api/agents', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; });
+    } catch (e) { agents = null; }
+    try {
+      sess = await fetch('/api/session', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; });
+    } catch (e) { sess = null; }
+
+    if (!daemonUp) {
+      /* keep last stats if pulse failed; do not pretend zeros are fresh */
+    }
+    applyStatsToStatusBar(stats);
+    applyAgentsToTop(agents || {});
+    applySessionUI(sess);
+  }
+
+  async function pollCockpit() {
+    await window.checkPulse();
+    if (daemonUp) await refreshMetrics();
+    else {
+      applyStatsToStatusBar(null);
+      applyAgentsToTop({});
+      applySessionUI(null);
+    }
+  }
+
+  var refreshBtn = document.getElementById('refreshBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', function () {
+      refreshBtn.classList.add('spinning');
+      refreshBtn.classList.remove('has-update');
+      setTimeout(function () { refreshBtn.classList.remove('spinning'); }, 600);
+      document.dispatchEvent(new CustomEvent('lctx:refresh'));
+      pollCockpit();
+      if (window.LctxRouter && window.LctxRouter.getActiveViewId) {
+        window.LctxRouter.navigateTo(window.LctxRouter.getActiveViewId());
+      }
+    });
+  }
+
+  function syncVersionBadge(ver) {
+    var badge = document.getElementById('verBadge');
+    var sbVer = document.getElementById('sbVersion');
+    var t = ver || 'v---';
+    if (badge) badge.textContent = t;
+    if (sbVer) sbVer.textContent = t;
+    if (nav && typeof nav.setVersion === 'function') nav.setVersion(t);
+  }
+  fetch('/api/version', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    var ver = j && (j.version || j.current);
+    if (ver) syncVersionBadge('v' + ver);
+  }).catch(function () {});
+
+  pollCockpit();
+  setInterval(pollCockpit, 10000);
+
+  if (window.LctxRouter && window.LctxRouter.init) window.LctxRouter.init();
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootCockpit);
+} else {
+  bootCockpit();
+}
+</script>
+</body>
+</html>
