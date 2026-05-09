@@ -326,6 +326,94 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <div class="section-divider content-grid"></div>
 
 
+<!-- ═══════ LEAN4 FORMAL VERIFICATION ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('safety.lean4Label')}
+      title={t('safety.lean4Title')}
+      highlight={t('safety.lean4TitleHighlight')}
+      description={t('safety.lean4Desc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent">{t('safety.lean4Stat1Value')}</span>
+        <span class="stat-desc">{t('safety.lean4Stat1Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-2">{t('safety.lean4Stat2Value')}</span>
+        <span class="stat-desc">{t('safety.lean4Stat2Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-3">{t('safety.lean4Stat3Value')}</span>
+        <span class="stat-desc">{t('safety.lean4Stat3Desc')}</span>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-2">
+      <div class="terminal-chrome">
+        <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-muted text-[11px] ml-2 font-mono">{t('safety.lean4TerminalLabel')}</span>
+        </div>
+        <div class="px-4 sm:px-6 py-4 sm:py-5">
+          <pre class="text-[11px] sm:text-[13px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">$</span> <span class="text-text-bright">lake build</span>
+
+<span class="text-accent font-bold">Build completed successfully.</span>
+<span class="text-muted/40">  82 theorems verified</span>
+<span class="text-muted/40">  0 sorry (unproven lemmas)</span>
+<span class="text-muted/40">  0 warnings</span>
+
+<span class="text-muted/60">$</span> <span class="text-text-bright">ctx_proof</span> <span class="text-accent">--format v2</span>
+
+<span class="text-accent font-bold">ContextProofV2</span> <span class="text-muted">· 8 claims extracted</span>
+  <span class="text-muted/40">├─ PathJail:       proved (Lean4) · Q4</span>
+  <span class="text-muted/40">├─ Budget:         proved (Lean4) · Q4</span>
+  <span class="text-muted/40">├─ Scope:          proved (Lean4) · Q4</span>
+  <span class="text-muted/40">├─ TerseQuality:   proved (Lean4) · Q4</span>
+  <span class="text-muted/40">├─ TerseEngine:    proved (Lean4) · Q4</span>
+  <span class="text-muted/40">├─ Compression:    preserved       · Q3</span>
+  <span class="text-muted/40">├─ Secrets:        passed           · Q2</span>
+  <span class="text-muted/40">└─ Quality Level:  <span class="text-accent font-bold">4 (Formally Verified)</span></span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.lean4PolicyTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.lean4PolicyDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.lean4CompressionTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.lean4CompressionDesc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('safety.lean4HandoffTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('safety.lean4HandoffDesc')}</p>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <a href={lp('/context-os/verification')} class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium">
+        {t('safety.lean4Link')}
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">

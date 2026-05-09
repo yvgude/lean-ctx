@@ -86,10 +86,10 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td set:html={t('docsConfiguration.ultraCompactDesc')} />
       </tr>
       <tr>
-        <td><code>output_density</code></td>
+        <td><code>compression_level</code></td>
         <td>string</td>
-        <td><code>"normal"</code></td>
-        <td>Controls <strong>tool response</strong> compression (input tokens). <code>"normal"</code> = full output, <code>"terse"</code> = moderate compression, <code>"ultra"</code> = maximum compression. This controls what the agent <em>reads</em>. Compare with <a href="#terse-agent"><code>terse_agent</code></a> which controls what the agent <em>writes</em>. See <a href="#output-density">Output Density</a>.</td>
+        <td><code>"standard"</code></td>
+        <td>Unified compression level controlling the 4-layer terse engine. <code>"off"</code> = no compression, <code>"lite"</code> = abbreviations only, <code>"standard"</code> = balanced compression, <code>"max"</code> = maximum token savings. Replaces the legacy <code>output_density</code> and <code>terse_agent</code> settings. See <a href="#compression-level">Compression Level</a>.</td>
       </tr>
       <tr>
         <td><code>minimal_overhead</code></td>
@@ -149,7 +149,7 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td><code>terse_agent</code></td>
         <td>string</td>
         <td><code>"off"</code></td>
-        <td>Bidirectional token optimization with 3 aggressiveness levels. <code>"off"</code> = disabled, <code>"lite"</code> = abbreviations + function refs, <code>"full"</code> = CEP v1 protocol with 150-token budget, <code>"ultra"</code> = maximum compression with single-line output. Also accepts <code>true</code>/<code>false</code> for backward compatibility (<code>true</code> maps to <code>"full"</code>). Interacts with CRP mode. Controls what the agent <em>writes</em>. See <a href="#terse-agent">Terse Agent Mode</a>.</td>
+        <td><strong>Legacy</strong> — superseded by <a href="#compression-level"><code>compression_level</code></a>. Still accepted for backward compatibility (<code>"off"</code>/<code>"lite"</code>/<code>"full"</code>/<code>"ultra"</code> and <code>true</code>/<code>false</code>). If both are set, <code>compression_level</code> takes precedence.</td>
       </tr>
       <tr>
         <td><code>rules_scope</code></td>
@@ -271,9 +271,14 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>Override which shell lean-ctx uses for <code>ctx_shell</code> / <code>lean-ctx -c</code>. Useful on Windows when PowerShell detection fails. Example: <code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></td>
       </tr>
       <tr>
+        <td><code>LEAN_CTX_COMPRESSION_LEVEL</code></td>
+        <td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td>
+        <td>Override <code>compression_level</code> config setting. Controls the 4-layer terse engine for unified input/output compression. See <a href="#compression-level">Compression Level</a>.</td>
+      </tr>
+      <tr>
         <td><code>LEAN_CTX_TERSE_AGENT</code></td>
         <td><code>true</code> / <code>false</code></td>
-        <td>Override <code>terse_agent</code> config setting. When <code>true</code>, agent instructions include the CEP v1 output protocol for bidirectional token optimization. See <a href="#terse-agent">Terse Agent Mode</a>.</td>
+        <td><strong>Legacy.</strong> Override <code>terse_agent</code> config. Mapped to <code>compression_level</code> internally. See <a href="#compression-level">Compression Level</a>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_ARCHIVE</code></td>
@@ -701,33 +706,33 @@ include_knowledge = true      # Include knowledge base entries in resume (defaul
 
   <hr />
 
-  <h2 id="terse-agent">Terse Agent Mode <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <h2 id="compression-level">Compression Level <span class="text-xs font-normal text-muted ml-2">v4.0.0</span></h2>
   <p>
-    Terse Agent Mode optimizes both directions of the AI conversation: not just <em>input</em>
-    tokens (tool responses), but also <em>output</em> tokens (the agent's own responses).
-    When enabled, the agent instructions include the CEP v1 protocol which trains the agent
-    to use function references, delta-only output, and structured notation.
+    <code>compression_level</code> is the unified control for the 4-layer terse engine, replacing the legacy
+    <code>output_density</code> and <code>terse_agent</code> settings. It governs both <em>input</em> compression
+    (tool responses) and <em>output</em> optimization (agent responses) through a single knob.
   </p>
 
-  <h3>Aggressiveness Levels</h3>
+  <h3>Levels</h3>
   <table>
     <thead>
       <tr><th>Level</th><th>Value</th><th>Behavior</th></tr>
     </thead>
     <tbody>
-      <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td>No output optimization. Agent responds normally.</td></tr>
-      <tr><td><strong>Lite</strong></td><td><code>"lite"</code></td><td>Abbreviations and function references (F1, F2...) enabled. Agent still explains in full sentences but avoids repetition.</td></tr>
-      <tr><td><strong>Full</strong></td><td><code>"full"</code></td><td>CEP v1 protocol active: delta-only output, structured notation, 150-token budget. The default when <code>true</code> is used.</td></tr>
-      <tr><td><strong>Ultra</strong></td><td><code>"ultra"</code></td><td>Maximum compression. Single-line output, no narration, symbols only (<code>+/-/~</code>). Best for automated pipelines.</td></tr>
+      <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td>No compression. Full tool output, no output optimization.</td></tr>
+      <tr><td><strong>Lite</strong></td><td><code>"lite"</code></td><td>Abbreviations and function references. Moderate input compression (~20-40% savings).</td></tr>
+      <tr><td><strong>Standard</strong></td><td><code>"standard"</code></td><td>Balanced compression with CEP v1 protocol, delta-only output, and structured notation. The recommended default.</td></tr>
+      <tr><td><strong>Max</strong></td><td><code>"max"</code></td><td>Maximum compression. Single-line output, aggressive truncation, symbols only. Best for CI/automated pipelines.</td></tr>
     </tbody>
   </table>
 
   <h3>Configuration</h3>
   <pre><code># ~/.lean-ctx/config.toml
-terse_agent = "full"          # off | lite | full | ultra
+compression_level = "standard"    # off | lite | standard | max
 
-# Backward compatible - true maps to "full", false maps to "off"
-# terse_agent = true</code></pre>
+# Legacy settings still accepted for backward compatibility:
+# terse_agent = "full"            # maps to compression_level = "standard"
+# output_density = "terse"        # maps to compression_level = "lite"</code></pre>
 
   <h3>Environment Variables</h3>
   <table>
@@ -735,71 +740,58 @@ terse_agent = "full"          # off | lite | full | ultra
       <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>off</code> / <code>lite</code> / <code>full</code> / <code>ultra</code> / <code>true</code> / <code>false</code></td><td>Override <code>terse_agent</code> at runtime. Accepts both the level names and boolean values for compatibility.</td></tr>
+      <tr><td><code>LEAN_CTX_COMPRESSION_LEVEL</code></td><td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td><td>Override <code>compression_level</code> at runtime.</td></tr>
+      <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>off</code> / <code>lite</code> / <code>full</code> / <code>ultra</code> / <code>true</code> / <code>false</code></td><td><strong>Legacy.</strong> Still accepted. Mapped to <code>compression_level</code> internally.</td></tr>
     </tbody>
   </table>
 
   <h3>Interaction with CRP Mode</h3>
   <p>
-    <code>terse_agent</code> and <code>LEAN_CTX_CRP_MODE</code> are complementary but independent.
+    <code>compression_level</code> and <code>LEAN_CTX_CRP_MODE</code> are complementary but independent.
     CRP mode controls the <em>format</em> of lean-ctx's own output (tdd/compact/off), while
-    <code>terse_agent</code> controls the <em>instructions given to the agent</em> about how it
+    <code>compression_level</code> controls both input compression and the <em>instructions given to the agent</em> about how it
     should respond. Both can be active simultaneously for maximum token savings.
   </p>
 
-  <h3>What Changes (Full / Ultra)</h3>
+  <h3>What Changes (Standard / Max)</h3>
   <p>
-    When terse mode is active at <code>"full"</code> or above, the agent instructions include the <strong>CEP v1</strong> output protocol:
+    When compression is active at <code>"standard"</code> or above, the 4-layer terse engine applies:
   </p>
   <ul>
-    <li><strong>Act First</strong> - Tool calls before narration</li>
-    <li><strong>Delta Only</strong> - Only changed lines, using function references (F1, F2...)</li>
-    <li><strong>Structured Notation</strong> - <code>+</code> (add), <code>-</code> (remove), <code>~</code> (modify)</li>
-    <li><strong>One Line Per Action</strong> - No verbose explanations</li>
-    <li><strong>150 Token Budget</strong> - Maximum response length for non-code output</li>
+    <li><strong>Layer 1: Dictionary</strong> — Common token substitutions and abbreviations</li>
+    <li><strong>Layer 2: Residual</strong> — Whitespace normalization, boilerplate removal</li>
+    <li><strong>Layer 3: Scoring</strong> — Information-theoretic ranking of content blocks</li>
+    <li><strong>Layer 4: Pipeline</strong> — CEP v1 protocol with delta-only output, structured notation (<code>+/-/~</code>), and token budgets</li>
   </ul>
   <p>
     This can reduce total token usage by <strong>30-50%</strong> per conversation turn.
-    Best suited for experienced developers who prefer concise, code-focused interactions.
+    Formally verified by 82 Lean4 theorems including TerseQuality and TerseEngine proofs.
+  </p>
+
+  <h3 id="terse-agent">Legacy: Terse Agent Mode</h3>
+  <p>
+    The <code>terse_agent</code> setting is still accepted for backward compatibility.
+    Values are mapped automatically: <code>"off"</code> → Off, <code>"lite"</code> → Lite,
+    <code>"full"</code> → Standard, <code>"ultra"</code> → Max. Boolean <code>true</code> maps to Standard.
   </p>
 
   <hr />
 
-  <h2 id="output-density">Output Density <span class="text-xs font-normal text-muted ml-2">v3.1.0</span></h2>
+  <h2 id="output-density">Legacy: Output Density <span class="text-xs font-normal text-muted ml-2">v3.1.0 — superseded by <a href="#compression-level">compression_level</a></span></h2>
   <p>
-    <code>output_density</code> controls how much lean-ctx compresses <strong>tool responses</strong>
-    (the data the agent reads as input tokens). This is fundamentally different from
-    <a href="#terse-agent"><code>terse_agent</code></a>, which controls the agent's own output behavior.
+    <code>output_density</code> is superseded by <a href="#compression-level"><code>compression_level</code></a>,
+    which unifies both input and output compression into a single setting.
+    The legacy <code>output_density</code> values are still accepted and mapped automatically:
+    <code>"normal"</code> → Off, <code>"terse"</code> → Lite, <code>"ultra"</code> → Max.
   </p>
 
-  <table>
-    <thead>
-      <tr><th>Setting</th><th>Direction</th><th>What it controls</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>output_density</code></td><td>Server &rarr; Agent (input tokens)</td><td>How much lean-ctx compresses tool responses before the agent sees them</td></tr>
-      <tr><td><code>terse_agent</code></td><td>Agent &rarr; User (output tokens)</td><td>How verbosely the agent writes its own responses</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Levels</h3>
-  <table>
-    <thead>
-      <tr><th>Value</th><th>Behavior</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>"normal"</code></td><td>Full tool output with standard formatting. No compression applied.</td></tr>
-      <tr><td><code>"terse"</code></td><td>Moderate compression - removes blank lines, shortens paths, collapses repetitive output. Typically saves 20-40% input tokens.</td></tr>
-      <tr><td><code>"ultra"</code></td><td>Maximum compression - aggressive truncation, symbol-only formatting, minimal whitespace. Saves 50-70% but may lose context in large outputs.</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Configuration</h3>
+  <h3>Legacy Configuration</h3>
   <pre><code># ~/.lean-ctx/config.toml
+# Legacy (still works):
 output_density = "terse"
 
-# Or via environment variable (takes precedence)
-# export LEAN_CTX_OUTPUT_DENSITY=ultra</code></pre>
+# Recommended replacement:
+compression_level = "lite"</code></pre>
 
   <hr />
 

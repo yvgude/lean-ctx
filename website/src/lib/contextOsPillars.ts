@@ -293,6 +293,7 @@ export const pillars: Pillar[] = [
     demoDescKey: 'pillar.verification.demoDesc',
     demoCommands: [
       { tool: 'ctx_verify', args: '{ scope: "session" }', output: ['Verified 12 tool calls', 'Paths: 12/12 valid', 'Secrets: 0 detected', 'Replay hash: a3f8c2...consistent'] },
+      { tool: 'ctx_proof', args: '{ format: "v2" }', output: ['ContextProofV2 · 6 claims extracted', 'PathJail:  proved (Lean4) · Q4', 'Budget:   proved (Lean4) · Q4', 'Secrets:  passed (deterministic) · Q2', 'Scope:    proved (Lean4) · Q4', 'Compression: signatures preserved · Q3', 'Quality Level: 4 (Formally Verified)'] },
     ],
     stats: [
       { valueKey: 'pillar.verification.stat1Value', labelKey: 'pillar.verification.stat1Label', tone: 'accent' },
@@ -304,10 +305,16 @@ export const pillars: Pillar[] = [
       { titleKey: 'pillar.verification.feature2Title', descKey: 'pillar.verification.feature2Desc', icon: featureIcon },
       { titleKey: 'pillar.verification.feature3Title', descKey: 'pillar.verification.feature3Desc', icon: featureIcon },
       { titleKey: 'pillar.verification.feature4Title', descKey: 'pillar.verification.feature4Desc', icon: featureIcon },
+      { titleKey: 'pillar.verification.feature5Title', descKey: 'pillar.verification.feature5Desc', icon: featureIcon },
+      { titleKey: 'pillar.verification.feature6Title', descKey: 'pillar.verification.feature6Desc', icon: featureIcon },
+      { titleKey: 'pillar.verification.feature7Title', descKey: 'pillar.verification.feature7Desc', icon: featureIcon },
+      { titleKey: 'pillar.verification.feature8Title', descKey: 'pillar.verification.feature8Desc', icon: featureIcon },
     ],
     navItems: [
       { labelKey: 'nav.pillars.verificationProofs', anchor: '#proofs' },
+      { labelKey: 'nav.pillars.verificationLean4', anchor: '#lean4' },
       { labelKey: 'nav.pillars.verificationChecks', anchor: '#checks' },
+      { labelKey: 'nav.pillars.verificationClaims', anchor: '#claims' },
       { labelKey: 'nav.pillars.verificationReplay', anchor: '#replay' },
       { labelKey: 'nav.pillars.verificationCi', anchor: '#ci' },
     ],

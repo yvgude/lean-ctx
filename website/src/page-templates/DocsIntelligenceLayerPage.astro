@@ -293,15 +293,34 @@ StructuredIntent:
   <p set:html={t('docs.intelligenceLayer.pipelineIntro')} />
 
   <h3>{t('docs.common.howItWorks')}</h3>
-  <pre><code>{`Input → Intent → Relevance → Compression → Translation → Delivery
-  │        │          │            │              │            │
-  │        │          │            │              │            └─ Final output to LLM
-  │        │          │            │              └─ BPE optimization, protocol formatting
+  <pre><code>{`Input → Intent → Relevance → Compression → Terse Engine → Delivery
+  │        │          │            │              │              │
+  │        │          │            │              │              └─ Final output to LLM
+  │        │          │            │              └─ 4-layer terse pipeline (see below)
   │        │          │            └─ AST-aware compression per intent
   │        │          └─ Graph heat + relevance scoring
   │        └─ StructuredIntent classification
   └─ Raw file content / shell output`}</code></pre>
   <p set:html={t('docs.intelligenceLayer.pipelineMetrics')} />
+
+  <h3>4-Layer Terse Engine</h3>
+  <p>
+    The terse engine applies four composable compression layers, controlled by
+    <a href={lp('/docs/configuration') + '#compression-level'}><code>compression_level</code></a>
+    (Off / Lite / Standard / Max). Each layer is independently verified by Lean4 proofs
+    (TerseQuality, TerseEngine — part of 82 total theorems).
+  </p>
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Name</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td><strong>Dictionary</strong></td><td>Common token substitutions and abbreviations (<code>function</code> → <code>fn</code>, <code>return</code> → <code>ret</code>)</td></tr>
+      <tr><td>2</td><td><strong>Residual</strong></td><td>Whitespace normalization, blank-line collapse, boilerplate removal</td></tr>
+      <tr><td>3</td><td><strong>Scoring</strong></td><td>Information-theoretic ranking — keeps high-surprise blocks, prunes low-entropy filler</td></tr>
+      <tr><td>4</td><td><strong>Pipeline</strong></td><td>CEP v1 protocol: delta-only output, structured notation (<code>+/-/~</code>), token budgets</td></tr>
+    </tbody>
+  </table>
 
   <hr />
 
