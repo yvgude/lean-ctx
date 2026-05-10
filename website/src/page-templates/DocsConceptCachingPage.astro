@@ -44,7 +44,7 @@ const sidebar = [
 
   <h2 id="session-cache">Session Cache</h2>
   <p>
-    Every file read via <code>ctx_read</code> is stored in a per-session in-memory cache with an MD5 content hash.
+    Every file read via <code>ctx_read</code> is stored in a per-session in-memory cache with a BLAKE3 content hash.
     When the same file is read again:
   </p>
   <ul>
@@ -211,7 +211,7 @@ mask_secrets = true      # Redact detected secrets before archiving`}</code></pr
   <h3>What This Means</h3>
   <ul>
     <li><strong>No silent overwrites:</strong> Once a file is cached as F1 with a specific hash, the F1 reference always points to that exact content until explicitly invalidated</li>
-    <li><strong>Hash-based validation:</strong> Every cache hit verifies the MD5 content hash - if the file changed on disk, the cache entry is invalidated and a full re-read occurs</li>
+    <li><strong>Hash-based validation:</strong> Every cache hit verifies the BLAKE3 content hash - if the file changed on disk, the cache entry is invalidated and a full re-read occurs</li>
     <li><strong>Immutable archive entries:</strong> Archived content (<code>ctx_expand</code> IDs) is immutable once written - the same ID always returns the same content</li>
     <li><strong>No partial reads:</strong> If a read fails mid-stream, no partial content enters the cache</li>
   </ul>

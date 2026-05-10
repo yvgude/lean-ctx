@@ -67,7 +67,7 @@ const sidebar = [
   <h3>Mode: full (default)</h3>
   <p>
     Reads the entire file with structured headers (dependencies, exports) and stores it in the session cache
-    with an MD5 hash. On subsequent reads, returns a compact cache-hit message instead of the full content.
+    with a BLAKE3 hash. On subsequent reads, returns a compact cache-hit message instead of the full content.
   </p>
   <pre><code># First read: returns full content with structured header
 ctx_read auth.ts

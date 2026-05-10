@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 46,
+    "granular": 58,
     "unified": 5
   },
   "read_modes": {
@@ -26,7 +26,7 @@
         "input_schema": {
           "properties": {
             "action": {
-              "description": "Agent operation. diary: persistent log (category=discovery|decision|blocker|progress|insight). recall_diary: read diary. diaries: list all.",
+              "description": "Agent operation. diary: persistent log. share_knowledge: broadcast key=value facts (message: 'k1=v1;k2=v2'). receive_knowledge: poll shared facts from other agents.",
               "enum": [
                 "register",
                 "list",
@@ -38,7 +38,9 @@
                 "sync",
                 "diary",
                 "recall_diary",
-                "diaries"
+                "diaries",
+                "share_knowledge",
+                "receive_knowledge"
               ],
               "type": "string"
             },
@@ -78,7 +80,7 @@
           "type": "object"
         },
         "name": "ctx_agent",
-        "schema_md5": "e3eed852993f6fa1e4da78fec9dbc764"
+        "schema_md5": "8e5656acf265ba8edbb16467198fea7f"
       },
       {
         "description": "Entropy analysis — recommends optimal compression mode for a file.",
@@ -126,6 +128,55 @@
         },
         "name": "ctx_architecture",
         "schema_md5": "3dd5e6f06ff0f8720cbaa1c1215e37ee"
+      },
+      {
+        "description": "Context artifact registry + BM25 index. Actions: list|status|index|reindex|search|remove.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Artifact action",
+              "enum": [
+                "list",
+                "status",
+                "index",
+                "reindex",
+                "search",
+                "remove"
+              ],
+              "type": "string"
+            },
+            "format": {
+              "description": "Output format (default: json)",
+              "enum": [
+                "json",
+                "markdown"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Artifact name (required for action=remove)",
+              "type": "string"
+            },
+            "project_root": {
+              "description": "Project root (default: session project root)",
+              "type": "string"
+            },
+            "query": {
+              "description": "Search query (required for action=search)",
+              "type": "string"
+            },
+            "top_k": {
+              "description": "Max results (default: 10, max: 50)",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_artifacts",
+        "schema_md5": "b79efbacf0af5cc1f2c6e393ae1330d9"
       },
       {
         "description": "Benchmark compression modes for a file or project.",
@@ -181,7 +232,29 @@
         "schema_md5": "be2d06bc26063e4b271e94537db7aa30"
       },
       {
-        "description": "Find all functions/methods called by a given symbol. Returns callee name, file, and line.",
+        "description": "Compatibility meta-tool: call any ctx_* tool by name using a stable schema. Useful for MCP clients that freeze tool registries at startup (static tools/list).",
+        "input_schema": {
+          "properties": {
+            "arguments": {
+              "additionalProperties": true,
+              "description": "Arguments object for the tool. Passed through as-is.",
+              "type": "object"
+            },
+            "name": {
+              "description": "Tool name to call (e.g. 'ctx_graph', 'ctx_gain', 'ctx_multi_read')",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_call",
+        "schema_md5": "7524690482ad5baa548368769df4c236"
+      },
+      {
+        "description": "Find all functions/methods called by a given symbol. Deprecated alias for ctx_callgraph direction=callees.",
         "input_schema": {
           "properties": {
             "file": {
@@ -202,7 +275,7 @@
         "schema_md5": "1aebc705756ba4598d1a34593d10c9eb"
       },
       {
-        "description": "Find all symbols that call a given function/method. Returns caller file, symbol, and line.",
+        "description": "Find all symbols that call a given function/method. Deprecated alias for ctx_callgraph direction=callers.",
         "input_schema": {
           "properties": {
             "file": {
@@ -221,6 +294,31 @@
         },
         "name": "ctx_callers",
         "schema_md5": "ccab40c20158d095e7e5b527409900c6"
+      },
+      {
+        "description": "Unified call graph query. direction=callers|callees for a symbol. Returns file/symbol/line edges.",
+        "input_schema": {
+          "properties": {
+            "direction": {
+              "description": "callers|callees (default: callers)",
+              "type": "string"
+            },
+            "file": {
+              "description": "Optional: scope to a specific file",
+              "type": "string"
+            },
+            "symbol": {
+              "description": "Symbol name to inspect",
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_callgraph",
+        "schema_md5": "98958fb65fc046df77d9874c8a705b5e"
       },
       {
         "description": "Context checkpoint for long conversations.",
@@ -417,6 +515,40 @@
         "schema_md5": "193135d118da09d7f552ee677ee98c4f"
       },
       {
+        "description": "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "retrieve (default) or list",
+              "type": "string"
+            },
+            "end_line": {
+              "description": "End line for range retrieval",
+              "type": "integer"
+            },
+            "id": {
+              "description": "Archive ID from the [Archived: ...] hint",
+              "type": "string"
+            },
+            "search": {
+              "description": "Search pattern to filter archived output",
+              "type": "string"
+            },
+            "session_id": {
+              "description": "Filter list by session ID",
+              "type": "string"
+            },
+            "start_line": {
+              "description": "Start line for range retrieval",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_expand",
+        "schema_md5": "1d84e2c8cb57cb6268727b4fc73f94d8"
+      },
+      {
         "description": "Harness feedback for LLM output tokens/latency (local-first). Actions: record|report|json|reset|status.",
         "input_schema": {
           "properties": {
@@ -499,7 +631,7 @@
         "schema_md5": "cbf54bb11746bf5edb4345a40c259590"
       },
       {
-        "description": "Gain report.",
+        "description": "Gain report (includes Wrapped via action=wrapped).",
         "input_schema": {
           "properties": {
             "action": {
@@ -537,18 +669,29 @@
         "schema_md5": "689b1f4c29249850e4bd369168bcb698"
       },
       {
-        "description": "Code dependency graph. Actions: build (index project), related (find files connected to path), symbol (lookup definition/usages as file::name), impact (blast radius of changes to path), status (index stats).",
+        "description": "Unified code graph. Actions: build (index), related (connected files), symbol (def/usages), impact (blast radius), status (stats), enrich (add commits+tests+knowledge), context (task-based query), diagram (Mermaid deps/calls).",
         "input_schema": {
           "properties": {
             "action": {
-              "description": "Graph operation: build, related, symbol, impact, status",
+              "description": "Graph operation: build, related, symbol, impact, status, enrich, context, diagram",
               "enum": [
                 "build",
                 "related",
                 "symbol",
                 "impact",
-                "status"
+                "status",
+                "enrich",
+                "context",
+                "diagram"
               ],
+              "type": "string"
+            },
+            "depth": {
+              "description": "Optional depth for action=diagram (default: 2)",
+              "type": "integer"
+            },
+            "kind": {
+              "description": "Optional kind for action=diagram: deps|calls",
               "type": "string"
             },
             "path": {
@@ -566,10 +709,10 @@
           "type": "object"
         },
         "name": "ctx_graph",
-        "schema_md5": "d56dfd6355ec656b5e5f8ef7490b7969"
+        "schema_md5": "c998f19ec15f8acefc0c126791558cfb"
       },
       {
-        "description": "Generate a Mermaid diagram of the dependency or call graph. Useful for understanding architecture.",
+        "description": "Generate a Mermaid diagram of the dependency or call graph. Deprecated alias for ctx_graph action=diagram.",
         "input_schema": {
           "properties": {
             "depth": {
@@ -692,6 +835,32 @@
         "schema_md5": "d003c71639c192aca0ded2bb087aba14"
       },
       {
+        "description": "Index orchestration. Actions: status|build|build-full.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Index action",
+              "enum": [
+                "status",
+                "build",
+                "build-full"
+              ],
+              "type": "string"
+            },
+            "project_root": {
+              "description": "Project root (default: session project root)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_index",
+        "schema_md5": "5da09d2467261816c9812fa1d9faca43"
+      },
+      {
         "description": "Structured intent input (optional) — submit compact JSON or short text; server also infers intents automatically from tool calls.",
         "input_schema": {
           "properties": {
@@ -713,18 +882,24 @@
         "schema_md5": "168f950ebaf7aef713d6a787ae0d78f6"
       },
       {
-        "description": "Persistent project knowledge (survives sessions). Actions: remember (store fact with temporal tracking + contradiction detection), recall (search), pattern (record convention), consolidate (extract session findings), gotcha (record a bug/mistake to never repeat — trigger+resolution required), timeline (view fact history for a category), rooms (list knowledge categories), search (cross-session search across ALL projects), wakeup (compact AAAK briefing), status (list all), remove, export, embeddings_status|embeddings_reset|embeddings_reindex (local semantic index management for recall).",
+        "description": "Persistent project knowledge across sessions (facts, patterns, history). Supports recall modes, embeddings, feedback, and typed relations.",
         "input_schema": {
           "properties": {
             "action": {
-              "description": "Knowledge operation. remember: auto-detects contradictions + tracks temporal validity. timeline: view version history. rooms: list categories. search: cross-project search. wakeup: compact AAAK briefing. embeddings_*: manage local semantic index for recall.",
+              "description": "Knowledge operation to perform.",
               "enum": [
+                "policy",
                 "remember",
                 "recall",
                 "pattern",
+                "feedback",
+                "relate",
+                "unrelate",
+                "relations",
+                "relations_diagram",
                 "consolidate",
-                "gotcha",
                 "status",
+                "health",
                 "remove",
                 "export",
                 "timeline",
@@ -756,12 +931,22 @@
               "description": "Fact key/identifier (e.g. 'auth-method', 'db-engine', 'test-framework')",
               "type": "string"
             },
+            "mode": {
+              "description": "Recall mode (default: auto). exact: lexical only. semantic: embeddings-only. hybrid: semantic + exact matches. auto: hybrid if embeddings available, else exact.",
+              "enum": [
+                "auto",
+                "exact",
+                "semantic",
+                "hybrid"
+              ],
+              "type": "string"
+            },
             "pattern_type": {
               "description": "Pattern type for pattern action (naming, structure, testing, error-handling)",
               "type": "string"
             },
             "query": {
-              "description": "Search query for recall action (matches against category, key, and value)",
+              "description": "Query/target (recall query, relate target 'category/key', relations direction in|out|all).",
               "type": "string"
             },
             "resolution": {
@@ -782,7 +967,7 @@
               "type": "string"
             },
             "value": {
-              "description": "Fact value or pattern description",
+              "description": "Value for action (fact value, pattern text, feedback up/down, relation kind).",
               "type": "string"
             }
           },
@@ -792,7 +977,7 @@
           "type": "object"
         },
         "name": "ctx_knowledge",
-        "schema_md5": "83096f8d2db22a6df5ac3d72f6d63a5b"
+        "schema_md5": "484183a03fe3c634a0b8bfaa7a31bbc5"
       },
       {
         "description": "Session token stats, cache rates, per-tool savings.",
@@ -867,6 +1052,50 @@
         "schema_md5": "60d1fbc945e30b0b835c1a55f2fef00e"
       },
       {
+        "description": "PR Context Pack. action=pr yields changed files, related tests, impact summary, and relevant context artifacts.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Pack action",
+              "enum": [
+                "pr"
+              ],
+              "type": "string"
+            },
+            "base": {
+              "description": "Git base ref (default: auto-detect or HEAD~1)",
+              "type": "string"
+            },
+            "depth": {
+              "description": "Impact depth (default: 3)",
+              "type": "integer"
+            },
+            "diff": {
+              "description": "Optional git diff --name-status text. If omitted, computed via git.",
+              "type": "string"
+            },
+            "format": {
+              "description": "Output format (default: markdown)",
+              "enum": [
+                "markdown",
+                "json"
+              ],
+              "type": "string"
+            },
+            "project_root": {
+              "description": "Project root (default: session project root)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_pack",
+        "schema_md5": "de0b2c71470713edf13051183266ab9c"
+      },
+      {
         "description": "Predictive prefetch — prewarm cache for blast radius files (graph + task signals) within budgets.",
         "input_schema": {
           "properties": {
@@ -921,7 +1150,91 @@
         "schema_md5": "d72370b88a54db91288f2dd7981e3bc7"
       },
       {
-        "description": "Read file (cached, compressed). Re-reads ~13 tok. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
+        "description": "Export a machine-readable ContextProofV1 (Verifier + SLO + Pipeline + Provenance). Writes to .lean-ctx/proofs/ by default.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "export (required)",
+              "type": "string"
+            },
+            "filename": {
+              "description": "Optional output filename (default: timestamped context-proof-v1_*.json)",
+              "type": "string"
+            },
+            "format": {
+              "description": "json|summary|both (default: json)",
+              "type": "string"
+            },
+            "max_evidence": {
+              "description": "Max tool receipts to include (default: 50)",
+              "type": "integer"
+            },
+            "max_ledger_files": {
+              "description": "Max context ledger top files to include (default: 10)",
+              "type": "integer"
+            },
+            "project_root": {
+              "description": "Project root for proof output (default: .)",
+              "type": "string"
+            },
+            "write": {
+              "description": "Write proof file under .lean-ctx/proofs/ (default: true)",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_proof",
+        "schema_md5": "2415518cb6999997856cf543d5acb609"
+      },
+      {
+        "description": "External context provider (GitLab-first). Actions: gitlab_issues (list), gitlab_issue (show by iid), gitlab_mrs (list MRs), gitlab_pipelines (list pipelines). Requires GITLAB_TOKEN or LEAN_CTX_GITLAB_TOKEN.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Provider action",
+              "enum": [
+                "gitlab_issues",
+                "gitlab_issue",
+                "gitlab_mrs",
+                "gitlab_pipelines"
+              ],
+              "type": "string"
+            },
+            "iid": {
+              "description": "Issue/MR IID for single-item lookup",
+              "type": "integer"
+            },
+            "labels": {
+              "description": "Comma-separated labels filter",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Max results (default 20, max 100)",
+              "type": "integer"
+            },
+            "state": {
+              "description": "Filter by state (opened, closed, merged, all)",
+              "type": "string"
+            },
+            "status": {
+              "description": "Pipeline status filter (running, success, failed)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_provider",
+        "schema_md5": "db32dffd7bd8cc45b854d0a1785aefe9"
+      },
+      {
+        "description": "Read file (cached, compressed). Cached re-reads can be ~13 tok when unchanged. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true forces a disk re-read.",
         "input_schema": {
           "properties": {
             "fresh": {
@@ -937,7 +1250,7 @@
               "type": "string"
             },
             "start_line": {
-              "description": "Read from this line number to end of file. Bypasses cache stub — always returns actual content.",
+              "description": "Read from this line number to end of file. Implies fresh=true (disk re-read) to avoid stale snippets.",
               "type": "integer"
             }
           },
@@ -947,7 +1260,7 @@
           "type": "object"
         },
         "name": "ctx_read",
-        "schema_md5": "c009571a83db38f6a0f6e583cc96cc5c"
+        "schema_md5": "dd1d5ae70ed92652e9571da5737f2f98"
       },
       {
         "description": "Compress LLM response text (remove filler, apply TDD).",
@@ -965,6 +1278,36 @@
         },
         "name": "ctx_response",
         "schema_md5": "aa9f7844e1cf4df53682cf13782c264e"
+      },
+      {
+        "description": "Automated code review: combines impact analysis, caller tracking, and test discovery. Actions: review (single file), diff-review (from git diff), checklist (structured review questions).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Review action",
+              "enum": [
+                "review",
+                "diff-review",
+                "checklist"
+              ],
+              "type": "string"
+            },
+            "depth": {
+              "description": "Impact analysis depth (default: 3)",
+              "type": "integer"
+            },
+            "path": {
+              "description": "File path to review (or git diff text for diff-review)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_review",
+        "schema_md5": "e0bc031387cdece1582c08014ca901c2"
       },
       {
         "description": "List HTTP routes/endpoints extracted from the project. Supports Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.",
@@ -985,7 +1328,7 @@
         "schema_md5": "122d1b755aba8e0664e4d6f7eb54f2af"
       },
       {
-        "description": "Regex code search (.gitignore aware, compact results).",
+        "description": "Regex code search (.gitignore aware, compact results). Deterministic ordering. Secret-like files (e.g. .env, *.pem) are skipped unless role allows. ignore_gitignore requires explicit policy.",
         "input_schema": {
           "properties": {
             "ext": {
@@ -993,7 +1336,7 @@
               "type": "string"
             },
             "ignore_gitignore": {
-              "description": "Set true to scan ALL files including .gitignore'd paths (default: false)",
+              "description": "Set true to scan ALL files including .gitignore'd paths (default: false). Requires role policy (e.g. admin).",
               "type": "boolean"
             },
             "max_results": {
@@ -1015,7 +1358,7 @@
           "type": "object"
         },
         "name": "ctx_search",
-        "schema_md5": "96a35db29cc52cd209a240f3fa446f75"
+        "schema_md5": "f71684cbaca988e1999d3a2ff4c1ddf3"
       },
       {
         "description": "Semantic code search (BM25 + optional embeddings/hybrid). action=reindex to rebuild.",
@@ -1067,7 +1410,7 @@
         "schema_md5": "634633b8dd18cb4cf44a1c1b2266d234"
       },
       {
-        "description": "Cross-session memory (CCP). Actions: load (restore previous session ~400 tok), save, status, task (set current task), finding (record discovery), decision (record choice), reset, list (show sessions), cleanup.",
+        "description": "Cross-session memory (CCP). Actions: load (restore ~400 tok), save, status, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, profile (context profiles), role (governance), budget (limits), slo (observability), diff (compare sessions), verify (output verification stats), episodes (episodic memory), procedures (procedural memory).",
         "input_schema": {
           "properties": {
             "action": {
@@ -1081,7 +1424,18 @@
                 "decision",
                 "reset",
                 "list",
-                "cleanup"
+                "cleanup",
+                "snapshot",
+                "restore",
+                "resume",
+                "profile",
+                "role",
+                "budget",
+                "slo",
+                "diff",
+                "verify",
+                "episodes",
+                "procedures"
               ],
               "type": "string"
             },
@@ -1090,7 +1444,7 @@
               "type": "string"
             },
             "value": {
-              "description": "Value for task/finding/decision actions",
+              "description": "Value for task/finding/decision/profile actions",
               "type": "string"
             }
           },
@@ -1100,7 +1454,7 @@
           "type": "object"
         },
         "name": "ctx_session",
-        "schema_md5": "1c5262c872c35dc6a6a61b25712142ba"
+        "schema_md5": "268597e55008f7da3c4f5be297e3c8f3"
       },
       {
         "description": "Share cached file contexts between agents. Actions: push (share files from your cache to another agent), pull (receive files shared by other agents), list (show all shared contexts), clear (remove your shared contexts).",
@@ -1138,7 +1492,7 @@
         "schema_md5": "60408629ab4dfbd4954c4e094cc67148"
       },
       {
-        "description": "Run shell command (compressed output, 95+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking).",
+        "description": "Run shell command (compressed output, 95+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking). Output redaction is on by default for non-admin roles (admin can disable).",
         "input_schema": {
           "properties": {
             "command": {
@@ -1150,7 +1504,7 @@
               "type": "string"
             },
             "raw": {
-              "description": "Skip compression, return full uncompressed output. Use for small outputs or when full detail is critical.",
+              "description": "Skip compression, return full uncompressed output. Redaction still applies by default for non-admin roles.",
               "type": "boolean"
             }
           },
@@ -1160,7 +1514,7 @@
           "type": "object"
         },
         "name": "ctx_shell",
-        "schema_md5": "9548c197b405ed267a1881bbb8e07a97"
+        "schema_md5": "ffeb1f06fdeb7c9a59cfede26a0593ef"
       },
       {
         "description": "Auto-select optimal read mode for a file.",
@@ -1273,6 +1627,24 @@
         "schema_md5": "08acd62450b0984d0931f74985fd5514"
       },
       {
+        "description": "Verification observability snapshot. Action stats returns versioned JSON or compact summary (no raw content).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "stats (default)",
+              "type": "string"
+            },
+            "format": {
+              "description": "summary|json|both (default: summary)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_verify",
+        "schema_md5": "d7ad4e0c917bd871d2f99164ab2a823e"
+      },
+      {
         "description": "Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.",
         "input_schema": {
           "properties": {
@@ -1316,7 +1688,7 @@
         "schema_md5": "b8c2ec2f293a4211b3c018f223cb2b92"
       },
       {
-        "description": "Savings report card. Periods: week|month|all.",
+        "description": "Savings report card. Deprecated alias for ctx_gain action=wrapped.",
         "input_schema": {
           "properties": {
             "period": {
@@ -1333,11 +1705,59 @@
         },
         "name": "ctx_wrapped",
         "schema_md5": "bdb231f135146bea02f4b01e284a5499"
+      },
+      {
+        "description": "Code smell detection (Property Graph). Actions: scan|summary|rules|file. 8 rules: dead_code, long_function, long_file, god_file, fan_out_skew, duplicate_definitions, untested_function, cyclomatic_complexity. Optional: format=text|json.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Smell operation (default: summary)",
+              "enum": ["scan", "summary", "rules", "file"],
+              "type": "string"
+            },
+            "format": {
+              "description": "Output format (text or json)",
+              "enum": ["text", "json"],
+              "type": "string"
+            },
+            "path": {
+              "description": "Filter by file path (optional)",
+              "type": "string"
+            },
+            "root": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            },
+            "rule": {
+              "description": "Filter by rule name (optional, for scan)",
+              "type": "string"
+            }
+          },
+          "required": ["action"],
+          "type": "object"
+        },
+        "name": "ctx_smells",
+        "schema_md5": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+      },
+      {
+        "description": "Search available lean-ctx tools by keyword. Returns matching tool names + descriptions for on-demand loading.",
+        "input_schema": {
+          "properties": {
+            "query": {
+              "description": "Search keyword",
+              "type": "string"
+            }
+          },
+          "required": ["query"],
+          "type": "object"
+        },
+        "name": "ctx_discover_tools",
+        "schema_md5": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"
       }
     ],
     "unified": [
       {
-        "description": "Meta-tool: set tool= to sub-tool name. Sub-tools: compress (checkpoint), metrics (stats), analyze (entropy), cache (status|clear|invalidate), discover (missed patterns), smart_read (auto-mode), delta (incremental diff), dedup (cross-file), fill (budget-aware batch read), intent (auto-read by task), response (compress LLM text), context (session state), graph (build|related|symbol|impact|status), session (load|save|task|finding|decision|status|reset|list|cleanup), knowledge (remember|recall|pattern|consolidate|timeline|rooms|search|wakeup|status|remove|export|embeddings_status|embeddings_reset|embeddings_reindex), agent (register|post|read|status|list|info|diary|recall_diary|diaries), overview (project map), wrapped (savings report), benchmark (file|project), multi_read (batch), semantic_search (BM25), cost (attribution), heatmap (file access), impact (graph impact), architecture (graph structure), task (A2A tasks), workflow (state machine).",
+        "description": "Meta-tool: set tool= to sub-tool name. Sub-tools: compress (checkpoint), metrics (stats), analyze (entropy), cache (status|clear|invalidate), discover (missed patterns), smart_read (auto-mode), delta (incremental diff), dedup (cross-file), fill (budget-aware batch read), intent (auto-read by task), response (compress LLM text), context (session state), graph (build|related|symbol|impact|status), session (load|save|task|finding|decision|status|reset|list|cleanup), knowledge (remember|recall|pattern|consolidate|timeline|rooms|search|wakeup|status|remove|export|embeddings_status|embeddings_reset|embeddings_reindex), agent (register|post|read|status|list|info|diary|recall_diary|diaries), overview (project map), wrapped (savings report), benchmark (file|project), multi_read (batch), semantic_search (BM25), cost (attribution), heatmap (file access), impact (graph impact), architecture (graph structure), task (A2A tasks), workflow (state machine), expand (retrieve archived output).",
         "input_schema": {
           "properties": {
             "action": {
@@ -1446,7 +1866,7 @@
               "type": "string"
             },
             "tool": {
-              "description": "compress|metrics|analyze|cache|discover|smart_read|delta|dedup|fill|intent|response|context|graph|session|knowledge|agent|overview|wrapped|benchmark|multi_read|semantic_search|cost|heatmap|impact|architecture|task|workflow",
+              "description": "compress|metrics|analyze|cache|discover|smart_read|delta|dedup|fill|intent|response|context|graph|session|knowledge|agent|overview|wrapped|benchmark|multi_read|semantic_search|cost|heatmap|impact|architecture|task|workflow|expand",
               "type": "string"
             },
             "value": {
@@ -1459,7 +1879,7 @@
           "type": "object"
         },
         "name": "ctx",
-        "schema_md5": "ab784efcae4e71c48415e1c4e51c0d64"
+        "schema_md5": "b694e05805b1877d695d103f2cab2217"
       },
       {
         "description": "Read file (cached, compressed). Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",

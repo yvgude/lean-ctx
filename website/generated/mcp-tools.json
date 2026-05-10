@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 56,
+    "granular": 58,
     "unified": 5
   },
   "read_modes": {
@@ -1705,6 +1705,54 @@
         },
         "name": "ctx_wrapped",
         "schema_md5": "bdb231f135146bea02f4b01e284a5499"
+      },
+      {
+        "description": "Code smell detection (Property Graph). Actions: scan|summary|rules|file. 8 rules: dead_code, long_function, long_file, god_file, fan_out_skew, duplicate_definitions, untested_function, cyclomatic_complexity. Optional: format=text|json.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Smell operation (default: summary)",
+              "enum": ["scan", "summary", "rules", "file"],
+              "type": "string"
+            },
+            "format": {
+              "description": "Output format (text or json)",
+              "enum": ["text", "json"],
+              "type": "string"
+            },
+            "path": {
+              "description": "Filter by file path (optional)",
+              "type": "string"
+            },
+            "root": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            },
+            "rule": {
+              "description": "Filter by rule name (optional, for scan)",
+              "type": "string"
+            }
+          },
+          "required": ["action"],
+          "type": "object"
+        },
+        "name": "ctx_smells",
+        "schema_md5": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+      },
+      {
+        "description": "Search available lean-ctx tools by keyword. Returns matching tool names + descriptions for on-demand loading.",
+        "input_schema": {
+          "properties": {
+            "query": {
+              "description": "Search keyword",
+              "type": "string"
+            }
+          },
+          "required": ["query"],
+          "type": "object"
+        },
+        "name": "ctx_discover_tools",
+        "schema_md5": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"
       }
     ],
     "unified": [

@@ -22,6 +22,8 @@ const sidebar = [
       { label: t('docs.intelligenceLayer.sidebarPipeline'), href: lp('/docs/intelligence-layer') + '#pipeline' },
       { label: t('docs.intelligenceLayer.sidebarLedger'), href: lp('/docs/intelligence-layer') + '#ledger' },
       { label: t('docs.intelligenceLayer.sidebarMultiAgent'), href: lp('/docs/intelligence-layer') + '#multi-agent' },
+      { label: 'Community Detection', href: lp('/docs/intelligence-layer') + '#community-detection' },
+      { label: 'Code Smells', href: lp('/docs/intelligence-layer') + '#code-smells' },
     ],
   },
   {
@@ -372,6 +374,24 @@ Shared Knowledge:
   K:decision:fix_approach = "add Option<T> wrapper"
   → reviewer-1 inherits these facts without re-reading files`}</code></pre>
   <p set:html={t('docs.intelligenceLayer.multiAgentKnowledge')} />
+
+  <hr />
+
+  <h2 id="community-detection">Community Detection (Louvain)</h2>
+  <p>
+    The <code>core::community</code> module clusters files by their dependency graph using the
+    <strong>Louvain algorithm</strong>. This groups tightly-coupled files into communities, enabling
+    more intelligent context selection — files in the same community as your target are prioritized
+    for preloading and receive higher relevance scores during task-driven reads.
+  </p>
+
+  <h2 id="code-smells">Code Smell Detection</h2>
+  <p>
+    The <code>ctx_smells</code> tool detects long functions, deep nesting, and high cyclomatic complexity
+    using the <code>core::smells</code> module. Detected smells are scored with graph-enriched weighting —
+    files with high PageRank or many dependents receive amplified smell scores, surfacing maintenance
+    hotspots that have the widest blast radius across the codebase.
+  </p>
 
   <hr />
 

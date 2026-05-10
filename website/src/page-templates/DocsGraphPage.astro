@@ -122,6 +122,20 @@ const sidebar = [
       <pre><code class="language-text">{`ctx_graph enrich              # Enrich graph with git, tests, knowledge
 ctx_graph build               # Index code structure
 ctx_graph status              # Show node/edge counts`}</code></pre>
+
+      <h3>Community Detection (Louvain)</h3>
+      <p>
+        The Louvain algorithm clusters files into communities based on their dependency relationships.
+        Files that frequently import each other or share transitive dependencies are grouped together,
+        enabling smarter context preloading and relevance scoring for task-driven queries.
+      </p>
+
+      <h3>PageRank</h3>
+      <p>
+        Computes file importance scores based on the dependency graph structure. Files imported by many
+        others (structural hubs) receive higher PageRank, which is used by Spectral Relevance and
+        Boltzmann Allocation to prioritize high-impact files during context assembly.
+      </p>
     </section>
 
     <!-- Context Query -->

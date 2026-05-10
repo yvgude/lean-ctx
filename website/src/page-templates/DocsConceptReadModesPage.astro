@@ -15,6 +15,7 @@ const sidebar = [
       { label: 'Mode Comparison', href: lp('/docs/concepts/read-modes') + '#comparison' },
       { label: 'Auto Mode', href: lp('/docs/concepts/read-modes') + '#auto' },
       { label: 'Task Mode', href: lp('/docs/concepts/read-modes') + '#task' },
+      { label: 'File Protection', href: lp('/docs/concepts/read-modes') + '#instruction-file-protection' },
     ],
   },
   {
@@ -126,7 +127,7 @@ const sidebar = [
   <h2 id="full">Full Mode (Default)</h2>
   <p>
     Returns the complete file with structured headers (dependencies, exports, file references).
-    The content is cached with an MD5 hash. Subsequent reads of the same unchanged file return a
+    The content is cached with a BLAKE3 hash. Subsequent reads of the same unchanged file return a
     compact cache-hit message (~13 tokens) instead of re-transmitting the full content.
   </p>
   <pre><code>{`# First read: full content
@@ -196,6 +197,30 @@ ctx_read src/auth/service.rs --mode task
     <li><code>lines:10-80</code> - line range</li>
     <li><code>lines:10-80,120,200-240</code> - multiple ranges</li>
   </ul>
+
+  <h2 id="instruction-file-protection">Instruction File Protection <span class="text-muted text-sm">(v3.5.13)</span></h2>
+  <p>
+    Files recognized as agent instructions are <strong>always delivered in <code>full</code> mode</strong>,
+    regardless of the requested mode. This prevents critical agent instructions from being compressed or stripped.
+  </p>
+  <p>Protected files and directories:</p>
+  <ul>
+    <li><code>SKILL.md</code>, <code>AGENTS.md</code>, <code>RULES.md</code>, <code>.cursorrules</code></li>
+    <li>Files in <code>/skills/</code>, <code>/.cursor/rules/</code>, <code>/.claude/rules/</code> directories</li>
+  </ul>
+  <p>
+    The guard is applied in 5 code paths: <code>resolve_auto_mode</code>, <code>predict_from_defaults</code>,
+    <code>select_mode_with_task</code>, <code>auto_degrade_read_mode</code>, and CLI <code>read_cmd</code>.
+  </p>
+
+  <h3>Markdown File Exemption</h3>
+  <p>
+    <strong>Markdown files</strong> (<code>.md</code>, <code>.mdx</code>, <code>.txt</code>, <code>.rst</code>)
+    are exempt from the <code>aggressive</code> default bucket — they return <code>full</code> mode by default
+    to preserve prose content.
+  </p>
+
+  <hr />
 
   <h2>Structured Headers</h2>
   <p>Every <code>ctx_read</code> response includes a structured header with persistent file references:</p>

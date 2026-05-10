@@ -12,7 +12,9 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.4.2 (Current)', href: lp('/docs/changelog') + '#v3.4.2' },
+      { label: '3.5.14 (Current)', href: lp('/docs/changelog') + '#v3.5.14' },
+      { label: '3.5.13', href: lp('/docs/changelog') + '#v3.5.13' },
+      { label: '3.4.2', href: lp('/docs/changelog') + '#v3.4.2' },
       { label: '3.4.1', href: lp('/docs/changelog') + '#v3.4.1' },
       { label: '3.4.0', href: lp('/docs/changelog') + '#v3.4.0' },
       { label: '3.3.3', href: lp('/docs/changelog') + '#v3.3.3' },
@@ -47,9 +49,61 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
+  <!-- 3.5.14 -->
+  <h2 id="v3.5.14">3.5.14 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release - performance overhaul and new analysis tools.</p>
+
+  <h3>Performance</h3>
+  <ul>
+    <li><strong>BLAKE3 hashing</strong> - 3x faster content hashing across all file operations</li>
+    <li><strong>Tree-sitter query cache</strong> - repeated structural queries skip re-parsing</li>
+    <li><strong>SQLite Property Graph optimization</strong> - faster graph traversal for architecture and impact analysis</li>
+    <li><strong>Token cache upgrade</strong> - capacity increased from 256 to 2048 entries</li>
+    <li><strong>Parallel indexing with rayon</strong> - multi-threaded project indexing</li>
+    <li><strong>Compact JSON serialization</strong> - reduced wire size for MCP responses</li>
+  </ul>
+
+  <h3>Improved</h3>
+  <ul>
+    <li><strong>Rules mode selection decision tree</strong> - improved heuristics for auto-selecting read modes (community contribution)</li>
+    <li><strong>Flaky test fixes</strong> - stabilized intermittent CI failures</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><code>core::hasher</code> module - BLAKE3-based content hashing abstraction</li>
+    <li><code>core::community</code> - Louvain clustering for dependency graph analysis</li>
+    <li><code>core::pagerank</code> - PageRank scoring for file importance</li>
+    <li><code>core::smells</code> - code smell detection engine</li>
+    <li><a href={lp('/docs/tools/ctx-smells')}><code>ctx_smells</code></a> tool - code smell detection with graph-enriched scoring</li>
+    <li><strong>58 MCP tools</strong> (up from 57)</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.5.13 -->
+  <h2 id="v3.5.13">3.5.13 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Instruction file handling fix and formal verification expansion.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Instruction files always delivered in full mode</strong> - <code>SKILL.md</code>, <code>AGENTS.md</code>, and <code>RULES.md</code> are no longer compressed, ensuring agent instructions are never mangled</li>
+    <li><strong>Markdown files exempt from aggressive compression</strong> - prevents loss of formatting in documentation files</li>
+    <li><strong>Windows Claude Code PowerShell compatibility</strong> - resolved shell detection issues when running under Claude Code on Windows</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><code>is_instruction_file()</code> API - programmatic check for instruction file detection</li>
+    <li><strong>Lean4 formal proofs</strong> - Theorems 12-13 added to the formal verification suite</li>
+    <li><strong>7 regression tests</strong> - covering instruction file handling and compression exemptions</li>
+  </ul>
+
+  <hr />
+
   <!-- 3.4.2 -->
   <h2 id="v3.4.2">3.4.2 <span class="text-xs text-muted">(April 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release - bug fixes for Unicode paths and Windows shell detection.</p>
+  <p class="text-sm text-muted">Bug fixes for Unicode paths and Windows shell detection.</p>
 
   <h3>Fixed</h3>
   <ul>
