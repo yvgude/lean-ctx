@@ -34,7 +34,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 ## Key Facts
 
-- Version: 3.5.12
+- Version: 3.5.13
 - License: MIT + Apache-2.0 (dual-licensed)
 - Language: Rust (single binary)
 - Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `pi install npm:pi-lean-ctx`
