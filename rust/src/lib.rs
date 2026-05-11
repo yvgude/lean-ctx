@@ -12,6 +12,7 @@ pub mod daemon;
 pub mod daemon_client;
 pub mod dashboard;
 pub mod doctor;
+pub mod dropin;
 pub mod engine;
 pub mod heatmap;
 pub mod hook_handlers;
