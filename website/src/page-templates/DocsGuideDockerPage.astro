@@ -15,6 +15,7 @@ const sidebar = [
       { label: 'Configuration', href: lp('/docs/guides/docker') + '#config' },
       { label: 'Volume Mounts', href: lp('/docs/guides/docker') + '#volumes' },
       { label: 'CI/CD Integration', href: lp('/docs/guides/docker') + '#ci-cd' },
+      { label: 'Project Identity', href: lp('/docs/guides/docker') + '#project-identity' },
       { label: 'Troubleshooting', href: lp('/docs/guides/docker') + '#troubleshooting' },
     ],
   },
@@ -145,6 +146,75 @@ context-check:
   script:
     - lean-ctx doctor
     - lean-ctx benchmark --project`}</code></pre>
+
+  <h2 id="project-identity">Project Identity (<code>.lean-ctx-id</code>)</h2>
+  <p>
+    In Docker environments, multiple projects are often mounted at the same path (e.g. <code>/workspace</code>).
+    lean-ctx uses a <strong>composite project hash</strong> — derived from the project path plus identity markers —
+    to distinguish sessions, caches, and knowledge bases. When the path alone is ambiguous,
+    you need an explicit identity file.
+  </p>
+
+  <h3>The Problem</h3>
+  <p>
+    Without an identity marker, all projects mounted at <code>/workspace</code> share the same
+    project hash. This causes cache collisions, mixed-up knowledge bases, and incorrect session state
+    across different projects running in separate containers.
+  </p>
+
+  <h3>The Solution: <code>.lean-ctx-id</code></h3>
+  <p>
+    Create a <code>.lean-ctx-id</code> file in your project root with a unique identifier:
+  </p>
+  <pre><code>{`echo "my-project-alpha" > .lean-ctx-id`}</code></pre>
+  <p>
+    lean-ctx reads this file during startup and incorporates it into the composite hash. Each project
+    now has a distinct identity, even when mounted at the same path.
+  </p>
+
+  <h3>Composite Hashing</h3>
+  <p>The project hash is computed from multiple signals:</p>
+  <ul>
+    <li><strong>Path</strong> — the working directory (e.g. <code>/workspace</code>)</li>
+    <li><strong><code>.lean-ctx-id</code></strong> — explicit identity string (highest priority)</li>
+    <li><strong>Git remote URL</strong> — detected from <code>.git/config</code> if available</li>
+    <li><strong><code>package.json</code> name</strong> — fallback for Node.js projects</li>
+    <li><strong><code>Cargo.toml</code> package name</strong> — fallback for Rust projects</li>
+  </ul>
+  <p>
+    The first available identity marker after the path is used. <code>.lean-ctx-id</code> takes
+    precedence over all other markers.
+  </p>
+
+  <h3>Docker Compose Example</h3>
+  <pre><code>{`# Project A — docker-compose.yml
+services:
+  lean-ctx:
+    image: ghcr.io/yvgude/lean-ctx:latest
+    volumes:
+      - ./project-a:/workspace
+      - lean-ctx-a:/root/.lean-ctx
+    working_dir: /workspace
+
+# project-a/.lean-ctx-id contains: "project-a"
+
+# Project B — docker-compose.yml
+services:
+  lean-ctx:
+    image: ghcr.io/yvgude/lean-ctx:latest
+    volumes:
+      - ./project-b:/workspace
+      - lean-ctx-b:/root/.lean-ctx
+    working_dir: /workspace
+
+# project-b/.lean-ctx-id contains: "project-b"`}</code></pre>
+
+  <h3>Migration from Legacy Path-Only Hashes</h3>
+  <p>
+    Projects that previously relied on path-only hashing are migrated automatically.
+    When lean-ctx detects an existing session or knowledge base keyed by the old hash,
+    it re-indexes under the new composite hash on first access. No manual intervention required.
+  </p>
 
   <h2 id="troubleshooting">Troubleshooting</h2>
 

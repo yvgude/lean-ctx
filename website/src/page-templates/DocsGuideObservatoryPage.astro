@@ -421,14 +421,14 @@ curl http://127.0.0.1:3333/api/context-ledger
         <td><code>GET</code></td>
         <td><code>/api/events</code></td>
         <td>-</td>
-        <td>Event stream - recent system events and notifications</td>
+        <td>Event stream - recent system events and notifications. Since v3.5.15, each event includes an inline help icon with a human-readable explanation and actionable guidance.</td>
       </tr>
     </tbody>
   </table>
 
   <pre><code>{`# Version info
 curl http://127.0.0.1:3333/api/version
-# {"version": "3.5.1", "build": "2026-05-06", "platform": "aarch64-apple-darwin"}
+# {"version": "3.5.16", "build": "2026-05-11", "platform": "aarch64-apple-darwin"}
 
 # Health check
 curl http://127.0.0.1:3333/api/pulse

@@ -83,6 +83,13 @@ const sidebar = [
         <td>v3.0</td>
       </tr>
       <tr>
+        <td><code>LEAN_CTX_MEMORY_CLEANUP</code></td>
+        <td>string</td>
+        <td><code>aggressive</code></td>
+        <td>Controls idle memory cleanup aggressiveness. <code>aggressive</code>: clear caches after 5 min idle (single-IDE). <code>shared</code>: retain caches 30 min (multi-IDE/multi-model). Overrides <code>memory_cleanup</code> in config.toml. If <code>LEAN_CTX_CACHE_TTL</code> is also set, it takes precedence for the cache TTL value.</td>
+        <td>v3.5.15</td>
+      </tr>
+      <tr>
         <td><code>LEAN_CTX_MINIMAL</code></td>
         <td>flag</td>
         <td><em>unset</em></td>
@@ -188,6 +195,13 @@ export LEAN_CTX_OUTPUT_DENSITY=ultra</code></pre>
         <td>Override which shell binary lean-ctx uses for <code>ctx_shell</code> and <code>lean-ctx -c</code>. Useful on Windows when PowerShell detection fails.</td>
         <td>v2.5</td>
       </tr>
+      <tr>
+        <td><code>LEAN_CTX_SHELL_ACTIVATION</code></td>
+        <td>string</td>
+        <td><code>always</code></td>
+        <td>Controls when lean-ctx shell aliases auto-activate. <code>always</code> (default): active in every interactive shell. <code>agents-only</code>: only when AI agent env vars are detected (<code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>). <code>off</code>: never auto-activate, user must call <code>lean-ctx-on</code> manually. Overrides <code>shell_activation</code> in config.toml.</td>
+        <td>v3.5.16</td>
+      </tr>
     </tbody>
   </table>
 
@@ -202,7 +216,10 @@ LEAN_CTX_RAW=1 lean-ctx -c "cat package.json"
 export LEAN_CTX_SHELL_TIMEOUT_MS=300000
 
 # Force a specific shell binary (Windows)
-export LEAN_CTX_SHELL="C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"</code></pre>
+export LEAN_CTX_SHELL="C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+# Control shell activation mode
+export LEAN_CTX_SHELL_ACTIVATION=agents-only</code></pre>
 
   <hr />
 
@@ -692,6 +709,7 @@ export LCTX_MAX_SHELL_BYTES=5242880</code></pre>
       <tr><td><code>LEAN_CTX_HOOK_EXCLUDE</code></td><td><em>none</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
       <tr><td><code>LEAN_CTX_HOST</code></td><td><code>127.0.0.1</code></td><td><a href="#dashboard">Dashboard</a></td></tr>
       <tr><td><code>LEAN_CTX_LAZY_TOOLS</code></td><td><em>unset</em></td><td><a href="#tool-mode">Tool Mode</a></td></tr>
+      <tr><td><code>LEAN_CTX_MEMORY_CLEANUP</code></td><td><code>aggressive</code></td><td><a href="#core">Core</a></td></tr>
       <tr><td><code>LEAN_CTX_MODEL</code></td><td><em>auto</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
       <tr><td><code>LEAN_CTX_MODELS_DIR</code></td><td><em>built-in</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
       <tr><td><code>LEAN_CTX_OUTPUT_DENSITY</code></td><td><code>normal</code></td><td><a href="#core">Core</a></td></tr>
@@ -700,6 +718,7 @@ export LCTX_MAX_SHELL_BYTES=5242880</code></pre>
       <tr><td><code>LEAN_CTX_RAW</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
       <tr><td><code>LEAN_CTX_RULES_SCOPE</code></td><td><code>both</code></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
       <tr><td><code>LEAN_CTX_SHELL</code></td><td><em>auto</em></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_SHELL_ACTIVATION</code></td><td><code>always</code></td><td><a href="#shell">Shell</a></td></tr>
       <tr><td><code>LEAN_CTX_SHELL_TIMEOUT_MS</code></td><td><code>120000</code></td><td><a href="#shell">Shell</a></td></tr>
       <tr><td><code>LEAN_CTX_SILENT_PRELOAD</code></td><td><code>true</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
       <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>off</code></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>

@@ -453,7 +453,7 @@ const sidebar = [
       step++;
       lines.push(step + '. VERIFY:');
       lines.push('   lean-ctx --version');
-      lines.push('   (Expected: lean-ctx 3.5.1 or newer)');
+      lines.push('   (Expected: lean-ctx 3.5.16 or newer)');
       lines.push('');
       step++;
       lines.push(step + '. ONE-COMMAND SETUP (shell hooks + editor config):');
@@ -748,7 +748,7 @@ lean-ctx init powershell | Invoke-Expression</code></pre>
   <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
   <p set:html={t('docs.gettingStarted.dockerDesc')} />
 
-  <pre><code>ARG LEAN_CTX_VERSION=3.5.1
+  <pre><code>ARG LEAN_CTX_VERSION=3.5.16
 
 # Download the musl binary (statically linked, no glibc dependency)
 RUN curl -fsSL \
@@ -801,6 +801,20 @@ RUN curl -fsSL \
     </tbody>
   </table>
 
+  <h3>Project Identity in Docker</h3>
+  <p>
+    When multiple projects share the same <code>/workspace</code> mount path inside Docker containers,
+    lean-ctx may confuse their data (graph index, semantic cache, etc.) because it uses the path to
+    identify projects. To solve this, create a <code>.lean-ctx-id</code> file in your project root:
+  </p>
+  <pre><code># In your project root (before building the Docker image)
+echo "my-unique-project-name" > .lean-ctx-id</code></pre>
+  <p>
+    This file takes highest priority for project identification — above git remote, package.json,
+    and directory name. Include it in your <code>Dockerfile</code> or mount it as a volume.
+    Existing data is automatically migrated from old hash directories when the identity changes.
+  </p>
+
   <h3 set:html={t('docs.gettingStarted.dockerIssuesTitle')} />
   <table>
     <thead>
@@ -830,7 +844,7 @@ RUN curl -fsSL \
   <h2 id="editor-setup">{t('docs.gettingStarted.step3Title')}</h2>
   <ol>
     <li>{t('docs.gettingStarted.verifyStep1')}
-      <pre><code>lean-ctx --version   # → lean-ctx 3.5.1
+      <pre><code>lean-ctx --version   # → lean-ctx 3.5.16
 lean-ctx doctor      # checks PATH, config, aliases, MCP</code></pre>
     </li>
     <li>{t('docs.gettingStarted.verifyStep2')}

@@ -31,6 +31,8 @@ const sidebar = [
       { label: 'Buddy Mode', href: lp('/docs/configuration') + '#buddy-mode' },
       { label: 'Custom Aliases', href: lp('/docs/configuration') + '#custom-aliases' },
       { label: 'Headless MCP Mode', href: lp('/docs/configuration') + '#headless-mode' },
+      { label: 'Project Identity (.lean-ctx-id)', href: lp('/docs/configuration') + '#lean-ctx-id' },
+      { label: 'Shell Activation', href: lp('/docs/configuration') + '#shell-activation' },
       { label: t('docsConfiguration.sidebarExitCodes'), href: lp('/docs/configuration') + '#exit-codes' },
       { label: t('docsConfiguration.sidebarTokenCounting'), href: lp('/docs/configuration') + '#token-counting' },
     ],
@@ -199,6 +201,12 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td><code>"aggressive"</code></td>
         <td>Controls how aggressively lean-ctx frees memory when idle. <code>"aggressive"</code> (default) clears caches after 5 minutes of idle time — ideal for single-IDE use. <code>"shared"</code> retains caches for 30 minutes — ideal when multiple IDEs or models share the same lean-ctx instance. Also available via <code>LEAN_CTX_MEMORY_CLEANUP</code> env var.</td>
       </tr>
+      <tr>
+        <td><code>shell_activation</code></td>
+        <td>string</td>
+        <td><code>"always"</code></td>
+        <td>Controls when lean-ctx shell aliases auto-activate. <code>"always"</code> (default): active in every interactive shell. <code>"agents-only"</code>: only active when AI agent env vars are detected (<code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>). <code>"off"</code>: never auto-activate, user must call <code>lean-ctx-on</code> manually. Also available via <code>LEAN_CTX_SHELL_ACTIVATION</code> env var. See <a href="#shell-activation">Shell Activation</a>.</td>
+      </tr>
     </tbody>
   </table>
 
@@ -245,6 +253,11 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td><code>LEAN_CTX_MEMORY_CLEANUP</code></td>
         <td><code>aggressive</code> (default) / <code>shared</code></td>
         <td>Controls idle memory cleanup aggressiveness. <code>aggressive</code>: clear caches after 5 min idle (single-IDE). <code>shared</code>: retain caches 30 min (multi-IDE/multi-model). Overrides <code>memory_cleanup</code> in config.toml. If <code>LEAN_CTX_CACHE_TTL</code> is also set, it takes precedence for the cache TTL value.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SHELL_ACTIVATION</code></td>
+        <td><code>always</code> (default) / <code>agents-only</code> / <code>off</code></td>
+        <td>Override <code>shell_activation</code> config setting. Controls when lean-ctx shell aliases auto-activate. <code>always</code>: active in every interactive shell. <code>agents-only</code>: only when AI agent env vars detected. <code>off</code>: manual activation via <code>lean-ctx-on</code>. See <a href="#shell-activation">Shell Activation</a>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_ACTIVE</code></td>
@@ -960,6 +973,93 @@ export LEAN_CTX_HEADLESS=1
     <li><strong>Toggle setups</strong> - You want to switch lean-ctx on/off per session</li>
     <li><strong>CI/CD pipelines</strong> - No interactive environment, no need for hooks</li>
     <li><strong>Sandboxed environments</strong> - You don't want lean-ctx modifying files outside the project</li>
+  </ul>
+
+  <hr />
+
+  <h2 id="lean-ctx-id">Project Identity File (<code>.lean-ctx-id</code>) <span class="text-xs font-normal text-muted ml-2">v3.5.16</span></h2>
+  <p>
+    lean-ctx identifies projects by hashing their root path. In Docker or CI environments where
+    multiple projects share the same mount path (e.g. <code>/workspace</code>), this can cause
+    data collisions — graph index, semantic cache, bandit state, and embedding index from one project
+    bleeding into another.
+  </p>
+  <p>
+    To prevent this, create a <code>.lean-ctx-id</code> file in your project root with a unique
+    project name. This file takes <strong>highest priority</strong> for project identification —
+    above git remote URL, <code>package.json</code> name, and directory name.
+  </p>
+  <pre><code># Create the identity file
+echo "my-unique-project-name" > .lean-ctx-id</code></pre>
+
+  <h3>Priority Order</h3>
+  <table>
+    <thead>
+      <tr><th>Priority</th><th>Source</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1 (highest)</td><td><code>.lean-ctx-id</code></td><td><code>my-api-service</code></td></tr>
+      <tr><td>2</td><td>Git remote URL</td><td><code>github.com/org/repo</code></td></tr>
+      <tr><td>3</td><td><code>package.json</code> / <code>Cargo.toml</code> name</td><td><code>my-api</code></td></tr>
+      <tr><td>4 (lowest)</td><td>Directory path</td><td><code>/workspace</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Identity-Aware Caches</h3>
+  <p>
+    The following data stores use a composite project hash (path + identity) to ensure isolation:
+  </p>
+  <ul>
+    <li><strong>Graph index</strong> — project dependency graph (SQLite Property Graph)</li>
+    <li><strong>Semantic cache</strong> — embedding-based similarity lookups</li>
+    <li><strong>Bandit state</strong> — multi-armed bandit model for read mode selection</li>
+    <li><strong>Embedding index</strong> — vector store for semantic search</li>
+  </ul>
+  <p>
+    When a <code>.lean-ctx-id</code> file is added or changed, existing data is automatically
+    migrated from old hash directories. No manual action required.
+  </p>
+
+  <h3>Docker Usage</h3>
+  <pre><code># Include in your Dockerfile or mount as volume
+COPY .lean-ctx-id /workspace/.lean-ctx-id
+
+# Or create during build
+RUN echo "my-project" > /workspace/.lean-ctx-id</code></pre>
+
+  <hr />
+
+  <h2 id="shell-activation">Shell Activation <span class="text-xs font-normal text-muted ml-2">v3.5.16</span></h2>
+  <p>
+    <code>shell_activation</code> controls when lean-ctx shell aliases (like <code>_lc</code>) auto-activate
+    in interactive shells. By default, lean-ctx activates in every shell. In team environments or CI,
+    you may want to limit activation to AI agent sessions only.
+  </p>
+
+  <h3>Modes</h3>
+  <table>
+    <thead>
+      <tr><th>Mode</th><th>Value</th><th>Behavior</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Always</strong></td><td><code>"always"</code></td><td>Active in every interactive shell. Default behavior, same as previous versions.</td></tr>
+      <tr><td><strong>Agents Only</strong></td><td><code>"agents-only"</code></td><td>Only activates when AI agent environment variables are detected: <code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>.</td></tr>
+      <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td>Never auto-activate. User must call <code>lean-ctx-on</code> manually to enable shell aliases.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+shell_activation = "agents-only"    # always | agents-only | off
+
+# Or via environment variable
+# export LEAN_CTX_SHELL_ACTIVATION=agents-only</code></pre>
+
+  <h3>When to Use</h3>
+  <ul>
+    <li><strong>always</strong> — Solo developer, want compression in every terminal</li>
+    <li><strong>agents-only</strong> — Team environments where non-AI shells should remain unmodified</li>
+    <li><strong>off</strong> — Full manual control, only enable when explicitly needed</li>
   </ul>
 
   <hr />

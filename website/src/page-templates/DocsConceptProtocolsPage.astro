@@ -125,6 +125,17 @@ const sidebar = [
     <li>Diff-only output (<code>+/-/~</code> notation)</li>
     <li>Budget target: ≤150 tokens per response, zero narration</li>
   </ul>
+
+  <h3>Quality Gate: Symbol Scope</h3>
+  <p>
+    TDD symbols like <code>λ</code> (lambda shorthand for functions) and <code>§</code> (section/map marker)
+    are <strong>only emitted in <code>map</code> mode</strong> output (<code>ctx_read mode="map"</code>).
+    Shell output (<code>ctx_shell</code>) never contains these symbols — the shell compression engine
+    uses a separate pipeline that preserves structural integrity of command output (exit codes, paths,
+    diff hunks). This separation ensures that tools and scripts parsing shell output are never confused
+    by TDD notation.
+  </p>
+
   <p>
     <a href={lp('/docs/tdd')}>Full TDD documentation →</a>
   </p>

@@ -196,6 +196,12 @@ lean-ctx deps frontend/</code></pre>
     <a href={lp('/docs/configuration') + '#archive'}>Tool Result Archive</a>, and
     Output Density interactively.
   </p>
+  <p>
+    Since v3.5.16, setup also configures <strong>Shell Activation</strong> — you can choose when
+    lean-ctx shell aliases auto-activate: <code>always</code> (default), <code>agents-only</code>
+    (only when AI agent env vars are detected), or <code>off</code> (manual via <code>lean-ctx-on</code>).
+    See <a href={lp('/docs/configuration') + '#shell-activation'}>Shell Activation</a> for details.
+  </p>
 
   <h3 id="init"><code>lean-ctx init [--global | &lt;shell&gt;]</code></h3>
   <p>{t('docs.cliReference.initDesc')}</p>

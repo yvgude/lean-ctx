@@ -383,7 +383,39 @@ Shared Knowledge:
     <strong>Louvain algorithm</strong>. This groups tightly-coupled files into communities, enabling
     more intelligent context selection — files in the same community as your target are prioritized
     for preloading and receive higher relevance scores during task-driven reads.
+    Since v3.5.16, Louvain uses an <strong>O(m) edge-list-based</strong> representation instead
+    of the previous O(n²) adjacency scan, yielding faster clustering on large dependency graphs.
   </p>
+
+  <h2 id="splade-bm25">SPLADE-Enhanced BM25</h2>
+  <p>
+    Relevance scoring now uses <strong>SPLADE-enhanced BM25</strong> for improved recall during
+    task-driven context selection. SPLADE (SParse Lexical AnD Expansion) augments traditional
+    BM25 term matching with learned sparse representations, capturing synonyms and related terms
+    that pure lexical search misses. This reduces false negatives when task descriptions use
+    different terminology than the source code.
+  </p>
+
+  <h2 id="research-modules">Research Modules <span class="text-xs font-normal text-muted ml-2">v3.5.16</span></h2>
+  <p>
+    v3.5.16 adds 13 research-grade modules under <code>core::research</code> that power
+    advanced intelligence features:
+  </p>
+  <ul>
+    <li><code>adaptive_chunking</code> — dynamic chunk sizing based on semantic density</li>
+    <li><code>attention_placement</code> — optimal positioning of high-relevance content for LLM attention</li>
+    <li><code>cognitive_load</code> — context complexity scoring to avoid overwhelming the model</li>
+    <li><code>confidence</code> — calibrated confidence estimates for relevance predictions</li>
+    <li><code>context_assembly</code> — multi-signal context window construction</li>
+    <li><code>context_budget</code> — token budget allocation across files and modes</li>
+    <li><code>embedding</code> — lightweight local embedding for semantic similarity</li>
+    <li><code>meta_learning</code> — cross-session pattern transfer</li>
+    <li><code>multi_objective</code> — Pareto-optimal trade-offs between compression and fidelity</li>
+    <li><code>query_expansion</code> — automatic query broadening for better recall</li>
+    <li><code>semantic_cache</code> — meaning-aware cache invalidation</li>
+    <li><code>splade</code> — SPLADE sparse vector scoring</li>
+    <li><code>temporal_weighting</code> — recency-weighted relevance decay</li>
+  </ul>
 
   <h2 id="code-smells">Code Smell Detection</h2>
   <p>

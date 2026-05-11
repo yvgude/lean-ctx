@@ -343,6 +343,21 @@ ctx_read src/auth/service.rs --mode task
     <li><strong>Metadata neutralization</strong> - All output is sanitized to strip control characters and potential prompt injection patterns.</li>
   </ul>
 
+  <h3>Structural Output Protection</h3>
+  <p>
+    Commands that produce structured diff output are protected from compression to preserve accuracy.
+    <code>git diff</code>, <code>git show</code>, <code>git blame</code>, <code>git log -p</code>,
+    and <code>git stash show</code> use a dedicated fast path
+    that preserves all <code>+</code>/<code>-</code> lines, hunk headers, and blame annotations verbatim.
+    Standalone diff tools — <code>diff</code>, <code>colordiff</code>, <code>icdiff</code>,
+    and <code>delta</code> — receive the same protection: only lightweight pattern cleanup is applied,
+    never aggressive compression.
+  </p>
+  <p>
+    Binary file detection is also built in: <code>ctx_read</code> and <code>ctx_smart_read</code> recognize 100+ binary
+    file extensions and return a human-readable label instead of attempting to read binary content.
+  </p>
+
   <h3>Supported Patterns (95+)</h3>
 
   <table>

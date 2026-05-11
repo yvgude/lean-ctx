@@ -128,6 +128,8 @@ ctx_graph status              # Show node/edge counts`}</code></pre>
         The Louvain algorithm clusters files into communities based on their dependency relationships.
         Files that frequently import each other or share transitive dependencies are grouped together,
         enabling smarter context preloading and relevance scoring for task-driven queries.
+        Since v3.5.16, Louvain runs on an <strong>O(m) edge-list-based</strong> representation instead
+        of the previous O(n²) adjacency scan, significantly improving performance on large codebases.
       </p>
 
       <h3>PageRank</h3>

@@ -13,6 +13,7 @@ const sidebar = [
       { label: 'Overview', href: lp('/docs/concepts/shell-patterns') },
       { label: 'How It Works', href: lp('/docs/concepts/shell-patterns') + '#how-it-works' },
       { label: '56 Pattern Modules', href: lp('/docs/concepts/shell-patterns') + '#pattern-modules' },
+      { label: 'Structural Protection', href: lp('/docs/concepts/shell-patterns') + '#structural-protection' },
       { label: 'Passthrough Commands', href: lp('/docs/concepts/shell-patterns') + '#passthrough' },
       { label: 'FilterEngine', href: lp('/docs/concepts/shell-patterns') + '#filter-engine' },
       { label: 'Bypassing Compression', href: lp('/docs/concepts/shell-patterns') + '#bypassing' },
@@ -248,6 +249,18 @@ ctx_shell command="npm install"
 → added 12, removed 0, changed 3, audited 847 packages
   0 vulnerabilities
   [saved 214 tok, 71%]`}</code></pre>
+
+  <!-- ───── STRUCTURAL OUTPUT PROTECTION ───── -->
+  <h2 id="structural-protection">Structural Output Protection</h2>
+  <p>
+    Diff-producing commands receive special treatment: <code>git diff</code>, <code>git show</code>,
+    <code>git blame</code>, <code>git log -p</code>, <code>git stash show</code>, and standalone
+    diff tools (<code>diff</code>, <code>colordiff</code>, <code>icdiff</code>, <code>delta</code>)
+    are <strong>never aggressively compressed</strong>. Only lightweight pattern cleanup is applied
+    (ANSI stripping, trailing whitespace removal) — all <code>+</code>/<code>-</code> lines,
+    hunk headers, and blame annotations are preserved verbatim to ensure agents can rely on
+    structural diff output for accurate code analysis.
+  </p>
 
   <!-- ───── PASSTHROUGH ───── -->
   <h2 id="passthrough">Passthrough Commands</h2>

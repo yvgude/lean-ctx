@@ -17,6 +17,7 @@ const sidebar = [
       { label: 'Audit Trail', href: lp('/docs/security#audit') },
       { label: 'Redaction Policies', href: lp('/docs/security#redaction') },
       { label: 'Secret Leak Prevention', href: lp('/docs/security#secrets') },
+      { label: 'v3.5.16 Hardening', href: lp('/docs/security#v3516-hardening') },
     ],
   },
   {
@@ -121,6 +122,19 @@ replacement = "[REDACTED_API_KEY]"`}</code></pre>
   </ul>
 
   <p>When a secret is detected, the verification step replaces it with <code>[REDACTED]</code> and logs a warning in the audit trail. This protection is enabled by default and works with all integration modes (CLI, Hybrid, MCP).</p>
+
+  <h2 id="v3516-hardening">v3.5.16 Security Hardening</h2>
+  <p>Version 3.5.16 introduced 40+ security fixes across all severity levels. Key protections:</p>
+  <ul>
+    <li><strong>Path traversal prevention</strong> — PathJail enforcement extended to <code>tee show</code> and dashboard routes; <code>..</code> and path separators are rejected outright.</li>
+    <li><strong>CSP nonce-based policy</strong> — Dashboard responses use per-request nonces instead of <code>unsafe-inline</code>, preventing XSS via injected inline scripts.</li>
+    <li><strong>Argon2id password hashing</strong> — Cloud server passwords are hashed with OWASP-recommended Argon2id parameters (19 MiB memory, 2 iterations).</li>
+    <li><strong>HMAC payload binding for A2A</strong> — Agent-to-Agent handoff payloads are authenticated with HMAC-SHA256, preventing tampering in transit.</li>
+    <li><strong>Constant-time token comparison</strong> — Bearer tokens are verified using constant-time equality to prevent timing side-channels.</li>
+    <li><strong>Sandbox environment isolation</strong> — The Rust sandbox strips all environment variables except an explicit allowlist before executing commands.</li>
+    <li><strong>SSE subscriber caps</strong> — Server-Sent Events channels enforce a 64-subscriber limit, preventing resource exhaustion via connection flooding.</li>
+  </ul>
+  <p>For full details, see the <a href={lp('/docs/changelog') + '#v3.5.16'}>v3.5.16 changelog</a>.</p>
 
   <h2>Open Source Audit</h2>
   <p>LeanCTX is fully open source. You can audit the security implementation yourself:</p>
