@@ -193,6 +193,12 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>-</td>
         <td>Configure loop detection thresholds. See <a href="#loop-detection">Loop Detection</a> section below.</td>
       </tr>
+      <tr>
+        <td><code>memory_cleanup</code></td>
+        <td>string</td>
+        <td><code>"aggressive"</code></td>
+        <td>Controls how aggressively lean-ctx frees memory when idle. <code>"aggressive"</code> (default) clears caches after 5 minutes of idle time — ideal for single-IDE use. <code>"shared"</code> retains caches for 30 minutes — ideal when multiple IDEs or models share the same lean-ctx instance. Also available via <code>LEAN_CTX_MEMORY_CLEANUP</code> env var.</td>
+      </tr>
     </tbody>
   </table>
 
@@ -234,6 +240,11 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td><code>LEAN_CTX_CACHE_TTL</code></td>
         <td>number (default: 300)</td>
         <td set:html={t('docsConfiguration.cacheTtlDesc')} />
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_MEMORY_CLEANUP</code></td>
+        <td><code>aggressive</code> (default) / <code>shared</code></td>
+        <td>Controls idle memory cleanup aggressiveness. <code>aggressive</code>: clear caches after 5 min idle (single-IDE). <code>shared</code>: retain caches 30 min (multi-IDE/multi-model). Overrides <code>memory_cleanup</code> in config.toml. If <code>LEAN_CTX_CACHE_TTL</code> is also set, it takes precedence for the cache TTL value.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_ACTIVE</code></td>
