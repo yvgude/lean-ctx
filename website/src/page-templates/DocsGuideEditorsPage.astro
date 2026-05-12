@@ -183,7 +183,7 @@ lean-ctx init --agent copilot`}</code></pre>
     <tbody>
       <tr><td><code>claude</code></td><td>Claude Code</td><td><code>~/.claude.json</code></td></tr>
       <tr><td><code>cursor</code></td><td>Cursor</td><td><code>~/.cursor/hooks.json</code> <span class="text-muted">(CLI-first)</span> / <code>~/.cursor/mcp.json</code> <span class="text-muted">(MCP/Hybrid)</span></td></tr>
-      <tr><td><code>codex</code></td><td>Codex CLI</td><td><code>~/.codex/config.toml</code></td></tr>
+      <tr><td><code>codex</code></td><td>Codex CLI</td><td><code>~/.codex/config.toml</code> <span class="text-muted">(or <code>$CODEX_HOME/</code>)</span></td></tr>
       <tr><td><code>gemini</code></td><td>Gemini CLI / Antigravity</td><td><code>~/.gemini/settings.json</code></td></tr>
       <tr><td><code>copilot</code></td><td>GitHub Copilot (VS Code)</td><td><code>.vscode/mcp.json</code> <span class="text-muted">(+</span> <code>.github/hooks/hooks.json</code><span class="text-muted">)</span></td></tr>
       <tr><td><code>windsurf</code></td><td>Windsurf</td><td><code>~/.codeium/windsurf/mcp_config.json</code></td></tr>
@@ -416,13 +416,13 @@ lean-ctx init --agent claude --project`}</code></pre>
   </table>
 
   <h4>MCP Configuration</h4>
-  <p>In <code>~/.codex/config.toml</code>:</p>
+  <p>In <code>~/.codex/config.toml</code> (or <code>$CODEX_HOME/config.toml</code> if <code>CODEX_HOME</code> is set):</p>
   <pre><code>{`[mcp_servers.lean-ctx]
 command = "lean-ctx"
 args = []
 
 [features]
-codex_hooks = true`}</code></pre>
+hooks = true`}</code></pre>
 
   <h4>Hook Configuration</h4>
   <p>In <code>~/.codex/hooks.json</code>:</p>
@@ -454,7 +454,8 @@ codex_hooks = true`}</code></pre>
   <h4>Quirks &amp; Notes</h4>
   <ul>
     <li>Codex uses <strong>TOML</strong> for MCP config - not JSON like most other editors.</li>
-    <li>The <code>codex_hooks = true</code> feature flag must be enabled in <code>config.toml</code> for hooks to work.</li>
+    <li>The <code>hooks = true</code> feature flag must be enabled in <code>[features]</code> for hooks to work. The deprecated <code>codex_hooks = true</code> is automatically migrated to <code>hooks = true</code> during install.</li>
+    <li>If the <code>CODEX_HOME</code> environment variable is set, lean-ctx uses that directory instead of <code>~/.codex</code> for all Codex configuration files.</li>
     <li><code>SessionStart</code> hooks run when a session starts, resumes, or is cleared.</li>
     <li>lean-ctx auto-creates <code>AGENTS.md</code> in the project root with instructions.</li>
   </ul>

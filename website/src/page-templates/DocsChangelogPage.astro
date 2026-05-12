@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.5.19 (Current)', href: lp('/docs/changelog') + '#v3.5.19' },
+      { label: '3.5.20 (Current)', href: lp('/docs/changelog') + '#v3.5.20' },
+      { label: '3.5.19', href: lp('/docs/changelog') + '#v3.5.19' },
       { label: '3.5.18', href: lp('/docs/changelog') + '#v3.5.18' },
       { label: '3.5.17', href: lp('/docs/changelog') + '#v3.5.17' },
       { label: '3.5.16', href: lp('/docs/changelog') + '#v3.5.16' },
@@ -55,9 +56,26 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
+  <!-- 3.5.20 -->
+  <h2 id="v3.5.20">3.5.20 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release — Codex installer fixes, Windows path normalization, and CLI flag validation.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Codex installer respects <code>CODEX_HOME</code></strong> — <code>lean-ctx init --agent codex</code> now reads the <code>CODEX_HOME</code> environment variable. All Codex config files are written to <code>$CODEX_HOME</code> instead of always using <code>~/.codex</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/202">#202</a>)</li>
+    <li><strong>Codex feature flag migrated to <code>hooks</code></strong> — The installer now writes <code>hooks = true</code> instead of the deprecated <code>codex_hooks = true</code>. Existing entries are auto-migrated. (<a href="https://github.com/yvgude/lean-ctx/issues/203">#203</a>)</li>
+    <li><strong><code>lean-ctx ls</code> rejects unsupported flags</strong> — Flags like <code>-la</code>, <code>-l</code>, <code>-R</code> now return a clear error with usage hints. Supported: <code>--all</code>/<code>-a</code>, <code>--depth N</code>. The shell hook continues passing <code>ls</code> flags to the system <code>ls</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/201">#201</a>)</li>
+    <li><strong>Windows path format for inline rewrites</strong> — <code>handle_rewrite_inline()</code> returns native OS paths on Windows instead of MSYS format (<code>/c/Users/...</code>). New <code>from_bash_to_native_path()</code> function provides symmetrical conversion. (<a href="https://github.com/yvgude/lean-ctx/issues/204">#204</a>)</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Path normalization tests</strong> — 11 new <code>normalize_tool_path()</code> tests, 6 new <code>from_bash_to_native_path()</code> tests including Windows/Unix roundtrips.</li>
+  </ul>
+
   <!-- 3.5.19 -->
   <h2 id="v3.5.19">3.5.19 <span class="text-xs text-muted">(May 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release — shell hook drop-in install, output policy classification, dashboard audit, and agent-aware non-interactive tracking.</p>
+  <p class="text-sm text-muted">Shell hook drop-in install, output policy classification, dashboard audit, and agent-aware non-interactive tracking.</p>
 
   <h3>Added</h3>
   <ul>
