@@ -203,11 +203,16 @@ lean-ctx deps frontend/</code></pre>
     See <a href={lp('/docs/configuration') + '#shell-activation'}>Shell Activation</a> for details.
   </p>
 
-  <h3 id="init"><code>lean-ctx init [--global | &lt;shell&gt;]</code></h3>
+  <h3 id="init"><code>lean-ctx init [--global | &lt;shell&gt;] [--style=auto|inline|dropin]</code></h3>
   <p>{t('docs.cliReference.initDesc')}</p>
   <pre><code># File-based: writes aliases directly into your shell profile
 lean-ctx init           # install for current shell
 lean-ctx init --global  # same, explicit flag
+
+# Install style (v3.5.19+)
+lean-ctx init --global --style=dropin   # drop-in file in ~/.zshenv.d/
+lean-ctx init --global --style=inline   # fenced block in ~/.zshenv (default)
+lean-ctx init --global --style=auto     # auto-detect (default)
 
 # Eval-based: prints hook code to stdout (like starship, zoxide, atuin)
 eval "$(lean-ctx init bash)"        # bash: add to ~/.bashrc
@@ -216,6 +221,17 @@ lean-ctx init fish | source         # fish: add to config.fish
 lean-ctx init powershell | Invoke-Expression  # PowerShell: add to $PROFILE</code></pre>
   <p><Fragment set:html={t('docs.cliReference.initNote')} /></p>
   <p><Fragment set:html={t('docs.cliReference.initEvalNote')} /></p>
+
+  <h4 id="init-style">{t('docs.cliReference.initStyleTitle')}</h4>
+  <p><Fragment set:html={t('docs.cliReference.initStyleDesc')} /></p>
+  <table>
+    <thead><tr><th>Style</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td><code>auto</code></td><td>{t('docs.cliReference.initStyleAuto')}</td></tr>
+      <tr><td><code>inline</code></td><td>{t('docs.cliReference.initStyleInline')}</td></tr>
+      <tr><td><code>dropin</code></td><td>{t('docs.cliReference.initStyleDropin')}</td></tr>
+    </tbody>
+  </table>
 
   <h3 id="init-agent"><code>lean-ctx init --agent &lt;name&gt;</code></h3>
   <p>{t('docs.cliReference.initAgentDesc')}</p>

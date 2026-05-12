@@ -453,7 +453,7 @@ const sidebar = [
       step++;
       lines.push(step + '. VERIFY:');
       lines.push('   lean-ctx --version');
-      lines.push('   (Expected: lean-ctx 3.5.16 or newer)');
+      lines.push('   (Expected: lean-ctx 3.5.19 or newer)');
       lines.push('');
       step++;
       lines.push(step + '. ONE-COMMAND SETUP (shell hooks + editor config):');
@@ -748,7 +748,7 @@ lean-ctx init powershell | Invoke-Expression</code></pre>
   <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
   <p set:html={t('docs.gettingStarted.dockerDesc')} />
 
-  <pre><code>ARG LEAN_CTX_VERSION=3.5.16
+  <pre><code>ARG LEAN_CTX_VERSION=3.5.19
 
 # Download the musl binary (statically linked, no glibc dependency)
 RUN curl -fsSL \
@@ -844,7 +844,7 @@ echo "my-unique-project-name" > .lean-ctx-id</code></pre>
   <h2 id="editor-setup">{t('docs.gettingStarted.step3Title')}</h2>
   <ol>
     <li>{t('docs.gettingStarted.verifyStep1')}
-      <pre><code>lean-ctx --version   # → lean-ctx 3.5.16
+      <pre><code>lean-ctx --version   # → lean-ctx 3.5.19
 lean-ctx doctor      # checks PATH, config, aliases, MCP</code></pre>
     </li>
     <li>{t('docs.gettingStarted.verifyStep2')}

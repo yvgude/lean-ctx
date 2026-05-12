@@ -1043,7 +1043,7 @@ RUN echo "my-project" > /workspace/.lean-ctx-id</code></pre>
     </thead>
     <tbody>
       <tr><td><strong>Always</strong></td><td><code>"always"</code></td><td>Active in every interactive shell. Default behavior, same as previous versions.</td></tr>
-      <tr><td><strong>Agents Only</strong></td><td><code>"agents-only"</code></td><td>Only activates when AI agent environment variables are detected: <code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>.</td></tr>
+      <tr><td><strong>Agents Only</strong></td><td><code>"agents-only"</code></td><td>Only activates when AI agent environment variables are detected: <code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>. Since v3.5.19, these same variables also enable tracking in non-interactive shells (e.g. Docker <code>bash -c</code>, Codex CLI), bypassing the TTY guard that normally disables the hook when stdout is not a terminal.</td></tr>
       <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td>Never auto-activate. User must call <code>lean-ctx-on</code> manually to enable shell aliases.</td></tr>
     </tbody>
   </table>
@@ -1058,7 +1058,7 @@ shell_activation = "agents-only"    # always | agents-only | off
   <h3>When to Use</h3>
   <ul>
     <li><strong>always</strong> — Solo developer, want compression in every terminal</li>
-    <li><strong>agents-only</strong> — Team environments where non-AI shells should remain unmodified</li>
+    <li><strong>agents-only</strong> — Team environments where non-AI shells should remain unmodified. Also enables non-interactive (non-TTY) tracking for Docker/Codex containers (v3.5.19+)</li>
     <li><strong>off</strong> — Full manual control, only enable when explicitly needed</li>
   </ul>
 

@@ -133,7 +133,7 @@
         "ctx_search",
         "ctx_tree"
       ],
-      "token_impact": "60-95% output compression for common tools (git, npm, cargo, docker, etc.)",
+      "token_impact": "60-95% output compression for common tools (git, npm, cargo, docker, ls, find, etc.)",
       "cli_equivalent": "lean-ctx -c <command>",
       "examples": [
         {

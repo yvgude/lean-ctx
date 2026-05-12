@@ -199,7 +199,7 @@ export LEAN_CTX_OUTPUT_DENSITY=ultra</code></pre>
         <td><code>LEAN_CTX_SHELL_ACTIVATION</code></td>
         <td>string</td>
         <td><code>always</code></td>
-        <td>Controls when lean-ctx shell aliases auto-activate. <code>always</code> (default): active in every interactive shell. <code>agents-only</code>: only when AI agent env vars are detected (<code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>). <code>off</code>: never auto-activate, user must call <code>lean-ctx-on</code> manually. Overrides <code>shell_activation</code> in config.toml.</td>
+        <td>Controls when lean-ctx shell aliases auto-activate. <code>always</code> (default): active in every interactive shell. <code>agents-only</code>: only when AI agent env vars are detected (<code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>). <code>off</code>: never auto-activate, user must call <code>lean-ctx-on</code> manually. Overrides <code>shell_activation</code> in config.toml. Since v3.5.19, these agent env vars also enable tracking in non-interactive (non-TTY) shells, e.g. Docker <code>bash -c</code> or Codex CLI containers.</td>
         <td>v3.5.16</td>
       </tr>
     </tbody>
