@@ -399,7 +399,7 @@ mod tests {
             engine: Arc::new(ContextEngine::from_server(
                 LeanCtxServer::new_with_project_root(Some(&root_str)),
             )),
-            timeout: Duration::from_millis(30_000),
+            timeout: Duration::from_secs(30),
         };
 
         let app = Router::new()
@@ -438,7 +438,7 @@ mod tests {
             concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
             rate: Arc::new(RateLimiter::new(1, 1)),
             engine: Arc::new(ContextEngine::new()),
-            timeout: Duration::from_millis(30_000),
+            timeout: Duration::from_secs(30),
         };
 
         let app = Router::new()

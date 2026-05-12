@@ -1,0 +1,487 @@
+{
+  "version": 1,
+  "sections": {
+    "archive": {
+      "description": "Settings for the zero-loss compression archive (large tool outputs saved to disk)",
+      "keys": {
+        "enabled": {
+          "type": "bool",
+          "default": true,
+          "description": "Enable zero-loss compression archive"
+        },
+        "max_age_hours": {
+          "type": "u64",
+          "default": 48,
+          "description": "Maximum age of archived entries before cleanup"
+        },
+        "max_disk_mb": {
+          "type": "u64",
+          "default": 500,
+          "description": "Maximum total disk usage for the archive"
+        },
+        "threshold_chars": {
+          "type": "usize",
+          "default": 4096,
+          "description": "Minimum output size (chars) to trigger archiving"
+        }
+      }
+    },
+    "autonomy": {
+      "description": "Controls autonomous background behaviors (preload, dedup, consolidation)",
+      "keys": {
+        "auto_consolidate": {
+          "type": "bool",
+          "default": true,
+          "description": "Auto-consolidate knowledge periodically"
+        },
+        "auto_dedup": {
+          "type": "bool",
+          "default": true,
+          "description": "Auto-deduplicate repeated reads"
+        },
+        "auto_preload": {
+          "type": "bool",
+          "default": true,
+          "description": "Auto-preload related files on first read"
+        },
+        "auto_related": {
+          "type": "bool",
+          "default": true,
+          "description": "Auto-load graph-related files"
+        },
+        "consolidate_cooldown_secs": {
+          "type": "u64",
+          "default": 120,
+          "description": "Minimum seconds between consolidation runs"
+        },
+        "consolidate_every_calls": {
+          "type": "u32",
+          "default": 25,
+          "description": "Consolidate knowledge every N tool calls"
+        },
+        "dedup_threshold": {
+          "type": "usize",
+          "default": 8,
+          "description": "Number of repeated reads before dedup triggers"
+        },
+        "enabled": {
+          "type": "bool",
+          "default": true,
+          "description": "Enable autonomous background behaviors"
+        },
+        "silent_preload": {
+          "type": "bool",
+          "default": true,
+          "description": "Suppress preload notifications in output"
+        }
+      }
+    },
+    "cloud": {
+      "description": "Cloud feature settings",
+      "keys": {
+        "contribute_enabled": {
+          "type": "bool",
+          "default": false,
+          "description": "Enable contributing anonymized stats to lean-ctx cloud"
+        }
+      }
+    },
+    "custom_aliases": {
+      "description": "Custom command aliases (array of {command, alias} entries). Note: field names are 'command' and 'alias' (not 'name')",
+      "keys": {
+        "alias": {
+          "type": "string",
+          "default": "",
+          "description": "The alias definition to execute"
+        },
+        "command": {
+          "type": "string",
+          "default": "",
+          "description": "The command pattern to match (e.g. 'deploy')"
+        }
+      }
+    },
+    "loop_detection": {
+      "description": "Loop detection settings for preventing repeated identical tool calls",
+      "keys": {
+        "blocked_threshold": {
+          "type": "u32",
+          "default": 0,
+          "description": "Repetitions before blocking. 0 = disabled"
+        },
+        "normal_threshold": {
+          "type": "u32",
+          "default": 2,
+          "description": "Repetitions before reducing output"
+        },
+        "reduced_threshold": {
+          "type": "u32",
+          "default": 4,
+          "description": "Repetitions before further reducing output"
+        },
+        "search_group_limit": {
+          "type": "u32",
+          "default": 10,
+          "description": "Maximum unique searches within a loop window"
+        },
+        "window_secs": {
+          "type": "u64",
+          "default": 300,
+          "description": "Time window in seconds for loop detection"
+        }
+      }
+    },
+    "memory.embeddings": {
+      "description": "Embeddings memory settings for semantic search",
+      "keys": {
+        "max_facts": {
+          "type": "usize",
+          "default": 2000,
+          "description": "Maximum number of embedding facts stored"
+        }
+      }
+    },
+    "memory.episodic": {
+      "description": "Episodic memory budgets (session episodes)",
+      "keys": {
+        "max_actions_per_episode": {
+          "type": "usize",
+          "default": 50,
+          "description": "Maximum actions tracked per episode"
+        },
+        "max_episodes": {
+          "type": "usize",
+          "default": 500,
+          "description": "Maximum number of episodes retained"
+        },
+        "summary_max_chars": {
+          "type": "usize",
+          "default": 200,
+          "description": "Maximum characters in episode summary"
+        }
+      }
+    },
+    "memory.gotcha": {
+      "description": "Gotcha memory settings (project-specific warnings and pitfalls)",
+      "keys": {
+        "default_decay_rate": {
+          "type": "f32",
+          "default": 0.03,
+          "description": "Default decay rate for gotcha importance"
+        },
+        "max_gotchas_per_project": {
+          "type": "usize",
+          "default": 100,
+          "description": "Maximum gotchas stored per project"
+        },
+        "retrieval_budget_per_room": {
+          "type": "usize",
+          "default": 10,
+          "description": "Maximum gotchas retrieved per room per query"
+        }
+      }
+    },
+    "memory.knowledge": {
+      "description": "Knowledge memory budgets (facts, patterns, gotchas)",
+      "keys": {
+        "contradiction_threshold": {
+          "type": "f32",
+          "default": 0.5,
+          "description": "Confidence threshold for contradiction detection"
+        },
+        "max_facts": {
+          "type": "usize",
+          "default": 200,
+          "description": "Maximum number of knowledge facts stored per project"
+        },
+        "max_history": {
+          "type": "usize",
+          "default": 100,
+          "description": "Maximum history entries retained"
+        },
+        "max_patterns": {
+          "type": "usize",
+          "default": 50,
+          "description": "Maximum number of patterns stored"
+        },
+        "recall_facts_limit": {
+          "type": "usize",
+          "default": 10,
+          "description": "Maximum facts returned per recall query"
+        },
+        "relations_limit": {
+          "type": "usize",
+          "default": 40,
+          "description": "Maximum number of relations returned"
+        },
+        "rooms_limit": {
+          "type": "usize",
+          "default": 25,
+          "description": "Maximum number of rooms returned"
+        },
+        "timeline_limit": {
+          "type": "usize",
+          "default": 25,
+          "description": "Maximum number of timeline entries returned"
+        }
+      }
+    },
+    "memory.lifecycle": {
+      "description": "Knowledge lifecycle policy (decay, staleness, dedup)",
+      "keys": {
+        "decay_rate": {
+          "type": "f32",
+          "default": 0.01,
+          "description": "Rate at which knowledge confidence decays over time"
+        },
+        "low_confidence_threshold": {
+          "type": "f32",
+          "default": 0.3,
+          "description": "Threshold below which facts are considered low-confidence"
+        },
+        "similarity_threshold": {
+          "type": "f32",
+          "default": 0.85,
+          "description": "Similarity threshold for deduplication"
+        },
+        "stale_days": {
+          "type": "i64",
+          "default": 30,
+          "description": "Days after which unused facts are considered stale"
+        }
+      }
+    },
+    "memory.procedural": {
+      "description": "Procedural memory budgets (learned patterns)",
+      "keys": {
+        "max_procedures": {
+          "type": "usize",
+          "default": 100,
+          "description": "Maximum number of learned procedures stored"
+        },
+        "max_window_size": {
+          "type": "usize",
+          "default": 10,
+          "description": "Maximum window size for pattern analysis"
+        },
+        "min_repetitions": {
+          "type": "usize",
+          "default": 3,
+          "description": "Minimum repetitions before a pattern is stored"
+        },
+        "min_sequence_len": {
+          "type": "usize",
+          "default": 2,
+          "description": "Minimum sequence length for procedure detection"
+        }
+      }
+    },
+    "proxy": {
+      "description": "Proxy upstream configuration for API routing",
+      "keys": {
+        "anthropic_upstream": {
+          "type": "string?",
+          "default": null,
+          "description": "Custom upstream URL for Anthropic API proxy"
+        },
+        "gemini_upstream": {
+          "type": "string?",
+          "default": null,
+          "description": "Custom upstream URL for Gemini API proxy"
+        },
+        "openai_upstream": {
+          "type": "string?",
+          "default": null,
+          "description": "Custom upstream URL for OpenAI API proxy"
+        }
+      }
+    },
+    "root": {
+      "description": "Top-level configuration keys",
+      "keys": {
+        "allow_paths": {
+          "type": "string[]",
+          "default": [],
+          "description": "Additional paths allowed by PathJail (absolute)",
+          "env_override": "LEAN_CTX_ALLOW_PATH"
+        },
+        "bm25_max_cache_mb": {
+          "type": "u64",
+          "default": 128,
+          "description": "Maximum BM25 cache file size in MB",
+          "env_override": "LEAN_CTX_BM25_MAX_CACHE_MB"
+        },
+        "buddy_enabled": {
+          "type": "bool",
+          "default": true,
+          "description": "Enable the buddy system for multi-agent coordination"
+        },
+        "checkpoint_interval": {
+          "type": "u32",
+          "default": 15,
+          "description": "Session checkpoint interval in minutes"
+        },
+        "compression_level": {
+          "type": "enum",
+          "default": "off",
+          "description": "Unified compression level for all output",
+          "values": [
+            "off",
+            "lite",
+            "standard",
+            "max"
+          ],
+          "env_override": "LEAN_CTX_COMPRESSION"
+        },
+        "content_defined_chunking": {
+          "type": "bool",
+          "default": false,
+          "description": "Enable Rabin-Karp chunking for cache-optimal output ordering"
+        },
+        "custom_aliases": {
+          "type": "array",
+          "default": [],
+          "description": "Custom command aliases (array of {command, alias} entries)"
+        },
+        "disabled_tools": {
+          "type": "string[]",
+          "default": [],
+          "description": "Tools to exclude from the MCP tool list"
+        },
+        "excluded_commands": {
+          "type": "string[]",
+          "default": [],
+          "description": "Commands to exclude from shell hook interception"
+        },
+        "extra_ignore_patterns": {
+          "type": "string[]",
+          "default": [],
+          "description": "Extra glob patterns to ignore in graph/overview/preload"
+        },
+        "graph_index_max_files": {
+          "type": "u64",
+          "default": 5000,
+          "description": "Maximum files scanned by the JSON graph index. Increase for large monorepos"
+        },
+        "memory_cleanup": {
+          "type": "enum",
+          "default": "aggressive",
+          "description": "Controls how aggressively memory is freed when idle",
+          "values": [
+            "aggressive",
+            "shared"
+          ],
+          "env_override": "LEAN_CTX_MEMORY_CLEANUP"
+        },
+        "memory_profile": {
+          "type": "enum",
+          "default": "balanced",
+          "description": "Controls RAM vs feature trade-off",
+          "values": [
+            "low",
+            "balanced",
+            "performance"
+          ],
+          "env_override": "LEAN_CTX_MEMORY_PROFILE"
+        },
+        "minimal_overhead": {
+          "type": "bool",
+          "default": false,
+          "description": "Skip session/knowledge/gotcha blocks in MCP instructions",
+          "env_override": "LEAN_CTX_MINIMAL"
+        },
+        "output_density": {
+          "type": "enum",
+          "default": "normal",
+          "description": "Controls how dense/compact MCP tool output is formatted",
+          "values": [
+            "normal",
+            "terse",
+            "ultra"
+          ],
+          "env_override": "LEAN_CTX_OUTPUT_DENSITY"
+        },
+        "passthrough_urls": {
+          "type": "string[]",
+          "default": [],
+          "description": "URLs to pass through without proxy interception"
+        },
+        "redirect_exclude": {
+          "type": "string[]",
+          "default": [],
+          "description": "URL patterns to exclude from proxy redirection"
+        },
+        "rules_scope": {
+          "type": "enum",
+          "default": "both",
+          "description": "Where agent rule files are installed. Override via LEAN_CTX_RULES_SCOPE",
+          "values": [
+            "both",
+            "global",
+            "project"
+          ]
+        },
+        "shell_activation": {
+          "type": "enum",
+          "default": "always",
+          "description": "Controls when the shell hook auto-activates aliases",
+          "values": [
+            "always",
+            "agents-only",
+            "off"
+          ],
+          "env_override": "LEAN_CTX_SHELL_ACTIVATION"
+        },
+        "shell_hook_disabled": {
+          "type": "bool",
+          "default": false,
+          "description": "Disable shell hook injection",
+          "env_override": "LEAN_CTX_NO_HOOK"
+        },
+        "slow_command_threshold_ms": {
+          "type": "u64",
+          "default": 5000,
+          "description": "Commands taking longer than this (ms) are recorded in the slow log. Set to 0 to disable"
+        },
+        "tee_mode": {
+          "type": "enum",
+          "default": "failures",
+          "description": "Controls when shell output is tee'd to disk for later retrieval",
+          "values": [
+            "never",
+            "failures",
+            "always"
+          ]
+        },
+        "terse_agent": {
+          "type": "enum",
+          "default": "off",
+          "description": "Controls agent output verbosity via instructions injection",
+          "values": [
+            "off",
+            "lite",
+            "full",
+            "ultra"
+          ],
+          "env_override": "LEAN_CTX_TERSE_AGENT"
+        },
+        "theme": {
+          "type": "string",
+          "default": "default",
+          "description": "Dashboard color theme"
+        },
+        "ultra_compact": {
+          "type": "bool",
+          "default": false,
+          "description": "Legacy flag for maximum compression (use compression_level instead)"
+        },
+        "update_check_disabled": {
+          "type": "bool",
+          "default": false,
+          "description": "Disable the daily version check",
+          "env_override": "LEAN_CTX_NO_UPDATE_CHECK"
+        }
+      }
+    }
+  }
+}

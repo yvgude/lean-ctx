@@ -12,6 +12,8 @@ const sidebar = [
     items: [
       { label: t('docsConfiguration.sidebarOverview'), href: lp('/docs/configuration') },
       { label: t('docsConfiguration.sidebarConfigFile'), href: lp('/docs/configuration') + '#config-file' },
+      { label: t('docsConfiguration.sidebarConfigPriority'), href: lp('/docs/configuration') + '#config-priority' },
+      { label: t('docsConfiguration.sidebarCommonConfusion'), href: lp('/docs/configuration') + '#common-confusion' },
       { label: t('docsConfiguration.sidebarConfigOptions'), href: lp('/docs/configuration') + '#config-options' },
       { label: t('docsConfiguration.sidebarAutonomyConfig'), href: lp('/docs/configuration') + '#autonomy-configuration' },
       { label: t('docsConfiguration.sidebarUserTomlFilters'), href: lp('/docs/configuration') + '#user-toml-filters' },
@@ -24,7 +26,9 @@ const sidebar = [
       { label: 'Loop Detection', href: lp('/docs/configuration') + '#loop-detection' },
       { label: 'Pipe Guard', href: lp('/docs/configuration') + '#pipe-guard' },
       { label: 'Tool Result Archive', href: lp('/docs/configuration') + '#archive' },
-      { label: 'Compaction Resilience', href: lp('/docs/configuration') + '#compaction' },
+      { label: 'Cloud', href: lp('/docs/configuration') + '#cloud' },
+      { label: 'Proxy', href: lp('/docs/configuration') + '#proxy' },
+      { label: 'Memory', href: lp('/docs/configuration') + '#memory' },
       { label: 'Terse Agent Mode', href: lp('/docs/configuration') + '#terse-agent' },
       { label: 'Output Density', href: lp('/docs/configuration') + '#output-density' },
       { label: 'Rules Scope', href: lp('/docs/configuration') + '#rules-scope' },
@@ -72,6 +76,81 @@ lean-ctx config set checkpoint_interval 15
 lean-ctx config set tee_mode always
 lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
 
+  <h3 set:html={t('docsConfiguration.validateTitle')} />
+  <pre><code># Check for typos, unknown keys, and wrong field names
+lean-ctx config validate
+
+# View the full config schema (all keys, types, defaults)
+lean-ctx config schema</code></pre>
+
+  <hr />
+
+  <h2 id="config-priority" set:html={t('docsConfiguration.configPriorityTitle')} />
+  <p set:html={t('docsConfiguration.configPriorityDesc')} />
+  <table>
+    <thead>
+      <tr><th>Priority</th><th>Source</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>1 (highest)</strong></td><td set:html={t('docsConfiguration.configPriorityP1')} /><td><code>LEAN_CTX_COMPRESSION=max</code></td></tr>
+      <tr><td><strong>2</strong></td><td set:html={t('docsConfiguration.configPriorityP2')} /><td><code>.lean-ctx.toml</code></td></tr>
+      <tr><td><strong>3 (lowest)</strong></td><td set:html={t('docsConfiguration.configPriorityP3')} /><td><code>~/.lean-ctx/config.toml</code></td></tr>
+    </tbody>
+  </table>
+  <p set:html={t('docsConfiguration.configPriorityTomlNote')} />
+
+  <hr />
+
+  <h2 id="common-confusion" set:html={t('docsConfiguration.commonConfusionTitle')} />
+  <p set:html={t('docsConfiguration.commonConfusionDesc')} />
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>What it controls</th><th>Default</th><th>Section</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>graph_index_max_files</code></td>
+        <td set:html={t('docsConfiguration.confusionGraphIndexDesc')} />
+        <td><code>5000</code></td>
+        <td>root</td>
+      </tr>
+      <tr>
+        <td><code>memory.knowledge.max_facts</code></td>
+        <td set:html={t('docsConfiguration.confusionKnowledgeDesc')} />
+        <td><code>200</code></td>
+        <td><code>[memory.knowledge]</code></td>
+      </tr>
+      <tr>
+        <td><code>memory.embeddings.max_facts</code></td>
+        <td set:html={t('docsConfiguration.confusionEmbeddingsDesc')} />
+        <td><code>2000</code></td>
+        <td><code>[memory.embeddings]</code></td>
+      </tr>
+      <tr>
+        <td><code>archive.max_disk_mb</code></td>
+        <td set:html={t('docsConfiguration.confusionArchiveDiskDesc')} />
+        <td><code>500</code></td>
+        <td><code>[archive]</code></td>
+      </tr>
+      <tr>
+        <td><code>archive.max_age_hours</code></td>
+        <td set:html={t('docsConfiguration.confusionArchiveAgeDesc')} />
+        <td><code>48</code></td>
+        <td><code>[archive]</code></td>
+      </tr>
+      <tr>
+        <td><code>memory.lifecycle.stale_days</code></td>
+        <td set:html={t('docsConfiguration.confusionStaleDaysDesc')} />
+        <td><code>30</code></td>
+        <td><code>[memory.lifecycle]</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="background: var(--surface-2, #1a1a2e); border-left: 3px solid var(--yellow, #f0c040); padding: 12px 16px; border-radius: 6px; margin: 16px 0;">
+    <span set:html={t('docsConfiguration.confusionCallout')} />
+  </div>
+
   <hr />
 
   <h2 id="config-options" set:html={t('docsConfiguration.configOptionsTitle')} />
@@ -90,7 +169,7 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
       <tr>
         <td><code>compression_level</code></td>
         <td>string</td>
-        <td><code>"standard"</code></td>
+        <td><code>"off"</code></td>
         <td>Unified compression level controlling the 4-layer terse engine. <code>"off"</code> = no compression, <code>"lite"</code> = abbreviations only, <code>"standard"</code> = balanced compression, <code>"max"</code> = maximum token savings. Replaces the legacy <code>output_density</code> and <code>terse_agent</code> settings. See <a href="#compression-level">Compression Level</a>.</td>
       </tr>
       <tr>
@@ -98,6 +177,12 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>bool</td>
         <td><code>false</code></td>
         <td>Reduce per-call token overhead to the absolute minimum. Disables auto-checkpoints, meta-strings (savings notes, stale notes, shell hints), and session/knowledge blocks in MCP instructions. Recommended for Codex, CI pipelines, and cost-sensitive environments. Also available via <code>LEAN_CTX_MINIMAL=1</code>. See <a href="#minimal-overhead">Minimal Overhead</a>.</td>
+      </tr>
+      <tr>
+        <td><code>output_density</code></td>
+        <td>string</td>
+        <td><code>"normal"</code></td>
+        <td><strong>Legacy</strong> — superseded by <a href="#compression-level"><code>compression_level</code></a>. Values: <code>"normal"</code> / <code>"terse"</code> / <code>"ultra"</code>. Also available via <code>LEAN_CTX_OUTPUT_DENSITY</code>. See <a href="#output-density">Output Density</a>.</td>
       </tr>
       <tr>
         <td><code>tee_mode</code></td>
@@ -161,14 +246,14 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
       </tr>
       <tr>
         <td><code>slow_command_threshold_ms</code></td>
-        <td>u32</td>
+        <td>u64</td>
         <td><code>5000</code></td>
         <td>Commands running longer than this threshold (in milliseconds) are flagged in <code>ctx_shell</code> output with a timing warning. Set to <code>0</code> to disable slow command detection entirely.</td>
       </tr>
       <tr>
         <td><code>buddy_enabled</code></td>
         <td>bool</td>
-        <td><code>false</code></td>
+        <td><code>true</code></td>
         <td>Enable buddy mode for collaborative multi-agent workflows. See <a href="#buddy-mode">Buddy Mode</a>.</td>
       </tr>
       <tr>
@@ -178,16 +263,70 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>Additional glob patterns to exclude from <code>ctx_tree</code>, <code>ctx_search</code>, and file discovery. These are merged with the built-in ignore list (node_modules, .git, etc.). Example: <code>["*.generated.ts", "vendor/**", "dist/**"]</code></td>
       </tr>
       <tr>
+        <td><code>theme</code></td>
+        <td>string</td>
+        <td><code>"default"</code></td>
+        <td>Visual theme for CLI and dashboard output.</td>
+      </tr>
+      <tr>
+        <td><code>memory_profile</code></td>
+        <td>string</td>
+        <td><code>"balanced"</code></td>
+        <td>Controls memory subsystem behavior. <code>"low"</code> reduces memory usage at the cost of recall. <code>"balanced"</code> (default) optimizes for typical workflows. <code>"performance"</code> retains more context for maximum recall. Also available via <code>LEAN_CTX_MEMORY_PROFILE</code>.</td>
+      </tr>
+      <tr>
+        <td><code>bm25_max_cache_mb</code></td>
+        <td>u64</td>
+        <td><code>128</code></td>
+        <td>Maximum size in MB for the BM25 search index cache. Higher values improve search performance for large codebases.</td>
+      </tr>
+      <tr>
+        <td><code>allow_paths</code></td>
+        <td>list</td>
+        <td><code>[]</code></td>
+        <td>Additional paths outside the project root that are allowed through the PathJail sandbox. Use for monorepo shared directories or external dependency sources.</td>
+      </tr>
+      <tr>
+        <td><code>shell_hook_disabled</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Disable the shell hook entirely. When <code>true</code>, lean-ctx will not intercept shell commands for compression.</td>
+      </tr>
+      <tr>
+        <td><code>update_check_disabled</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Disable automatic version update checks. When <code>true</code>, lean-ctx will not check for new releases on startup.</td>
+      </tr>
+      <tr>
+        <td><code>graph_index_max_files</code></td>
+        <td>u64</td>
+        <td><code>5000</code></td>
+        <td>Maximum files scanned by the JSON graph index fallback. Increase for large monorepos. When the cap is reached, <code>lean-ctx gain</code> shows "(capped)" and a warning is emitted.</td>
+      </tr>
+      <tr>
         <td><code>[archive]</code></td>
         <td>table</td>
         <td>-</td>
         <td>Configure zero-loss compression. Full tool results are saved to disk; the agent retrieves them on demand via <code>ctx_expand</code>. See <a href="#archive">Tool Result Archive</a>.</td>
       </tr>
       <tr>
-        <td><code>[compaction]</code></td>
+        <td><code>[cloud]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Configure session resilience after IDE compaction events. Controls how lean-ctx recovers context when the IDE truncates conversation history. See <a href="#compaction">Compaction Resilience</a>.</td>
+        <td>Cloud integration settings. See <a href="#cloud">Cloud</a>.</td>
+      </tr>
+      <tr>
+        <td><code>[proxy]</code></td>
+        <td>table</td>
+        <td>-</td>
+        <td>Upstream API proxy overrides. See <a href="#proxy">Proxy</a>.</td>
+      </tr>
+      <tr>
+        <td><code>[memory]</code></td>
+        <td>table</td>
+        <td>-</td>
+        <td>Memory subsystem configuration with sub-tables for knowledge, episodic, procedural, lifecycle, gotcha, and embeddings. See <a href="#memory">Memory</a>.</td>
       </tr>
       <tr>
         <td><code>[loop_detection]</code></td>
@@ -295,7 +434,7 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
         <td>Override which shell lean-ctx uses for <code>ctx_shell</code> / <code>lean-ctx -c</code>. Useful on Windows when PowerShell detection fails. Example: <code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></td>
       </tr>
       <tr>
-        <td><code>LEAN_CTX_COMPRESSION_LEVEL</code></td>
+        <td><code>LEAN_CTX_COMPRESSION</code></td>
         <td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td>
         <td>Override <code>compression_level</code> config setting. Controls the 4-layer terse engine for unified input/output compression. See <a href="#compression-level">Compression Level</a>.</td>
       </tr>
@@ -311,13 +450,8 @@ lean-ctx config set passthrough_urls localhost:3000,api.internal</code></pre>
       </tr>
       <tr>
         <td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td>
-        <td>number (default: 500)</td>
-        <td>Minimum token count before a tool result is archived. Override for <code>archive.threshold_tokens</code>.</td>
-      </tr>
-      <tr>
-        <td><code>LEAN_CTX_ARCHIVE_TTL</code></td>
-        <td>number (default: 120)</td>
-        <td>Auto-cleanup interval in minutes for archived results. Override for <code>archive.ttl_minutes</code>.</td>
+        <td>number (default: 4096)</td>
+        <td>Minimum character count before a tool result is archived. Override for <code>archive.threshold_chars</code>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_HEADLESS</code></td>
@@ -404,7 +538,7 @@ auto_consolidate = true           # Auto-consolidate knowledge periodically
 silent_preload = true             # Cache files without output
 dedup_threshold = 8               # Files before auto-dedup triggers
 consolidate_every_calls = 25      # Run consolidation every N tool calls
-consolidate_cooldown_secs = 300   # Minimum seconds between consolidations</code></pre>
+consolidate_cooldown_secs = 120   # Minimum seconds between consolidations</code></pre>
   <p set:html={t('docsConfiguration.autonomyConfigOverride')} />
 
   <h3>All Autonomy Fields</h3>
@@ -421,7 +555,7 @@ consolidate_cooldown_secs = 300   # Minimum seconds between consolidations</code
       <tr><td><code>autonomy.silent_preload</code></td><td>bool</td><td><code>true</code></td><td>Pre-cache files silently without adding output to tool responses. Disable to see which files were preloaded.</td></tr>
       <tr><td><code>autonomy.dedup_threshold</code></td><td>u32</td><td><code>8</code></td><td>Number of cached files that triggers automatic deduplication.</td></tr>
       <tr><td><code>autonomy.consolidate_every_calls</code></td><td>u32</td><td><code>25</code></td><td>Run knowledge consolidation every N tool calls. Higher values reduce overhead but delay cleanup.</td></tr>
-      <tr><td><code>autonomy.consolidate_cooldown_secs</code></td><td>u32</td><td><code>300</code></td><td>Minimum seconds between two consecutive consolidation runs, preventing rapid repeated consolidation.</td></tr>
+      <tr><td><code>autonomy.consolidate_cooldown_secs</code></td><td>u32</td><td><code>120</code></td><td>Minimum seconds between two consecutive consolidation runs, preventing rapid repeated consolidation.</td></tr>
     </tbody>
   </table>
 
@@ -561,8 +695,8 @@ lean-ctx read file.rs --fresh     # Bypass cache for one read</code></pre>
     </thead>
     <tbody>
       <tr><td><strong>Normal</strong></td><td>&le; 2 identical calls</td><td>No intervention</td></tr>
-      <tr><td><strong>Reduced</strong></td><td>3–6 identical calls</td><td>Warning appended to tool response</td></tr>
-      <tr><td><strong>Blocked</strong></td><td>7+ identical calls</td><td>Tool call blocked with actionable guidance</td></tr>
+      <tr><td><strong>Reduced</strong></td><td>3+ identical calls (configurable via <code>reduced_threshold</code>)</td><td>Warning appended to tool response</td></tr>
+      <tr><td><strong>Blocked</strong></td><td>Disabled by default (<code>blocked_threshold = 0</code>). Set to a positive value to enable.</td><td>Tool call blocked with actionable guidance</td></tr>
     </tbody>
   </table>
 
@@ -589,7 +723,7 @@ lean-ctx read file.rs --fresh     # Bypass cache for one read</code></pre>
   <pre><code>[loop_detection]
 normal_threshold = 2      # warn after this many identical calls
 reduced_threshold = 4     # reduce output after this many
-blocked_threshold = 6     # block after this many
+blocked_threshold = 0     # block after this many (0 = disabled)
 window_secs = 300         # sliding window in seconds
 search_group_limit = 10   # total search calls before block</code></pre>
 
@@ -637,30 +771,20 @@ search_group_limit = 10   # total search calls before block</code></pre>
   <h3>Configuration</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [archive]
-enabled = true                # Enable tool result archiving (default: false)
+enabled = true                # Enable tool result archiving (default: true)
 threshold_chars = 4096        # Minimum characters before archiving (default: 4096)
-threshold_tokens = 500        # Minimum tokens before archiving kicks in (default: 500)
 max_age_hours = 48            # Auto-cleanup after N hours (default: 48)
-max_disk_mb = 500             # Maximum total disk usage for archive (default: 500)
-ttl_minutes = 120             # Per-entry auto-cleanup interval (default: 120)
-exclude_tools = ["ctx_tree"]  # Tools whose output is never archived
-always_archive = ["ctx_shell", "ctx_search"]  # Tools always archived above threshold
-mask_secrets = true           # Redact secrets before archiving (default: true)</code></pre>
+max_disk_mb = 500             # Maximum total disk usage for archive (default: 500)</code></pre>
 
   <table>
     <thead>
       <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>archive.enabled</code></td><td>bool</td><td><code>false</code></td><td>Enable the archive system. When disabled, compression is permanent (no retrieval).</td></tr>
-      <tr><td><code>archive.threshold_chars</code></td><td>u32</td><td><code>4096</code></td><td>Minimum character count in a tool response before archiving is considered. Works alongside <code>threshold_tokens</code> - both must be exceeded.</td></tr>
-      <tr><td><code>archive.threshold_tokens</code></td><td>u32</td><td><code>500</code></td><td>Minimum token count before archiving kicks in. Small outputs don't benefit from archiving.</td></tr>
+      <tr><td><code>archive.enabled</code></td><td>bool</td><td><code>true</code></td><td>Enable the archive system. When disabled, compression is permanent (no retrieval).</td></tr>
+      <tr><td><code>archive.threshold_chars</code></td><td>u32</td><td><code>4096</code></td><td>Minimum character count in a tool response before archiving is considered.</td></tr>
       <tr><td><code>archive.max_age_hours</code></td><td>u32</td><td><code>48</code></td><td>Global maximum age for archived entries. Entries older than this are purged regardless of access patterns.</td></tr>
       <tr><td><code>archive.max_disk_mb</code></td><td>u32</td><td><code>500</code></td><td>Maximum total disk space (in MB) the archive directory may consume. Oldest entries are evicted when the limit is reached.</td></tr>
-      <tr><td><code>archive.ttl_minutes</code></td><td>u32</td><td><code>120</code></td><td>Per-entry auto-cleanup interval. Entries not accessed within this window are cleaned up.</td></tr>
-      <tr><td><code>archive.exclude_tools</code></td><td>list</td><td><code>[]</code></td><td>Tool names whose output should never be archived, even if they exceed thresholds. Example: <code>["ctx_tree", "ctx_overview"]</code></td></tr>
-      <tr><td><code>archive.always_archive</code></td><td>list</td><td><code>[]</code></td><td>Tool names whose output is always archived when above threshold, bypassing any heuristics that might skip archiving. Example: <code>["ctx_shell", "ctx_search"]</code></td></tr>
-      <tr><td><code>archive.mask_secrets</code></td><td>bool</td><td><code>true</code></td><td>Redact detected secrets (API keys, tokens, passwords) before writing to the archive. Uses the same detection patterns as the security layer.</td></tr>
     </tbody>
   </table>
 
@@ -671,8 +795,7 @@ mask_secrets = true           # Redact secrets before archiving (default: true)<
     </thead>
     <tbody>
       <tr><td><code>LEAN_CTX_ARCHIVE</code></td><td><code>true</code> / <code>false</code></td><td>Override <code>archive.enabled</code> at runtime.</td></tr>
-      <tr><td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td><td>number</td><td>Override <code>archive.threshold_tokens</code>.</td></tr>
-      <tr><td><code>LEAN_CTX_ARCHIVE_TTL</code></td><td>number (minutes)</td><td>Override <code>archive.ttl_minutes</code>.</td></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td><td>number</td><td>Override <code>archive.threshold_chars</code>.</td></tr>
     </tbody>
   </table>
 
@@ -684,49 +807,6 @@ mask_secrets = true           # Redact secrets before archiving (default: true)<
   </p>
 
   <hr />
-
-  <h2 id="compaction">Compaction Resilience <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
-  <p>
-    IDEs like Cursor and Windsurf periodically compact (truncate) conversation history to stay within
-    context limits. When this happens, the agent loses all prior context - cached files, knowledge,
-    session state. The <code>[compaction]</code> block controls how lean-ctx automatically recovers.
-  </p>
-
-  <h3>How It Works</h3>
-  <ol>
-    <li>lean-ctx detects a compaction event (conversation history is shorter than expected)</li>
-    <li>A resume summary is generated from the session diary, knowledge base, and cached files</li>
-    <li>The summary is injected into the next tool response so the agent can continue seamlessly</li>
-  </ol>
-
-  <h3>Configuration</h3>
-  <pre><code># ~/.lean-ctx/config.toml
-[compaction]
-auto_detect = true            # Automatically detect compaction events (default: true)
-resume_max_tokens = 500       # Maximum tokens for the resume summary (default: 500)
-include_archives = true       # Include archive references in resume (default: true)
-include_knowledge = true      # Include knowledge base entries in resume (default: true)</code></pre>
-
-  <table>
-    <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>compaction.auto_detect</code></td><td>bool</td><td><code>true</code></td><td>Automatically detect when the IDE has compacted conversation history and trigger a context recovery. Disable if you handle compaction manually.</td></tr>
-      <tr><td><code>compaction.resume_max_tokens</code></td><td>u32</td><td><code>500</code></td><td>Maximum token budget for the resume summary injected after compaction. Higher values recover more context but consume more of the fresh context window.</td></tr>
-      <tr><td><code>compaction.include_archives</code></td><td>bool</td><td><code>true</code></td><td>Include references to archived tool results in the resume summary. The agent can then call <code>ctx_expand</code> to retrieve full content.</td></tr>
-      <tr><td><code>compaction.include_knowledge</code></td><td>bool</td><td><code>true</code></td><td>Include relevant knowledge base entries (discoveries, decisions, blockers) in the resume summary.</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Example Recovery Flow</h3>
-  <pre><code># After compaction, the next tool call automatically includes:
-# --- COMPACTION RECOVERY ---
-# Session: 45 calls, 3 files cached
-# Active task: Refactoring auth module
-# Key decisions: JWT over sessions (see knowledge #12)
-# Archives: [ARC:a1b2c3] auth.rs full output
-# ---</code></pre>
 
   <hr />
 
@@ -752,7 +832,7 @@ include_knowledge = true      # Include knowledge base entries in resume (defaul
 
   <h3>Configuration</h3>
   <pre><code># ~/.lean-ctx/config.toml
-compression_level = "standard"    # off | lite | standard | max
+compression_level = "off"    # off (default) | lite | standard | max
 
 # Legacy settings still accepted for backward compatibility:
 # terse_agent = "full"            # maps to compression_level = "standard"
@@ -764,7 +844,7 @@ compression_level = "standard"    # off | lite | standard | max
       <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>LEAN_CTX_COMPRESSION_LEVEL</code></td><td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td><td>Override <code>compression_level</code> at runtime.</td></tr>
+      <tr><td><code>LEAN_CTX_COMPRESSION</code></td><td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td><td>Override <code>compression_level</code> at runtime.</td></tr>
       <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>off</code> / <code>lite</code> / <code>full</code> / <code>ultra</code> / <code>true</code> / <code>false</code></td><td><strong>Legacy.</strong> Still accepted. Mapped to <code>compression_level</code> internally.</td></tr>
     </tbody>
   </table>
@@ -910,7 +990,7 @@ buddy_enabled = true</code></pre>
       <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>buddy_enabled</code></td><td>bool</td><td><code>false</code></td><td>Enable buddy mode for multi-agent collaboration. Agents can share cached files, knowledge entries, and session context via <code>ctx_agent</code>.</td></tr>
+      <tr><td><code>buddy_enabled</code></td><td>bool</td><td><code>true</code></td><td>Enable buddy mode for multi-agent collaboration. Agents can share cached files, knowledge entries, and session context via <code>ctx_agent</code>.</td></tr>
     </tbody>
   </table>
 
@@ -925,15 +1005,15 @@ buddy_enabled = true</code></pre>
   <h3>Configuration</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [[custom_aliases]]
-name = "test"
+alias = "test"
 command = "cargo test --workspace --quiet"
 
 [[custom_aliases]]
-name = "lint"
+alias = "lint"
 command = "npm run lint -- --fix"
 
 [[custom_aliases]]
-name = "deploy-staging"
+alias = "deploy-staging"
 command = "kubectl apply -f k8s/staging/ --dry-run=client"</code></pre>
 
   <table>
@@ -941,7 +1021,7 @@ command = "kubectl apply -f k8s/staging/ --dry-run=client"</code></pre>
       <tr><th>Field</th><th>Type</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>name</code></td><td>string</td><td>The alias name. Used as <code>ctx_shell("@test")</code> or similar shorthand.</td></tr>
+      <tr><td><code>alias</code></td><td>string</td><td>The alias name. Used as <code>ctx_shell("@test")</code> or similar shorthand.</td></tr>
       <tr><td><code>command</code></td><td>string</td><td>The full command that the alias expands to.</td></tr>
     </tbody>
   </table>
@@ -1061,6 +1141,188 @@ shell_activation = "agents-only"    # always | agents-only | off
     <li><strong>agents-only</strong> — Team environments where non-AI shells should remain unmodified. Also enables non-interactive (non-TTY) tracking for Docker/Codex containers (v3.5.19+)</li>
     <li><strong>off</strong> — Full manual control, only enable when explicitly needed</li>
   </ul>
+
+  <hr />
+
+  <h2 id="cloud">Cloud</h2>
+  <p>
+    The <code>[cloud]</code> section controls cloud integration features for lean-ctx.
+  </p>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+[cloud]
+contribute_enabled = false    # Opt-in to anonymous usage telemetry (default: false)</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>cloud.contribute_enabled</code></td><td>bool</td><td><code>false</code></td><td>Opt-in to anonymous usage telemetry. When enabled, lean-ctx sends aggregated compression statistics to help improve the product. No code, file paths, or personal data is transmitted.</td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="proxy">Proxy</h2>
+  <p>
+    The <code>[proxy]</code> section lets you override upstream API endpoints for LLM providers.
+    Useful for corporate proxies, self-hosted inference, or regional routing.
+  </p>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+[proxy]
+anthropic_upstream = null     # Custom Anthropic API endpoint (default: null)
+openai_upstream = null        # Custom OpenAI API endpoint (default: null)
+gemini_upstream = null        # Custom Gemini API endpoint (default: null)</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>proxy.anthropic_upstream</code></td><td>string?</td><td><code>null</code></td><td>Custom upstream URL for Anthropic API requests. Set to your corporate proxy or self-hosted endpoint.</td></tr>
+      <tr><td><code>proxy.openai_upstream</code></td><td>string?</td><td><code>null</code></td><td>Custom upstream URL for OpenAI API requests.</td></tr>
+      <tr><td><code>proxy.gemini_upstream</code></td><td>string?</td><td><code>null</code></td><td>Custom upstream URL for Gemini API requests.</td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="memory">Memory</h2>
+  <p>
+    The <code>[memory]</code> section configures lean-ctx's persistent memory subsystem. Memory is
+    organized into specialized stores — each with its own retention policy, capacity limits, and
+    retrieval rules. Use <code>memory_profile</code> for a preset, or fine-tune individual sub-tables.
+  </p>
+
+  <h3 set:html={t('docsConfiguration.memoryLifecycleTitle')} />
+  <p set:html={t('docsConfiguration.memoryLifecycleDesc')} />
+  <ol>
+    <li set:html={t('docsConfiguration.memoryLifecycleStep1')} />
+    <li set:html={t('docsConfiguration.memoryLifecycleStep2')} />
+    <li set:html={t('docsConfiguration.memoryLifecycleStep3')} />
+    <li set:html={t('docsConfiguration.memoryLifecycleStep4')} />
+    <li set:html={t('docsConfiguration.memoryLifecycleStep5')} />
+    <li set:html={t('docsConfiguration.memoryLifecycleStep6')} />
+  </ol>
+  <div style="background: var(--surface-2, #1a1a2e); border-left: 3px solid var(--blue, #4080f0); padding: 12px 16px; border-radius: 6px; margin: 16px 0;">
+    <span set:html={t('docsConfiguration.memoryLifecycleCallout')} />
+  </div>
+
+  <h3 id="memory-knowledge"><code>[memory.knowledge]</code></h3>
+  <p>Fact store for project-level knowledge extracted from conversations and code analysis.</p>
+  <pre><code>[memory.knowledge]
+max_facts = 200               # Maximum stored facts per project (default: 200)
+max_patterns = 50             # Maximum code patterns (default: 50)
+max_history = 100             # Maximum history entries (default: 100)
+contradiction_threshold = 0.5 # Confidence threshold for contradiction detection (default: 0.5)
+recall_facts_limit = 10       # Facts recalled per retrieval (default: 10)
+rooms_limit = 25              # Maximum rooms returned (default: 25)
+timeline_limit = 25           # Maximum timeline entries (default: 25)
+relations_limit = 40          # Maximum relations returned (default: 40)</code></pre>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>memory.knowledge.max_facts</code></td><td>usize</td><td><code>200</code></td><td>Maximum number of facts stored in the knowledge base per project. Oldest entries are evicted when the limit is reached.</td></tr>
+      <tr><td><code>memory.knowledge.max_patterns</code></td><td>usize</td><td><code>50</code></td><td>Maximum number of code patterns retained.</td></tr>
+      <tr><td><code>memory.knowledge.max_history</code></td><td>usize</td><td><code>100</code></td><td>Maximum history entries retained in the knowledge timeline.</td></tr>
+      <tr><td><code>memory.knowledge.contradiction_threshold</code></td><td>f32</td><td><code>0.5</code></td><td>Confidence threshold for automatic contradiction detection between facts.</td></tr>
+      <tr><td><code>memory.knowledge.recall_facts_limit</code></td><td>usize</td><td><code>10</code></td><td>Number of facts retrieved per knowledge recall query.</td></tr>
+      <tr><td><code>memory.knowledge.rooms_limit</code></td><td>usize</td><td><code>25</code></td><td>Maximum number of rooms returned per query.</td></tr>
+      <tr><td><code>memory.knowledge.timeline_limit</code></td><td>usize</td><td><code>25</code></td><td>Maximum number of timeline entries returned per query.</td></tr>
+      <tr><td><code>memory.knowledge.relations_limit</code></td><td>usize</td><td><code>40</code></td><td>Maximum number of entity relations returned per query.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="memory-episodic"><code>[memory.episodic]</code></h3>
+  <p>Session-level memory capturing what happened during agent interactions.</p>
+  <pre><code>[memory.episodic]
+max_episodes = 500            # Maximum stored episodes (default: 500)
+max_actions_per_episode = 50  # Actions per episode (default: 50)
+summary_max_chars = 200       # Episode summary length (default: 200)</code></pre>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>memory.episodic.max_episodes</code></td><td>usize</td><td><code>500</code></td><td>Maximum number of episodes retained across sessions.</td></tr>
+      <tr><td><code>memory.episodic.max_actions_per_episode</code></td><td>usize</td><td><code>50</code></td><td>Maximum actions recorded per individual episode.</td></tr>
+      <tr><td><code>memory.episodic.summary_max_chars</code></td><td>usize</td><td><code>200</code></td><td>Maximum character length for automatically generated episode summaries.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="memory-procedural"><code>[memory.procedural]</code></h3>
+  <p>Learned procedures extracted from repeated agent workflows.</p>
+  <pre><code>[memory.procedural]
+max_procedures = 100          # Maximum stored procedures (default: 100)
+min_repetitions = 3           # Repetitions before a pattern becomes a procedure (default: 3)
+min_sequence_len = 2          # Minimum sequence length for detection (default: 2)
+max_window_size = 10          # Maximum window size for pattern analysis (default: 10)</code></pre>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>memory.procedural.max_procedures</code></td><td>usize</td><td><code>100</code></td><td>Maximum number of learned procedures stored.</td></tr>
+      <tr><td><code>memory.procedural.min_repetitions</code></td><td>usize</td><td><code>3</code></td><td>Minimum times a workflow pattern must repeat before it is promoted to a procedure.</td></tr>
+      <tr><td><code>memory.procedural.min_sequence_len</code></td><td>usize</td><td><code>2</code></td><td>Minimum length of a tool-call sequence to be considered for procedure extraction.</td></tr>
+      <tr><td><code>memory.procedural.max_window_size</code></td><td>usize</td><td><code>10</code></td><td>Maximum sliding window size when scanning for repeated patterns.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="memory-lifecycle"><code>[memory.lifecycle]</code></h3>
+  <p>Controls how memory entries age, decay, and are pruned over time.</p>
+  <pre><code>[memory.lifecycle]
+decay_rate = 0.01             # Daily decay factor for memory scores (default: 0.01)
+low_confidence_threshold = 0.3 # Below this, facts are low-confidence (default: 0.3)
+stale_days = 30               # Days before an entry is considered stale (default: 30)
+similarity_threshold = 0.85   # Cosine similarity for deduplication (default: 0.85)</code></pre>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>memory.lifecycle.decay_rate</code></td><td>f32</td><td><code>0.01</code></td><td>Daily decay factor applied to memory entry scores. Higher values age entries faster.</td></tr>
+      <tr><td><code>memory.lifecycle.low_confidence_threshold</code></td><td>f32</td><td><code>0.3</code></td><td>Facts with confidence below this threshold are flagged as low-confidence and may be pruned earlier.</td></tr>
+      <tr><td><code>memory.lifecycle.stale_days</code></td><td>i64</td><td><code>30</code></td><td>Number of days after which an unaccessed entry is considered stale and eligible for pruning.</td></tr>
+      <tr><td><code>memory.lifecycle.similarity_threshold</code></td><td>f32</td><td><code>0.85</code></td><td>Cosine similarity threshold for deduplication. Entries above this threshold are merged.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="memory-gotcha"><code>[memory.gotcha]</code></h3>
+  <p>Stores project-specific gotchas — pitfalls, caveats, and non-obvious behaviors discovered during sessions.</p>
+  <pre><code>[memory.gotcha]
+max_gotchas_per_project = 100       # Maximum gotchas per project (default: 100)
+retrieval_budget_per_room = 10      # Gotchas surfaced per session (default: 10)
+default_decay_rate = 0.03           # Default decay rate for gotcha importance (default: 0.03)</code></pre>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>memory.gotcha.max_gotchas_per_project</code></td><td>usize</td><td><code>100</code></td><td>Maximum number of gotchas stored per project.</td></tr>
+      <tr><td><code>memory.gotcha.retrieval_budget_per_room</code></td><td>usize</td><td><code>10</code></td><td>Maximum number of gotchas surfaced in a single session context.</td></tr>
+      <tr><td><code>memory.gotcha.default_decay_rate</code></td><td>f32</td><td><code>0.03</code></td><td>Default daily decay rate applied to gotcha importance scores. Category-specific overrides can be set via <code>category_decay_overrides</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="memory-embeddings"><code>[memory.embeddings]</code></h3>
+  <p>Configuration for the vector embedding index used by semantic memory operations.</p>
+  <pre><code>[memory.embeddings]
+max_facts = 2000              # Maximum facts in the embedding index (default: 2000)</code></pre>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>memory.embeddings.max_facts</code></td><td>usize</td><td><code>2000</code></td><td>Maximum number of facts indexed in the vector embedding store.</td></tr>
+    </tbody>
+  </table>
 
   <hr />
 
