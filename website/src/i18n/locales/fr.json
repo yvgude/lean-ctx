@@ -3389,7 +3389,7 @@
   "index.heroSubline": "L'infrastructure neutre, locale d'abord, qui gère ce que votre IA voit, retient et sur quoi elle se concentre. Un binaire. Zéro config. 29+ outils IA. Open source.",
   "index.heroTitle": "Votre IA voit tout.",
   "index.heroTitleHighlight": "Faites‑lui voir l’essentiel.",
-  "index.howItWorks1Desc": "10 read modes with Tree-sitter AST parsing for 18 languages. Strips noise, keeps structure. Cached re-reads cost ~13 tokens.",
+  "index.howItWorks1Desc": "10 modes de lecture avec analyse AST Tree-sitter pour 18 langages. Supprime le bruit, conserve la structure. Les relectures en cache coûtent ~13 tokens.",
   "index.howItWorks1Title": "Compress",
   "index.howItWorks2Desc": "Cross-session memory, knowledge graphs, and context checkpoints. Your AI remembers decisions, discoveries, and file relationships.",
   "index.howItWorks2Title": "Remember",

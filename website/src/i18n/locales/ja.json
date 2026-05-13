@@ -3389,7 +3389,7 @@
   "index.heroSubline": "あなたのAIが何を見て、何を覚え、何に集中するかを管理する、ベンダーニュートラルでローカルファーストのインフラストラクチャ層。1つのバイナリ。設定不要。29以上のAIツール。オープンソース。",
   "index.heroTitle": "あなたの AI はすべてを見る。",
   "index.heroTitleHighlight": "重要なものを見せよう。",
-  "index.howItWorks1Desc": "10 read modes with Tree-sitter AST parsing for 18 languages. Strips noise, keeps structure. Cached re-reads cost ~13 tokens.",
+  "index.howItWorks1Desc": "18言語に対応したTree-sitter AST解析による10種類の読み取りモード。ノイズを除去し、構造を維持。キャッシュされた再読み取りは約13トークン。",
   "index.howItWorks1Title": "Compress",
   "index.howItWorks2Desc": "Cross-session memory, knowledge graphs, and context checkpoints. Your AI remembers decisions, discoveries, and file relationships.",
   "index.howItWorks2Title": "Remember",

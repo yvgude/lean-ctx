@@ -3389,7 +3389,7 @@
   "index.heroSubline": "厂商中立、本地优先的基础设施层，管理您的AI看到什么、记住什么和关注什么。一个二进制文件。零配置。29+个AI工具。开源。",
   "index.heroTitle": "你的 AI 看得见一切。",
   "index.heroTitleHighlight": "让它看到重点。",
-  "index.howItWorks1Desc": "10 read modes with Tree-sitter AST parsing for 18 languages. Strips noise, keeps structure. Cached re-reads cost ~13 tokens.",
+  "index.howItWorks1Desc": "10种读取模式，支持18种语言的Tree-sitter AST解析。去除噪音，保留结构。缓存的重复读取仅需约13个token。",
   "index.howItWorks1Title": "Compress",
   "index.howItWorks2Desc": "Cross-session memory, knowledge graphs, and context checkpoints. Your AI remembers decisions, discoveries, and file relationships.",
   "index.howItWorks2Title": "Remember",
