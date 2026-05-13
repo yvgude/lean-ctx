@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.5.24 (Current)', href: lp('/docs/changelog') + '#v3.5.24' },
+      { label: '3.5.25 (Current)', href: lp('/docs/changelog') + '#v3.5.25' },
+      { label: '3.5.24', href: lp('/docs/changelog') + '#v3.5.24' },
       { label: '3.5.23', href: lp('/docs/changelog') + '#v3.5.23' },
       { label: '3.5.22', href: lp('/docs/changelog') + '#v3.5.22' },
       { label: '3.5.21', href: lp('/docs/changelog') + '#v3.5.21' },
@@ -60,9 +61,37 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
+  <!-- 3.5.25 -->
+  <h2 id="v3.5.25">3.5.25 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release — CPU hotspot fixes, canonical rules policy, full registry migration.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Process concurrency guard</strong> — Limits concurrent lean-ctx processes to 4 via <code>flock</code> slot locks, preventing CPU saturation when multiple agents trigger simultaneous operations.</li>
+    <li><strong>Terse pipeline input cap &amp; timeout</strong> — Skips inputs &gt;64KB and enforces a 500ms deadline, preventing runaway CPU on large outputs (<a href="https://github.com/yvgude/lean-ctx/issues/210">#210</a>).</li>
+    <li><strong>Canonical rules policy</strong> — New <code>rules_canonical.rs</code> module provides a single source of truth for all rule generation (MUST USE / NEVER USE tables) across Hybrid and MCP modes.</li>
+    <li><strong>Contract tests for rules consistency</strong> — 11 cross-IDE contract tests verify generated rules contain correct MUST/NEVER language with no contradictions.</li>
+    <li><strong>Property-based compression tests</strong> — <code>proptest</code> invariant tests for <code>safeguard_ratio</code>, <code>entropy_compress</code>, and <code>compress_output</code>.</li>
+    <li><strong>MCP JSON <code>instructions</code> field</strong> — Editor MCP configs now include tool policy instructions where clients support it.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Rules language strengthened</strong> — All rule templates now use <code>CRITICAL: ALWAYS</code>, <code>MUST USE</code>, and <code>NEVER USE</code> instead of <code>PREFER</code>.</li>
+    <li><strong>Background index throttled</strong> — Index builds run with <code>nice -n 19</code> and <code>ionice -c 3</code> to prevent CPU contention during setup.</li>
+    <li><strong>Dictionary and quality gate optimized</strong> — Case-insensitive early-exit in <code>apply_dictionaries</code>, HashSet lookup in quality gate, identifier cap at 200.</li>
+    <li><strong>Entropy compression safeguard</strong> — Falls back to original content when compression would inflate token count.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>100% CPU on <code>terse</code> with large inputs</strong> (<a href="https://github.com/yvgude/lean-ctx/issues/210">#210</a>) — Combination of input cap, timeout budget, trigram cap, and process guard eliminates all known CPU hotspot scenarios.</li>
+    <li><strong>env.sh self-heal loop</strong> — Container self-heal now includes 60-second cooldown and PID-lock check (max 4 concurrent).</li>
+  </ul>
+
   <!-- 3.5.24 -->
   <h2 id="v3.5.24">3.5.24 <span class="text-xs text-muted">(May 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release — unified Hybrid mode, CliRedirect elimination, LEAN_CTX_QUIET production mode.</p>
+  <p class="text-sm text-muted">Unified Hybrid mode, CliRedirect elimination, LEAN_CTX_QUIET production mode.</p>
 
   <h3>Changed</h3>
   <ul>
