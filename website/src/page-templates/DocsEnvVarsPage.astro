@@ -284,7 +284,7 @@ export LEAN_CTX_SHELL_ACTIVATION=agents-only</code></pre>
         <td><code>LEAN_CTX_QUIET</code></td>
         <td>flag</td>
         <td><em>unset</em></td>
-        <td>Suppresses all output during <code>lean-ctx doctor --fix</code> and similar auto-repair operations. Useful for non-interactive environments.</td>
+        <td>Suppresses all informational output: savings footers (<code>[lean-ctx: X→Y tok, -Z%]</code>), session-start messages, tee-log hints, and verbose reroute messages. Shell compression still runs — only human-visible annotations are hidden. Set to <code>1</code> for production/agent environments. <em>(expanded in v3.5.24)</em></td>
         <td>v3.0</td>
       </tr>
       <tr>

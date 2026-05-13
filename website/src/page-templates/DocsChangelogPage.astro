@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.5.23 (Current)', href: lp('/docs/changelog') + '#v3.5.23' },
+      { label: '3.5.24 (Current)', href: lp('/docs/changelog') + '#v3.5.24' },
+      { label: '3.5.23', href: lp('/docs/changelog') + '#v3.5.23' },
       { label: '3.5.22', href: lp('/docs/changelog') + '#v3.5.22' },
       { label: '3.5.21', href: lp('/docs/changelog') + '#v3.5.21' },
       { label: '3.5.20', href: lp('/docs/changelog') + '#v3.5.20' },
@@ -59,9 +60,40 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
+  <!-- 3.5.24 -->
+  <h2 id="v3.5.24">3.5.24 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release — unified Hybrid mode, CliRedirect elimination, LEAN_CTX_QUIET production mode.</p>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Eliminate CliRedirect hook mode</strong> — All agents now use <code>Hybrid</code> (MCP for reads/search + shell hooks for command compression) or <code>Mcp</code> only. Cursor, Gemini CLI, and 18 more agents get automatic MCP installation with cached reads.</li>
+    <li><strong>All agents default to Hybrid</strong> — <code>recommend_hook_mode()</code> returns <code>Hybrid</code> for all agents with shell access. MCP reads + shell compression = best of both worlds.</li>
+    <li><strong>Cursor: automatic MCP installation</strong> — <code>lean-ctx init --agent cursor</code> and <code>lean-ctx setup</code> now install the MCP server config automatically.</li>
+    <li><strong>Hybrid rules template v2</strong> — Updated rule templates to clearly instruct <code>ctx_read</code> + <code>ctx_search</code> (MCP) for reads/search, <code>lean-ctx -c</code> (CLI) for shell.</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong><code>LEAN_CTX_QUIET=1</code> production mode</strong> — Suppresses all informational output: savings footers, session-start messages, tee-log hints. Shell compression still runs — only annotations are hidden.</li>
+    <li><strong>Redirect subprocess timeout increased</strong> — Hook redirect timeout increased from 3s to 10s for reliable operation on slow filesystems.</li>
+  </ul>
+
+  <h3>Removed</h3>
+  <ul>
+    <li><strong><code>HookMode::CliRedirect</code></strong> — Enum variant, <code>CLI_REDIRECT_RULES</code> constant, <code>build_cli_redirect_instructions()</code>, and the <code>lean-ctx-cli-redirect.mdc</code> template.</li>
+    <li><strong><code>DedicatedCliRedirect</code> / <code>CursorMdcCliRedirect</code></strong> — Rules injection variants removed.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Cursor reads/search not using MCP</strong> — CliRedirect mode prevented MCP installation. Now all rule files consistently instruct Hybrid mode.</li>
+    <li><strong>Inconsistent rule files</strong> — <code>.cursorrules</code>, <code>AGENTS.md</code>, and <code>.mdc</code> templates now all instruct Hybrid mode.</li>
+    <li><strong>macOS CI: rustup-init in PATH</strong> — Added explicit <code>rustup default stable</code> step to ensure toolchain is active.</li>
+  </ul>
+
   <!-- 3.5.23 -->
   <h2 id="v3.5.23">3.5.23 <span class="text-xs text-muted">(May 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release — RAM Guardian with jemalloc, zstd cache compression, configurable savings footer suppression.</p>
+  <p class="text-sm text-muted">RAM Guardian with jemalloc, zstd cache compression, configurable savings footer suppression.</p>
 
   <h3>Added</h3>
   <ul>
