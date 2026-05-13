@@ -72,7 +72,7 @@ const sidebar = [
 
   <h3>Added</h3>
   <ul>
-    <li><strong>Native Windows daemon support — IPC abstraction layer</strong> — New <code>ipc/</code> module provides platform-independent daemon transport. Unix uses UDS (unchanged), Windows uses Named Pipes (<code>\\.\pipe\lean-ctx-{hash}</code>). All OS-specific code isolated in <code>ipc/unix.rs</code> and <code>ipc/windows.rs</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/209">#209</a>)</li>
+    <li><strong>Native Windows daemon support — IPC abstraction layer</strong> — New <code>ipc/</code> module provides platform-independent daemon transport. Unix uses UDS (unchanged), Windows uses Named Pipes (<code>\\.\pipe\lean-ctx-&lbrace;hash&rbrace;</code>). All OS-specific code isolated in <code>ipc/unix.rs</code> and <code>ipc/windows.rs</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/209">#209</a>)</li>
     <li><strong>HTTP-based daemon shutdown</strong> — New <code>POST /v1/shutdown</code> endpoint for cross-platform graceful shutdown. Falls back to <code>SIGTERM</code>/<code>TerminateProcess</code>, then force kill.</li>
     <li><strong>Parallel call graph build with progress tracking</strong> — <code>CallGraph::build_parallel()</code> uses rayon for concurrent file analysis with live progress. Dashboard polls via <code>/api/call-graph/status</code>.</li>
     <li><strong>Dashboard: call graph progress bar</strong> — Live progress bar during call graph builds with auto-polling every 2s.</li>
