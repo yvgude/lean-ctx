@@ -346,6 +346,18 @@ lean-ctx config schema</code></pre>
         <td><code>"always"</code></td>
         <td>Controls when lean-ctx shell aliases auto-activate. <code>"always"</code> (default): active in every interactive shell. <code>"agents-only"</code>: only active when AI agent env vars are detected (<code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>). <code>"off"</code>: never auto-activate, user must call <code>lean-ctx-on</code> manually. Also available via <code>LEAN_CTX_SHELL_ACTIVATION</code> env var. See <a href="#shell-activation">Shell Activation</a>.</td>
       </tr>
+      <tr>
+        <td><code>max_ram_percent</code></td>
+        <td>u8</td>
+        <td><code>5</code></td>
+        <td>Maximum percentage of system RAM that lean-ctx may use before the RAM Guardian triggers adaptive cache eviction. Range: 1–50. Also available via <code>LEAN_CTX_MAX_RAM_PERCENT</code> env var.</td>
+      </tr>
+      <tr>
+        <td><code>savings_footer</code></td>
+        <td>string</td>
+        <td><code>"auto"</code></td>
+        <td>Controls visibility of token savings footers (e.g. <code>[42 tok saved (30%)]</code>). <code>"auto"</code> (default): shown in CLI, suppressed in MCP/agent context. <code>"always"</code>: always shown. <code>"never"</code>: never shown. Also available via <code>LEAN_CTX_SAVINGS_FOOTER</code> env var.</td>
+      </tr>
     </tbody>
   </table>
 
@@ -397,6 +409,16 @@ lean-ctx config schema</code></pre>
         <td><code>LEAN_CTX_SHELL_ACTIVATION</code></td>
         <td><code>always</code> (default) / <code>agents-only</code> / <code>off</code></td>
         <td>Override <code>shell_activation</code> config setting. Controls when lean-ctx shell aliases auto-activate. <code>always</code>: active in every interactive shell. <code>agents-only</code>: only when AI agent env vars detected. <code>off</code>: manual activation via <code>lean-ctx-on</code>. See <a href="#shell-activation">Shell Activation</a>.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_MAX_RAM_PERCENT</code></td>
+        <td>number (default: 5)</td>
+        <td>Maximum percentage of system RAM lean-ctx may use before the RAM Guardian triggers adaptive cache eviction. Range: 1–50. Overrides <code>max_ram_percent</code> in config.toml.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SAVINGS_FOOTER</code></td>
+        <td><code>auto</code> (default) / <code>always</code> / <code>never</code></td>
+        <td>Controls visibility of token savings footers. <code>auto</code>: shown in CLI, suppressed in MCP/agent context. <code>always</code>: always shown. <code>never</code>: never shown. Overrides <code>savings_footer</code> in config.toml.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_ACTIVE</code></td>

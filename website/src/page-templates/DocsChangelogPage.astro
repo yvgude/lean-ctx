@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.5.22 (Current)', href: lp('/docs/changelog') + '#v3.5.22' },
+      { label: '3.5.23 (Current)', href: lp('/docs/changelog') + '#v3.5.23' },
+      { label: '3.5.22', href: lp('/docs/changelog') + '#v3.5.22' },
       { label: '3.5.21', href: lp('/docs/changelog') + '#v3.5.21' },
       { label: '3.5.20', href: lp('/docs/changelog') + '#v3.5.20' },
       { label: '3.5.19', href: lp('/docs/changelog') + '#v3.5.19' },
@@ -58,9 +59,30 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
+  <!-- 3.5.23 -->
+  <h2 id="v3.5.23">3.5.23 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release — RAM Guardian with jemalloc, zstd cache compression, configurable savings footer suppression.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>RAM Guardian — adaptive memory management</strong> — RSS-based memory monitoring with adaptive tiered eviction. Uses <code>jemalloc</code> as global allocator on Unix for aggressive memory return. Configurable via <code>max_ram_percent</code> (default 5%). New <code>/api/memory</code> dashboard endpoint and <code>lean-ctx doctor</code> diagnostics.</li>
+    <li><strong>zstd-compressed session cache</strong> — Cache entries now stored as zstd-compressed data, reducing in-memory footprint by ~60–80%.</li>
+    <li><strong>Configurable savings footer suppression</strong> — New <code>savings_footer</code> config option (<code>auto</code> / <code>always</code> / <code>never</code>) and <code>LEAN_CTX_SAVINGS_FOOTER</code> env var. In <code>auto</code> mode (default), token savings footers are shown in CLI but suppressed in MCP/agent context.</li>
+    <li><strong>Memory estimation and unload for indexes</strong> — BM25 and embedding indexes expose memory usage and can be unloaded by the RAM Guardian under pressure.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>CLI savings footer bypass</strong> — CLI footer formatting now delegates to the central <code>format_savings()</code> function, respecting the <code>savings_footer</code> configuration.</li>
+    <li><strong>Daemon-delegated output footer leakage</strong> — Client-side filtering ensures footers are stripped when <code>LEAN_CTX_SAVINGS_FOOTER=never</code>, even when output comes from the daemon.</li>
+    <li><strong>Shared session store cap</strong> — Reduced from 64 to 8 cached sessions to prevent unbounded memory growth.</li>
+  </ul>
+
+  <hr />
+
   <!-- 3.5.22 -->
   <h2 id="v3.5.22">3.5.22 <span class="text-xs text-muted">(May 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release — Native Windows daemon, IPC abstraction, overlay/FUSE read fix, CPU hotfix, dashboard improvements.</p>
+  <p class="text-sm text-muted">Native Windows daemon, IPC abstraction, overlay/FUSE read fix, CPU hotfix, dashboard improvements.</p>
 
   <h3>Fixed</h3>
   <ul>
