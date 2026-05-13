@@ -12,7 +12,9 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.5.20 (Current)', href: lp('/docs/changelog') + '#v3.5.20' },
+      { label: '3.5.22 (Current)', href: lp('/docs/changelog') + '#v3.5.22' },
+      { label: '3.5.21', href: lp('/docs/changelog') + '#v3.5.21' },
+      { label: '3.5.20', href: lp('/docs/changelog') + '#v3.5.20' },
       { label: '3.5.19', href: lp('/docs/changelog') + '#v3.5.19' },
       { label: '3.5.18', href: lp('/docs/changelog') + '#v3.5.18' },
       { label: '3.5.17', href: lp('/docs/changelog') + '#v3.5.17' },
@@ -56,9 +58,54 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
+  <!-- 3.5.22 -->
+  <h2 id="v3.5.22">3.5.22 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release — Native Windows daemon, IPC abstraction, overlay/FUSE read fix, CPU hotfix, dashboard improvements.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Read: overlay/FUSE stat() race</strong> — <code>read_file_lossy</code> now opens the file first and uses <code>fstat()</code> on the file descriptor instead of a separate <code>stat()</code> syscall. Fixes sporadic "No such file or directory" errors in Docker overlay/FUSE filesystems (e.g. Codex sandboxes). Adds a single retry with 50ms backoff on NotFound.</li>
+    <li><strong>100% CPU after <code>lean-ctx setup</code> on Ubuntu</strong> — Two root causes: (1) <code>env.sh</code> self-heal script could recursively spawn <code>lean-ctx init</code> via <code>BASH_ENV</code>. Now guarded with container detection, recursion guard, and <code>LEAN_CTX_ACTIVE</code> propagation. (2) Graph index scanning could scan entire <code>$HOME</code>. Now guarded with <code>is_safe_scan_root()</code>, cross-process lock, 50k entry limit, and 2-minute timeout. <code>LEAN_CTX_NO_INDEX</code> env var skips indexing entirely. (<a href="https://github.com/yvgude/lean-ctx/issues/210">#210</a>)</li>
+    <li><strong>Daemon modules now platform-independent</strong> — Removed all <code>#[cfg(unix)]</code> gates from daemon modules. <code>daemon_client.rs</code> auto-start works on all platforms.</li>
+    <li><strong>Dashboard call graph timeout</strong> — Increased from 15s/30s to 60s for larger projects during initial build.</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Native Windows daemon support — IPC abstraction layer</strong> — New <code>ipc/</code> module provides platform-independent daemon transport. Unix uses UDS (unchanged), Windows uses Named Pipes (<code>\\.\pipe\lean-ctx-{hash}</code>). All OS-specific code isolated in <code>ipc/unix.rs</code> and <code>ipc/windows.rs</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/209">#209</a>)</li>
+    <li><strong>HTTP-based daemon shutdown</strong> — New <code>POST /v1/shutdown</code> endpoint for cross-platform graceful shutdown. Falls back to <code>SIGTERM</code>/<code>TerminateProcess</code>, then force kill.</li>
+    <li><strong>Parallel call graph build with progress tracking</strong> — <code>CallGraph::build_parallel()</code> uses rayon for concurrent file analysis with live progress. Dashboard polls via <code>/api/call-graph/status</code>.</li>
+    <li><strong>Dashboard: call graph progress bar</strong> — Live progress bar during call graph builds with auto-polling every 2s.</li>
+    <li><strong>Dashboard: project file browser in Compression Lab</strong> — Two tabs: "Recent" and "Project" (all indexed files). Includes search, file count, and token count per file.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong><code>serve_uds()</code> replaced by <code>serve_ipc()</code></strong> — Takes a <code>DaemonAddr</code> enum instead of a <code>PathBuf</code>.</li>
+    <li><strong><code>daemon_socket_path()</code> removed</strong> — Replaced by <code>daemon::daemon_addr()</code> returning a <code>DaemonAddr</code> enum.</li>
+  </ul>
+
+  <!-- 3.5.21 -->
+  <h2 id="v3.5.21">3.5.21 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Graph data directory fix, graph index UX, config schema validation, dashboard expandable events.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>graph.db and graph.meta.json now honor <code>LEAN_CTX_DATA_DIR</code></strong> — Property graph files stored in <code>$DATA_DIR/graphs/&lt;project_hash&gt;/</code>. Transparent migration moves existing files from <code>&lt;project&gt;/.lean-ctx/</code> on first access. (<a href="https://github.com/yvgude/lean-ctx/issues/205">#205</a>)</li>
+    <li><strong>Graph index UX: correct labels and configurable cap</strong> — <code>lean-ctx gain</code> shows "files" instead of "nodes". New config key <code>graph_index_max_files</code> (default: 5000). (<a href="https://github.com/yvgude/lean-ctx/issues/206">#206</a>)</li>
+    <li><strong>Config documentation accuracy</strong> — Removed phantom sections and corrected wrong defaults across website docs. (<a href="https://github.com/yvgude/lean-ctx/issues/208">#208</a>)</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Dashboard expandable event details</strong> — Event cards in the Live Observatory are now clickable with accordion pattern and lazy-loaded full metrics. (<a href="https://github.com/yvgude/lean-ctx/issues/207">#207</a>)</li>
+    <li><strong><code>lean-ctx config schema</code></strong> — Outputs complete JSON schema of all configuration keys.</li>
+    <li><strong><code>lean-ctx config validate</code></strong> — Validates <code>config.toml</code> against the schema with "did you mean?" suggestions.</li>
+  </ul>
+
   <!-- 3.5.20 -->
   <h2 id="v3.5.20">3.5.20 <span class="text-xs text-muted">(May 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release — Codex installer fixes, Windows path normalization, and CLI flag validation.</p>
+  <p class="text-sm text-muted">Codex installer fixes, Windows path normalization, and CLI flag validation.</p>
 
   <h3>Fixed</h3>
   <ul>

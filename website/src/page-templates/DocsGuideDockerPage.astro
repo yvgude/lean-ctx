@@ -232,6 +232,16 @@ docker run --rm -u "$(id -u):$(id -g)" \\
     knowledge base, and configuration between container restarts.
   </p>
 
+  <h3>OverlayFS / FUSE Read Errors</h3>
+  <p>
+    On some Docker overlay filesystem configurations, <code>stat()</code> can sporadically return
+    "No such file or directory" for files that exist. Since v3.5.22, lean-ctx uses <code>fstat()</code>
+    on the file descriptor instead of a separate <code>stat()</code> syscall, and retries once with
+    a 50ms backoff on NotFound. This resolves the issue in most overlay/FUSE environments
+    (including Codex sandboxes). If you still see file-not-found errors for existing files,
+    try switching the Docker storage driver from <code>overlay2</code> to <code>fuse-overlayfs</code>.
+  </p>
+
   <h3>Headless Mode</h3>
   <p>
     In CI/CD environments, set <code>LEAN_CTX_HEADLESS=1</code> to disable the Observatory
