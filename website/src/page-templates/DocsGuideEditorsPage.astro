@@ -126,25 +126,22 @@ lean-ctx --version</code></pre>
   <hr />
 
   <p>
-    lean-ctx integrates with <strong>24+ AI coding agents and editors</strong> using a combination of
-    <strong>CLI-first hooks</strong> (where the client supports hook interception / a reliable terminal tool)
-    and <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> (when you want explicit <code>ctx_*</code> tools).
+    lean-ctx integrates with <strong>29+ AI coding agents and editors</strong> using a combination of
+    <strong>shell compression hooks</strong> (where the client supports hook interception / a reliable terminal tool)
+    and <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> for cached reads and explicit <code>ctx_*</code> tools.
     Each integration is auto-configured by <code>lean-ctx init</code> — or you can set it up manually using the guides below.
   </p>
   <p>
     <strong>Modes:</strong> Every integration supports <code>--mode</code>:
-    <code>auto</code> (recommended), <code>cli-redirect</code> (CLI-first), <code>mcp</code> (MCP tools), <code>hybrid</code> (both).
+    <code>auto</code> (recommended), <code>hybrid</code> (MCP reads + shell hooks), <code>mcp</code> (MCP tools only).
   </p>
   <pre><code>{`# Recommended (auto-detect best mode per tool)
 lean-ctx init --agent cursor
 
-# Force MCP tools (ctx_read, ctx_shell, ...)
+# Force MCP tools only (ctx_read, ctx_shell, ...)
 lean-ctx init --agent cursor --mode mcp
 
-# Force CLI-first (shell rewrite hooks + prefer lean-ctx read/grep/ls)
-lean-ctx init --agent cursor --mode cli-redirect
-
-# Combine both (fallback path available)
+# Force Hybrid (MCP reads + shell compression hooks)
 lean-ctx init --agent cursor --mode hybrid`}</code></pre>
 
   <!-- ─── Universal Setup ─── -->
@@ -182,7 +179,7 @@ lean-ctx init --agent copilot`}</code></pre>
     </thead>
     <tbody>
       <tr><td><code>claude</code></td><td>Claude Code</td><td><code>~/.claude.json</code></td></tr>
-      <tr><td><code>cursor</code></td><td>Cursor</td><td><code>~/.cursor/hooks.json</code> <span class="text-muted">(CLI-first)</span> / <code>~/.cursor/mcp.json</code> <span class="text-muted">(MCP/Hybrid)</span></td></tr>
+      <tr><td><code>cursor</code></td><td>Cursor</td><td><code>~/.cursor/hooks.json</code> <span class="text-muted">(shell hooks)</span> / <code>~/.cursor/mcp.json</code> <span class="text-muted">(MCP)</span></td></tr>
       <tr><td><code>codex</code></td><td>Codex CLI</td><td><code>~/.codex/config.toml</code> <span class="text-muted">(or <code>$CODEX_HOME/</code>)</span></td></tr>
       <tr><td><code>gemini</code></td><td>Gemini CLI / Antigravity</td><td><code>~/.gemini/settings.json</code></td></tr>
       <tr><td><code>copilot</code></td><td>GitHub Copilot (VS Code)</td><td><code>.vscode/mcp.json</code> <span class="text-muted">(+</span> <code>.github/hooks/hooks.json</code><span class="text-muted">)</span></td></tr>
@@ -211,9 +208,8 @@ lean-ctx init --agent copilot`}</code></pre>
   <p>lean-ctx integrates with editors at three levels:</p>
   <ol>
     <li>
-      <strong>CLI-first (recommended where supported)</strong> - hook interception rewrites common
-      shell commands to <code>lean-ctx -c</code>, and agent rules prefer <code>lean-ctx read/grep/ls</code>
-      for file operations (no MCP schema overhead).
+      <strong>Shell hooks (part of Hybrid mode)</strong> — hook interception rewrites common
+      shell commands to <code>lean-ctx -c</code> for automatic output compression.
     </li>
     <li>
       <strong>MCP Server (optional)</strong> - lean-ctx can also run as a stdio-based MCP server,
@@ -308,7 +304,7 @@ lean-ctx init --agent claude --mode mcp`}</code></pre>
     <code>lean-ctx -c</code> for output compression.
     The <strong>redirect</strong> hook is intentionally a <em>pass-through</em> (native tools remain available,
     which is required for reliable edits in many clients). Tool preference comes from injected rules:
-    use <code>ctx_*</code> tools in <code>--mode mcp</code>/<code>--mode hybrid</code>, or use <code>lean-ctx</code> CLI commands in <code>--mode cli-redirect</code>.
+    use <code>ctx_*</code> tools in <code>--mode mcp</code>, or use both MCP reads and CLI shell hooks in <code>--mode hybrid</code> (recommended).
   </p>
 
   <h4>Project-Level Hooks</h4>
@@ -362,9 +358,8 @@ lean-ctx init --agent claude --project`}</code></pre>
   <p>
     The file <code>.cursor/rules/lean-ctx.mdc</code> is created in your project directory.
     It contains the full lean-ctx instruction set including tool mapping, CEP protocol,
-    and CRP mode directives. In CLI-first mode it tells Cursor's AI to prefer lean-ctx CLI commands
-    (<code>lean-ctx read</code>, <code>lean-ctx grep</code>, <code>lean-ctx ls</code>, <code>lean-ctx -c</code>)
-    over native equivalents. In MCP/Hybrid mode it can also prefer <code>ctx_*</code> tools.
+    and CRP mode directives. In Hybrid mode it tells Cursor's AI to use <code>ctx_read</code> and <code>ctx_search</code>
+    (MCP) for reads/search, and <code>lean-ctx -c</code> (CLI) for shell commands.
   </p>
 
   <h4>PreToolUse Hooks</h4>

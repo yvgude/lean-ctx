@@ -90,7 +90,6 @@ const sidebar = [
         <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5">Integration</label>
         <div class="flex gap-1" id="pg-mode">
           <button data-v="auto" class="pg-btn active">Auto</button>
-          <button data-v="cli-redirect" class="pg-btn">CLI-first</button>
           <button data-v="hybrid" class="pg-btn">Hybrid</button>
           <button data-v="mcp" class="pg-btn">MCP</button>
         </div>
@@ -146,9 +145,9 @@ const sidebar = [
     var editors = {
       cursor: {
         name: 'Cursor',
-        note: 'lean-ctx auto-detects Cursor. In Auto mode it prefers CLI-first hooks (shell rewrite) to avoid MCP schema overhead. You can force MCP/Hybrid with --mode.',
+        note: 'lean-ctx auto-detects Cursor. In Auto mode it uses Hybrid (MCP reads + shell hooks for compression). You can force MCP-only with --mode mcp.',
         manual: [
-          'MCP fallback (only if you chose MCP/Hybrid): create ~/.cursor/mcp.json manually:',
+          'MCP fallback (only if auto-setup failed): create ~/.cursor/mcp.json manually:',
           '{',
           '  "mcpServers": {',
           '    "lean-ctx": { "command": "lean-ctx" }',
@@ -218,7 +217,7 @@ const sidebar = [
       },
       gemini: {
         name: 'Gemini CLI',
-        note: 'lean-ctx auto-detects Gemini CLI. Gemini uses ~/.gemini/settings.json (not mcp.json). In Auto mode, lean-ctx can run CLI-first or MCP depending on your setup; override with --mode.',
+        note: 'lean-ctx auto-detects Gemini CLI. Gemini uses ~/.gemini/settings.json (not mcp.json). In Auto mode, lean-ctx uses Hybrid (MCP reads + shell hooks); override with --mode mcp for MCP-only.',
         manual: [
           'MCP fallback: ensure ~/.gemini/settings.json contains an MCP server entry:',
           '{',
@@ -245,7 +244,7 @@ const sidebar = [
       },
       hermes: {
         name: 'Hermes Agent',
-        note: 'Hermes supports MCP via ~/.hermes/config.yaml. Use MCP or Hybrid; CLI-first is possible but MCP is usually the simplest.',
+        note: 'Hermes supports MCP via ~/.hermes/config.yaml. Auto mode selects Hybrid (MCP reads + shell hooks).',
         manual: [
           'If auto-setup fails, add to ~/.hermes/config.yaml:',
           'mcp_servers:',
@@ -275,7 +274,7 @@ const sidebar = [
       },
       cline: {
         name: 'Cline',
-        note: 'Cline (VS Code) supports MCP + terminal execution. Use Hybrid if you want both CLI-first shell compression and MCP tools.',
+        note: 'Cline (VS Code) supports MCP + terminal execution. Auto mode selects Hybrid (MCP reads + shell hooks).',
         manual: ['Run: lean-ctx init --agent cline (writes VS Code globalStorage MCP settings and installs .clinerules).'],
         agentKey: 'cline',
         restart: 'Restart VS Code.'
@@ -412,7 +411,7 @@ const sidebar = [
       },
       qoder: {
         name: 'Qoder',
-        note: 'Qoder supports PreToolUse hooks. In CLI-first mode lean-ctx installs shell rewrite hooks in ~/.qoder/settings.json. MCP is optional via ~/.qoder/mcp.json (and additional macOS locations).',
+        note: 'Qoder supports PreToolUse hooks. lean-ctx installs shell rewrite hooks in ~/.qoder/settings.json and MCP config in ~/.qoder/mcp.json.',
         manual: [
           'Run: lean-ctx init --agent qoder',
           'Hooks: ~/.qoder/settings.json',
@@ -466,11 +465,6 @@ const sidebar = [
       lines.push('');
       step++;
       lines.push(step + '. MANUAL FALLBACK (only if step 3 did not configure ' + e.name + '):');
-      if (mode === 'cli-redirect') {
-        lines.push('   NOTE: CLI-first mode focuses on lean-ctx CLI + shell rewrite hooks (no MCP schema overhead).');
-        lines.push('   If you prefer MCP tools, re-run: ' + (agentCmd ? agentCmd.replace(' --mode cli-redirect', ' --mode mcp') : 'lean-ctx init --agent <tool> --mode mcp'));
-        lines.push('');
-      }
       for (var j = 0; j < e.manual.length; j++) lines.push('   ' + e.manual[j]);
       lines.push('');
       if (agentCmd) {
@@ -1335,19 +1329,18 @@ source ~/.zshrc          # restart shell</code></pre>
   <p>{t('docs.gettingStarted.manualFallbackDesc')}</p>
   <pre><code>{`# lean-ctx - Context Engineering Layer
 
-Default (CLI-first):
-- Use lean-ctx CLI commands for reads/search:
-  - lean-ctx read <path> [-m mode]
-  - lean-ctx grep <pattern> <path>
-  - lean-ctx ls <path>
+Hybrid mode (default):
+- Use MCP tools for reads/search (cached, token-efficient):
+  - ctx_read instead of Read/cat for file reads
+  - ctx_search instead of Grep/search for code search
 - Use lean-ctx -c "<cmd>" for compressed shell output
 
-If you're running in MCP/Hybrid mode:
-- Prefer ctx_* tools instead of native equivalents:
-  - ctx_read instead of Read/cat for file reads
-  - ctx_shell instead of Shell/bash for commands
-  - ctx_search instead of Grep/search for code search
-  - ctx_tree instead of ls/find for directory listing
+MCP-only mode:
+- Use ctx_* tools for everything:
+  - ctx_read for file reads
+  - ctx_shell for shell commands
+  - ctx_search for code search
+  - ctx_tree for directory listing
 
 Keep using native tools for: Write, StrReplace, Delete, Glob (no lean-ctx replacement).
 Do NOT fall back to native tools for reading/shell/search/tree when a lean-ctx path is available.`}</code></pre>
