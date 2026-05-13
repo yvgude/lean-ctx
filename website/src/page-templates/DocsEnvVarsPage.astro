@@ -104,6 +104,13 @@ const sidebar = [
         <td>v3.4.1</td>
       </tr>
       <tr>
+        <td><code>LEAN_CTX_NO_INDEX</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Skips all graph index scanning. Use in CI/CD or environments where indexing is not needed. Prevents background scans that can cause high CPU on first run.</td>
+        <td>v3.5.22</td>
+      </tr>
+      <tr>
         <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
         <td>number</td>
         <td><code>15</code></td>
@@ -166,6 +173,13 @@ export LEAN_CTX_OUTPUT_DENSITY=ultra</code></pre>
         <td><em>unset</em></td>
         <td>Explicit enable toggle. Set to <code>0</code> to disable the shell hook. Useful in scripts where you want to temporarily turn off lean-ctx.</td>
         <td>v1.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HOOK_CHILD</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Set automatically by the shell hook to prevent recursive lean-ctx invocations. Internal variable, not user-facing.</td>
+        <td>v3.5.22</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_RAW</code></td>
@@ -706,12 +720,15 @@ export LCTX_MAX_SHELL_BYTES=5242880</code></pre>
       <tr><td><code>LEAN_CTX_ENABLED</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
       <tr><td><code>LEAN_CTX_FULL_TOOLS</code></td><td><em>unset</em></td><td><a href="#tool-mode">Tool Mode</a></td></tr>
       <tr><td><code>LEAN_CTX_HEADLESS</code></td><td><em>unset</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_HOOK_CHILD</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
       <tr><td><code>LEAN_CTX_HOOK_EXCLUDE</code></td><td><em>none</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
       <tr><td><code>LEAN_CTX_HOST</code></td><td><code>127.0.0.1</code></td><td><a href="#dashboard">Dashboard</a></td></tr>
       <tr><td><code>LEAN_CTX_LAZY_TOOLS</code></td><td><em>unset</em></td><td><a href="#tool-mode">Tool Mode</a></td></tr>
       <tr><td><code>LEAN_CTX_MEMORY_CLEANUP</code></td><td><code>aggressive</code></td><td><a href="#core">Core</a></td></tr>
       <tr><td><code>LEAN_CTX_MODEL</code></td><td><em>auto</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
       <tr><td><code>LEAN_CTX_MODELS_DIR</code></td><td><em>built-in</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_NO_CHECKPOINT</code></td><td><em>unset</em></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_NO_INDEX</code></td><td><em>unset</em></td><td><a href="#core">Core</a></td></tr>
       <tr><td><code>LEAN_CTX_OUTPUT_DENSITY</code></td><td><code>normal</code></td><td><a href="#core">Core</a></td></tr>
       <tr><td><code>LEAN_CTX_PORT</code></td><td><code>3117</code></td><td><a href="#dashboard">Dashboard</a></td></tr>
       <tr><td><code>LEAN_CTX_QUIET</code></td><td><em>unset</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>

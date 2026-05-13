@@ -4140,7 +4140,7 @@
   "pillar.sdk.feature1Title": "TypeScript Client",
   "pillar.sdk.feature2Desc": "Abonnieren Sie versionierte Events mit automatischer Wiederverbindung, Backfill bei Verzögerung, Konsistenzebenen und typisierten ContextEventV1-Payloads inklusive version, parentId und consistencyLevel.",
   "pillar.sdk.feature2Title": "Event Subscription",
-  "pillar.sdk.feature3Desc": "Every tool and endpoint available as REST. JSON request/response with typed errors and rate limiting.",
+  "pillar.sdk.feature3Desc": "Jedes Tool und jeder Endpunkt als REST verfügbar. JSON-Request/Response mit typisierten Fehlern und Rate-Limiting.",
   "pillar.sdk.feature3Title": "REST API",
   "pillar.sdk.feature4Desc": "Team tokens with configurable scopes. SHA-256 hashed, config-driven issuance via lean-ctx team token create.",
   "pillar.sdk.feature4Title": "Token Authentication",

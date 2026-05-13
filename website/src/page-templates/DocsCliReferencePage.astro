@@ -320,6 +320,22 @@ lean-ctx config set slow_command_threshold_ms 3000
 lean-ctx config set passthrough_urls "localhost:3000,api.example.com"
 lean-ctx config set rules_scope both</code></pre>
 
+  <h3 id="config-schema"><code>lean-ctx config schema</code> <span class="text-xs font-normal text-muted ml-2">v3.5.21</span></h3>
+  <p>
+    Outputs a complete JSON schema of all configuration keys, including types, defaults, descriptions,
+    and env var overrides. Useful for editor autocompletion and CI validation.
+  </p>
+  <pre><code>lean-ctx config schema                     # print full JSON schema to stdout
+lean-ctx config schema > config-schema.json  # save for editor integration</code></pre>
+
+  <h3 id="config-validate"><code>lean-ctx config validate</code> <span class="text-xs font-normal text-muted ml-2">v3.5.21</span></h3>
+  <p>
+    Validates <code>config.toml</code> against the schema. Warns about unknown keys with
+    Levenshtein-distance "did you mean?" suggestions. Returns exit code 1 on errors (CI-friendly).
+  </p>
+  <pre><code>lean-ctx config validate                   # validate ~/.lean-ctx/config.toml
+lean-ctx config validate && echo "OK"      # CI gate - fails on invalid config</code></pre>
+
   <h3 id="doctor"><code>lean-ctx doctor</code></h3>
   <p>{t('docs.cliReference.doctorDesc')}</p>
   <ul>
