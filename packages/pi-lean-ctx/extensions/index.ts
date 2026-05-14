@@ -2,7 +2,6 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   createBashToolDefinition,
   createReadToolDefinition,
-  DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   getLanguageFromPath,
   highlightCode,
@@ -36,10 +35,22 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const CODE_FULL_READ_MAX_BYTES = 8 * 1024;
 const CODE_SIGNATURES_MIN_BYTES = 96 * 1024;
 
+// Pi builtins we replace with ctx_ prefixed versions
+const DISABLED_BUILTIN_TOOLS = new Set(["read", "bash", "ls", "find", "grep"]);
+// Max bytes constant for truncation warnings (same as Pi's DEFAULT_MAX_BYTES)
+const DEFAULT_MAX_BYTES = 8192;
+
+const readModeSchema = Type.Union([
+  Type.Literal("full"),
+  Type.Literal("map"),
+  Type.Literal("signatures"),
+], { description: "Override auto-selection: full (complete content), map (deps+API signatures), signatures (AST only)" });
+
 const readSchema = Type.Object({
   path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
   offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
   limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+  mode: Type.Optional(readModeSchema),
 });
 
 const lsSchema = Type.Object({
@@ -276,6 +287,13 @@ async function execLeanCtx(pi: ExtensionAPI, args: string[]) {
 }
 
 export default async function (pi: ExtensionAPI) {
+  // Defer setActiveTools to session_start — runtime actions aren't available during extension load
+  // Must run on every session_start since active tools are per-session
+  pi.on("session_start", () => {
+    const activeTools = pi.getActiveTools().filter((name) => !DISABLED_BUILTIN_TOOLS.has(name));
+    pi.setActiveTools(activeTools);
+  });
+
   const baseBashTool = createBashToolDefinition(process.cwd(), {
     spawnHook: ({ command, cwd, env }) => {
       const bin = resolveBinary();
@@ -295,19 +313,21 @@ export default async function (pi: ExtensionAPI) {
     raw: Type.Optional(Type.Boolean({ description: "Skip compression, return full uncompressed output" })),
   });
 
+  // ── ctx_shell (replaces bash) ─────────────────────────────────────────
   pi.registerTool({
-    ...baseBashTool,
-    parameters: bashSchemaWithRaw,
+    name: "ctx_shell",
+    label: "ctx_shell",
     description:
-      "Execute a bash command. Output is auto-compressed by lean-ctx. "
-      + "IMPORTANT: Do NOT use bash to read files (cat/head/tail) — use the read tool instead. "
-      + "Do NOT use bash for grep/find/ls — use the dedicated tools. "
+      "Execute a shell command. Output is auto-compressed by lean-ctx. "
+      + "IMPORTANT: Do NOT use ctx_shell to read files (cat/head/tail) — use ctx_read instead. "
+      + "Do NOT use ctx_shell for grep/find/ls — use ctx_grep, ctx_find, ctx_ls. "
       + "Set raw=true to skip compression when exact output matters. "
       + "Use timeout (seconds) to prevent hanging commands.",
-    promptSnippet: "Run shell commands (not for file reading — use read tool)",
+    promptSnippet: "Run shell commands (not for file reading — use ctx_read)",
     promptGuidelines: [
-      "Use bash only for commands with side effects: build, test, install, git, run scripts.",
+      "Use ctx_shell only for commands with side effects: build, test, install, git, run scripts.",
     ],
+    parameters: bashSchemaWithRaw,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const isRaw = !!params.raw;
       const toolParams = { command: params.command, timeout: params.timeout };
@@ -335,19 +355,22 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
+  // ── ctx_read (replaces read) ──────────────────────────────────────────
   const nativeReadTool = createReadToolDefinition(process.cwd());
 
   pi.registerTool({
-    name: "read",
-    label: "Read",
+    name: "ctx_read",
+    label: "ctx_read",
     description:
-      "Read file contents. ALWAYS use this instead of cat/head/tail via bash. "
+      "Read file contents. ALWAYS use ctx_read instead of cat/head/tail via ctx_shell. "
       + "Auto-selects mode: configs (.yaml/.json/.toml/.env) are always full-read. "
       + "Code files: full (<8KB), map (8-96KB), signatures (>96KB). "
+      + "Add mode=full to get complete file content (bypasses cache). "
       + "Use offset and limit to read specific line ranges.",
     promptSnippet: "Read file contents (always use instead of cat)",
     promptGuidelines: [
-      "Use read to inspect file contents instead of cat or less.",
+      "Use ctx_read to inspect file contents instead of cat or less.",
+      "Use mode=full if you need the complete file content.",
     ],
     parameters: readSchema,
     renderCall(args, theme, context) {
@@ -386,11 +409,11 @@ export default async function (pi: ExtensionAPI) {
         | undefined;
       if (truncation?.truncated) {
         if (truncation.firstLineExceedsLimit) {
-          text += `\n${theme.fg("warning", `[First line exceeds ${Math.round((truncation.maxBytes ?? DEFAULT_MAX_BYTES) / 1024)}KB limit]`)}`;
+          text += `\n${theme.fg("warning", `[First line exceeds ${Math.round((truncation.maxBytes ?? 8192) / 1024)}KB limit]`)}`;
         } else if (truncation.truncatedBy === "lines") {
           text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} of ${truncation.totalLines} lines]`)}`;
         } else {
-          text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines (${Math.round((truncation.maxBytes ?? DEFAULT_MAX_BYTES) / 1024)}KB limit)]`)}`;
+          text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines (${Math.round((truncation.maxBytes ?? 8192) / 1024)}KB limit)]`)}`;
         }
       }
 
@@ -431,8 +454,9 @@ export default async function (pi: ExtensionAPI) {
         return nativeReadTool.execute(_toolCallId, { ...params, path: absolutePath }, signal, onUpdate, ctx);
       }
 
-      const mode = await chooseReadMode(absolutePath);
-      const args = mode === "full" ? ["read", absolutePath] : ["read", absolutePath, "-m", mode];
+      const isExplicitFull = params.mode === "full";
+      const mode = params.mode ?? await chooseReadMode(absolutePath);
+      const args = ["read", absolutePath, "-m", mode, ...(isExplicitFull ? ["--fresh"] : [])];
       const output = await execLeanCtx(pi, args);
       const originalText = await readFile(absolutePath, "utf8");
       const decorated = withFooter(output, { originalText, always: true, preferEstimate: true });
@@ -444,9 +468,10 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
+  // ── ctx_ls (replaces ls) ──────────────────────────────────────────────
   pi.registerTool({
-    name: "ls",
-    label: "ls",
+    name: "ctx_ls",
+    label: "ctx_ls",
     description: "List directory contents. Use limit to reduce output size.",
     promptSnippet: "List directory contents",
     parameters: lsSchema,
@@ -462,9 +487,10 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
+  // ── ctx_find (replaces find) ──────────────────────────────────────────
   pi.registerTool({
-    name: "find",
-    label: "find",
+    name: "ctx_find",
+    label: "ctx_find",
     description: "Find files by glob pattern (respects .gitignore). Use limit to reduce output size.",
     promptSnippet: "Find files by glob pattern",
     parameters: findSchema,
@@ -480,9 +506,10 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
+  // ── ctx_grep (replaces grep) ──────────────────────────────────────────
   pi.registerTool({
-    name: "grep",
-    label: "grep",
+    name: "ctx_grep",
+    label: "ctx_grep",
     description: "Search file contents with ripgrep. Use limit to cap matches and context for surrounding lines.",
     promptSnippet: "Search file contents for patterns",
     parameters: grepSchema,
@@ -512,6 +539,7 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
+  // ── lean_ctx (CLI passthrough) ────────────────────────────────────────
   pi.registerTool({
     name: "lean_ctx",
     label: "lean_ctx",
@@ -573,6 +601,12 @@ export default async function (pi: ExtensionAPI) {
         if (status.lastError) {
           lines.push(`Last bridge error: ${status.lastError}`);
         }
+      }
+
+      // Show active ctx_ tools
+      const ctxTools = pi.getActiveTools().filter((n) => n.startsWith("ctx_") || n === "lean_ctx");
+      if (ctxTools.length > 0) {
+        lines.push(`Active tools: ${ctxTools.join(", ")}`);
       }
 
       const ok = found && (adapterConfigured || !enableMcpBridge || (status?.connected ?? false));
