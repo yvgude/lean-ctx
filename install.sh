@@ -131,7 +131,8 @@ install_download() {
   sums_url="https://github.com/${REPO}/releases/download/${latest}/SHA256SUMS"
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir:-}"' EXIT
+  tmp_bin=""
+  trap 'rm -rf "${tmpdir:-}"; [ -n "${tmp_bin:-}" ] && rm -f "${tmp_bin:-}" 2>/dev/null || true' EXIT
 
   echo "Downloading binary..."
   if ! curl -fsSL "$asset_url" -o "$tmpdir/lean-ctx.tar.gz"; then
@@ -152,12 +153,15 @@ install_download() {
   tar -xzf "$tmpdir/lean-ctx.tar.gz" -C "$tmpdir"
 
   mkdir -p "$INSTALL_DIR"
-  install -m755 "$tmpdir/lean-ctx" "$INSTALL_DIR/lean-ctx"
+  tmp_bin="$INSTALL_DIR/.lean-ctx.new.$$"
+  install -m755 "$tmpdir/lean-ctx" "$tmp_bin"
 
   if [ "$(uname -s)" = "Darwin" ]; then
-    xattr -cr "$INSTALL_DIR/lean-ctx" 2>/dev/null || true
-    codesign --force --sign - "$INSTALL_DIR/lean-ctx" 2>/dev/null || true
+    xattr -cr "$tmp_bin" 2>/dev/null || true
+    codesign --force --sign - "$tmp_bin" 2>/dev/null || true
   fi
+  mv -f "$tmp_bin" "$INSTALL_DIR/lean-ctx"
+  tmp_bin=""
 
   echo "  Installed: $INSTALL_DIR/lean-ctx"
 
@@ -199,7 +203,9 @@ install_from_source() {
   fi
 
   mkdir -p "$INSTALL_DIR"
-  ln -sf "$binary" "$INSTALL_DIR/lean-ctx"
+  tmp_link="$INSTALL_DIR/.lean-ctx.link.$$"
+  ln -sf "$binary" "$tmp_link"
+  mv -f "$tmp_link" "$INSTALL_DIR/lean-ctx"
   echo "  Linked: $INSTALL_DIR/lean-ctx -> $binary"
 
   finish

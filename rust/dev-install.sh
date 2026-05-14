@@ -37,8 +37,10 @@ cargo build --release 2>&1 | tail -3
 
 # 3) Install
 mkdir -p "$INSTALL_DIR"
-cp target/release/lean-ctx "$BINARY"
-chmod +x "$BINARY"
+TARGET="$(pwd)/target/release/lean-ctx"
+TMP_LINK="${BINARY}.tmp.$$"
+ln -sf "$TARGET" "$TMP_LINK"
+mv -f "$TMP_LINK" "$BINARY"
 
 # 4) Verify
 VERSION=$("$BINARY" --version 2>&1)
