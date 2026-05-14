@@ -1,34 +1,36 @@
 # pi-lean-ctx
 
-CLI-first [Pi Coding Agent](https://github.com/badlogic/pi-mono) extension that routes Pi’s built-in tools through [lean-ctx](https://leanctx.com) for **60–90% token savings**.
+[Pi Coding Agent](https://github.com/badlogic/pi-mono) extension that provides `ctx_`-prefixed tools backed by [lean-ctx](https://leanctx.com) for **60–90% token savings**.
 
 - **Default**: CLI-only (no MCP required)
 - **Optional**: enable MCP tools (`LEAN_CTX_PI_ENABLE_MCP=1`) or run `lean-ctx init --agent pi --mode mcp`
 
 ## What it does
 
-### Built-in Tool Overrides (CLI)
+### ctx_ Tools (CLI-backed)
 
-Overrides Pi's built-in tools to route them through `lean-ctx`:
+Replaces Pi's built-in `read`, `bash`, `ls`, `find`, `grep` with `ctx_`-prefixed versions:
 
-| Tool | Compression |
-|------|------------|
-| `bash` | All shell commands compressed via lean-ctx's 95+ patterns |
-| `read` | Smart mode selection (full/map/signatures) based on file type and size |
-| `grep` | Results grouped and compressed via ripgrep + lean-ctx |
-| `find` | File listings compressed and .gitignore-aware |
-| `ls` | Directory output compressed |
+| Tool | Replaces | Compression |
+|------|----------|-------------|
+| `ctx_read` | `read` | Smart mode selection (full/map/signatures) based on file type and size |
+| `ctx_shell` | `bash` | All shell commands compressed via lean-ctx's 95+ patterns |
+| `ctx_grep` | `grep` | Results grouped and compressed via ripgrep + lean-ctx |
+| `ctx_find` | `find` | File listings compressed and .gitignore-aware |
+| `ctx_ls` | `ls` | Directory output compressed |
+
+Pi's `edit` and `write` builtins remain unchanged.
 
 ### Direct lean-ctx CLI tool
 
-The extension registers a `lean_ctx` tool that runs `lean-ctx` directly (no nested compression).
+The `lean_ctx` tool runs `lean-ctx` directly (no nested compression).
 Use it for commands like:
 
-- `lean-ctx overview`
-- `lean-ctx session …`
-- `lean-ctx knowledge …`
-- `lean-ctx gain` / `lean-ctx stats`
-- `lean-ctx index …`
+- `lean_ctx overview`
+- `lean_ctx session …`
+- `lean_ctx knowledge …`
+- `lean_ctx gain` / `lean_ctx stats`
+- `lean_ctx index …`
 
 ### Optional MCP Tools (Embedded Bridge)
 
@@ -43,24 +45,11 @@ server and registers advanced tools directly in Pi:
 | `ctx_overview` | Codebase overview and architecture analysis |
 | `ctx_compress` | Manual compression control |
 | `ctx_metrics` | Token savings dashboard |
-| `ctx_agent` | Multi-agent coordination and handoffs |
-| `ctx_graph` | Dependency graph analysis |
-| `ctx_discover` | Smart code discovery |
-| `ctx_context` | Context window management |
-| `ctx_preload` | Predictive file preloading |
-| `ctx_delta` | Changed-lines-only reads |
-| `ctx_edit` | Read-modify-write in one call |
-| `ctx_dedup` | Duplicate context elimination |
-| `ctx_fill` | Template completion |
-| `ctx_intent` | Intent-based task routing |
-| `ctx_response` | Response optimization |
-| `ctx_wrapped` | Wrapped command execution |
-| `ctx_benchmark` | Compression benchmarking |
-| `ctx_analyze` | Code analysis |
-| `ctx_cache` | Cache management |
-| `ctx_execute` | Direct command execution |
+| `ctx_multi_read` | Batch file reads |
+| `ctx_search` | MCP-native search |
+| `ctx_tree` | File tree listing |
 
-If you don’t want MCP: keep it disabled and use the CLI overrides + `lean_ctx` tool only.
+If you don't want MCP: keep it disabled and use the `ctx_` CLI tools + `lean_ctx` tool only.
 
 ## Install
 
@@ -83,14 +72,17 @@ lean-ctx init --agent pi
 
 ## How it works
 
-### CLI overrides (bash, read, grep, find, ls)
+### ctx_ tools (CLI-backed)
 
-These tools invoke the `lean-ctx` binary via CLI with `LEAN_CTX_COMPRESS=1`. The output is parsed for compression stats and displayed with a token savings footer.
+These tools invoke the `lean-ctx` binary via CLI with `LEAN_CTX_COMPRESS=1`.
+The built-in tools they replace (`read`, `bash`, `ls`, `find`, `grep`) are disabled
+via `pi.setActiveTools()` so only the `ctx_` versions are available to the LLM.
 
 ### Optional MCP bridge (all other tools)
 
 If you enable the MCP bridge, pi-lean-ctx spawns the `lean-ctx` binary as an MCP server (JSON-RPC over stdio).
-It discovers available tools via `list_tools`, filters out those already covered by CLI overrides, and registers the rest as native Pi tools.
+It discovers available tools via `list_tools`, filters out those already covered by `ctx_` CLI tools,
+and registers the rest as native Pi tools.
 
 If `lean-ctx` is already configured as an MCP server via [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter) in `~/.pi/agent/mcp.json`, the embedded bridge is skipped to avoid duplicate tools.
 
@@ -150,7 +142,7 @@ The extension locates the `lean-ctx` binary in this order:
 
 ## Smart Read Modes
 
-The `read` tool automatically selects the optimal lean-ctx mode:
+The `ctx_read` tool automatically selects the optimal lean-ctx mode:
 
 | File Type | Size | Mode |
 |-----------|------|------|
@@ -166,7 +158,7 @@ The `read` tool automatically selects the optimal lean-ctx mode:
 Use `/lean-ctx` in Pi to check:
 - Which binary is being used
 - MCP bridge status (disabled / embedded / adapter)
-- Number and names of registered MCP tools
+- Active `ctx_` tool names
 
 ## Disabling specific tools
 
