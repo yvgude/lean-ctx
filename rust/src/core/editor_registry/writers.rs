@@ -693,7 +693,6 @@ fn write_zed_config(
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
     let desired = serde_json::json!({
-        "source": "custom",
         "command": binary,
         "args": [],
         "env": {}
