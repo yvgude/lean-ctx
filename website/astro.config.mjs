@@ -14,6 +14,7 @@ export default defineConfig({
     },
   },
   redirects: {
+    '/benchmark/': '/context-os/benchmark/',
     // Commercial / internal pages → homepage
     '/checkout/': '/',
     '/pro/': '/',

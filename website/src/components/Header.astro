@@ -58,7 +58,7 @@ const contextOsColumns = [
   {
     title: t('nav.arch.coreConcepts'),
     items: [
-      { label: t('nav.arch.overview'), href: lp('/context-os'), description: t('nav.arch.overviewDesc'), icon: ico.grid, badge: 'Start' },
+      { label: t('nav.arch.overview'), href: lp('/context-os'), description: t('nav.arch.overviewDesc'), icon: ico.grid, badge: t('nav.learn.startHereBadge') },
       { label: t('nav.docs.concepts.readModes'), href: lp('/docs/concepts/read-modes'), description: t('nav.docs.concepts.readModesDesc'), icon: ico.book },
       { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: ico.term },
       { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: ico.dollar },
@@ -236,6 +236,9 @@ const toolsColumns = [
         <a href={lp('/docs/tools/core')} class="mobile-nav-link">{t('nav.tools.coreTools')}</a>
         <a href={lp('/docs/tools/intelligence')} class="mobile-nav-link">{t('nav.tools.intelligence')}</a>
         <a href={lp('/docs/tools/memory')} class="mobile-nav-link">{t('nav.tools.memorySession')}</a>
+        <a href={lp('/docs/tools/session')} class="mobile-nav-link">{t('nav.tools.sessionTools')}</a>
+        <a href={lp('/docs/tools/workflow')} class="mobile-nav-link">{t('nav.tools.workflowAnalysis')}</a>
+        <a href={lp('/docs/tools/analysis')} class="mobile-nav-link">{t('nav.tools.analysisTools')}</a>
       </div>
 
       <div class="mobile-lang-area" style="display: flex; align-items: center; gap: 0.5rem;">
