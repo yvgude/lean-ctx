@@ -187,7 +187,7 @@ const fullArt = tiledArt + '\n' + tiledArt;
   }
   .ascii-hero-bg pre {
     font-family: var(--font-mono);
-    font-size: clamp(9px, 1.1vw, 15px);
+    font-size: clamp(6px, 1.5vw, 14px);
     line-height: 1.3;
     white-space: pre;
     text-align: left;
@@ -214,5 +214,17 @@ const fullArt = tiledArt + '\n' + tiledArt;
   @keyframes ascii-color-flow {
     0% { background-position: 0% 50%; }
     100% { background-position: 300% 50%; }
+  }
+  @media (max-width: 768px) {
+    .ascii-hero-bg pre {
+      font-size: 7px;
+      opacity: 0.3;
+      animation-duration: 20s;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ascii-hero-bg pre {
+      animation: none;
+    }
   }
 </style>
