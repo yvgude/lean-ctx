@@ -33,7 +33,7 @@
   --color-warning: #fbbf24;
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-display: 'JetBrains Mono', 'Space Grotesk', monospace;
+  --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
   --card-radius: 4px;
