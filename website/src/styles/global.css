@@ -200,6 +200,21 @@ body {
   isolation: isolate;
 }
 
+.ascii-global-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+  overflow: hidden;
+}
+.ascii-global-bg .ascii-hero-bg {
+  position: absolute;
+  inset: 0;
+}
+.ascii-global-bg .ascii-hero-bg pre {
+  opacity: 0.12;
+}
+
 body::before {
   content: '';
   position: fixed;

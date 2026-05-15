@@ -195,5 +195,10 @@ const fullArt = tiledArt + '\n' + tiledArt + '\n' + tiledArt;
     margin: 0;
     padding: 0;
     user-select: none;
+    animation: ascii-drift 120s linear infinite;
+  }
+  @keyframes ascii-drift {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(-10%, -10%); }
   }
 </style>
