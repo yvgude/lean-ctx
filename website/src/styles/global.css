@@ -212,7 +212,7 @@ body {
   inset: 0;
 }
 .ascii-global-bg .ascii-hero-bg pre {
-  opacity: 0.45;
+  opacity: 0.38;
 }
 .ascii-global-bg::after {
   content: '';
