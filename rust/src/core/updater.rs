@@ -252,28 +252,6 @@ fn post_update_rewire() {
     restart_proxy_if_running();
 }
 
-// Daemon lifecycle is now centralized in setup::run_setup_with_options.
-// Kept as a standalone utility for cases outside the full setup flow.
-#[allow(dead_code)]
-fn restart_daemon_if_running() {
-    #[cfg(unix)]
-    {
-        if !crate::daemon::is_daemon_running() {
-            return;
-        }
-        println!("  \x1b[33m⟳\x1b[0m Restarting daemon with new binary…");
-        if let Err(e) = crate::daemon::stop_daemon() {
-            println!("  \x1b[33m⚠\x1b[0m Could not stop daemon: {e}");
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        match crate::daemon::start_daemon(&[]) {
-            Ok(()) => println!("  \x1b[32m✓\x1b[0m Daemon restarted"),
-            Err(e) => println!("  \x1b[33m⚠\x1b[0m Daemon restart failed: {e}"),
-        }
-    }
-}
-
 fn restart_proxy_if_running() {
     let port = crate::proxy_setup::default_port();
 

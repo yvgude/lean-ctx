@@ -1109,8 +1109,13 @@ mod structural_output_tests {
     fn git_log_without_patch_not_structural() {
         assert!(!has_structural_output("git log"));
         assert!(!has_structural_output("git log --oneline"));
-        assert!(!has_structural_output("git log --stat"));
         assert!(!has_structural_output("git log -n 5"));
+    }
+
+    #[test]
+    fn git_log_with_stat_is_structural() {
+        assert!(has_structural_output("git log --stat"));
+        assert!(has_structural_output("git log --stat -n 5"));
     }
 
     #[test]

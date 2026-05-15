@@ -69,14 +69,14 @@ LeanCTX is a **Lossless Minifier for Human Thought**.
 | **Cost** | Linear (expensive) | Logarithmic (high ROI) |
 | **Context Lifespan** | Burns through window fast | Extends effective session length |
 
-## Where We Are (v3.4.7)
+## Where We Are (v3.6.0)
 
 LeanCTX delivers strong coverage of Dimensions 1 and 3, with foundations for 2 and 4:
 
 ### Dimension 1 — Compression Layer (Production-Ready)
 - 95+ CLI compression patterns for git, npm, docker, kubectl, cargo, and more
 - 18 tree-sitter languages for AST-based signatures and outlines
-- 60 MCP tools with 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto)
+- 56+ MCP tools with 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto)
 - Session caching with mtime-validation — re-reads cost ~13 tokens
 - Cross-file codebook compression and archive system (`ctx_expand`)
 

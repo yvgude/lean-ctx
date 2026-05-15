@@ -84,7 +84,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_analyze::CtxAnalyzeTool));
     registry.register(Box::new(registered::ctx_discover::CtxDiscoverTool));
     registry.register(Box::new(registered::ctx_response::CtxResponseTool));
-    registry.register(Box::new(registered::ctx_wrapped::CtxWrappedTool));
     registry.register(Box::new(registered::ctx_heatmap::CtxHeatmapTool));
     registry.register(Box::new(registered::ctx_verify::CtxVerifyTool));
     registry.register(Box::new(registered::ctx_outline::CtxOutlineTool));
@@ -92,11 +91,9 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_gain::CtxGainTool));
     registry.register(Box::new(registered::ctx_expand::CtxExpandTool));
     registry.register(Box::new(registered::ctx_routes::CtxRoutesTool));
-    registry.register(Box::new(registered::ctx_callers::CtxCallersTool));
-    registry.register(Box::new(registered::ctx_callees::CtxCalleesTool));
     registry.register(Box::new(registered::ctx_callgraph::CtxCallgraphTool));
+    registry.register(Box::new(registered::ctx_refactor::CtxRefactorTool));
     registry.register(Box::new(registered::ctx_symbol::CtxSymbolTool));
-    registry.register(Box::new(registered::ctx_graph_diagram::CtxGraphDiagramTool));
     registry.register(Box::new(
         registered::ctx_discover_tools::CtxDiscoverToolsTool,
     ));

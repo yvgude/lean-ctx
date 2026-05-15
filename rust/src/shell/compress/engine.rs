@@ -32,7 +32,7 @@ pub(in crate::shell) fn compress_and_measure(
     (result, output_tokens)
 }
 
-pub(super) fn compress_if_beneficial(command: &str, output: &str) -> String {
+pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
     if output.trim().is_empty() {
         return String::new();
     }

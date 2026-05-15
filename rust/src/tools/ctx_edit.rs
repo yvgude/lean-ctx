@@ -436,10 +436,53 @@ pub fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
     } else {
         ""
     };
+
+    let escalation = auto_escalate_reread(cache, file_path);
+
     format!(
         "ERROR: old_string not found in {file_path}{hint}. \
          Make sure it matches exactly (including whitespace/indentation).\n\
-         Searched for: {preview}"
+         Searched for: {preview}{escalation}"
+    )
+}
+
+/// Auto-escalation: when old_string is not found and the file was previously read
+/// in a compressed mode, re-read in full and return the content so the agent
+/// can immediately retry with the correct old_string.
+fn auto_escalate_reread(cache: &mut SessionCache, path: &str) -> String {
+    let entry = cache.get(path);
+    let last_mode = entry.map(|e| e.last_mode.clone()).unwrap_or_default();
+
+    if last_mode.is_empty() || last_mode == "full" {
+        return String::new();
+    }
+
+    let Ok(fresh_content) = std::fs::read_to_string(path) else {
+        return String::new();
+    };
+    cache.store(path, &fresh_content);
+    cache.mark_full_delivered(path);
+
+    let line_count = fresh_content.lines().count();
+    const MAX_LINES: usize = 300;
+
+    let content_preview = if line_count <= MAX_LINES {
+        fresh_content
+    } else {
+        let lines: Vec<&str> = fresh_content.lines().collect();
+        let head = &lines[..MAX_LINES / 2];
+        let tail = &lines[line_count - MAX_LINES / 2..];
+        let omitted = line_count - MAX_LINES;
+        format!(
+            "{}\n[... {omitted} lines omitted ...]\n{}",
+            head.join("\n"),
+            tail.join("\n")
+        )
+    };
+
+    format!(
+        "\n\n[auto-escalation] Last read used mode=\"{last_mode}\". \
+         Full content ({line_count}L) below — retry edit with exact text from here:\n\n{content_preview}"
     )
 }
 

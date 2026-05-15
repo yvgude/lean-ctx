@@ -448,7 +448,8 @@ fn audit_full_savings_pipeline() {
             CrpMode::Off,
         );
         let output2_tokens = count_tokens(&output2);
-        let is_cache_hit = output2.is_empty();
+        let is_cache_hit =
+            output2.is_empty() || output2.contains("unchanged") || output2.contains("cached");
 
         eprintln!("\n  ctx_read (cache re-read):");
         eprintln!("    file tokens:   {file_tokens}");
@@ -456,7 +457,10 @@ fn audit_full_savings_pipeline() {
         eprintln!("    is_cache_hit:  {is_cache_hit}");
         eprintln!("    output: {output2:?}");
 
-        assert!(is_cache_hit, "second read should be a cache hit (silent)");
+        assert!(
+            is_cache_hit,
+            "second read should be a cache hit, got: {output2}"
+        );
         assert!(
             output2_tokens < 40,
             "cache hit stub should be <40 tokens, got {output2_tokens}",

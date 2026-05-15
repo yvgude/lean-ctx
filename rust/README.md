@@ -1,6 +1,6 @@
 # lean-ctx
 
-**Context Runtime for AI Agents with CCP + TDD. Shell Hook + MCP Server. 60 MCP tools, 10 read modes, 95+ shell patterns, cross-session memory (CCP), LITM-aware positioning, tree-sitter AST for 18 languages. Single Rust binary.**
+**Context Runtime for AI Agents with CCP + TDD. Shell Hook + MCP Server. 56 MCP tools, 10 read modes, 95+ shell patterns, cross-session memory (CCP), LITM-aware positioning, tree-sitter AST for 18 languages. Single Rust binary.**
 
 [![CI](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml)
 [![Security Check](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml)
@@ -361,7 +361,7 @@ $ lean-ctx gain
   lean-ctx v2.1.1  |  leanctx.com  |  lean-ctx dashboard
 ```
 
-## 60 MCP Tools
+## 56 MCP Tools
 
 When configured as an MCP server, lean-ctx provides 56 tools that replace or augment your editor's built-in tools:
 
@@ -402,7 +402,7 @@ When configured as an MCP server, lean-ctx provides 56 tools that replace or aug
 | `ctx_knowledge` | Persistent project knowledge — remember, recall, export, import, remove, search, timeline, relations |
 | `ctx_agent` | Multi-agent coordination — register, post/read scratchpad, handoff tasks, sync status |
 | `ctx_share` | Multi-agent context sharing — push/pull cached file contexts between agents |
-| `ctx_wrapped` | Shareable savings report — "Spotify Wrapped" for your token savings |
+| `ctx_gain` | Savings report card — wrapped report, summary, delta (action=wrapped for "Spotify Wrapped" style) |
 
 ### Analysis Tools
 
@@ -462,7 +462,7 @@ lean-ctx benchmark report           # Shareable Markdown report
 {"tool": "ctx_session", "arguments": {"action": "task", "value": "Implement auth module"}}
 {"tool": "ctx_session", "arguments": {"action": "finding", "value": "Auth uses JWT with RS256"}}
 {"tool": "ctx_session", "arguments": {"action": "decision", "value": "Use middleware pattern for auth"}}
-{"tool": "ctx_wrapped", "arguments": {}}
+{"tool": "ctx_gain", "arguments": {"action": "wrapped"}}
 ```
 
 ## Editor Configuration

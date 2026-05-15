@@ -435,7 +435,7 @@ in the team server JSON config with SHA-256 hashes.
 | Scope | Grants Access To |
 |-------|-----------------|
 | `search` | `ctx_read`, `ctx_multi_read`, `ctx_smart_read`, `ctx_search`, `ctx_tree`, `ctx_outline`, `ctx_expand`, `ctx_delta`, `ctx_dedup`, `ctx_prefetch`, `ctx_preload`, `ctx_review`, `ctx_response`, `ctx_task`, `ctx_overview`, `ctx_pack` (+ graph), `ctx_semantic_search` |
-| `graph` | `ctx_graph`, `ctx_graph_diagram`, `ctx_impact`, `ctx_callgraph`, `ctx_callers`, `ctx_callees`, `ctx_routes`, `ctx_pack` (+ search) |
+| `graph` | `ctx_graph`, `ctx_impact`, `ctx_callgraph`, `ctx_refactor`, `ctx_routes`, `ctx_pack` (+ search) |
 | `artifacts` | `ctx_semantic_search` with `artifacts=true` |
 | `index` | `ctx_graph` with `action=index-build*`, `ctx_semantic_search` with `action=reindex` |
 | `events` | `GET /v1/events` SSE stream |

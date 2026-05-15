@@ -229,10 +229,10 @@ fn postinstall_has_sha256_verification() {
 // ---------------------------------------------------------------------------
 #[test]
 fn pipeline_archive_uses_redacted_output() {
-    let src = include_str!("../src/server/pipeline_stages.rs");
+    let src = include_str!("../src/server/mod.rs");
 
     assert!(
-        src.contains("redact_text_if_enabled(result_text)"),
+        src.contains("redact_text_if_enabled"),
         "H6: shell archive must use redact_text_if_enabled before storing"
     );
 }

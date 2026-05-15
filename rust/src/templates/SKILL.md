@@ -1,11 +1,11 @@
 ---
 name: lean-ctx
-description: Context Runtime for AI Agents — 60 MCP tools, 10 read modes, 95+ shell patterns, tree-sitter AST for 18 languages. Compresses LLM context by up to 99%. Use when reading files, running shell commands, searching code, or exploring directories. Auto-installs if not present.
+description: Context Runtime for AI Agents — 56+ MCP tools, 10 read modes, 95+ shell patterns, tree-sitter AST for 18 languages. Compresses LLM context by up to 99%. Use when reading files, running shell commands, searching code, or exploring directories. Auto-installs if not present.
 ---
 
 # LeanCTX — Context Runtime for AI Agents
 
-LeanCTX optimizes LLM context through 60 MCP tools, 95+ shell compression patterns, and tree-sitter AST parsing for 18 languages. It provides adaptive file reading, cross-session memory (CCP), task-conditioned relevance scoring, and a feedback loop for learning optimal compression.
+LeanCTX optimizes LLM context through 56+ MCP tools, 95+ shell compression patterns, and tree-sitter AST parsing for 18 languages. It provides adaptive file reading, cross-session memory (CCP), task-conditioned relevance scoring, and a feedback loop for learning optimal compression.
 
 ## Setup (run first)
 
@@ -86,7 +86,7 @@ lean-ctx init --agent jetbrains                    # MCP (JetBrains)
 lean-ctx init --agent windsurf                     # Hybrid (Windsurf)
 ```
 
-## Multi-Agent & Knowledge (v2.7.0+)
+## Multi-Agent & Knowledge
 
 CLI (works in all setups):
 
@@ -107,7 +107,7 @@ lean-ctx session save
 If MCP is enabled for your IDE, the same capabilities are also available as MCP tools
 (`ctx_knowledge`, `ctx_session`, `ctx_agent`, ...).
 
-## Additional Intelligence Tools (v2.19.0)
+## Additional Intelligence Tools
 
 - `ctx_edit(path, old_string, new_string)` — search-and-replace file editing without native Read/Edit
 - `ctx_overview(task)` — task-relevant project map at session start
@@ -149,7 +149,7 @@ MCP tools for CCP:
 - `ctx_graph impact` — blast radius analysis
 - `ctx_graph enrich` — add commits, tests, knowledge to graph
 - `ctx_graph context` — task-based graph query for relevant context
-- `ctx_wrapped` — generate savings report card in chat
+- `ctx_gain action=wrapped` — generate savings report card in chat
 
 ## Analytics
 

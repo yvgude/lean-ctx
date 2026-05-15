@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::SystemTime;
@@ -30,7 +31,9 @@ pub enum TeeMode {
     Always,
 }
 
-/// Controls agent output verbosity level injected into MCP instructions.
+/// Legacy: Controls agent output verbosity level injected into MCP instructions.
+/// Superseded by `CompressionLevel`. Kept for backward compatibility with old config.toml files.
+/// New setups use `compression_level` instead. See `CompressionLevel::effective()`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TerseAgent {
@@ -55,27 +58,11 @@ impl TerseAgent {
             _ => Self::Off,
         }
     }
-
-    /// Returns the effective terse level, preferring env var over config value.
-    pub fn effective(config_val: &TerseAgent) -> Self {
-        match std::env::var("LEAN_CTX_TERSE_AGENT") {
-            Ok(val) if !val.is_empty() => match val.to_lowercase().as_str() {
-                "lite" => Self::Lite,
-                "full" => Self::Full,
-                "ultra" => Self::Ultra,
-                _ => Self::Off,
-            },
-            _ => config_val.clone(),
-        }
-    }
-
-    /// Returns `true` if any terse level is enabled (not `Off`).
-    pub fn is_active(&self) -> bool {
-        !matches!(self, Self::Off)
-    }
 }
 
-/// Controls how dense/compact MCP tool output is formatted.
+/// Legacy: Controls how dense/compact MCP tool output is formatted.
+/// Superseded by `CompressionLevel`. Kept for backward compatibility with old config.toml files.
+/// New setups use `compression_level` instead. See `CompressionLevel::effective()`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputDensity {
@@ -97,27 +84,6 @@ impl OutputDensity {
             "ultra" => Self::Ultra,
             _ => Self::Normal,
         }
-    }
-
-    /// Returns the effective density, preferring env var over config value.
-    pub fn effective(config_val: &OutputDensity) -> Self {
-        let env_val = Self::from_env();
-        if env_val != Self::Normal {
-            return env_val;
-        }
-        let profile_val = crate::core::profiles::active_profile()
-            .compression
-            .output_density_effective()
-            .to_lowercase();
-        let profile_density = match profile_val.as_str() {
-            "terse" => Self::Terse,
-            "ultra" => Self::Ultra,
-            _ => Self::Normal,
-        };
-        if profile_density != Self::Normal {
-            return profile_density;
-        }
-        config_val.clone()
     }
 }
 
@@ -175,7 +141,8 @@ impl CompressionLevel {
     /// 1. `LEAN_CTX_COMPRESSION` env var
     /// 2. `compression_level` in config
     /// 3. Legacy `ultra_compact` flag (maps to `Max`)
-    /// 4. Inferred from legacy `terse_agent` + `output_density`
+    /// 4. Legacy env vars (`LEAN_CTX_TERSE_AGENT`, `LEAN_CTX_OUTPUT_DENSITY`)
+    /// 5. Legacy config fields (`terse_agent`, `output_density`)
     pub fn effective(config: &Config) -> Self {
         if let Some(env_level) = Self::from_env() {
             return env_level;
@@ -186,7 +153,19 @@ impl CompressionLevel {
         if config.ultra_compact {
             return Self::Max;
         }
-        Self::from_legacy(&config.terse_agent, &config.output_density)
+        let ta_env = TerseAgent::from_env();
+        let od_env = OutputDensity::from_env();
+        let ta = if ta_env == TerseAgent::Off {
+            config.terse_agent.clone()
+        } else {
+            ta_env
+        };
+        let od = if od_env == OutputDensity::Normal {
+            config.output_density.clone()
+        } else {
+            od_env
+        };
+        Self::from_legacy(&ta, &od)
     }
 
     pub fn from_str_label(s: &str) -> Option<Self> {
@@ -497,18 +476,23 @@ pub struct LoopDetectionConfig {
     pub blocked_threshold: u32,
     pub window_secs: u64,
     pub search_group_limit: u32,
+    pub tool_total_limits: HashMap<String, u32>,
 }
 
 impl Default for LoopDetectionConfig {
     fn default() -> Self {
+        let mut tool_total_limits = HashMap::new();
+        tool_total_limits.insert("ctx_read".to_string(), 100);
+        tool_total_limits.insert("ctx_search".to_string(), 80);
+        tool_total_limits.insert("ctx_shell".to_string(), 50);
+        tool_total_limits.insert("ctx_semantic_search".to_string(), 60);
         Self {
             normal_threshold: 2,
             reduced_threshold: 4,
-            // 0 = blocking disabled (LeanCTX philosophy: always help, never block)
-            // Set to 6+ in config to enable blocking for strict governance
             blocked_threshold: 0,
             window_secs: 300,
             search_group_limit: 10,
+            tool_total_limits,
         }
     }
 }
@@ -1053,10 +1037,10 @@ impl Config {
         {
             self.autonomy.consolidate_cooldown_secs = local.autonomy.consolidate_cooldown_secs;
         }
-        if local.compression_level != CompressionLevel::default() {
+        if local_toml.contains("compression_level") {
             self.compression_level = local.compression_level;
         }
-        if local.terse_agent != TerseAgent::default() {
+        if local_toml.contains("terse_agent") {
             self.terse_agent = local.terse_agent;
         }
         if !local.archive.enabled {

@@ -10,6 +10,7 @@ pub fn handle(args: &serde_json::Value) -> String {
 
     match action {
         "list" => handle_list(args),
+        "search_all" => handle_search_all(args),
         _ => handle_retrieve(args),
     }
 }
@@ -103,6 +104,35 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
             "Archive '{id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."
         ),
     }
+}
+
+fn handle_search_all(args: &serde_json::Value) -> String {
+    let query = match args.get("query").and_then(|v| v.as_str()) {
+        Some(q) if !q.is_empty() => q,
+        _ => return "ERROR: 'query' parameter required for search_all.".to_string(),
+    };
+    let limit = args
+        .get("limit")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(10) as usize;
+
+    let results = crate::core::archive_fts::search(query, limit);
+    if results.is_empty() {
+        return format!(
+            "No archives match \"{query}\". Indexed: {} entries.",
+            crate::core::archive_fts::entry_count()
+        );
+    }
+
+    let mut out = format!("{} result(s) for \"{}\":\n", results.len(), query);
+    for r in &results {
+        out.push_str(&format!(
+            "  {} | {} | {} | …{}…\n",
+            r.archive_id, r.tool, r.command, r.snippet
+        ));
+    }
+    out.push_str("\nRetrieve full: ctx_expand(id=\"<archive_id>\")");
+    out
 }
 
 fn handle_list(args: &serde_json::Value) -> String {

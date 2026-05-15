@@ -4,7 +4,6 @@ pub mod dynamic_tools;
 pub mod elicitation;
 pub(crate) mod execute;
 pub mod helpers;
-pub mod pipeline_stages;
 pub mod prompts;
 pub mod registry;
 pub mod resources;
@@ -272,7 +271,8 @@ impl ServerHandler for LeanCtxServer {
         };
 
         let tools = {
-            let level = crate::core::config::Config::load().compression_level;
+            let cfg = crate::core::config::Config::load();
+            let level = crate::core::config::CompressionLevel::effective(&cfg);
             let mode =
                 crate::core::terse::mcp_compress::DescriptionMode::from_compression_level(&level);
             if mode == crate::core::terse::mcp_compress::DescriptionMode::Full {
@@ -662,7 +662,7 @@ impl ServerHandler for LeanCtxServer {
         if compression.is_active() && !skip_terse {
             let terse_result =
                 crate::core::terse::pipeline::compress(&result_text, &compression, None);
-            if terse_result.quality_passed && terse_result.savings_pct >= 1.0 {
+            if terse_result.quality_passed && terse_result.savings_pct >= 3.0 {
                 result_text = terse_result.output;
             }
         }
@@ -1051,11 +1051,10 @@ impl ServerHandler for LeanCtxServer {
                     | "ctx_knowledge"
                     | "ctx_agent"
                     | "ctx_share"
-                    | "ctx_wrapped"
+                    | "ctx_gain"
                     | "ctx_overview"
                     | "ctx_preload"
                     | "ctx_cost"
-                    | "ctx_gain"
                     | "ctx_heatmap"
                     | "ctx_task"
                     | "ctx_impact"

@@ -92,6 +92,89 @@ pub fn force_kill(pid: u32) -> Result<()> {
     }
 }
 
+/// Find all PIDs of processes whose executable name matches `name`.
+/// Excludes the current process.
+pub fn find_pids_by_name(name: &str) -> Vec<u32> {
+    let my_pid = std::process::id();
+    let mut pids = Vec::new();
+
+    #[cfg(unix)]
+    {
+        let Ok(output) = std::process::Command::new("pgrep")
+            .arg("-x")
+            .arg(name)
+            .output()
+        else {
+            return pids;
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if let Ok(pid) = line.trim().parse::<u32>() {
+                if pid != my_pid {
+                    pids.push(pid);
+                }
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let Ok(output) = std::process::Command::new("tasklist")
+            .args([
+                "/FI",
+                &format!("IMAGENAME eq {name}.exe"),
+                "/FO",
+                "CSV",
+                "/NH",
+            ])
+            .output()
+        else {
+            return pids;
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split(',').collect();
+            if parts.len() >= 2 {
+                let pid_str = parts[1].trim().trim_matches('"');
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    if pid != my_pid {
+                        pids.push(pid);
+                    }
+                }
+            }
+        }
+    }
+
+    pids
+}
+
+/// Kill ALL processes matching `name` (SIGTERM then SIGKILL).
+/// Returns count of killed processes.
+pub fn kill_all_by_name(name: &str) -> usize {
+    let pids = find_pids_by_name(name);
+    if pids.is_empty() {
+        return 0;
+    }
+
+    for &pid in &pids {
+        let _ = terminate_gracefully(pid);
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let mut killed = 0;
+    for &pid in &pids {
+        if is_alive(pid) {
+            let _ = force_kill(pid);
+        }
+        killed += 1;
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    killed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

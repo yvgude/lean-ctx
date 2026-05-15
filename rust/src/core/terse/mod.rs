@@ -59,18 +59,4 @@ impl TerseResult {
             quality_passed: true,
         }
     }
-
-    pub fn format_footer(&self) -> String {
-        if self.savings_pct < 1.0 {
-            return String::new();
-        }
-        format!(
-            "[lean-ctx: {}→{} tok, pattern:-{} terse:-{}, -{:.0}%]",
-            self.tokens_before,
-            self.tokens_after,
-            self.pattern_savings,
-            self.terse_savings,
-            self.savings_pct,
-        )
-    }
 }

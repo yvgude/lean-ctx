@@ -464,44 +464,14 @@ pub fn full_instructions_for_rules_file(crp_mode: CrpMode) -> String {
     build_full_instructions(crp_mode, "")
 }
 
-fn build_terse_agent_block(crp_mode: &CrpMode) -> String {
-    use crate::core::config::{CompressionLevel, Config, TerseAgent};
+fn build_terse_agent_block(_crp_mode: &CrpMode) -> String {
+    use crate::core::config::{CompressionLevel, Config};
     let cfg = Config::load();
-
     let compression = CompressionLevel::effective(&cfg);
     if compression.is_active() {
         return crate::core::terse::agent_prompts::build_prompt_block(&compression);
     }
-
-    let level = TerseAgent::effective(&cfg.terse_agent);
-    if !level.is_active() {
-        return String::new();
-    }
-    // CRP Tdd already enforces extreme density — only Ultra adds value on top
-    if matches!(crp_mode, CrpMode::Tdd) && !matches!(level, TerseAgent::Ultra) {
-        return String::new();
-    }
-    let text = match level {
-        TerseAgent::Off => return String::new(),
-        TerseAgent::Lite => {
-            "\
-OUTPUT STYLE: Prefer concise responses. Skip narration, explain only when asked.\n\
-Use bullet points over paragraphs. Code > words. Diff > full file."
-        }
-        TerseAgent::Full => {
-            "\
-OUTPUT STYLE: Maximum density. Every token carries meaning.\n\
-Code changes: diff only (+/-), no full blocks. Explanations: 1 sentence max unless asked.\n\
-Lists: no filler words. Never repeat what the user said. Never explain what you're about to do."
-        }
-        TerseAgent::Ultra => {
-            "\
-OUTPUT STYLE: Ultra-terse. Expert pair programmer mode.\n\
-Skip: greetings, transitions, summaries, \"I'll\", \"Let me\", \"Here's\".\n\
-Max 2 sentences per explanation. Code speaks. Act, don't narrate. When uncertain: ask 1 question."
-        }
-    };
-    format!("{text}\n\n")
+    String::new()
 }
 
 fn build_intelligence_block() -> String {

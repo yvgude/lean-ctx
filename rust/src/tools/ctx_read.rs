@@ -172,6 +172,18 @@ fn handle_with_options(
     handle_with_options_resolved(cache, path, mode, fresh, crp_mode, task).content
 }
 
+/// Detects if the current execution context is a subagent (forked agent).
+/// Subagents inherit stale parent caches, so force-fresh prevents VERIFY FAIL.
+fn is_subagent_context() -> bool {
+    static IS_SUBAGENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *IS_SUBAGENT.get_or_init(|| {
+        if std::env::var("LEAN_CTX_FORCE_FRESH").is_ok_and(|v| v == "1" || v == "true") {
+            return true;
+        }
+        std::env::var("CURSOR_TASK_ID").is_ok_and(|v| !v.is_empty())
+    })
+}
+
 fn handle_with_options_resolved(
     cache: &mut SessionCache,
     path: &str,
@@ -180,12 +192,22 @@ fn handle_with_options_resolved(
     crp_mode: CrpMode,
     task: Option<&str>,
 ) -> ReadOutput {
+    let effective_fresh = fresh || is_subagent_context();
+
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
     }
-    let mut result = handle_with_options_inner(cache, path, mode, fresh, crp_mode, task);
+    let mut result = handle_with_options_inner(cache, path, mode, effective_fresh, crp_mode, task);
 
-    if result.resolved_mode != "full" && result.resolved_mode != "diff" {
+    if let Some(entry) = cache.get_mut(path) {
+        entry.last_mode.clone_from(&result.resolved_mode);
+    }
+
+    let dedup_allowed = matches!(
+        result.resolved_mode.as_str(),
+        "map" | "signatures" | "aggressive" | "entropy" | "task"
+    );
+    if dedup_allowed {
         if let Some(deduped) = cache.apply_dedup(path, &result.content) {
             let new_tokens = count_tokens(&deduped);
             if new_tokens < result.output_tokens {
@@ -224,11 +246,21 @@ fn handle_with_options_inner(
         .unwrap_or("");
 
     if fresh {
+        if mode == "diff" {
+            let warning = "[warning] fresh+diff is redundant — fresh invalidates cache, no diff possible. Use mode=full with fresh=true instead.";
+            return ReadOutput {
+                content: warning.to_string(),
+                resolved_mode: "diff".into(),
+                output_tokens: count_tokens(warning),
+            };
+        }
         cache.invalidate(path);
     }
 
     if mode == "diff" {
-        let (out, sent) = handle_diff(cache, path, &file_ref);
+        let (out, _) = handle_diff(cache, path, &file_ref);
+        let out = crate::core::redaction::redact_text_if_enabled(&out);
+        let sent = count_tokens(&out);
         return ReadOutput {
             content: out,
             resolved_mode: "diff".into(),
@@ -247,9 +279,9 @@ fn handle_with_options_inner(
 
     if let Some(existing) = cache.get(path) {
         if mode == "full" {
-            let (out, sent) =
-                handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
+            let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
             let out = crate::core::redaction::redact_text_if_enabled(&out);
+            let sent = count_tokens(&out);
             return ReadOutput {
                 content: out,
                 resolved_mode: "full".into(),
@@ -266,8 +298,8 @@ fn handle_with_options_inner(
         if is_cacheable_mode(&resolved_mode) {
             let cache_key = compressed_cache_key(&resolved_mode, crp_mode);
             if let Some(cached_output) = cache.get_compressed(path, &cache_key) {
-                let sent = count_tokens(cached_output);
                 let out = crate::core::redaction::redact_text_if_enabled(cached_output);
+                let sent = count_tokens(&out);
                 return ReadOutput {
                     content: out,
                     resolved_mode,
@@ -275,7 +307,7 @@ fn handle_with_options_inner(
                 };
             }
         }
-        let (out, sent) = process_mode(
+        let (out, _) = process_mode(
             &content,
             &resolved_mode,
             &file_ref,
@@ -291,6 +323,7 @@ fn handle_with_options_inner(
             cache.set_compressed(path, &cache_key, out.clone());
         }
         let out = crate::core::redaction::redact_text_if_enabled(&out);
+        let sent = count_tokens(&out);
         return ReadOutput {
             content: out,
             resolved_mode,
@@ -318,7 +351,7 @@ fn handle_with_options_inner(
 
     if mode == "full" {
         cache.mark_full_delivered(path);
-        let (mut output, sent) = format_full_output(
+        let (mut output, _) = format_full_output(
             &file_ref,
             &short,
             ext,
@@ -334,6 +367,7 @@ fn handle_with_options_inner(
             output.push_str(&format!("\n{hint}"));
         }
         let output = crate::core::redaction::redact_text_if_enabled(&output);
+        let sent = count_tokens(&output);
         return ReadOutput {
             content: output,
             resolved_mode: "full".into(),
@@ -358,15 +392,15 @@ fn handle_with_options_inner(
         path,
         task,
     );
-    if is_cacheable_mode(&resolved_mode) {
-        let cache_key = compressed_cache_key(&resolved_mode, crp_mode);
-        cache.set_compressed(path, &cache_key, output.clone());
-    }
     if let Some(hint) = &graph_hint {
         output.push_str(&format!("\n{hint}"));
     }
     if let Some(hint) = similar_hint {
         output.push_str(&format!("\n{hint}"));
+    }
+    if is_cacheable_mode(&resolved_mode) {
+        let cache_key = compressed_cache_key(&resolved_mode, crp_mode);
+        cache.set_compressed(path, &cache_key, output.clone());
     }
     let output = crate::core::redaction::redact_text_if_enabled(&output);
     let final_tokens = count_tokens(&output);
@@ -428,25 +462,28 @@ fn resolve_auto_mode(file_path: &str, original_tokens: usize, task: Option<&str>
     }
 
     // Priority 3: Bandit exploration when budget is tight
-    if let Some(project_root) =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
-    {
-        let ext = std::path::Path::new(file_path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        let bucket = match original_tokens {
-            0..=2000 => "sm",
-            2001..=10000 => "md",
-            10001..=50000 => "lg",
-            _ => "xl",
-        };
-        let bandit_key = format!("{ext}_{bucket}");
-        let mut store = crate::core::bandit::BanditStore::load(&project_root);
-        let bandit = store.get_or_create(&bandit_key);
-        let arm = bandit.select_arm();
-        if arm.budget_ratio < 0.25 && predicted == "full" && original_tokens > 2000 {
-            predicted = "aggressive".to_string();
+    // SAFETY: Bandit NEVER overrides "full" — full is sacred (byte-accurate content needed for edits)
+    if predicted != "full" {
+        if let Some(project_root) =
+            crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
+        {
+            let ext = std::path::Path::new(file_path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let bucket = match original_tokens {
+                0..=2000 => "sm",
+                2001..=10000 => "md",
+                10001..=50000 => "lg",
+                _ => "xl",
+            };
+            let bandit_key = format!("{ext}_{bucket}");
+            let mut store = crate::core::bandit::BanditStore::load(&project_root);
+            let bandit = store.get_or_create(&bandit_key);
+            let arm = bandit.select_arm();
+            if arm.budget_ratio < 0.25 && original_tokens > 2000 {
+                predicted = "aggressive".to_string();
+            }
         }
     }
 
@@ -569,15 +606,19 @@ fn handle_full_with_auto_delta(
 
     if store_result.was_hit {
         if store_result.full_content_delivered {
-            if crate::core::protocol::meta_visible() {
-                let out = format!(
+            let out = if crate::core::protocol::meta_visible() {
+                format!(
                     "{file_ref}={short} cached {}t {}L\nFile content unchanged since last read (same hash). Already in your context window.",
                     store_result.read_count, store_result.line_count
-                );
-                let sent = count_tokens(&out);
-                return (out, sent);
-            }
-            return (String::new(), 0);
+                )
+            } else {
+                format!(
+                    "{file_ref}={short} [unchanged, {}L, use cached context]",
+                    store_result.line_count
+                )
+            };
+            let sent = count_tokens(&out);
+            return (out, sent);
         }
         cache.mark_full_delivered(path);
         return format_full_output(
@@ -627,51 +668,12 @@ fn format_full_output(
     content: &str,
     original_tokens: usize,
     line_count: usize,
-    task: Option<&str>,
+    _task: Option<&str>,
 ) -> (String, usize) {
     let tokens = original_tokens;
     let metadata = build_header(file_ref, short, ext, content, line_count, true);
 
-    let mut reordered: Option<String> = None;
-    {
-        let profile = crate::core::profiles::active_profile();
-        let cfg = profile.layout;
-        if cfg.enabled_effective() && line_count >= cfg.min_lines_effective() {
-            let task_str = task.unwrap_or("");
-            if !task_str.is_empty() {
-                let (_files, keywords) = crate::core::task_relevance::parse_task_hints(task_str);
-                let r = crate::core::attention_layout_driver::maybe_reorder_for_attention(
-                    content, &keywords, &cfg,
-                );
-                if !r.skipped && r.changed {
-                    reordered = Some(r.output);
-                }
-            }
-        }
-    }
-
-    let content_for_output = reordered.as_deref().unwrap_or(content);
-
-    let mut sym = SymbolMap::new();
-    let idents = symbol_map::extract_identifiers(content_for_output, ext);
-    for ident in &idents {
-        sym.register(ident);
-    }
-
-    if sym.len() >= 3 {
-        let sym_table = sym.format_table();
-        let compressed = sym.apply(content_for_output);
-        let original_tok = count_tokens(content_for_output);
-        let compressed_tok = count_tokens(&compressed) + count_tokens(&sym_table);
-        let net_saving = original_tok.saturating_sub(compressed_tok);
-        if original_tok > 0 && net_saving * 100 / original_tok >= 5 {
-            let output = format!("{metadata}\n{compressed}{sym_table}");
-            let sent = count_tokens(&output);
-            return (protocol::append_savings(&output, tokens, sent), sent);
-        }
-    }
-
-    let output = format!("{metadata}\n{content_for_output}");
+    let output = format!("{metadata}\n{content}");
     let sent = count_tokens(&output);
     (protocol::append_savings(&output, tokens, sent), sent)
 }

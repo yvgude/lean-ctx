@@ -25,22 +25,16 @@ pub fn handle_with_context(
     let compressed_tokens = count_tokens(&compressed);
     let savings = original_tokens.saturating_sub(compressed_tokens);
     let pct = if original_tokens > 0 {
-        (savings as f64 / original_tokens as f64 * 100.0) as u32
+        (savings as f64 / original_tokens as f64 * 100.0).round() as usize
     } else {
         0
     };
 
-    if savings < 20 {
+    if pct < 3 {
         return response.to_string();
     }
 
-    if crate::core::protocol::savings_footer_visible() {
-        format!(
-            "{compressed}\n[response compressed: {original_tokens}→{compressed_tokens} tok, -{pct}%]"
-        )
-    } else {
-        compressed
-    }
+    crate::core::protocol::append_savings(&compressed, original_tokens, compressed_tokens)
 }
 
 fn compress_standard(text: &str, input_context: Option<&str>) -> String {

@@ -677,7 +677,7 @@ fn is_structural_git_command(command: &str) -> bool {
             let sub = arg.to_ascii_lowercase();
             return match sub.as_str() {
                 "diff" | "show" | "blame" => true,
-                "log" => has_patch_flag(&remaining),
+                "log" => has_patch_flag(&remaining) || has_stat_flag(&remaining),
                 "stash" => remaining.iter().any(|a| a.eq_ignore_ascii_case("show")),
                 _ => false,
             };
@@ -691,4 +691,10 @@ fn is_structural_git_command(command: &str) -> bool {
 fn has_patch_flag(args: &[&str]) -> bool {
     args.iter()
         .any(|a| *a == "-p" || *a == "--patch" || a.starts_with("-p"))
+}
+
+/// Returns true if the argument list contains `--stat`.
+fn has_stat_flag(args: &[&str]) -> bool {
+    args.iter()
+        .any(|a| *a == "--stat" || a.starts_with("--stat="))
 }

@@ -4,7 +4,6 @@ use serde_json::{json, Map, Value};
 
 use crate::server::tool_trait::{get_bool, get_int, get_str, McpTool, ToolContext, ToolOutput};
 use crate::tool_defs::tool_def;
-use crate::tools::LeanCtxServer;
 
 pub struct CtxReadTool;
 
@@ -111,8 +110,6 @@ impl CtxReadTool {
             auto_degrade_read_mode(&mode)
         };
 
-        let effective_mode = LeanCtxServer::upgrade_mode_if_stale(&mode, false).to_string();
-
         if mode.starts_with("lines:") {
             fresh = true;
         }
@@ -143,7 +140,7 @@ impl CtxReadTool {
                 crate::tools::ctx_read::handle_fresh_with_task_resolved(
                     &mut cache,
                     path,
-                    &effective_mode,
+                    &mode,
                     ctx.crp_mode,
                     task_ref,
                 )
@@ -151,7 +148,7 @@ impl CtxReadTool {
                 crate::tools::ctx_read::handle_with_task_resolved(
                     &mut cache,
                     path,
-                    &effective_mode,
+                    &mode,
                     ctx.crp_mode,
                     task_ref,
                 )
@@ -166,12 +163,6 @@ impl CtxReadTool {
             (content, rmode, orig, hit, fref, stats_snapshot)
         };
 
-        let stale_note = if !ctx.minimal && effective_mode != mode {
-            format!("[cache stale, {mode}→{effective_mode}]\n")
-        } else {
-            String::new()
-        };
-        let output = format!("{stale_note}{output}");
         let output_tokens = crate::core::tokens::count_tokens(&output);
         let saved = original.saturating_sub(output_tokens);
 

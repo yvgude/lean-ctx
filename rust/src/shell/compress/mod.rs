@@ -1,5 +1,5 @@
 mod classification;
-mod engine;
+pub(crate) mod engine;
 mod footer;
 mod passthrough;
 #[cfg(test)]

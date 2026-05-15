@@ -123,16 +123,6 @@ impl McpTool for CtxShellTool {
                 None
             };
 
-            let savings_note = if !ctx.minimal
-                && !raw
-                && saved > 0
-                && crate::core::protocol::savings_footer_visible()
-            {
-                format!("\n[saved {saved} tokens vs native Shell]")
-            } else {
-                String::new()
-            };
-
             let shell_mismatch = if cfg!(windows) && !raw {
                 shell_mismatch_hint(&command, &result_out)
             } else {
@@ -140,7 +130,7 @@ impl McpTool for CtxShellTool {
             };
 
             let result_out = crate::core::redaction::redact_text_if_enabled(&result_out);
-            let final_out = format!("{result_out}{savings_note}{tee_hint}{shell_mismatch}");
+            let final_out = format!("{result_out}{tee_hint}{shell_mismatch}");
 
             Ok(ToolOutput {
                 text: final_out,

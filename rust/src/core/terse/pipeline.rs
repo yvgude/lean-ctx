@@ -188,27 +188,4 @@ mod tests {
         assert_eq!(result.output, "");
         assert_eq!(result.tokens_before, 0);
     }
-
-    #[test]
-    fn result_footer_format() {
-        let result = TerseResult {
-            output: "compressed".to_string(),
-            tokens_before: 500,
-            tokens_after: 120,
-            savings_pct: 76.0,
-            layers_applied: vec!["patterns", "deterministic"],
-            pattern_savings: 340,
-            terse_savings: 40,
-            quality_passed: true,
-        };
-        let footer = result.format_footer();
-        assert!(
-            footer.contains("500→120"),
-            "footer should show token counts: {footer}"
-        );
-        assert!(
-            footer.contains("76%"),
-            "footer should show percentage: {footer}"
-        );
-    }
 }

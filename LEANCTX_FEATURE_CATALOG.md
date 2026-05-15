@@ -21,7 +21,7 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 
 ## Runtime Surface (Current)
 
-- Granular MCP tools: **60**
+- Granular MCP tools: **56**
 - Unified MCP tools: **5**
 - MCP Resources: **5**
 - MCP Prompts: **5**
@@ -43,7 +43,7 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 
 ---
 
-## Granular MCP Tools (60)
+## Granular MCP Tools (56)
 
 ### A) Read / Search / IO Surface
 
@@ -65,11 +65,9 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 
 ### B) Architecture / Analysis / Discovery
 
-- `ctx_graph`
-- `ctx_graph_diagram` _(deprecated alias -> `ctx_graph action=diagram`)_
-- `ctx_callgraph` _(canonical)_
-- `ctx_callers` _(deprecated alias -> `ctx_callgraph direction=callers`)_
-- `ctx_callees` _(deprecated alias -> `ctx_callgraph direction=callees`)_
+- `ctx_graph` _(actions: build, related, symbol, impact, status, enrich, context, diagram)_
+- `ctx_callgraph` _(direction=callers|callees)_
+- `ctx_refactor` _(LSP: rename, references, definition, implementations)_
 - `ctx_architecture`
 - `ctx_impact`
 - `ctx_review`
@@ -119,8 +117,7 @@ Import supports three formats: native `ProjectKnowledge` JSON, simple `[{categor
 - `ctx_metrics`
 - `ctx_cost`
 - `ctx_heatmap`
-- `ctx_gain` _(canonical for wrapped report via `action=wrapped`)_
-- `ctx_wrapped` _(deprecated alias -> `ctx_gain action=wrapped`)_
+- `ctx_gain` _(actions: wrapped, summary, delta)_
 - `ctx_execute`
 - `ctx_benchmark`
 - `ctx_response`
@@ -205,12 +202,13 @@ Tier 1–4 classification determines feature gating for resources, prompts, elic
 
 ---
 
-## Deprecation Map (Canonical Paths)
+## Removed Aliases (v3.6.1+)
 
-- `ctx_callers` -> `ctx_callgraph direction=callers`
-- `ctx_callees` -> `ctx_callgraph direction=callees`
-- `ctx_graph_diagram` -> `ctx_graph action=diagram`
-- `ctx_wrapped` -> `ctx_gain action=wrapped`
+Previously deprecated aliases have been removed. Use the canonical tools:
+- `ctx_callgraph direction=callers` (was: ctx_callers)
+- `ctx_callgraph direction=callees` (was: ctx_callees)
+- `ctx_graph action=diagram` (was: ctx_graph_diagram)
+- `ctx_gain action=wrapped` (was: ctx_wrapped)
 
 ---
 

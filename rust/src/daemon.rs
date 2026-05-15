@@ -128,10 +128,8 @@ pub fn stop_daemon() -> Result<()> {
         return Ok(());
     }
 
-    // Step 1: Try graceful HTTP shutdown.
     let http_shutdown_ok = try_http_shutdown();
 
-    // Step 2: Wait up to 3s for process exit.
     if http_shutdown_ok {
         for _ in 0..30 {
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -141,7 +139,6 @@ pub fn stop_daemon() -> Result<()> {
         }
     }
 
-    // Step 3: OS-level graceful termination if still alive.
     if ipc::process::is_alive(pid) {
         let _ = ipc::process::terminate_gracefully(pid);
         for _ in 0..20 {
@@ -152,16 +149,22 @@ pub fn stop_daemon() -> Result<()> {
         }
     }
 
-    // Step 4: Force kill as last resort.
     if ipc::process::is_alive(pid) {
         eprintln!("Daemon (PID {pid}) did not stop gracefully, force killing.");
         let _ = ipc::process::force_kill(pid);
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(200));
     }
 
     let _ = fs::remove_file(&pid_path);
     ipc::cleanup(&daemon_addr());
     eprintln!("lean-ctx daemon stopped (PID {pid}).");
+
+    let orphans = ipc::process::find_pids_by_name("lean-ctx");
+    if !orphans.is_empty() {
+        eprintln!("  Cleaning up {} orphan process(es)…", orphans.len());
+        ipc::process::kill_all_by_name("lean-ctx");
+    }
+
     Ok(())
 }
 

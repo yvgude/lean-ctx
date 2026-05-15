@@ -319,6 +319,7 @@ pub mod wrapped;
 // Feature-gated modules
 // ---------------------------------------------------------------------------
 pub mod archive;
+pub mod archive_fts;
 pub mod artifact_index;
 pub mod artifacts;
 pub mod buddy;

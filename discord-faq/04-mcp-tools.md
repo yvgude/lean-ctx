@@ -15,7 +15,7 @@ Important distinction:
 
 If you're using `pi-lean-ctx` (Pi editor), make sure you're on the latest version — earlier versions didn't route reads through the MCP cache.
 
-**Q: `ctx_graph` / `ctx_callers` / `ctx_callees` don't find anything!**
+**Q: `ctx_graph` / `ctx_callgraph` don't find anything!**
 1. Build the graph first: use `ctx_graph` with action `build`
 2. On **Windows**: path handling was fixed in v3.2.2 — make sure to update
 3. Check that your project root is correct: `lean-ctx doctor`
@@ -60,12 +60,12 @@ lean-ctx provides 5 slash commands (MCP prompts) for context management:
 Available in IDEs that support MCP prompts (Cursor, Claude Code, Kiro, VS Code Copilot, Zed).
 
 **Q: What are Dynamic Tool Categories?**
-lean-ctx splits its 63+ tools into 6 categories. In supporting IDEs, only the **core** category is loaded by default — additional categories are loaded on demand:
+lean-ctx splits its 56+ tools into 6 categories. In supporting IDEs, only the **core** category is loaded by default — additional categories are loaded on demand:
 
 | Category | Tools | Loaded by default |
 |----------|-------|-------------------|
 | `core` | ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_edit | yes |
-| `intelligence` | ctx_graph, ctx_callers, ctx_callees, ctx_semantic_search | no |
+| `intelligence` | ctx_graph, ctx_callgraph, ctx_refactor, ctx_semantic_search | no |
 | `session` | ctx_session, ctx_knowledge, ctx_agent | no |
 | `metrics` | ctx_metrics, ctx_gain, ctx_benchmark | no |
 | `advanced` | ctx_compress, ctx_dedup, ctx_preload, ctx_overview | no |

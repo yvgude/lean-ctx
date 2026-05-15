@@ -31,6 +31,8 @@ pub struct CacheEntry {
     /// Whether full (uncompressed) content was already delivered for this hash.
     /// Prevents cache-stub loops when upgrading from compressed to full mode.
     pub full_content_delivered: bool,
+    /// Last read mode used for this file (for auto-escalation on edit failure).
+    pub last_mode: String,
 }
 
 const ZSTD_LEVEL: i32 = 3;
@@ -68,6 +70,7 @@ impl CacheEntry {
             stored_mtime,
             compressed_outputs: HashMap::new(),
             full_content_delivered: false,
+            last_mode: String::new(),
         }
     }
 
@@ -295,6 +298,11 @@ impl SessionCache {
     /// Looks up a cached entry by file path.
     pub fn get(&self, path: &str) -> Option<&CacheEntry> {
         self.entries.get(&normalize_key(path))
+    }
+
+    /// Mutable lookup of a cached entry by file path.
+    pub fn get_mut(&mut self, path: &str) -> Option<&mut CacheEntry> {
+        self.entries.get_mut(&normalize_key(path))
     }
 
     /// Retrieves the full (uncompressed) content for a file path, if cached.

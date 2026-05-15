@@ -1,7 +1,3 @@
-use crate::core::patterns;
-use crate::core::protocol;
-use crate::core::symbol_map::{self, SymbolMap};
-use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
 const MAX_COMMAND_BYTES: usize = 8192;
@@ -143,64 +139,14 @@ pub fn normalize_command_for_shell(command: &str) -> String {
     String::from_utf8(result).unwrap_or_else(|_| command.to_string())
 }
 
-/// Compresses shell command output using pattern matching, dedup, and symbol mapping.
-pub fn handle(command: &str, output: &str, crp_mode: CrpMode) -> String {
-    let original_tokens = count_tokens(output);
-
-    // OutputPolicy gate: protected commands bypass ALL compression.
-    let policy = crate::shell::output_policy::classify(command, &[]);
-    if policy.is_protected() {
-        let savings = protocol::format_savings(original_tokens, original_tokens);
-        return format!("{output}\n{savings}");
-    }
-
-    if !is_search_command(command) && contains_auth_flow(output) {
-        let savings = protocol::format_savings(original_tokens, original_tokens);
-        return format!(
-            "{output}\n[lean-ctx: auth/device-code flow detected — output preserved uncompressed]\n{savings}"
-        );
-    }
-
-    let raw_compressed = match patterns::compress_output(command, output) {
-        Some(c) if is_search_command(command) => {
-            if count_tokens(&c) <= count_tokens(output) {
-                c
-            } else {
-                output.to_string()
-            }
-        }
-        Some(c) => crate::core::compressor::safeguard_ratio(output, &c),
-        None if is_search_command(command) => {
-            let stripped = crate::core::compressor::strip_ansi(output);
-            stripped.clone()
-        }
-        None => generic_compress(output),
-    };
-    let compressed = crate::core::compressor::verbatim_compact(&raw_compressed);
-
-    if crp_mode.is_tdd() && looks_like_code(&compressed) {
-        let ext = detect_ext_from_command(command);
-        let mut sym = SymbolMap::new();
-        let idents = symbol_map::extract_identifiers(&compressed, ext);
-        for ident in &idents {
-            sym.register(ident);
-        }
-        if !sym.is_empty() {
-            let mapped = sym.apply(&compressed);
-            let sym_table = sym.format_table();
-            let result = format!("{mapped}{sym_table}");
-            let sent = count_tokens(&result);
-            let savings = protocol::format_savings(original_tokens, sent);
-            return format!("{result}\n{savings}");
-        }
-    }
-
-    let sent = count_tokens(&compressed);
-    let savings = protocol::format_savings(original_tokens, sent);
-
-    format!("{compressed}\n{savings}")
+/// Compresses shell command output using the unified compression pipeline.
+/// This delegates to the same `compress_if_beneficial` logic used by the CLI,
+/// ensuring consistent behavior for excluded_commands, structural routing, and terse.
+pub fn handle(command: &str, output: &str, _crp_mode: CrpMode) -> String {
+    crate::shell::compress::engine::compress_if_beneficial(command, output)
 }
 
+#[cfg(test)]
 fn is_search_command(command: &str) -> bool {
     let cmd = command.trim_start();
     cmd.starts_with("grep ")
@@ -211,6 +157,7 @@ fn is_search_command(command: &str) -> bool {
         || cmd.starts_with("ack ")
 }
 
+#[cfg(test)]
 fn generic_compress(output: &str) -> String {
     let output = crate::core::compressor::strip_ansi(output);
     let lines: Vec<&str> = output
@@ -238,57 +185,6 @@ fn generic_compress(output: &str) -> String {
         omitted,
         last.join("\n")
     )
-}
-
-fn looks_like_code(text: &str) -> bool {
-    let indicators = [
-        "fn ",
-        "pub ",
-        "let ",
-        "const ",
-        "impl ",
-        "struct ",
-        "enum ",
-        "function ",
-        "class ",
-        "import ",
-        "export ",
-        "def ",
-        "async ",
-        "=>",
-        "->",
-        "::",
-        "self.",
-        "this.",
-    ];
-    let total_lines = text.lines().count();
-    if total_lines < 3 {
-        return false;
-    }
-    let code_lines = text
-        .lines()
-        .filter(|l| indicators.iter().any(|i| l.contains(i)))
-        .count();
-    code_lines as f64 / total_lines as f64 > 0.15
-}
-
-fn detect_ext_from_command(command: &str) -> &str {
-    let cmd = command.to_lowercase();
-    if cmd.contains("cargo") || cmd.contains(".rs") {
-        "rs"
-    } else if cmd.contains("npm")
-        || cmd.contains("node")
-        || cmd.contains(".ts")
-        || cmd.contains(".js")
-    {
-        "ts"
-    } else if cmd.contains("python") || cmd.contains("pip") || cmd.contains(".py") {
-        "py"
-    } else if cmd.contains("go ") || cmd.contains(".go") {
-        "go"
-    } else {
-        "rs"
-    }
 }
 
 /// Detects OAuth device code flow output that must not be compressed.

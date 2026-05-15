@@ -107,24 +107,6 @@ impl LeanCtxServer {
         self.write_mcp_live_stats().await;
     }
 
-    /// Returns true if over an hour has passed since the last tool call.
-    pub async fn is_prompt_cache_stale(&self) -> bool {
-        let last = *self.last_call.read().await;
-        last.elapsed().as_secs() > 3600
-    }
-
-    /// Promotes lightweight read modes to richer ones when the prompt cache is stale.
-    pub fn upgrade_mode_if_stale(mode: &str, stale: bool) -> &str {
-        if !stale {
-            return mode;
-        }
-        match mode {
-            "full" => "full",
-            "map" => "signatures",
-            m => m,
-        }
-    }
-
     /// Increments the call counter and returns true if a checkpoint is due.
     pub fn increment_and_check(&self) -> bool {
         let count = self.call_count.fetch_add(1, Ordering::Relaxed) + 1;

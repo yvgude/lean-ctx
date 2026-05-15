@@ -1203,6 +1203,10 @@ pub fn run() {
                 cmd_restart();
                 return;
             }
+            "dev-install" => {
+                cmd_dev_install();
+                return;
+            }
             "doctor" => {
                 let code = doctor::run_cli(&rest);
                 if code != 0 {
@@ -1429,7 +1433,7 @@ fn print_help() {
     println!(
         "lean-ctx {version} — Context Runtime for AI Agents
 
-95+ compression patterns | 59 MCP tools | Context Continuity Protocol
+95+ compression patterns | 60+ MCP tools | 10 read modes | Context Continuity Protocol
 
 USAGE:
     lean-ctx                       Start MCP server (stdio)
@@ -1501,6 +1505,7 @@ COMMANDS:
     slow-log [list|clear]          Show/clear slow command log (~/.lean-ctx/slow-commands.log)
     update [--check]               Self-update lean-ctx binary from GitHub Releases
     restart                        Restart daemon (applies config.toml changes)
+    dev-install                    Build release + atomic install + restart (for development)
     gotchas [list|clear|export|stats] Bug Memory: view/manage auto-detected error patterns
     buddy [show|stats|ascii|json]  Token Guardian: your data-driven coding companion
     doctor integrations [--json]   Integration health checks (Cursor/Claude Code)
@@ -1619,15 +1624,31 @@ GITHUB:  https://github.com/yvgude/lean-ctx
 
 fn cmd_restart() {
     use crate::daemon;
+    use crate::ipc;
 
-    eprintln!("Restarting lean-ctx daemon…");
+    eprintln!("Restarting lean-ctx…");
 
-    if daemon::is_daemon_running() {
-        if let Err(e) = daemon::stop_daemon() {
-            eprintln!("  Warning: stop failed: {e}");
-        }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+    if let Err(e) = daemon::stop_daemon() {
+        eprintln!("  Warning: daemon stop: {e}");
     }
+
+    let orphans = ipc::process::kill_all_by_name("lean-ctx");
+    if orphans > 0 {
+        eprintln!("  Terminated {orphans} orphan process(es).");
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let remaining = ipc::process::find_pids_by_name("lean-ctx");
+    if !remaining.is_empty() {
+        eprintln!(
+            "  Warning: {} process(es) still alive: {:?}",
+            remaining.len(),
+            remaining
+        );
+    }
+
+    daemon::cleanup_daemon_files();
 
     match daemon::start_daemon(&[]) {
         Ok(()) => eprintln!("  ✓ Daemon restarted. Config changes are now active."),
@@ -1636,4 +1657,125 @@ fn cmd_restart() {
             std::process::exit(1);
         }
     }
+}
+
+fn cmd_dev_install() {
+    use crate::ipc;
+
+    let cargo_root = find_cargo_project_root();
+    let Some(cargo_root) = cargo_root else {
+        eprintln!("Error: No Cargo.toml found. Run from the lean-ctx project directory.");
+        std::process::exit(1);
+    };
+
+    eprintln!("Building release binary…");
+    let build = std::process::Command::new("cargo")
+        .args(["build", "--release"])
+        .current_dir(&cargo_root)
+        .status();
+
+    match build {
+        Ok(s) if s.success() => {}
+        Ok(s) => {
+            eprintln!("  Build failed with exit code {}", s.code().unwrap_or(-1));
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("  Build failed: {e}");
+            std::process::exit(1);
+        }
+    }
+
+    let built_binary = cargo_root.join("target/release/lean-ctx");
+    if !built_binary.exists() {
+        eprintln!(
+            "  Error: Built binary not found at {}",
+            built_binary.display()
+        );
+        std::process::exit(1);
+    }
+
+    let install_path = resolve_install_path();
+    eprintln!("Installing to {}…", install_path.display());
+
+    eprintln!("  Stopping all lean-ctx processes…");
+    let _ = crate::daemon::stop_daemon();
+    ipc::process::kill_all_by_name("lean-ctx");
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let old_path = install_path.with_extension("old");
+    if install_path.exists() {
+        if let Err(e) = std::fs::rename(&install_path, &old_path) {
+            eprintln!("  Warning: rename existing binary: {e}");
+        }
+    }
+
+    match std::fs::copy(&built_binary, &install_path) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&old_path);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ =
+                    std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
+            }
+            eprintln!("  ✓ Binary installed.");
+        }
+        Err(e) => {
+            eprintln!("  Error: copy failed: {e}");
+            if old_path.exists() {
+                let _ = std::fs::rename(&old_path, &install_path);
+                eprintln!("  Rolled back to previous binary.");
+            }
+            std::process::exit(1);
+        }
+    }
+
+    eprintln!("  Starting daemon…");
+    match crate::daemon::start_daemon(&[]) {
+        Ok(()) => {}
+        Err(e) => eprintln!("  Warning: daemon start: {e} (will be started by editor)"),
+    }
+
+    let version = std::process::Command::new(&install_path)
+        .arg("--version")
+        .output()
+        .map_or_else(
+            |_| "unknown".to_string(),
+            |o| String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        );
+
+    eprintln!("  ✓ dev-install complete: {version}");
+}
+
+fn find_cargo_project_root() -> Option<std::path::PathBuf> {
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        if dir.join("Cargo.toml").exists() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+fn resolve_install_path() -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Ok(canonical) = exe.canonicalize() {
+            let is_in_cargo_target = canonical.components().any(|c| c.as_os_str() == "target");
+            if !is_in_cargo_target && canonical.exists() {
+                return canonical;
+            }
+        }
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let local_bin = std::path::PathBuf::from(&home).join(".local/bin/lean-ctx");
+        if local_bin.parent().is_some_and(std::path::Path::exists) {
+            return local_bin;
+        }
+    }
+
+    std::path::PathBuf::from("/usr/local/bin/lean-ctx")
 }

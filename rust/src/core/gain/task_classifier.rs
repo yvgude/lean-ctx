@@ -45,17 +45,16 @@ impl TaskClassifier {
         match t.as_str() {
             "ctx_edit" | "ctx_fill" => TaskCategory::Refactoring,
             "ctx_read" | "ctx_multi_read" | "ctx_smart_read" | "ctx_delta" | "ctx_tree"
-            | "ctx_search" | "ctx_outline" | "ctx_graph" | "ctx_graph_diagram"
-            | "ctx_callgraph" => TaskCategory::Exploration,
+            | "ctx_search" | "ctx_outline" | "ctx_graph" | "ctx_callgraph" => {
+                TaskCategory::Exploration
+            }
             "ctx_semantic_search" | "ctx_architecture" | "ctx_impact" => TaskCategory::Architecture,
             "ctx_overview" | "ctx_preload" | "ctx_task" | "ctx_intent" | "ctx_workflow" => {
                 TaskCategory::Planning
             }
             "ctx_handoff" | "ctx_agent" | "ctx_share" => TaskCategory::Delegation,
             "ctx_session" | "ctx_knowledge" | "ctx_compress_memory" => TaskCategory::Knowledge,
-            "ctx_cost" | "ctx_gain" | "ctx_metrics" | "ctx_wrapped" | "ctx_heatmap" => {
-                TaskCategory::Review
-            }
+            "ctx_cost" | "ctx_gain" | "ctx_metrics" | "ctx_heatmap" => TaskCategory::Review,
             "ctx_shell" | "ctx_execute" => TaskCategory::Debugging,
             _ => TaskCategory::General,
         }

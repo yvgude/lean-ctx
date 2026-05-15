@@ -11,18 +11,6 @@ pub enum CrpMode {
 }
 
 impl CrpMode {
-    pub fn from_env() -> Self {
-        match std::env::var("LEAN_CTX_CRP_MODE")
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str()
-        {
-            "off" => Self::Off,
-            "compact" => Self::Compact,
-            _ => Self::Tdd,
-        }
-    }
-
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "off" => Some(Self::Off),
@@ -200,7 +188,7 @@ pub fn meta_visible() -> bool {
         || matches!(std::env::var("LEAN_CTX_DIAGNOSTICS"), Ok(v) if v.trim() == "1")
 }
 
-/// Formats a token savings summary like `[42 tok saved (30%)]`.
+/// Formats a unified token savings footer like `[lean-ctx: 100→50 tok, -50%]`.
 ///
 /// Returns an empty string when savings footers are suppressed (MCP context in `auto` mode,
 /// or `savings_footer = "never"`).
@@ -208,12 +196,15 @@ pub fn format_savings(original: usize, compressed: usize) -> String {
     if !savings_footer_visible() {
         return String::new();
     }
-    let saved = original.saturating_sub(compressed);
     if original == 0 {
-        return "0 tok saved".to_string();
+        return String::new();
+    }
+    let saved = original.saturating_sub(compressed);
+    if saved == 0 {
+        return String::new();
     }
     let pct = (saved as f64 / original as f64 * 100.0).round() as usize;
-    format!("[{saved} tok saved ({pct}%)]")
+    format!("[lean-ctx: {original}\u{2192}{compressed} tok, -{pct}%]")
 }
 
 /// Appends a savings footer to `output` with a newline separator, but only if the footer is non-empty.
@@ -417,10 +408,10 @@ mod tests {
         std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "always");
         let s = super::format_savings(100, 50);
         assert!(
-            s.contains("50 tok saved"),
-            "expected savings bracket, got: {s}"
+            s.contains("100\u{2192}50 tok"),
+            "expected unified format, got: {s}"
         );
-        assert!(s.contains("50%"), "expected percentage, got: {s}");
+        assert!(s.contains("-50%"), "expected percentage, got: {s}");
     }
 
     #[test]

@@ -407,7 +407,7 @@ fn seed_knowledge(project_root: &str) {
         (
             "ARCHITECTURE",
             "mcp-protocol",
-            "63 MCP tools via rmcp crate",
+            "60+ MCP tools via rmcp crate",
             0.96,
         ),
         (

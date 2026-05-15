@@ -47,24 +47,8 @@ impl SessionState {
     }
 
     fn with_compression_from_config(mut self) -> Self {
-        let level = if let Some(env_level) = crate::core::config::CompressionLevel::from_env() {
-            env_level
-        } else {
-            let profile = crate::core::profiles::active_profile();
-            let terse = profile.compression.terse_mode_effective();
-            let density = profile.compression.output_density_effective();
-            let od = match density {
-                "ultra" => crate::core::config::OutputDensity::Ultra,
-                "terse" => crate::core::config::OutputDensity::Terse,
-                _ => crate::core::config::OutputDensity::Normal,
-            };
-            let ta = if terse {
-                crate::core::config::TerseAgent::Full
-            } else {
-                crate::core::config::TerseAgent::Off
-            };
-            crate::core::config::CompressionLevel::from_legacy(&ta, &od)
-        };
+        let cfg = crate::core::config::Config::load();
+        let level = crate::core::config::CompressionLevel::effective(&cfg);
         self.compression_level = level.label().to_string();
         self.terse_mode = level.is_active();
         self

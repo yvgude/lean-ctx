@@ -120,7 +120,7 @@ Important distinction:
 
 If you're using `pi-lean-ctx` (Pi editor), make sure you're on the latest version — earlier versions didn't route reads through the MCP cache.
 
-**Q: `ctx_graph` / `ctx_callers` / `ctx_callees` don't find anything!**
+**Q: `ctx_graph` / `ctx_callgraph` don't find anything!**
 1. Build the graph first: use `ctx_graph` with action `build`
 2. On **Windows**: path handling was fixed in v3.2.2 — make sure to update
 3. Check that your project root is correct: `lean-ctx doctor`

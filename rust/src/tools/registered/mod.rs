@@ -4,8 +4,6 @@ pub mod ctx_architecture;
 pub mod ctx_artifacts;
 pub mod ctx_benchmark;
 pub mod ctx_cache;
-pub mod ctx_callees;
-pub mod ctx_callers;
 pub mod ctx_callgraph;
 pub mod ctx_compile;
 pub mod ctx_compress;
@@ -24,7 +22,6 @@ pub mod ctx_feedback;
 pub mod ctx_fill;
 pub mod ctx_gain;
 pub mod ctx_graph;
-pub mod ctx_graph_diagram;
 pub mod ctx_handoff;
 pub mod ctx_heatmap;
 pub mod ctx_impact;
@@ -43,6 +40,7 @@ pub mod ctx_proof;
 pub mod ctx_provider;
 pub mod ctx_radar;
 pub mod ctx_read;
+pub mod ctx_refactor;
 pub mod ctx_response;
 pub mod ctx_retrieve;
 pub mod ctx_review;
@@ -59,7 +57,6 @@ pub mod ctx_task;
 pub mod ctx_tree;
 pub mod ctx_verify;
 pub mod ctx_workflow;
-pub mod ctx_wrapped;
 
 /// Resolve a relative path against session state (sync version).
 /// Replicates the core logic of `LeanCtxServer::resolve_path` without

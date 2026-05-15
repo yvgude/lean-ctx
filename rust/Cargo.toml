@@ -3,7 +3,7 @@ name = "lean-ctx"
 version = "3.6.0"
 edition = "2021"
 autobins = false
-description = "Context Runtime for AI Agents with CCP. 63 MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing + diaries, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24 AI tools. Reduces LLM token consumption by up to 99%."
+description = "Context Runtime for AI Agents with CCP. 56+ MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing + diaries, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 26 AI tools. Reduces LLM token consumption by up to 99%."
 license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
@@ -167,6 +167,7 @@ moka = { version = "0.12.15", features = ["sync"] }
 bincode = { version = "2", features = ["serde"] }
 zstd = "0.13"
 memmap2 = "0.9"
+lsp-types = "0.97"
 
 [lints.rust]
 unreachable_pub = "warn"

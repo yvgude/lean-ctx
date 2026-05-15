@@ -628,20 +628,6 @@ pull (receive files shared by other agents), list (show all shared contexts), cl
             }),
         ),
         tool_def(
-            "ctx_wrapped",
-            "Savings report card. Deprecated alias for ctx_gain action=wrapped.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "period": {
-                        "type": "string",
-                        "enum": ["week", "month", "all"],
-                        "description": "Report period (default: week)"
-                    }
-                }
-            }),
-        ),
-        tool_def(
             "ctx_cost",
             "Cost attribution (local-first). Actions: report|agent|tools|json|reset.",
             json!({
@@ -898,18 +884,6 @@ code block instead of the entire file. 90-97% fewer tokens than full file read."
             }),
         ),
         tool_def(
-            "ctx_graph_diagram",
-            "Generate a Mermaid diagram of the dependency or call graph. Deprecated alias for ctx_graph action=diagram.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "file": { "type": "string", "description": "Optional: scope to dependencies of a specific file" },
-                    "depth": { "type": "integer", "description": "Max depth (default: 2)" },
-                    "kind": { "type": "string", "description": "deps (file dependencies) or calls (symbol call graph)" }
-                }
-            }),
-        ),
-        tool_def(
             "ctx_routes",
             "List HTTP routes/endpoints extracted from the project. Supports Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.",
             json!({
@@ -930,30 +904,6 @@ Preserves code blocks, URLs, paths, headings, tables. Creates .original.md backu
                     "path": { "type": "string", "description": "Path to memory file" }
                 },
                 "required": ["path"]
-            }),
-        ),
-        tool_def(
-            "ctx_callers",
-            "Find all symbols that call a given function/method. Deprecated alias for ctx_callgraph direction=callers.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "symbol": { "type": "string", "description": "Symbol name to find callers of" },
-                    "file": { "type": "string", "description": "Optional: scope to a specific file" }
-                },
-                "required": ["symbol"]
-            }),
-        ),
-        tool_def(
-            "ctx_callees",
-            "Find all functions/methods called by a given symbol. Deprecated alias for ctx_callgraph direction=callees.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "symbol": { "type": "string", "description": "Symbol name to find callees of" },
-                    "file": { "type": "string", "description": "Optional: scope to a specific file" }
-                },
-                "required": ["symbol"]
             }),
         ),
         tool_def(
@@ -984,15 +934,18 @@ Much fewer tokens than reading the full file.",
         ),
         tool_def(
             "ctx_expand",
-            "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list.",
+            "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. \
+Actions: retrieve (default), list, search_all (FTS5 cross-archive fulltext search).",
             json!({
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "Archive ID from the [Archived: ...] hint" },
-                    "action": { "type": "string", "description": "retrieve (default) or list" },
+                    "action": { "type": "string", "description": "retrieve (default), list, or search_all" },
+                    "query": { "type": "string", "description": "FTS5 query for search_all action" },
+                    "limit": { "type": "integer", "description": "Max results for search_all (default: 10)" },
                     "start_line": { "type": "integer", "description": "Start line for range retrieval" },
                     "end_line": { "type": "integer", "description": "End line for range retrieval" },
-                    "search": { "type": "string", "description": "Search pattern to filter archived output" },
+                    "search": { "type": "string", "description": "Search pattern to filter within a single archive" },
                     "session_id": { "type": "string", "description": "Filter list by session ID" }
                 }
             }),
@@ -1282,7 +1235,6 @@ pull (receive shared files), list (show all shared contexts), clear (remove your
         ("ctx_overview", "Task-relevant project map — use at session start.", json!({"type": "object", "properties": {"task": {"type": "string"}, "path": {"type": "string"}}})),
         ("ctx_preload", "Proactive context loader — reads and caches task-relevant files, returns compact L-curve-optimized summary with critical lines, imports, and signatures. Costs ~50-100 tokens instead of ~5000 for individual reads.", json!({"type": "object", "properties": {"task": {"type": "string", "description": "Task description (e.g. 'fix auth bug in validate_token')"}, "path": {"type": "string", "description": "Project root (default: .)"}}, "required": ["task"]})),
         ("ctx_prefetch", "Predictive prefetch — prewarm cache for blast radius files (graph + task signals) within budgets.", json!({"type": "object", "properties": {"root": {"type": "string"}, "task": {"type": "string"}, "changed_files": {"type": "array", "items": {"type": "string"}}, "budget_tokens": {"type": "integer"}, "max_files": {"type": "integer"}}})),
-        ("ctx_wrapped", "Deprecated alias for ctx_gain action=wrapped.", json!({"type": "object", "properties": {"period": {"type": "string"}}})),
         ("ctx_cost", "Cost attribution (local-first). Actions: report|agent|tools|json|reset.", json!({"type": "object", "properties": {"action": {"type": "string"}, "agent_id": {"type": "string"}, "limit": {"type": "integer"}}})),
         ("ctx_gain", "Gain report (includes Wrapped via action=wrapped).", json!({"type": "object", "properties": {"action": {"type": "string"}, "period": {"type": "string"}, "model": {"type": "string"}, "limit": {"type": "integer"}}})),
         ("ctx_feedback", "Harness feedback for LLM output tokens/latency (local-first). Actions: record|report|json|reset|status.", json!({"type": "object", "properties": {"action": {"type": "string"}, "agent_id": {"type": "string"}, "intent": {"type": "string"}, "model": {"type": "string"}, "llm_input_tokens": {"type": "integer"}, "llm_output_tokens": {"type": "integer"}, "latency_ms": {"type": "integer"}, "note": {"type": "string"}, "limit": {"type": "integer"}}})),
@@ -1298,12 +1250,10 @@ pull (receive shared files), list (show all shared contexts), clear (remove your
         ("ctx_symbol", "Read a specific symbol (function, struct, class) by name. Returns only the symbol code block instead of the entire file. 90-97% fewer tokens than full file read.", json!({"type": "object", "properties": {"name": {"type": "string"}, "file": {"type": "string"}, "kind": {"type": "string"}}, "required": ["name"]})),
         ("ctx_outline", "List all symbols in a file with signatures. Much fewer tokens than reading the full file.", json!({"type": "object", "properties": {"path": {"type": "string"}, "kind": {"type": "string"}}, "required": ["path"]})),
         ("ctx_compress_memory", "Compress a memory/config file (CLAUDE.md, .cursorrules) preserving code, URLs, paths. Creates .original.md backup.", json!({"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]})),
-        ("ctx_callers", "Deprecated alias for ctx_callgraph direction=callers.", json!({"type": "object", "properties": {"symbol": {"type": "string"}, "file": {"type": "string"}}, "required": ["symbol"]})),
-        ("ctx_callees", "Deprecated alias for ctx_callgraph direction=callees.", json!({"type": "object", "properties": {"symbol": {"type": "string"}, "file": {"type": "string"}}, "required": ["symbol"]})),
         ("ctx_callgraph", "Unified call graph query with direction=callers|callees.", json!({"type": "object", "properties": {"symbol": {"type": "string"}, "direction": {"type": "string"}, "file": {"type": "string"}}, "required": ["symbol"]})),
+        ("ctx_refactor", "LSP-powered refactoring (rename, references, definition, implementations). Requires language server.", json!({"type": "object", "properties": {"action": {"type": "string", "enum": ["rename", "references", "definition", "implementations"]}, "path": {"type": "string"}, "line": {"type": "integer"}, "column": {"type": "integer"}, "new_name": {"type": "string"}}, "required": ["action", "path", "line"]})),
         ("ctx_routes", "List HTTP routes/endpoints extracted from the project. Supports Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.", json!({"type": "object", "properties": {"method": {"type": "string"}, "path": {"type": "string"}}})),
-        ("ctx_graph_diagram", "Deprecated alias for ctx_graph action=diagram.", json!({"type": "object", "properties": {"file": {"type": "string"}, "depth": {"type": "integer"}, "kind": {"type": "string"}}})),
-        ("ctx_expand", "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list.", json!({"type": "object", "properties": {"id": {"type": "string", "description": "Archive ID from the [Archived: ...] hint"}, "action": {"type": "string", "description": "retrieve (default) or list"}, "start_line": {"type": "integer", "description": "Start line for range retrieval"}, "end_line": {"type": "integer", "description": "End line for range retrieval"}, "search": {"type": "string", "description": "Search pattern to filter archived output"}, "session_id": {"type": "string", "description": "Filter list by session ID"}}})),
+        ("ctx_expand", "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list, search_all (FTS5 cross-archive fulltext search).", json!({"type": "object", "properties": {"id": {"type": "string", "description": "Archive ID from the [Archived: ...] hint"}, "action": {"type": "string", "description": "retrieve (default), list, or search_all"}, "query": {"type": "string", "description": "FTS5 query for search_all action"}, "limit": {"type": "integer", "description": "Max results for search_all (default: 10)"}, "start_line": {"type": "integer", "description": "Start line for range retrieval"}, "end_line": {"type": "integer", "description": "End line for range retrieval"}, "search": {"type": "string", "description": "Search pattern to filter within a single archive"}, "session_id": {"type": "string", "description": "Filter list by session ID"}}})),
         ("ctx_review", "Automated code review: combines impact analysis, caller tracking, test discovery, and code smell detection. Actions: review (single file), diff-review (from git diff), checklist (structured review questions).", json!({"type": "object", "properties": {"action": {"type": "string", "enum": ["review", "diff-review", "checklist"], "description": "Review action"}, "path": {"type": "string", "description": "File path to review (or git diff text for diff-review)"}, "depth": {"type": "integer", "description": "Impact analysis depth (default: 3)"}}, "required": ["action"]})),
         ("ctx_provider", "External context provider (GitLab-first). Actions: gitlab_issues, gitlab_issue, gitlab_mrs, gitlab_pipelines.", json!({"type": "object", "properties": {"action": {"type": "string", "enum": ["gitlab_issues", "gitlab_issue", "gitlab_mrs", "gitlab_pipelines"]}, "state": {"type": "string", "description": "Filter by state (opened, closed, merged, all)"}, "labels": {"type": "string", "description": "Comma-separated labels filter"}, "iid": {"type": "integer", "description": "Issue/MR IID for single-item lookup"}, "status": {"type": "string", "description": "Pipeline status filter (running, success, failed)"}, "limit": {"type": "integer", "description": "Max results (default 20, max 100)"}}, "required": ["action"]})),
         ("ctx_control", "Universal context manipulation (Context Field Theory). Actions: exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history. Overlay-based, reversible, scoped.", json!({"type": "object", "properties": {"action": {"type": "string", "description": "exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history"}, "target": {"type": "string", "description": "@F1 or path or item ID"}, "value": {"type": "string", "description": "New content, view name, or priority"}, "scope": {"type": "string", "description": "call|session|project (default: session)"}, "reason": {"type": "string", "description": "Reason for the action"}}, "required": ["action"]})),

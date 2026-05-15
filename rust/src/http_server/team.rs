@@ -503,8 +503,7 @@ fn required_scopes(tool_name: &str, args: Option<&Value>) -> Option<BTreeSet<Tea
             Some(s)
         }
         // Graph scope
-        "ctx_graph" | "ctx_graph_diagram" | "ctx_impact" | "ctx_callgraph" | "ctx_callers"
-        | "ctx_callees" | "ctx_routes" => {
+        "ctx_graph" | "ctx_impact" | "ctx_callgraph" | "ctx_routes" => {
             s.insert(TeamScope::Graph);
 
             if tool_name == "ctx_graph" {

@@ -146,6 +146,8 @@ pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>)
         }
     }
 
+    super::archive_fts::index_entry(&id, tool, command, content);
+
     Some(id)
 }
 
@@ -254,6 +256,7 @@ pub fn cleanup() -> u32 {
                                 let c = content_path(&entry.id);
                                 let _ = std::fs::remove_file(&c);
                                 let _ = std::fs::remove_file(&path);
+                                super::archive_fts::remove_entry(&entry.id);
                                 removed += 1;
                             }
                         }

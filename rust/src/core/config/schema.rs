@@ -289,8 +289,8 @@ impl ConfigSchema {
             "savings_footer".into(),
             key_enum_with_env(
                 &["auto", "always", "never"],
-                "auto",
-                "Controls visibility of token savings footers: auto (suppress in MCP, show in CLI), always, never",
+                "never",
+                "Controls visibility of token savings footers: never (default, suppress everywhere), always, auto (context-dependent)",
                 "LEAN_CTX_SAVINGS_FOOTER",
             ),
         );

@@ -12,6 +12,8 @@ const SEARCH_SHELL_PREFIXES: &[&str] = &["grep ", "rg ", "find ", "fd ", "ag ", 
 pub struct LoopDetector {
     call_history: HashMap<String, Vec<Instant>>,
     duplicate_counts: HashMap<String, u32>,
+    tool_total_counts: HashMap<String, u32>,
+    tool_total_limits: HashMap<String, u32>,
     search_group_history: Vec<Instant>,
     recent_search_patterns: Vec<String>,
     normal_threshold: u32,
@@ -55,11 +57,12 @@ impl LoopDetector {
         Self {
             call_history: HashMap::new(),
             duplicate_counts: HashMap::new(),
+            tool_total_counts: HashMap::new(),
+            tool_total_limits: cfg.tool_total_limits.clone(),
             search_group_history: Vec::new(),
             recent_search_patterns: Vec::new(),
             normal_threshold: cfg.normal_threshold.max(1),
             reduced_threshold: cfg.reduced_threshold.max(2),
-            // 0 = never block (LeanCTX default), >0 = block after N identical calls
             blocked_threshold: cfg.blocked_threshold,
             window: Duration::from_secs(cfg.window_secs),
             search_group_limit: if cfg.blocked_threshold == 0 {
@@ -75,13 +78,35 @@ impl LoopDetector {
         let now = Instant::now();
         self.prune_window(now);
 
+        // Per-tool total count (regardless of args)
+        let total = self.tool_total_counts.entry(tool.to_string()).or_insert(0);
+        *total += 1;
+        let total_count = *total;
+
+        if let Some(&limit) = self.tool_total_limits.get(tool) {
+            if total_count > limit {
+                let msg = if crate::core::protocol::meta_visible() {
+                    Some(format!(
+                        "Warning: {tool} called {total_count}x total (limit: {limit}). \
+                         Consider ctx_compress or narrowing scope."
+                    ))
+                } else {
+                    None
+                };
+                return ThrottleResult {
+                    level: ThrottleLevel::Reduced,
+                    call_count: total_count,
+                    message: msg,
+                };
+            }
+        }
+
         let key = format!("{tool}:{args_fingerprint}");
         let entries = self.call_history.entry(key.clone()).or_default();
         entries.push(now);
         let count = entries.len() as u32;
         *self.duplicate_counts.entry(key).or_default() = count;
 
-        // blocked_threshold == 0 means blocking is disabled (LeanCTX default)
         if self.blocked_threshold > 0 && count > self.blocked_threshold {
             return ThrottleResult {
                 level: ThrottleLevel::Blocked,
@@ -376,6 +401,7 @@ mod tests {
             blocked_threshold: blocked,
             window_secs: 300,
             search_group_limit: 10,
+            tool_total_limits: std::collections::HashMap::new(),
         }
     }
 

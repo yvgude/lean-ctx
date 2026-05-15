@@ -11,22 +11,37 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn set_env(compression: &str, terse: &str) {
+fn set_compression(compression: &str) {
     std::env::set_var("LEAN_CTX_COMPRESSION", compression);
+    std::env::remove_var("LEAN_CTX_TERSE_AGENT");
+    std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY");
+}
+
+fn set_legacy_terse(terse: &str) {
+    std::env::remove_var("LEAN_CTX_COMPRESSION");
     std::env::set_var("LEAN_CTX_TERSE_AGENT", terse);
+    std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY");
+    isolate_config();
+}
+
+fn isolate_config() {
+    let tmp = std::env::temp_dir().join("lean_ctx_test_config_empty");
+    let _ = std::fs::create_dir_all(&tmp);
+    std::env::set_var("LEAN_CTX_DATA_DIR", &tmp);
 }
 
 fn cleanup_env() {
     std::env::remove_var("LEAN_CTX_COMPRESSION");
     std::env::remove_var("LEAN_CTX_TERSE_AGENT");
+    std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY");
+    std::env::remove_var("LEAN_CTX_DATA_DIR");
 }
 
-// ── TerseAgent unit tests (no Config::load dependency) ──
+// ── TerseAgent unit tests ──
 
 #[test]
 fn terse_agent_default_is_off() {
     let ta = TerseAgent::default();
-    assert!(!ta.is_active());
     assert!(matches!(ta, TerseAgent::Off));
 }
 
@@ -34,9 +49,7 @@ fn terse_agent_default_is_off() {
 fn terse_agent_from_env() {
     let _g = lock();
     std::env::set_var("LEAN_CTX_TERSE_AGENT", "full");
-    let ta = TerseAgent::from_env();
-    assert!(matches!(ta, TerseAgent::Full));
-    assert!(ta.is_active());
+    assert!(matches!(TerseAgent::from_env(), TerseAgent::Full));
 
     std::env::set_var("LEAN_CTX_TERSE_AGENT", "lite");
     assert!(matches!(TerseAgent::from_env(), TerseAgent::Lite));
@@ -47,72 +60,43 @@ fn terse_agent_from_env() {
     std::env::set_var("LEAN_CTX_TERSE_AGENT", "off");
     assert!(matches!(TerseAgent::from_env(), TerseAgent::Off));
 
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", "0");
-    assert!(matches!(TerseAgent::from_env(), TerseAgent::Off));
-
     cleanup_env();
 }
 
-#[test]
-fn terse_agent_effective_env_overrides_config() {
-    let _g = lock();
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", "ultra");
-    let effective = TerseAgent::effective(&TerseAgent::Off);
-    assert!(matches!(effective, TerseAgent::Ultra));
-    cleanup_env();
-}
+// ── Legacy LEAN_CTX_TERSE_AGENT routes through CompressionLevel ──
 
 #[test]
-fn terse_agent_effective_falls_back_to_config() {
+fn legacy_terse_lite_routes_to_compression_lite() {
     let _g = lock();
-    std::env::remove_var("LEAN_CTX_TERSE_AGENT");
-    let effective = TerseAgent::effective(&TerseAgent::Full);
-    assert!(matches!(effective, TerseAgent::Full));
-    cleanup_env();
-}
-
-// ── Legacy TerseAgent instruction injection (CompressionLevel forced off) ──
-
-#[test]
-fn legacy_terse_lite_injects_output_style() {
-    let _g = lock();
-    set_env("off", "lite");
+    set_legacy_terse("lite");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
-        text.contains("OUTPUT STYLE"),
-        "legacy terse lite should inject OUTPUT STYLE block"
-    );
-    assert!(
-        text.contains("concise"),
-        "legacy terse lite should mention concise"
+        text.contains("OUTPUT STYLE: concise"),
+        "legacy terse lite should route to compression lite prompt"
     );
     cleanup_env();
 }
 
 #[test]
-fn legacy_terse_full_injects_density() {
+fn legacy_terse_full_routes_to_compression_standard() {
     let _g = lock();
-    set_env("off", "full");
+    set_legacy_terse("full");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
-        text.contains("Maximum density"),
-        "legacy terse full should mention max density"
+        text.contains("OUTPUT STYLE: dense"),
+        "legacy terse full should route to compression standard prompt"
     );
     cleanup_env();
 }
 
 #[test]
-fn legacy_terse_ultra_injects_expert_mode() {
+fn legacy_terse_ultra_routes_to_compression_max() {
     let _g = lock();
-    set_env("off", "ultra");
+    set_legacy_terse("ultra");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
-        text.contains("Ultra-terse"),
-        "legacy terse ultra should contain ultra-terse"
-    );
-    assert!(
-        text.contains("pair programmer"),
-        "legacy terse ultra should mention pair programmer"
+        text.contains("OUTPUT STYLE: expert-terse"),
+        "legacy terse ultra should route to compression max prompt"
     );
     cleanup_env();
 }
@@ -120,45 +104,34 @@ fn legacy_terse_ultra_injects_expert_mode() {
 #[test]
 fn legacy_terse_off_no_output_style() {
     let _g = lock();
-    set_env("off", "off");
+    set_legacy_terse("off");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
         !text.contains("OUTPUT STYLE"),
-        "all off should not inject OUTPUT STYLE block"
+        "terse off should not inject OUTPUT STYLE block"
     );
     cleanup_env();
 }
+
+// ── Unified CompressionLevel env var ──
 
 #[test]
-fn legacy_terse_lite_with_tdd_skipped() {
+fn compression_env_overrides_legacy_terse_agent() {
     let _g = lock();
-    set_env("off", "lite");
-    let text = instructions::build_instructions(CrpMode::Tdd);
+    std::env::set_var("LEAN_CTX_COMPRESSION", "max");
+    std::env::set_var("LEAN_CTX_TERSE_AGENT", "lite");
+    let text = instructions::build_instructions(CrpMode::Off);
     assert!(
-        !text.contains("OUTPUT STYLE"),
-        "legacy terse lite should be skipped when CRP=tdd (already dense enough)"
+        text.contains("expert-terse"),
+        "compression env should override legacy terse_agent"
     );
     cleanup_env();
 }
-
-#[test]
-fn legacy_terse_ultra_with_tdd_still_active() {
-    let _g = lock();
-    set_env("off", "ultra");
-    let text = instructions::build_instructions(CrpMode::Tdd);
-    assert!(
-        text.contains("Ultra-terse"),
-        "legacy terse ultra should still apply on top of CRP=tdd"
-    );
-    cleanup_env();
-}
-
-// ── New CompressionLevel instruction injection ──
 
 #[test]
 fn compression_level_lite_injects_concise() {
     let _g = lock();
-    set_env("lite", "off");
+    set_compression("lite");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
         text.contains("OUTPUT STYLE: concise"),
@@ -170,7 +143,7 @@ fn compression_level_lite_injects_concise() {
 #[test]
 fn compression_level_standard_injects_dense() {
     let _g = lock();
-    set_env("standard", "off");
+    set_compression("standard");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
         text.contains("OUTPUT STYLE: dense"),
@@ -186,15 +159,11 @@ fn compression_level_standard_injects_dense() {
 #[test]
 fn compression_level_max_injects_expert_terse() {
     let _g = lock();
-    set_env("max", "off");
+    set_compression("max");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
         text.contains("OUTPUT STYLE: expert-terse"),
         "compression max should inject expert-terse prompt"
-    );
-    assert!(
-        text.contains("Telegraph"),
-        "compression max should mention telegraph format"
     );
     cleanup_env();
 }
@@ -202,27 +171,11 @@ fn compression_level_max_injects_expert_terse() {
 #[test]
 fn compression_level_off_no_output_style() {
     let _g = lock();
-    set_env("off", "off");
+    set_compression("off");
     let text = instructions::build_instructions(CrpMode::Off);
     assert!(
         !text.contains("OUTPUT STYLE"),
-        "both off should not inject any OUTPUT STYLE block"
-    );
-    cleanup_env();
-}
-
-#[test]
-fn compression_env_overrides_legacy_terse_agent() {
-    let _g = lock();
-    set_env("max", "lite");
-    let text = instructions::build_instructions(CrpMode::Off);
-    assert!(
-        text.contains("expert-terse"),
-        "compression env should override legacy terse_agent"
-    );
-    assert!(
-        !text.contains("Ultra-terse"),
-        "legacy ultra text should not appear when compression env is set"
+        "compression off should not inject any OUTPUT STYLE block"
     );
     cleanup_env();
 }

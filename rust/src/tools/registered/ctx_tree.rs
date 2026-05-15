@@ -40,15 +40,10 @@ impl McpTool for CtxTreeTool {
         let sent = crate::core::tokens::count_tokens(&result);
         let saved = original.saturating_sub(sent);
 
-        let savings_note =
-            if !ctx.minimal && saved > 0 && crate::core::protocol::savings_footer_visible() {
-                format!("\n[saved {saved} tokens vs native ls]")
-            } else {
-                String::new()
-            };
+        let final_out = crate::core::protocol::append_savings(&result, original, sent);
 
         Ok(ToolOutput {
-            text: format!("{result}{savings_note}"),
+            text: final_out,
             original_tokens: original,
             saved_tokens: saved,
             mode: None,

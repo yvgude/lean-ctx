@@ -24,7 +24,7 @@ pub fn handle(path: &str, kind_filter: Option<&str>) -> (String, usize) {
 
     let filtered = filter_by_kind(&sigs, kind_filter);
 
-    let crp = CrpMode::from_env();
+    let crp = CrpMode::effective();
     let outline = format_outline(&filtered, path, crp);
 
     let full_tokens = count_tokens(&content);

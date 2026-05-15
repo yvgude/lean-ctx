@@ -26,15 +26,17 @@ pub use crate::core::protocol::CrpMode;
 // Re-exported here for backward compatibility.
 
 impl CrpMode {
-    /// Effective CRP mode: explicit env var wins; otherwise use active profile.
+    /// Effective CRP mode: explicit env var wins; otherwise derived from CompressionLevel.
     pub fn effective() -> Self {
         if let Ok(v) = std::env::var("LEAN_CTX_CRP_MODE") {
             if !v.trim().is_empty() {
-                return Self::parse(&v).unwrap_or(Self::Tdd);
+                return Self::parse(&v).unwrap_or(Self::Off);
             }
         }
-        let p = crate::core::profiles::active_profile();
-        Self::parse(p.compression.crp_mode_effective()).unwrap_or(Self::Tdd)
+        let config = crate::core::config::Config::load();
+        let level = crate::core::config::CompressionLevel::effective(&config);
+        let (_, _, crp_str, _) = level.to_components();
+        Self::parse(crp_str).unwrap_or(Self::Off)
     }
 
     /// Returns true if the mode is TDD (maximum compression).

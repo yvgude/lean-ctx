@@ -274,21 +274,40 @@ mod tests {
     }
 
     #[test]
-    fn git_log_with_patch_filters_diff_content() {
+    fn git_log_with_patch_keeps_hunks_for_few_commits() {
         let output = "commit abc1234567890\nAuthor: User <user@email.com>\nDate:   Mon Mar 25 10:00:00 2026 +0100\n\n    feat: add feature\n\ndiff --git a/src/main.rs b/src/main.rs\nindex abc1234..def5678 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,3 +1,4 @@\n fn main() {\n+    println!(\"hello\");\n     let x = 1;\n }\n\ncommit def4567890abc\nAuthor: User <user@email.com>\nDate:   Sun Mar 24 09:00:00 2026 +0100\n\n    fix: resolve issue\n\ndiff --git a/src/lib.rs b/src/lib.rs\nindex 111..222 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1,2 @@\n+pub fn helper() {}\n";
         let result = compress("git log -p", output).unwrap();
         assert!(
-            !result.contains("println"),
-            "should NOT contain diff content, got: {result}"
+            result.contains("println"),
+            "1-3 commits with -p should KEEP diff hunks, got: {result}"
         );
         assert!(result.contains("abc1234"), "should contain commit hash");
         assert!(
             result.contains("feat: add feature"),
             "should contain commit message"
         );
+    }
+
+    #[test]
+    fn git_log_with_patch_summarizes_many_commits() {
+        let mut output = String::new();
+        for i in 0..10 {
+            output.push_str(&format!(
+                "commit {i:07}abc1234\nAuthor: U <u@e.com>\nDate:   Mon\n\n    msg {i}\n\ndiff --git a/src/f{i}.rs b/src/f{i}.rs\nindex 111..222 100644\n--- a/src/f{i}.rs\n+++ b/src/f{i}.rs\n@@ -1 +1,2 @@\n+line {i}\n\n"
+            ));
+        }
+        let result = compress("git log -p", &output).unwrap();
         assert!(
-            result.len() < output.len() / 2,
-            "compressed should be less than half of original ({} vs {})",
+            result.contains("msg 0"),
+            "newest commit message should be present"
+        );
+        assert!(
+            result.contains("+line 0"),
+            "newest commit should have hunks preserved"
+        );
+        assert!(
+            result.len() < output.len(),
+            "should be compressed ({} vs {})",
             result.len(),
             output.len()
         );

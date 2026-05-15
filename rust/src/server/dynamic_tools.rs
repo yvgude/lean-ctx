@@ -46,9 +46,8 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         | "ctx_execute" | "ctx_context" | "ctx_cache" | "ctx_retrieve" | "ctx_discover_tools"
         | "ctx_pack" | "ctx_feedback" => ToolCategory::Core,
 
-        "ctx_graph" | "ctx_architecture" | "ctx_impact" | "ctx_callers" | "ctx_callees"
-        | "ctx_callgraph" | "ctx_symbol" | "ctx_graph_diagram" | "ctx_routes" | "ctx_smells"
-        | "ctx_index" => ToolCategory::Arch,
+        "ctx_graph" | "ctx_architecture" | "ctx_impact" | "ctx_callgraph" | "ctx_refactor"
+        | "ctx_symbol" | "ctx_routes" | "ctx_smells" | "ctx_index" => ToolCategory::Arch,
 
         "ctx_benchmark" | "ctx_heatmap" | "ctx_verify" | "ctx_analyze" | "ctx_profile"
         | "ctx_proof" | "ctx_review" => ToolCategory::Debug,
@@ -59,8 +58,8 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         | "ctx_provider"
         | "ctx_artifacts" => ToolCategory::Memory,
 
-        "ctx_metrics" | "ctx_cost" | "ctx_gain" | "ctx_intent" | "ctx_response" | "ctx_wrapped"
-        | "ctx_outline" | "ctx_radar" => ToolCategory::Metrics,
+        "ctx_metrics" | "ctx_cost" | "ctx_gain" | "ctx_intent" | "ctx_response" | "ctx_outline"
+        | "ctx_radar" => ToolCategory::Metrics,
 
         "ctx_share" | "ctx_task" | "ctx_handoff" | "ctx_workflow" => ToolCategory::Session,
 

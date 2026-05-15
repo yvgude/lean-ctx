@@ -87,14 +87,7 @@ impl McpTool for CtxSearchTool {
         let sent = crate::core::tokens::count_tokens(&result);
         let saved = original.saturating_sub(sent);
 
-        let savings_note =
-            if !ctx.minimal && saved > 0 && crate::core::protocol::savings_footer_visible() {
-                format!("\n[saved {saved} tokens vs native Grep]")
-            } else {
-                String::new()
-            };
-
-        let final_out = format!("{result}{savings_note}");
+        let final_out = crate::core::protocol::append_savings(&result, original, sent);
 
         Ok(ToolOutput {
             text: final_out,

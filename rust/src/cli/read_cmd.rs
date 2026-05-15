@@ -216,7 +216,7 @@ pub fn cmd_read(args: &[String]) {
             let level = crate::core::config::CompressionLevel::effective(&config);
             if level.is_active() {
                 let terse_result = crate::core::terse::pipeline::compress(&output, &level, None);
-                if terse_result.quality_passed && terse_result.savings_pct >= 1.0 {
+                if terse_result.quality_passed && terse_result.savings_pct >= 3.0 {
                     output = terse_result.output;
                 }
             }
