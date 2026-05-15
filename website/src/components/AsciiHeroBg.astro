@@ -163,7 +163,9 @@ const art = scenes[variant] || scenes['index'];
 
 const tileHorizontally = (block: string, repeats: number) => {
   const lines = block.split('\n');
-  return lines.map(line => Array(repeats).fill(line).join('   ')).join('\n');
+  const maxLen = Math.max(...lines.map(l => l.length));
+  const padded = lines.map(l => l.padEnd(maxLen));
+  return padded.map(line => Array(repeats).fill(line).join('  ')).join('\n');
 };
 
 const tiledArt = tileHorizontally(art, 4);
@@ -187,7 +189,7 @@ const fullArt = tiledArt + '\n' + tiledArt + '\n' + tiledArt;
     font-size: clamp(9px, 1.1vw, 15px);
     line-height: 1.3;
     color: var(--color-accent);
-    opacity: 0.32;
+    opacity: 0.25;
     white-space: pre;
     text-align: left;
     margin: 0;
