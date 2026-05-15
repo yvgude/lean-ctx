@@ -217,7 +217,7 @@ body {
   contain: layout style;
 }
 .ascii-global-bg .ascii-hero-bg pre {
-  opacity: 0.2;
+  opacity: 0.14;
 }
 .ascii-global-bg::after {
   content: '';
