@@ -46,7 +46,13 @@ export default defineConfig({
     '/shell-hook/': '/how-it-works/',
     '/dashboard/': '/',
     '/cloud/': '/',
-    '/docs/tools/[...slug]/': '/tools/',
+    '/docs/tools/': '/tools/',
+    '/docs/tools/core/': '/tools/',
+    '/docs/tools/analysis/': '/tools/',
+    '/docs/tools/intelligence/': '/tools/',
+    '/docs/tools/memory/': '/tools/',
+    '/docs/tools/session/': '/tools/',
+    '/docs/tools/workflow/': '/tools/',
   },
   integrations: [
     sitemap({
