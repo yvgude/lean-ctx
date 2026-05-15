@@ -15,6 +15,7 @@ interface Props {
   keywords?: string;
   breadcrumbs?: Array<{ name: string; url: string }>;
   extraJsonLd?: string;
+  hideAscii?: boolean;
 }
 
 const {
@@ -25,6 +26,7 @@ const {
   keywords = 'lean-ctx, reduce AI token costs, MCP server, Claude Code costs, Cursor token optimization, Copilot API costs, context compression, Rust, Gemini CLI, Windsurf, context engineering, agentic coding',
   breadcrumbs,
   extraJsonLd,
+  hideAscii = false,
 } = Astro.props;
 
 const locale = getLocaleFromUrl(Astro.url) as Locale;
@@ -257,9 +259,11 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   </script>
 </head>
 <body class="min-h-screen flex flex-col">
-  <div class="ascii-global-bg" aria-hidden="true">
-    <AsciiHeroBg variant="index" />
-  </div>
+  {!hideAscii && (
+    <div class="ascii-global-bg" aria-hidden="true">
+      <AsciiHeroBg variant="index" />
+    </div>
+  )}
   <Header />
   <main id="main-content" class="flex-1" role="main">
     <slot />
