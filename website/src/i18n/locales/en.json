@@ -4292,6 +4292,7 @@
   "nav.docs.more": "More",
   "nav.docs.changelog": "Changelog",
   "nav.docs.changelogDesc": "Release history and what's new",
+  "nav.docs.concepts.caching": "Caching",
   "nav.docs.concepts.cachingDesc": "Session cache and mtime-based invalidation",
   "nav.learn.startHereBadge": "Start here",
   "nav.contextOs": "Context OS",

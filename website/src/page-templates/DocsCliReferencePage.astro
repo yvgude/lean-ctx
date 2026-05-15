@@ -40,7 +40,6 @@ const sidebar = [
   {
     title: t('docs.common.related'),
     items: [
-      { label: t('docs.cliReference.sidebarAnalyticsGuide'), href: lp('/docs/analytics') },
       { label: t('docs.cliReference.sidebarQuickRef'), href: lp('/docs/quick-reference') },
       { label: t('docs.cliReference.sidebarConfiguration'), href: lp('/docs/configuration') },
       { label: t('docs.cliReference.sidebarGettingStarted'), href: lp('/docs/getting-started') },
@@ -51,7 +50,7 @@ const sidebar = [
 
 <DocsLayout title={t('docs.cliReference.title')} description={t('docs.cliReference.description')} sidebar={sidebar}>
 
-  <p><Fragment set:html={t('docs.cliReference.intro', { quickRefPath: lp('/docs/quick-reference'), analyticsPath: lp('/docs/analytics') })} /></p>
+  <p><Fragment set:html={t('docs.cliReference.intro', { quickRefPath: lp('/docs/quick-reference'), analyticsPath: lp('/docs/tools/analysis') })} /></p>
 
   <hr />
 
@@ -392,7 +391,7 @@ lean-ctx register user@example.com --password mypassword</code></pre>
 
   <h2 id="analytics">{t('docs.cliReference.analyticsTitle')}</h2>
 
-  <p><Fragment set:html={t('docs.cliReference.analyticsIntro', { analyticsPath: lp('/docs/analytics') })} /></p>
+  <p><Fragment set:html={t('docs.cliReference.analyticsIntro', { analyticsPath: lp('/docs/tools/analysis') })} /></p>
 
   <h3 id="gain"><code>lean-ctx gain [flags]</code></h3>
   <p>{t('docs.cliReference.gainDesc')}</p>
