@@ -160,10 +160,18 @@ const scenes: Record<string, string> = {
 };
 
 const art = scenes[variant] || scenes['index'];
+
+const tileHorizontally = (block: string, repeats: number) => {
+  const lines = block.split('\n');
+  return lines.map(line => Array(repeats).fill(line).join('   ')).join('\n');
+};
+
+const tiledArt = tileHorizontally(art, 4);
+const fullArt = tiledArt + '\n' + tiledArt + '\n' + tiledArt;
 ---
 
 <div class="ascii-hero-bg" aria-hidden="true">
-  <pre set:text={art + '\n' + art + '\n' + art} />
+  <pre set:text={fullArt} />
 </div>
 
 <style>
@@ -185,7 +193,5 @@ const art = scenes[variant] || scenes['index'];
     margin: 0;
     padding: 0;
     user-select: none;
-    min-width: 100vw;
-    width: max-content;
   }
 </style>
