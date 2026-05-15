@@ -95,8 +95,8 @@ const faqSchema = JSON.stringify({
     </div>
 
     <p class="fluid-sm text-muted/60 animate-entrance" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      Deep dive: <a href={lp('/docs/concepts/shell-patterns')} class="text-accent hover:underline">Shell Patterns</a> (56 pattern modules) &nbsp;·&nbsp;
-      <a href={lp('/docs/concepts/read-modes')} class="text-accent hover:underline">Read Modes</a> (10 compression modes) &nbsp;·&nbsp;
+      Deep dive: <a href={lp('/docs/concepts/shell-patterns')} class="text-accent hover:underline">Shell Patterns</a> (95+ pattern modules) &nbsp;·&nbsp;
+      <a href={lp('/docs/concepts/read-modes')} class="text-accent hover:underline">Read Modes</a> ({manifest.read_modes.count} compression modes) &nbsp;·&nbsp;
       <a href={lp('/docs/concepts/caching')} class="text-accent hover:underline">Caching</a>
     </p>
 
@@ -213,7 +213,7 @@ const faqSchema = JSON.stringify({
       </div>
       <p class="fluid-sm text-muted/60 mt-4">
         {t('howItWorks.setupGuidePrefix')} <a href={lp('/docs/getting-started')} class="text-accent hover:underline">{t('howItWorks.setupGuideLink')}</a> &nbsp;·&nbsp;
-        {t('howItWorks.cliCommandsPrefix')} <a href={lp('/cli')} class="text-accent hover:underline">{t('howItWorks.cliCommandsLink')}</a>
+        {t('howItWorks.cliCommandsPrefix')} <a href={lp('/docs/cli-reference')} class="text-accent hover:underline">{t('howItWorks.cliCommandsLink')}</a>
       </p>
     </div>
 
@@ -269,6 +269,9 @@ const faqSchema = JSON.stringify({
       <li class="fluid-sm text-muted" set:html={t('howItWorks.securityToctou')} />
       <li class="fluid-sm text-muted" set:html={t('howItWorks.securityIntegrity')} />
     </ul>
+    <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem); padding: clamp(0.5rem, 0.4rem + 0.2vw, 0.7rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      {t('howItWorks.securityCta')}
+    </a>
   </div>
 </section>
 
