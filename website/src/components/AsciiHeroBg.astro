@@ -173,9 +173,6 @@ const art = scenes[variant] || scenes['index'];
     overflow: hidden;
     z-index: -2;
     pointer-events: none;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
   }
   .ascii-hero-bg pre {
     font-family: var(--font-mono);
@@ -186,8 +183,9 @@ const art = scenes[variant] || scenes['index'];
     white-space: pre;
     text-align: left;
     margin: 0;
-    padding: 1rem 2rem;
+    padding: 0;
     user-select: none;
-    width: 100%;
+    min-width: 100vw;
+    width: max-content;
   }
 </style>
