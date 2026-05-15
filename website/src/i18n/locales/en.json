@@ -3317,7 +3317,7 @@
   "dash.knowledgeSearch": "Search knowledge…",
   "dash.bugMemory": "Bug Memory",
   "dash.modelsAdaptiveTitle": "What Adaptive Models Do For You",
-  "dash.modelsIntro": "Every time lean-ctx reads a file via <code style=\"color:#34d399;font-size:0.6875rem\">ctx_read</code>, it decides <strong style=\"color:var(--color-text-bright)\">how to compress</strong> it. Without models, it uses conservative defaults. <strong style=\"color:var(--color-text-bright)\">With models, it picks the best compression mode automatically</strong> - saving you 40–90% tokens per file.",
+  "dash.modelsIntro": "Every time lean-ctx reads a file via <code style=\"color:#00ff41;font-size:0.6875rem\">ctx_read</code>, it decides <strong style=\"color:var(--color-text-bright)\">how to compress</strong> it. Without models, it uses conservative defaults. <strong style=\"color:var(--color-text-bright)\">With models, it picks the best compression mode automatically</strong> - saving you 40–90% tokens per file.",
   "dash.modelsWithout": "Without Models",
   "dash.modelsWith": "With Models",
   "dash.modelsWithoutDesc": "Result: <strong>2,400 tokens</strong><br>lean-ctx doesn't know that <code>signatures</code> mode works great for .rs config files.",

@@ -29,12 +29,12 @@ const problems = [
       </h2>
     </div>
 
-    <div class="grid md:grid-cols-3 gap-0">
+    <div class="grid md:grid-cols-3 gap-0 border border-accent/20">
       {problems.map((p, i) => (
-        <div class:list={['py-8 md:py-10 md:px-8 text-center animate-entrance', i > 0 && 'border-t md:border-t-0 md:border-l border-white/[0.06]']}>
-          <p class="stat-value text-3xl sm:text-4xl text-accent mb-1">{p.number}</p>
-          <p class="text-[11px] text-muted uppercase tracking-wider mb-5">{p.label}</p>
-          <h3 class="text-sm font-semibold font-display text-text-bright mb-2">{p.title}</h3>
+        <div class:list={['py-8 md:py-10 md:px-8 text-center animate-entrance', i > 0 && 'border-t md:border-t-0 md:border-l border-accent/20']}>
+          <p class="stat-value text-3xl sm:text-4xl text-accent mb-1 font-mono" style="text-shadow: 0 0 12px rgba(0, 255, 65, 0.4);">{p.number}</p>
+          <p class="text-[11px] text-accent/60 uppercase tracking-wider mb-5 font-mono">{p.label}</p>
+          <h3 class="text-sm font-semibold font-mono text-accent mb-2">{p.title}</h3>
           <p class="text-[13px] text-muted leading-relaxed max-w-xs mx-auto">{p.description}</p>
         </div>
       ))}

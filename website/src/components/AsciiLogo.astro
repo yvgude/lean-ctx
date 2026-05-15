@@ -1,0 +1,36 @@
+---
+interface Props {
+  size?: 'sm' | 'md' | 'lg';
+  class?: string;
+}
+
+const { size = 'md', class: className = '' } = Astro.props;
+
+const sizeClass = {
+  sm: 'text-[0.5rem] sm:text-[0.6rem]',
+  md: 'text-[0.6rem] sm:text-[0.75rem] md:text-[0.85rem]',
+  lg: 'text-[0.7rem] sm:text-[0.9rem] md:text-[1.1rem]',
+}[size];
+---
+
+<pre class:list={['ascii-logo', sizeClass, className]} aria-label="LeanCTX" role="img">
+{`  ╦  ╔═╗╔═╗╔╗╔ ╔═╗╔╦╗═╗ ╦
+  ║  ║╣ ╠═╣║║║ ║   ║  ╔╩╦╝
+  ╩═╝╚═╝╩ ╩╝╚╝ ╚═╝ ╩  ╩ ╚═`}</pre>
+
+<style>
+  .ascii-logo {
+    font-family: var(--font-mono);
+    color: var(--color-accent);
+    text-shadow: 0 0 12px rgba(0, 255, 65, 0.5), 0 0 24px rgba(0, 255, 65, 0.2);
+    line-height: 1.2;
+    white-space: pre;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    user-select: none;
+    letter-spacing: 0;
+  }
+</style>

@@ -45,12 +45,12 @@ const dimensions = [
       </h2>
     </div>
 
-    <div class="grid sm:grid-cols-2 gap-px bg-white/[0.04] rounded-xl overflow-hidden mb-14 sm:mb-20">
+    <div class="grid sm:grid-cols-2 gap-px bg-accent/10 overflow-hidden mb-14 sm:mb-20 border border-accent/20">
       {dimensions.map((d) => (
         <div class="bg-bg p-6 sm:p-8 animate-entrance">
           <div class="flex items-center gap-2 mb-3">
-            <p class:list={['text-[11px] font-medium uppercase tracking-wider', d.accent]}>{d.subtitle}</p>
-            <span class:list={['px-2 py-0.5 text-[10px] font-semibold rounded-full border', d.badgeColor]}>{d.badge}</span>
+            <p class:list={['text-[11px] font-mono font-medium uppercase tracking-wider', d.accent]}>{d.subtitle}</p>
+            <span class:list={['px-2 py-0.5 text-[10px] font-mono font-semibold border', d.badgeColor]}>{d.badge}</span>
           </div>
           <h3 class="text-base font-semibold font-display text-text-bright mb-2">{d.title}</h3>
           <p class="text-[13px] text-muted leading-relaxed">{d.description}</p>

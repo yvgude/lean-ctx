@@ -113,8 +113,8 @@ const editorConfigs = [
             <button
               data-editor={e.id}
               class:list={[
-                'shrink-0 px-3.5 py-2 text-xs font-medium transition-all editor-tab cursor-pointer whitespace-nowrap rounded-t-lg',
-                i === 0 ? 'text-accent bg-white/[0.04]' : 'text-muted hover:text-text'
+                'shrink-0 px-3.5 py-2 text-xs font-mono font-medium transition-all editor-tab cursor-pointer whitespace-nowrap',
+                i === 0 ? 'text-accent bg-white/[0.04]' : 'text-muted hover:text-accent'
               ]}
             >
               {e.label}
@@ -123,7 +123,7 @@ const editorConfigs = [
         </div>
         {editorConfigs.map((e, i) => (
           <div data-editor-panel={e.id} class:list={['editor-panel', i !== 0 && 'hidden']}>
-            <pre class="rounded-b-xl rounded-tr-xl overflow-hidden terminal-body p-4 sm:p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto"><code>{e.code}</code></pre>
+            <pre class="overflow-hidden terminal-body p-4 sm:p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto border border-accent/20 border-t-0"><code>{e.code}</code></pre>
           </div>
         ))}
 

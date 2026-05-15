@@ -668,7 +668,7 @@ ctx_expand id="a1b2c3d4"
     <code>ctx_call</code> is a compatibility meta-tool that lets MCP clients call any <code>ctx_*</code> tool by name using a stable schema.
     This is useful for clients that freeze the tool registry at startup (static <code>tools/list</code>).
   </p>
-  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+  <table class="w-full text-sm border border-border rounded-none overflow-hidden">
     <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Parameter</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
     <tbody>
       <tr class="border-t border-border"><td class="px-4 py-2 font-mono text-accent">tool</td><td class="px-4 py-2">string</td><td class="px-4 py-2">Name of the ctx_* tool to call (e.g. <code>ctx_read</code>)</td></tr>
@@ -683,7 +683,7 @@ ctx_expand id="a1b2c3d4"
     <code>ctx_provider</code> fetches external context from providers like GitLab. It supports listing issues, MRs, and pipelines directly within the agent context.
     Requires <code>GITLAB_TOKEN</code> or <code>LEAN_CTX_GITLAB_TOKEN</code> environment variable.
   </p>
-  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+  <table class="w-full text-sm border border-border rounded-none overflow-hidden">
     <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Parameter</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
     <tbody>
       <tr class="border-t border-border"><td class="px-4 py-2 font-mono text-accent">action</td><td class="px-4 py-2">string</td><td class="px-4 py-2"><code>gitlab_issues</code>, <code>gitlab_issue</code>, <code>gitlab_mrs</code>, <code>gitlab_pipelines</code></td></tr>

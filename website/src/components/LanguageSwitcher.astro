@@ -58,7 +58,7 @@ const showSwitcher = locales.length > 1;
     color: var(--color-muted);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 0;
     cursor: pointer;
     transition: color 0.2s, border-color 0.2s;
     line-height: 1;
@@ -66,7 +66,7 @@ const showSwitcher = locales.length > 1;
   }
 
   .lang-trigger:hover {
-    color: var(--color-text-bright);
+    color: var(--color-accent);
     border-color: var(--color-border-light);
   }
 
@@ -93,8 +93,8 @@ const showSwitcher = locales.length > 1;
     padding: 6px;
     background: var(--color-surface-3);
     border: 1px solid var(--color-border);
-    border-radius: 10px;
-    box-shadow: var(--shadow-card);
+    border-radius: 0;
+    box-shadow: 0 0 16px rgba(0, 255, 65, 0.08);
     animation: langDropIn 0.15s ease;
     display: none;
   }
@@ -118,14 +118,14 @@ const showSwitcher = locales.length > 1;
     font-size: 0.8125rem;
     color: var(--color-text);
     text-decoration: none;
-    border-radius: 6px;
+    border-radius: 0;
     transition: background 0.15s, color 0.15s;
     white-space: nowrap;
   }
 
   .lang-option:hover {
-    background: var(--overlay-heavy);
-    color: var(--color-text-bright);
+    background: rgba(0, 255, 65, 0.06);
+    color: var(--color-accent);
   }
 
   .lang-option.is-active {

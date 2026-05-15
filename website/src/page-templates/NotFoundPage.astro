@@ -8,25 +8,32 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 ---
 
 <BaseLayout title={t('notFound.title')} noindex={true}>
-  <div class="relative max-w-xl mx-auto px-6 py-32 sm:py-40 text-center">
-    <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
-      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-radial-[at_50%_50%] from-accent/[0.04] to-transparent rounded-full"></div>
-    </div>
-    <div class="relative">
-      <p class="stat-value text-[8rem] sm:text-[10rem] gradient-text leading-none mb-4" style="filter:drop-shadow(0 0 40px rgba(52,211,153,0.1))">404</p>
-      <h1 class="font-display text-2xl sm:text-3xl font-bold mb-4 text-text-bright">{t('notFound.heading')}</h1>
-      <p class="text-sm text-muted mb-10 max-w-sm mx-auto leading-relaxed">{t('notFound.description')}</p>
-      <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
-        <a href={lp('/')} class="btn-glossy inline-flex items-center px-8 py-3.5 text-sm font-bold rounded-xl text-bg">
+  <div class="max-w-2xl mx-auto px-6 py-32 sm:py-40 font-mono">
+    <div class="border border-border rounded-none bg-surface p-6 sm:p-8">
+      <div class="text-accent text-xs mb-4 glow-green">$ curl -I {Astro.url.pathname}</div>
+      <div class="text-text-bright text-sm mb-2">HTTP/1.1 <span class="text-accent font-bold text-4xl sm:text-5xl glow-green">404</span></div>
+      <div class="text-muted text-sm mb-6">
+        <p>Status: Not Found</p>
+        <p>Path: {Astro.url.pathname}</p>
+      </div>
+      <div class="border-t border-border pt-4 mb-6">
+        <p class="text-muted text-sm">{t('notFound.heading')}</p>
+        <p class="text-muted text-xs mt-2">{t('notFound.description')}</p>
+      </div>
+      <div class="flex flex-col sm:flex-row items-start gap-3">
+        <a href={lp('/')} class="btn-primary inline-flex items-center px-6 py-2.5 text-sm font-bold rounded-none text-bg">
           {t('notFound.backToHome')}
           <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
           </svg>
         </a>
-        <a href={lp('/docs/getting-started')} class="btn-outline-glossy inline-flex items-center px-8 py-3.5 text-sm font-medium rounded-xl text-text">
+        <a href={lp('/docs/getting-started')} class="btn-outline inline-flex items-center px-6 py-2.5 text-sm font-medium rounded-none text-text">
           {t('notFound.readTheDocs')}
         </a>
       </div>
+    </div>
+    <div class="text-muted text-xs mt-4 font-mono">
+      <span class="text-accent">$</span> <span class="text-muted">_</span>
     </div>
   </div>
 </BaseLayout>

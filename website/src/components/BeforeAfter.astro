@@ -266,8 +266,8 @@ fn rateLimiter(max,window)
         <button
           data-tab={d.id}
           class:list={[
-            'shrink-0 px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 demo-tab cursor-pointer whitespace-nowrap',
-            i === 0 ? 'text-accent bg-white/[0.04]' : 'text-muted hover:text-text'
+            'shrink-0 px-3.5 py-2 text-xs font-mono font-medium transition-all duration-200 demo-tab cursor-pointer whitespace-nowrap',
+            i === 0 ? 'text-accent bg-white/[0.04]' : 'text-muted hover:text-accent'
           ]}
         >
           {d.label}
@@ -282,17 +282,17 @@ fn rateLimiter(max,window)
       >
         <div>
           <div class="flex items-center justify-between mb-3">
-            <span class="text-xs font-mono text-muted">Without LeanCTX</span>
+            <span class="text-xs font-mono text-danger">- Without LeanCTX</span>
             <span class="text-xs font-mono text-danger/80">~{d.before.tokens} tokens</span>
           </div>
-          <div class="rounded-xl overflow-hidden border border-white/[0.06]">
+          <div class="overflow-hidden border border-danger/20">
             <pre class="terminal-body p-4 sm:p-5 text-xs font-mono text-muted leading-relaxed overflow-x-auto max-h-[300px] overflow-y-auto"><code>{d.before.code}</code></pre>
           </div>
         </div>
 
         <div>
           <div class="flex items-center justify-between mb-3">
-            <span class="text-xs font-mono text-accent">With LeanCTX</span>
+            <span class="text-xs font-mono text-accent">+ With LeanCTX</span>
             <span class="text-xs font-mono text-accent">~{d.after.tokens} tokens <span class="text-accent-bright">(-{d.after.saving})</span></span>
           </div>
           <div class="terminal-chrome">

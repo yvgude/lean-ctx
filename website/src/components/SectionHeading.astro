@@ -83,7 +83,7 @@ const descStyle = [
 
 <h2
   class={`font-display ${titleSizeClass} font-bold text-text-bright animate-entrance stagger-1 ${align === 'center' ? 'text-center' : ''}`}
-  style={titleStyle}
+  style={`${titleStyle} text-shadow: 0 0 20px rgba(0, 255, 65, 0.15), 0 0 40px rgba(0, 255, 65, 0.05);`}
 >
   {titleHtml ? (
     <Fragment set:html={titleHtml} />

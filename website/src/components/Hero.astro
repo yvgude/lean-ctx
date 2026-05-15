@@ -5,9 +5,9 @@
       <div class="hero-content">
         <p class="hero-fade text-[11px] font-medium uppercase tracking-[0.2em] text-accent mb-5">Stop burning tokens on noise</p>
 
-        <h1 class="hero-fade font-display text-[2rem] leading-[1.1] sm:text-[2.75rem] lg:text-[3.5rem] font-bold tracking-tight sm:leading-[1.08] mb-5 sm:mb-6">
+        <h1 class="hero-fade font-display text-[2rem] leading-[1.1] sm:text-[2.75rem] lg:text-[3.5rem] font-bold tracking-tight sm:leading-[1.08] mb-5 sm:mb-6 glow-green">
           Every token counts.
-          <span class="gradient-text-green"> Make yours go further.</span>
+          <span class="gradient-text"> Make yours go further.</span>
         </h1>
 
         <p class="hero-fade text-sm sm:text-base text-muted leading-relaxed mb-5 max-w-lg">
@@ -53,13 +53,13 @@
         </div>
 
         <div class="hero-fade flex flex-col sm:flex-row gap-3 sm:gap-4">
-          <a href="/docs/getting-started" class="btn-glossy inline-flex items-center justify-center px-8 py-3.5 text-sm font-bold rounded-xl text-bg">
+          <a href="/docs/getting-started" class="btn-primary inline-flex items-center justify-center px-8 py-3.5 text-sm font-bold">
             Get Started
             <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
             </svg>
           </a>
-          <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline-glossy inline-flex items-center justify-center px-8 py-3.5 text-sm font-medium rounded-xl text-text">
+          <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center justify-center px-8 py-3.5 text-sm font-medium">
             <svg class="mr-2 w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
             </svg>
@@ -72,9 +72,9 @@
       <div class="hidden lg:block">
         <div class="terminal-chrome">
           <div class="terminal-header flex items-center gap-2 px-5 py-3">
-            <div class="terminal-dot" style="background:#ef4444"></div>
-            <div class="terminal-dot" style="background:#eab308"></div>
-            <div class="terminal-dot" style="background:#34d399"></div>
+            <span class="text-[11px] font-mono" style="color:#ff3333">[x]</span>
+            <span class="text-[11px] font-mono" style="color:#ffcc00">[-]</span>
+            <span class="text-[11px] font-mono" style="color:#00ff41">[o]</span>
             <span class="ml-3 text-xs text-muted font-mono">lean-ctx gain</span>
             <span class="text-[9px] text-muted/40 ml-auto mr-2 font-mono">real session data</span>
           </div>
@@ -83,17 +83,17 @@
             <p><span class="text-text-bright font-bold">◆ lean-ctx</span>  <span class="text-muted">Token Savings Dashboard</span></p>
             <p class="text-border-light/30">────────────────────────────────────────────</p>
             <p class="mt-2">
-              <span class="text-[#34d399] font-bold"> 1.7M</span><span class="text-muted ml-2 text-[11px]">saved</span>
+              <span class="text-[#00ff41] font-bold"> 1.7M</span><span class="text-muted ml-2 text-[11px]">saved</span>
               <span class="ml-3 text-[#06b6d4] font-bold">76.8%</span><span class="text-muted ml-1 text-[11px]">rate</span>
               <span class="ml-3 text-[#eab308] font-bold">520</span><span class="text-muted ml-1 text-[11px]">cmds</span>
               <span class="ml-3 text-[#a855f7] font-bold">$4.25</span><span class="text-muted ml-1 text-[11px]">USD</span>
             </p>
-            <p class="mt-1 text-muted text-[11px]">Since 2026-03-23 (2 days) <span class="text-[#34d399]">▁█</span></p>
+            <p class="mt-1 text-muted text-[11px]">Since 2026-03-23 (2 days) <span class="text-[#00ff41]">▁█</span></p>
             <p class="mt-3 text-text-bright font-semibold">Top Commands</p>
             <p class="text-border-light/30">────────────────────────────────────────────</p>
-            <p><span class="text-muted">curl         </span> 48x <span class="term-bar text-[#34d399]">████████████████████</span> <span class="text-[#34d399] font-bold">728.1K</span> <span class="text-muted">97%</span></p>
+            <p><span class="text-muted">curl         </span> 48x <span class="term-bar text-[#00ff41]">████████████████████</span> <span class="text-[#00ff41] font-bold">728.1K</span> <span class="text-muted">97%</span></p>
             <p><span class="text-muted">git commit   </span> 34x <span class="term-bar text-[#eab308]">██████████▎</span>          <span class="text-[#eab308] font-bold">375.2K</span> <span class="text-muted">50%</span></p>
-            <p><span class="text-muted">git rm       </span>  7x <span class="term-bar text-[#34d399]">████████▌</span>            <span class="text-[#34d399] font-bold">313.4K</span> <span class="text-muted">100%</span></p>
+            <p><span class="text-muted">git rm       </span>  7x <span class="term-bar text-[#00ff41]">████████▌</span>            <span class="text-[#00ff41] font-bold">313.4K</span> <span class="text-muted">100%</span></p>
             <p><span class="text-muted">ctx_read     </span>103x <span class="term-bar text-[#a855f7]">█▌</span>                   <span class="text-[#a855f7] font-bold"> 59.1K</span> <span class="text-muted">38%</span></p>
             <p class="text-muted text-[11px] mt-1">  ... +33 more commands</p>
           </div>
@@ -106,22 +106,22 @@
     <div class="lg:hidden mt-8">
       <div class="terminal-chrome">
         <div class="terminal-header flex items-center gap-1.5 px-3 py-2">
-          <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
-          <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
-          <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
+          <span class="text-[9px] font-mono" style="color:#ff3333">[x]</span>
+          <span class="text-[9px] font-mono" style="color:#ffcc00">[-]</span>
+          <span class="text-[9px] font-mono" style="color:#00ff41">[o]</span>
           <span class="ml-2 text-[10px] text-muted font-mono">lean-ctx gain</span>
         </div>
         <div id="hero-terminal-mobile" class="term-anim terminal-body px-3 py-2.5 font-mono text-[10px] leading-[1.5]">
           <p class="term-cmd text-muted">$ lean-ctx gain</p>
           <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted text-[9px]">Token Savings</span></p>
           <p class="mt-1.5">
-            <span class="text-[#34d399] font-bold">1.7M</span><span class="text-muted text-[9px]"> saved</span>
+            <span class="text-[#00ff41] font-bold">1.7M</span><span class="text-muted text-[9px]"> saved</span>
             <span class="ml-2 text-[#06b6d4] font-bold">76.8%</span>
             <span class="ml-2 text-[#eab308] font-bold">520</span><span class="text-muted text-[9px]"> cmds</span>
             <span class="ml-2 text-[#a855f7] font-bold">$4.25</span>
           </p>
           <p class="mt-1.5 text-text-bright font-semibold text-[9px]">Top Commands</p>
-          <p><span class="text-muted">curl    </span>48x <span class="term-bar text-[#34d399]">████████████</span> <span class="text-[#34d399] font-bold">728K</span></p>
+          <p><span class="text-muted">curl    </span>48x <span class="term-bar text-[#00ff41]">████████████</span> <span class="text-[#00ff41] font-bold">728K</span></p>
           <p><span class="text-muted">git     </span>34x <span class="term-bar text-[#eab308]">██████</span>      <span class="text-[#eab308] font-bold">375K</span></p>
           <p><span class="text-muted">ctx_read</span> 103x <span class="term-bar text-[#a855f7]">█</span>        <span class="text-[#a855f7] font-bold"> 59K</span></p>
         </div>
@@ -132,14 +132,7 @@
 
 <style>
   .hero-glow {
-    position: absolute;
-    top: -20%;
-    right: -10%;
-    width: 700px;
-    height: 700px;
-    background: radial-gradient(circle, var(--overlay-accent-green), transparent 60%);
-    filter: blur(80px);
-    pointer-events: none;
+    display: none;
   }
 
   .hero-fade {
@@ -203,7 +196,7 @@
     color: var(--color-text);
     background: var(--color-surface);
     border: 1px solid var(--overlay-heavy);
-    border-radius: 8px;
+    border-radius: 0;
     text-decoration: none;
     transition: all 0.25s ease;
     position: relative;
@@ -227,7 +220,7 @@
     color: var(--color-text);
     background: var(--color-surface-3);
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: 0;
     white-space: nowrap;
     opacity: 0;
     pointer-events: none;
@@ -241,7 +234,7 @@
   .protocol-badge-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: 0;
     flex-shrink: 0;
   }
 
@@ -253,7 +246,7 @@
     padding: 10px 16px;
     background: var(--color-surface);
     border: 1px solid var(--overlay-heavy);
-    border-radius: 12px;
+    border-radius: 0;
     width: fit-content;
   }
 
@@ -299,7 +292,7 @@
     color: var(--color-text);
     background: var(--color-surface-3);
     border: 1px solid var(--overlay-heavy);
-    border-radius: 8px;
+    border-radius: 0;
     white-space: normal;
     width: max-content;
     max-width: 240px;
