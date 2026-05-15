@@ -106,17 +106,19 @@ impl ContextRadar {
 
         for path in &paths_to_scan {
             if path.is_file() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let tokens = content.len() / 4;
-                    if tokens > 0 {
-                        files.push((path.display().to_string(), tokens));
+                if Self::is_rules_file(path) {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        let tokens = content.len() / 4;
+                        if tokens > 0 {
+                            files.push((path.display().to_string(), tokens));
+                        }
                     }
                 }
             } else if path.is_dir() {
                 if let Ok(entries) = std::fs::read_dir(path) {
                     for entry in entries.flatten() {
                         let p = entry.path();
-                        if p.is_file() {
+                        if p.is_file() && Self::is_rules_file(&p) {
                             if let Ok(content) = std::fs::read_to_string(&p) {
                                 let tokens = content.len() / 4;
                                 if tokens > 0 {
@@ -131,6 +133,27 @@ impl ContextRadar {
 
         let total = files.iter().map(|(_, t)| *t).sum();
         self.rules_tokens = RulesTokens { files, total };
+    }
+
+    fn is_rules_file(path: &Path) -> bool {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+        if name.starts_with('.') && name != ".cursorrules" {
+            return false;
+        }
+        if name.contains(".bak") || name.contains(".tmp") || name.contains(".swp") {
+            return false;
+        }
+        if name == ".cursorrules"
+            || name == "AGENTS.md"
+            || name == "CLAUDE.md"
+            || name == "LEAN-CTX.md"
+        {
+            return true;
+        }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        matches!(ext, "md" | "mdc" | "markdown" | "txt")
     }
 
     pub fn budget_breakdown(&self) -> BudgetBreakdown {

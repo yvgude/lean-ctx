@@ -24,7 +24,6 @@ const KNOWN_ROUTES = [
   'learning',
   'symbols',
   'callgraph',
-  'contextlayer',
 ];
 
 const ROUTE_LABELS = {
@@ -42,7 +41,6 @@ const ROUTE_LABELS = {
   callgraph: 'Call Graph',
   graph: 'Call Graph',
   routes: 'Route Map',
-  contextlayer: 'Context Layer',
   health: 'Health',
 };
 
@@ -155,7 +153,6 @@ function initRouter() {
     symbols: 'symbolsView',
     callgraph: 'callgraphView',
     routes: 'routesView',
-    contextlayer: 'contextlayerView',
     health: 'healthView',
   };
   for (var viewId in viewElementMap) {
