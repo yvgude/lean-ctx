@@ -194,32 +194,19 @@ const fullArt = tiledArt + '\n' + tiledArt;
     margin: 0;
     padding: 0;
     user-select: none;
-    color: transparent;
-    background: linear-gradient(
-      90deg,
-      #34d399 0%,
-      #818cf8 25%,
-      #34d399 50%,
-      #818cf8 75%,
-      #34d399 100%
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
     opacity: 0.38;
-    animation: ascii-color-flow 15s linear infinite;
-    will-change: background-position;
+    color: #34d399;
+    animation: ascii-color-pulse 10s ease-in-out infinite;
     transform: translateZ(0);
   }
-  @keyframes ascii-color-flow {
-    0% { background-position: 0% 50%; }
-    100% { background-position: 300% 50%; }
+  @keyframes ascii-color-pulse {
+    0%, 100% { color: #34d399; }
+    50% { color: #818cf8; }
   }
   @media (max-width: 768px) {
     .ascii-hero-bg pre {
       font-size: 7px;
       opacity: 0.3;
-      animation-duration: 20s;
     }
   }
   @media (prefers-reduced-motion: reduce) {
