@@ -238,11 +238,13 @@ body::after {
   font-size: clamp(2.25rem, 1.5rem + 4vw, 7rem);
   line-height: 0.95;
   letter-spacing: -0.045em;
+  font-weight: 400;
 }
 .fluid-h1 {
   font-size: clamp(1.625rem, 1.2rem + 2.5vw, 4rem);
   line-height: 1.06;
   letter-spacing: -0.035em;
+  font-weight: 400;
 }
 .fluid-h2 {
   font-size: clamp(1.25rem, 0.95rem + 1.6vw, 2.75rem);
