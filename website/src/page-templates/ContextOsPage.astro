@@ -9,6 +9,18 @@ import { pillars } from '../lib/contextOsPillars';
 import { getMcpManifest } from '../lib/mcpManifest';
 import '../styles/index.css';
 
+const pillarDocsLinks: Record<string, string> = {
+  'smart-io': '/docs/concepts/read-modes',
+  'intelligence': '/docs/concepts/read-modes',
+  'memory': '/docs/concepts/caching',
+  'governance': '/docs/configuration',
+  'verification': '/docs/security',
+  'integrations': '/compatibility',
+  'shared-sessions': '/docs/concepts/multi-agent',
+  'context-bus': '/docs/concepts/multi-agent',
+  'sdk': '/docs/api-reference',
+};
+
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
@@ -496,7 +508,7 @@ const stats = [
     <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       {pillars.map((p, i) => (
         <a
-          href={lp(`/context-os/${p.slug}`)}
+          href={lp(pillarDocsLinks[p.slug] || '/context-os')}
           class={`card group animate-entrance stagger-${1 + i}`}
           style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;"
         >

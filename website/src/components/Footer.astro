@@ -29,28 +29,24 @@ const year = new Date().getFullYear();
 
       <div class="footer-columns">
         <div class="footer-col">
-          <h4 class="footer-col-title">{t('nav.contextOs')}</h4>
+          <h4 class="footer-col-title">{t('footer.product')}</h4>
           <ul class="footer-links">
-            <li><a href={lp('/context-os')}>{t('nav.contextOs')}</a></li>
-            <li><a href={lp('/context-os/smart-io')}>{t('nav.pillars.smartIo')}</a></li>
-            <li><a href={lp('/context-os/intelligence')}>{t('nav.pillars.intelligence')}</a></li>
-            <li><a href={lp('/context-os/memory')}>{t('nav.pillars.memory')}</a></li>
-            <li><a href={lp('/context-os/governance')}>{t('nav.pillars.governance')}</a></li>
-            <li><a href={lp('/context-os/verification')}>{t('nav.pillars.verification')}</a></li>
-            <li><a href={lp('/context-os/integrations')}>{t('nav.pillars.integrations')}</a></li>
+            <li><a href={lp('/how-it-works')}>{t('nav.learn.howItWorks')}</a></li>
+            <li><a href={lp('/compare')}>{t('nav.getStarted.compare')}</a></li>
+            <li><a href={lp('/compatibility')}>{t('nav.getStarted.compatibility')}</a></li>
+            <li><a href={lp('/context-os/benchmark')}>{t('nav.learn.benchmark')}</a></li>
+            <li><a href={lp('/context-os')}>{t('nav.arch.overview')}</a></li>
           </ul>
         </div>
 
         <div class="footer-col">
           <h4 class="footer-col-title">{t('footer.documentation')}</h4>
           <ul class="footer-links">
-            <li><a href={lp('/docs/getting-started')}>{t('nav.docs.installSetup')}</a></li>
-            <li><a href={lp('/docs/quick-reference')}>{t('nav.docs.quickReference')}</a></li>
-            <li><a href={lp('/docs/tools')}>{t('footer.toolApi')}</a></li>
+            <li><a href={lp('/docs/getting-started')}>{t('nav.learn.gettingStarted')}</a></li>
+            <li><a href={lp('/docs/quick-reference')}>{t('nav.learn.quickReference')}</a></li>
             <li><a href={lp('/docs/cli-reference')}>{t('nav.docs.cliComplete')}</a></li>
             <li><a href={lp('/docs/configuration')}>{t('nav.docs.configuration')}</a></li>
-            <li><a href={lp('/docs/verification')}>{t('nav.docs.verification')}</a></li>
-            <li><a href={lp('/context-os/benchmark')}>{t('nav.product.benchmark')}</a></li>
+            <li><a href={lp('/docs/security')}>{t('nav.docs.security')}</a></li>
           </ul>
         </div>
 
@@ -61,20 +57,16 @@ const year = new Date().getFullYear();
             <li><a href="https://crates.io/crates/lean-ctx" target="_blank" rel="noopener">crates.io</a></li>
             <li><a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener">Discord</a></li>
             <li><a href="https://buymeacoffee.com/yvgude" target="_blank" rel="noopener">{t('footer.buyMeACoffee')}</a></li>
-            <li><a href={lp('/compare')}>{t('footer.compare')}</a></li>
-            <li><a href={lp('/limitations')}>{t('footer.limitations')}</a></li>
           </ul>
         </div>
 
         <div class="footer-col">
-          <h4 class="footer-col-title">{t('footer.ecosystem')}</h4>
+          <h4 class="footer-col-title">{t('footer.resources')}</h4>
           <ul class="footer-links">
-            <li><a href="https://leanctl.com" target="_blank" rel="noopener">{t('nav.product.leanctl')}</a></li>
+            <li><a href={lp('/docs/tools')}>{t('nav.tools.allTools')}</a></li>
+            <li><a href={lp('/what-is-context-engineering')}>{t('nav.learn.contextEngineering')}</a></li>
+            <li><a href={lp('/docs/changelog')}>{t('nav.docs.changelog')}</a></li>
             <li><a href={lp('/privacy')}>{t('footer.privacy')}</a></li>
-            <li><a href={lp('/docs/security')}>Security</a></li>
-            <li><a href={lp('/safety')}>{t('footer.safety')}</a></li>
-            <li><a href={lp('/what-is-context-engineering')}>Context Engineering</a></li>
-            <li><a href={lp('/context-governance')}>Context Governance</a></li>
           </ul>
         </div>
       </div>

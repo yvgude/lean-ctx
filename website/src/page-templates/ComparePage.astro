@@ -17,6 +17,17 @@ const rows = [
   { label: t('compare.rowAnalysis'),     noTool: t('compare.rowAnalysisNoTool'), manual: t('compare.rowAnalysisManual'), leanCtx: t('compare.rowAnalysisLeanCtx'), leanIcon: 'check' },
   { label: t('compare.rowMaintenance'),  noTool: t('compare.rowMaintenanceNoTool'), manual: t('compare.rowMaintenanceManual'), leanCtx: t('compare.rowMaintenanceLeanCtx'), leanIcon: 'check' },
 ];
+
+const altRows = [
+  { feature: t('compare.altRowReadModes'),       rtk: t('compare.altRtkReadModes'),       ctxPlus: t('compare.altCtxPlusReadModes'),       memgpt: t('compare.altMemgptReadModes'),       leanCtx: t('compare.altLeanReadModes') },
+  { feature: t('compare.altRowShellCompress'),    rtk: t('compare.altRtkShellCompress'),    ctxPlus: t('compare.altCtxPlusShellCompress'),    memgpt: t('compare.altMemgptShellCompress'),    leanCtx: t('compare.altLeanShellCompress') },
+  { feature: t('compare.altRowSessionMemory'),    rtk: t('compare.altRtkSessionMemory'),    ctxPlus: t('compare.altCtxPlusSessionMemory'),    memgpt: t('compare.altMemgptSessionMemory'),    leanCtx: t('compare.altLeanSessionMemory') },
+  { feature: t('compare.altRowMultiAgent'),       rtk: t('compare.altRtkMultiAgent'),       ctxPlus: t('compare.altCtxPlusMultiAgent'),       memgpt: t('compare.altMemgptMultiAgent'),       leanCtx: t('compare.altLeanMultiAgent') },
+  { feature: t('compare.altRowCodeGraph'),        rtk: t('compare.altRtkCodeGraph'),        ctxPlus: t('compare.altCtxPlusCodeGraph'),        memgpt: t('compare.altMemgptCodeGraph'),        leanCtx: t('compare.altLeanCodeGraph') },
+  { feature: t('compare.altRowGovernance'),       rtk: t('compare.altRtkGovernance'),       ctxPlus: t('compare.altCtxPlusGovernance'),       memgpt: t('compare.altMemgptGovernance'),       leanCtx: t('compare.altLeanGovernance') },
+  { feature: t('compare.altRowLocalFirst'),       rtk: t('compare.altRtkLocalFirst'),       ctxPlus: t('compare.altCtxPlusLocalFirst'),       memgpt: t('compare.altMemgptLocalFirst'),       leanCtx: t('compare.altLeanLocalFirst') },
+  { feature: t('compare.altRowMcpTools'),         rtk: t('compare.altRtkMcpTools'),         ctxPlus: t('compare.altCtxPlusMcpTools'),         memgpt: t('compare.altMemgptMcpTools'),         leanCtx: t('compare.altLeanMcpTools') },
+];
 ---
 
 <BaseLayout
@@ -82,6 +93,62 @@ const rows = [
         </table>
       </div>
     </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ VS. ALTERNATIVES ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('compare.altLabel')}
+      title={t('compare.altTitle')}
+      highlight={t('compare.altTitleHighlight')}
+      description={t('compare.altDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="animate-entrance stagger-3" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+      <div class="rounded-lg border border-border overflow-hidden" style="min-width: 740px;">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-surface-2">
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('compare.colFeature')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">RTK</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">Context+</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">MemGPT / Letta</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label font-display cmp-col-accent">LeanCTX</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/30">
+            {altRows.map((row) => (
+              <tr>
+                <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{row.feature}</td>
+                <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{row.rtk}</td>
+                <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{row.ctxPlus}</td>
+                <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{row.memgpt}</td>
+                <td class="px-4 sm:px-5 py-3 fluid-sm">
+                  <span class="cmp-cell-accent">
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                    {row.leanCtx}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="fluid-sm text-muted animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
+      {t('compare.altFootnote')}
+    </p>
   </div>
 </section>
 
@@ -225,7 +292,7 @@ const rows = [
         {t('compare.ctaGetStarted')}
         <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
-      <a href={lp('/safety')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('compare.ctaSafety')}
       </a>
     </div>
