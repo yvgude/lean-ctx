@@ -169,7 +169,7 @@ const tileHorizontally = (block: string, repeats: number) => {
 };
 
 const tiledArt = tileHorizontally(art, 3);
-const fullArt = tiledArt + '\n' + tiledArt;
+const fullArt = Array(5).fill(tiledArt).join('\n');
 ---
 
 <div class="ascii-hero-bg" aria-hidden="true">
@@ -197,6 +197,7 @@ const fullArt = tiledArt + '\n' + tiledArt;
     color: #34d399;
     animation: ascii-color-pulse 10s ease-in-out infinite;
     transform: translateZ(0);
+    min-height: 100vh;
   }
   @keyframes ascii-color-pulse {
     0%, 100% { color: #34d399; }
