@@ -789,7 +789,7 @@ pre code {
   table-layout: auto;
 }
 .docs-prose th {
-  text-align: start;
+  text-align: left;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -799,8 +799,11 @@ pre code {
   padding-inline: 0.5rem;
   font-family: var(--font-display);
   white-space: nowrap;
+  vertical-align: bottom;
 }
 .docs-prose td {
+  text-align: left;
+  vertical-align: top;
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);

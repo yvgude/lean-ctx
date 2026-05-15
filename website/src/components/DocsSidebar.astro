@@ -258,30 +258,62 @@ function isSectionActive(section: SidebarSection): boolean {
 <script>
   const navLinks = document.querySelectorAll<HTMLAnchorElement>('.docs-nav-link[data-anchor]');
   if (navLinks.length > 0) {
-    const anchors: { id: string; el: Element }[] = [];
+    const anchors: { id: string; el: Element; link: HTMLAnchorElement }[] = [];
     navLinks.forEach(link => {
       const id = link.dataset.anchor;
       if (id) {
         const target = document.getElementById(id);
-        if (target) anchors.push({ id, el: target });
+        if (target) anchors.push({ id, el: target, link });
       }
     });
 
     if (anchors.length > 0) {
-      function updateActive() {
-        let currentId = '';
-        const scrollY = window.scrollY + 120;
-        for (const a of anchors) {
-          if ((a.el as HTMLElement).offsetTop <= scrollY) {
-            currentId = a.id;
+      let activeId = '';
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const visible = entries
+            .filter(e => e.isIntersecting)
+            .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+          if (visible.length > 0) {
+            activeId = visible[0].target.id;
+          } else {
+            const scrollY = window.scrollY + 140;
+            let best = '';
+            for (const a of anchors) {
+              const rect = a.el.getBoundingClientRect();
+              const absTop = rect.top + window.scrollY;
+              if (absTop <= scrollY) best = a.id;
+            }
+            if (best) activeId = best;
           }
+
+          navLinks.forEach(link => {
+            const isActive = link.dataset.anchor === activeId;
+            link.classList.toggle('is-scrolled-to', isActive);
+          });
+
+          const activeLink = document.querySelector('.docs-nav-link.is-scrolled-to');
+          if (activeLink) {
+            activeLink.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+        },
+        {
+          rootMargin: '-80px 0px -60% 0px',
+          threshold: [0, 0.25, 0.5],
         }
+      );
+
+      anchors.forEach(a => observer.observe(a.el));
+
+      if (window.location.hash) {
+        const hashId = window.location.hash.slice(1);
+        activeId = hashId;
         navLinks.forEach(link => {
-          link.classList.toggle('is-scrolled-to', link.dataset.anchor === currentId);
+          link.classList.toggle('is-scrolled-to', link.dataset.anchor === hashId);
         });
       }
-      window.addEventListener('scroll', updateActive, { passive: true });
-      updateActive();
     }
   }
 </script>
