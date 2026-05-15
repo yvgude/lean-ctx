@@ -255,20 +255,36 @@ const faqSchema = JSON.stringify({
 <section class="relative section-y">
   <div class="content-grid">
     <SectionHeading
+      label="Security"
       title=""
       titleHtml={t('howItWorks.securityTitle')}
       descriptionHtml={t('howItWorks.securityDesc')}
       variant="full"
+      kickerTone="accent-2"
       titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
-      descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      descMb="clamp(2.5rem, 2rem + 2vw, 4rem)"
       descMaxWidth="48rem"
     />
-    <ul class="space-y-3 animate-entrance stagger-3" style="list-style: none; padding: 0; max-width: 48rem;">
-      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityPathJail')} />
-      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityShellCap')} />
-      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityToctou')} />
-      <li class="fluid-sm text-muted" set:html={t('howItWorks.securityIntegrity')} />
-    </ul>
+
+    <div class="grid sm:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); max-width: 56rem;">
+      <div class="security-card card">
+        <span class="security-icon font-mono text-accent-2">[//]</span>
+        <div class="fluid-sm text-muted leading-relaxed" set:html={t('howItWorks.securityPathJail')} />
+      </div>
+      <div class="security-card card">
+        <span class="security-icon font-mono text-accent-2">[##]</span>
+        <div class="fluid-sm text-muted leading-relaxed" set:html={t('howItWorks.securityShellCap')} />
+      </div>
+      <div class="security-card card">
+        <span class="security-icon font-mono text-accent-2">[<>]</span>
+        <div class="fluid-sm text-muted leading-relaxed" set:html={t('howItWorks.securityToctou')} />
+      </div>
+      <div class="security-card card">
+        <span class="security-icon font-mono text-accent-2">[ok]</span>
+        <div class="fluid-sm text-muted leading-relaxed" set:html={t('howItWorks.securityIntegrity')} />
+      </div>
+    </div>
+
     <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem); padding: clamp(0.5rem, 0.4rem + 0.2vw, 0.7rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
       {t('howItWorks.securityCta')}
     </a>
@@ -320,6 +336,8 @@ const faqSchema = JSON.stringify({
   }
   .layer-card:hover { background: var(--color-surface); }
   .layer-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }
+  .security-card { padding: clamp(1.25rem, 1rem + 0.5vw, 1.75rem); display: flex; flex-direction: column; gap: 0.75rem; }
+  .security-icon { font-size: 0.8125rem; font-weight: 700; opacity: 0.7; }
 </style>
 
 </BaseLayout>
