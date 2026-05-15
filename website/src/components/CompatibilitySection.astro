@@ -107,7 +107,7 @@ const tools = [
       </p>
     </div>
 
-    <div class="grid sm:grid-cols-3 gap-0 mb-3 rounded-xl overflow-hidden border border-white/[0.06]">
+    <div class="grid sm:grid-cols-3 gap-0 mb-3 rounded overflow-hidden border border-white/[0.06]">
       <div class="text-center py-6 px-4 bg-white/[0.02]">
         <p class="stat-value text-3xl sm:text-4xl text-muted mb-1">~40</p>
         <p class="text-[11px] text-muted uppercase tracking-wider">file reads per session</p>
@@ -132,7 +132,7 @@ const tools = [
           i % 2 !== 0 && i < 4 && 'max-sm:border-l max-sm:border-l-white/[0.06]',
           i >= 2 && i < 4 && 'max-lg:border-t max-lg:border-t-white/[0.06]',
         ]}>
-          <h3 class="text-sm font-semibold text-text-bright mb-3">{t.name}</h3>
+          <h3 class="text-sm font-semibold text-text-bright mb-3"><span class="text-accent font-mono text-xs opacity-70">[x]</span> {t.name}</h3>
           <div class="space-y-2 mb-4">
             <div class="flex justify-between text-[13px]">
               <span class="text-muted">Price</span>
