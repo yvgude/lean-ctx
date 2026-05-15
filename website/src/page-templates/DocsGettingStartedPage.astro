@@ -98,9 +98,9 @@ const sidebar = [
       <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
         <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
         <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
-        <div class="terminal-dot" style="background:#00ff41;width:7px;height:7px"></div>
+        <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
         <span class="text-muted text-[11px] ml-2">{t('docs.gettingStarted.labelGeneratedPrompt')}</span>
-        <button id="pg-copy" class="ml-auto px-3 py-1 text-[11px] font-medium rounded-none bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer border border-accent/20">{t('docs.gettingStarted.btnCopy')}</button>
+        <button id="pg-copy" class="ml-auto px-3 py-1 text-[11px] font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer border border-accent/20">{t('docs.gettingStarted.btnCopy')}</button>
       </div>
       <div class="terminal-body px-4 py-3">
         <pre id="pg-out" class="text-[12px] sm:text-[13px] font-mono text-text leading-relaxed whitespace-pre-wrap"></pre>
@@ -113,15 +113,15 @@ const sidebar = [
       padding: 5px 12px;
       font-size: 12px;
       font-weight: 500;
-      border-radius: 0;
+      border-radius: 8px;
       cursor: pointer;
       background: rgba(255,255,255,0.03);
       border: 1px solid rgba(255,255,255,0.08);
       color: var(--color-muted);
       transition: all 0.15s ease;
     }
-    .pg-btn:hover { border-color: rgba(0, 255, 65,0.3); color: var(--color-text); }
-    .pg-btn.active { background: rgba(0, 255, 65,0.1); border-color: rgba(0, 255, 65,0.3); color: var(--color-accent); }
+    .pg-btn:hover { border-color: rgba(52,211,153,0.3); color: var(--color-text); }
+    .pg-btn.active { background: rgba(52,211,153,0.1); border-color: rgba(52,211,153,0.3); color: var(--color-accent); }
   </style>
 
   <script is:inline>
@@ -527,7 +527,7 @@ const sidebar = [
     <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
       <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
       <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
-      <div class="terminal-dot" style="background:#00ff41;width:7px;height:7px"></div>
+      <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
       <span class="text-muted text-[11px] ml-2">{t('docs.gettingStarted.threeStepsTermLabel')}</span>
     </div>
     <div class="terminal-body px-4 py-3 font-mono text-[13px]">
@@ -696,7 +696,7 @@ cargo build --release</code></pre>
     <li set:html={t('docs.gettingStarted.step2Feature5')} />
   </ul>
 
-  <div class="border border-accent/20 rounded-none p-4 mb-6 bg-accent/5">
+  <div class="border border-accent/20 rounded-lg p-4 mb-6 bg-accent/5">
     <p class="mt-0 mb-2"><strong>{t('docs.gettingStarted.restartIdeTitle')}</strong></p>
     <p class="mb-0 text-sm text-muted" set:html={t('docs.gettingStarted.restartIdeDesc')} />
   </div>
@@ -764,7 +764,7 @@ lean-ctx gain        # shows token savings so far</code></pre>
   <p set:html={t('docs.gettingStarted.manualEditorOnlyIf')} />
   <p>{t('docs.gettingStarted.manualEditorConnect')}</p>
 
-  <div class="border border-white/10 rounded-none p-4 mb-6 bg-white/[0.02]">
+  <div class="border border-white/10 rounded-lg p-4 mb-6 bg-white/[0.02]">
     <p class="mt-0" set:html={t('docs.gettingStarted.beforeYouStart')} />
     <pre><code># macOS / Linux:
 which lean-ctx

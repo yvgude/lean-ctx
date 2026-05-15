@@ -63,7 +63,7 @@ const altRows = [
     />
 
     <div class="animate-entrance stagger-3" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
-      <div class="rounded-none border border-border overflow-hidden" style="min-width: 640px;">
+      <div class="rounded-lg border border-border overflow-hidden" style="min-width: 640px;">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-surface-2">
@@ -115,7 +115,7 @@ const altRows = [
     />
 
     <div class="animate-entrance stagger-3" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
-      <div class="rounded-none border border-border overflow-hidden" style="min-width: 740px;">
+      <div class="rounded-lg border border-border overflow-hidden" style="min-width: 740px;">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-surface-2">
@@ -288,11 +288,11 @@ const altRows = [
       descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
     />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-none text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('compare.ctaGetStarted')}
         <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
-      <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-none text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('compare.ctaSafety')}
       </a>
     </div>
@@ -305,12 +305,12 @@ const altRows = [
   .cmp-cell-dim { opacity: 0.5; }
   .cmp-cell-accent { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--color-accent); font-weight: 600; font-family: var(--font-mono); font-size: 0.8125rem; }
   .cmp-shine-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--color-accent); margin-bottom: 0.75rem; }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: 0; overflow: hidden; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
   .stat-item { display: flex; flex-direction: column; padding: clamp(1.25rem, 1rem + 1vw, 2rem); background: var(--color-bg); }
   .stat-number { font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin-bottom: 0.625rem; }
   .stat-desc { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); color: var(--color-muted); line-height: 1.5; }
   @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
-  .compare-card { border: 1px solid var(--color-border); border-radius: 0; overflow: hidden; }
+  .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
   .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
   .compare-header--warn { background: rgba(251, 191, 36, 0.04); color: var(--color-accent-3); }
   .compare-body { background: var(--color-surface); }

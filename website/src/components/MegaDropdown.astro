@@ -110,9 +110,9 @@ const { id, label, columns } = Astro.props;
     grid-template-columns: repeat(var(--dd-cols, 2), minmax(0, auto));
     background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-radius: 0;
+    border-radius: clamp(10px, 0.8vw, 14px);
     padding: 8px;
-    box-shadow: 0 0 20px rgba(0, 255, 65, 0.1);
+    box-shadow: var(--shadow-elevated);
   }
 
   .mega-dd-col {
@@ -130,11 +130,10 @@ const { id, label, columns } = Astro.props;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.14em;
-    color: var(--color-accent);
+    color: var(--color-muted);
     margin-bottom: 8px;
     padding-inline-start: 10px;
-    opacity: 0.7;
-    text-shadow: 0 0 6px rgba(0, 255, 65, 0.3);
+    opacity: 0.6;
   }
 
   .mega-dd-list {
@@ -151,16 +150,12 @@ const { id, label, columns } = Astro.props;
     align-items: flex-start;
     gap: 12px;
     padding: 10px 12px;
-    border-radius: 0;
+    border-radius: 8px;
     text-decoration: none;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background 0.15s ease;
   }
   .mega-dd-item:hover {
-    background: rgba(0, 255, 65, 0.05);
-  }
-  .mega-dd-item:hover .mega-dd-item-label {
-    color: var(--color-accent);
-    text-shadow: 0 0 8px rgba(0, 255, 65, 0.3);
+    background: var(--overlay-hover);
   }
 
   .mega-dd-icon {
@@ -169,7 +164,7 @@ const { id, label, columns } = Astro.props;
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 0;
+    border-radius: 6px;
     background: var(--overlay-light);
     border: 1px solid var(--color-border);
     color: var(--color-accent);
@@ -178,8 +173,7 @@ const { id, label, columns } = Astro.props;
     transition: border-color 0.15s ease;
   }
   .mega-dd-item:hover .mega-dd-icon {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 6px rgba(0, 255, 65, 0.2);
+    border-color: var(--color-border-light);
   }
 
   .mega-dd-item-label {
@@ -210,7 +204,7 @@ const { id, label, columns } = Astro.props;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 1px 6px;
-    border-radius: 0;
+    border-radius: 4px;
     background: color-mix(in srgb, var(--color-accent) 15%, transparent);
     color: var(--color-accent);
     margin-inline-start: 6px;

@@ -100,15 +100,15 @@ function isSectionActive(section: SidebarSection): boolean {
                 <a
                   href={item.href}
                   class:list={[
-                    'docs-nav-link block py-1.5 px-2 transition-colors duration-150',
+                    'docs-nav-link block py-1.5 px-2 rounded-md transition-colors duration-150',
                     isPageActive
                       ? 'text-accent font-medium'
-                      : 'text-muted hover:text-accent'
+                      : 'text-muted hover:text-text-bright'
                   ]}
                   style="font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);"
                   data-anchor={hasAnchor ? item.href.split('#')[1] : undefined}
                 >
-                  {isPageActive ? '> ' : ''}{item.label}
+                  {item.label}
                   {item.badge && <span class="sidebar-badge">{item.badge}</span>}
                 </a>
               );
@@ -146,15 +146,15 @@ function isSectionActive(section: SidebarSection): boolean {
                     href={item.href}
                     data-anchor={hasAnchor ? item.href.split('#')[1] : undefined}
                     class:list={[
-                      'docs-nav-link block transition-all duration-200 relative',
+                      'docs-nav-link block rounded-lg transition-all duration-200 relative',
                       section.compact ? 'py-1 px-3' : 'py-1.5 px-3',
                       isPageActive
-                        ? 'text-accent font-medium sidebar-active'
-                        : 'text-muted hover:text-accent'
+                        ? 'text-accent bg-accent/8 font-medium sidebar-active'
+                        : 'text-muted hover:text-text-bright hover:bg-surface-2'
                     ]}
                     style={`font-size: ${section.compact ? 'clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem)' : 'clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem)'};`}
                   >
-                    {isPageActive ? '> ' : ''}{item.label}
+                    {item.label}
                     {item.badge && <span class="sidebar-badge">{item.badge}</span>}
                   </a>
                 </li>
@@ -169,31 +169,25 @@ function isSectionActive(section: SidebarSection): boolean {
 
 <style>
   .sidebar-active::before {
-    content: '>';
+    content: '';
     position: absolute;
-    left: -2px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--color-accent);
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    text-shadow: 0 0 8px rgba(0, 255, 65, 0.6);
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--color-accent), var(--color-accent-2));
+    border-radius: 1px;
   }
 
   .docs-nav-link.is-scrolled-to {
     color: var(--color-accent) !important;
     background: var(--overlay-accent-green);
-    text-shadow: 0 0 8px rgba(0, 255, 65, 0.4);
-  }
-
-  .docs-nav-link:hover {
-    text-shadow: 0 0 6px rgba(0, 255, 65, 0.3);
   }
 
   .docs-mobile-nav {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-radius: 0;
+    border-radius: 12px;
   }
   .docs-mobile-nav summary {
     display: flex;
@@ -239,7 +233,7 @@ function isSectionActive(section: SidebarSection): boolean {
     letter-spacing: 0.05em;
     padding: 0.0625rem 0.375rem;
     margin-left: 0.375rem;
-    border-radius: 0;
+    border-radius: 4px;
     background: var(--overlay-accent-green);
     color: var(--color-accent);
     vertical-align: middle;
@@ -254,7 +248,7 @@ function isSectionActive(section: SidebarSection): boolean {
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
     background: var(--overlay-heavy);
-    border-radius: 0;
+    border-radius: 2px;
   }
   .sidebar-scroll::-webkit-scrollbar-thumb:hover {
     background: var(--overlay-medium);

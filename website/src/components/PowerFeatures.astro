@@ -154,7 +154,7 @@ const features = [
     <div class="space-y-8 sm:space-y-12">
       {features.map((f, i) => (
         <div class:list={[
-          'power-feature animate-entrance grid lg:grid-cols-2 gap-6 lg:gap-10 items-start p-6 sm:p-8 border border-accent/20 hover:border-accent/40 transition-colors duration-300',
+          'power-feature animate-entrance grid lg:grid-cols-2 gap-6 lg:gap-10 items-start p-6 sm:p-8 rounded-2xl border border-white/[0.06] bg-surface/50 hover:border-accent/15 transition-colors duration-300',
           i % 2 === 1 ? 'lg:[direction:rtl] lg:*:[direction:ltr]' : ''
         ]}>
           <div>
@@ -181,7 +181,10 @@ const features = [
 
           <div class="terminal-chrome">
             <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
-              <span class="text-accent text-[11px] font-mono" style="text-shadow: 0 0 8px rgba(0, 255, 65, 0.4);">{f.terminal.title}</span>
+              <div class="terminal-dot" style="background:#ef4444;width:7px;height:7px"></div>
+              <div class="terminal-dot" style="background:#eab308;width:7px;height:7px"></div>
+              <div class="terminal-dot" style="background:#34d399;width:7px;height:7px"></div>
+              <span class="text-muted text-[11px] ml-2">{f.terminal.title}</span>
             </div>
             <div class="terminal-body px-4 py-3 font-mono text-[12px] sm:text-[13px] leading-relaxed">
               {f.terminal.lines.map(line => (

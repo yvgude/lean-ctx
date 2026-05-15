@@ -5,10 +5,13 @@
 }
 
 .hero-terminal {
-  border-radius: 0;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-surface);
-  box-shadow: 0 0 20px rgba(0, 255, 65, 0.08);
+  border-radius: var(--card-radius);
+  border: 1px solid var(--color-border);
+  background: var(--overlay-heavy);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    var(--shadow-hero),
+    0 0 0 1px var(--overlay-faint) inset;
   overflow: hidden;
   max-width: 100%;
 }
@@ -155,9 +158,9 @@
   font-family: var(--font-mono);
   font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem);
   color: var(--color-muted);
-  background: var(--color-surface);
+  background: var(--overlay-medium);
   border: 1px solid var(--color-border);
-  border-radius: 0;
+  border-radius: 6px;
   padding: 0.5rem 1rem;
   user-select: all;
   cursor: text;
@@ -177,9 +180,9 @@
   height: 36px;
   min-width: 44px;
   min-height: 44px;
-  border-radius: 0;
+  border-radius: 6px;
   border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--overlay-medium);
   color: var(--color-muted);
   cursor: pointer;
   transition: border-color 0.2s, color 0.2s, background 0.2s;
@@ -268,15 +271,16 @@
 
 /* Terminal chrome: align with panels */
 .terminal-chrome {
-  background: var(--color-surface);
+  background: var(--overlay-light);
+  backdrop-filter: blur(14px);
 }
 
 .terminal-body {
-  background: var(--color-bg);
+  background: var(--overlay-glass);
 }
 
 .terminal-header {
-  background: var(--color-surface-2);
+  background: var(--overlay-panel);
 }
 
 /* Terminal helpers */
@@ -297,17 +301,18 @@
   flex-direction: column;
   padding: clamp(1.25rem, 1rem + 1vw, 3rem);
   border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  transition: all 0.25s ease;
+  background: var(--overlay-light);
+  backdrop-filter: blur(14px);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   text-decoration: none;
 }
 
 .layer-card:first-child {
-  border-radius: 0;
+  border-radius: var(--card-radius-lg) var(--card-radius-lg) 0 0;
 }
 
 .layer-card:last-child {
-  border-radius: 0;
+  border-radius: 0 0 var(--card-radius-lg) var(--card-radius-lg);
 }
 
 .layer-card + .layer-card {
@@ -315,15 +320,15 @@
 }
 
 @media (min-width: 768px) {
-  .layer-card:first-child { border-radius: 0; }
-  .layer-card:last-child { border-radius: 0; }
+  .layer-card:first-child { border-radius: var(--card-radius-lg) 0 0 var(--card-radius-lg); }
+  .layer-card:last-child { border-radius: 0 var(--card-radius-lg) var(--card-radius-lg) 0; }
   .layer-card + .layer-card { border-top: 1px solid var(--color-border); border-inline-start: none; }
 }
 
 .layer-card:hover {
   border-color: var(--color-border-light);
-  transform: none;
-  box-shadow: 0 0 16px rgba(0, 255, 65, 0.08);
+  transform: scale(1.02);
+  box-shadow: var(--shadow-elevated);
 }
 
 .layer-icon {
@@ -354,20 +359,20 @@
 }
 .compat-item {
   padding: 0.5rem 1rem;
-  border-radius: 0;
+  border-radius: 10px;
   font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
   font-weight: 500;
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--overlay-light);
+  backdrop-filter: blur(14px);
   border: 1px solid var(--color-border);
   white-space: nowrap;
   transition: all 0.25s ease;
 }
 .compat-item:hover {
-  border-color: var(--color-accent);
-  transform: none;
-  color: var(--color-accent);
-  box-shadow: 0 0 8px rgba(0, 255, 65, 0.15);
+  border-color: var(--color-border-light);
+  transform: translateY(-1px);
+  color: var(--color-text-bright);
 }
 
 /* Testimonials — borderless quotes */
@@ -384,15 +389,16 @@
 /* What is / Dimensions cards */
 .what-card {
   padding: clamp(1.25rem, 1rem + 0.75vw, 2.5rem);
-  background: var(--color-surface);
+  background: var(--overlay-light);
+  backdrop-filter: blur(14px);
   border: 1px solid var(--color-border);
-  border-radius: 0;
-  transition: all 0.25s ease;
+  border-radius: var(--card-radius-lg);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .what-card:hover {
   border-color: var(--color-border-light);
-  transform: none;
-  box-shadow: 0 0 16px rgba(0, 255, 65, 0.08);
+  transform: scale(1.02);
+  box-shadow: var(--shadow-elevated);
 }
 .what-icon {
   width: clamp(40px, 36px + 0.5vw, 52px);
@@ -400,9 +406,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: var(--overlay-faint);
   border: 1px solid var(--color-border);
-  border-radius: 0;
+  border-radius: 8px;
 }
 
 /* ── Mobile overrides ─────────────────────────────────── */
@@ -516,7 +522,7 @@
   display: flex;
   flex-direction: column;
   padding: clamp(1.25rem, 1rem + 0.5vw, 1.75rem);
-  border-radius: 0;
+  border-radius: 14px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   text-decoration: none;
@@ -524,8 +530,8 @@
 }
 .pillar-card-home:hover {
   border-color: var(--color-accent);
-  transform: none;
-  box-shadow: 0 0 16px rgba(0, 255, 65, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
 }
 .pillar-card-icon {
   display: inline-flex;
@@ -533,8 +539,8 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 0;
-  background: transparent;
+  border-radius: 10px;
+  background: var(--overlay-light);
   border: 1px solid var(--color-border);
   color: var(--color-accent);
   margin-bottom: 0.75rem;

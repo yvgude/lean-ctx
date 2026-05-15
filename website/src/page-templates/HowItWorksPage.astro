@@ -175,7 +175,7 @@ const faqSchema = JSON.stringify({
 
     <div class="animate-entrance">
         <p class="fluid-label text-muted font-display mb-4">{t('howItWorks.tableLabel')}</p>
-      <div class="rounded-none border border-border overflow-hidden">
+      <div class="rounded-lg border border-border overflow-hidden">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-surface-2">
@@ -239,7 +239,7 @@ const faqSchema = JSON.stringify({
       <p class="fluid-sm text-muted" style="margin: 0 0 1.5rem 0; max-width: 44rem;">
         {t('howItWorks.archCtaDesc')}
       </p>
-      <a href={lp('/context-os')} class="btn-primary inline-flex items-center font-bold rounded-none text-bg" style="padding: clamp(0.6rem, 0.5rem + 0.25vw, 0.8rem) clamp(1.25rem, 0.9rem + 0.6vw, 1.75rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <a href={lp('/context-os')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.6rem, 0.5rem + 0.25vw, 0.8rem) clamp(1.25rem, 0.9rem + 0.6vw, 1.75rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('howItWorks.archCtaLink')}
         <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
@@ -269,7 +269,7 @@ const faqSchema = JSON.stringify({
       <li class="fluid-sm text-muted" set:html={t('howItWorks.securityToctou')} />
       <li class="fluid-sm text-muted" set:html={t('howItWorks.securityIntegrity')} />
     </ul>
-    <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-none text-text animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem); padding: clamp(0.5rem, 0.4rem + 0.2vw, 0.7rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+    <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem); padding: clamp(0.5rem, 0.4rem + 0.2vw, 0.7rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
       {t('howItWorks.securityCta')}
     </a>
   </div>
@@ -293,11 +293,11 @@ const faqSchema = JSON.stringify({
       descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
     />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-none text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('howItWorks.ctaGetStarted')}
         <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
-      <a href={lp('/compatibility')} class="btn-outline inline-flex items-center font-medium rounded-none text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <a href={lp('/compatibility')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('howItWorks.ctaCompatibility')}
       </a>
     </div>
@@ -308,14 +308,14 @@ const faqSchema = JSON.stringify({
 <style>
   .hiw-step-card { padding: 1.5rem; }
   .hiw-step-num { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-accent); opacity: 0.3; line-height: 1; margin-bottom: 0.75rem; }
-  .hiw-step-code { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent); border-radius: 0; padding: 8px 12px; }
+  .hiw-step-code { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent); border-radius: 8px; padding: 8px 12px; }
   .layer-card { display: flex; flex-direction: column; padding: clamp(1.5rem, 1.25rem + 1vw, 2.5rem); border: 1px solid var(--color-border); background: var(--color-bg); transition: background 0.2s ease; }
-  .layer-card:first-child { border-radius: 0; }
-  .layer-card:last-child { border-radius: 0; }
+  .layer-card:first-child { border-radius: clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0 0; }
+  .layer-card:last-child { border-radius: 0 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px); }
   .layer-card + .layer-card { border-top: none; }
   @media (min-width: 640px) {
-    .layer-card:first-child { border-radius: 0; }
-    .layer-card:last-child { border-radius: 0; }
+    .layer-card:first-child { border-radius: clamp(10px, 0.8vw, 14px) 0 0 clamp(10px, 0.8vw, 14px); }
+    .layer-card:last-child { border-radius: 0 clamp(10px, 0.8vw, 14px) clamp(10px, 0.8vw, 14px) 0; }
     .layer-card + .layer-card { border-top: 1px solid var(--color-border); border-left: none; }
   }
   .layer-card:hover { background: var(--color-surface); }

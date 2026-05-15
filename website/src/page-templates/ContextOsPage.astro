@@ -66,7 +66,7 @@ const stats = [
   <Fragment slot="actions">
     <a
       href={lp('/docs/getting-started')}
-      class="btn-primary inline-flex items-center gap-2 font-bold rounded-none text-bg"
+      class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg"
       style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
     >
       {t('nav.getStarted')}
@@ -74,7 +74,7 @@ const stats = [
     </a>
     <a
       href={lp('/context-os/benchmark')}
-      class="btn-outline inline-flex items-center gap-2 font-medium rounded-none text-text"
+      class="btn-outline inline-flex items-center gap-2 font-medium rounded-lg text-text"
       style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
     >
       {t('nav.product.benchmark')}
@@ -398,7 +398,7 @@ const stats = [
       <h3 class="font-display fluid-h3 font-semibold text-accent" style="margin: 0 0 1rem 0;">
         {t('contextOs.cftPhiTitle')}
       </h3>
-      <div class="font-mono text-accent fluid-sm" style="margin-bottom: 1.25rem; padding: 1rem; background: var(--color-bg); border-radius: 0; border: 1px solid var(--color-border); overflow-x: auto; white-space: nowrap;">
+      <div class="font-mono text-accent fluid-sm" style="margin-bottom: 1.25rem; padding: 1rem; background: var(--color-bg); border-radius: 0.5rem; border: 1px solid var(--color-border); overflow-x: auto; white-space: nowrap;">
         {t('contextOs.cftPhiFormula')}
       </div>
       <p class="text-muted fluid-sm" style="margin: 0 0 1rem 0;">
@@ -513,7 +513,7 @@ const stats = [
           style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;"
         >
           <div class="flex items-center gap-3" style="margin-bottom: 0.75rem;">
-            <div class="w-9 h-9 rounded-none flex items-center justify-center bg-accent/10" style="border: 1px solid var(--color-border);">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center bg-accent/10" style="border: 1px solid var(--color-border);">
               <span class="text-accent" set:html={p.icon} />
             </div>
             <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">
@@ -624,7 +624,7 @@ const stats = [
       <p class="fluid-sm text-muted" style="margin: 0 0 1.5rem 0; max-width: 44rem;">
         {t('contextOs.hiwCtaDesc')}
       </p>
-      <a href={lp('/how-it-works')} class="btn-primary inline-flex items-center font-bold rounded-none text-bg" style="padding: clamp(0.6rem, 0.5rem + 0.25vw, 0.8rem) clamp(1.25rem, 0.9rem + 0.6vw, 1.75rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <a href={lp('/how-it-works')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.6rem, 0.5rem + 0.25vw, 0.8rem) clamp(1.25rem, 0.9rem + 0.6vw, 1.75rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
         {t('contextOs.hiwCtaLink')}
         <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
@@ -680,7 +680,7 @@ const stats = [
   .pipeline-step-dot {
     width: clamp(2.5rem, 2rem + 1vw, 3.25rem);
     height: clamp(2.5rem, 2rem + 1vw, 3.25rem);
-    border-radius: 0;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -717,7 +717,7 @@ const stats = [
   /* Agent Matrix */
   .agent-matrix {
     border: 1px solid var(--color-border);
-    border-radius: 0;
+    border-radius: 0.75rem;
     overflow: hidden;
   }
   .matrix-th {
@@ -745,7 +745,7 @@ const stats = [
     display: inline-block;
     width: 0.5rem;
     height: 0.5rem;
-    border-radius: 0;
+    border-radius: 50%;
     margin-right: 0.375rem;
     vertical-align: middle;
   }
