@@ -218,7 +218,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 0%, var(--color-bg) 85%);
+  background: linear-gradient(180deg, transparent 0%, var(--color-bg) 95%);
   pointer-events: none;
 }
 
@@ -321,16 +321,6 @@ body::after {
   overflow: hidden;
 }
 
-.hero-split::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(180deg, var(--hero-gradient-start) 0%, var(--hero-gradient-mid) 50%, var(--color-bg) 100%);
-  backdrop-filter: blur(0.6px);
-  pointer-events: none;
-  z-index: -1;
-}
 
 .hero-copy {
   max-width: 56rem;
