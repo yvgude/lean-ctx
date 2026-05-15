@@ -1,4 +1,54 @@
 ---
-import NotFoundPage from '../page-templates/NotFoundPage.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
 ---
-<NotFoundPage />
+
+<BaseLayout title="404 — Page not found" noindex={true}>
+  <section class="not-found">
+    <h1>404</h1>
+    <p>This page doesn't exist. We recently restructured the site.</p>
+    <div class="links">
+      <a href="/">Homepage</a>
+      <a href="/setup/">Setup</a>
+      <a href="/docs/">Docs</a>
+      <a href="/tools/">Tools</a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .not-found {
+    text-align: center;
+    padding: clamp(6rem, 12vw, 12rem) 1rem;
+  }
+  .not-found h1 {
+    font-size: 4rem;
+    font-weight: 800;
+    color: var(--color-accent);
+    margin-bottom: 1rem;
+  }
+  .not-found p {
+    font-size: 1rem;
+    color: var(--color-muted);
+    margin-bottom: 2rem;
+  }
+  .links {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .links a {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .links a:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+</style>
