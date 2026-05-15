@@ -1,0 +1,86 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Configuration" description="All lean-ctx config.toml options explained.">
+  <h1>Configuration</h1>
+  <p>lean-ctx is configured via <code>~/.config/lean-ctx/config.toml</code>. Most settings have sensible defaults — you typically don't need to change anything.</p>
+
+  <h2>File Location</h2>
+  <pre><code># Default location:
+~/.config/lean-ctx/config.toml
+
+# Open in editor:
+lean-ctx config edit
+
+# Show current config:
+lean-ctx config show</code></pre>
+
+  <h2>Compression</h2>
+  <pre><code>[compression]
+# Global compression level: off | lite | standard | max
+level = "standard"  # default
+
+# AST languages (tree-sitter)
+# Supported: rust, python, javascript, typescript, go, java, c, cpp,
+#            ruby, php, swift, kotlin, scala, haskell, lua, zig, elixir, bash
+languages = "all"</code></pre>
+
+  <h2>Integration</h2>
+  <pre><code>[integration]
+# Mode: auto | cli-redirect | hybrid | mcp
+mode = "auto"  # auto-selects based on detected tool
+
+# Shell hook
+shell_hook = true
+
+# MCP server port (when using full MCP mode)
+mcp_port = 0  # 0 = auto-select</code></pre>
+
+  <h2>Session</h2>
+  <pre><code>[session]
+# Persist sessions across restarts
+persist = true
+
+# Auto-compress after N tool calls
+auto_compress_after = 15
+
+# Knowledge storage
+knowledge_path = "~/.local/share/lean-ctx/knowledge"</code></pre>
+
+  <h2>Budget</h2>
+  <pre><code>[budget]
+# Max tokens per session (0 = unlimited)
+token_limit = 0
+
+# Max cost per session in USD (0 = unlimited)
+cost_limit = 0.0
+
+# Max shell commands per session (0 = unlimited)
+shell_limit = 0</code></pre>
+
+  <h2>Output</h2>
+  <pre><code>[output]
+# Output hints (append helpful context to responses)
+compressed_hint = true
+related_hint = false
+verify_footer = true
+archive_hint = false</code></pre>
+
+  <h2>Security</h2>
+  <pre><code>[security]
+# PathJail: restrict to project directory
+path_jail = true
+
+# Max file size to read (bytes)
+max_file_size = 10485760  # 10MB
+
+# Block known secret patterns
+secret_detection = true</code></pre>
+
+  <h2>Profiles</h2>
+  <p>Profiles bundle multiple settings for specific use cases. See <a href="/docs/governance/">Governance</a> for built-in profiles.</p>
+  <pre><code>[profile]
+# Active profile: default | minimal | verbose | paranoid
+active = "default"</code></pre>
+</DocsLayout>

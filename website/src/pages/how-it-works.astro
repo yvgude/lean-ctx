@@ -1,4 +1,221 @@
 ---
-import HowItWorksPage from '../page-templates/HowItWorksPage.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getMcpManifest } from '../lib/mcpManifest';
+
+const manifest = getMcpManifest();
+const readModes = manifest.read_modes.modes;
+
+const shellExamples = [
+  { cmd: 'git status', before: '~3,200 tokens', after: '~640 tokens', saved: '80%', desc: 'Removes unchanged file listings, compresses diff headers' },
+  { cmd: 'cargo test', before: '~10,000 tokens', after: '~1,000 tokens', saved: '90%', desc: 'Strips compilation output, keeps only test results and failures' },
+  { cmd: 'ls -la src/', before: '~1,600 tokens', after: '~320 tokens', saved: '80%', desc: 'Tabular compression, removes metadata noise' },
+];
 ---
-<HowItWorksPage />
+
+<BaseLayout title="How It Works — lean-ctx" description="How lean-ctx compresses AI context: the data pipeline from file read to compressed delivery.">
+  <section class="page-section">
+    <div class="content-grid">
+      <h1 class="page-title">How lean-ctx works</h1>
+      <p class="page-sub">One question answered: What happens when your AI reads a file through lean-ctx?</p>
+
+      <!-- Pipeline Diagram -->
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="pipe-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <span class="pipe-label">AI Agent</span>
+          <span class="pipe-detail">requests file read</span>
+        </div>
+        <div class="pipe-arrow"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="pipeline-step">
+          <div class="pipe-icon pipe-icon-accent">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 8l4 4-4 4"/><line x1="13" y1="16" x2="17" y2="16"/></svg>
+          </div>
+          <span class="pipe-label">lean-ctx</span>
+          <span class="pipe-detail">intercepts request</span>
+        </div>
+        <div class="pipe-arrow"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="pipeline-step">
+          <div class="pipe-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <span class="pipe-label">Cache Check</span>
+          <span class="pipe-detail">hit = 13 tokens</span>
+        </div>
+        <div class="pipe-arrow"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="pipeline-step">
+          <div class="pipe-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <span class="pipe-label">Compress</span>
+          <span class="pipe-detail">AST + mode selection</span>
+        </div>
+        <div class="pipe-arrow"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="pipeline-step">
+          <div class="pipe-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          </div>
+          <span class="pipe-label">Enrich</span>
+          <span class="pipe-detail">graph + deps</span>
+        </div>
+        <div class="pipe-arrow"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="pipeline-step">
+          <div class="pipe-icon pipe-icon-accent">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <span class="pipe-label">Deliver</span>
+          <span class="pipe-detail">compressed output</span>
+        </div>
+      </div>
+
+      <!-- Read Modes -->
+      <h2 class="section-heading">10 Read Modes</h2>
+      <p class="section-sub">lean-ctx selects the optimal mode automatically. Each mode extracts different signal from the same file:</p>
+
+      <div class="modes-table-wrap">
+        <table class="modes-table">
+          <thead><tr><th>Mode</th><th>What it extracts</th><th>Best for</th></tr></thead>
+          <tbody>
+            <tr><td><code>full</code></td><td>Complete file (cached)</td><td>Files you're editing</td></tr>
+            <tr><td><code>map</code></td><td>Dependencies + exports + key signatures</td><td>Understanding file role</td></tr>
+            <tr><td><code>signatures</code></td><td>Function/class/type signatures only</td><td>API surface overview</td></tr>
+            <tr><td><code>diff</code></td><td>Only changed lines since last read</td><td>Re-reads after edits</td></tr>
+            <tr><td><code>aggressive</code></td><td>Syntax-stripped minimal content</td><td>Large files, context only</td></tr>
+            <tr><td><code>entropy</code></td><td>High-information-density lines</td><td>Finding key logic</td></tr>
+            <tr><td><code>task</code></td><td>Task-relevant sections only</td><td>Focused work</td></tr>
+            <tr><td><code>reference</code></td><td>Quote-friendly minimal excerpts</td><td>Documentation</td></tr>
+            <tr><td><code>lines:N-M</code></td><td>Specific line range</td><td>Targeted reads</td></tr>
+            <tr><td><code>auto</code></td><td>System selects optimal mode</td><td>Default (recommended)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mode-cta">
+        <a href="/docs/read-modes/" class="link-arrow">Deep dive: all modes with examples</a>
+      </div>
+
+      <!-- Shell Compression -->
+      <h2 class="section-heading">Shell Compression</h2>
+      <p class="section-sub">60+ patterns compress command output before it reaches your AI:</p>
+
+      <div class="shell-examples">
+        {shellExamples.map(ex => (
+          <div class="shell-card">
+            <code class="shell-cmd">{ex.cmd}</code>
+            <div class="shell-stats">
+              <span class="shell-before">{ex.before}</span>
+              <span class="shell-arrow-sm">→</span>
+              <span class="shell-after">{ex.after}</span>
+              <span class="shell-saved">{ex.saved}</span>
+            </div>
+            <p class="shell-desc">{ex.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <div class="mode-cta">
+        <a href="/docs/shell-patterns/" class="link-arrow">Full pattern reference</a>
+      </div>
+
+      <!-- Integration Modes -->
+      <h2 class="section-heading">Integration Modes</h2>
+      <p class="section-sub">Three ways to connect lean-ctx to your AI tool:</p>
+
+      <div class="integration-grid">
+        <div class="int-card">
+          <h3 class="int-name">CLI-Redirect</h3>
+          <span class="int-badge">Recommended</span>
+          <p class="int-desc">AI calls <code>lean-ctx -c "cmd"</code> instead of raw shell. Zero MCP overhead. Fastest mode.</p>
+          <p class="int-used">Used by: Claude Code, Codex, Gemini CLI, Pi, Amp</p>
+        </div>
+        <div class="int-card">
+          <h3 class="int-name">Hybrid</h3>
+          <span class="int-badge">Best balance</span>
+          <p class="int-desc">MCP for cached reads (13 tokens per re-read) + CLI for shell. Combines caching with speed.</p>
+          <p class="int-used">Used by: Cursor, Windsurf, Antigravity, Kiro</p>
+        </div>
+        <div class="int-card">
+          <h3 class="int-name">Full MCP</h3>
+          <span class="int-badge">Most features</span>
+          <p class="int-desc">All {manifest.counts.granular} tools via MCP protocol. Full access to every lean-ctx capability.</p>
+          <p class="int-used">Used by: Copilot, JetBrains, VS Code, Cline, Zed</p>
+        </div>
+      </div>
+
+      <!-- Deep Dive Links -->
+      <h2 class="section-heading">Go deeper</h2>
+      <div class="deep-links">
+        <a href="/docs/read-modes/" class="deep-link">Read Modes Reference</a>
+        <a href="/docs/shell-patterns/" class="deep-link">Shell Patterns</a>
+        <a href="/docs/memory/" class="deep-link">Memory & Sessions</a>
+        <a href="/docs/governance/" class="deep-link">Governance & Budgets</a>
+        <a href="/docs/verification/" class="deep-link">Verification & Security</a>
+        <a href="/docs/multi-agent/" class="deep-link">Multi-Agent</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-section { padding: clamp(3rem, 6vw, 5rem) 0; }
+  .page-title { font-size: clamp(1.75rem, 3vw + 0.5rem, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 0.75rem; color: var(--color-text-bright); }
+  .page-sub { text-align: center; color: var(--color-muted); margin-bottom: 3rem; max-width: 36rem; margin-left: auto; margin-right: auto; }
+  .section-heading { font-size: 1.5rem; font-weight: 700; text-align: center; margin: 4rem 0 0.5rem; color: var(--color-text-bright); }
+  .section-sub { text-align: center; color: var(--color-muted); margin-bottom: 2rem; font-size: 0.875rem; }
+  .mode-cta { text-align: center; margin-top: 1.5rem; }
+  .link-arrow { font-size: 0.875rem; font-weight: 500; color: var(--color-accent); text-decoration: none; }
+  .link-arrow:hover { text-decoration: underline; }
+
+  .pipeline {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.5rem; flex-wrap: wrap; margin: 0 auto 2rem;
+    padding: 2rem 1rem; border-radius: 16px;
+    background: var(--color-surface); border: 1px solid var(--color-border);
+  }
+  .pipeline-step { display: flex; flex-direction: column; align-items: center; gap: 0.375rem; min-width: 5rem; }
+  .pipe-icon {
+    width: 2.5rem; height: 2.5rem; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; border: 1px solid var(--color-border); color: var(--color-muted);
+  }
+  .pipe-icon-accent { border-color: var(--color-accent); color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+  .pipe-label { font-size: 0.75rem; font-weight: 600; color: var(--color-text-bright); }
+  .pipe-detail { font-size: 0.625rem; color: var(--color-muted); }
+  .pipe-arrow { color: var(--color-border-light); flex-shrink: 0; }
+  @media (max-width: 768px) {
+    .pipeline { flex-direction: column; gap: 0.75rem; }
+    .pipe-arrow { transform: rotate(90deg); }
+  }
+
+  .modes-table-wrap { max-width: 48rem; margin: 0 auto; overflow-x: auto; }
+  .modes-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  .modes-table th { text-align: left; padding: 0.625rem 0.75rem; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); border-bottom: 1px solid var(--color-border); }
+  .modes-table td { padding: 0.625rem 0.75rem; border-bottom: 1px solid var(--color-border); color: var(--color-text-bright); }
+  .modes-table code { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--color-accent); }
+
+  .shell-examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; max-width: 52rem; margin: 0 auto; }
+  .shell-card { padding: 1.25rem; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface); }
+  .shell-cmd { font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; color: var(--color-text-bright); display: block; margin-bottom: 0.75rem; }
+  .shell-stats { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .shell-before { font-size: 0.8125rem; color: var(--color-muted); }
+  .shell-arrow-sm { color: var(--color-border-light); }
+  .shell-after { font-size: 0.8125rem; font-weight: 600; color: var(--color-accent); }
+  .shell-saved { font-size: 0.6875rem; font-weight: 700; padding: 0.125rem 0.375rem; border-radius: 4px; background: color-mix(in srgb, var(--color-accent) 10%, transparent); color: var(--color-accent); }
+  .shell-desc { font-size: 0.75rem; color: var(--color-muted); line-height: 1.4; }
+
+  .integration-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; max-width: 52rem; margin: 0 auto; }
+  .int-card { padding: 1.5rem; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface); }
+  .int-name { font-size: 1rem; font-weight: 600; color: var(--color-text-bright); margin-bottom: 0.25rem; }
+  .int-badge { font-size: 0.625rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-accent); }
+  .int-desc { font-size: 0.8125rem; color: var(--color-muted); margin: 0.75rem 0; line-height: 1.5; }
+  .int-desc code { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--color-accent); }
+  .int-used { font-size: 0.6875rem; color: var(--color-muted); font-style: italic; }
+
+  .deep-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; margin: 1.5rem auto; max-width: 40rem; }
+  .deep-link {
+    padding: 0.5rem 1rem; font-size: 0.8125rem; font-weight: 500;
+    border-radius: 8px; border: 1px solid var(--color-border);
+    color: var(--color-text-bright); text-decoration: none; transition: all 0.2s;
+  }
+  .deep-link:hover { border-color: var(--color-accent); color: var(--color-accent); }
+</style>

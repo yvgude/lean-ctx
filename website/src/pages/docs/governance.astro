@@ -1,0 +1,42 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Governance" description="Control agent behavior with roles, budgets, SLOs, and workflow gates.">
+  <h1>Governance</h1>
+  <p>lean-ctx provides fine-grained control over what AI agents can do, how much they can spend, and when they need approval.</p>
+
+  <h2>Roles</h2>
+  <p>5 built-in roles with different permission levels:</p>
+  <table>
+    <thead><tr><th>Role</th><th>Can read</th><th>Can write</th><th>Shell access</th><th>Budget</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Admin</strong></td><td>All</td><td>All</td><td>Full</td><td>Unlimited</td></tr>
+      <tr><td><strong>Coder</strong></td><td>All</td><td>Allowed paths</td><td>Full</td><td>Standard</td></tr>
+      <tr><td><strong>Debugger</strong></td><td>All</td><td>None</td><td>Read-only</td><td>Low</td></tr>
+      <tr><td><strong>Reviewer</strong></td><td>All</td><td>Comments only</td><td>None</td><td>Low</td></tr>
+      <tr><td><strong>Ops</strong></td><td>Config/logs</td><td>Config</td><td>System cmds</td><td>Standard</td></tr>
+    </tbody>
+  </table>
+  <pre><code>ctx_session(action="role", value="list")    # Show available roles
+ctx_session(action="role", value="coder")   # Switch to coder role</code></pre>
+
+  <h2>Budgets</h2>
+  <p>Set limits on token consumption, cost, and shell command execution:</p>
+  <pre><code># In config.toml:
+[budget]
+token_limit = 500000       # Max tokens per session
+cost_limit = 5.0           # Max $ per session
+shell_limit = 100          # Max shell commands</code></pre>
+  <p>When a budget is exceeded, lean-ctx throttles or blocks further actions with clear warnings.</p>
+
+  <h2>SLOs (Service Level Objectives)</h2>
+  <p>Define quality targets and get alerts when they're violated:</p>
+  <pre><code>ctx_session(action="slo")  # Show current SLO status</code></pre>
+  <p>SLOs track metrics like compression ratio, cache hit rate, and response latency. Violations trigger automatic throttling to prevent waste.</p>
+
+  <h2>Workflow Gates</h2>
+  <p>Require explicit confirmation before certain actions:</p>
+  <pre><code>ctx_workflow(action="gate", value="destructive_ops")  # Gate destructive commands
+ctx_workflow(action="approve")                        # Approve pending action</code></pre>
+</DocsLayout>

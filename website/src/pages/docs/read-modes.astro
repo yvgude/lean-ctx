@@ -1,0 +1,73 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+
+<DocsLayout title="Read Modes" description="All 10 lean-ctx read modes explained with examples and decision tree.">
+  <h1>Read Modes</h1>
+  <p>lean-ctx provides 10 read modes that extract different levels of information from the same file. The <code>auto</code> mode selects the optimal one automatically based on context.</p>
+
+  <h2>Decision Tree</h2>
+  <ul>
+    <li>Editing the file? → <code>full</code> (first read), then <code>diff</code> (re-reads)</li>
+    <li>Need API surface only? → <code>map</code> or <code>signatures</code></li>
+    <li>Large file, only for context? → <code>entropy</code> or <code>aggressive</code></li>
+    <li>Specific line range? → <code>lines:N-M</code></li>
+    <li>Working on a focused task? → <code>task</code></li>
+    <li>Unsure? → <code>auto</code></li>
+  </ul>
+
+  <h2>Mode Reference</h2>
+
+  <h3>full</h3>
+  <p>Returns the complete file content, cached for subsequent reads. Use for files you're actively editing. Re-reads cost ~13 tokens.</p>
+  <pre><code>ctx_read(path="src/main.rs", mode="full")</code></pre>
+
+  <h3>map</h3>
+  <p>Returns dependency graph + exports + key function signatures. Ideal for understanding a file's role without reading everything.</p>
+  <pre><code>ctx_read(path="src/auth/mod.rs", mode="map")</code></pre>
+
+  <h3>signatures</h3>
+  <p>Extracts only function, class, and type signatures. Perfect for API surface overview. Uses tree-sitter for 18 languages.</p>
+  <pre><code>ctx_read(path="src/lib.rs", mode="signatures")</code></pre>
+
+  <h3>diff</h3>
+  <p>Returns only lines that changed since the last read. Extremely efficient for re-reads after edits — typically 5-20 tokens.</p>
+  <pre><code>ctx_read(path="src/main.rs", mode="diff")</code></pre>
+
+  <h3>aggressive</h3>
+  <p>Syntax-stripped minimal content. Removes comments, whitespace, formatting — keeps only structural code. Best for large files where you need context but not detail.</p>
+  <pre><code>ctx_read(path="src/big_module.rs", mode="aggressive")</code></pre>
+
+  <h3>entropy</h3>
+  <p>Shannon entropy + Jaccard filtering. Selects only high-information-density lines. Surfaces the most unique/important parts of a file.</p>
+  <pre><code>ctx_read(path="src/config.rs", mode="entropy")</code></pre>
+
+  <h3>task</h3>
+  <p>Filters content based on the current active task. Only returns sections relevant to what you're working on.</p>
+  <pre><code>ctx_read(path="src/server.rs", mode="task")</code></pre>
+
+  <h3>reference</h3>
+  <p>Quote-friendly minimal excerpts. Designed for when you need to reference code in documentation or communication.</p>
+  <pre><code>ctx_read(path="src/types.rs", mode="reference")</code></pre>
+
+  <h3>lines:N-M</h3>
+  <p>Returns a specific line range. Use when you know exactly which lines you need.</p>
+  <pre><code>ctx_read(path="src/main.rs", mode="lines:42-58")</code></pre>
+
+  <h3>auto</h3>
+  <p>System selects the optimal mode based on file size, recent access patterns, active task, and session state. The recommended default.</p>
+  <pre><code>ctx_read(path="src/main.rs", mode="auto")</code></pre>
+
+  <h2>Token Comparison</h2>
+  <table>
+    <thead><tr><th>Mode</th><th>Typical output</th><th>vs full</th></tr></thead>
+    <tbody>
+      <tr><td><code>full</code> (cached re-read)</td><td>13 tokens</td><td>99.9%</td></tr>
+      <tr><td><code>diff</code></td><td>5-50 tokens</td><td>99%+</td></tr>
+      <tr><td><code>signatures</code></td><td>5-15% of file</td><td>85-95%</td></tr>
+      <tr><td><code>map</code></td><td>10-20% of file</td><td>80-90%</td></tr>
+      <tr><td><code>entropy</code></td><td>15-30% of file</td><td>70-85%</td></tr>
+      <tr><td><code>aggressive</code></td><td>30-50% of file</td><td>50-70%</td></tr>
+    </tbody>
+  </table>
+</DocsLayout>

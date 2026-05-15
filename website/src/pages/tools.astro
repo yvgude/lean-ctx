@@ -1,9 +1,192 @@
 ---
-import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getMcpManifest, getToolEnrichments } from '../lib/mcpManifest';
 
-const locale = getLocaleFromUrl(Astro.url);
-const lp = (path: string) => getLocalizedPath(path, locale);
+const manifest = getMcpManifest();
+const enrichments = getToolEnrichments();
+const tools = manifest.tools.granular;
 
-return Astro.redirect(lp('/mcp-server'), 301);
+function getCategoryForTool(name: string): string {
+  for (const [key, cat] of Object.entries(enrichments.categories)) {
+    if (cat.tools.includes(name)) return key;
+  }
+  return 'other';
+}
+
+function getCategoryLabel(key: string): string {
+  return enrichments.categories[key]?.label || 'Other';
+}
+
+const categories = Object.entries(enrichments.categories).map(([key, cat]) => ({
+  key,
+  label: cat.label,
+  count: cat.tools.filter(t => tools.some(gt => gt.name === t)).length,
+})).filter(c => c.count > 0);
+
+const toolsWithCategory = tools.map(tool => ({
+  ...tool,
+  category: getCategoryForTool(tool.name),
+  categoryLabel: getCategoryLabel(getCategoryForTool(tool.name)),
+  params: tool.input_schema?.properties
+    ? Object.entries(tool.input_schema.properties).map(([name, schema]) => ({
+        name,
+        type: (schema as any).type || 'string',
+        description: (schema as any).description || '',
+        required: (tool.input_schema?.required || []).includes(name),
+        enumValues: (schema as any).enum,
+      }))
+    : [],
+}));
 ---
-<!-- redirect -->
+
+<BaseLayout title="Tools — lean-ctx" description={`All ${manifest.counts.granular} MCP tools with parameters, examples, and categories.`}>
+  <section class="page-section">
+    <div class="content-grid">
+      <h1 class="page-title">{manifest.counts.granular} MCP Tools</h1>
+      <p class="page-sub">All tools available via the lean-ctx MCP server. Click to expand parameters.</p>
+
+      <div class="filter-bar">
+        <input type="text" id="tool-search" class="filter-search" placeholder="Search tools..." autocomplete="off" />
+        <div class="filter-tags">
+          <button class="filter-tag active" data-cat="all">All</button>
+          {categories.map(cat => (
+            <button class="filter-tag" data-cat={cat.key}>{cat.label} <span class="tag-count">{cat.count}</span></button>
+          ))}
+        </div>
+      </div>
+
+      <div class="tools-list" id="tools-list">
+        {toolsWithCategory.map(tool => (
+          <div class="tool-item" data-category={tool.category} data-name={tool.name.toLowerCase()} data-desc={tool.description.toLowerCase()}>
+            <button class="tool-header" aria-expanded="false">
+              <div class="tool-header-left">
+                <code class="tool-name">{tool.name}</code>
+                <span class="tool-cat-badge">{tool.categoryLabel}</span>
+              </div>
+              <p class="tool-desc">{tool.description}</p>
+              <svg class="tool-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="tool-details" hidden>
+              {tool.params.length > 0 && (
+                <table class="params-table">
+                  <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+                  <tbody>
+                    {tool.params.map(p => (
+                      <tr>
+                        <td><code>{p.name}</code>{p.required && <span class="param-req">*</span>}</td>
+                        <td class="param-type">{p.enumValues ? `enum` : p.type}</td>
+                        <td class="param-desc">
+                          {p.description}
+                          {p.enumValues && <span class="param-enum"> [{p.enumValues.join(', ')}]</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {tool.params.length === 0 && <p class="no-params">No parameters required.</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p class="tools-source">Data sourced from <a href="/generated/mcp-tools.json">mcp-tools.json</a> at build time.</p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-section { padding: clamp(3rem, 6vw, 5rem) 0; }
+  .page-title { font-size: clamp(1.75rem, 3vw + 0.5rem, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 0.5rem; color: var(--color-text-bright); }
+  .page-sub { text-align: center; color: var(--color-muted); margin-bottom: 2rem; }
+
+  .filter-bar { max-width: 48rem; margin: 0 auto 2rem; }
+  .filter-search {
+    width: 100%; padding: 0.75rem 1rem; margin-bottom: 1rem;
+    font-size: 0.875rem; border-radius: 12px;
+    border: 1px solid var(--color-border); background: var(--color-surface);
+    color: var(--color-text-bright); outline: none; transition: border-color 0.2s;
+  }
+  .filter-search:focus { border-color: var(--color-accent); }
+  .filter-search::placeholder { color: var(--color-muted); }
+  .filter-tags { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+  .filter-tag {
+    padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 500;
+    border-radius: 6px; border: 1px solid var(--color-border);
+    background: transparent; color: var(--color-muted); cursor: pointer; transition: all 0.2s;
+  }
+  .filter-tag:hover { border-color: var(--color-accent); color: var(--color-accent); }
+  .filter-tag.active { background: var(--color-accent); color: var(--color-bg); border-color: var(--color-accent); }
+  .tag-count { opacity: 0.7; }
+
+  .tools-list { max-width: 48rem; margin: 0 auto; display: flex; flex-direction: column; gap: 0.25rem; }
+  .tool-item { border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; transition: border-color 0.2s; }
+  .tool-item:hover { border-color: var(--color-border-light); }
+  .tool-item[hidden] { display: none; }
+  .tool-header {
+    width: 100%; padding: 0.875rem 1rem; display: grid;
+    grid-template-columns: 1fr auto; grid-template-rows: auto auto;
+    gap: 0.25rem 0.75rem; align-items: center;
+    background: none; border: none; cursor: pointer; text-align: left;
+  }
+  .tool-header-left { display: flex; align-items: center; gap: 0.5rem; }
+  .tool-name { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; color: var(--color-accent); font-weight: 500; }
+  .tool-cat-badge { font-size: 0.5625rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.125rem 0.375rem; border-radius: 3px; border: 1px solid var(--color-border); color: var(--color-muted); }
+  .tool-desc { grid-column: 1 / -1; font-size: 0.8125rem; color: var(--color-muted); line-height: 1.4; }
+  .tool-chevron { grid-row: 1; grid-column: 2; color: var(--color-muted); transition: transform 0.2s; }
+  .tool-header[aria-expanded="true"] .tool-chevron { transform: rotate(180deg); }
+
+  .tool-details { padding: 0 1rem 1rem; border-top: 1px solid var(--color-border); }
+  .tool-details[hidden] { display: none; }
+  .params-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; margin-top: 0.75rem; }
+  .params-table th { text-align: left; padding: 0.375rem 0.5rem; font-weight: 600; font-size: 0.6875rem; text-transform: uppercase; color: var(--color-muted); border-bottom: 1px solid var(--color-border); }
+  .params-table td { padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+  .params-table code { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--color-text-bright); }
+  .param-req { color: var(--color-accent); font-weight: 700; margin-left: 2px; }
+  .param-type { font-size: 0.75rem; color: var(--color-muted); font-family: 'JetBrains Mono', monospace; }
+  .param-desc { font-size: 0.75rem; color: var(--color-muted); }
+  .param-enum { font-size: 0.6875rem; color: var(--color-accent); }
+  .no-params { font-size: 0.8125rem; color: var(--color-muted); margin-top: 0.75rem; }
+  .tools-source { text-align: center; margin-top: 2rem; font-size: 0.75rem; color: var(--color-muted); }
+  .tools-source a { color: var(--color-accent); }
+</style>
+
+<script>
+  const search = document.getElementById('tool-search') as HTMLInputElement;
+  const tags = document.querySelectorAll('.filter-tag');
+  const items = document.querySelectorAll('.tool-item') as NodeListOf<HTMLElement>;
+
+  let activeCategory = 'all';
+
+  function filterTools() {
+    const query = search?.value.toLowerCase().trim() || '';
+    items.forEach(item => {
+      const name = item.dataset.name || '';
+      const desc = item.dataset.desc || '';
+      const cat = item.dataset.category || '';
+      const matchesCat = activeCategory === 'all' || cat === activeCategory;
+      const matchesSearch = !query || name.includes(query) || desc.includes(query);
+      item.hidden = !(matchesCat && matchesSearch);
+    });
+  }
+
+  search?.addEventListener('input', filterTools);
+
+  tags.forEach(tag => {
+    tag.addEventListener('click', () => {
+      tags.forEach(t => t.classList.remove('active'));
+      tag.classList.add('active');
+      activeCategory = (tag as HTMLElement).dataset.cat || 'all';
+      filterTools();
+    });
+  });
+
+  document.querySelectorAll('.tool-header').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      const details = btn.nextElementSibling as HTMLElement;
+      if (details) details.hidden = expanded;
+    });
+  });
+</script>

@@ -49,7 +49,7 @@ check(tools.length === manifest.counts?.granular, `tool array length matches cou
 for (const tool of tools) {
   check(tool.name?.startsWith('ctx_'), `tool "${tool.name}" has ctx_ prefix`);
   check(tool.description?.length > 10, `tool "${tool.name}" has description`);
-  check(tool.schema_md5?.length === 32, `tool "${tool.name}" has valid MD5 hash`);
+  check(tool.schema_md5?.length === 64 || tool.schema_md5?.length === 32, `tool "${tool.name}" has valid schema hash`);
   check(tool.input_schema?.type === 'object', `tool "${tool.name}" has object schema`);
 }
 

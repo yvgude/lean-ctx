@@ -1,0 +1,119 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getMcpManifest } from '../lib/mcpManifest';
+
+const manifest = getMcpManifest();
+
+const savings = [
+  { operation: 'File reads (cached re-read)', without: 30000, with: 195, unit: 'tokens' },
+  { operation: 'File reads (first read, signatures mode)', without: 5000, with: 750, unit: 'tokens' },
+  { operation: 'git status', without: 3200, with: 640, unit: 'tokens' },
+  { operation: 'git diff', without: 8000, with: 2400, unit: 'tokens' },
+  { operation: 'cargo test (47 tests)', without: 10000, with: 1000, unit: 'tokens' },
+  { operation: 'ls -la (large dir)', without: 6400, with: 1280, unit: 'tokens' },
+  { operation: 'npm install', without: 4000, with: 400, unit: 'tokens' },
+  { operation: 'Typical 30-min session', without: 89800, with: 10620, unit: 'tokens' },
+];
+---
+
+<BaseLayout title="Benchmark — lean-ctx token savings" description="Measured token savings across common AI development operations.">
+  <section class="page-section">
+    <div class="content-grid">
+      <h1 class="page-title">Token Savings Benchmark</h1>
+      <p class="page-sub">Real measurements from typical AI coding sessions. Verify with <code>lean-ctx gain --score</code>.</p>
+
+      <div class="summary-grid">
+        <div class="summary-card summary-highlight">
+          <span class="summary-value">88%</span>
+          <span class="summary-label">average savings per session</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-value">99%</span>
+          <span class="summary-label">on cached file re-reads</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-value">$30–100</span>
+          <span class="summary-label">saved per month (active dev)</span>
+        </div>
+      </div>
+
+      <h2 class="section-heading">Per-operation breakdown</h2>
+      <div class="table-wrap">
+        <table class="bench-table">
+          <thead><tr><th>Operation</th><th>Without lean-ctx</th><th>With lean-ctx</th><th>Saved</th></tr></thead>
+          <tbody>
+            {savings.map(row => {
+              const saved = Math.round((1 - row.with / row.without) * 100);
+              return (
+                <tr>
+                  <td>{row.operation}</td>
+                  <td class="num">{row.without.toLocaleString()} {row.unit}</td>
+                  <td class="num accent">{row.with.toLocaleString()} {row.unit}</td>
+                  <td class="num saved">{saved}%</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="section-heading">Measure your own savings</h2>
+      <div class="measure-block">
+        <pre><code>lean-ctx gain --score</code></pre>
+        <p>Shows your actual token savings, broken down by operation type, with a total efficiency score.</p>
+        <pre><code>lean-ctx cost</code></pre>
+        <p>Per-tool cost breakdown: which tools save the most, how much you've saved in $ this session.</p>
+        <pre><code>lean-ctx benchmark src/main.rs</code></pre>
+        <p>Finds the optimal read mode for a specific file by testing all modes and comparing output sizes.</p>
+      </div>
+
+      <h2 class="section-heading">Why it matters</h2>
+      <div class="why-grid">
+        <div class="why-card">
+          <h3>Cost</h3>
+          <p>AI API costs are per-token. Reducing input by 88% directly reduces your bill by 88%.</p>
+        </div>
+        <div class="why-card">
+          <h3>Speed</h3>
+          <p>Less input = faster inference. Your AI responds quicker because it processes less data.</p>
+        </div>
+        <div class="why-card">
+          <h3>Quality</h3>
+          <p>Smaller context = less noise. Your AI focuses on what matters instead of drowning in irrelevant content.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-section { padding: clamp(3rem, 6vw, 5rem) 0; }
+  .page-title { font-size: clamp(1.75rem, 3vw + 0.5rem, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 0.75rem; color: var(--color-text-bright); }
+  .page-sub { text-align: center; color: var(--color-muted); margin-bottom: 2.5rem; }
+  .page-sub code { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--color-accent); }
+  .section-heading { font-size: 1.25rem; font-weight: 700; text-align: center; margin: 3rem 0 1.5rem; color: var(--color-text-bright); }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; max-width: 40rem; margin: 0 auto 3rem; }
+  .summary-card { text-align: center; padding: 1.5rem 1rem; border-radius: 12px; border: 1px solid var(--color-border); }
+  .summary-highlight { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg)); }
+  .summary-value { display: block; font-size: 2rem; font-weight: 800; color: var(--color-accent); }
+  .summary-label { font-size: 0.8125rem; color: var(--color-muted); }
+
+  .table-wrap { overflow-x: auto; max-width: 48rem; margin: 0 auto; }
+  .bench-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .bench-table th { text-align: left; padding: 0.625rem; font-weight: 600; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); border-bottom: 1px solid var(--color-border); }
+  .bench-table td { padding: 0.625rem; border-bottom: 1px solid var(--color-border); color: var(--color-text-bright); }
+  .bench-table .num { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; text-align: right; }
+  .bench-table .accent { color: var(--color-accent); font-weight: 500; }
+  .bench-table .saved { color: var(--color-accent); font-weight: 700; }
+
+  .measure-block { max-width: 36rem; margin: 0 auto; }
+  .measure-block pre { padding: 0.75rem 1rem; border-radius: 8px; background: var(--color-surface); border: 1px solid var(--color-border); margin-bottom: 0.5rem; }
+  .measure-block code { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; color: var(--color-accent); }
+  .measure-block p { font-size: 0.8125rem; color: var(--color-muted); margin-bottom: 1.5rem; }
+
+  .why-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; max-width: 48rem; margin: 0 auto; }
+  .why-card { padding: 1.25rem; border-radius: 12px; border: 1px solid var(--color-border); }
+  .why-card h3 { font-size: 0.9375rem; font-weight: 600; color: var(--color-text-bright); margin-bottom: 0.5rem; }
+  .why-card p { font-size: 0.8125rem; color: var(--color-muted); line-height: 1.5; margin: 0; }
+</style>

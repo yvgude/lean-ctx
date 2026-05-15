@@ -1,8 +1,0 @@
----
-import { getLocaleStaticPaths } from '../../i18n/routing.ts';
-export const getStaticPaths = getLocaleStaticPaths;
-
-const { locale } = Astro.params;
-return Astro.redirect(`/${locale}/docs/cloud`, 301);
----
-<!-- redirect -->

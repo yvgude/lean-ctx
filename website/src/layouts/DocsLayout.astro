@@ -1,136 +1,77 @@
 ---
 import BaseLayout from './BaseLayout.astro';
-import DocsSidebar from '../components/DocsSidebar.astro';
-import PageHero from '../components/PageHero.astro';
-import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
-
-interface SidebarItem {
-  label: string;
-  href: string;
-}
-
-interface SidebarSection {
-  title: string;
-  compact?: boolean;
-  items: SidebarItem[];
-}
 
 interface Props {
   title: string;
   description?: string;
-  keywords?: string;
-  sidebar?: SidebarSection[];
 }
 
-const { title, description, keywords, sidebar } = Astro.props;
+const { title, description } = Astro.props;
+const currentPath = Astro.url.pathname;
 
-const locale = getLocaleFromUrl(Astro.url);
-const t = useTranslations(locale);
-const lp = (path: string) => getLocalizedPath(path, locale);
-
-const breadcrumbs = [
-  { name: t('docs.home'), url: lp('/') },
-  { name: t('docs.documentation'), url: lp('/docs/getting-started') },
-  { name: title, url: Astro.url.pathname },
+const nav = [
+  { href: '/docs/', label: 'Overview' },
+  { href: '/docs/read-modes/', label: 'Read Modes' },
+  { href: '/docs/shell-patterns/', label: 'Shell Patterns' },
+  { href: '/docs/memory/', label: 'Memory & Sessions' },
+  { href: '/docs/governance/', label: 'Governance' },
+  { href: '/docs/multi-agent/', label: 'Multi-Agent' },
+  { href: '/docs/verification/', label: 'Verification' },
+  { href: '/docs/cli/', label: 'CLI Reference' },
+  { href: '/docs/config/', label: 'Configuration' },
 ];
 ---
 
-<BaseLayout
-  title={`${title} — LeanCTX Docs`}
-  description={description}
-  keywords={keywords || `lean-ctx ${title.toLowerCase()}, LLM token reduction, MCP tools, AI coding documentation`}
-  breadcrumbs={breadcrumbs}
->
-  <PageHero
-    label={t('docs.documentation')}
-    title={title}
-    description={description}
-    kickerTone="accent"
-    container="wide"
-    sectionClass="section-y-xs"
-    titleMaxWidth="42rem"
-    descMaxWidth="42rem"
-    breakHighlight={false}
-  />
-
-  <div class="content-grid-wide" style="padding-bottom: clamp(3rem, 2rem + 2vw, 5rem);">
-    <div class="lg:grid lg:grid-cols-[240px_1fr] lg:gap-12">
-      <DocsSidebar sections={sidebar} />
-      <article class="min-w-0 docs-prose">
-        <slot />
-      </article>
-    </div>
+<BaseLayout title={`${title} — lean-ctx docs`} description={description}>
+  <div class="docs-wrapper">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+        <span class="docs-nav-title">Documentation</span>
+        {nav.map(item => (
+          <a href={item.href} class:list={["docs-nav-link", { active: currentPath === item.href }]}>{item.label}</a>
+        ))}
+      </nav>
+    </aside>
+    <article class="docs-content">
+      <slot />
+    </article>
   </div>
 </BaseLayout>
 
-<style is:global>
-  .heading-anchor {
-    color: var(--color-accent);
-    text-decoration: none;
-    opacity: 0;
-    font-weight: 400;
-    margin-inline-start: 0.4em;
-    font-size: 0.75em;
-    transition: opacity 0.2s ease;
-    vertical-align: middle;
+<style>
+  .docs-wrapper {
+    display: grid;
+    grid-template-columns: 14rem 1fr;
+    gap: 2rem;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 4vw, 3rem) 1rem;
   }
-  h2:hover .heading-anchor,
-  h3:hover .heading-anchor,
-  h4:hover .heading-anchor,
-  .heading-anchor:focus {
-    opacity: 0.5;
+  @media (max-width: 768px) {
+    .docs-wrapper { grid-template-columns: 1fr; }
+    .docs-sidebar { border-bottom: 1px solid var(--color-border); padding-bottom: 1rem; margin-bottom: 1rem; }
   }
-  .heading-anchor:hover {
-    opacity: 1 !important;
+  .docs-sidebar { position: sticky; top: 5rem; align-self: start; }
+  .docs-nav { display: flex; flex-direction: column; gap: 0.125rem; }
+  .docs-nav-title { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-muted); padding: 0 0.75rem; margin-bottom: 0.5rem; }
+  .docs-nav-link {
+    padding: 0.5rem 0.75rem; font-size: 0.8125rem; font-weight: 450;
+    color: var(--color-muted); text-decoration: none; border-radius: 6px; transition: all 0.15s;
   }
+  .docs-nav-link:hover { color: var(--color-text-bright); background: var(--overlay-hover); }
+  .docs-nav-link.active { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); font-weight: 500; }
+
+  .docs-content { min-width: 0; max-width: 48rem; }
+  .docs-content :global(h1) { font-size: 1.75rem; font-weight: 800; margin-bottom: 1rem; color: var(--color-text-bright); }
+  .docs-content :global(h2) { font-size: 1.25rem; font-weight: 700; margin: 2.5rem 0 0.75rem; color: var(--color-text-bright); }
+  .docs-content :global(h3) { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 0.5rem; color: var(--color-text-bright); }
+  .docs-content :global(p) { font-size: 0.875rem; color: var(--color-muted); line-height: 1.7; margin-bottom: 1rem; }
+  .docs-content :global(code) { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--color-accent); background: var(--color-surface); padding: 0.125rem 0.375rem; border-radius: 4px; }
+  .docs-content :global(pre) { padding: 1rem; border-radius: 8px; background: var(--color-surface); border: 1px solid var(--color-border); overflow-x: auto; margin-bottom: 1.5rem; }
+  .docs-content :global(pre code) { background: none; padding: 0; font-size: 0.8125rem; color: var(--color-text-bright); }
+  .docs-content :global(table) { width: 100%; border-collapse: collapse; font-size: 0.8125rem; margin-bottom: 1.5rem; }
+  .docs-content :global(th) { text-align: left; padding: 0.5rem; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; color: var(--color-muted); border-bottom: 1px solid var(--color-border); }
+  .docs-content :global(td) { padding: 0.5rem; border-bottom: 1px solid var(--color-border); color: var(--color-text-bright); }
+  .docs-content :global(ul), .docs-content :global(ol) { padding-left: 1.25rem; margin-bottom: 1rem; }
+  .docs-content :global(li) { font-size: 0.875rem; color: var(--color-muted); line-height: 1.7; margin-bottom: 0.25rem; }
 </style>
-
-<script>
-  function slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/[^a-z0-9_\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-  }
-
-  const article = document.querySelector('article');
-  if (article) {
-    const headings = article.querySelectorAll('h2, h3, h4');
-    const usedSlugs = new Set<string>();
-
-    headings.forEach((heading) => {
-      const existingId = heading.getAttribute('id');
-      let slug: string;
-
-      if (existingId) {
-        slug = existingId;
-      } else {
-        const text = heading.textContent?.replace(/#/g, '').trim() || '';
-        slug = slugify(text);
-        if (usedSlugs.has(slug)) {
-          let i = 2;
-          while (usedSlugs.has(`${slug}-${i}`)) i++;
-          slug = `${slug}-${i}`;
-        }
-        heading.id = slug;
-      }
-      usedSlugs.add(slug);
-
-      const anchor = document.createElement('a');
-      anchor.href = `#${slug}`;
-      anchor.className = 'heading-anchor';
-      anchor.setAttribute('aria-label', `Link to ${heading.textContent?.replace(/#/g, '').trim()}`);
-      anchor.textContent = '#';
-      heading.appendChild(anchor);
-    });
-
-    if (window.location.hash) {
-      const target = document.getElementById(window.location.hash.slice(1));
-      if (target) {
-        requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth' }));
-      }
-    }
-  }
-</script>

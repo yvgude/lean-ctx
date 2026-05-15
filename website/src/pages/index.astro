@@ -1,4 +1,464 @@
 ---
-import IndexPage from '../page-templates/IndexPage.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getMcpManifest } from '../lib/mcpManifest';
+
+const manifest = getMcpManifest();
+const toolCount = manifest.counts.granular;
+
+const savings = [
+  { operation: 'File reads (cached re-read)', without: '30,000', with: '195', saved: '99%' },
+  { operation: 'git status / log / diff', without: '8,000', with: '2,400', saved: '70%' },
+  { operation: 'ls / find / tree', without: '6,400', with: '1,280', saved: '80%' },
+  { operation: 'Test runner output', without: '10,000', with: '1,000', saved: '90%' },
+  { operation: 'Typical 30-min session', without: '~89,800', with: '~10,620', saved: '88%' },
+];
+
+const tools = [
+  { name: 'Cursor', category: 'editor' },
+  { name: 'Claude Code', category: 'cli' },
+  { name: 'GitHub Copilot', category: 'editor' },
+  { name: 'Windsurf', category: 'editor' },
+  { name: 'VS Code', category: 'editor' },
+  { name: 'OpenAI Codex', category: 'cli' },
+  { name: 'Gemini CLI', category: 'cli' },
+  { name: 'Pi', category: 'cli' },
+  { name: 'Cline', category: 'editor' },
+  { name: 'Roo Code', category: 'editor' },
+  { name: 'JetBrains', category: 'editor' },
+  { name: 'Amp', category: 'cli' },
+  { name: 'AWS Kiro', category: 'editor' },
+  { name: 'Aider', category: 'cli' },
+  { name: 'Zed', category: 'editor' },
+  { name: 'Antigravity', category: 'cli' },
+  { name: 'Amazon Q', category: 'editor' },
+  { name: 'Trae', category: 'editor' },
+  { name: 'Continue', category: 'editor' },
+  { name: 'OpenCode', category: 'cli' },
+  { name: 'Hermes', category: 'cli' },
+  { name: 'Neovim', category: 'editor' },
+  { name: 'Emacs', category: 'editor' },
+  { name: 'Sublime Text', category: 'editor' },
+];
 ---
-<IndexPage />
+
+<BaseLayout title="lean-ctx — The Context Runtime for AI Agents">
+  <!-- HERO -->
+  <section class="hero-section">
+    <div class="content-grid">
+      <div class="hero-content">
+        <h1 class="hero-title">Your AI wastes 90% of its context window.</h1>
+        <p class="hero-sub">lean-ctx sits between your AI and your code. It compresses every file read, caches everything, remembers across sessions, and costs nothing.</p>
+        <div class="hero-install">
+          <code class="hero-code">curl -fsSL https://leanctx.com/install.sh | sh</code>
+          <span class="hero-then">then: <code>lean-ctx setup</code></span>
+        </div>
+        <p class="hero-compat">Works with Cursor, Claude Code, Copilot, and {tools.length - 3} more.</p>
+        <p class="hero-positioning">The Context Runtime for AI Agents</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- BEFORE/AFTER -->
+  <section class="section-alt" id="savings">
+    <div class="content-grid">
+      <h2 class="section-title">See the difference</h2>
+      <div class="before-after-grid">
+        <div class="ba-card ba-before">
+          <span class="ba-label">Without lean-ctx</span>
+          <code class="ba-command">cat src/main.rs</code>
+          <span class="ba-tokens ba-tokens-bad">30,000 tokens</span>
+        </div>
+        <div class="ba-arrow">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+        <div class="ba-card ba-after">
+          <span class="ba-label">With lean-ctx</span>
+          <code class="ba-command">lean-ctx read src/main.rs</code>
+          <span class="ba-tokens ba-tokens-good">195 tokens</span>
+        </div>
+      </div>
+
+      <div class="savings-table-wrap">
+        <table class="savings-table">
+          <thead>
+            <tr><th>Operation</th><th>Without</th><th>With lean-ctx</th><th>Saved</th></tr>
+          </thead>
+          <tbody>
+            {savings.map(row => (
+              <tr>
+                <td>{row.operation}</td>
+                <td class="text-muted">{row.without}</td>
+                <td class="text-accent font-medium">{row.with}</td>
+                <td class="text-accent font-bold">{row.saved}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS (3 Steps) -->
+  <section class="section-default" id="how">
+    <div class="content-grid">
+      <h2 class="section-title">How it works</h2>
+      <div class="steps-grid">
+        <div class="step-card">
+          <span class="step-number">1</span>
+          <h3 class="step-title">Intercept</h3>
+          <p class="step-desc">lean-ctx hooks into your AI tool's file reads, shell commands, and code searches. Zero config — <code>lean-ctx setup</code> detects your editors automatically.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-number">2</span>
+          <h3 class="step-title">Compress</h3>
+          <p class="step-desc">AST-aware compression via tree-sitter for 18 languages. 10 intelligent read modes. 60+ shell output patterns. Everything is cached — re-reads cost 13 tokens.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-number">3</span>
+          <h3 class="step-title">Deliver</h3>
+          <p class="step-desc">Your AI gets exactly what it needs. Nothing more. Enriched with dependency hints, graph context, and verification checks. Memory persists across sessions.</p>
+        </div>
+      </div>
+      <div class="step-cta">
+        <a href="/how-it-works/" class="link-arrow">Learn more about the pipeline</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- NUMBERS -->
+  <section class="section-alt" id="numbers">
+    <div class="content-grid">
+      <h2 class="section-title">Hard numbers</h2>
+      <div class="numbers-grid">
+        <div class="number-card">
+          <span class="number-value">88%</span>
+          <span class="number-label">average token savings</span>
+        </div>
+        <div class="number-card">
+          <span class="number-value">{tools.length}+</span>
+          <span class="number-label">AI tools supported</span>
+        </div>
+        <div class="number-card">
+          <span class="number-value">{toolCount}</span>
+          <span class="number-label">MCP tools</span>
+        </div>
+        <div class="number-card">
+          <span class="number-value">&lt;1ms</span>
+          <span class="number-label">overhead per operation</span>
+        </div>
+        <div class="number-card">
+          <span class="number-value">$30–100</span>
+          <span class="number-label">saved per month</span>
+        </div>
+        <div class="number-card">
+          <span class="number-value">0</span>
+          <span class="number-label">telemetry. ever.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPATIBILITY -->
+  <section class="section-default" id="compatibility">
+    <div class="content-grid">
+      <h2 class="section-title">Works with your tool</h2>
+      <p class="section-sub">One install. Automatic detection. Three integration modes: CLI-Redirect, Hybrid, or Full MCP.</p>
+      <div class="compat-grid">
+        {tools.map(tool => (
+          <span class="compat-badge">{tool.name}</span>
+        ))}
+      </div>
+      <div class="step-cta">
+        <a href="/setup/" class="link-arrow">Setup guide for your tool</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRUST + CTA -->
+  <section class="section-cta" id="install">
+    <div class="content-grid">
+      <div class="trust-badges">
+        <span class="trust-badge">MIT + Apache-2.0</span>
+        <span class="trust-badge">Single Rust binary</span>
+        <span class="trust-badge">Zero telemetry</span>
+        <span class="trust-badge">100% local</span>
+        <span class="trust-badge">Open source</span>
+      </div>
+      <h2 class="cta-title">Stop wasting tokens. Start now.</h2>
+      <div class="hero-install">
+        <code class="hero-code">curl -fsSL https://leanctx.com/install.sh | sh && lean-ctx setup</code>
+      </div>
+      <div class="cta-links">
+        <a href="/setup/" class="cta-btn-primary">Setup Guide</a>
+        <a href="/compare/" class="cta-btn-secondary">Compare alternatives</a>
+        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="cta-btn-secondary">GitHub</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero-section {
+    padding: clamp(4rem, 8vw, 8rem) 0 clamp(3rem, 6vw, 6rem);
+    text-align: center;
+  }
+  .hero-content { max-width: 52rem; margin: 0 auto; }
+  .hero-title {
+    font-size: clamp(2rem, 4vw + 1rem, 3.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    color: var(--color-text-bright);
+    margin-bottom: 1.25rem;
+  }
+  .hero-sub {
+    font-size: clamp(1rem, 1.5vw + 0.5rem, 1.25rem);
+    color: var(--color-muted);
+    line-height: 1.6;
+    max-width: 40rem;
+    margin: 0 auto 2rem;
+  }
+  .hero-install {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .hero-code {
+    display: inline-block;
+    padding: 0.75rem 1.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: clamp(0.75rem, 1vw + 0.25rem, 0.9rem);
+    color: var(--color-accent);
+    word-break: break-all;
+  }
+  .hero-then {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+  }
+  .hero-then code {
+    color: var(--color-text-bright);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .hero-compat {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+    margin-bottom: 1rem;
+  }
+  .hero-positioning {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-accent);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .section-alt { padding: clamp(3rem, 6vw, 5rem) 0; background: var(--color-surface); }
+  .section-default { padding: clamp(3rem, 6vw, 5rem) 0; }
+  .section-cta { padding: clamp(4rem, 8vw, 6rem) 0; text-align: center; }
+  .section-title {
+    font-size: clamp(1.5rem, 2.5vw + 0.5rem, 2.25rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-align: center;
+    margin-bottom: 1rem;
+    color: var(--color-text-bright);
+  }
+  .section-sub {
+    text-align: center;
+    color: var(--color-muted);
+    max-width: 36rem;
+    margin: 0 auto 2rem;
+  }
+
+  .before-after-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    max-width: 48rem;
+    margin: 2rem auto;
+  }
+  @media (max-width: 640px) {
+    .before-after-grid { grid-template-columns: 1fr; }
+    .ba-arrow { transform: rotate(90deg); justify-self: center; }
+  }
+  .ba-card {
+    padding: 1.5rem;
+    border-radius: 16px;
+    border: 1px solid var(--color-border);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .ba-before { background: color-mix(in srgb, var(--color-bg) 50%, transparent); }
+  .ba-after { background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg)); border-color: var(--color-accent); }
+  .ba-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-muted); }
+  .ba-command { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; color: var(--color-text-bright); }
+  .ba-tokens { font-size: 1.5rem; font-weight: 700; }
+  .ba-tokens-bad { color: var(--color-muted); }
+  .ba-tokens-good { color: var(--color-accent); }
+  .ba-arrow { color: var(--color-accent); justify-self: center; }
+
+  .savings-table-wrap {
+    max-width: 48rem;
+    margin: 2rem auto 0;
+    overflow-x: auto;
+  }
+  .savings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .savings-table th {
+    text-align: left;
+    padding: 0.75rem;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .savings-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+  }
+
+  .steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1.5rem;
+    max-width: 56rem;
+    margin: 2rem auto;
+  }
+  .step-card {
+    padding: 1.5rem;
+    border-radius: 16px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    font-weight: 700;
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+  }
+  .step-title { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--color-text-bright); }
+  .step-desc { font-size: 0.875rem; color: var(--color-muted); line-height: 1.6; }
+  .step-desc code { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--color-accent); }
+  .step-cta { text-align: center; margin-top: 1.5rem; }
+
+  .link-arrow {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .link-arrow:hover { text-decoration: underline; }
+
+  .numbers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1rem;
+    max-width: 48rem;
+    margin: 2rem auto;
+  }
+  .number-card {
+    text-align: center;
+    padding: 1.5rem 1rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+  .number-value {
+    display: block;
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--color-accent);
+    letter-spacing: -0.02em;
+  }
+  .number-label { font-size: 0.8125rem; color: var(--color-muted); }
+
+  .compat-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    max-width: 48rem;
+    margin: 0 auto 1.5rem;
+  }
+  .compat-badge {
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+    background: var(--color-surface);
+  }
+
+  .trust-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  .trust-badge {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    color: var(--color-muted);
+  }
+  .cta-title {
+    font-size: clamp(1.5rem, 3vw + 0.5rem, 2.5rem);
+    font-weight: 800;
+    color: var(--color-text-bright);
+    margin-bottom: 1.5rem;
+  }
+  .cta-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+  .cta-btn-primary {
+    padding: 0.625rem 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 12px;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    text-decoration: none;
+    transition: opacity 0.2s;
+  }
+  .cta-btn-primary:hover { opacity: 0.9; }
+  .cta-btn-secondary {
+    padding: 0.625rem 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .cta-btn-secondary:hover { border-color: var(--color-accent); color: var(--color-accent); }
+</style>

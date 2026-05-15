@@ -1,0 +1,173 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const tools = [
+  { name: 'Cursor', mode: 'Hybrid' },
+  { name: 'Claude Code', mode: 'CLI-Redirect' },
+  { name: 'GitHub Copilot', mode: 'Full MCP' },
+  { name: 'Windsurf', mode: 'Hybrid' },
+  { name: 'OpenAI Codex', mode: 'CLI-Redirect' },
+  { name: 'Gemini CLI', mode: 'CLI-Redirect' },
+  { name: 'Pi', mode: 'CLI-Redirect' },
+  { name: 'VS Code', mode: 'Full MCP' },
+  { name: 'JetBrains', mode: 'Full MCP' },
+  { name: 'Cline', mode: 'Full MCP' },
+  { name: 'Roo Code', mode: 'Full MCP' },
+  { name: 'Amp', mode: 'CLI-Redirect' },
+  { name: 'AWS Kiro', mode: 'Hybrid' },
+  { name: 'Aider', mode: 'CLI-Redirect' },
+  { name: 'Zed', mode: 'Full MCP' },
+  { name: 'Antigravity', mode: 'Hybrid' },
+  { name: 'Amazon Q', mode: 'Full MCP' },
+  { name: 'Trae', mode: 'Full MCP' },
+  { name: 'Continue', mode: 'Full MCP' },
+  { name: 'OpenCode', mode: 'CLI-Redirect' },
+  { name: 'Hermes', mode: 'CLI-Redirect' },
+  { name: 'Neovim', mode: 'Full MCP' },
+  { name: 'Emacs', mode: 'Full MCP' },
+  { name: 'Sublime Text', mode: 'Full MCP' },
+];
+
+const modes = [
+  { name: 'CLI-Redirect', desc: 'Zero MCP overhead. AI calls lean-ctx as a shell command. Fastest mode.', tools: tools.filter(t => t.mode === 'CLI-Redirect') },
+  { name: 'Hybrid', desc: 'MCP for cached reads (13 tokens per re-read) + CLI for shell/search. Best balance.', tools: tools.filter(t => t.mode === 'Hybrid') },
+  { name: 'Full MCP', desc: 'All tools available via MCP protocol. Broadest feature access.', tools: tools.filter(t => t.mode === 'Full MCP') },
+];
+---
+
+<BaseLayout title="Setup — lean-ctx" description="Install lean-ctx and configure it for your AI tool in under 2 minutes. Works with 24+ tools.">
+  <section class="page-section">
+    <div class="content-grid">
+      <h1 class="page-title">Install lean-ctx</h1>
+      <p class="page-sub">One install. Auto-detection. Works with {tools.length}+ AI tools. Under 2 minutes.</p>
+
+      <div class="steps">
+        <div class="step">
+          <span class="step-num">1</span>
+          <div class="step-body">
+            <h2 class="step-title">Install</h2>
+            <div class="install-options">
+              <div class="install-row">
+                <span class="install-label">macOS / Linux</span>
+                <code class="install-code">curl -fsSL https://leanctx.com/install.sh | sh</code>
+              </div>
+              <div class="install-row">
+                <span class="install-label">npm</span>
+                <code class="install-code">npm install -g lean-ctx-bin</code>
+              </div>
+              <div class="install-row">
+                <span class="install-label">Cargo</span>
+                <code class="install-code">cargo install lean-ctx</code>
+              </div>
+              <div class="install-row">
+                <span class="install-label">Pi</span>
+                <code class="install-code">pi install npm:pi-lean-ctx</code>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="step-num">2</span>
+          <div class="step-body">
+            <h2 class="step-title">Configure</h2>
+            <code class="install-code-main">lean-ctx setup</code>
+            <p class="step-note">Auto-detects all installed editors and configures shell hooks, MCP server registration, and rule injection. No manual config needed.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <span class="step-num">3</span>
+          <div class="step-body">
+            <h2 class="step-title">Verify</h2>
+            <code class="install-code-main">lean-ctx doctor</code>
+            <p class="step-note">Checks that everything is working. Reports any issues with clear fix instructions.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="done-block">
+        <p class="done-text">That's it. Your AI tool now uses lean-ctx automatically.</p>
+      </div>
+
+      <h2 class="compat-title">Compatibility</h2>
+      <p class="compat-sub">lean-ctx auto-selects the optimal integration mode for each tool:</p>
+
+      <div class="modes-grid">
+        {modes.map(mode => (
+          <div class="mode-card">
+            <h3 class="mode-name">{mode.name}</h3>
+            <p class="mode-desc">{mode.desc}</p>
+            <div class="mode-tools">
+              {mode.tools.map(t => (
+                <span class="mode-tool">{t.name}</span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-section { padding: clamp(3rem, 6vw, 5rem) 0; }
+  .page-title { font-size: clamp(1.75rem, 3vw + 0.5rem, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 0.75rem; color: var(--color-text-bright); }
+  .page-sub { text-align: center; color: var(--color-muted); margin-bottom: 3rem; }
+
+  .steps { max-width: 36rem; margin: 0 auto; display: flex; flex-direction: column; gap: 2.5rem; }
+  .step { display: flex; gap: 1.25rem; align-items: flex-start; }
+  .step-num {
+    display: flex; align-items: center; justify-content: center;
+    width: 2.25rem; height: 2.25rem; border-radius: 50%;
+    background: var(--color-accent); color: var(--color-bg);
+    font-weight: 700; font-size: 0.9375rem; flex-shrink: 0;
+  }
+  .step-body { flex: 1; }
+  .step-title { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--color-text-bright); }
+  .step-note { font-size: 0.8125rem; color: var(--color-muted); margin-top: 0.5rem; line-height: 1.5; }
+
+  .install-options { display: flex; flex-direction: column; gap: 0.5rem; }
+  .install-row { display: flex; align-items: center; gap: 0.75rem; }
+  .install-label { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); min-width: 5rem; }
+  .install-code {
+    flex: 1; padding: 0.5rem 0.75rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: 8px; color: var(--color-accent);
+  }
+  .install-code-main {
+    display: block; padding: 0.625rem 1rem; max-width: 20rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.875rem;
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: 8px; color: var(--color-accent);
+  }
+
+  .done-block {
+    text-align: center; margin: 3rem 0;
+    padding: 1.25rem; border-radius: 12px;
+    border: 1px solid var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg));
+  }
+  .done-text { font-weight: 600; color: var(--color-accent); }
+
+  .compat-title { font-size: 1.5rem; font-weight: 700; text-align: center; margin-bottom: 0.5rem; color: var(--color-text-bright); }
+  .compat-sub { text-align: center; color: var(--color-muted); margin-bottom: 2rem; font-size: 0.875rem; }
+
+  .modes-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1.25rem; max-width: 56rem; margin: 0 auto;
+  }
+  .mode-card {
+    padding: 1.5rem; border-radius: 12px;
+    border: 1px solid var(--color-border); background: var(--color-surface);
+  }
+  .mode-name { font-size: 1rem; font-weight: 600; color: var(--color-accent); margin-bottom: 0.5rem; }
+  .mode-desc { font-size: 0.8125rem; color: var(--color-muted); line-height: 1.5; margin-bottom: 1rem; }
+  .mode-tools { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+  .mode-tool {
+    font-size: 0.6875rem; font-weight: 500; padding: 0.25rem 0.5rem;
+    border-radius: 4px; border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+  }
+</style>
