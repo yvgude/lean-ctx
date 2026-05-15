@@ -212,7 +212,14 @@ body {
   inset: 0;
 }
 .ascii-global-bg .ascii-hero-bg pre {
-  opacity: 0.12;
+  opacity: 0.18;
+}
+.ascii-global-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 0%, var(--color-bg) 85%);
+  pointer-events: none;
 }
 
 body::before {
