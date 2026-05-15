@@ -218,7 +218,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 0%, var(--color-bg) 95%);
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-bg) 70%, transparent) 100%);
   pointer-events: none;
 }
 
