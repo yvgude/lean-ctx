@@ -774,19 +774,14 @@ pre code {
   margin-bottom: 0.375rem;
   line-height: 1.7;
 }
-.docs-prose table {
-  width: 100%;
-  margin-bottom: 1.25rem;
-  border-collapse: collapse;
-  display: block;
+.docs-prose .table-wrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  margin-bottom: 1.25rem;
 }
-.docs-prose table thead,
-.docs-prose table tbody {
-  display: table;
+.docs-prose table {
   width: 100%;
-  table-layout: auto;
+  border-collapse: collapse;
 }
 .docs-prose th {
   text-align: left;

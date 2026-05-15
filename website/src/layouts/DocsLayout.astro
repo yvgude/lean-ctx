@@ -133,5 +133,13 @@ const breadcrumbs = [
         requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth' }));
       }
     }
+
+    article.querySelectorAll('table').forEach((table) => {
+      if (table.parentElement?.classList.contains('table-wrap')) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-wrap';
+      table.parentNode!.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    });
   }
 </script>
