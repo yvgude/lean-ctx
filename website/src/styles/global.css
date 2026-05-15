@@ -297,17 +297,6 @@ body::after {
   overflow: hidden;
 }
 
-.hero-split::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: url('/images/hero-bg.png') center / cover no-repeat;
-  opacity: 0.35;
-  filter: brightness(0.55) saturate(0.7);
-  pointer-events: none;
-  z-index: -2;
-}
-
 .hero-split::after {
   content: '';
   position: absolute;

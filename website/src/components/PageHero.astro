@@ -1,4 +1,6 @@
 ---
+import AsciiHeroBg from './AsciiHeroBg.astro';
+
 interface Props {
   label: string;
   title: string;
@@ -18,6 +20,7 @@ interface Props {
   titleMaxWidth?: string;
   descMaxWidth?: string;
   breakHighlight?: boolean;
+  asciiVariant?: string;
 }
 
 const {
@@ -39,7 +42,10 @@ const {
   titleMaxWidth,
   descMaxWidth,
   breakHighlight = true,
+  asciiVariant,
 } = Astro.props;
+
+const showAscii = sectionClass.includes('hero-split') && asciiVariant;
 
 const gridClass =
   container === 'wide' ? 'content-grid-wide' : container === 'narrow' ? 'content-grid-narrow' : 'content-grid';
@@ -70,6 +76,7 @@ const descStyle = [
 ---
 
 <section class={sectionClass}>
+  {showAscii && <AsciiHeroBg variant={asciiVariant} />}
   <div class={gridClass} style={containerStyle || undefined}>
     <div class="animate-entrance">
       <span class={`kicker-pill ${kickerClass}`} style={`margin-bottom: ${kickerMb};`}>
