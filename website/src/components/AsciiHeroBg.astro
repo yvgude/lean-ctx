@@ -188,17 +188,27 @@ const fullArt = tiledArt + '\n' + tiledArt + '\n' + tiledArt;
     font-family: var(--font-mono);
     font-size: clamp(9px, 1.1vw, 15px);
     line-height: 1.3;
-    color: var(--color-accent);
-    opacity: 0.25;
     white-space: pre;
     text-align: left;
     margin: 0;
     padding: 0;
     user-select: none;
-    animation: ascii-drift 120s linear infinite;
+    color: transparent;
+    background: linear-gradient(
+      90deg,
+      var(--color-accent) 0%,
+      color-mix(in srgb, var(--color-accent) 40%, transparent) 45%,
+      var(--color-accent) 55%,
+      color-mix(in srgb, var(--color-accent) 40%, transparent) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    opacity: 0.22;
+    animation: ascii-shimmer 12s ease-in-out infinite;
   }
-  @keyframes ascii-drift {
-    0% { transform: translate(0, 0); }
-    100% { transform: translate(-10%, -10%); }
+  @keyframes ascii-shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
   }
 </style>
