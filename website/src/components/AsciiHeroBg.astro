@@ -196,19 +196,20 @@ const fullArt = tiledArt + '\n' + tiledArt + '\n' + tiledArt;
     color: transparent;
     background: linear-gradient(
       90deg,
-      var(--color-accent) 0%,
-      color-mix(in srgb, var(--color-accent) 40%, transparent) 45%,
-      var(--color-accent) 55%,
-      color-mix(in srgb, var(--color-accent) 40%, transparent) 100%
+      #34d399 0%,
+      #818cf8 25%,
+      #34d399 50%,
+      #818cf8 75%,
+      #34d399 100%
     );
-    background-size: 200% 100%;
+    background-size: 300% 100%;
     -webkit-background-clip: text;
     background-clip: text;
-    opacity: 0.22;
-    animation: ascii-shimmer 12s ease-in-out infinite;
+    opacity: 0.25;
+    animation: ascii-color-flow 15s linear infinite;
   }
-  @keyframes ascii-shimmer {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
+  @keyframes ascii-color-flow {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
   }
 </style>
