@@ -450,7 +450,7 @@ const sidebar = [
       step++;
       lines.push(step + '. VERIFY:');
       lines.push('   lean-ctx --version');
-      lines.push('   (Expected: lean-ctx 3.5.19 or newer)');
+      lines.push('   (Expected: lean-ctx 3.x or newer)');
       lines.push('');
       step++;
       lines.push(step + '. ONE-COMMAND SETUP (shell hooks + editor config):');
@@ -737,106 +737,10 @@ lean-ctx init powershell | Invoke-Expression</code></pre>
 
   <hr />
 
-  <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
-  <p set:html={t('docs.gettingStarted.dockerDesc')} />
-
-  <pre><code>ARG LEAN_CTX_VERSION=3.5.19
-
-# Download the musl binary (statically linked, no glibc dependency)
-RUN curl -fsSL \
-    "https://github.com/yvgude/lean-ctx/releases/download/v$&#123;LEAN_CTX_VERSION&#125;/lean-ctx-x86_64-unknown-linux-musl.tar.gz" \
-    | tar -xz -C /usr/local/bin lean-ctx &amp;&amp; \
-    chmod +x /usr/local/bin/lean-ctx
-
-# Install shell hook (non-interactive) + configure your AI tool
-RUN lean-ctx init --global &amp;&amp; \
-    lean-ctx init --agent claude
-
-# Load shell hook in non-interactive shells
-ENV BASH_ENV="/root/.lean-ctx/env.sh"
-
-# Claude Code: sources this file before each command
-ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
-
-  <p set:html={t('docs.gettingStarted.dockerArm64')} />
-  <pre><code># For ARM64 (Apple Silicon / Graviton), use the aarch64 binary:
-RUN curl -fsSL \
-    "https://github.com/yvgude/lean-ctx/releases/download/v$&#123;LEAN_CTX_VERSION&#125;/lean-ctx-aarch64-unknown-linux-musl.tar.gz" \
-    | tar -xz -C /usr/local/bin lean-ctx</code></pre>
-
-  <h3 set:html={t('docs.gettingStarted.dockerWhyTitle')} />
-  <table>
-    <thead>
-      <tr><th set:html={t('docs.gettingStarted.dockerWhyStep')} /><th set:html={t('docs.gettingStarted.dockerWhyPurpose')} /></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><code>musl</code> binary</td>
-        <td set:html={t('docs.gettingStarted.dockerWhyMusl')} />
-      </tr>
-      <tr>
-        <td><code>lean-ctx init --global</code></td>
-        <td set:html={t('docs.gettingStarted.dockerWhyInit')} />
-      </tr>
-      <tr>
-        <td><code>lean-ctx init --agent claude</code></td>
-        <td set:html={t('docs.gettingStarted.dockerWhyAgent')} />
-      </tr>
-      <tr>
-        <td><code>BASH_ENV</code></td>
-        <td set:html={t('docs.gettingStarted.dockerWhyBashEnv')} />
-      </tr>
-      <tr>
-        <td><code>CLAUDE_ENV_FILE</code></td>
-        <td set:html={t('docs.gettingStarted.dockerWhyClaudeEnv')} />
-      </tr>
-    </tbody>
-  </table>
-
-  <h3>Project Identity in Docker</h3>
-  <p>
-    When multiple projects share the same <code>/workspace</code> mount path inside Docker containers,
-    lean-ctx may confuse their data (graph index, semantic cache, etc.) because it uses the path to
-    identify projects. To solve this, create a <code>.lean-ctx-id</code> file in your project root:
-  </p>
-  <pre><code># In your project root (before building the Docker image)
-echo "my-unique-project-name" > .lean-ctx-id</code></pre>
-  <p>
-    This file takes highest priority for project identification — above git remote, package.json,
-    and directory name. Include it in your <code>Dockerfile</code> or mount it as a volume.
-    Existing data is automatically migrated from old hash directories when the identity changes.
-  </p>
-
-  <h3 set:html={t('docs.gettingStarted.dockerIssuesTitle')} />
-  <table>
-    <thead>
-      <tr><th set:html={t('docs.gettingStarted.dockerIssuesError')} /><th set:html={t('docs.gettingStarted.dockerIssuesCause')} /><th set:html={t('docs.gettingStarted.dockerIssuesFix')} /></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><code>command not found: _lc</code></td>
-        <td set:html={t('docs.gettingStarted.dockerIssuesLcError')} />
-        <td set:html={t('docs.gettingStarted.dockerIssuesLcFix')} />
-      </tr>
-      <tr>
-        <td><code>lean-ctx setup</code> hangs</td>
-        <td set:html={t('docs.gettingStarted.dockerIssuesSetupError')} />
-        <td set:html={t('docs.gettingStarted.dockerIssuesSetupFix')} />
-      </tr>
-      <tr>
-        <td>Binary not found / exec format error</td>
-        <td set:html={t('docs.gettingStarted.dockerIssuesBinaryError')} />
-        <td set:html={t('docs.gettingStarted.dockerIssuesBinaryFix')} />
-      </tr>
-    </tbody>
-  </table>
-
-  <hr />
-
   <h2 id="editor-setup">{t('docs.gettingStarted.step3Title')}</h2>
   <ol>
     <li>{t('docs.gettingStarted.verifyStep1')}
-      <pre><code>lean-ctx --version   # → lean-ctx 3.5.19
+      <pre><code>lean-ctx --version   # → lean-ctx 3.x.x
 lean-ctx doctor      # checks PATH, config, aliases, MCP</code></pre>
     </li>
     <li>{t('docs.gettingStarted.verifyStep2')}
@@ -845,6 +749,15 @@ lean-ctx gain        # shows token savings so far</code></pre>
     </li>
     <li set:html={t('docs.gettingStarted.verifyStep3')} />
   </ol>
+
+  <div class="card" style="padding: 1.5rem; margin: 2rem 0; border-left: 3px solid var(--color-accent);">
+    <p style="font-weight: 600; margin-bottom: 0.5rem;">Setup complete! What's next?</p>
+    <ul style="margin: 0; padding-left: 1.25rem;">
+      <li><a href={lp('/docs/quick-reference')}>Quick Reference</a> — daily cheat sheet for all commands and read modes</li>
+      <li><a href={lp('/docs/tools')}>All Tools</a> — explore the full MCP tool catalog</li>
+      <li><a href={lp('/docs/configuration')}>Configuration</a> — customize behavior, filters, and security</li>
+    </ul>
+  </div>
 
   <details class="mb-8">
     <summary class="cursor-pointer font-semibold text-accent hover:text-accent/80 transition-colors py-2" set:html={t('docs.gettingStarted.manualEditorTitle')} />
@@ -1192,6 +1105,104 @@ nano ~/.config/opencode/opencode.json</code></pre>
   </ul>
 
   </details>
+
+  <hr />
+
+  <h2 id="docker" set:html={t('docs.gettingStarted.dockerTitle')} />
+  <p set:html={t('docs.gettingStarted.dockerDesc')} />
+
+  <pre><code>ARG LEAN_CTX_VERSION=3.6.0
+
+# Download the musl binary (statically linked, no glibc dependency)
+RUN curl -fsSL \
+    "https://github.com/yvgude/lean-ctx/releases/download/v$&#123;LEAN_CTX_VERSION&#125;/lean-ctx-x86_64-unknown-linux-musl.tar.gz" \
+    | tar -xz -C /usr/local/bin lean-ctx &amp;&amp; \
+    chmod +x /usr/local/bin/lean-ctx
+
+# Install shell hook (non-interactive) + configure your AI tool
+RUN lean-ctx init --global &amp;&amp; \
+    lean-ctx init --agent claude
+
+# Load shell hook in non-interactive shells
+ENV BASH_ENV="/root/.lean-ctx/env.sh"
+
+# Claude Code: sources this file before each command
+ENV CLAUDE_ENV_FILE="/root/.lean-ctx/env.sh"</code></pre>
+
+  <p set:html={t('docs.gettingStarted.dockerArm64')} />
+  <pre><code># For ARM64 (Apple Silicon / Graviton), use the aarch64 binary:
+RUN curl -fsSL \
+    "https://github.com/yvgude/lean-ctx/releases/download/v$&#123;LEAN_CTX_VERSION&#125;/lean-ctx-aarch64-unknown-linux-musl.tar.gz" \
+    | tar -xz -C /usr/local/bin lean-ctx</code></pre>
+
+  <h3 set:html={t('docs.gettingStarted.dockerWhyTitle')} />
+  <table>
+    <thead>
+      <tr><th set:html={t('docs.gettingStarted.dockerWhyStep')} /><th set:html={t('docs.gettingStarted.dockerWhyPurpose')} /></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>musl</code> binary</td>
+        <td set:html={t('docs.gettingStarted.dockerWhyMusl')} />
+      </tr>
+      <tr>
+        <td><code>lean-ctx init --global</code></td>
+        <td set:html={t('docs.gettingStarted.dockerWhyInit')} />
+      </tr>
+      <tr>
+        <td><code>lean-ctx init --agent claude</code></td>
+        <td set:html={t('docs.gettingStarted.dockerWhyAgent')} />
+      </tr>
+      <tr>
+        <td><code>BASH_ENV</code></td>
+        <td set:html={t('docs.gettingStarted.dockerWhyBashEnv')} />
+      </tr>
+      <tr>
+        <td><code>CLAUDE_ENV_FILE</code></td>
+        <td set:html={t('docs.gettingStarted.dockerWhyClaudeEnv')} />
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Project Identity in Docker</h3>
+  <p>
+    When multiple projects share the same <code>/workspace</code> mount path inside Docker containers,
+    lean-ctx may confuse their data (graph index, semantic cache, etc.) because it uses the path to
+    identify projects. To solve this, create a <code>.lean-ctx-id</code> file in your project root:
+  </p>
+  <pre><code># In your project root (before building the Docker image)
+echo "my-unique-project-name" > .lean-ctx-id</code></pre>
+  <p>
+    This file takes highest priority for project identification — above git remote, package.json,
+    and directory name. Include it in your <code>Dockerfile</code> or mount it as a volume.
+    Existing data is automatically migrated from old hash directories when the identity changes.
+  </p>
+
+  <h3 set:html={t('docs.gettingStarted.dockerIssuesTitle')} />
+  <table>
+    <thead>
+      <tr><th set:html={t('docs.gettingStarted.dockerIssuesError')} /><th set:html={t('docs.gettingStarted.dockerIssuesCause')} /><th set:html={t('docs.gettingStarted.dockerIssuesFix')} /></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>command not found: _lc</code></td>
+        <td set:html={t('docs.gettingStarted.dockerIssuesLcError')} />
+        <td set:html={t('docs.gettingStarted.dockerIssuesLcFix')} />
+      </tr>
+      <tr>
+        <td><code>lean-ctx setup</code> hangs</td>
+        <td set:html={t('docs.gettingStarted.dockerIssuesSetupError')} />
+        <td set:html={t('docs.gettingStarted.dockerIssuesSetupFix')} />
+      </tr>
+      <tr>
+        <td>Binary not found / exec format error</td>
+        <td set:html={t('docs.gettingStarted.dockerIssuesBinaryError')} />
+        <td set:html={t('docs.gettingStarted.dockerIssuesBinaryFix')} />
+      </tr>
+    </tbody>
+  </table>
+
+  <hr />
 
   <h2 id="monitor">{t('docs.gettingStarted.monitorTitle')}</h2>
   <pre><code># Terminal dashboard (colors, bars, sparklines)

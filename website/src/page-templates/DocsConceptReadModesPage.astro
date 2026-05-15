@@ -14,6 +14,8 @@ const sidebar = [
       { label: 'Decision Tree', href: lp('/docs/concepts/read-modes') + '#decision-tree' },
       { label: 'Mode Comparison', href: lp('/docs/concepts/read-modes') + '#comparison' },
       { label: 'Auto Mode', href: lp('/docs/concepts/read-modes') + '#auto' },
+      { label: 'Aggressive Mode', href: lp('/docs/concepts/read-modes') + '#aggressive' },
+      { label: 'Entropy Mode', href: lp('/docs/concepts/read-modes') + '#entropy' },
       { label: 'Task Mode', href: lp('/docs/concepts/read-modes') + '#task' },
       { label: 'File Protection', href: lp('/docs/concepts/read-modes') + '#instruction-file-protection' },
     ],
@@ -145,6 +147,14 @@ ctx_read auth.ts
     Uses <strong>tree-sitter AST parsing</strong> across 18 languages for accurate extraction.
     Best when you need to understand a file's role without reading its implementation.
   </p>
+  <pre><code>{`ctx_read src/auth/service.ts --mode map
+→ F1=src/auth/service.ts [map] 214L (91% saved)
+  DEPS: express, jsonwebtoken, bcrypt, ./db/users
+  EXPORTS: authenticateUser, generateToken, refreshSession
+  TYPES: AuthConfig, TokenPayload, SessionData
+  API: authenticateUser(req,res)->Promise<User>
+       generateToken(user:User)->string
+       refreshSession(token:s)->Result<Session>`}</code></pre>
 
   <h2 id="signatures">Signatures Mode</h2>
   <p>
@@ -152,12 +162,53 @@ ctx_read auth.ts
     More detailed than <code>map</code> - includes private functions, nested types, and multi-line
     signatures with compact type abbreviations (<code>:s</code> for string, <code>:n</code> for number).
   </p>
+  <pre><code>{`ctx_read src/server/router.rs --mode signatures
+→ F3=src/server/router.rs [signatures] 489L (87% saved)
+  pub fn register_routes(app: &mut App) -> Result<()>
+  pub fn handle_request(req: Request) -> Response
+  fn validate_params(params: &Params) -> Result<()>
+  pub struct RouterConfig { base_path: String, timeout: Duration }
+  pub trait RouteHandler { fn execute(&self, ctx: &Context) -> Result<Response> }`}</code></pre>
 
   <h2 id="diff">Diff Mode</h2>
   <p>
     Shows only the lines that changed since the file was last cached. Requires a prior read of the
     same file. Only sends the delta, which can save 80-97% compared to re-reading the full file.
   </p>
+  <pre><code>{`# After editing auth.ts (previously read as F1)
+ctx_read src/auth/service.ts --mode diff
+→ F1=src/auth/service.ts [diff] Δ3 lines (94% saved)
+  ~L42: -  const token = jwt.sign(payload, SECRET)
+        +  const token = jwt.sign(payload, SECRET, { expiresIn: '15m' })
+  +L67:    validateRefreshToken(refreshToken: string): boolean`}</code></pre>
+
+  <h2 id="aggressive">Aggressive Mode</h2>
+  <p>
+    Returns the full file with all comments, JSDoc blocks, and excessive whitespace stripped.
+    Preserves all functional code. Best for verbose files where documentation comments dominate the token count.
+  </p>
+  <pre><code>{`ctx_read src/utils/helpers.ts --mode aggressive
+→ F5=src/utils/helpers.ts [aggressive] 186L (32% saved)
+  import { format } from 'date-fns';
+  export function formatDate(d: Date): string {
+    return format(d, 'yyyy-MM-dd');
+  }
+  export function slugify(text: string): string {
+    return text.toLowerCase().replace(/\\s+/g, '-');
+  }`}</code></pre>
+
+  <h2 id="entropy">Entropy Mode</h2>
+  <p>
+    Uses Shannon entropy scoring and Jaccard similarity to filter out repetitive, low-information lines.
+    Ideal for generated files, large configs, or schema files where many declarations follow the same pattern.
+  </p>
+  <pre><code>{`ctx_read src/generated/schema.ts --mode entropy
+→ F4=src/generated/schema.ts [entropy] 1847L→312L (83% saved)
+  Shannon filter: removed 1535 repetitive lines
+  Kept: unique type definitions, variant patterns
+  export interface UserSchema { id: string; email: string; ... }
+  export interface OrderSchema { id: string; items: Item[]; ... }
+  // 47 similar interfaces deduplicated`}</code></pre>
 
   <h2 id="task">Task Mode (Graph-Driven)</h2>
   <p>
@@ -187,6 +238,8 @@ ctx_read src/auth/service.rs --mode task
     Ultra-compact: returns a single line with file metadata (line count, token estimate, type).
     No content is transferred. Use to register a file as "known" without spending tokens on it.
   </p>
+  <pre><code>{`ctx_read src/auth/service.ts --mode reference
+→ F1=src/auth/service.ts [ref] 214L ~847tok ts`}</code></pre>
 
   <h2 id="lines">Lines Mode</h2>
   <p>
@@ -197,6 +250,15 @@ ctx_read src/auth/service.rs --mode task
     <li><code>lines:10-80</code> - line range</li>
     <li><code>lines:10-80,120,200-240</code> - multiple ranges</li>
   </ul>
+  <pre><code>{`ctx_read src/server.rs --mode lines:42-48
+→ F2=src/server.rs [lines:42-48] 7L
+  42| pub fn start_server(config: &Config) -> Result<()> {
+  43|     let addr = config.bind_address();
+  44|     let listener = TcpListener::bind(addr)?;
+  45|     info!("Server listening on {}", addr);
+  46|     for stream in listener.incoming() {
+  47|         handle_connection(stream?)?;
+  48|     }`}</code></pre>
 
   <h2 id="instruction-file-protection">Instruction File Protection <span class="text-muted text-sm">(v3.5.13)</span></h2>
   <p>

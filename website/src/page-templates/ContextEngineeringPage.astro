@@ -2,23 +2,26 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
-import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getMcpManifest } from '../lib/mcpManifest';
 
 const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
+const manifest = getMcpManifest();
 ---
 
 <BaseLayout
-  title="What is Context Engineering? - LeanCTX"
-  description="Context engineering is the discipline of optimizing the full information environment an AI agent operates in — not just the prompt, but memory, compression, governance, and verification."
-  breadcrumbs={[{ name: 'Home', url: lp('/') }, { name: 'What is Context Engineering?', url: lp('/what-is-context-engineering/') }]}>
+  title={t('ce.title')}
+  description={t('ce.metaDesc')}
+  breadcrumbs={[{ name: t('ce.breadcrumbHome'), url: lp('/') }, { name: t('ce.breadcrumbTitle'), url: lp('/what-is-context-engineering/') }]}>
 
 <!-- ═══════ HERO ═══════ -->
 <PageHero
-  label="Thought Leadership"
-  title="What is Context Engineering?"
-  highlight="The evolution from prompt engineering to context operations."
-  description="Context engineering is the emerging discipline of designing, compressing, and managing the full information environment that AI coding agents operate in."
+  label={t('ce.heroLabel')}
+  title={t('ce.heroTitle')}
+  highlight={t('ce.heroHighlight')}
+  description={t('ce.heroDesc')}
   highlightStyle="italic"
 />
 
@@ -30,10 +33,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <section class="relative section-y">
   <div class="content-grid">
     <SectionHeading
-      label="The Problem"
-      title="Prompts alone"
-      highlight="aren't enough"
-      description="Prompt engineering optimized the input. Context engineering optimizes the environment."
+      label={t('ce.problemLabel')}
+      title={t('ce.problemTitle')}
+      highlight={t('ce.problemHighlight')}
+      description={t('ce.problemDesc')}
       variant="full"
       breakHighlight={false}
       descMaxWidth="48rem"
@@ -41,34 +44,23 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     />
 
     <div class="prose-section animate-entrance">
-      <p>
-        When AI agents were limited to single-turn interactions, prompt engineering was sufficient.
-        You crafted the right instruction, the model returned a useful response, and the workflow ended.
-      </p>
-      <p>
-        Modern AI coding agents operate differently. They run multi-step workflows across dozens of files,
-        maintain state across sessions, and make decisions that compound over time. The prompt is no longer
-        the bottleneck — the context is.
-      </p>
-      <p>
-        A coding agent with a perfect prompt but poor context will hallucinate file paths, lose track of
-        prior decisions, and repeat work it already completed. The failure mode isn't bad instructions —
-        it's an incomplete picture of the codebase.
-      </p>
+      <p>{t('ce.problemP1')}</p>
+      <p>{t('ce.problemP2')}</p>
+      <p>{t('ce.problemP3')}</p>
     </div>
 
     <div class="grid sm:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
       <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Context window limits</h3>
-        <p class="fluid-sm text-muted">Models have finite context windows. A medium-sized codebase exceeds them. Without compression, agents see fragments, not structure.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.problem1Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.problem1Desc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Session amnesia</h3>
-        <p class="fluid-sm text-muted">Every new conversation starts from zero. Decisions, discoveries, and patterns from prior sessions are lost unless explicitly persisted.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.problem2Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.problem2Desc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Unstructured information</h3>
-        <p class="fluid-sm text-muted">Raw file contents waste tokens on syntax noise. Agents need semantic structure — dependency graphs, API surfaces, change deltas — not raw text.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.problem3Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.problem3Desc')}</p>
       </div>
     </div>
   </div>
@@ -82,10 +74,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <section class="relative section-y">
   <div class="content-grid">
     <SectionHeading
-      label="The Framework"
-      title="Three shifts from prompt"
-      highlight="to context engineering"
-      description="Context engineering represents a fundamental change in how we think about AI agent inputs."
+      label={t('ce.frameworkLabel')}
+      title={t('ce.frameworkTitle')}
+      highlight={t('ce.frameworkHighlight')}
+      description={t('ce.frameworkDesc')}
       variant="full"
       breakHighlight={false}
       descMaxWidth="48rem"
@@ -95,18 +87,18 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     <div class="grid sm:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="shift-card card" style="padding: 1.5rem;">
         <div class="shift-number font-display text-accent">01</div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Static prompts → Dynamic context pipelines</h3>
-        <p class="fluid-sm text-muted">Instead of a fixed system prompt, context engineering builds a pipeline that assembles the right context for each task — reading only what's relevant, at the right compression level, with the right metadata.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.shift1Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.shift1Desc')}</p>
       </div>
       <div class="shift-card card" style="padding: 1.5rem;">
         <div class="shift-number font-display text-accent-2">02</div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Manual curation → Automated compression</h3>
-        <p class="fluid-sm text-muted">Rather than hand-picking which files to include, context engineering uses AST parsing, entropy filtering, and semantic chunking to automatically compress information to its essential signal.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.shift2Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.shift2Desc')}</p>
       </div>
       <div class="shift-card card" style="padding: 1.5rem;">
         <div class="shift-number font-display text-accent-3">03</div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Single-shot → Persistent memory across sessions</h3>
-        <p class="fluid-sm text-muted">Context engineering introduces session persistence, knowledge graphs, and handoff protocols so that agents accumulate understanding over time instead of starting fresh every conversation.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.shift3Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.shift3Desc')}</p>
       </div>
     </div>
   </div>
@@ -120,10 +112,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <section class="relative section-y">
   <div class="content-grid">
     <SectionHeading
-      label="The Discipline"
-      title="What context engineering"
-      highlight="includes"
-      description="Context engineering spans four interconnected domains, each addressing a different aspect of the agent's information environment."
+      label={t('ce.disciplineLabel')}
+      title={t('ce.disciplineTitle')}
+      highlight={t('ce.disciplineHighlight')}
+      description={t('ce.disciplineDesc')}
       variant="full"
       breakHighlight={false}
       descMaxWidth="48rem"
@@ -132,24 +124,24 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     <div class="grid sm:grid-cols-2 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card" style="padding: 1.5rem;">
-        <div class="domain-label text-accent">Compression</div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Fit more signal into fewer tokens</h3>
-        <p class="fluid-sm text-muted">Multiple read modes (full, map, signatures, entropy, aggressive), tree-sitter AST parsing across 18+ languages, and semantic chunking reduce file content by 60–99% while preserving the information agents need to make decisions.</p>
+        <div class="domain-label text-accent">{t('ce.domain1Label')}</div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.domain1Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.domain1Desc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <div class="domain-label text-accent-2">Memory</div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Persist understanding across sessions</h3>
-        <p class="fluid-sm text-muted">Session snapshots, knowledge graphs, handoff ledgers, and prospective memory allow agents to recall prior decisions, avoid repeated work, and transfer context between team members or agent instances.</p>
+        <div class="domain-label text-accent-2">{t('ce.domain2Label')}</div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.domain2Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.domain2Desc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <div class="domain-label text-accent-3">Governance</div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Control what agents can access</h3>
-        <p class="fluid-sm text-muted">Role-based access policies, token budgets, SLO enforcement, and path sandboxing ensure agents operate within defined boundaries — reading only what they should, spending only what's allocated.</p>
+        <div class="domain-label text-accent-3">{t('ce.domain3Label')}</div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.domain3Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.domain3Desc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <div class="domain-label text-accent">Verification</div>
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Prove compression didn't lose information</h3>
-        <p class="fluid-sm text-muted">Output validation, proof artifacts, path and identifier preservation checks, and information-loss scoring give measurable confidence that compressed context retains the semantic content the agent requires.</p>
+        <div class="domain-label text-accent">{t('ce.domain4Label')}</div>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.domain4Title')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.domain4Desc')}</p>
       </div>
     </div>
   </div>
@@ -163,10 +155,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <section class="relative section-y">
   <div class="content-grid">
     <SectionHeading
-      label="Implementation"
-      title="How LeanCTX implements"
-      highlight="context engineering"
-      description="LeanCTX is an open-source context engineering runtime that brings these principles into production for AI coding agents."
+      label={t('ce.implLabel')}
+      title={t('ce.implTitle')}
+      highlight={t('ce.implHighlight')}
+      description={t('ce.implDesc')}
       variant="full"
       breakHighlight={false}
       descMaxWidth="48rem"
@@ -175,26 +167,26 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     <div class="grid sm:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
       <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">58+ MCP tools</h3>
-        <p class="fluid-sm text-muted">A comprehensive tool surface for reading, searching, compressing, and managing context — all exposed via the Model Context Protocol.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{manifest.counts.granular}{t('ce.implToolsSuffix')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.implToolsDesc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">10 read modes</h3>
-        <p class="fluid-sm text-muted">From full cached reads to entropy-filtered compression, each mode is optimized for a specific task: editing, exploring, reviewing, or referencing.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.implReadModesTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.implReadModesDesc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">95+ shell patterns</h3>
-        <p class="fluid-sm text-muted">Pattern-based compression for git, cargo, npm, docker, and other CLI output — reducing verbose command results to structured, token-efficient summaries.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.implShellTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.implShellDesc')}</p>
       </div>
       <div class="card" style="padding: 1.5rem;">
-        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Zero network calls</h3>
-        <p class="fluid-sm text-muted">Runs entirely local. No telemetry, no cloud dependencies, no data leaving your machine. Open-source under Apache-2.0.</p>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('ce.implLocalTitle')}</h3>
+        <p class="fluid-sm text-muted">{t('ce.implLocalDesc')}</p>
       </div>
     </div>
 
     <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
       <a href={lp('/context-os')} class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium">
-        Explore the full Context OS architecture
+        {t('ce.implCta')}
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </a>
     </div>
@@ -209,10 +201,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 <section class="section-y">
   <div class="content-grid">
     <SectionHeading
-      label="Get Started"
-      title="Start engineering"
-      highlight="your context"
-      description="LeanCTX is free, open-source, and installs in under a minute. See what context engineering can do for your AI workflow."
+      label={t('ce.ctaLabel')}
+      title={t('ce.ctaTitle')}
+      highlight={t('ce.ctaHighlight')}
+      description={t('ce.ctaDesc')}
       variant="full"
       breakHighlight={false}
       descMaxWidth="44rem"
@@ -220,11 +212,11 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     />
     <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
       <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        Getting Started
+        {t('ce.ctaGetStarted')}
         <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
       <a href={lp('/context-os')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        Context OS
+        {t('ce.ctaContextOs')}
       </a>
     </div>
   </div>

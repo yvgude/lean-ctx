@@ -62,7 +62,7 @@ const sidebar = [
         <td>20-95% per first read</td>
       </tr>
       <tr>
-        <td><strong>3. Shell Compression</strong></td>
+        <td><strong>3. <a href={lp('/docs/concepts/shell-patterns')}>Shell Compression</a></strong></td>
         <td>95+ tool patterns strip boilerplate output</td>
         <td>50-95% per command</td>
       </tr>
@@ -192,7 +192,7 @@ const sidebar = [
   <ul>
     <li><strong>Session cache</strong> - ~13 token stubs replace re-reads (99% on re-reads)</li>
     <li><strong>Read modes</strong> - map, signatures, entropy, aggressive compress first reads (20-95%)</li>
-    <li><strong>Shell compression</strong> - 95+ tool-specific patterns strip boilerplate (50-95%)</li>
+    <li><strong><a href={lp('/docs/concepts/shell-patterns')}>Shell compression</a></strong> - 95+ tool-specific patterns strip boilerplate (50-95%)</li>
     <li><strong>Archive + Expand</strong> - large results stored to disk, retrieved on demand (80-95%)</li>
     <li><strong>Deduplication</strong> - <code>ctx_dedup</code> detects and eliminates redundant content in context</li>
   </ul>
@@ -270,6 +270,10 @@ export LCTX_TERSE_LEVEL=full`}</code></pre>
   <p>
     The level can also be changed mid-session via <code>ctx_session</code> without restarting
     the lean-ctx server.
+  </p>
+  <p>
+    For details on how shell command output is compressed (the input-side counterpart to Terse Agent),
+    see <a href={lp('/docs/concepts/shell-patterns')}>Shell Patterns</a>.
   </p>
 
   <h2 id="tips">Optimization Tips</h2>

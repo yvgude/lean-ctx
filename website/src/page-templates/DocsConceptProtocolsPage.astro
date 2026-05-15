@@ -16,6 +16,7 @@ const sidebar = [
       { label: 'TDD / CRP Mode', href: lp('/docs/concepts/protocols') + '#tdd' },
       { label: 'CLP (Context Layered Preload)', href: lp('/docs/concepts/protocols') + '#clp' },
       { label: 'A2A (Agent-to-Agent)', href: lp('/docs/concepts/protocols') + '#a2a' },
+      { label: 'Which Protocol When?', href: lp('/docs/concepts/protocols') + '#which-protocol-when' },
     ],
   },
   {
@@ -24,6 +25,16 @@ const sidebar = [
       { label: 'CEP Full Reference', href: lp('/docs/cep') },
       { label: 'CCP Full Reference', href: lp('/docs/ccp') },
       { label: 'TDD Full Reference', href: lp('/docs/tdd') },
+    ],
+  },
+  {
+    title: 'Related Tools',
+    compact: true,
+    items: [
+      { label: 'ctx_compress', href: lp('/docs/tools/ctx-compress') },
+      { label: 'ctx_preload', href: lp('/docs/tools/ctx-preload') },
+      { label: 'ctx_session', href: lp('/docs/tools/ctx-session') },
+      { label: 'ctx_agent', href: lp('/docs/tools/ctx-agent') },
     ],
   },
 ];
@@ -74,57 +85,143 @@ const sidebar = [
         <td><code>A2A</code></td>
         <td>Agent-to-Agent</td>
         <td>Multi-agent sessions</td>
-        <td>Message bus, shared cache, task delegation, diary persistence</td>
+        <td>Message bus, shared cache, task delegation between agents</td>
       </tr>
     </tbody>
   </table>
 
-  <h2 id="cep">CEP - Context Engineering Protocol</h2>
+  <!-- ========== CEP ========== -->
+
+  <h2 id="cep">CEP — Context Engineering Protocol</h2>
   <p>
-    CEP is injected into every session's system prompt. It establishes 5 core rules that reduce
-    token waste from the LLM itself:
+    CEP is the foundational protocol: it shapes <em>how the LLM itself communicates</em>. Injected
+    into every session's system prompt, CEP establishes 5 rules that reduce output token waste
+    by training the model to be concise and action-oriented.
   </p>
+
+  <h3>The 5 CEP Rules</h3>
   <ol>
-    <li><strong>ACT FIRST:</strong> Execute tool calls before explaining. Avoid narration before action.</li>
-    <li><strong>DELTA ONLY:</strong> Use file references (F1, F2...) instead of repeating paths. Show only changed code.</li>
-    <li><strong>STRUCTURED:</strong> Use <code>+</code> (add), <code>-</code> (remove), <code>~</code> (modify) notation.</li>
-    <li><strong>ONE LINE PER ACTION:</strong> Keep each action to a single line for scan-ability.</li>
-    <li><strong>QUALITY ANCHOR:</strong> Never skip edge cases, never use mock data, never placeholder.</li>
+    <li><strong>ACT FIRST:</strong> Execute tool calls before explaining. No narration before action.</li>
+    <li><strong>DELTA ONLY:</strong> Use file references (<code>F1</code>, <code>F2</code>...) instead of repeating full paths. Show only changed code, never echo unchanged lines.</li>
+    <li><strong>STRUCTURED:</strong> Use <code>+</code> (add), <code>-</code> (remove), <code>~</code> (modify) notation for changes.</li>
+    <li><strong>ONE LINE PER ACTION:</strong> Each action or result fits on a single line for scan-ability.</li>
+    <li><strong>QUALITY ANCHOR:</strong> Never skip edge cases, never use mock data, never use placeholders.</li>
   </ol>
+
+  <h3>When CEP Activates</h3>
+  <p>
+    CEP is <strong>always active</strong>. It is injected via the <code>LITM</code> (Lost-In-The-Middle)
+    system prompt block at session start and reinforced at the end of instructions. You cannot disable
+    CEP — it is the baseline communication contract between lean-ctx and the model.
+  </p>
+
+  <h3>Example: With vs. Without CEP</h3>
+  <pre><code>{`# Without CEP (typical LLM output):
+I'll read the authentication service file to understand the current implementation.
+Let me also check the token refresh logic...
+The file at src/auth/service.rs contains a TokenService struct with methods for
+creating and refreshing tokens. I can see that the refresh logic on line 45...
+
+# With CEP active (lean-ctx output):
+F1=auth/service.rs → ~refresh_token(): fixed expiry calc
+  ~ L45: expires_at = now + duration  (was: now - duration)`}</code></pre>
+
   <p>
     <a href={lp('/docs/cep')}>Full CEP documentation →</a>
   </p>
 
-  <h2 id="ccp">CCP - Context Checkpoint Protocol</h2>
+  <!-- ========== CCP ========== -->
+
+  <h2 id="ccp">CCP — Context Checkpoint Protocol</h2>
   <p>
-    CCP automatically creates compressed session snapshots every ~15 tool calls.
-    These checkpoints capture:
+    CCP creates compressed session snapshots that preserve the agent's working state across
+    context window truncation. In long sessions, the LLM's context window silently drops older
+    messages — CCP ensures critical state (cached files, F-references, active tasks) survives.
   </p>
+
+  <h3>What a Checkpoint Captures</h3>
   <ul>
-    <li>Cached files with their F-references and content hashes</li>
-    <li>Active session state (task, workflow, knowledge)</li>
-    <li>File signatures for quick recovery</li>
+    <li><strong>File cache state:</strong> All cached files with their F-references, content hashes, and read modes</li>
+    <li><strong>Session metadata:</strong> Active task, workflow state, knowledge entries, diary entries</li>
+    <li><strong>File signatures:</strong> Compact summaries for quick recovery without full re-reads</li>
+    <li><strong>Token accounting:</strong> Cumulative savings, call counts, and budget status</li>
   </ul>
-  <p>
-    When the context window is truncated (common in long sessions), the checkpoint allows
-    the agent to recover its full working state without re-reading all files.
-  </p>
+
+  <h3>When CCP Activates</h3>
+  <table>
+    <thead>
+      <tr><th>Trigger</th><th>Condition</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Auto checkpoint</td><td>Every ~15 tool calls (configurable via <code>checkpoint_interval</code>)</td></tr>
+      <tr><td>Manual checkpoint</td><td>Call <code>ctx_compress</code> explicitly</td></tr>
+      <tr><td>Threshold checkpoint</td><td>When estimated context usage exceeds 60% of window</td></tr>
+      <tr><td>Session save</td><td>When calling <code>ctx_session save</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example: Checkpoint in Action</h3>
+  <pre><code>{`# After 15+ tool calls, lean-ctx auto-compresses:
+⟳ CCP checkpoint (auto, call #16)
+  Files: 5 cached (F1..F5), 3 signatures
+  State: task="fix auth bug", workflow=investigating
+  Tokens: 34,200 saved (87% reduction)
+  Snapshot: 142 tokens (vs ~4800 tokens to re-read all files)
+
+# Manual checkpoint when you want to save state:
+ctx_compress
+→ Checkpoint created: 5 files, 2 knowledge entries, 1 diary
+  Recovery cost: ~150 tokens`}</code></pre>
+
   <p>
     <a href={lp('/docs/ccp')}>Full CCP documentation →</a>
   </p>
 
-  <h2 id="tdd">TDD / CRP - Terse Data Density Mode</h2>
+  <!-- ========== TDD ========== -->
+
+  <h2 id="tdd">TDD / CRP — Terse Data Density Mode</h2>
   <p>
-    Activated when <code>CRP_MODE=tdd</code> is set in the environment or config.
-    Applies maximum compression to all lean-ctx output:
+    TDD is the maximum compression protocol. When activated, all lean-ctx output is compressed using
+    abbreviated keywords, symbol maps, and diff-only notation. It targets ≤150 tokens per response
+    with zero narration — ideal for agents running on tight token budgets or high-throughput pipelines.
   </p>
+
+  <h3>When TDD Activates</h3>
+  <table>
+    <thead>
+      <tr><th>Trigger</th><th>How</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Environment variable</td><td><code>CRP_MODE=tdd</code> in shell or <code>.env</code></td></tr>
+      <tr><td>Config file</td><td><code>crp_mode = "tdd"</code> in <code>lean-ctx.toml</code></td></tr>
+      <tr><td>Per-session</td><td><code>ctx_session set crp_mode=tdd</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>TDD Compression Techniques</h3>
   <ul>
-    <li>Abbreviated keywords: <code>fn</code>, <code>cfg</code>, <code>impl</code>, <code>deps</code>, <code>req</code>, <code>res</code>, <code>ctx</code>, <code>err</code></li>
-    <li>Type shortcuts: <code>:s</code> (string), <code>:n</code> (number), <code>:b</code> (boolean)</li>
-    <li>Symbol map tables (<code>§MAP</code>) for long identifiers → short IDs (<code>α1</code>, <code>α2</code>...)</li>
-    <li>Diff-only output (<code>+/-/~</code> notation)</li>
-    <li>Budget target: ≤150 tokens per response, zero narration</li>
+    <li><strong>Abbreviated keywords:</strong> <code>fn</code>, <code>cfg</code>, <code>impl</code>, <code>deps</code>, <code>req</code>, <code>res</code>, <code>ctx</code>, <code>err</code></li>
+    <li><strong>Type shortcuts:</strong> <code>:s</code> (string), <code>:n</code> (number), <code>:b</code> (boolean)</li>
+    <li><strong>Symbol maps (<code>§MAP</code>):</strong> Long identifiers → short IDs (<code>α1</code>, <code>α2</code>...)</li>
+    <li><strong>Diff-only output:</strong> <code>+/-/~</code> notation, no unchanged code</li>
+    <li><strong>Budget target:</strong> ≤150 tokens per response</li>
   </ul>
+
+  <h3>Example: Normal vs. TDD Output</h3>
+  <pre><code>{`# Normal ctx_read output (~180 tokens):
+F1=src/auth/service.rs 95L [full]
+  pub struct TokenService { db: Pool, secret: String }
+  pub fn create_token(&self, user_id: i64) -> Token { ... }
+  pub fn refresh_token(&self, token: &str) -> Result<Token> { ... }
+  pub fn revoke_token(&self, token: &str) -> Result<()> { ... }
+
+# TDD ctx_read output (~45 tokens):
+F1=auth/service.rs 95L
+  §MAP: TokenService=α1, create_token=α2, refresh_token=α3
+  α1 { db:Pool, secret:s }
+  α2(user_id:n)->Token
+  α3(token:s)->Res<Token>
+  revoke_token(token:s)->Res<()>`}</code></pre>
 
   <h3>Quality Gate: Symbol Scope</h3>
   <p>
@@ -140,33 +237,144 @@ const sidebar = [
     <a href={lp('/docs/tdd')}>Full TDD documentation →</a>
   </p>
 
-  <h2 id="clp">CLP - Context Layered Preload</h2>
+  <!-- ========== CLP ========== -->
+
+  <h2 id="clp">CLP — Context Layered Preload</h2>
   <p>
-    CLP activates when you call <code>ctx_preload</code> at session start. It analyzes your task
-    description and the project structure to pre-load the most relevant files in optimal read modes.
+    CLP front-loads the right files at session start so the agent doesn't waste tool calls discovering
+    them later. Given a task description, CLP analyzes the project structure (imports, call graph,
+    file names) and pre-loads files in three layers with decreasing detail.
   </p>
-  <h3>Layers</h3>
-  <ol>
-    <li><strong>Layer 1 (Entry):</strong> Files directly mentioned or most relevant to the task - read in <code>full</code> mode</li>
-    <li><strong>Layer 2 (Context):</strong> Dependencies and imports of Layer 1 files - read in <code>map</code> or <code>signatures</code> mode</li>
-    <li><strong>Layer 3 (Reference):</strong> Transitive dependencies - registered as <code>reference</code> mode (no content loaded)</li>
-  </ol>
+
+  <h3>When CLP Activates</h3>
+  <p>
+    CLP activates when you call <code>ctx_preload</code> with a task description at session start.
+    It can also trigger automatically if <code>auto_preload = true</code> is set in <code>lean-ctx.toml</code>
+    and the agent's first message contains a clear task.
+  </p>
+
+  <h3>The Three Layers</h3>
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Read Mode</th><th>What Gets Loaded</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>L1 (Entry)</strong></td>
+        <td><code>full</code></td>
+        <td>Files directly relevant to the task</td>
+        <td>You'll likely edit these — need full content</td>
+      </tr>
+      <tr>
+        <td><strong>L2 (Context)</strong></td>
+        <td><code>map</code> / <code>signatures</code></td>
+        <td>Dependencies and imports of L1 files</td>
+        <td>Need API surface, not full code</td>
+      </tr>
+      <tr>
+        <td><strong>L3 (Reference)</strong></td>
+        <td><code>reference</code></td>
+        <td>Transitive dependencies</td>
+        <td>Registered for quick access, no content loaded</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Example: Preloading for a Bug Fix</h3>
   <pre><code>{`ctx_preload task="fix the auth refresh token bug"
 → Preloaded 7 files in 3 layers:
   L1 (full):    src/auth/service.rs, src/auth/token.rs
   L2 (map):     src/http/middleware.rs, src/db/sessions.rs, src/config.rs
   L3 (ref):     src/http/server.rs, src/main.rs
-  Total: ~2400 tokens (vs ~12000 tokens for full reads)`}</code></pre>
+  Total: ~2400 tokens (vs ~12000 tokens for full reads)
 
-  <h2 id="a2a">A2A - Agent-to-Agent Protocol</h2>
+# Without CLP, the agent would:
+#   1. ctx_tree src/         → 200 tokens
+#   2. ctx_read src/auth/    → scan multiple files → 800+ tokens
+#   3. ctx_read dependencies → 600+ tokens each
+# CLP saves 3-5 tool calls and loads everything in optimal modes`}</code></pre>
+
+  <!-- ========== A2A ========== -->
+
+  <h2 id="a2a">A2A — Agent-to-Agent Protocol</h2>
   <p>
     A2A enables coordination between multiple AI agents working on the same project.
-    It provides an agent registry, message bus, task delegation, shared cache, and persistent diaries —
-    everything needed for multi-agent workflows on a single codebase.
+    It provides an agent registry, message bus, task delegation, shared cache, and persistent
+    diaries — everything needed for multi-agent workflows on a single codebase.
   </p>
   <p>
-    <a href={lp('/docs/concepts/multi-agent')} class="inline-flex items-center gap-1 font-medium">
-      Full multi-agent documentation →
-    </a>
+    See <a href={lp('/docs/concepts/multi-agent')}>Multi-Agent Coordination</a> for details
+    on the agent registry, message routing, task delegation, Google A2A compatibility,
+    and context handoff patterns.
   </p>
+
+  <!-- ========== Protocol Interactions ========== -->
+
+  <h2 id="protocol-interactions">How Protocols Work Together</h2>
+  <p>
+    Protocols are not isolated — they compose. A typical session activates multiple protocols
+    at different stages:
+  </p>
+  <ol>
+    <li><strong>Session start:</strong> CEP activates (always). CLP activates if <code>ctx_preload</code> is called.</li>
+    <li><strong>During work:</strong> CEP governs LLM output style. TDD may further compress if enabled.</li>
+    <li><strong>At checkpoint intervals:</strong> CCP creates snapshots automatically every ~15 calls.</li>
+    <li><strong>In multi-agent setups:</strong> A2A routes messages and shares cache between agents.</li>
+  </ol>
+  <pre><code>{`Session timeline:
+  ┌─── CEP (always active, governs output style) ──────────────────────┐
+  │                                                                     │
+  │ CLP         CCP          CCP          CCP                          │
+  │ preload     checkpoint   checkpoint   checkpoint                   │
+  │ ↓           ↓            ↓            ↓                            │
+  ├──┤──────────┤────────────┤────────────┤────────────────────────────┤
+  0  start     call #15     call #30     call #45                   end
+  │                                                                     │
+  │ TDD (optional, if CRP_MODE=tdd) ───────────────────────────────────│
+  │ A2A (optional, if multi-agent) ────────────────────────────────────│
+  └─────────────────────────────────────────────────────────────────────┘`}</code></pre>
+
+  <!-- ========== Which Protocol When? ========== -->
+
+  <h2 id="which-protocol-when">Which Protocol When?</h2>
+  <p>
+    Use this table to decide which protocols matter for your use case:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Scenario</th><th>Protocols Active</th><th>What to Do</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Default session (no config)</td>
+        <td>CEP + CCP</td>
+        <td>Nothing — both activate automatically</td>
+      </tr>
+      <tr>
+        <td>Long session (50+ tool calls)</td>
+        <td>CEP + CCP</td>
+        <td>CCP auto-checkpoints; call <code>ctx_compress</code> manually if context feels stale</td>
+      </tr>
+      <tr>
+        <td>Tight token budget or CI pipeline</td>
+        <td>CEP + CCP + TDD</td>
+        <td>Set <code>CRP_MODE=tdd</code> for maximum compression</td>
+      </tr>
+      <tr>
+        <td>Task-oriented session start</td>
+        <td>CEP + CLP + CCP</td>
+        <td>Call <code>ctx_preload task="..."</code> to front-load relevant files</td>
+      </tr>
+      <tr>
+        <td>Multiple agents on same project</td>
+        <td>CEP + CCP + A2A</td>
+        <td>Use <code>ctx_agent</code> for coordination; see <a href={lp('/docs/concepts/multi-agent')}>Multi-Agent</a></td>
+      </tr>
+      <tr>
+        <td>Maximum savings (all optimizations)</td>
+        <td>CEP + CCP + TDD + CLP</td>
+        <td>Preload + TDD mode + auto checkpoints — typical 90%+ token reduction</td>
+      </tr>
+    </tbody>
+  </table>
 </DocsLayout>

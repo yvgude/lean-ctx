@@ -32,14 +32,14 @@ const sidebar = [
 
 <DocsLayout title="Security — LeanCTX" description="Security architecture of LeanCTX: data privacy, PathJail sandbox, token scopes, audit trail, redaction policies, and secret leak prevention." sidebar={sidebar}>
 
-  <p>LeanCTX is designed with security as a first-class concern. Everything runs locally by default, there is zero telemetry, and the entire codebase is open source and auditable.</p>
+  <p>LeanCTX is designed with security as a first-class concern. Everything runs locally by default, there is zero telemetry out of the box, and the entire codebase is open source and auditable.</p>
 
   <h2 id="privacy">Data Privacy</h2>
   <ul>
     <li><strong>Local-first:</strong> All processing happens on your machine. No data leaves your network unless you explicitly configure a Team Server.</li>
-    <li><strong>Zero telemetry:</strong> LeanCTX does not collect, send, or store any usage data, analytics, or crash reports.</li>
+    <li><strong>Zero telemetry by default:</strong> LeanCTX ships with all telemetry disabled. An optional <code>contribute_enabled</code> flag in <code>[cloud]</code> config can be explicitly opted into — it is off unless you turn it on. See <a href="/docs/configuration#cloud">Configuration</a>.</li>
     <li><strong>No cloud dependency:</strong> The binary runs entirely offline. Cloud sync is opt-in and self-hosted.</li>
-    <li><strong>Open source:</strong> MIT + Apache-2.0 dual license. Full source code available for audit at any time.</li>
+    <li><strong>Open source:</strong> Apache-2.0 license. Full source code available for audit at any time.</li>
   </ul>
 
   <h2 id="pathjail">PathJail Sandbox</h2>

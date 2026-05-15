@@ -11,13 +11,13 @@ import '../styles/index.css';
 
 const pillarDocsLinks: Record<string, string> = {
   'smart-io': '/docs/concepts/read-modes',
-  'intelligence': '/docs/concepts/read-modes',
+  'intelligence': '/docs/tools/intelligence',
   'memory': '/docs/concepts/caching',
   'governance': '/docs/configuration',
   'verification': '/docs/security',
   'integrations': '/compatibility',
   'shared-sessions': '/docs/concepts/multi-agent',
-  'context-bus': '/docs/concepts/multi-agent',
+  'context-bus': '/docs/api-reference',
   'sdk': '/docs/api-reference',
 };
 
@@ -260,7 +260,7 @@ const stats = [
           <div class="compare-line"><span class="text-accent-3 font-semibold">{t('contextOs.modeMcpTag')}</span></div>
           <div class="compare-line"><span class="text-muted">{t('contextOs.modeMcpDesc')}</span></div>
           <div class="compare-line" style="margin-top: 0.5rem;">
-            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">58 tools via MCP + lazy tool set</code>
+            <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">{manifest.counts.granular} tools via MCP + lazy tool set</code>
           </div>
         </div>
       </div>
