@@ -1,0 +1,690 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getMcpManifest } from '../lib/mcpManifest';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+const toolCount = getMcpManifest().counts.granular;
+
+const sidebar = [
+  {
+    title: 'Versions',
+    items: [
+      { label: '3.5.25 (Current)', href: lp('/docs/changelog') + '#v3.5.25' },
+      { label: '3.5.24', href: lp('/docs/changelog') + '#v3.5.24' },
+      { label: '3.5.23', href: lp('/docs/changelog') + '#v3.5.23' },
+      { label: '3.5.22', href: lp('/docs/changelog') + '#v3.5.22' },
+      { label: '3.5.21', href: lp('/docs/changelog') + '#v3.5.21' },
+      { label: '3.5.20', href: lp('/docs/changelog') + '#v3.5.20' },
+      { label: '3.5.19', href: lp('/docs/changelog') + '#v3.5.19' },
+      { label: '3.5.18', href: lp('/docs/changelog') + '#v3.5.18' },
+      { label: '3.5.17', href: lp('/docs/changelog') + '#v3.5.17' },
+      { label: '3.5.16', href: lp('/docs/changelog') + '#v3.5.16' },
+      { label: '3.5.15', href: lp('/docs/changelog') + '#v3.5.15' },
+      { label: '3.5.14', href: lp('/docs/changelog') + '#v3.5.14' },
+      { label: '3.5.13', href: lp('/docs/changelog') + '#v3.5.13' },
+      { label: '3.4.2', href: lp('/docs/changelog') + '#v3.4.2' },
+      { label: '3.4.1', href: lp('/docs/changelog') + '#v3.4.1' },
+      { label: '3.4.0', href: lp('/docs/changelog') + '#v3.4.0' },
+      { label: '3.3.3', href: lp('/docs/changelog') + '#v3.3.3' },
+      { label: '3.3.2', href: lp('/docs/changelog') + '#v3.3.2' },
+      { label: '3.3.1', href: lp('/docs/changelog') + '#v3.3.1' },
+      { label: '3.3.0', href: lp('/docs/changelog') + '#v3.3.0' },
+      { label: '3.2.9', href: lp('/docs/changelog') + '#v3.2.9' },
+      { label: '3.2.8', href: lp('/docs/changelog') + '#v3.2.8' },
+      { label: '3.2.6', href: lp('/docs/changelog') + '#v3.2.6' },
+      { label: '3.2.0', href: lp('/docs/changelog') + '#v3.2.0' },
+      { label: '3.0.1', href: lp('/docs/changelog') + '#v3.0.1' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: lp('/docs/getting-started') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+      { label: 'Shell Activation', href: lp('/docs/configuration') + '#shell-activation' },
+      { label: `${t('docs.sidebarToolApi')} (${toolCount})`, href: lp('/docs/tools') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Changelog"
+  description="lean-ctx version history - new features, improvements, and bug fixes for every release."
+  sidebar={sidebar}
+>
+  <p>
+    Complete version history for lean-ctx. Each release includes new features,
+    improvements, and bug fixes. lean-ctx follows semantic versioning.
+  </p>
+
+  <!-- 3.5.25 -->
+  <h2 id="v3.5.25">3.5.25 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Current stable release — CPU hotspot fixes, canonical rules policy, full registry migration.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Process concurrency guard</strong> — Limits concurrent lean-ctx processes to 4 via <code>flock</code> slot locks, preventing CPU saturation when multiple agents trigger simultaneous operations.</li>
+    <li><strong>Terse pipeline input cap &amp; timeout</strong> — Skips inputs &gt;64KB and enforces a 500ms deadline, preventing runaway CPU on large outputs (<a href="https://github.com/yvgude/lean-ctx/issues/210">#210</a>).</li>
+    <li><strong>Canonical rules policy</strong> — New <code>rules_canonical.rs</code> module provides a single source of truth for all rule generation (MUST USE / NEVER USE tables) across Hybrid and MCP modes.</li>
+    <li><strong>Contract tests for rules consistency</strong> — 11 cross-IDE contract tests verify generated rules contain correct MUST/NEVER language with no contradictions.</li>
+    <li><strong>Property-based compression tests</strong> — <code>proptest</code> invariant tests for <code>safeguard_ratio</code>, <code>entropy_compress</code>, and <code>compress_output</code>.</li>
+    <li><strong>MCP JSON <code>instructions</code> field</strong> — Editor MCP configs now include tool policy instructions where clients support it.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Rules language strengthened</strong> — All rule templates now use <code>CRITICAL: ALWAYS</code>, <code>MUST USE</code>, and <code>NEVER USE</code> instead of <code>PREFER</code>.</li>
+    <li><strong>Background index throttled</strong> — Index builds run with <code>nice -n 19</code> and <code>ionice -c 3</code> to prevent CPU contention during setup.</li>
+    <li><strong>Dictionary and quality gate optimized</strong> — Case-insensitive early-exit in <code>apply_dictionaries</code>, HashSet lookup in quality gate, identifier cap at 200.</li>
+    <li><strong>Entropy compression safeguard</strong> — Falls back to original content when compression would inflate token count.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>100% CPU on <code>terse</code> with large inputs</strong> (<a href="https://github.com/yvgude/lean-ctx/issues/210">#210</a>) — Combination of input cap, timeout budget, trigram cap, and process guard eliminates all known CPU hotspot scenarios.</li>
+    <li><strong>env.sh self-heal loop</strong> — Container self-heal now includes 60-second cooldown and PID-lock check (max 4 concurrent).</li>
+  </ul>
+
+  <!-- 3.5.24 -->
+  <h2 id="v3.5.24">3.5.24 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Unified Hybrid mode, CliRedirect elimination, LEAN_CTX_QUIET production mode.</p>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Eliminate CliRedirect hook mode</strong> — All agents now use <code>Hybrid</code> (MCP for reads/search + shell hooks for command compression) or <code>Mcp</code> only. Cursor, Gemini CLI, and 18 more agents get automatic MCP installation with cached reads.</li>
+    <li><strong>All agents default to Hybrid</strong> — <code>recommend_hook_mode()</code> returns <code>Hybrid</code> for all agents with shell access. MCP reads + shell compression = best of both worlds.</li>
+    <li><strong>Cursor: automatic MCP installation</strong> — <code>lean-ctx init --agent cursor</code> and <code>lean-ctx setup</code> now install the MCP server config automatically.</li>
+    <li><strong>Hybrid rules template v2</strong> — Updated rule templates to clearly instruct <code>ctx_read</code> + <code>ctx_search</code> (MCP) for reads/search, <code>lean-ctx -c</code> (CLI) for shell.</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong><code>LEAN_CTX_QUIET=1</code> production mode</strong> — Suppresses all informational output: savings footers, session-start messages, tee-log hints. Shell compression still runs — only annotations are hidden.</li>
+    <li><strong>Redirect subprocess timeout increased</strong> — Hook redirect timeout increased from 3s to 10s for reliable operation on slow filesystems.</li>
+  </ul>
+
+  <h3>Removed</h3>
+  <ul>
+    <li><strong><code>HookMode::CliRedirect</code></strong> — Enum variant, <code>CLI_REDIRECT_RULES</code> constant, <code>build_cli_redirect_instructions()</code>, and the <code>lean-ctx-cli-redirect.mdc</code> template.</li>
+    <li><strong><code>DedicatedCliRedirect</code> / <code>CursorMdcCliRedirect</code></strong> — Rules injection variants removed.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Cursor reads/search not using MCP</strong> — CliRedirect mode prevented MCP installation. Now all rule files consistently instruct Hybrid mode.</li>
+    <li><strong>Inconsistent rule files</strong> — <code>.cursorrules</code>, <code>AGENTS.md</code>, and <code>.mdc</code> templates now all instruct Hybrid mode.</li>
+    <li><strong>macOS CI: rustup-init in PATH</strong> — Added explicit <code>rustup default stable</code> step to ensure toolchain is active.</li>
+  </ul>
+
+  <!-- 3.5.23 -->
+  <h2 id="v3.5.23">3.5.23 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">RAM Guardian with jemalloc, zstd cache compression, configurable savings footer suppression.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>RAM Guardian — adaptive memory management</strong> — RSS-based memory monitoring with adaptive tiered eviction. Uses <code>jemalloc</code> as global allocator on Unix for aggressive memory return. Configurable via <code>max_ram_percent</code> (default 5%). New <code>/api/memory</code> dashboard endpoint and <code>lean-ctx doctor</code> diagnostics.</li>
+    <li><strong>zstd-compressed session cache</strong> — Cache entries now stored as zstd-compressed data, reducing in-memory footprint by ~60–80%.</li>
+    <li><strong>Configurable savings footer suppression</strong> — New <code>savings_footer</code> config option (<code>auto</code> / <code>always</code> / <code>never</code>) and <code>LEAN_CTX_SAVINGS_FOOTER</code> env var. In <code>auto</code> mode (default), token savings footers are shown in CLI but suppressed in MCP/agent context.</li>
+    <li><strong>Memory estimation and unload for indexes</strong> — BM25 and embedding indexes expose memory usage and can be unloaded by the RAM Guardian under pressure.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>CLI savings footer bypass</strong> — CLI footer formatting now delegates to the central <code>format_savings()</code> function, respecting the <code>savings_footer</code> configuration.</li>
+    <li><strong>Daemon-delegated output footer leakage</strong> — Client-side filtering ensures footers are stripped when <code>LEAN_CTX_SAVINGS_FOOTER=never</code>, even when output comes from the daemon.</li>
+    <li><strong>Shared session store cap</strong> — Reduced from 64 to 8 cached sessions to prevent unbounded memory growth.</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.5.22 -->
+  <h2 id="v3.5.22">3.5.22 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Native Windows daemon, IPC abstraction, overlay/FUSE read fix, CPU hotfix, dashboard improvements.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Read: overlay/FUSE stat() race</strong> — <code>read_file_lossy</code> now opens the file first and uses <code>fstat()</code> on the file descriptor instead of a separate <code>stat()</code> syscall. Fixes sporadic "No such file or directory" errors in Docker overlay/FUSE filesystems (e.g. Codex sandboxes). Adds a single retry with 50ms backoff on NotFound.</li>
+    <li><strong>100% CPU after <code>lean-ctx setup</code> on Ubuntu</strong> — Two root causes: (1) <code>env.sh</code> self-heal script could recursively spawn <code>lean-ctx init</code> via <code>BASH_ENV</code>. Now guarded with container detection, recursion guard, and <code>LEAN_CTX_ACTIVE</code> propagation. (2) Graph index scanning could scan entire <code>$HOME</code>. Now guarded with <code>is_safe_scan_root()</code>, cross-process lock, 50k entry limit, and 2-minute timeout. <code>LEAN_CTX_NO_INDEX</code> env var skips indexing entirely. (<a href="https://github.com/yvgude/lean-ctx/issues/210">#210</a>)</li>
+    <li><strong>Daemon modules now platform-independent</strong> — Removed all <code>#[cfg(unix)]</code> gates from daemon modules. <code>daemon_client.rs</code> auto-start works on all platforms.</li>
+    <li><strong>Dashboard call graph timeout</strong> — Increased from 15s/30s to 60s for larger projects during initial build.</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Native Windows daemon support — IPC abstraction layer</strong> — New <code>ipc/</code> module provides platform-independent daemon transport. Unix uses UDS (unchanged), Windows uses Named Pipes (<code>\\.\pipe\lean-ctx-&lbrace;hash&rbrace;</code>). All OS-specific code isolated in <code>ipc/unix.rs</code> and <code>ipc/windows.rs</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/209">#209</a>)</li>
+    <li><strong>HTTP-based daemon shutdown</strong> — New <code>POST /v1/shutdown</code> endpoint for cross-platform graceful shutdown. Falls back to <code>SIGTERM</code>/<code>TerminateProcess</code>, then force kill.</li>
+    <li><strong>Parallel call graph build with progress tracking</strong> — <code>CallGraph::build_parallel()</code> uses rayon for concurrent file analysis with live progress. Dashboard polls via <code>/api/call-graph/status</code>.</li>
+    <li><strong>Dashboard: call graph progress bar</strong> — Live progress bar during call graph builds with auto-polling every 2s.</li>
+    <li><strong>Dashboard: project file browser in Compression Lab</strong> — Two tabs: "Recent" and "Project" (all indexed files). Includes search, file count, and token count per file.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong><code>serve_uds()</code> replaced by <code>serve_ipc()</code></strong> — Takes a <code>DaemonAddr</code> enum instead of a <code>PathBuf</code>.</li>
+    <li><strong><code>daemon_socket_path()</code> removed</strong> — Replaced by <code>daemon::daemon_addr()</code> returning a <code>DaemonAddr</code> enum.</li>
+  </ul>
+
+  <!-- 3.5.21 -->
+  <h2 id="v3.5.21">3.5.21 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Graph data directory fix, graph index UX, config schema validation, dashboard expandable events.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>graph.db and graph.meta.json now honor <code>LEAN_CTX_DATA_DIR</code></strong> — Property graph files stored in <code>$DATA_DIR/graphs/&lt;project_hash&gt;/</code>. Transparent migration moves existing files from <code>&lt;project&gt;/.lean-ctx/</code> on first access. (<a href="https://github.com/yvgude/lean-ctx/issues/205">#205</a>)</li>
+    <li><strong>Graph index UX: correct labels and configurable cap</strong> — <code>lean-ctx gain</code> shows "files" instead of "nodes". New config key <code>graph_index_max_files</code> (default: 5000). (<a href="https://github.com/yvgude/lean-ctx/issues/206">#206</a>)</li>
+    <li><strong>Config documentation accuracy</strong> — Removed phantom sections and corrected wrong defaults across website docs. (<a href="https://github.com/yvgude/lean-ctx/issues/208">#208</a>)</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Dashboard expandable event details</strong> — Event cards in the Live Observatory are now clickable with accordion pattern and lazy-loaded full metrics. (<a href="https://github.com/yvgude/lean-ctx/issues/207">#207</a>)</li>
+    <li><strong><code>lean-ctx config schema</code></strong> — Outputs complete JSON schema of all configuration keys.</li>
+    <li><strong><code>lean-ctx config validate</code></strong> — Validates <code>config.toml</code> against the schema with "did you mean?" suggestions.</li>
+  </ul>
+
+  <!-- 3.5.20 -->
+  <h2 id="v3.5.20">3.5.20 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Codex installer fixes, Windows path normalization, and CLI flag validation.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Codex installer respects <code>CODEX_HOME</code></strong> — <code>lean-ctx init --agent codex</code> now reads the <code>CODEX_HOME</code> environment variable. All Codex config files are written to <code>$CODEX_HOME</code> instead of always using <code>~/.codex</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/202">#202</a>)</li>
+    <li><strong>Codex feature flag migrated to <code>hooks</code></strong> — The installer now writes <code>hooks = true</code> instead of the deprecated <code>codex_hooks = true</code>. Existing entries are auto-migrated. (<a href="https://github.com/yvgude/lean-ctx/issues/203">#203</a>)</li>
+    <li><strong><code>lean-ctx ls</code> rejects unsupported flags</strong> — Flags like <code>-la</code>, <code>-l</code>, <code>-R</code> now return a clear error with usage hints. Supported: <code>--all</code>/<code>-a</code>, <code>--depth N</code>. The shell hook continues passing <code>ls</code> flags to the system <code>ls</code>. (<a href="https://github.com/yvgude/lean-ctx/issues/201">#201</a>)</li>
+    <li><strong>Windows path format for inline rewrites</strong> — <code>handle_rewrite_inline()</code> returns native OS paths on Windows instead of MSYS format (<code>/c/Users/...</code>). New <code>from_bash_to_native_path()</code> function provides symmetrical conversion. (<a href="https://github.com/yvgude/lean-ctx/issues/204">#204</a>)</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Path normalization tests</strong> — 11 new <code>normalize_tool_path()</code> tests, 6 new <code>from_bash_to_native_path()</code> tests including Windows/Unix roundtrips.</li>
+  </ul>
+
+  <!-- 3.5.19 -->
+  <h2 id="v3.5.19">3.5.19 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Shell hook drop-in install, output policy classification, dashboard audit, and agent-aware non-interactive tracking.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Shell hook drop-in install</strong> — Users with <code>.d/</code>-style dotfiles (chezmoi, yadm, stow, oh-my-zsh <code>custom/</code>) now get hook fragments installed as numbered drop-in files (e.g. <code>~/.zshenv.d/00-lean-ctx.zsh</code>) instead of inline fenced blocks. Detection is automatic (<code>Style::Auto</code>); override with <code>--style=inline</code> or <code>--style=dropin</code>. Transparent migration between styles preserves hand-edits via timestamped backups.</li>
+    <li><strong>Output policy classification</strong> — New <code>OutputPolicy</code> enum (<code>Passthrough</code>, <code>Verbatim</code>, <code>Compressible</code>) provides centralized command classification for the compression pipeline. Commands like <code>gh api</code>, <code>az login</code>, <code>docker ps</code>, <code>kubectl get pods</code> are now correctly classified and never compressed.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Dashboard: 7 frontend data mismatch bugs</strong> — Complete attribute-by-attribute audit of all 17 dashboard pages. Fixed field name mismatches, falsy checks hiding zero values, incorrect API field mapping in Overview, Health, Agents, Memory, Live, Compression Lab, and Graph components.</li>
+    <li><strong>Token Pressure accuracy</strong> — Context field <code>temperature</code> now uses <code>pressure.utilization</code> (weighted decay) instead of raw ratio for consistency with the Token Pressure card.</li>
+    <li><strong>Truncation bug (</strong><a href="https://github.com/yvgude/lean-ctx/issues/199">#199</a><strong>)</strong> — Removed aggressive 8000-byte fallback truncation that caused AI models to retry commands. Large outputs now flow through the safety-aware <code>compress_if_beneficial</code> pipeline.</li>
+    <li><strong>Shell hook: <code>ls</code> and <code>find</code> added</strong> — Both commands are now included in the generated shell hook alias list, so directory listings are tracked and compressed. (<a href="https://github.com/yvgude/lean-ctx/issues/200">#200</a>)</li>
+    <li><strong>Shell hook: agent-aware TTY bypass</strong> — The TTY guard (<code>[ ! -t 1 ]</code>) now checks for agent environment variables (<code>LEAN_CTX_AGENT</code>, <code>CODEX_CLI_SESSION</code>, <code>CLAUDECODE</code>, <code>GEMINI_SESSION</code>). Non-interactive agent commands in Docker/Codex are now tracked. (<a href="https://github.com/yvgude/lean-ctx/issues/200">#200</a>)</li>
+  </ul>
+
+  <!-- 3.5.18 -->
+  <h2 id="v3.5.18">3.5.18 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong><code>gh api</code> output no longer compressed</strong> — Commands like <code>gh api repos/.../actions/jobs/.../logs</code> are now passthrough (no compression, no truncation). Previously, large API responses were silently truncated by the generic 8000-byte fallback.</li>
+  </ul>
+
+  <!-- 3.5.17 -->
+  <h2 id="v3.5.17">3.5.17 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <h3>Security</h3>
+  <ul>
+    <li><strong>[Critical] LLM Proxy bearer token auth</strong> — The proxy server now supports optional bearer token authentication via <code>LEAN_CTX_PROXY_TOKEN</code>.</li>
+    <li><strong>[Critical] Symlink hijack protection</strong> — <code>write_atomic()</code> and context package <code>atomic_write()</code> now reject writes through symlinks.</li>
+    <li><strong>[High] Claude binary path validation</strong> — <code>claude mcp add-json</code> validates that the resolved <code>claude</code> binary comes from a trusted directory.</li>
+    <li><strong>[High] TOCTOU mitigation</strong> — New <code>write_atomic_with_backup_checked()</code> validates file mtime between read and write.</li>
+    <li><strong>[High] Auto-approve transparency</strong> — <code>lean-ctx setup</code> now displays a banner listing all auto-approved MCP tools. New <code>--no-auto-approve</code> flag.</li>
+    <li><strong>[High] Full integrity verification</strong> — <code>verify_integrity()</code> now validates <code>content_hash</code>, <code>sha256</code>, and <code>byte_size</code>.</li>
+  </ul>
+
+  <!-- 3.5.16 -->
+  <h2 id="v3.5.16">3.5.16 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Major security hardening, structural output protection, and context runtime research modules.</p>
+
+  <h3>Security (32 fixes)</h3>
+  <ul>
+    <li><strong>[Critical] Path traversal fixes</strong> - <code>tee show</code> and dashboard <code>compression-demo</code> no longer accept path separators or <code>..</code></li>
+    <li><strong>[Critical] Injection prevention</strong> - <code>ctx_execute</code> intent parameter sanitized to alphanumeric only; CSPRNG failures now panic</li>
+    <li><strong>[Critical] MCP stdio overflow guard</strong> - <code>Content-Length</code> headers validated with <code>checked_add</code> and size cap</li>
+    <li><strong>[High] Dashboard auth hardened</strong> - loopback token exposure fixed, nonce-based CSP replaces <code>unsafe-inline</code></li>
+    <li><strong>[High] Data isolation</strong> - <code>ctx_share</code> scoped per project hash, <code>ctx_execute</code> output redacted, panic payloads no longer leaked</li>
+    <li><strong>[High] Resource exhaustion</strong> - SSE subscriber cap enforced (64/channel), Rust sandbox environment isolated</li>
+    <li><strong>[Medium] Crypto upgrade</strong> - Argon2id password hashing, SQLite busy_timeout, ReDoS mitigation for filter rules</li>
+    <li><strong>[Medium] Error sanitization</strong> - A2A handoff, cloud server, and context summary errors no longer leak OS details</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Structural output protection</strong> - <code>git diff</code>, <code>git show</code>, <code>git blame</code>, <code>git log -p</code>, <code>git stash show</code>, <code>diff</code>, <code>colordiff</code>, <code>icdiff</code>, and <code>delta</code> output is no longer mangled by compression. Dedicated fast path preserves all <code>+</code>/<code>-</code> lines, hunk headers, and blame annotations verbatim.</li>
+    <li><strong>Zsh completion fix</strong> — <code>compinit</code> sourcing in the shell hook no longer blocks interactive shells when completion dirs are missing. <a href="https://github.com/yvgude/lean-ctx/issues/193">#193</a></li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Security hardening test strengthened</strong> — the <code>security_resolve_path_guard</code> test suite now covers additional traversal vectors (encoded slashes, null bytes, overlong UTF-8) and asserts stricter deny semantics for symlink-to-outside-project scenarios.</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>13 context runtime research modules</strong> - adaptive chunking (Rabin-Karp), attention placement, cognitive load estimation (Halstead), cyclomatic complexity, gamma cover sets, graph features, information bottleneck (Blahut-Arimoto), MDL selector, memory consolidation, progressive compression, SPLADE retrieval, structural diff, structural tokenizer (18 languages)</li>
+    <li><strong>Louvain community detection O(m)</strong> - rewrote from O(n²) to edge-list-based with modularity optimization</li>
+    <li><strong>Enhanced PageRank</strong> - configurable damping, convergence detection, seed biasing</li>
+    <li><strong>SPLADE-enhanced BM25</strong> - sparse expansion terms for improved recall</li>
+    <li><strong><code>memory_cleanup</code> config option</strong> - <code>aggressive</code> (default, 5 min TTL) or <code>shared</code> (30 min TTL) for multi-IDE setups</li>
+    <li><strong>Shell activation mode</strong> — new <code>shell_activation</code> config option with three modes: <code>always</code> (default, all shells), <code>agents-only</code> (only when AI agent env vars detected), <code>off</code> (manual activation via <code>lean-ctx-on</code>). Override via <code>LEAN_CTX_SHELL_ACTIVATION</code> env var.</li>
+    <li><strong>Explicit project identity (<code>.lean-ctx-id</code>)</strong> — new highest-priority identity marker file for Docker environments. Place a <code>.lean-ctx-id</code> file in your project root with a unique project name to prevent hash collisions when different projects share the same <code>/workspace</code> mount path.</li>
+    <li><strong>Docker project isolation fix</strong> — graph index, semantic cache, bandit, and embedding index now use a composite project hash (path + identity) instead of path-only hash. Existing data is automatically migrated from old hash directories. No user action required.</li>
+  </ul>
+
+  <!-- 3.5.15 -->
+  <h2 id="v3.5.15">3.5.15 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Critical bug fixes for dashboard auth and large file handling.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Dashboard "unauthorized" on localhost</strong> - auto-injects auth token for loopback connections so the dashboard works without manual token setup</li>
+    <li><strong>Large file crash / MCP hang</strong> - reading multi-GB files no longer causes unbounded memory allocation; 4-layer protection: binary detection, metadata check, stat guard, MCP error semantics</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Binary file detection</strong> - 100+ binary file extensions recognized with human-readable labels</li>
+    <li><strong>Live Observatory help</strong> - every dashboard event now has an inline explanation with actionable guidance</li>
+    <li><strong><code>memory_cleanup</code> setting</strong> - <code>aggressive</code> (5 min idle TTL) or <code>shared</code> (30 min TTL) via config or <code>LEAN_CTX_MEMORY_CLEANUP</code></li>
+  </ul>
+
+  <!-- 3.5.14 -->
+  <h2 id="v3.5.14">3.5.14 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Performance overhaul and new analysis tools.</p>
+
+  <h3>Performance</h3>
+  <ul>
+    <li><strong>BLAKE3 hashing</strong> - 3x faster content hashing across all file operations</li>
+    <li><strong>Tree-sitter query cache</strong> - repeated structural queries skip re-parsing</li>
+    <li><strong>SQLite Property Graph optimization</strong> - faster graph traversal for architecture and impact analysis</li>
+    <li><strong>Token cache upgrade</strong> - capacity increased from 256 to 2048 entries</li>
+    <li><strong>Parallel indexing with rayon</strong> - multi-threaded project indexing</li>
+    <li><strong>Compact JSON serialization</strong> - reduced wire size for MCP responses</li>
+  </ul>
+
+  <h3>Improved</h3>
+  <ul>
+    <li><strong>Rules mode selection decision tree</strong> - improved heuristics for auto-selecting read modes (community contribution)</li>
+    <li><strong>Flaky test fixes</strong> - stabilized intermittent CI failures</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><code>core::hasher</code> module - BLAKE3-based content hashing abstraction</li>
+    <li><code>core::community</code> - Louvain clustering for dependency graph analysis</li>
+    <li><code>core::pagerank</code> - PageRank scoring for file importance</li>
+    <li><code>core::smells</code> - code smell detection engine</li>
+    <li><a href={lp('/docs/tools/ctx-smells')}><code>ctx_smells</code></a> tool - code smell detection with graph-enriched scoring</li>
+    <li><strong>58 MCP tools</strong> (up from 57)</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.5.13 -->
+  <h2 id="v3.5.13">3.5.13 <span class="text-xs text-muted">(May 2026)</span></h2>
+  <p class="text-sm text-muted">Instruction file handling fix and formal verification expansion.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Instruction files always delivered in full mode</strong> - <code>SKILL.md</code>, <code>AGENTS.md</code>, and <code>RULES.md</code> are no longer compressed, ensuring agent instructions are never mangled</li>
+    <li><strong>Markdown files exempt from aggressive compression</strong> - prevents loss of formatting in documentation files</li>
+    <li><strong>Windows Claude Code PowerShell compatibility</strong> - resolved shell detection issues when running under Claude Code on Windows</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><code>is_instruction_file()</code> API - programmatic check for instruction file detection</li>
+    <li><strong>Lean4 formal proofs</strong> - Theorems 12-13 added to the formal verification suite</li>
+    <li><strong>7 regression tests</strong> - covering instruction file handling and compression exemptions</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.4.2 -->
+  <h2 id="v3.4.2">3.4.2 <span class="text-xs text-muted">(April 2026)</span></h2>
+  <p class="text-sm text-muted">Bug fixes for Unicode paths and Windows shell detection.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Unicode SIGABRT in <code>ctx_overview</code></strong> - directory path truncation used byte-index slicing which panicked on multi-byte UTF-8 characters (Chinese, Japanese, Korean, emoji paths). Replaced with char-boundary-safe truncation. <a href="https://github.com/yvgude/lean-ctx/issues/154">#154</a></li>
+    <li><strong>Windows shell detection in Git Bash / MSYS2</strong> - <code>find_real_shell()</code> now checks <code>MSYSTEM</code>/<code>MINGW_PREFIX</code> env vars before <code>PSModulePath</code>, preventing incorrect PowerShell detection when running inside Git Bash. <a href="https://github.com/yvgude/lean-ctx/issues/156">#156</a></li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Shell hint in MCP instructions (Windows)</strong> - on Windows, instructions now include the detected shell type with explicit guidance, helping LLMs generate correct commands for the active shell environment</li>
+    <li><strong>Shell mismatch hint in <code>ctx_shell</code> responses (Windows)</strong> - when a command fails and contains PowerShell cmdlets while the detected shell is POSIX, a correction hint is appended</li>
+  </ul>
+
+  <!-- 3.4.1 -->
+  <h2 id="v3.4.1">3.4.1 <span class="text-xs text-muted">(April 2026)</span></h2>
+  <p class="text-sm text-muted">Performance &amp; token optimization release.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Up to 64% lower per-session token overhead</strong> - best-case overhead reduced from ~6,600 to ~2,400 tokens through lazy tools + <code>minimal_overhead</code> mode</li>
+    <li><strong>Async I/O on hot paths</strong> - session saves and cost attribution no longer block tool responses, reducing latency for every tool call</li>
+    <li><strong>New <code>minimal_overhead</code> mode</strong> - set <code>minimal_overhead = true</code> or <code>LEAN_CTX_MINIMAL=1</code> to suppress auto-checkpoints, meta-strings, and session blocks in instructions. Ideal for Codex and cost-sensitive environments</li>
+  </ul>
+
+  <h3>Performance</h3>
+  <ul>
+    <li><code>Session.save()</code> split into <code>prepare_save()</code> (CPU under lock) + <code>write_to_disk()</code> (background thread) - serialization stays fast, disk I/O no longer blocks responses</li>
+    <li><code>CostStore</code> writes deferred to background via <code>tokio::task::spawn_blocking</code></li>
+    <li><code>mcp-live.json</code> writes debounced to every 5th tool call (80% fewer disk writes)</li>
+    <li><code>count_tokens</code> called once per tool response instead of up to 4 times - cached result reused for hints, cost attribution, and logging</li>
+    <li><code>compress_output</code> skipped entirely for <code>Normal</code> density (no string copy)</li>
+    <li><code>md5_hex_fast</code> - 8x faster fingerprinting for large outputs (&gt;16 KB) by hashing prefix + suffix + length</li>
+  </ul>
+
+  <h3>Token Savings</h3>
+  <ul>
+    <li>Auto-checkpoint injection disabled under <code>minimal_overhead</code> - eliminates the largest per-call token overhead source</li>
+    <li>Meta-strings (<code>stale_note</code>, <code>savings_note</code>, shell efficiency hints, archive hints) suppressed under <code>minimal_overhead</code></li>
+    <li>Session/knowledge/gotcha blocks removed from MCP instructions under <code>minimal_overhead</code></li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed integer overflow crash in <code>shell_efficiency_hint</code> when output tokens exceeded input tokens (e.g. shell commands that expand output) - now uses <code>saturating_sub</code></li>
+    <li>Synchronous <code>save()</code> restores retry counter on disk write failure, preserving auto-save retry behavior</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.4.0 -->
+  <h2 id="v3.4.0">3.4.0 <span class="text-xs text-muted">(April 2026)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Lazy tools now the default</strong> - only 9 core tools exposed by default instead of 46, reducing per-turn input overhead by ~80%. Use <code>LEAN_CTX_FULL_TOOLS=1</code> to opt back in. <code>ctx_discover_tools</code> lets agents load additional tools on demand</li>
+    <li><strong>XDG Base Directory compliance</strong> - new installs use <code>$XDG_CONFIG_HOME/lean-ctx</code>. Existing <code>~/.lean-ctx</code> directories auto-detected</li>
+    <li><strong>JSONC comment support</strong> - config writers now parse JSON with <code>//</code> and <code>/* */</code> comments</li>
+    <li><strong>Shell hook disable</strong> - <code>--no-shell-hook</code> flag, <code>shell_hook_disabled = true</code> config, <code>LEAN_CTX_NO_HOOK=1</code> env var</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.3.3 -->
+  <h2 id="v3.3.3">3.3.3 <span class="text-xs text-muted">(April 2026)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Official release tag:</strong> lean-ctx 3.3.3 was marked as the stable build at time of release</li>
+    <li>Stability improvements across all MCP tools</li>
+    <li>Refined CEP v1 (Context Efficiency Protocol) instruction codes</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Improved CRP mode density - budget enforcement at ≤150 tokens per response</li>
+    <li>Enhanced <code>ctx_knowledge</code> with <code>rooms</code>, <code>search</code>, and <code>wakeup</code> actions</li>
+    <li>Better session resume flow with <code>ctx_session</code> resume action</li>
+    <li>Polished Observatory TUI dashboard layout</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed edge case where <code>ctx_dedup</code> could skip entries with identical hashes but different paths</li>
+    <li>Corrected cache-hit stub token count reporting in <code>ctx_gain</code></li>
+    <li>Fixed <code>ctx_tree</code> depth parameter not respecting symlink boundaries</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.3.2 -->
+  <h2 id="v3.3.2">3.3.2 <span class="text-xs text-muted">(March 2026)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Composite project hash:</strong> New <code>project_hash</code> combines content hash, structure hash, and config hash into a single deterministic fingerprint for change detection</li>
+    <li><strong>Codex hooks integration:</strong> Native hook support for OpenAI Codex CLI - <code>PreToolCall</code>, <code>PostToolCall</code>, and <code>SessionStart</code> events</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>project_hash</code> - composite hash for CI caching and drift detection across branches</li>
+    <li>Codex hook scripts auto-installed via <code>lean-ctx install --codex</code></li>
+    <li><code>ctx_knowledge action="timeline"</code> - chronological view of knowledge base entries</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Faster <code>ctx_preload</code> with parallel file reads (up to 4x speedup on large projects)</li>
+    <li>Reduced memory footprint for sessions with 50+ cached files</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed <code>project_hash</code> inconsistency when <code>.gitignore</code> patterns changed between runs</li>
+    <li>Resolved Codex hook permission errors on Windows WSL environments</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.3.1 -->
+  <h2 id="v3.3.1">3.3.1 <span class="text-xs text-muted">(February 2026)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>85+ new passthrough entries:</strong> Massive expansion of the shell passthrough table - commands that are passed through uncompressed when compression would lose critical information</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li>85+ new passthrough patterns for debugging tools (<code>strace</code>, <code>ltrace</code>, <code>perf</code>), database CLIs (<code>psql</code>, <code>mysql</code>, <code>redis-cli</code>), and cloud CLIs (<code>aws</code>, <code>gcloud</code>, <code>az</code>)</li>
+    <li><code>ctx_shell raw=true</code> - explicit bypass for any command, returning uncompressed output</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Better error messages when passthrough entries conflict with custom compression patterns</li>
+    <li>Shell pattern matching now supports glob wildcards in command prefixes</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed passthrough not triggering for commands with leading whitespace</li>
+    <li>Resolved <code>ctx_shell</code> timeout not resetting between chained commands</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.3.0 -->
+  <h2 id="v3.3.0">3.3.0 <span class="text-xs text-muted">(January 2026)</span></h2>
+  <p class="text-sm text-muted">Major release - expanded tool surface and protocol overhaul.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>46 MCP tools:</strong> Expanded from 38 to 46 tools, adding analysis, graph, and workflow categories</li>
+    <li><strong>CEP v1 protocol:</strong> New Context Efficiency Protocol with 5-rule framework and instruction codes</li>
+    <li><strong>18 tree-sitter grammars:</strong> Full language coverage for structural analysis</li>
+  </ul>
+
+  <h3>New Tools</h3>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Category</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code><a href={lp('/docs/tools/ctx-architecture')}>ctx_architecture</a></code></td><td>Analysis</td><td>Project architecture overview with dependency graph</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-graph')}>ctx_graph</a></code></td><td>Analysis</td><td>Build and query code dependency graphs</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-graph-diagram')}>ctx_graph_diagram</a></code></td><td>Analysis</td><td>Visual Mermaid diagrams from dependency data</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-heatmap')}>ctx_heatmap</a></code></td><td>Analysis</td><td>File complexity and change-frequency heatmaps</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-impact')}>ctx_impact</a></code></td><td>Analysis</td><td>Change impact analysis - what breaks if you modify X</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-workflow')}>ctx_workflow</a></code></td><td>Workflow</td><td>Multi-step workflow orchestration</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-wrapped')}>ctx_wrapped</a></code></td><td>Workflow</td><td>Wrapped tool calls with pre/post hooks</td></tr>
+      <tr><td><code><a href={lp('/docs/tools/ctx-execute')}>ctx_execute</a></code></td><td>Workflow</td><td>Execute workflow steps with rollback</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Rewritten instruction system with <code>ACT1</code>, <code>BRIEF</code>, <code>FULL</code>, <code>DELTA</code>, <code>NOREPEAT</code>, <code>STRUCT</code>, <code>1LINE</code> codes</li>
+    <li>Auto-checkpoint every 15 tool calls (configurable)</li>
+    <li>Tree-sitter grammars now cover TypeScript, Python, Rust, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, Scala, Lua, Zig, Elixir, Haskell, OCaml</li>
+  </ul>
+
+  <h3>Breaking Changes</h3>
+  <ul>
+    <li>CRP mode output format changed - agents using hard-coded parsers should update</li>
+    <li><code>ctx_agent action="handoff"</code> renamed to <code>ctx_handoff</code> (old form still accepted with deprecation warning)</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.9 -->
+  <h2 id="v3.2.9">3.2.9 <span class="text-xs text-muted">(December 2025)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>LEAN_CTX_SHELL_TIMEOUT_MS</code>:</strong> New environment variable to control shell command timeout globally - prevents runaway processes from blocking sessions</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>LEAN_CTX_SHELL_TIMEOUT_MS</code> - configurable shell timeout (default: 30000ms), applied to all <code>ctx_shell</code> invocations</li>
+    <li><code>ctx_shell</code> now reports timeout kills with exit code and partial output</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Graceful SIGTERM → SIGKILL escalation for timed-out processes (500ms grace period)</li>
+    <li>Timeout duration shown in <code>ctx_metrics</code> per-command breakdown</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed zombie process accumulation when timeout killed a process group</li>
+    <li>Resolved <code>ctx_shell</code> not cleaning up temp files after timeout</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.8 -->
+  <h2 id="v3.2.8">3.2.8 <span class="text-xs text-muted">(November 2025)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong>Gemini path change:</strong> Gemini CLI MCP configuration moved from <code>~/.gemini/config.json</code> to VS Code <code>settings.json</code> - lean-ctx auto-detects the new path</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li>Auto-detection of Gemini MCP config in <code>settings.json</code> during <code>lean-ctx install --gemini</code></li>
+    <li><code>lean-ctx doctor</code> now checks both legacy and new Gemini config locations</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Installer shows migration instructions when legacy Gemini config is detected</li>
+    <li>Updated <a href={lp('/docs/guides/editor-integrations')}>Editor Integrations</a> guide with new Gemini setup steps</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed installer creating duplicate MCP entries when both config locations existed</li>
+    <li>Resolved Gemini config validation failing on Windows backslash paths</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.6 -->
+  <h2 id="v3.2.6">3.2.6 <span class="text-xs text-muted">(October 2025)</span></h2>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>rules_scope</code>:</strong> New config option to control which rule files lean-ctx injects - filter by <code>project</code>, <code>user</code>, or <code>global</code> scope</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>rules_scope</code> config option - restrict injected rules to specific scopes (<code>"project"</code>, <code>"user"</code>, <code>"global"</code>, or combinations)</li>
+    <li><code>ctx_read mode="reference"</code> - compact reference-only output for documentation files</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Rule injection now respects <code>.cursorignore</code> patterns</li>
+    <li>Faster startup when many rule files are present (lazy loading)</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed <code>rules_scope="project"</code> accidentally including workspace-level rules</li>
+    <li>Resolved rules not reloading after config change without server restart</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.2.0 -->
+  <h2 id="v3.2.0">3.2.0 <span class="text-xs text-muted">(August 2025)</span></h2>
+  <p class="text-sm text-muted">Major feature release - HTTP server mode.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>lean-ctx serve</code>:</strong> HTTP server mode for running lean-ctx as a standalone service - enables remote agents, web integrations, and custom toolchains to use lean-ctx over HTTP</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>lean-ctx serve</code> - starts an HTTP server with REST API endpoints mirroring all MCP tools</li>
+    <li><code>lean-ctx serve --stdio</code> - stdio mode for container and pipe-based integrations</li>
+    <li><code>lean-ctx serve --port 9315</code> - configurable port (default: 9315)</li>
+    <li>Health check endpoint at <code>/health</code> with session and cache stats</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>All 38 tools (at the time) accessible via <code>POST /tool/:name</code> with JSON body</li>
+    <li>Session management via <code>X-Session-ID</code> header - enables multi-tenant usage</li>
+    <li>CORS support for browser-based integrations</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed stdio mode not flushing output buffers on slow connections</li>
+    <li>Resolved session cleanup not triggering for HTTP sessions after idle timeout</li>
+  </ul>
+
+  <hr />
+
+  <!-- 3.0.1 -->
+  <h2 id="v3.0.1">3.0.1 <span class="text-xs text-muted">(June 2025)</span></h2>
+  <p class="text-sm text-muted">First stable release of the v3 series.</p>
+
+  <h3>Highlights</h3>
+  <ul>
+    <li><strong><code>lean-ctx watch</code> (Observatory TUI):</strong> Real-time terminal dashboard showing active sessions, tool calls, token savings, cache status, and agent activity</li>
+  </ul>
+
+  <h3>New Features</h3>
+  <ul>
+    <li><code>lean-ctx watch</code> - interactive terminal UI with live session monitoring</li>
+    <li>Dashboard panels: active agents, recent tool calls, token savings graph, cache hit rate, file reference table</li>
+    <li>Keyboard shortcuts: <kbd>q</kbd> quit, <kbd>r</kbd> refresh, <kbd>t</kbd> toggle tool detail, <kbd>f</kbd> filter by agent</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Complete rewrite from Node.js to Rust - 10x faster startup, 5x lower memory</li>
+    <li>Single binary distribution - no runtime dependencies</li>
+    <li>Tree-sitter integration for structural code analysis (initial 12 grammars)</li>
+  </ul>
+
+  <h3>Bug Fixes</h3>
+  <ul>
+    <li>Fixed file watcher not detecting changes on NFS-mounted directories</li>
+    <li>Resolved TUI rendering artifacts on terminals with non-standard color support</li>
+    <li>Fixed <code>ctx_read</code> returning stale content when file was replaced (not modified in-place)</li>
+  </ul>
+</DocsLayout>

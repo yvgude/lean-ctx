@@ -2,6 +2,8 @@
 import '../styles/global.css';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import { locales, isRtl, type Locale } from '../i18n/config';
+import { getLocaleFromUrl, getLocalizedPath, removeLocalePrefix } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 
 interface Props {
@@ -9,86 +11,249 @@ interface Props {
   description?: string;
   ogImage?: string;
   noindex?: boolean;
+  keywords?: string;
+  breadcrumbs?: Array<{ name: string; url: string }>;
+  extraJsonLd?: string;
 }
 
-const manifest = getMcpManifest();
 const {
   title,
-  description = `Reduce AI token costs by 88%. Open-source context runtime with ${manifest.counts.granular} MCP tools, 10 read modes, 60+ shell compression patterns. Single Rust binary, zero telemetry.`,
+  description = `Reduce Claude Code, Cursor & Copilot token costs by 99%. Open-source MCP server + shell hook with ${getMcpManifest().counts.granular} tools and 95+ compression patterns. Single Rust binary, privacy-first.`,
   ogImage = '/og-image-v4.png',
   noindex = false,
+  keywords = 'lean-ctx, reduce AI token costs, MCP server, Claude Code costs, Cursor token optimization, Copilot API costs, context compression, Rust, Gemini CLI, Windsurf, context engineering, agentic coding',
+  breadcrumbs,
+  extraJsonLd,
 } = Astro.props;
 
+const locale = getLocaleFromUrl(Astro.url) as Locale;
+const dir = isRtl(locale) ? 'rtl' : 'ltr';
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const currentPathWithoutLocale = removeLocalePrefix(Astro.url.pathname);
 const isHome = Astro.url.pathname === '/';
+
+const manifest = getMcpManifest();
+const todayIso = new Date().toISOString().slice(0, 10);
+
+const orgJsonLd = {
+  '@type': 'Organization',
+  name: 'LeanCTX',
+  url: 'https://leanctx.com',
+  logo: 'https://leanctx.com/apple-touch-icon.png',
+  sameAs: [
+    'https://github.com/yvgude/lean-ctx',
+    'https://crates.io/crates/lean-ctx',
+    'https://discord.gg/leanctx',
+  ],
+};
 
 const softwareJsonLd = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'lean-ctx',
+  name: 'LeanCTX',
+  alternateName: ['lean-ctx', 'Context OS'],
   applicationCategory: 'DeveloperApplication',
+  applicationSubCategory: 'AI Development Tool',
   operatingSystem: 'macOS, Linux, Windows',
   url: 'https://leanctx.com',
   downloadUrl: 'https://crates.io/crates/lean-ctx',
+  softwareVersion: '3.5.13',
   license: ['https://www.apache.org/licenses/LICENSE-2.0', 'https://opensource.org/licenses/MIT'],
-  description: `The Context Runtime for AI Agents. ${manifest.counts.granular} MCP tools, 10 read modes, 60+ shell patterns.`,
-  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  description: `The Context OS for AI Development. Reduce Claude Code, Cursor & Copilot token costs by up to 99%. ${manifest.counts.granular} MCP tools, 95+ shell compression patterns, 10 read modes. Privacy-first, open source.`,
+  featureList: 'Intelligent file compression, Session memory, Graph-powered intelligence, Output verification, Multi-agent governance, 24+ IDE integrations',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
   author: { '@type': 'Person', name: 'Yves Gugger', url: 'https://github.com/yvgude' },
+  publisher: orgJsonLd,
+  codeRepository: 'https://github.com/yvgude/lean-ctx',
+  programmingLanguage: 'Rust',
+  dateModified: todayIso,
+  aggregateRating: { '@type': 'AggregateRating', ratingValue: '5', bestRating: '5', worstRating: '1', ratingCount: '1' },
 });
+
+const webSiteJsonLd = isHome ? JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'LeanCTX',
+  alternateName: 'lean-ctx',
+  url: 'https://leanctx.com',
+  description: 'The Context OS for AI Development',
+  publisher: orgJsonLd,
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: { '@type': 'EntryPoint', urlTemplate: 'https://leanctx.com/docs/tools/{search_term}' },
+    'query-input': 'required name=search_term',
+  },
+}) : null;
+
+const webPageJsonLd = !isHome ? JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: title,
+  description: description,
+  url: canonicalURL.toString(),
+  isPartOf: { '@type': 'WebSite', name: 'LeanCTX', url: 'https://leanctx.com' },
+  author: { '@type': 'Person', name: 'Yves Gugger' },
+  publisher: orgJsonLd,
+  dateModified: todayIso,
+}) : null;
+
+const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: breadcrumbs.map((item, i) => ({
+    '@type': 'ListItem',
+    position: i + 1,
+    name: item.name,
+    item: new URL(item.url, 'https://leanctx.com').toString(),
+  })),
+}) : null;
 ---
 
 <!DOCTYPE html>
-<html lang="en" class="antialiased scroll-smooth">
+<html lang={locale} dir={dir} class="antialiased scroll-smooth">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content={description} />
+  <meta name="keywords" content={keywords} />
   <meta name="author" content="Yves Gugger" />
+  <meta name="generator" content={Astro.generator} />
   <meta name="theme-color" content="#f7f8fb" />
   <meta name="color-scheme" content="light dark" />
   <script is:inline>
   (function() {
     var root = document.documentElement;
-    var stored = null;
-    try { stored = localStorage.getItem('leanctx-theme'); } catch(_) {}
-    var theme = stored === 'dark' ? 'dark' : stored === 'light' ? 'light' : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    root.setAttribute('data-theme', theme);
-    root.style.colorScheme = theme;
-    window.__leanctxSetTheme = function(t) {
-      root.setAttribute('data-theme', t);
-      root.style.colorScheme = t;
-      try { localStorage.setItem('leanctx-theme', t); } catch(_) {}
-    };
-    window.__leanctxGetTheme = function() { return root.getAttribute('data-theme') || 'light'; };
+    var STORAGE_KEY = 'leanctx-theme';
+    var DARK = 'dark';
+    var LIGHT = 'light';
+    function safeGet() { try { return localStorage.getItem(STORAGE_KEY); } catch(_) { return null; } }
+    var stored = safeGet();
+    var mql = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function systemTheme() { return mql && mql.matches ? DARK : LIGHT; }
+    function resolveTheme() {
+      if (stored === DARK || stored === LIGHT) return stored;
+      return systemTheme();
+    }
+    function updateMeta(theme) {
+      var themeColor = document.querySelector('meta[name="theme-color"]');
+      var colorScheme = document.querySelector('meta[name="color-scheme"]');
+      if (themeColor) themeColor.setAttribute('content', theme === DARK ? '#050507' : '#f7f8fb');
+      if (colorScheme) colorScheme.setAttribute('content', theme === DARK ? 'dark light' : 'light dark');
+    }
+    function applyTheme(theme, persist) {
+      var normalized = theme === DARK ? DARK : LIGHT;
+      root.setAttribute('data-theme', normalized);
+      root.style.colorScheme = normalized;
+      updateMeta(normalized);
+      if (persist) { try { localStorage.setItem(STORAGE_KEY, normalized); } catch(_) {} }
+      window.dispatchEvent(new CustomEvent('leanctx-theme-change', { detail: { theme: normalized } }));
+    }
+    applyTheme(resolveTheme(), false);
+    window.__leanctxSetTheme = function(theme) { applyTheme(theme, true); };
+    window.__leanctxGetTheme = function() { return root.getAttribute('data-theme') === DARK ? DARK : LIGHT; };
+    if (mql) {
+      var onSystemThemeChange = function() { if (!safeGet()) applyTheme(systemTheme(), false); };
+      if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onSystemThemeChange);
+      else if (typeof mql.addListener === 'function') mql.addListener(onSystemThemeChange);
+    }
   })();
   </script>
-  {!noindex && <meta name="robots" content="index, follow" />}
+  <script is:inline>
+    (function() {
+      try {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        if (!('IntersectionObserver' in window)) return;
+        document.documentElement.classList.add('reveal-entrance');
+      } catch (_) {}
+    })();
+  </script>
+  <meta name="application-name" content="LeanCTX" />
+  {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
   {noindex && <meta name="robots" content="noindex, nofollow" />}
 
   <meta property="og:title" content={title} />
   <meta property="og:description" content={description} />
   <meta property="og:type" content="website" />
   <meta property="og:url" content={canonicalURL} />
-  <meta property="og:site_name" content="lean-ctx" />
+  <meta property="og:site_name" content="LeanCTX" />
+  <meta property="og:locale" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[locale] || 'en_US'} />
+  {locales.filter(l => l !== locale).map(l => (
+    <meta property="og:locale:alternate" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[l] || 'en_US'} />
+  ))}
+  {locales.map(l => (
+    <link rel="alternate" hreflang={l} href={new URL(getLocalizedPath(currentPathWithoutLocale, l), Astro.site)} />
+  ))}
+  <link rel="alternate" hreflang="x-default" href={new URL(currentPathWithoutLocale, Astro.site)} />
   {ogImage && <meta property="og:image" content={new URL(ogImage, Astro.site)} />}
+  {ogImage && <meta property="og:image:width" content="1200" />}
+  {ogImage && <meta property="og:image:height" content="630" />}
+  {ogImage && <meta property="og:image:alt" content={title} />}
 
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@leanctx" />
   <meta name="twitter:title" content={title} />
   <meta name="twitter:description" content={description} />
+  {ogImage && <meta name="twitter:image" content={new URL(ogImage, Astro.site)} />}
+  {ogImage && <meta name="twitter:image:alt" content={title} />}
 
   <link rel="canonical" href={canonicalURL} />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="icon" type="image/x-icon" sizes="48x48" href="/favicon.ico" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
   <link rel="sitemap" href="/sitemap-index.xml" />
 
+  <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" /></noscript>
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" /></noscript>
 
   <title>{title}</title>
 
+  <script is:inline>
+  (function() {
+    var SUPPORTED = ['en','de','ar','zh','hi','es','fr','bn','pt','ru','ja'];
+    var STORAGE_KEY = 'leanctx-locale';
+
+    if (localStorage.getItem(STORAGE_KEY)) return;
+
+    var path = window.location.pathname;
+    var firstSeg = path.split('/').filter(Boolean)[0];
+    if (firstSeg && SUPPORTED.indexOf(firstSeg) !== -1) return;
+
+    var langs = navigator.languages || [navigator.language];
+    var match = null;
+    for (var i = 0; i < langs.length; i++) {
+      var code = langs[i].toLowerCase().split('-')[0];
+      if (SUPPORTED.indexOf(code) !== -1 && code !== 'en') {
+        match = code;
+        break;
+      }
+    }
+    if (match) {
+      localStorage.setItem(STORAGE_KEY, match);
+      window.location.replace('/' + match + path + window.location.search + window.location.hash);
+    }
+  })();
+  </script>
+
   {isHome && <script type="application/ld+json" set:html={softwareJsonLd} />}
+  {webSiteJsonLd && <script type="application/ld+json" set:html={webSiteJsonLd} />}
+  {webPageJsonLd && <script type="application/ld+json" set:html={webPageJsonLd} />}
+  {breadcrumbJsonLd && <script type="application/ld+json" set:html={breadcrumbJsonLd} />}
+  {extraJsonLd && <script type="application/ld+json" set:html={extraJsonLd} />}
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable site description" />
+
+  <script is:inline>
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init('phc_J0Ac94FAcsmbFj0CWOAqo9tGGSE4i9F4LXXfnN796gN', {
+        api_host: 'https://eu.i.posthog.com',
+        defaults: '2026-01-30'
+    })
+  </script>
 </head>
 <body class="min-h-screen flex flex-col">
   <Header />
@@ -96,5 +261,60 @@ const softwareJsonLd = JSON.stringify({
     <slot />
   </main>
   <Footer />
+
+  <div class="scroll-indicator" id="scroll-indicator" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+  </div>
+
+  <script is:inline>
+    (function() {
+      var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced) return;
+      if (!('IntersectionObserver' in window)) return;
+
+      var io = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+          if (e.isIntersecting) {
+            e.target.classList.add('is-visible');
+            io.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
+
+      var els = Array.prototype.slice.call(document.querySelectorAll('.animate-entrance'));
+      els.forEach(function(el) { io.observe(el); });
+
+      function revealInViewport() {
+        var vh = window.innerHeight || 0;
+        els.forEach(function(el) {
+          if (el.classList.contains('is-visible')) return;
+          var r = el.getBoundingClientRect();
+          if (r.top < vh * 0.9) {
+            el.classList.add('is-visible');
+            io.unobserve(el);
+          }
+        });
+      }
+
+      requestAnimationFrame(revealInViewport);
+
+      setTimeout(function() {
+        els.forEach(function(el) {
+          if (!el.classList.contains('is-visible')) el.classList.add('is-visible');
+        });
+      }, 1500);
+    })();
+    (function() {
+      var si = document.getElementById('scroll-indicator');
+      if (!si) return;
+      var hidden = false;
+      window.addEventListener('scroll', function() {
+        if (!hidden && window.scrollY > 80) {
+          si.classList.add('is-hidden');
+          hidden = true;
+        }
+      }, { passive: true });
+    })();
+  </script>
 </body>
 </html>

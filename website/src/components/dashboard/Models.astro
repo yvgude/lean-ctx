@@ -1,0 +1,91 @@
+---
+interface Props {
+  t: (key: string) => string;
+}
+const { t } = Astro.props;
+---
+
+<div class="dash-view" data-panel="models">
+  <!-- What Happens When You Use lean-ctx -->
+  <div class="dash-card" style="border-color:rgba(52,211,153,0.15);background:rgba(52,211,153,0.02)">
+    <div class="dash-card-head" style="color:#34d399">{t('dash.modelsAdaptiveTitle')}</div>
+    <div class="dash-card-body" style="font-size:0.8125rem;line-height:1.7;color:var(--color-muted)">
+      <p style="margin-bottom:0.625rem" set:html={t('dash.modelsIntro')} />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
+        <div style="padding:0.75rem;background:rgba(248,113,113,0.04);border-radius:8px;border:1px solid rgba(248,113,113,0.1)">
+          <div style="font-weight:600;font-size:0.75rem;color:#f87171;margin-bottom:0.375rem">{t('dash.modelsWithout')}</div>
+          <div style="font-size:0.6875rem;line-height:1.6">
+            <code style="color:#f87171">ctx_read("config.rs")</code> → uses <strong>full</strong> mode<br>
+            <Fragment set:html={t('dash.modelsWithoutDesc')} />
+          </div>
+        </div>
+        <div style="padding:0.75rem;background:rgba(52,211,153,0.04);border-radius:8px;border:1px solid rgba(52,211,153,0.1)">
+          <div style="font-weight:600;font-size:0.75rem;color:#34d399;margin-bottom:0.375rem">{t('dash.modelsWith')}</div>
+          <div style="font-size:0.6875rem;line-height:1.6">
+            <code style="color:#34d399">ctx_read("config.rs")</code> → model picks <strong>signatures</strong> mode<br>
+            <Fragment set:html={t('dash.modelsWithDesc')} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- How It Works -->
+  <div class="dash-card" style="border-color:rgba(167,139,250,0.15);background:rgba(167,139,250,0.02)">
+    <div class="dash-card-head" style="color:#a78bfa">{t('dash.modelsHowBuilt')}</div>
+    <div class="dash-card-body" style="font-size:0.8125rem;line-height:1.7;color:var(--color-muted)">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.625rem;margin-bottom:0.75rem">
+        <div style="padding:0.625rem;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.04)">
+          <div style="font-weight:600;font-size:0.6875rem;color:#34d399;margin-bottom:0.25rem">{t('dash.modelsStep1Title')}</div>
+          <div style="font-size:0.6875rem">{t('dash.modelsStep1Desc')}</div>
+        </div>
+        <div style="padding:0.625rem;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.04)">
+          <div style="font-weight:600;font-size:0.6875rem;color:#60a5fa;margin-bottom:0.25rem">{t('dash.modelsStep2Title')}</div>
+          <div style="font-size:0.6875rem"><code style="color:#60a5fa;font-size:0.625rem">lean-ctx sync</code> {t('dash.modelsStep2Desc')}</div>
+        </div>
+        <div style="padding:0.625rem;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.04)">
+          <div style="font-weight:600;font-size:0.6875rem;color:#a78bfa;margin-bottom:0.25rem">{t('dash.modelsStep3Title')}</div>
+          <div style="font-size:0.6875rem" set:html={t('dash.modelsStep3Desc')} />
+        </div>
+        <div style="padding:0.625rem;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.04)">
+          <div style="font-weight:600;font-size:0.6875rem;color:#fbbf24;margin-bottom:0.25rem">{t('dash.modelsStep4Title')}</div>
+          <div style="font-size:0.6875rem" set:html={t('dash.modelsStep4Desc')} />
+        </div>
+      </div>
+      <div style="padding:0.625rem;background:rgba(255,255,255,0.015);border-radius:8px;border:1px solid rgba(255,255,255,0.04);font-size:0.6875rem">
+        <strong style="color:var(--color-text-bright)">{t('dash.modelsPriorityChain')}</strong>
+        {t('dash.modelsPriorityDesc')}
+      </div>
+    </div>
+  </div>
+
+  <!-- Available Modes Reference -->
+  <div class="dash-card">
+    <div class="dash-card-head">{t('dash.modelsCompressionModes')}</div>
+    <div class="dash-card-body" style="padding:0">
+      <table class="dash-table" style="width:100%">
+        <thead><tr><th>{t('dash.modelsThMode')}</th><th>{t('dash.modelsThWhatItDoes')}</th><th>{t('dash.modelsThBestFor')}</th><th>{t('dash.modelsThTypicalSavings')}</th></tr></thead>
+        <tbody>
+          <tr><td style="font-weight:600;color:#34d399">full</td><td>{t('dash.modelsFullDesc')}</td><td>{t('dash.modelsFullBest')}</td><td>{t('dash.modelsFullSavings')}</td></tr>
+          <tr><td style="font-weight:600;color:#60a5fa">map</td><td>{t('dash.modelsMapDesc')}</td><td>{t('dash.modelsMapBest')}</td><td>60–80%</td></tr>
+          <tr><td style="font-weight:600;color:#a78bfa">signatures</td><td>{t('dash.modelsSigDesc')}</td><td>{t('dash.modelsSigBest')}</td><td>80–97%</td></tr>
+          <tr><td style="font-weight:600;color:#fbbf24">aggressive</td><td>{t('dash.modelsAggressiveDesc')}</td><td>{t('dash.modelsAggressiveBest')}</td><td>50–70%</td></tr>
+          <tr><td style="font-weight:600;color:#f472b6">entropy</td><td>{t('dash.modelsEntropyDesc')}</td><td>{t('dash.modelsEntropyBest')}</td><td>40–90%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Models Grid -->
+  <div class="dash-card">
+    <div class="dash-card-head">
+      <span>{t('dash.modelsTitle')}</span>
+      <span id="modelsCount" style="font-weight:400;text-transform:none;letter-spacing:0"></span>
+    </div>
+    <div class="dash-card-body" id="modelsContent">
+      <div class="dash-skeleton dash-skeleton-line"></div>
+      <div class="dash-skeleton dash-skeleton-line" style="width:80%"></div>
+      <div class="dash-skeleton dash-skeleton-line" style="width:50%"></div>
+    </div>
+  </div>
+</div>

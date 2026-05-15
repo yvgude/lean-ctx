@@ -1,0 +1,259 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout title={t('blog.mcpOverhead.title')}
+  description={t('blog.mcpOverhead.description')}
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: 'Blog', url: lp('/blog/') }, { name: 'MCP Overhead', url: lp('/blog/mcp-overhead/') }]}>
+
+<article class="section-hero">
+  <div class="content-grid" style="max-width: 48rem;">
+
+    <header class="animate-entrance" style="margin-bottom: clamp(3rem, 2rem + 3vw, 6rem);">
+      <p class="fluid-label text-accent" style="margin-bottom: 1rem;">{t('blog.mcpOverhead.heroLabel')}</p>
+      <h1 class="font-display fluid-h1 font-bold text-text-bright" style="margin-bottom: 1.5rem;" set:html={t('blog.mcpOverhead.heroTitle')} />
+      <p class="text-muted" style="font-size: 0.875rem;">
+        {t('blog.mcpOverhead.heroMeta')}
+      </p>
+    </header>
+
+    <div class="blog-content animate-entrance stagger-1">
+
+      <div class="blog-snapshot-notice">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span>
+          This article is a <strong>historical snapshot</strong> from lean-ctx v2.8.2 (21 tools).
+          The current version has 58 tools.
+          <a href={lp('/docs/tools')}>See the full tool reference →</a>
+        </span>
+      </div>
+
+      <p>{t('blog.mcpOverhead.introP1')}</p>
+
+      <h2>{t('blog.mcpOverhead.measurementTitle')}</h2>
+
+      <p set:html={t('blog.mcpOverhead.measurementP1')} />
+
+      <div class="blog-stat-grid">
+        <div class="blog-stat">
+          <span class="blog-stat-value">22,945</span>
+          <span class="blog-stat-label">{t('blog.mcpOverhead.stat1Label')}</span>
+        </div>
+        <div class="blog-stat">
+          <span class="blog-stat-value">72%</span>
+          <span class="blog-stat-label">{t('blog.mcpOverhead.stat2Label')}</span>
+        </div>
+        <div class="blog-stat">
+          <span class="blog-stat-value">$0.069</span>
+          <span class="blog-stat-label">{t('blog.mcpOverhead.stat3Label')}</span>
+        </div>
+      </div>
+
+      <p set:html={t('blog.mcpOverhead.measurementP2')} />
+
+      <h2>{t('blog.mcpOverhead.whyExpensiveTitle')}</h2>
+
+      <p>{t('blog.mcpOverhead.whyExpensiveP1')}</p>
+
+      <ul>
+        <li set:html={t('blog.mcpOverhead.whyExpensiveLi1')} />
+        <li set:html={t('blog.mcpOverhead.whyExpensiveLi2')} />
+        <li set:html={t('blog.mcpOverhead.whyExpensiveLi3')} />
+        <li set:html={t('blog.mcpOverhead.whyExpensiveLi4')} />
+      </ul>
+
+      <p>{t('blog.mcpOverhead.whyExpensiveP2')}</p>
+
+      <h2>{t('blog.mcpOverhead.solutionTitle')}</h2>
+
+      <p set:html={t('blog.mcpOverhead.solutionP1')} />
+
+      <div class="blog-code">
+        <pre><code>Before: 21 tools × ~1,100 tokens each = 22,945 tokens
+After:   4 core + 1 meta-tool          =  4,200 tokens
+
+Savings: 18,745 tokens per session (81.7%)</code></pre>
+      </div>
+
+      <p set:html={t('blog.mcpOverhead.solutionP2')} />
+
+      <h2>{t('blog.mcpOverhead.broaderTitle')}</h2>
+
+      <p set:html={t('blog.mcpOverhead.broaderP1')} />
+
+      <p>{t('blog.mcpOverhead.broaderP2')}</p>
+
+      <ul>
+        <li set:html={t('blog.mcpOverhead.broaderLi1')} />
+        <li set:html={t('blog.mcpOverhead.broaderLi2')} />
+        <li set:html={t('blog.mcpOverhead.broaderLi3')} />
+        <li set:html={t('blog.mcpOverhead.broaderLi4')} />
+      </ul>
+
+      <p set:html={t('blog.mcpOverhead.broaderP3')} />
+
+      <h2>{t('blog.mcpOverhead.tryItTitle')}</h2>
+
+      <div class="blog-code">
+        <pre><code>cargo install lean-ctx
+lean-ctx setup
+
+# Enable Unified Mode for maximum savings
+export LEAN_CTX_UNIFIED=1</code></pre>
+      </div>
+
+      <p set:html={t('blog.mcpOverhead.tryItP1')} />
+
+    </div>
+  </div>
+</article>
+
+</BaseLayout>
+
+<style>
+  .blog-content {
+    font-size: clamp(0.9375rem, 0.875rem + 0.2vw, 1.0625rem);
+    line-height: 1.8;
+    color: var(--color-text);
+  }
+
+  .blog-content h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.25rem, 1rem + 0.8vw, 1.75rem);
+    font-weight: 600;
+    color: var(--color-text-bright);
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  .blog-content p {
+    margin-bottom: 1.25rem;
+  }
+
+  .blog-content ul {
+    margin-bottom: 1.25rem;
+    padding-inline-start: 1.5rem;
+  }
+
+  .blog-content li {
+    margin-bottom: 0.5rem;
+    color: var(--color-text);
+  }
+
+  .blog-content li :global(strong) {
+    color: var(--color-text-bright);
+  }
+
+  .blog-content :global(strong) {
+    color: var(--color-text-bright);
+    font-weight: 500;
+  }
+
+  .blog-content :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--color-surface-2);
+    padding: 0.15em 0.4em;
+    border-radius: 0.25rem;
+    color: var(--color-accent);
+  }
+
+  .blog-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 2rem 0;
+  }
+
+  @media (max-width: 640px) {
+    .blog-stat-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .blog-stat {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .blog-stat-value {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
+    font-weight: 700;
+    color: var(--color-accent);
+    line-height: 1;
+  }
+
+  .blog-stat-label {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+  }
+
+  .blog-code {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+    overflow-x: auto;
+  }
+
+  .blog-code pre {
+    margin: 0;
+  }
+
+  .blog-code code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--color-text);
+    background: none;
+    padding: 0;
+    line-height: 1.6;
+  }
+
+  .blog-snapshot-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent-2) 30%, transparent);
+    background: color-mix(in srgb, var(--color-accent-2) 6%, transparent);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--color-text);
+  }
+
+  .blog-snapshot-notice svg {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+    color: var(--color-accent-2);
+  }
+
+  .blog-snapshot-notice strong {
+    color: var(--color-text-bright);
+    font-weight: 600;
+  }
+
+  .blog-snapshot-notice a {
+    color: var(--color-accent);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .blog-snapshot-notice a:hover {
+    text-decoration: underline;
+  }
+</style>

@@ -1,0 +1,114 @@
+---
+interface Props {
+  label: string;
+  title: string;
+  titleHtml?: string;
+  highlight?: string;
+  description?: string;
+  descriptionHtml?: string;
+  kickerMb?: string;
+  descMt?: string;
+  actionsMt?: string;
+  titleVariant?: 'h1' | 'display';
+  highlightStyle?: 'italic' | 'gradient';
+  kickerTone?: 'muted' | 'accent' | 'accent-2' | 'accent-3' | 'bright';
+  sectionClass?: string;
+  container?: 'standard' | 'wide' | 'narrow';
+  containerStyle?: string;
+  titleMaxWidth?: string;
+  descMaxWidth?: string;
+  breakHighlight?: boolean;
+}
+
+const {
+  label,
+  title,
+  titleHtml,
+  highlight,
+  description,
+  descriptionHtml,
+  kickerMb = 'clamp(1rem, 0.75rem + 0.5vw, 1.5rem)',
+  descMt = 'clamp(1.25rem, 1rem + 1vw, 2rem)',
+  actionsMt = 'clamp(1.5rem, 1rem + 1.25vw, 2.5rem)',
+  titleVariant,
+  highlightStyle = 'italic',
+  kickerTone = 'muted',
+  sectionClass = 'section-hero hero-split',
+  container = 'wide',
+  containerStyle,
+  titleMaxWidth,
+  descMaxWidth,
+  breakHighlight = true,
+} = Astro.props;
+
+const gridClass =
+  container === 'wide' ? 'content-grid-wide' : container === 'narrow' ? 'content-grid-narrow' : 'content-grid';
+
+const resolvedTitleVariant =
+  titleVariant ?? (sectionClass.split(/\s+/).includes('section-hero') ? 'display' : 'h1');
+
+const kickerClass =
+  kickerTone === 'accent'
+    ? 'text-accent'
+    : kickerTone === 'accent-2'
+      ? 'text-accent-2'
+      : kickerTone === 'accent-3'
+        ? 'text-accent-3'
+        : kickerTone === 'bright'
+          ? 'text-text-bright'
+          : 'text-muted';
+
+const highlightClass = highlightStyle === 'gradient' ? 'gradient-text' : 'italic-accent';
+const titleSizeClass = resolvedTitleVariant === 'display' ? 'fluid-display' : 'fluid-h1';
+
+const titleStyle = titleMaxWidth ? `max-width: ${titleMaxWidth};` : undefined;
+
+const descStyle = [
+  `margin-top: ${descMt};`,
+  descMaxWidth ? `max-width: ${descMaxWidth};` : 'max-width: 46rem;',
+].join(' ');
+---
+
+<section class={sectionClass}>
+  <div class={gridClass} style={containerStyle || undefined}>
+    <div class="animate-entrance">
+      <span class={`kicker-pill ${kickerClass}`} style={`margin-bottom: ${kickerMb};`}>
+        {label}
+      </span>
+    </div>
+
+    <h1 class={`font-display ${titleSizeClass} font-bold text-text-bright animate-entrance stagger-1`} style={titleStyle}>
+      {titleHtml ? (
+        <Fragment set:html={titleHtml} />
+      ) : (
+        <>
+          {title}
+          {highlight && (
+            <>
+              {breakHighlight ? <br /> : ' '}
+              <span class={highlightClass}>{highlight}</span>
+            </>
+          )}
+        </>
+      )}
+    </h1>
+
+    {descriptionHtml && (
+      <p class="fluid-body text-muted animate-entrance stagger-2" style={descStyle} set:html={descriptionHtml} />
+    )}
+    {!descriptionHtml && description && (
+      <p class="fluid-body text-muted animate-entrance stagger-2" style={descStyle}>
+        {description}
+      </p>
+    )}
+
+    {Astro.slots.has('actions') && (
+      <div
+        class="flex flex-wrap items-center animate-entrance stagger-3"
+        style={`margin-top: ${actionsMt}; gap: clamp(0.5rem, 0.375rem + 0.5vw, 1rem);`}
+      >
+        <slot name="actions" />
+      </div>
+    )}
+  </div>
+</section>

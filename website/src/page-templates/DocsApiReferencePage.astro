@@ -1,0 +1,265 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'API Reference',
+    items: [
+      { label: 'Overview', href: lp('/docs/api-reference') },
+      { label: 'Authentication', href: lp('/docs/api-reference#auth') },
+      { label: 'REST Endpoints', href: lp('/docs/api-reference#endpoints') },
+      { label: 'Rate Limiting', href: lp('/docs/api-reference#rate-limiting') },
+      { label: 'TypeScript SDK', href: lp('/docs/api-reference#sdk') },
+      { label: 'HTTP MCP Contract', href: lp('/docs/api-reference#http-mcp') },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('docs.sidebarAllTools'), href: lp('/docs/tools') },
+      { label: t('docs.sidebarTeamServer'), href: lp('/docs/team-server') },
+      { label: t('docs.sidebarCliRef'), href: lp('/docs/cli-reference') },
+    ],
+  },
+];
+---
+
+<DocsLayout title="API Reference — LeanCTX" description="REST API endpoints, authentication, rate limiting, and TypeScript SDK reference for the LeanCTX Team Server." sidebar={sidebar}>
+
+  <p>The LeanCTX Team Server exposes a REST API for programmatic access to sessions, events, tools, and knowledge. All endpoints are available when the Team Server is running.</p>
+
+  <h2 id="auth">Authentication</h2>
+  <p>All API requests require a bearer token in the <code>Authorization</code> header. Create tokens with the CLI:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope read,write --name "ci-bot"
+<span class="text-muted">→</span> Token: lctx_t_a3f8c2...</code></pre>
+  </div>
+
+  <p>Include the token in every request:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>Authorization: Bearer lctx_t_a3f8c2...</code></pre>
+  </div>
+
+  <h3>Token Scopes</h3>
+  <table>
+    <thead><tr><th>Scope</th><th>Access</th></tr></thead>
+    <tbody>
+      <tr><td><code>search</code></td><td>Read tools: <code>ctx_read</code>, <code>ctx_search</code>, <code>ctx_tree</code>, <code>ctx_overview</code>, etc.</td></tr>
+      <tr><td><code>graph</code></td><td>Graph tools: <code>ctx_graph</code>, <code>ctx_impact</code>, <code>ctx_callgraph</code>, etc.</td></tr>
+      <tr><td><code>artifacts</code></td><td><code>ctx_artifacts</code>, <code>ctx_semantic_search</code> with artifacts</td></tr>
+      <tr><td><code>index</code></td><td>Graph index builds, semantic reindex</td></tr>
+      <tr><td><code>events</code></td><td>Subscribe to SSE event stream</td></tr>
+      <tr><td><code>sessionMutations</code></td><td><code>ctx_session</code> writes, <code>ctx_handoff</code>, <code>ctx_workflow</code></td></tr>
+      <tr><td><code>knowledge</code></td><td><code>ctx_knowledge</code> writes, <code>ctx_knowledge_relations</code></td></tr>
+      <tr><td><code>audit</code></td><td>Metrics, full-payload events, audit log</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="endpoints">REST Endpoints</h2>
+
+  <h3>Tool Execution</h3>
+  <p>Execute any MCP tool via REST:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">POST</span> /v1/tools/call
+
+<span class="text-muted">Request:</span>
+{'{'}
+  "name": "ctx_read",
+  "arguments": {'{'}
+    "path": "src/lib/auth.ts",
+    "mode": "map"
+  {'}'},
+  "workspaceId": "my-team",
+  "channelId": "feat/auth"
+{'}'}
+
+<span class="text-muted">Response:</span>
+{'{'}
+  "content": [{'{'}
+    "type": "text",
+    "text": "exports: authenticate(), validateToken()\\ndeps: jsonwebtoken, bcrypt\\ncached — 180 tokens (was 4,200)"
+  {'}'}],
+  "isError": false,
+  "meta": {'{'}
+    "tokens_saved": 4020,
+    "cache_hit": false,
+    "duration_ms": 12
+  {'}'}
+{'}'}</code></pre>
+  </div>
+
+  <h3>Session Management</h3>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/session?workspaceId=my-team&channel=feat/auth
+<span class="text-accent">POST</span> /v1/session/mutate
+<span class="text-accent">GET</span>  /v1/session/list?workspaceId=my-team</code></pre>
+  </div>
+
+  <h3>Event Stream (SSE)</h3>
+  <p>Subscribe to real-time events via Server-Sent Events. Events include versioning, causal lineage, and consistency levels:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>{`GET /v1/events?workspaceId=my-team&channelId=feat/auth&since=0
+
+Response (SSE stream):
+id: 42
+event: tool_call_recorded
+data: {"id":42,"workspaceId":"my-team","channelId":"feat/auth","kind":"tool_call_recorded","actor":"cursor","timestamp":"2026-05-05T13:00:00Z","version":42,"parentId":null,"consistencyLevel":"local","payload":{"tool":"ctx_read"}}
+
+id: 43
+event: session_mutated
+data: {"id":43,"workspaceId":"my-team","channelId":"feat/auth","kind":"session_mutated","actor":"cursor","timestamp":"2026-05-05T13:00:01Z","version":43,"parentId":42,"consistencyLevel":"strong","payload":{"tool":"ctx_session","action":"save","reasoning":"Auth refactor checkpoint"}}`}</code></pre>
+  </div>
+
+  <h4>Event Types</h4>
+  <table>
+    <thead><tr><th>Kind</th><th>Consistency</th><th>Trigger</th></tr></thead>
+    <tbody>
+      <tr><td><code>tool_call_recorded</code></td><td>local</td><td>Any tool invocation completes</td></tr>
+      <tr><td><code>session_mutated</code></td><td>strong</td><td>Session state modified</td></tr>
+      <tr><td><code>knowledge_remembered</code></td><td>eventual</td><td>Knowledge fact written</td></tr>
+      <tr><td><code>artifact_stored</code></td><td>eventual</td><td>Artifact persisted</td></tr>
+      <tr><td><code>graph_built</code></td><td>local</td><td>Graph index updated</td></tr>
+      <tr><td><code>proof_added</code></td><td>strong</td><td>Evidence ledger appended</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Context Summary</h3>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/context/summary?workspaceId=my-team  <span class="text-muted"># Materialized view: agents, decisions, conflicts</span></code></pre>
+  </div>
+
+  <h3>Event Search & Lineage</h3>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/events/search?q=auth+strategy&workspaceId=my-team  <span class="text-muted"># FTS5 full-text search</span>
+<span class="text-accent">GET</span>  /v1/events/lineage?id=42&depth=10                      <span class="text-muted"># Causal chain traversal</span></code></pre>
+  </div>
+
+  <h3>Health & Metrics</h3>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span> /health            <span class="text-muted"># Health check</span>
+<span class="text-accent">GET</span> /v1/metrics        <span class="text-muted"># JSON metrics snapshot (requires audit scope)</span></code></pre>
+  </div>
+
+  <h2 id="rate-limiting">Rate Limiting</h2>
+  <p>The Team Server applies per-token rate limits:</p>
+  <table>
+    <thead><tr><th>Endpoint</th><th>Limit</th></tr></thead>
+    <tbody>
+      <tr><td><code>/v1/tools/call</code></td><td>100 req/min per token</td></tr>
+      <tr><td><code>/v1/events</code></td><td>5 concurrent SSE connections</td></tr>
+      <tr><td><code>/v1/knowledge/*</code></td><td>60 req/min per token</td></tr>
+    </tbody>
+  </table>
+  <p>Rate limit headers are included in all responses: <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, <code>X-RateLimit-Reset</code>.</p>
+
+  <h2 id="sdk">TypeScript SDK</h2>
+  <p>The SDK wraps all REST endpoints with type-safe methods:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">// Install</span>
+npm install @anthropic/lean-ctx-sdk
+
+<span class="text-muted">// Usage</span>
+import {'{'} LeanCtx {'}'} from "@anthropic/lean-ctx-sdk";
+
+const ctx = new LeanCtx({'{'}
+  baseUrl: "http://localhost:7700",
+  token: process.env.LEANCTX_TOKEN,
+  workspace: "my-team",
+{'}'});
+
+<span class="text-muted">// Read a file</span>
+const result = await ctx.tools.call("ctx_read", {'{'}
+  path: "src/lib/auth.ts",
+  mode: "map",
+{'}'});
+
+<span class="text-muted">// Subscribe to events</span>
+for await (const event of ctx.events.subscribe()) {'{'}
+  console.log(event.type, event.data);
+{'}'}
+
+<span class="text-muted">// Error handling</span>
+try {'{'}
+  await ctx.tools.call("ctx_read", {'{'} path: "/etc/passwd" {'}'});
+{'}'} catch (e) {'{'}
+  if (e instanceof LeanCtxError) {'{'}
+    console.error(e.code, e.message);
+  {'}'}
+{'}'}</code></pre>
+  </div>
+
+  <h3>SDK Methods</h3>
+  <table>
+    <thead><tr><th>Method</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ctx.tools.call(name, args)</code></td><td>Execute any MCP tool</td></tr>
+      <tr><td><code>ctx.tools.list()</code></td><td>List available tools</td></tr>
+      <tr><td><code>ctx.session.get(channel)</code></td><td>Get session state</td></tr>
+      <tr><td><code>ctx.session.list()</code></td><td>List active sessions</td></tr>
+      <tr><td><code>ctx.knowledge.search(query)</code></td><td>Search knowledge base</td></tr>
+      <tr><td><code>ctx.knowledge.remember(fact)</code></td><td>Store a fact</td></tr>
+      <tr><td><code>ctx.events.subscribe(opts)</code></td><td>SSE event stream (async iterator)</td></tr>
+      <tr><td><code>ctx.status()</code></td><td>Server status</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="http-mcp">HTTP MCP Contract</h2>
+  <p>
+    LeanCTX also exposes a small, stable HTTP surface for direct system-to-system access to the tool registry,
+    mirroring MCP semantics over plain HTTP.
+  </p>
+
+  <h3>Loopback vs Non-Loopback</h3>
+  <ul>
+    <li><strong>Loopback bind</strong> (<code>127.0.0.1</code> / <code>localhost</code> / <code>::1</code>): auth token is optional.</li>
+    <li><strong>Non-loopback bind</strong> (e.g. <code>0.0.0.0</code>): requires <code>--auth-token</code>.</li>
+    <li>Host header is checked unless disabled. Use <code>--allowed-host</code> to add hostnames.</li>
+  </ul>
+
+  <h3>Error Codes</h3>
+  <table>
+    <thead><tr><th>Status</th><th>Code</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>401</code></td><td><code>unauthorized</code></td><td>Missing/invalid Bearer token</td></tr>
+      <tr><td><code>400</code></td><td><code>host_denied</code></td><td>Host header not allowed</td></tr>
+      <tr><td><code>429</code></td><td><code>rate_limited</code></td><td>RPS guard triggered</td></tr>
+      <tr><td><code>429</code></td><td><code>concurrency_limited</code></td><td>In-flight guard triggered</td></tr>
+      <tr><td><code>400</code></td><td><code>tool_error</code></td><td>Tool execution rejected/failed</td></tr>
+      <tr><td><code>504</code></td><td><code>request_timeout</code></td><td>Tool call exceeded timeout</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Direct curl Examples</h3>
+  <div class="not-prose">
+    <pre class="code-block"><code>{`# Start server on loopback (no auth required)
+lean-ctx serve --host 127.0.0.1 --port 8080
+
+# Health check
+curl http://127.0.0.1:8080/health
+
+# Manifest + tool list
+curl http://127.0.0.1:8080/v1/manifest
+curl "http://127.0.0.1:8080/v1/tools?offset=0&limit=50"
+
+# Call a tool
+curl -X POST \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"ctx_tree","arguments":{"path":".","depth":2}}' \\
+  http://127.0.0.1:8080/v1/tools/call`}</code></pre>
+  </div>
+
+</DocsLayout>

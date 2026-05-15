@@ -1,67 +1,9 @@
 ---
-import DocsLayout from '../../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+return Astro.redirect(lp('/cli'), 301);
 ---
-
-<DocsLayout title="CLI Reference" description="All lean-ctx CLI commands, flags, and usage patterns.">
-  <h1>CLI Reference</h1>
-  <p>lean-ctx is CLI-first. All functionality is accessible via the <code>lean-ctx</code> command.</p>
-
-  <h2>Core Commands</h2>
-  <table>
-    <thead><tr><th>Command</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>lean-ctx setup</code></td><td>Auto-configure all detected editors and shell hooks</td></tr>
-      <tr><td><code>lean-ctx doctor</code></td><td>Check configuration and report issues</td></tr>
-      <tr><td><code>lean-ctx -c "cmd"</code></td><td>Run shell command with output compression</td></tr>
-      <tr><td><code>lean-ctx read &lt;path&gt;</code></td><td>Read file with compression (default: auto mode)</td></tr>
-      <tr><td><code>lean-ctx ls [path]</code></td><td>Compressed directory listing</td></tr>
-      <tr><td><code>lean-ctx grep &lt;pattern&gt; [path]</code></td><td>Compressed search results</td></tr>
-    </tbody>
-  </table>
-
-  <h2>Measurement</h2>
-  <table>
-    <thead><tr><th>Command</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>lean-ctx gain</code></td><td>Show token savings for current session</td></tr>
-      <tr><td><code>lean-ctx gain --score</code></td><td>Detailed savings breakdown with score</td></tr>
-      <tr><td><code>lean-ctx cost</code></td><td>Per-tool cost and savings breakdown</td></tr>
-      <tr><td><code>lean-ctx metrics</code></td><td>Compression metrics and statistics</td></tr>
-      <tr><td><code>lean-ctx benchmark &lt;path&gt;</code></td><td>Find optimal read mode for a file</td></tr>
-    </tbody>
-  </table>
-
-  <h2>Session Management</h2>
-  <table>
-    <thead><tr><th>Command</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>lean-ctx session status</code></td><td>Current session state</td></tr>
-      <tr><td><code>lean-ctx session save</code></td><td>Persist session to disk</td></tr>
-      <tr><td><code>lean-ctx session load</code></td><td>Restore previous session</td></tr>
-      <tr><td><code>lean-ctx compress</code></td><td>Create context checkpoint</td></tr>
-    </tbody>
-  </table>
-
-  <h2>Administration</h2>
-  <table>
-    <thead><tr><th>Command</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>lean-ctx config show</code></td><td>Display current configuration</td></tr>
-      <tr><td><code>lean-ctx config edit</code></td><td>Open config in $EDITOR</td></tr>
-      <tr><td><code>lean-ctx update</code></td><td>Update to latest version</td></tr>
-      <tr><td><code>lean-ctx --version</code></td><td>Show version</td></tr>
-    </tbody>
-  </table>
-
-  <h2>Flags</h2>
-  <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>--mode &lt;mode&gt;</code></td><td>Override read mode (full, map, signatures, etc.)</td></tr>
-      <tr><td><code>--raw</code></td><td>Output without compression</td></tr>
-      <tr><td><code>--json</code></td><td>Output in JSON format</td></tr>
-      <tr><td><code>--quiet</code></td><td>Suppress informational messages</td></tr>
-      <tr><td><code>--verbose</code></td><td>Show detailed processing info</td></tr>
-    </tbody>
-  </table>
-</DocsLayout>
+<!-- redirect -->

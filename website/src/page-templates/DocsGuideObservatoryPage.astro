@@ -1,0 +1,520 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Observatory Dashboard',
+    items: [
+      { label: 'Overview', href: lp('/docs/guides/observatory') + '#overview' },
+      { label: 'Starting the Dashboard', href: lp('/docs/guides/observatory') + '#starting' },
+      { label: 'Dashboard Tabs', href: lp('/docs/guides/observatory') + '#tabs' },
+      { label: 'Configuration', href: lp('/docs/guides/observatory') + '#configuration' },
+      { label: 'Security', href: lp('/docs/guides/observatory') + '#security' },
+    ],
+  },
+  {
+    title: 'REST API',
+    items: [
+      { label: 'Stats & Analytics', href: lp('/docs/guides/observatory') + '#api-stats' },
+      { label: 'Agents & Knowledge', href: lp('/docs/guides/observatory') + '#api-agents' },
+      { label: 'Graphs & Heatmaps', href: lp('/docs/guides/observatory') + '#api-graphs' },
+      { label: 'Search & Symbols', href: lp('/docs/guides/observatory') + '#api-search' },
+      { label: 'Session & Pipeline', href: lp('/docs/guides/observatory') + '#api-session' },
+      { label: 'System', href: lp('/docs/guides/observatory') + '#api-system' },
+    ],
+  },
+  {
+    title: 'Cloud Dashboard',
+    items: [
+      { label: 'Cloud Overview', href: lp('/docs/guides/observatory') + '#cloud' },
+      { label: 'Local vs Cloud', href: lp('/docs/guides/observatory') + '#local-vs-cloud' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Analytics & Dashboard', href: lp('/docs/analytics') },
+      { label: 'ctx_metrics', href: lp('/docs/tools/ctx-metrics') },
+      { label: 'ctx_gain', href: lp('/docs/tools/ctx-gain') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Observatory Dashboard Guide"
+  description="lean-ctx ships two dashboards: a local Observatory with 20+ REST API endpoints, and a Cloud Dashboard at api.leanctx.com. Learn how to use both."
+  sidebar={sidebar}
+>
+  <p>
+    lean-ctx provides <strong>two dashboards</strong> that are often confused.
+    The <strong>Local Observatory</strong> is a built-in HTTP server running on your machine,
+    while the <strong>Cloud Dashboard</strong> at <code>api.leanctx.com</code> syncs
+    data across devices. This guide covers both in detail.
+  </p>
+
+  <!-- ========================================== -->
+  <!-- LOCAL OBSERVATORY                           -->
+  <!-- ========================================== -->
+
+  <h2 id="overview">Local Observatory</h2>
+  <p>
+    The Observatory is a built-in HTTP server that ships with every lean-ctx installation.
+    It runs locally at <code>127.0.0.1:3333</code> by default and provides a real-time
+    web UI plus a full REST API for inspecting token savings, agent activity, knowledge
+    graphs, file heatmaps, and more.
+  </p>
+
+  <h2 id="starting">Starting the Dashboard</h2>
+  <pre><code>{`# Start with defaults (127.0.0.1:3333)
+lean-ctx dashboard
+
+# Start for a specific project
+lean-ctx dashboard --project=myproject
+
+# Custom port
+LEAN_CTX_PORT=4444 lean-ctx dashboard
+
+# Bind to all interfaces (requires bearer token)
+LEAN_CTX_HOST=0.0.0.0 lean-ctx dashboard`}</code></pre>
+  <p>
+    Once running, open <a href="http://127.0.0.1:3333" target="_blank" rel="noopener">http://127.0.0.1:3333</a>
+    in your browser to access the web UI.
+  </p>
+
+  <h2 id="tabs">Dashboard Tabs</h2>
+  <table>
+    <thead>
+      <tr><th>Tab</th><th>Description</th><th>API Source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Stats</strong></td>
+        <td>Token statistics, savings percentages, and cost estimates</td>
+        <td><code>/api/stats</code></td>
+      </tr>
+      <tr>
+        <td><strong>Agents</strong></td>
+        <td>Active agents, scratchpad contents, shared contexts</td>
+        <td><code>/api/agents</code></td>
+      </tr>
+      <tr>
+        <td><strong>Knowledge</strong></td>
+        <td>Project knowledge graph - gotchas, buddy data, discoveries</td>
+        <td><code>/api/knowledge</code></td>
+      </tr>
+      <tr>
+        <td><strong>Call-Graph</strong></td>
+        <td>Dependency and call graph visualization</td>
+        <td><code>/api/call-graph</code></td>
+      </tr>
+      <tr>
+        <td><strong>Heatmap</strong></td>
+        <td>File access heatmap - shows which files are read most often</td>
+        <td><code>/api/heatmap</code></td>
+      </tr>
+      <tr>
+        <td><strong>Compression-Demo</strong></td>
+        <td>Live side-by-side comparison of all compression modes</td>
+        <td><code>/api/compression-demo</code></td>
+      </tr>
+      <tr>
+        <td><strong>Pipeline</strong></td>
+        <td>Pipeline stage metrics and throughput</td>
+        <td><code>/api/pipeline-stats</code></td>
+      </tr>
+      <tr>
+        <td><strong>Ledger</strong></td>
+        <td>Context budget ledger - tracks token allocation per request</td>
+        <td><code>/api/context-ledger</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="configuration">Configuration</h2>
+  <table>
+    <thead>
+      <tr><th>Variable / Flag</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_PORT</code></td>
+        <td><code>3333</code></td>
+        <td>HTTP port for the Observatory</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HOST</code></td>
+        <td><code>127.0.0.1</code></td>
+        <td>Bind address (<code>0.0.0.0</code> for all interfaces)</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_DASHBOARD_PROJECT</code></td>
+        <td>-</td>
+        <td>Pre-select a project on startup</td>
+      </tr>
+      <tr>
+        <td><code>--project=NAME</code></td>
+        <td>-</td>
+        <td>CLI flag equivalent of <code>LEAN_CTX_DASHBOARD_PROJECT</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="security">Security</h2>
+  <p>
+    When bound to <code>127.0.0.1</code> (default), the Observatory accepts unauthenticated
+    requests - it's only reachable from your own machine.
+  </p>
+  <p>
+    When you bind to a non-localhost address (e.g. <code>LEAN_CTX_HOST=0.0.0.0</code>),
+    lean-ctx automatically generates a bearer token stored at
+    <code>~/.lean-ctx/dashboard.token</code>. All API requests must include this token:
+  </p>
+  <pre><code>{`# Read the token
+TOKEN=$(cat ~/.lean-ctx/dashboard.token)
+
+# Use it in API requests
+curl -H "Authorization: Bearer $TOKEN" http://your-host:3333/api/stats`}</code></pre>
+
+  <!-- ========================================== -->
+  <!-- REST API ENDPOINTS                          -->
+  <!-- ========================================== -->
+
+  <h2 id="api-stats">REST API - Stats & Analytics</h2>
+  <p>All endpoints return JSON and are available at <code>http://HOST:PORT/api/...</code></p>
+
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/stats</code></td>
+        <td>-</td>
+        <td>Token statistics: input/output counts, savings percentage, cost estimates</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/gain</code></td>
+        <td>-</td>
+        <td>Gain report with per-task breakdown and heatmap data</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/feedback</code></td>
+        <td>-</td>
+        <td>Feedback data collected during sessions</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Token statistics
+curl http://127.0.0.1:3333/api/stats
+# {"tokens_saved": 142857, "savings_pct": 87.3, "sessions": 12, ...}
+
+# Gain report
+curl http://127.0.0.1:3333/api/gain
+# {"tasks": [...], "heatmap": {...}, "total_gain": 0.87}`}</code></pre>
+
+  <h2 id="api-agents">REST API - Agents & Knowledge</h2>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/agents</code></td>
+        <td>-</td>
+        <td>Active agents, scratchpad contents, shared contexts</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/knowledge</code></td>
+        <td>-</td>
+        <td>Project knowledge graph (discoveries, patterns, rules)</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/gotchas</code></td>
+        <td>-</td>
+        <td>Known project gotchas and warnings</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/buddy</code></td>
+        <td>-</td>
+        <td>Buddy data - learned patterns and preferences</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/mcp</code></td>
+        <td>-</td>
+        <td>MCP live data from <code>mcp-live.json</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Active agents
+curl http://127.0.0.1:3333/api/agents
+# {"agents": [{"id": "a1b2", "status": "active", "task": "refactoring"}]}
+
+# Knowledge graph
+curl http://127.0.0.1:3333/api/knowledge
+# {"entries": [...], "connections": [...]}
+
+# MCP live data
+curl http://127.0.0.1:3333/api/mcp`}</code></pre>
+
+  <h2 id="api-graphs">REST API - Graphs & Heatmaps</h2>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/graph</code></td>
+        <td>-</td>
+        <td>Dependency graph data</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/call-graph</code></td>
+        <td>-</td>
+        <td>Call graph with function-level edges</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/heatmap</code></td>
+        <td>-</td>
+        <td>File access heatmap - frequency and recency of reads</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/compression-demo</code></td>
+        <td>-</td>
+        <td>Live comparison of all compression modes on sample content</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Dependency graph
+curl http://127.0.0.1:3333/api/graph
+# {"nodes": [...], "edges": [...]}
+
+# File access heatmap
+curl http://127.0.0.1:3333/api/heatmap
+# {"files": [{"path": "src/main.rs", "reads": 47, "last": "2025-04-23T..."}]}`}</code></pre>
+
+  <h2 id="api-search">REST API - Search & Symbols</h2>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/symbols</code></td>
+        <td><code>q</code>, <code>kind</code></td>
+        <td>Symbol search with optional kind filter (<code>fn</code>, <code>class</code>, <code>struct</code>)</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/routes</code></td>
+        <td>-</td>
+        <td>HTTP routes from the project index</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/search-index</code></td>
+        <td>-</td>
+        <td>Raw BM25 search index data</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/search</code></td>
+        <td><code>q</code>, <code>limit</code></td>
+        <td>BM25 full-text search across the project</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Search symbols
+curl "http://127.0.0.1:3333/api/symbols?q=parse&kind=fn"
+# {"symbols": [{"name": "parse_config", "kind": "fn", "file": "src/config.rs"}]}
+
+# Full-text search (BM25)
+curl "http://127.0.0.1:3333/api/search?q=authentication&limit=10"
+# {"results": [{"file": "src/auth.rs", "score": 4.2, "snippet": "..."}]}`}</code></pre>
+
+  <h2 id="api-session">REST API - Session & Pipeline</h2>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/session</code></td>
+        <td>-</td>
+        <td>Current session state, call count, active project</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/intent</code></td>
+        <td>-</td>
+        <td>Structured intents detected during the session</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/pipeline-stats</code></td>
+        <td>-</td>
+        <td>Pipeline stage metrics - timing, throughput, bottlenecks</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/context-ledger</code></td>
+        <td>-</td>
+        <td>Context budget ledger - token allocation per request</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Session state
+curl http://127.0.0.1:3333/api/session
+# {"session_id": "s_abc123", "calls": 47, "project": "lean-ctx"}
+
+# Pipeline metrics
+curl http://127.0.0.1:3333/api/pipeline-stats
+# {"stages": [{"name": "read", "avg_ms": 12, "calls": 234}]}
+
+# Context ledger
+curl http://127.0.0.1:3333/api/context-ledger
+# {"budget": 128000, "used": 42000, "entries": [...]}`}</code></pre>
+
+  <h2 id="api-system">REST API - System</h2>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Endpoint</th><th>Parameters</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/version</code></td>
+        <td>-</td>
+        <td>lean-ctx version, build info, platform</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/pulse</code></td>
+        <td>-</td>
+        <td>Health check - returns uptime, memory usage, active connections</td>
+      </tr>
+      <tr>
+        <td><code>GET</code></td>
+        <td><code>/api/events</code></td>
+        <td>-</td>
+        <td>Event stream - recent system events and notifications. Since v3.5.15, each event includes an inline help icon with a human-readable explanation and actionable guidance.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Version info
+curl http://127.0.0.1:3333/api/version
+# {"version": "3.5.19", "build": "2026-05-12", "platform": "aarch64-apple-darwin"}
+
+# Health check
+curl http://127.0.0.1:3333/api/pulse
+# {"uptime_s": 3600, "memory_mb": 24, "connections": 1}`}</code></pre>
+
+  <!-- ========================================== -->
+  <!-- CLOUD DASHBOARD                             -->
+  <!-- ========================================== -->
+
+  <h2 id="cloud">Cloud Dashboard</h2>
+  <p>
+    The Cloud Dashboard at <a href="https://api.leanctx.com" target="_blank" rel="noopener">api.leanctx.com</a>
+    provides a centralized view of your lean-ctx usage across all devices. It requires
+    authentication via email verification and syncs a subset of data from your local sessions.
+  </p>
+
+  <h3>Features</h3>
+  <ul>
+    <li><strong>Authentication</strong> - Email-verified accounts with secure token-based auth</li>
+    <li><strong>Cross-device sync</strong> - View aggregated stats from all your machines</li>
+    <li><strong>Adaptive models</strong> - Cloud-trained compression models that improve over time</li>
+    <li><strong>CSV export</strong> - Download session data and token statistics as CSV</li>
+    <li><strong>Estimated costs</strong> - Dollar-amount cost estimates based on your LLM provider rates</li>
+  </ul>
+
+  <h2 id="local-vs-cloud">Local vs Cloud - What Syncs?</h2>
+  <table>
+    <thead>
+      <tr><th>Data</th><th>Local Observatory</th><th>Cloud Dashboard</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Token statistics</td>
+        <td>Real-time, per-session</td>
+        <td>Aggregated, synced periodically</td>
+      </tr>
+      <tr>
+        <td>Agent activity</td>
+        <td>Live view of all agents</td>
+        <td>Not synced</td>
+      </tr>
+      <tr>
+        <td>Knowledge graph</td>
+        <td>Full local graph</td>
+        <td>Not synced</td>
+      </tr>
+      <tr>
+        <td>File heatmap</td>
+        <td>Real-time access data</td>
+        <td>Not synced</td>
+      </tr>
+      <tr>
+        <td>Call graph</td>
+        <td>Full dependency data</td>
+        <td>Not synced</td>
+      </tr>
+      <tr>
+        <td>Compression metrics</td>
+        <td>Per-call detail</td>
+        <td>Aggregated summaries</td>
+      </tr>
+      <tr>
+        <td>Session history</td>
+        <td>Current session only</td>
+        <td>All sessions, all devices</td>
+      </tr>
+      <tr>
+        <td>Cost estimates</td>
+        <td>Not available</td>
+        <td>Based on provider rates</td>
+      </tr>
+      <tr>
+        <td>CSV export</td>
+        <td>Not available</td>
+        <td>Full export support</td>
+      </tr>
+      <tr>
+        <td>Adaptive models</td>
+        <td>Not available</td>
+        <td>Cloud-trained, auto-updated</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <strong>Privacy note:</strong> Your source code never leaves your machine. The Cloud Dashboard
+    only receives aggregated metrics (token counts, timing data, compression ratios) - not file
+    contents, knowledge entries, or code snippets.
+  </p>
+</DocsLayout>

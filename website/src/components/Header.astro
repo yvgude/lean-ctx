@@ -1,21 +1,151 @@
 ---
-import { getMcpManifest } from '../lib/mcpManifest';
-const manifest = getMcpManifest();
+import MegaDropdown from './MegaDropdown.astro';
+import SearchModal from './SearchModal.astro';
+import LanguageSwitcher from './LanguageSwitcher.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
 const currentPath = Astro.url.pathname;
 
-function isActive(path: string): boolean {
-  return currentPath.startsWith(path);
-}
+const ico = {
+  doc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>',
+  clock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  list: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  gear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="M12 16v6"/><path d="M4.93 4.93l4.24 4.24"/><path d="M14.83 14.83l4.24 4.24"/><path d="M2 12h6"/><path d="M16 12h6"/><path d="M4.93 19.07l4.24-4.24"/><path d="M14.83 9.17l4.24-4.24"/><circle cx="12" cy="12" r="3"/></svg>',
+  flow: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  bar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>',
+  bulb: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/></svg>',
+  shield: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
+  grid: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20"/><path d="M17 2v20"/><path d="M2 12h20"/></svg>',
+  server: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>',
+  share: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>',
+  code: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+  book: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>',
+  dollar: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>',
+  term: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
+  cli: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8l4 4-4 4"/><line x1="13" y1="16" x2="17" y2="16"/></svg>',
+  cog: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+  users: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
+  monitor: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+  sliders: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>',
+  graph: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><path d="M6 9v12"/></svg>',
+  wrench: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+};
+
+const learnColumns = [
+  {
+    title: t('nav.learn.getStarted'),
+    items: [
+      { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: t('nav.learn.startHereBadge') },
+      { label: t('nav.learn.firstSession'), href: lp('/docs/guides/first-session'), description: t('nav.learn.firstSessionDesc'), icon: ico.clock },
+      { label: t('nav.learn.quickReference'), href: lp('/docs/quick-reference'), description: t('nav.learn.quickReferenceDesc'), icon: ico.list },
+      { label: t('nav.learn.ideSetup'), href: lp('/docs/guides/editor-integrations'), description: t('nav.learn.ideSetupDesc'), icon: ico.gear },
+    ],
+  },
+  {
+    title: t('nav.learn.understand'),
+    items: [
+      { label: t('nav.learn.howItWorks'), href: lp('/how-it-works'), description: t('nav.learn.howItWorksDesc'), icon: ico.flow },
+      { label: t('nav.learn.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.learn.benchmarkDesc'), icon: ico.bar },
+      { label: t('nav.learn.contextEngineering'), href: lp('/what-is-context-engineering'), description: t('nav.learn.contextEngineeringDesc'), icon: ico.bulb },
+      { label: t('nav.learn.contextGovernance'), href: lp('/context-governance'), description: t('nav.learn.contextGovernanceDesc'), icon: ico.shield },
+    ],
+  },
+  {
+    title: t('nav.learn.forTeams'),
+    items: [
+      { label: t('nav.learn.teamServer'), href: lp('/docs/team-server'), description: t('nav.learn.teamServerDesc'), icon: ico.server },
+      { label: t('nav.learn.observatory'), href: lp('/docs/guides/observatory'), description: t('nav.learn.observatoryDesc'), icon: ico.bar },
+      { label: t('nav.learn.profiles'), href: lp('/docs/profiles'), description: t('nav.learn.profilesDesc'), icon: ico.sliders },
+    ],
+  },
+];
+
+const contextOsColumns = [
+  {
+    title: t('nav.contextOs.coreTitle'),
+    items: [
+      { label: t('nav.contextOs.overviewLabel'), href: lp('/context-os'), description: t('nav.contextOs.overviewDesc'), icon: ico.grid, badge: 'Start' },
+      { label: t('nav.pillars.smartIoReads'), href: lp('/context-os/smart-io'), description: t('nav.pillars.smartIoDesc'), icon: ico.doc },
+      { label: t('nav.pillars.memorySessions'), href: lp('/context-os/memory'), description: t('nav.pillars.memoryDesc'), icon: ico.grid },
+      { label: t('nav.pillars.governance'), href: lp('/context-os/governance'), description: t('nav.pillars.governanceDesc'), icon: ico.shield },
+    ],
+  },
+  {
+    title: t('nav.contextOs.advancedTitle'),
+    items: [
+      { label: t('nav.pillars.verificationProofs'), href: lp('/context-os/verification'), description: t('nav.pillars.verificationDesc'), icon: ico.check },
+      { label: t('nav.pillars.intelligence'), href: lp('/context-os/intelligence'), description: t('nav.pillars.intelligenceDesc'), icon: ico.bulb },
+      { label: t('nav.pillars.integrations'), href: lp('/context-os/integrations'), description: t('nav.pillars.integrationsDesc'), icon: ico.server },
+    ],
+  },
+  {
+    title: t('nav.pillars.multiAgent'),
+    items: [
+      { label: t('nav.pillars.sharedSessions'), href: lp('/context-os/shared-sessions'), description: t('nav.pillars.sharedSessionsDesc'), icon: ico.share },
+      { label: t('nav.pillars.contextBus'), href: lp('/context-os/context-bus'), description: t('nav.pillars.contextBusDesc'), icon: ico.flow },
+      { label: t('nav.pillars.sdk'), href: lp('/context-os/sdk'), description: t('nav.pillars.sdkDesc'), icon: ico.code },
+    ],
+  },
+];
+
+const docsColumns = [
+  {
+    title: t('nav.docs.concepts'),
+    items: [
+      { label: t('nav.docs.concepts.readModes'), href: lp('/docs/concepts/read-modes'), description: t('nav.docs.concepts.readModesDesc'), icon: ico.book },
+      { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols'), description: t('nav.docs.concepts.protocolsDesc'), icon: ico.flow },
+      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: ico.dollar },
+      { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: ico.term },
+      { label: t('cft.heroLabel'), href: lp('/docs/context-field-theory'), description: t('cft.metaDesc').slice(0, 60) + '...', icon: ico.flow },
+      { label: t('docs.sidebarMultiAgent'), href: lp('/docs/concepts/multi-agent'), description: t('nav.docs.concepts.multiAgentDesc'), icon: ico.share },
+    ],
+  },
+  {
+    title: t('nav.docs.reference'),
+    items: [
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
+      { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference'), description: t('nav.docs.apiReferenceDesc'), icon: ico.code },
+      { label: t('nav.docs.contextPackages'), href: lp('/docs/context-packages'), description: t('nav.docs.contextPackagesDesc'), icon: ico.share },
+      { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
+      { label: t('docs.sidebarGraph'), href: lp('/docs/graph'), description: t('nav.docs.graphDesc'), icon: ico.graph },
+      { label: t('nav.docs.security'), href: lp('/docs/security'), description: t('nav.docs.securityDesc'), icon: ico.shield },
+    ],
+  },
+];
+
+const toolsColumns = [
+  {
+    title: t('nav.tools.browse'),
+    items: [
+      { label: t('nav.tools.allTools'), href: lp('/docs/tools'), description: t('nav.tools.allToolsDesc'), icon: ico.wrench, badge: t('nav.tools.toolsBadge') },
+    ],
+  },
+  {
+    title: t('nav.tools.categories'),
+    items: [
+      { label: t('nav.tools.coreTools'), href: lp('/docs/tools/core'), description: t('nav.tools.coreToolsDesc'), icon: ico.doc },
+      { label: t('nav.tools.intelligence'), href: lp('/docs/tools/intelligence'), description: t('nav.tools.intelligenceDesc'), icon: ico.bulb },
+      { label: t('nav.tools.memorySession'), href: lp('/docs/tools/memory'), description: t('nav.tools.memorySessionDesc'), icon: ico.grid },
+      { label: t('nav.tools.sessionTools'), href: lp('/docs/tools/session'), description: t('nav.tools.sessionToolsDesc'), icon: ico.server },
+      { label: t('nav.tools.workflowAnalysis'), href: lp('/docs/tools/workflow'), description: t('nav.tools.workflowAnalysisDesc'), icon: ico.graph },
+      { label: t('nav.tools.analysisTools'), href: lp('/docs/tools/analysis'), description: t('nav.tools.analysisToolsDesc'), icon: ico.bar },
+    ],
+  },
+];
 ---
 
 <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-accent focus:text-bg focus:text-sm">
-  Skip to content
+  {t('nav.skipToContent')}
 </a>
 
 <header id="site-header" class="header-root" data-scrolled="false">
   <nav class="content-grid-wide">
     <div class="header-inner">
-      <a href="/" class="header-logo">
+      <a href={lp('/')} class="header-logo">
         <svg class="header-logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect width="32" height="32" rx="7" fill="#0a0a12"/>
           <path d="M6 16L13 9" stroke="#34d399" stroke-width="2.8" stroke-linecap="round"/>
@@ -30,30 +160,51 @@ function isActive(path: string): boolean {
       </a>
 
       <div class="header-center">
-        <a href="/how-it-works/" class:list={["header-nav-item", { "is-active": isActive("/how-it-works") }]}>How It Works</a>
-        <a href="/setup/" class:list={["header-nav-item", { "is-active": isActive("/setup") }]}>Setup</a>
-        <a href="/docs/" class:list={["header-nav-item", { "is-active": isActive("/docs") }]}>Docs</a>
-        <a href="/tools/" class:list={["header-nav-item", { "is-active": isActive("/tools") }]}>Tools <span class="nav-badge">{manifest.counts.granular}</span></a>
+        <MegaDropdown id="learn" label={t('nav.learn')} columns={learnColumns} />
+        <MegaDropdown id="context-os" label={t('nav.contextOs')} columns={contextOsColumns} />
+        <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
+        <MegaDropdown id="tools" label={t('nav.tools')} columns={toolsColumns} />
       </div>
 
       <div class="header-right">
+        <button data-search-trigger class="header-search-btn" aria-label={t('nav.searchLabel')}>
+          <svg class="w-[16px] h-[16px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <span class="header-search-label">{t('nav.search')}</span>
+          <kbd class="header-search-kbd">⌘K</kbd>
+        </button>
+
         <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="header-github-cta">
           <svg class="header-gh-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
-          <span class="header-gh-label">Star</span>
+          <span class="header-gh-label">{t('nav.star')}</span>
           <span class="header-gh-divider"></span>
           <span id="gh-stars" class="header-gh-count">-</span>
         </a>
 
-        <a href="/setup/" class="header-cta">
-          Install lean-ctx
+        <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="header-discord" aria-label="Discord">
+          <svg class="header-discord-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+          <span class="header-discord-label">{t('nav.discord')}</span>
+          <span class="header-discord-divider"></span>
+          <span class="header-discord-join">{t('nav.discordJoin')}</span>
+        </a>
+
+        <a href={lp('/docs/getting-started')} class="header-cta">
+          {t('nav.getStarted')}
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </a>
+
+        <a href={lp('/login')} class="header-login" aria-label={t('nav.login')}>
+          <svg class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </a>
 
         <button
           type="button"
           class="header-theme-toggle"
           data-theme-toggle
-          aria-label="Toggle theme"
+          data-label-dark={t('nav.switchToDarkMode')}
+          data-label-light={t('nav.switchToLightMode')}
+          aria-label={t('nav.switchToDarkMode')}
+          aria-pressed="false"
+          title={t('nav.switchToDarkMode')}
         >
           <span class="header-theme-toggle-track" aria-hidden="true">
             <svg class="header-theme-icon header-theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -68,7 +219,9 @@ function isActive(path: string): boolean {
           </span>
         </button>
 
-        <button id="mobile-menu-btn" class="header-mobile-btn" aria-label="Menu">
+        <LanguageSwitcher />
+
+        <button id="mobile-menu-btn" class="header-mobile-btn" aria-label={t('nav.menu')}>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
       </div>
@@ -77,21 +230,92 @@ function isActive(path: string): boolean {
 
   <div id="mobile-menu" class="mobile-menu-closed">
     <div class="mobile-menu-inner">
-      <a href="/how-it-works/" class="mobile-nav-link">How It Works</a>
-      <a href="/setup/" class="mobile-nav-link">Setup</a>
-      <a href="/docs/" class="mobile-nav-link">Docs</a>
-      <a href="/tools/" class="mobile-nav-link">Tools</a>
-      <a href="/compare/" class="mobile-nav-link">Compare</a>
-      <a href="/benchmark/" class="mobile-nav-link">Benchmark</a>
+      <div class="mobile-section">
+        <span class="mobile-section-title">{t('nav.learn')}</span>
+        <a href={lp('/docs/getting-started')} class="mobile-nav-link">{t('nav.learn.gettingStarted')}</a>
+        <a href={lp('/docs/guides/first-session')} class="mobile-nav-link">{t('nav.learn.firstSession')}</a>
+        <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.learn.howItWorks')}</a>
+        <a href={lp('/context-os/benchmark')} class="mobile-nav-link">{t('nav.learn.benchmark')}</a>
+        <a href={lp('/docs/team-server')} class="mobile-nav-link">{t('nav.learn.teamServer')}</a>
+      </div>
+
+      <div class="mobile-section">
+        <span class="mobile-section-title">{t('nav.contextOs')}</span>
+        <a href={lp('/context-os')} class="mobile-nav-link">{t('nav.contextOs.overviewLabel')}</a>
+        <a href={lp('/context-os/smart-io')} class="mobile-nav-link">{t('nav.pillars.smartIo')}</a>
+        <a href={lp('/context-os/memory')} class="mobile-nav-link">{t('nav.pillars.memory')}</a>
+        <a href={lp('/context-os/governance')} class="mobile-nav-link">{t('nav.pillars.governance')}</a>
+        <a href={lp('/context-os/verification')} class="mobile-nav-link">{t('nav.pillars.verification')}</a>
+        <a href={lp('/context-os/intelligence')} class="mobile-nav-link">{t('nav.pillars.intelligence')}</a>
+        <a href={lp('/context-os/integrations')} class="mobile-nav-link">{t('nav.pillars.integrations')}</a>
+        <a href={lp('/context-os/shared-sessions')} class="mobile-nav-link">{t('nav.pillars.sharedSessions')}</a>
+        <a href={lp('/context-os/context-bus')} class="mobile-nav-link">{t('nav.pillars.contextBus')}</a>
+        <a href={lp('/context-os/sdk')} class="mobile-nav-link">{t('nav.pillars.sdk')}</a>
+        <a href={lp('/docs/context-packages')} class="mobile-nav-link">{t('nav.contextOs.contextPkgLabel')}</a>
+      </div>
+
+      <div class="mobile-section">
+        <span class="mobile-section-title">{t('nav.docs')}</span>
+        <a href={lp('/docs/concepts/read-modes')} class="mobile-nav-link">{t('nav.docs.concepts.readModes')}</a>
+        <a href={lp('/docs/concepts/multi-agent')} class="mobile-nav-link">{t('docs.sidebarMultiAgent')}</a>
+        <a href={lp('/docs/context-field-theory')} class="mobile-nav-link">{t('nav.pillars.intelligenceCft')}</a>
+        <a href={lp('/docs/context-packages')} class="mobile-nav-link">{t('nav.docs.contextPackages')}</a>
+        <a href={lp('/docs/graph')} class="mobile-nav-link">{t('docs.sidebarGraph')}</a>
+        <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
+        <a href={lp('/docs/api-reference')} class="mobile-nav-link">{t('nav.docs.apiReference')}</a>
+        <a href={lp('/docs/security')} class="mobile-nav-link">{t('nav.docs.security')}</a>
+        <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>
+      </div>
+
+      <div class="mobile-section">
+        <span class="mobile-section-title">{t('nav.tools')}</span>
+        <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.tools.allTools')}</a>
+        <a href={lp('/docs/tools/core')} class="mobile-nav-link">{t('nav.tools.coreTools')}</a>
+        <a href={lp('/docs/tools/intelligence')} class="mobile-nav-link">{t('nav.tools.intelligence')}</a>
+        <a href={lp('/docs/tools/memory')} class="mobile-nav-link">{t('nav.tools.memorySession')}</a>
+      </div>
+
+      <div class="mobile-section mobile-top-links">
+        <a href={lp('/login')} class="mobile-nav-link">{t('nav.login')}</a>
+      </div>
+
+      <div class="mobile-lang-area" style="display: flex; align-items: center; gap: 0.5rem;">
+        <button
+          type="button"
+          class="header-theme-toggle header-theme-toggle-mobile"
+          data-theme-toggle
+          data-label-dark={t('nav.switchToDarkMode')}
+          data-label-light={t('nav.switchToLightMode')}
+          aria-label={t('nav.switchToDarkMode')}
+          aria-pressed="false"
+          title={t('nav.switchToDarkMode')}
+        >
+          <span class="header-theme-toggle-track" aria-hidden="true">
+            <svg class="header-theme-icon header-theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <svg class="header-theme-icon header-theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+          </span>
+        </button>
+        <LanguageSwitcher />
+      </div>
+
       <div class="mobile-cta-area">
-        <a href="/setup/" class="mobile-get-started">
-          Install lean-ctx
+        <a href={lp('/docs/getting-started')} class="mobile-get-started">
+          {t('nav.getStarted')}
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
         </a>
       </div>
     </div>
   </div>
 </header>
+
+<SearchModal />
 
 <style>
   .header-root {
@@ -121,41 +345,139 @@ function isActive(path: string): boolean {
     text-decoration: none;
     flex-shrink: 0;
   }
-  .header-logo-icon { width: 1.75rem; height: 1.75rem; }
-  .header-logo-text { font-size: 1.125rem; font-weight: 700; letter-spacing: -0.02em; }
+  .header-logo-icon {
+    width: clamp(1.5rem, 1.25rem + 0.5vw, 1.875rem);
+    height: clamp(1.5rem, 1.25rem + 0.5vw, 1.875rem);
+  }
+  .header-logo-text {
+    font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
   .header-center {
     display: none;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0;
   }
-  @media (min-width: 768px) { .header-center { display: flex; } }
-  .header-nav-item {
+  @media (min-width: 768px) {
+    .header-center { display: flex; }
+  }
+  .header-nav-item,
+  :global(.mega-dd-trigger) {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.875rem;
+    gap: 5px;
+    padding: 6px clamp(10px, 0.6rem + 0.4vw, 14px);
+    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.875rem);
     font-weight: 450;
     color: var(--color-muted);
     transition: color 0.2s ease;
     text-decoration: none;
-    border-radius: 8px;
+    white-space: nowrap;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    line-height: 1;
   }
-  .header-nav-item:hover { color: var(--color-text-bright); }
-  .header-nav-item.is-active { color: var(--color-text-bright); background: var(--overlay-hover); }
-  .nav-badge {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
-    background: var(--overlay-faint);
-    color: var(--color-accent);
-    border: 1px solid var(--color-border);
+  .header-nav-item:hover,
+  :global(.mega-dd-trigger:hover) {
+    color: var(--color-text-bright);
+  }
+  .header-nav-item.is-active {
+    color: var(--color-text-bright);
   }
   .header-right {
     display: flex;
     align-items: center;
+    gap: clamp(0.5rem, 0.3rem + 0.4vw, 0.75rem);
+  }
+  .header-search-btn {
+    display: none;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4rem 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    color: var(--color-muted);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    white-space: nowrap;
+    font-family: inherit;
+    line-height: 1;
+  }
+  .header-search-btn:hover {
+    border-color: var(--color-border-light);
+    color: var(--color-text-bright);
+    background: var(--overlay-hover);
+  }
+  .header-search-label { font-size: 0.8125rem; }
+  .header-search-kbd {
+    font-size: 0.625rem;
+    font-family: inherit;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-faint);
+    color: var(--color-muted);
+    margin-inline-start: 0.25rem;
+    line-height: 1;
+  }
+  @media (min-width: 640px) {
+    .header-search-btn { display: inline-flex; }
+  }
+  .header-discord {
+    display: none;
+    align-items: center;
     gap: 0.5rem;
+    padding: 0.4rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+    text-decoration: none;
+    transition: all 0.25s ease;
+    white-space: nowrap;
+    line-height: 1;
+  }
+  .header-discord:hover {
+    border-color: var(--color-border-light);
+    background: var(--overlay-hover);
+  }
+  .header-discord-icon {
+    width: 16px;
+    height: 16px;
+    animation: discord-rgb 8s linear infinite;
+  }
+  .header-discord-label {
+    font-weight: 600;
+    animation: discord-rgb 8s linear infinite;
+  }
+  .header-discord-divider {
+    width: 1px;
+    height: 14px;
+    background: var(--color-border-light);
+  }
+  .header-discord-join {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+    font-size: 0.75rem;
+  }
+  @keyframes discord-rgb {
+    0%   { color: #5865F2; }
+    16%  { color: #57F287; }
+    33%  { color: #FEE75C; }
+    50%  { color: #EB459E; }
+    66%  { color: #ED4245; }
+    83%  { color: #34d399; }
+    100% { color: #5865F2; }
+  }
+  @media (min-width: 640px) {
+    .header-discord { display: inline-flex; }
   }
   .header-github-cta {
     display: none;
@@ -169,13 +491,20 @@ function isActive(path: string): boolean {
     color: var(--color-text-bright);
     text-decoration: none;
     transition: all 0.25s ease;
+    white-space: nowrap;
+    line-height: 1;
   }
-  .header-github-cta:hover { border-color: var(--color-border-light); background: var(--overlay-hover); }
+  .header-github-cta:hover {
+    border-color: var(--color-border-light);
+    background: var(--overlay-hover);
+  }
   .header-gh-icon { width: 16px; height: 16px; }
   .header-gh-label { font-weight: 600; }
   .header-gh-divider { width: 1px; height: 14px; background: var(--color-border-light); }
   .header-gh-count { font-variant-numeric: tabular-nums; color: var(--color-muted); font-size: 0.75rem; }
-  @media (min-width: 640px) { .header-github-cta { display: inline-flex; } }
+  @media (min-width: 640px) {
+    .header-github-cta { display: inline-flex; }
+  }
   .header-cta {
     display: none;
     align-items: center;
@@ -187,56 +516,85 @@ function isActive(path: string): boolean {
     background: var(--color-accent);
     color: var(--color-bg);
     transition: all 0.25s ease;
-    text-decoration: none;
+    white-space: nowrap;
   }
-  .header-cta:hover { opacity: 0.92; box-shadow: 0 0 20px rgba(52, 211, 153, 0.15); }
-  @media (min-width: 640px) { .header-cta { display: inline-flex; } }
-  .header-theme-toggle {
+  .header-cta:hover {
+    opacity: 0.92;
+    box-shadow: 0 0 20px rgba(52, 211, 153, 0.15);
+  }
+  @media (min-width: 640px) {
+    .header-cta { display: inline-flex; }
+  }
+  .header-login {
     display: none;
     align-items: center;
     justify-content: center;
     padding: 0.375rem;
     border-radius: 12px;
-    border: 1px solid var(--color-border-light);
-    background: transparent;
-    cursor: pointer;
-    transition: all 0.25s ease;
+    border: 1px solid var(--color-border);
     color: var(--color-muted);
+    transition: all 0.25s ease;
   }
-  .header-theme-toggle:hover { color: var(--color-accent); border-color: var(--color-accent); }
-  .header-theme-toggle-track { width: 18px; height: 18px; position: relative; }
-  .header-theme-icon { width: 18px; height: 18px; position: absolute; top: 0; left: 0; transition: opacity 0.25s ease, transform 0.25s ease; }
-  .header-theme-icon-sun { opacity: 0; transform: rotate(-30deg) scale(0.8); }
-  .header-theme-icon-moon { opacity: 1; transform: rotate(0) scale(1); }
-  .header-theme-toggle[data-theme='light'] .header-theme-icon-sun { opacity: 1; transform: rotate(0) scale(1); }
-  .header-theme-toggle[data-theme='light'] .header-theme-icon-moon { opacity: 0; transform: rotate(30deg) scale(0.8); }
-  @media (min-width: 640px) { .header-theme-toggle { display: inline-flex; } }
+  .header-login:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  @media (min-width: 640px) {
+    .header-login { display: flex; }
+  }
   .header-mobile-btn {
     display: flex;
     align-items: center;
+    justify-content: center;
     color: var(--color-muted);
     padding: 0.375rem;
     border: none;
     background: none;
     cursor: pointer;
+    transition: color 0.2s ease;
   }
   .header-mobile-btn:hover { color: var(--color-text-bright); }
-  @media (min-width: 768px) { .header-mobile-btn { display: none; } }
+  @media (min-width: 768px) {
+    .header-mobile-btn { display: none; }
+  }
   .mobile-menu-closed { display: none; }
   .mobile-menu-open {
     display: block;
     background: color-mix(in srgb, var(--color-bg) 98%, transparent);
     backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--color-border);
     animation: menuReveal 0.25s ease;
   }
-  @keyframes menuReveal { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-  @media (min-width: 768px) { .mobile-menu-open { display: none; } }
+  @keyframes menuReveal {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (min-width: 768px) {
+    .mobile-menu-open { display: none; }
+  }
   .mobile-menu-inner {
-    padding: 1rem;
+    padding: clamp(1rem, 0.75rem + 1vw, 1.5rem);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.75rem;
+    max-height: calc(100dvh - 4rem);
+    overflow-y: auto;
+  }
+  .mobile-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+  .mobile-section-title {
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--color-muted);
+    padding: 0 0.75rem;
+    margin-bottom: 0.25rem;
+    opacity: 0.5;
   }
   .mobile-nav-link {
     display: block;
@@ -244,10 +602,15 @@ function isActive(path: string): boolean {
     font-size: 0.9375rem;
     color: var(--color-muted);
     border-radius: 8px;
+    transition: all 0.2s ease;
     text-decoration: none;
+    min-height: 44px;
   }
   .mobile-nav-link:hover { color: var(--color-text-bright); background: var(--overlay-hover); }
-  .mobile-cta-area { padding-top: 0.75rem; }
+  .mobile-lang-area {
+    padding: 0.25rem 0.5rem;
+  }
+  .mobile-cta-area { padding-top: 0.5rem; }
   .mobile-get-started {
     display: flex;
     align-items: center;
@@ -261,43 +624,214 @@ function isActive(path: string): boolean {
     color: var(--color-bg);
     text-decoration: none;
   }
+  .mobile-get-started:hover {
+    box-shadow: 0 0 20px rgba(52, 211, 153, 0.15);
+  }
+  .header-theme-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-border-light);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    color: var(--color-muted);
+  }
+  .header-theme-toggle:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .header-theme-toggle:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .header-theme-toggle-track {
+    width: 18px;
+    height: 18px;
+    position: relative;
+  }
+  .header-theme-icon {
+    width: 18px;
+    height: 18px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .header-theme-icon-sun {
+    opacity: 0;
+    transform: rotate(-30deg) scale(0.8);
+  }
+  .header-theme-icon-moon {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+  .header-theme-toggle[data-theme='light'] .header-theme-icon-sun {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+  .header-theme-toggle[data-theme='light'] .header-theme-icon-moon {
+    opacity: 0;
+    transform: rotate(30deg) scale(0.8);
+  }
+  @media (min-width: 640px) {
+    .header-theme-toggle { display: inline-flex; }
+  }
+  .header-theme-toggle-mobile { display: inline-flex; }
+  @media (min-width: 640px) {
+    .header-theme-toggle-mobile { display: none; }
+  }
 </style>
 
 <script>
   const btn = document.getElementById('mobile-menu-btn');
   const menu = document.getElementById('mobile-menu');
   btn?.addEventListener('click', () => {
-    menu?.classList.toggle('mobile-menu-closed');
-    menu?.classList.toggle('mobile-menu-open');
+    if (menu?.classList.contains('mobile-menu-closed')) {
+      menu.classList.remove('mobile-menu-closed');
+      menu.classList.add('mobile-menu-open');
+    } else {
+      menu?.classList.remove('mobile-menu-open');
+      menu?.classList.add('mobile-menu-closed');
+    }
   });
 
   const header = document.getElementById('site-header');
   if (header) {
-    window.addEventListener('scroll', () => {
+    const update = () => {
       header.dataset.scrolled = window.scrollY > 20 ? 'true' : 'false';
-    }, { passive: true });
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    update();
   }
 
-  fetch('/api/stats').then(r => r.json()).then(data => {
-    const el = document.getElementById('gh-stars');
-    if (el && data.stars > 0) {
-      el.textContent = data.stars >= 1000 ? (data.stars / 1000).toFixed(1) + 'k' : String(data.stars);
+  function positionPanel(wrapper: HTMLElement) {
+    const panel = wrapper.querySelector<HTMLElement>('.mega-dd-panel');
+    if (!panel) return;
+    panel.style.left = '0';
+    const triggerRect = wrapper.getBoundingClientRect();
+    const panelWidth = panel.offsetWidth;
+    const viewportW = window.innerWidth;
+    const pad = 12;
+    let idealLeft = (triggerRect.width - panelWidth) / 2;
+    const absLeft = triggerRect.left + idealLeft;
+    const absRight = absLeft + panelWidth;
+    if (absLeft < pad) {
+      idealLeft += pad - absLeft;
+    } else if (absRight > viewportW - pad) {
+      idealLeft -= absRight - (viewportW - pad);
     }
-  }).catch(() => {});
+    panel.style.left = `${idealLeft}px`;
+  }
 
-  function initThemeToggle() {
+  document.querySelectorAll<HTMLDivElement>('.mega-dd-wrapper').forEach(wrapper => {
+    const trigger = wrapper.querySelector('.mega-dd-trigger');
+    let closeTimer: ReturnType<typeof setTimeout>;
+    function open() {
+      clearTimeout(closeTimer);
+      document.querySelectorAll('.mega-dd-wrapper.is-open').forEach(w => {
+        if (w !== wrapper) w.classList.remove('is-open');
+      });
+      wrapper.classList.add('is-open');
+      trigger?.setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(() => positionPanel(wrapper));
+    }
+    function close() {
+      closeTimer = setTimeout(() => {
+        wrapper.classList.remove('is-open');
+        trigger?.setAttribute('aria-expanded', 'false');
+      }, 180);
+    }
+    wrapper.addEventListener('mouseenter', open);
+    wrapper.addEventListener('mouseleave', close);
+    trigger?.addEventListener('click', (e) => {
+      e.preventDefault();
+      wrapper.classList.contains('is-open') ? close() : open();
+    });
+    trigger?.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Escape') {
+        wrapper.classList.remove('is-open');
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+    const panel = wrapper.querySelector('.mega-dd-panel');
+    panel?.addEventListener('mouseenter', () => clearTimeout(closeTimer));
+    panel?.addEventListener('mouseleave', close);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!(e.target as HTMLElement).closest('.mega-dd-wrapper')) {
+      document.querySelectorAll('.mega-dd-wrapper.is-open').forEach(w => {
+        w.classList.remove('is-open');
+        w.querySelector('.mega-dd-trigger')?.setAttribute('aria-expanded', 'false');
+      });
+    }
+  });
+
+  fetch('/api/stats')
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('gh-stars');
+      if (el && data.stars > 0) {
+        const count = data.stars;
+        el.textContent = count >= 1000 ? (count / 1000).toFixed(1) + 'k' : String(count);
+      }
+    })
+    .catch(() => {});
+
+  function getTheme(): string {
+    if (typeof (window as any).__leanctxGetTheme === 'function') return (window as any).__leanctxGetTheme();
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  function setThemeButtonState(btn: Element, theme: string) {
+    const isDark = theme === 'dark';
+    const el = btn as HTMLElement;
+    el.dataset.theme = isDark ? 'dark' : 'light';
+    btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+    const darkLabel = el.dataset.labelDark || 'Switch to dark mode';
+    const lightLabel = el.dataset.labelLight || 'Switch to light mode';
+    const nextLabel = isDark ? lightLabel : darkLabel;
+    btn.setAttribute('aria-label', nextLabel);
+    btn.setAttribute('title', nextLabel);
+  }
+
+  function applyTheme(theme: string) {
+    document.documentElement.classList.add('theme-transition');
+    if (typeof (window as any).__leanctxSetTheme === 'function') {
+      (window as any).__leanctxSetTheme(theme);
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.style.colorScheme = theme;
+      try { localStorage.setItem('leanctx-theme', theme); } catch (_) {}
+    }
+    window.dispatchEvent(new CustomEvent('leanctx-theme-change', { detail: { theme } }));
+    setTimeout(() => document.documentElement.classList.remove('theme-transition'), 350);
+  }
+
+  function bindThemeToggles() {
     document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
-      const el = btn as HTMLElement;
-      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-      el.dataset.theme = theme;
+      if ((btn as HTMLElement).dataset.boundThemeToggle === 'true') return;
+      (btn as HTMLElement).dataset.boundThemeToggle = 'true';
+      setThemeButtonState(btn, getTheme());
       btn.addEventListener('click', () => {
-        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        if (typeof (window as any).__leanctxSetTheme === 'function') {
-          (window as any).__leanctxSetTheme(next);
-        }
-        document.querySelectorAll('[data-theme-toggle]').forEach(b => (b as HTMLElement).dataset.theme = next);
+        const next = getTheme() === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        document.querySelectorAll('[data-theme-toggle]').forEach((b) => setThemeButtonState(b, next));
       });
     });
   }
-  initThemeToggle();
+
+  bindThemeToggles();
+  document.addEventListener('astro:page-load', bindThemeToggles);
+
+  if (!(window as any).__leanctxThemeToggleListenerBound) {
+    (window as any).__leanctxThemeToggleListenerBound = true;
+    window.addEventListener('leanctx-theme-change', ((event: CustomEvent) => {
+      const theme = event?.detail?.theme === 'dark' ? 'dark' : 'light';
+      document.querySelectorAll('[data-theme-toggle]').forEach((btn) => setThemeButtonState(btn, theme));
+    }) as EventListener);
+  }
 </script>

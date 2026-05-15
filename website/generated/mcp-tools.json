@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 60,
+    "granular": 58,
     "unified": 5
   },
   "read_modes": {
@@ -80,7 +80,7 @@
           "type": "object"
         },
         "name": "ctx_agent",
-        "schema_md5": "74ad28b37433d2730f7f2ee8827fe7b862263e03bf6b657e81ad62c665d63f0b"
+        "schema_md5": "8e5656acf265ba8edbb16467198fea7f"
       },
       {
         "description": "Entropy analysis — recommends optimal compression mode for a file.",
@@ -97,10 +97,10 @@
           "type": "object"
         },
         "name": "ctx_analyze",
-        "schema_md5": "53c50c71ea51ef8b6c0d0b2c513b542e7a19d2cebee1058bf49e135b7ca7a8db"
+        "schema_md5": "cdaf58c465aa2e2e2e0519a2c66b1a8f"
       },
       {
-        "description": "Graph-based architecture analysis. Actions: overview|clusters|communities|layers|cycles|entrypoints|hotspots|health|module.",
+        "description": "Graph-based architecture analysis. Actions: overview|clusters|layers|cycles|entrypoints|module.",
         "input_schema": {
           "properties": {
             "action": {
@@ -108,12 +108,9 @@
               "enum": [
                 "overview",
                 "clusters",
-                "communities",
                 "layers",
                 "cycles",
                 "entrypoints",
-                "hotspots",
-                "health",
                 "module"
               ],
               "type": "string"
@@ -130,7 +127,7 @@
           "type": "object"
         },
         "name": "ctx_architecture",
-        "schema_md5": "db2c9a27e12fc3d599fc63cdc87b3cef129eaf3cf42de04fe5f8c973e7fb5dd9"
+        "schema_md5": "3dd5e6f06ff0f8720cbaa1c1215e37ee"
       },
       {
         "description": "Context artifact registry + BM25 index. Actions: list|status|index|reindex|search|remove.",
@@ -179,7 +176,7 @@
           "type": "object"
         },
         "name": "ctx_artifacts",
-        "schema_md5": "81621dea60be07814f1ebff4ffce6b1f66091da79919b4072a47903f89c2709d"
+        "schema_md5": "b79efbacf0af5cc1f2c6e393ae1330d9"
       },
       {
         "description": "Benchmark compression modes for a file or project.",
@@ -206,7 +203,7 @@
           "type": "object"
         },
         "name": "ctx_benchmark",
-        "schema_md5": "6f703e70f310c1c20fea499645872ed816158ad9a3666fcc73d3354fec9edb6a"
+        "schema_md5": "aa5cb517f08c47b509b4c25f35b8d802"
       },
       {
         "description": "Cache ops: status|clear|invalidate.",
@@ -232,7 +229,7 @@
           "type": "object"
         },
         "name": "ctx_cache",
-        "schema_md5": "6872efabbc026966a84691009a91bc43a54f51e96ea669ef33dc0d98f20cfc07"
+        "schema_md5": "be2d06bc26063e4b271e94537db7aa30"
       },
       {
         "description": "Compatibility meta-tool: call any ctx_* tool by name using a stable schema. Useful for MCP clients that freeze tool registries at startup (static tools/list).",
@@ -254,7 +251,7 @@
           "type": "object"
         },
         "name": "ctx_call",
-        "schema_md5": "0192496c606dd136809c19e265be5bd2298457212be509596eaaf66738577f8c"
+        "schema_md5": "7524690482ad5baa548368769df4c236"
       },
       {
         "description": "Find all functions/methods called by a given symbol. Deprecated alias for ctx_callgraph direction=callees.",
@@ -275,7 +272,7 @@
           "type": "object"
         },
         "name": "ctx_callees",
-        "schema_md5": "a52f17c700f1a7ae00d612cfa2575ba96323c449a2c2d2980c57f5d7082bf537"
+        "schema_md5": "1aebc705756ba4598d1a34593d10c9eb"
       },
       {
         "description": "Find all symbols that call a given function/method. Deprecated alias for ctx_callgraph direction=callers.",
@@ -296,7 +293,7 @@
           "type": "object"
         },
         "name": "ctx_callers",
-        "schema_md5": "6c67fc568cf011a45a00ddd625d6d8298bc244359143d9747723105a055a6796"
+        "schema_md5": "ccab40c20158d095e7e5b527409900c6"
       },
       {
         "description": "Unified call graph query. direction=callers|callees for a symbol. Returns file/symbol/line edges.",
@@ -321,7 +318,7 @@
           "type": "object"
         },
         "name": "ctx_callgraph",
-        "schema_md5": "316fd9a876ffdd1fa8824b19af540a193bd2b1d7fb7e3143a9b99d13877f202e"
+        "schema_md5": "98958fb65fc046df77d9874c8a705b5e"
       },
       {
         "description": "Context checkpoint for long conversations.",
@@ -335,7 +332,7 @@
           "type": "object"
         },
         "name": "ctx_compress",
-        "schema_md5": "0c068344297f17bcfd1ff92a99356d3d303eabba10ae2dcc4a9958f9f097be20"
+        "schema_md5": "4637c2b83cb811d3fc007bf24d951664"
       },
       {
         "description": "Compress a memory/config file (CLAUDE.md, .cursorrules, etc.) to save tokens on every session start. Preserves code blocks, URLs, paths, headings, tables. Creates .original.md backup.",
@@ -352,7 +349,7 @@
           "type": "object"
         },
         "name": "ctx_compress_memory",
-        "schema_md5": "6b138a355d353dfb35769cc35ae8549e6df8d74b2c9d3fc590ae741f0c336450"
+        "schema_md5": "82f50feed0439dd2264d45f470bc2a5a"
       },
       {
         "description": "Session context overview — cached files, seen files, session state.",
@@ -361,7 +358,7 @@
           "type": "object"
         },
         "name": "ctx_context",
-        "schema_md5": "abb597612a6682160d09dd50b5792a1198b2d490fad0b53a3fc3d6c61175a6db"
+        "schema_md5": "4fceb125360b2d16a872e883c0d67ab9"
       },
       {
         "description": "Cost attribution (local-first). Actions: report|agent|tools|json|reset.",
@@ -391,7 +388,7 @@
           "type": "object"
         },
         "name": "ctx_cost",
-        "schema_md5": "ccc1413c76edd6e95fcc7d6f3fccc4cc860a52723b26ab750e6e75803eb95d67"
+        "schema_md5": "4d585a666518c79a7301311252f4dfe6"
       },
       {
         "description": "Cross-file dedup: analyze or apply shared block references.",
@@ -406,7 +403,7 @@
           "type": "object"
         },
         "name": "ctx_dedup",
-        "schema_md5": "bce4fda9ec7bbfe39d9d123fca9eac57ea1243e0c67a0ea8e360bcfb90d33917"
+        "schema_md5": "05554f176d4289b9b9f41f48314e86fc"
       },
       {
         "description": "Incremental diff — sends only changed lines since last read.",
@@ -423,7 +420,7 @@
           "type": "object"
         },
         "name": "ctx_delta",
-        "schema_md5": "1d0f60445f1300893cab1442c58a03b5fa0c8531716c86c0937ca56b28e47c0a"
+        "schema_md5": "3fd509ff5e2fa247f048df50bb5c642e"
       },
       {
         "description": "Find missed compression opportunities in shell history.",
@@ -437,24 +434,7 @@
           "type": "object"
         },
         "name": "ctx_discover",
-        "schema_md5": "9ff5a689b8bb2d8f555389fa07560eb311ed5fbc9ec1cf8a555bbe586bba3fbd"
-      },
-      {
-        "description": "Search available lean-ctx tools by keyword. Returns matching tool names + descriptions for on-demand loading.",
-        "input_schema": {
-          "properties": {
-            "query": {
-              "description": "Search keyword (e.g. 'graph', 'cost', 'workflow', 'dedup')",
-              "type": "string"
-            }
-          },
-          "required": [
-            "query"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_discover_tools",
-        "schema_md5": "0d7d89154683f462a8fe07952a8efa3cdb7860170cd387d1aa3efa36bd596c7d"
+        "schema_md5": "5ed6881919de41fc3df4abfd4397c850"
       },
       {
         "description": "Edit a file via search-and-replace. Works without native Read/Edit tools. Use this when the IDE's Edit tool requires Read but Read is unavailable.",
@@ -490,7 +470,7 @@
           "type": "object"
         },
         "name": "ctx_edit",
-        "schema_md5": "c0be8ffb8557379fe1c29e4c89acb2233a564703a367b6b103d712ab6c00d698"
+        "schema_md5": "88c3586c298b373fe7c65633d6a3c43e"
       },
       {
         "description": "Run code in sandbox (11 languages). Only stdout enters context. Raw data never leaves subprocess. Languages: javascript, typescript, python, shell, ruby, go, rust, php, perl, r, elixir.",
@@ -532,7 +512,7 @@
           "type": "object"
         },
         "name": "ctx_execute",
-        "schema_md5": "30a187dcd70ccc90bbeb072a617a571633e4c1d6ca8afbac294416c5e14a4555"
+        "schema_md5": "193135d118da09d7f552ee677ee98c4f"
       },
       {
         "description": "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list.",
@@ -566,7 +546,7 @@
           "type": "object"
         },
         "name": "ctx_expand",
-        "schema_md5": "7ab7fbcdac2f13479bccededec1421e6d5db5c4a33f8a755a00c5e0d846eaf30"
+        "schema_md5": "1d84e2c8cb57cb6268727b4fc73f94d8"
       },
       {
         "description": "Harness feedback for LLM output tokens/latency (local-first). Actions: record|report|json|reset|status.",
@@ -619,7 +599,7 @@
           "type": "object"
         },
         "name": "ctx_feedback",
-        "schema_md5": "0c7c0a24fe01fade9f8a583ad7eee0bc2d436684fb539786813afea153bffdf7"
+        "schema_md5": "c8f0abaf207d048062889c97b9214537"
       },
       {
         "description": "Budget-aware context fill — auto-selects compression per file within token limit.",
@@ -648,7 +628,7 @@
           "type": "object"
         },
         "name": "ctx_fill",
-        "schema_md5": "a61fd174655abe267ab6be06eb1d780739336f4ef24442920c93e8362cc62790"
+        "schema_md5": "cbf54bb11746bf5edb4345a40c259590"
       },
       {
         "description": "Gain report (includes Wrapped via action=wrapped).",
@@ -686,7 +666,7 @@
           "type": "object"
         },
         "name": "ctx_gain",
-        "schema_md5": "499b8286554a4f7a5e4891d0a2920234d361f45abc505868178c30f64cc2c5ca"
+        "schema_md5": "689b1f4c29249850e4bd369168bcb698"
       },
       {
         "description": "Unified code graph. Actions: build (index), related (connected files), symbol (def/usages), impact (blast radius), status (stats), enrich (add commits+tests+knowledge), context (task-based query), diagram (Mermaid deps/calls).",
@@ -729,7 +709,7 @@
           "type": "object"
         },
         "name": "ctx_graph",
-        "schema_md5": "3bf931c72477e989f7e93c2e1ec1c3428d6c9f0a1d022cd2bdf477a3aefffd47"
+        "schema_md5": "c998f19ec15f8acefc0c126791558cfb"
       },
       {
         "description": "Generate a Mermaid diagram of the dependency or call graph. Deprecated alias for ctx_graph action=diagram.",
@@ -751,7 +731,7 @@
           "type": "object"
         },
         "name": "ctx_graph_diagram",
-        "schema_md5": "7617914c6cf01de432057853ceaa1eed13329e486980a971f2ffaad542d8bb39"
+        "schema_md5": "71353a05e33f366b6c1bd38ddfd82efb"
       },
       {
         "description": "Context Ledger Protocol (hashed, deterministic, local-first). Actions: create|show|list|pull|clear.",
@@ -795,7 +775,7 @@
           "type": "object"
         },
         "name": "ctx_handoff",
-        "schema_md5": "9881e6d36d3c2baeabb4ad023daafb24fc1bbb1f3c4ab0ba21569ab54aa014d8"
+        "schema_md5": "a250b0cdf9120414a21e16b4b3f73539"
       },
       {
         "description": "File access heatmap (local-first). Actions: status|directory|cold|json.",
@@ -820,20 +800,18 @@
           "type": "object"
         },
         "name": "ctx_heatmap",
-        "schema_md5": "52f8aecc5eb6ff1b0de78b0967a24f9f4a5cf3f24fc8a7459fcb5f9c1bc779f3"
+        "schema_md5": "fc6893448bdafc99d908b04cff5ff00e"
       },
       {
-        "description": "Graph-based impact analysis. Actions: analyze|diff|chain|build|update|status.",
+        "description": "Graph-based impact analysis. Actions: analyze|chain|build|status.",
         "input_schema": {
           "properties": {
             "action": {
               "description": "Impact operation (default: analyze)",
               "enum": [
                 "analyze",
-                "diff",
                 "chain",
                 "build",
-                "update",
                 "status"
               ],
               "type": "string"
@@ -854,7 +832,7 @@
           "type": "object"
         },
         "name": "ctx_impact",
-        "schema_md5": "c7b3a1b7e6807647330b06f753f54aeef3c4ce764e284274700e805995d25509"
+        "schema_md5": "d003c71639c192aca0ded2bb087aba14"
       },
       {
         "description": "Index orchestration. Actions: status|build|build-full.",
@@ -880,7 +858,7 @@
           "type": "object"
         },
         "name": "ctx_index",
-        "schema_md5": "6326a0afd6c937a58e95b080231badafb048f8a4775b835cff0eb9501f2ac71d"
+        "schema_md5": "5da09d2467261816c9812fa1d9faca43"
       },
       {
         "description": "Structured intent input (optional) — submit compact JSON or short text; server also infers intents automatically from tool calls.",
@@ -901,7 +879,7 @@
           "type": "object"
         },
         "name": "ctx_intent",
-        "schema_md5": "6612b6c556c34e60c44d473e01120bde5b1158f390a2b36367204e7ba16dd831"
+        "schema_md5": "168f950ebaf7aef713d6a787ae0d78f6"
       },
       {
         "description": "Persistent project knowledge across sessions (facts, patterns, history). Supports recall modes, embeddings, feedback, and typed relations.",
@@ -999,7 +977,7 @@
           "type": "object"
         },
         "name": "ctx_knowledge",
-        "schema_md5": "6d2f1681940b3b5c7f4134510707899c5fe0cbee4f57d6d24ef343806409f6d6"
+        "schema_md5": "484183a03fe3c634a0b8bfaa7a31bbc5"
       },
       {
         "description": "Session token stats, cache rates, per-tool savings.",
@@ -1008,7 +986,7 @@
           "type": "object"
         },
         "name": "ctx_metrics",
-        "schema_md5": "abb597612a6682160d09dd50b5792a1198b2d490fad0b53a3fc3d6c61175a6db"
+        "schema_md5": "4fceb125360b2d16a872e883c0d67ab9"
       },
       {
         "description": "Batch read files in one call. Same modes as ctx_read.",
@@ -1032,7 +1010,7 @@
           "type": "object"
         },
         "name": "ctx_multi_read",
-        "schema_md5": "00aeb2f202a6827006c2c8636ad0ef8e7ceec93dee8811e12d2ff2a476a4fa0f"
+        "schema_md5": "6b6e96a7372f9ab1f4a2dc11bba154cf"
       },
       {
         "description": "List all symbols in a file (functions, structs, classes, methods) with signatures. Much fewer tokens than reading the full file.",
@@ -1053,7 +1031,7 @@
           "type": "object"
         },
         "name": "ctx_outline",
-        "schema_md5": "d26bea5f347dfdf23137f3e9efacdeddfcbcbc15e5f1955101cac2bef9167597"
+        "schema_md5": "d5c2e2a1091f6b9ad00400a547063ada"
       },
       {
         "description": "Task-relevant project map — use at session start.",
@@ -1071,7 +1049,7 @@
           "type": "object"
         },
         "name": "ctx_overview",
-        "schema_md5": "e7992610e6deadd3bee9161a1e62cf19fb7ef8649d94eca9ba319db96c2ab4b1"
+        "schema_md5": "60d1fbc945e30b0b835c1a55f2fef00e"
       },
       {
         "description": "PR Context Pack. action=pr yields changed files, related tests, impact summary, and relevant context artifacts.",
@@ -1115,7 +1093,7 @@
           "type": "object"
         },
         "name": "ctx_pack",
-        "schema_md5": "63db1a4df1ef347b3648c6e84dfa933102202ff963cc2f67a796e70e3410334a"
+        "schema_md5": "de0b2c71470713edf13051183266ab9c"
       },
       {
         "description": "Predictive prefetch — prewarm cache for blast radius files (graph + task signals) within budgets.",
@@ -1148,7 +1126,7 @@
           "type": "object"
         },
         "name": "ctx_prefetch",
-        "schema_md5": "cf98decd40dda66673de487b4564b8eca35064a9c3daa08e113a074e34a71f1f"
+        "schema_md5": "a861285ce8f2a416a04d44ecbedd823c"
       },
       {
         "description": "Proactive context loader — caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
@@ -1169,7 +1147,7 @@
           "type": "object"
         },
         "name": "ctx_preload",
-        "schema_md5": "6f89e71a0edd1403c0ae0c1f3a04fdd0c8193a1fdf409b7dbe5c6c27b639def0"
+        "schema_md5": "d72370b88a54db91288f2dd7981e3bc7"
       },
       {
         "description": "Export a machine-readable ContextProofV1 (Verifier + SLO + Pipeline + Provenance). Writes to .lean-ctx/proofs/ by default.",
@@ -1210,7 +1188,7 @@
           "type": "object"
         },
         "name": "ctx_proof",
-        "schema_md5": "85a6da612f46cc63d6bceb1d34f9fddc33aa8d3cfda5e22f92e197c599ef60ca"
+        "schema_md5": "2415518cb6999997856cf543d5acb609"
       },
       {
         "description": "External context provider (GitLab-first). Actions: gitlab_issues (list), gitlab_issue (show by iid), gitlab_mrs (list MRs), gitlab_pipelines (list pipelines). Requires GITLAB_TOKEN or LEAN_CTX_GITLAB_TOKEN.",
@@ -1253,26 +1231,7 @@
           "type": "object"
         },
         "name": "ctx_provider",
-        "schema_md5": "c8cbcd7e260a6c152daffa6493eaaf9f984a127c29c58e4c39a098acfaa16e3c"
-      },
-      {
-        "description": "Full context budget breakdown: system prompt, messages, tools, reads, shell — all tracked token usage.",
-        "input_schema": {
-          "properties": {
-            "format": {
-              "default": "display",
-              "description": "Output format: 'display' (human-readable) or 'json' (structured)",
-              "enum": [
-                "display",
-                "json"
-              ],
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        "name": "ctx_radar",
-        "schema_md5": "619692cfae1d231e6eca9914a5e29f28826b11dd2bbd89763aff4761daf4adb8"
+        "schema_md5": "db32dffd7bd8cc45b854d0a1785aefe9"
       },
       {
         "description": "Read file (cached, compressed). Cached re-reads can be ~13 tok when unchanged. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true forces a disk re-read.",
@@ -1301,7 +1260,7 @@
           "type": "object"
         },
         "name": "ctx_read",
-        "schema_md5": "ac8c1e3f6d8fab8be0e09f3b22544755c62f57fbb14f0abcb753abd1b08c9e7b"
+        "schema_md5": "dd1d5ae70ed92652e9571da5737f2f98"
       },
       {
         "description": "Compress LLM response text (remove filler, apply TDD).",
@@ -1318,31 +1277,10 @@
           "type": "object"
         },
         "name": "ctx_response",
-        "schema_md5": "4c4f0a56902031f5a889571642833ac15cbedec4c403ff99ddd0f636f6ca4f55"
+        "schema_md5": "aa9f7844e1cf4df53682cf13782c264e"
       },
       {
-        "description": "Retrieve original uncompressed content from the session cache (CCR). Use when a compressed ctx_read output is insufficient.",
-        "input_schema": {
-          "properties": {
-            "path": {
-              "description": "File path whose original content to retrieve",
-              "type": "string"
-            },
-            "query": {
-              "description": "Optional: search within cached content",
-              "type": "string"
-            }
-          },
-          "required": [
-            "path"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_retrieve",
-        "schema_md5": "ceab8d0ccf45c35a5b7daaeba80342f560375b36aff18f3f31598931e9b68c42"
-      },
-      {
-        "description": "Automated code review: combines impact analysis, caller tracking, test discovery, and code smell detection. Actions: review (single file), diff-review (from git diff), checklist (structured review questions).",
+        "description": "Automated code review: combines impact analysis, caller tracking, and test discovery. Actions: review (single file), diff-review (from git diff), checklist (structured review questions).",
         "input_schema": {
           "properties": {
             "action": {
@@ -1369,7 +1307,7 @@
           "type": "object"
         },
         "name": "ctx_review",
-        "schema_md5": "d7958fcce94a6e149c5bea38553d1f6b680f13ec0aaa0d2b1acc6084be02d878"
+        "schema_md5": "e0bc031387cdece1582c08014ca901c2"
       },
       {
         "description": "List HTTP routes/endpoints extracted from the project. Supports Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.",
@@ -1387,7 +1325,7 @@
           "type": "object"
         },
         "name": "ctx_routes",
-        "schema_md5": "4ed344c62c9f3272079e05f58011c86a0a48e6909c7084bedd094d0bfe433d29"
+        "schema_md5": "122d1b755aba8e0664e4d6f7eb54f2af"
       },
       {
         "description": "Regex code search (.gitignore aware, compact results). Deterministic ordering. Secret-like files (e.g. .env, *.pem) are skipped unless role allows. ignore_gitignore requires explicit policy.",
@@ -1420,7 +1358,7 @@
           "type": "object"
         },
         "name": "ctx_search",
-        "schema_md5": "72bd844a9a8e4ed463cfc114b0f295c59ea1d3b5312431c8e5fc97609e56fb06"
+        "schema_md5": "f71684cbaca988e1999d3a2ff4c1ddf3"
       },
       {
         "description": "Semantic code search (BM25 + optional embeddings/hybrid). action=reindex to rebuild.",
@@ -1469,7 +1407,7 @@
           "type": "object"
         },
         "name": "ctx_semantic_search",
-        "schema_md5": "07f4c74c27716c3390176fdeba90fcfc64a59b38176042e60ff81e664048874f"
+        "schema_md5": "634633b8dd18cb4cf44a1c1b2266d234"
       },
       {
         "description": "Cross-session memory (CCP). Actions: load (restore ~400 tok), save, status, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, profile (context profiles), role (governance), budget (limits), slo (observability), diff (compare sessions), verify (output verification stats), episodes (episodic memory), procedures (procedural memory).",
@@ -1516,7 +1454,7 @@
           "type": "object"
         },
         "name": "ctx_session",
-        "schema_md5": "6fbee1b4cffd4a6d32652490bcb78706788ecbbff8030b186a31d501f286b38f"
+        "schema_md5": "268597e55008f7da3c4f5be297e3c8f3"
       },
       {
         "description": "Share cached file contexts between agents. Actions: push (share files from your cache to another agent), pull (receive files shared by other agents), list (show all shared contexts), clear (remove your shared contexts).",
@@ -1551,7 +1489,7 @@
           "type": "object"
         },
         "name": "ctx_share",
-        "schema_md5": "0829164e3a1b7ae5ce9ff50ea5b811b3d0abb71bfc2ce804679f4da15c186103"
+        "schema_md5": "60408629ab4dfbd4954c4e094cc67148"
       },
       {
         "description": "Run shell command (compressed output, 95+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking). Output redaction is on by default for non-admin roles (admin can disable).",
@@ -1576,7 +1514,7 @@
           "type": "object"
         },
         "name": "ctx_shell",
-        "schema_md5": "6ae2f086d77f1b23eb32d5278ace63d07133c4f13ccaf3ca14d03ec47236c43f"
+        "schema_md5": "ffeb1f06fdeb7c9a59cfede26a0593ef"
       },
       {
         "description": "Auto-select optimal read mode for a file.",
@@ -1593,46 +1531,7 @@
           "type": "object"
         },
         "name": "ctx_smart_read",
-        "schema_md5": "eabb90cef94552014f5af1f4406fee7bd52ce163c6d110737e55a15ac0f76807"
-      },
-      {
-        "description": "Code smell detection (Property Graph). Actions: scan|summary|rules|file. 8 rules: dead_code, long_function, long_file, god_file, fan_out_skew, duplicate_definitions, untested_function, cyclomatic_complexity.",
-        "input_schema": {
-          "properties": {
-            "action": {
-              "description": "Smell operation (default: summary)",
-              "enum": [
-                "scan",
-                "summary",
-                "rules",
-                "file"
-              ],
-              "type": "string"
-            },
-            "format": {
-              "description": "Output format (text or json)",
-              "type": "string"
-            },
-            "path": {
-              "description": "Filter by file path (optional)",
-              "type": "string"
-            },
-            "root": {
-              "description": "Project root (default: .)",
-              "type": "string"
-            },
-            "rule": {
-              "description": "Filter by rule name (optional, for scan)",
-              "type": "string"
-            }
-          },
-          "required": [
-            "action"
-          ],
-          "type": "object"
-        },
-        "name": "ctx_smells",
-        "schema_md5": "6dd790aba490cc09bc701aa7cd9f00080dac201e304bae61849ffa0fb4c0fe85"
+        "schema_md5": "9205792117a3c8b955a18198d266a05e"
       },
       {
         "description": "Read a specific symbol (function, struct, class) by name. Returns only the symbol code block instead of the entire file. 90-97% fewer tokens than full file read.",
@@ -1657,7 +1556,7 @@
           "type": "object"
         },
         "name": "ctx_symbol",
-        "schema_md5": "8eff6b14e97e4e1689b16833c46e8178332b25af1aca8a0190e368d1a8f11d4a"
+        "schema_md5": "6be622cc59d95ceb4ca9f77162b524c2"
       },
       {
         "description": "Multi-agent task orchestration. Actions: create|update|list|get|cancel|message|info.",
@@ -1703,7 +1602,7 @@
           "type": "object"
         },
         "name": "ctx_task",
-        "schema_md5": "936db09b3f42a34458f96e583916c5288e2104b5d2ea2e811bd36b421961a9f8"
+        "schema_md5": "47ead080a82f37eecd5c6f3c7105b18f"
       },
       {
         "description": "Directory listing with file counts.",
@@ -1725,25 +1624,25 @@
           "type": "object"
         },
         "name": "ctx_tree",
-        "schema_md5": "4ff92533c457fcd38ae4bc9b6d1b0a5f4b836ecf548510d4515d5a338bee5aad"
+        "schema_md5": "08acd62450b0984d0931f74985fd5514"
       },
       {
-        "description": "Verification observability. Actions: stats (versioned JSON or compact summary), proof|v2 (ContextProofV2 claim-based verification with Lean4 theorems). format=json|summary.",
+        "description": "Verification observability snapshot. Action stats returns versioned JSON or compact summary (no raw content).",
         "input_schema": {
           "properties": {
             "action": {
-              "description": "stats (default) | proof | v2",
+              "description": "stats (default)",
               "type": "string"
             },
             "format": {
-              "description": "summary|json|both (default: summary for stats, json for proof)",
+              "description": "summary|json|both (default: summary)",
               "type": "string"
             }
           },
           "type": "object"
         },
         "name": "ctx_verify",
-        "schema_md5": "c6fd718f31d570e75ba3b547e0737f1763f7c66ede91c0ca3f07b5a4ea369c87"
+        "schema_md5": "d7ad4e0c917bd871d2f99164ab2a823e"
       },
       {
         "description": "Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.",
@@ -1786,7 +1685,7 @@
           "type": "object"
         },
         "name": "ctx_workflow",
-        "schema_md5": "739ff739917f250ef3a44be4f7c966301ff96fcd12c23610ff5fcd8bf453e60e"
+        "schema_md5": "b8c2ec2f293a4211b3c018f223cb2b92"
       },
       {
         "description": "Savings report card. Deprecated alias for ctx_gain action=wrapped.",
@@ -1805,7 +1704,55 @@
           "type": "object"
         },
         "name": "ctx_wrapped",
-        "schema_md5": "dafd814e67e96c9abec319c033c635eecd1dead518441ce51ae61c1cc79216ff"
+        "schema_md5": "bdb231f135146bea02f4b01e284a5499"
+      },
+      {
+        "description": "Code smell detection (Property Graph). Actions: scan|summary|rules|file. 8 rules: dead_code, long_function, long_file, god_file, fan_out_skew, duplicate_definitions, untested_function, cyclomatic_complexity. Optional: format=text|json.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Smell operation (default: summary)",
+              "enum": ["scan", "summary", "rules", "file"],
+              "type": "string"
+            },
+            "format": {
+              "description": "Output format (text or json)",
+              "enum": ["text", "json"],
+              "type": "string"
+            },
+            "path": {
+              "description": "Filter by file path (optional)",
+              "type": "string"
+            },
+            "root": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            },
+            "rule": {
+              "description": "Filter by rule name (optional, for scan)",
+              "type": "string"
+            }
+          },
+          "required": ["action"],
+          "type": "object"
+        },
+        "name": "ctx_smells",
+        "schema_md5": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+      },
+      {
+        "description": "Search available lean-ctx tools by keyword. Returns matching tool names + descriptions for on-demand loading.",
+        "input_schema": {
+          "properties": {
+            "query": {
+              "description": "Search keyword",
+              "type": "string"
+            }
+          },
+          "required": ["query"],
+          "type": "object"
+        },
+        "name": "ctx_discover_tools",
+        "schema_md5": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"
       }
     ],
     "unified": [
@@ -1932,7 +1879,7 @@
           "type": "object"
         },
         "name": "ctx",
-        "schema_md5": "80dfad888c8773d9288a2ef0a74a31232efd2326dc3c046dbbbcd01a281b4322"
+        "schema_md5": "b694e05805b1877d695d103f2cab2217"
       },
       {
         "description": "Read file (cached, compressed). Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
@@ -1958,7 +1905,7 @@
           "type": "object"
         },
         "name": "ctx_read",
-        "schema_md5": "0ac00d75d0d090374385d17de39a703e038cb3b2e4e0b4be5b296947394f988f"
+        "schema_md5": "43924555a3aab6de93f44643f3876f38"
       },
       {
         "description": "Regex code search (.gitignore aware).",
@@ -1987,7 +1934,7 @@
           "type": "object"
         },
         "name": "ctx_search",
-        "schema_md5": "a789183266dd9a0015440ff7e78809096e71c845829574218005bf18ce9e2b0e"
+        "schema_md5": "d60e5ad5b34c48edb218d76010558c1e"
       },
       {
         "description": "Run shell command (compressed output). raw=true skips compression. cwd sets working directory.",
@@ -2012,7 +1959,7 @@
           "type": "object"
         },
         "name": "ctx_shell",
-        "schema_md5": "49bbbb51c776fdfcb1fea7bb2076b987604d9c91d2302912a49b59b2dd2e8f95"
+        "schema_md5": "facb06b5aa0add40ecfef388b1909515"
       },
       {
         "description": "Directory listing with file counts.",
@@ -2031,7 +1978,7 @@
           "type": "object"
         },
         "name": "ctx_tree",
-        "schema_md5": "9ffcb18e0812908584592b105c09c103e55107a23ef0a10fab92874714c7305e"
+        "schema_md5": "94bd4461caa9323f68ad88467ec1dc04"
       }
     ]
   }

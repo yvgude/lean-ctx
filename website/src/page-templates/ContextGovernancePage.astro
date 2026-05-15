@@ -1,0 +1,214 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title="Context Governance: The Missing Layer for AI Agents - LeanCTX"
+  description="AI agents need governance over what they see, remember and execute. Learn why context governance is the critical missing layer — and how LeanCTX implements it."
+  breadcrumbs={[{ name: 'Home', url: lp('/') }, { name: 'Context Governance', url: lp('/context-governance/') }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<PageHero
+  label="Thought Leadership"
+  title="Context Governance:"
+  highlight="The Missing Layer for AI Agents."
+  description="As AI agents gain access to files, tools, shells and workflows, the question is no longer what they can generate — but what they are allowed to see, remember and execute."
+  highlightStyle="italic"
+/>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ WHY GOVERNANCE? ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="The Problem"
+      title="Why Agents Need"
+      highlight="Governance"
+      description="AI agents operate with broad access by default. Without explicit governance, they over-read files, burn token budgets, and accumulate context that dilutes their focus — leading to slower responses, higher costs and lower-quality output."
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="grid sm:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Unchecked File Access</h3>
+        <p class="fluid-sm text-muted">Agents read every file they encounter — including irrelevant dependencies, generated assets and lock files — filling the context window with noise.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Budget Overruns</h3>
+        <p class="fluid-sm text-muted">Without token and cost limits, a single complex task can consume thousands of tokens on redundant reads and verbose shell output.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Context Dilution</h3>
+        <p class="fluid-sm text-muted">When everything is context, nothing is. Agents lose focus as irrelevant information crowds out the code and data that actually matter for the task.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ FOUR PILLARS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="Framework"
+      title="The Four Pillars of"
+      highlight="Context Governance"
+      description="Effective governance requires control across four dimensions: who can access what, how much they can consume, what quality targets apply, and whether every action is traceable."
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <span class="pillar-number font-display text-accent">01</span>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Role-Based Access</h3>
+        <p class="fluid-sm text-muted">Five built-in roles — from read-only observer to full autonomous agent — each with scoped tool access, path restrictions and shell permissions.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <span class="pillar-number font-display text-accent-2">02</span>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Budget Controls</h3>
+        <p class="fluid-sm text-muted">Hard limits on tokens consumed, API cost per session, shell execution count and wall-clock time. Breaches trigger graceful degradation, not failures.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <span class="pillar-number font-display text-accent-3">03</span>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">SLOs & Monitoring</h3>
+        <p class="fluid-sm text-muted">Service-level objectives for latency (p95 &lt; 120 ms), cost (max per-call budget) and quality (compression fidelity &gt; 95%). Real-time dashboards track compliance.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <span class="pillar-number font-display" style="color: var(--color-text-bright);">04</span>
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Audit Trail</h3>
+        <p class="fluid-sm text-muted">Every tool call is logged with timestamp, role, token cost and result hash. Sessions can be replayed and verified for compliance or debugging.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ WITHOUT GOVERNANCE ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="Risks"
+      title="What Happens"
+      highlight="Without Governance"
+      description="Organizations deploying AI agents without context governance face predictable failure modes. These are not edge cases — they are the default behaviour."
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="grid sm:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Runaway Token Consumption</h3>
+        <p class="fluid-sm text-muted">A single agent session reading a monorepo can consume 500K+ tokens before producing any output. Without budgets, there is no ceiling.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Context Window Saturation</h3>
+        <p class="fluid-sm text-muted">When the context window fills with low-relevance content, agents hallucinate more frequently and miss critical instructions buried in the noise.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Uncontrolled Cross-Repo Access</h3>
+        <p class="fluid-sm text-muted">Without path jailing, agents traverse symlinks and parent directories — accessing credentials, private keys or unrelated repositories.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ HOW LEANCTX IMPLEMENTS IT ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="Implementation"
+      title="How LeanCTX Implements"
+      highlight="Governance"
+      description="LeanCTX embeds governance into the context layer itself — enforced at the tool level, not bolted on as an afterthought. Every read, shell call and search passes through the governance pipeline."
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Agent Harness</h3>
+        <p class="fluid-sm text-muted">The harness wraps every tool call with role checks, budget enforcement and SLO validation before execution reaches the underlying system.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Profile System</h3>
+        <p class="fluid-sm text-muted">Predefined profiles (minimal, standard, autonomous) bundle role, budget and SLO settings into one-line configuration for teams.</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">Governance Dashboard</h3>
+        <p class="fluid-sm text-muted">A real-time dashboard surfaces token spend, SLO compliance, budget utilisation and audit logs — giving teams visibility into agent behaviour.</p>
+      </div>
+    </div>
+
+    <div class="animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <a href={lp('/safety')} class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium">
+        Explore the Safety & Governance architecture
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CTA ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label="Get Started"
+      title="Take Control of Your"
+      highlight="Agent Context"
+      description="Deploy context governance in under five minutes. LeanCTX is open source, runs locally and requires zero configuration to start seeing results."
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Get Started
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href={lp('/safety')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        Governance Pillar
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  .pillar-number { display: block; font-size: clamp(1.75rem, 1.25rem + 1.5vw, 2.5rem); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin-bottom: 0.75rem; }
+</style>
+
+</BaseLayout>

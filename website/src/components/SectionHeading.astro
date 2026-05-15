@@ -1,0 +1,112 @@
+---
+interface Props {
+  label?: string;
+  title: string;
+  titleHtml?: string;
+  highlight?: string;
+  afterHighlight?: string;
+  description?: string;
+  descriptionHtml?: string;
+
+  variant?: 'full' | 'split';
+  align?: 'left' | 'center';
+
+  kickerTone?: 'muted' | 'accent' | 'accent-2' | 'accent-3' | 'bright';
+  highlightStyle?: 'italic' | 'gradient';
+  breakHighlight?: boolean;
+
+  titleMaxWidth?: string;
+  descMaxWidth?: string;
+
+  kickerMb?: string;
+  titleMb?: string;
+  descMb?: string;
+}
+
+const {
+  label,
+  title,
+  titleHtml,
+  highlight,
+  afterHighlight,
+  description,
+  descriptionHtml,
+  variant = 'full',
+  align = 'left',
+  kickerTone = 'muted',
+  highlightStyle = 'italic',
+  breakHighlight = true,
+  titleMaxWidth,
+  descMaxWidth,
+  kickerMb = 'clamp(1.25rem, 1rem + 0.75vw, 2rem)',
+  titleMb,
+  descMb,
+} = Astro.props;
+
+const kickerClass =
+  kickerTone === 'accent'
+    ? 'text-accent'
+    : kickerTone === 'accent-2'
+      ? 'text-accent-2'
+      : kickerTone === 'accent-3'
+        ? 'text-accent-3'
+        : kickerTone === 'bright'
+          ? 'text-text-bright'
+          : 'text-muted';
+
+const highlightClass = highlightStyle === 'gradient' ? 'gradient-text' : 'italic-accent';
+const titleSizeClass = 'fluid-h1';
+
+const resolvedTitleMb =
+  titleMb || (variant === 'split' ? 'clamp(1.25rem, 1rem + 0.75vw, 2rem)' : 'clamp(1.5rem, 1rem + 1vw, 2.5rem)');
+const resolvedDescMb =
+  descMb || (variant === 'split' ? 'clamp(2rem, 1.5rem + 1.5vw, 3rem)' : 'clamp(2.5rem, 2rem + 2vw, 4rem)');
+
+const titleStyle = [
+  `margin-bottom: ${resolvedTitleMb};`,
+  titleMaxWidth ? `max-width: ${titleMaxWidth};` : variant === 'split' ? '' : 'max-width: 60rem;',
+  align === 'center' ? 'margin-inline: auto;' : '',
+].join(' ');
+
+const descStyle = [
+  `margin-bottom: ${resolvedDescMb};`,
+  descMaxWidth ? `max-width: ${descMaxWidth};` : variant === 'split' ? 'max-width: 48rem;' : 'max-width: 56rem;',
+  align === 'center' ? 'margin-inline: auto;' : '',
+].join(' ');
+---
+
+{label && (
+  <div class={`animate-entrance ${align === 'center' ? 'text-center' : ''}`} style={`margin-bottom: ${kickerMb};`}>
+    <span class={`kicker-pill ${kickerClass}`}>{label}</span>
+  </div>
+)}
+
+<h2
+  class={`font-display ${titleSizeClass} font-bold text-text-bright animate-entrance stagger-1 ${align === 'center' ? 'text-center' : ''}`}
+  style={titleStyle}
+>
+  {titleHtml ? (
+    <Fragment set:html={titleHtml} />
+  ) : (
+    <>
+      {title}
+      {highlight && (
+        <>
+          {breakHighlight ? <br /> : ' '}
+          <span class={highlightClass}>{highlight}</span>
+          {afterHighlight ? ` ${afterHighlight}` : null}
+        </>
+      )}
+    </>
+  )}
+</h2>
+
+{descriptionHtml && (
+  <p class={`fluid-body text-muted animate-entrance stagger-2 ${align === 'center' ? 'text-center' : ''}`} style={descStyle} set:html={descriptionHtml} />
+)}
+{!descriptionHtml && description && (
+  <p class={`fluid-body text-muted animate-entrance stagger-2 ${align === 'center' ? 'text-center' : ''}`} style={descStyle}>
+    {description}
+  </p>
+)}
+

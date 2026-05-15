@@ -7,7 +7,13 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build && npx pagefind --site dist",
+    "generate:tools": "node scripts/generate-tool-docs.mjs",
+    "validate:tools": "node scripts/validate-tool-docs.mjs",
+    "validate:docs-coverage": "node scripts/validate-docs-coverage.mjs",
+    "validate:manifest": "node scripts/validate-manifest.mjs",
+    "validate:i18n": "node scripts/validate-i18n.mjs",
+    "validate:i18n-dupes": "node scripts/validate-i18n-duplicates.mjs",
+    "build": "node scripts/generate-tool-docs.mjs && node scripts/validate-docs-coverage.mjs && node scripts/validate-manifest.mjs && node scripts/validate-tool-docs.mjs && node scripts/validate-i18n.mjs && node scripts/validate-i18n-duplicates.mjs && astro build && npx pagefind --site dist",
     "preview": "astro preview",
     "astro": "astro"
   },

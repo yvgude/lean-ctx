@@ -1,0 +1,276 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title={t('limitations.metaTitle')}
+  description={t('limitations.metaDescription')}
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('limitations.breadcrumb'), url: lp('/limitations/') }]}>
+
+<!-- ═══════ HERO ═══════ -->
+<PageHero
+  label={t('limitations.heroLabel')}
+  title={t('limitations.heroTitle')}
+  highlight={t('limitations.heroTitleHighlight')}
+  description={t('limitations.heroDesc')}
+  highlightStyle="italic"
+/>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ COMPRESSION LIMITS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('limitations.compressionLabel')}
+      title={t('limitations.compressionTitle')}
+      highlight={t('limitations.compressionTitleHighlight')}
+      description={t('limitations.compressionDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted font-display mb-4">{t('limitations.compressionTableTitle')}</p>
+      <div class="rounded-lg border border-border overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-surface-2">
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('limitations.compressionColScenario')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('limitations.compressionColSavings')}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/30">
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{t('limitations.compressionRow1Scenario')}</td>
+              <td class="px-4 sm:px-5 py-3 text-accent font-mono text-sm font-semibold">{t('limitations.compressionRow1Savings')}</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{t('limitations.compressionRow2Scenario')}</td>
+              <td class="px-4 sm:px-5 py-3 text-accent font-mono text-sm font-semibold">{t('limitations.compressionRow2Savings')}</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{t('limitations.compressionRow3Scenario')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted font-mono text-sm">{t('limitations.compressionRow3Savings')}</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{t('limitations.compressionRow4Scenario')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted font-mono text-sm">{t('limitations.compressionRow4Savings')}</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{t('limitations.compressionRow5Scenario')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted font-mono text-sm">{t('limitations.compressionRow5Savings')}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 animate-entrance" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem); gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('limitations.compressionCard1Title')}</h3>
+        <p class="fluid-sm text-muted">{t('limitations.compressionCard1Desc')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('limitations.compressionCard2Title')}</h3>
+        <p class="fluid-sm text-muted">{t('limitations.compressionCard2Desc')}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ LANGUAGE SUPPORT ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('limitations.languageLabel')}
+      title={t('limitations.languageTitle')}
+      highlight={t('limitations.languageTitleHighlight')}
+      description={t('limitations.languageDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="stats-grid animate-entrance" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent">18</span>
+        <span class="stat-desc">{t('limitations.languageStat1Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-2">95+</span>
+        <span class="stat-desc">{t('limitations.languageStat2Desc')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number font-display text-accent-3">10</span>
+        <span class="stat-desc">{t('limitations.languageStat3Desc')}</span>
+      </div>
+    </div>
+
+    <div class="animate-entrance">
+      <p class="fluid-label text-muted font-display mb-4">{t('limitations.languageTableTitle')}</p>
+      <div class="rounded-lg border border-border overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-surface-2">
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('limitations.languageColTier')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('limitations.languageColLanguages')}</th>
+              <th class="text-left px-4 sm:px-5 py-3 fluid-label text-muted font-display">{t('limitations.languageColCompression')}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/30">
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-accent font-semibold">{t('limitations.languageRow1Tier')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{t('limitations.languageRow1Languages')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{t('limitations.languageRow1Compression')}</td>
+            </tr>
+            <tr>
+              <td class="px-4 sm:px-5 py-3 text-text-bright font-semibold">{t('limitations.languageRow2Tier')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{t('limitations.languageRow2Languages')}</td>
+              <td class="px-4 sm:px-5 py-3 text-muted fluid-sm">{t('limitations.languageRow2Compression')}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fluid-sm text-muted/60 mt-4">{t('limitations.languageBasicExplain')}</p>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ ARCHITECTURE CONSTRAINTS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('limitations.archLabel')}
+      title={t('limitations.archTitle')}
+      highlight={t('limitations.archTitleHighlight')}
+      description={t('limitations.archDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="grid md:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('limitations.archCard1Title')}</h3>
+        <p class="fluid-sm text-muted mb-3">{t('limitations.archCard1Desc')}</p>
+        <p class="fluid-sm text-accent font-medium">{t('limitations.archCard1Context')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('limitations.archCard2Title')}</h3>
+        <p class="fluid-sm text-muted mb-3">{t('limitations.archCard2Desc')}</p>
+        <p class="fluid-sm text-accent font-medium">{t('limitations.archCard2Context')}</p>
+      </div>
+      <div class="card" style="padding: 1.5rem;">
+        <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2">{t('limitations.archCard3Title')}</h3>
+        <p class="fluid-sm text-muted mb-3">{t('limitations.archCard3Desc')}</p>
+        <p class="fluid-sm text-accent font-medium">{t('limitations.archCard3Context')}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ NOT A REPLACEMENT FOR ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('limitations.notReplaceLabel')}
+      title={t('limitations.notReplaceTitle')}
+      highlight={t('limitations.notReplaceTitleHighlight')}
+      description={t('limitations.notReplaceDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+
+    <div class="animate-entrance">
+      <div class="compare-card">
+        <div class="compare-header compare-header--warn">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          {t('limitations.notReplaceCardHeader')}
+        </div>
+        <div class="compare-body" style="padding: 1.25rem;">
+          <ul class="lim-list">
+            <li class="fluid-sm text-muted">{t('limitations.notReplaceItem1')}</li>
+            <li class="fluid-sm text-muted">{t('limitations.notReplaceItem2')}</li>
+            <li class="fluid-sm text-muted">{t('limitations.notReplaceItem3')}</li>
+          </ul>
+          <p class="fluid-sm text-muted/60 mt-4">{t('limitations.notReplaceSummary')}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ CTA ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('limitations.ctaLabel')}
+      title={t('limitations.ctaTitle')}
+      highlight={t('limitations.ctaTitleHighlight')}
+      description={t('limitations.ctaDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="44rem"
+      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
+    />
+    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href={lp('/safety')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('limitations.ctaSafety')}
+        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href={lp('/compare')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('limitations.ctaCompare')}
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
+  .stat-item { display: flex; flex-direction: column; padding: clamp(1.25rem, 1rem + 1vw, 2rem); background: var(--color-bg); }
+  .stat-number { font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin-bottom: 0.625rem; }
+  .stat-desc { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); color: var(--color-muted); line-height: 1.5; }
+  @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
+  .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
+  .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
+  .compare-header--warn { background: rgba(251, 191, 36, 0.06); color: #f59e0b; }
+  .compare-body { padding: 1.25rem; background: var(--color-surface); }
+  .lim-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.625rem; }
+  .lim-list li { padding-inline-start: 1.5rem; position: relative; line-height: 1.65; }
+  .lim-list li::before { content: '–'; position: absolute; left: 0; color: #f59e0b; }
+</style>
+
+</BaseLayout>

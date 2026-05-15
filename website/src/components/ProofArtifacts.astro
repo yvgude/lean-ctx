@@ -1,0 +1,62 @@
+---
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from "../i18n/utils";
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+type Artifact = {
+  titleKey: string;
+  descKey: string;
+  href: string;
+  accent: "accent" | "accent-2" | "accent-3";
+  icon: string;
+};
+
+const artifacts: Artifact[] = [
+  {
+    titleKey: "artifacts.cookbookTitle",
+    descKey: "artifacts.cookbookDesc",
+    href: "/docs/quick-reference#cookbook",
+    accent: "accent",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>',
+  },
+  {
+    titleKey: "artifacts.ciTitle",
+    descKey: "artifacts.ciDesc",
+    href: "/docs/verification",
+    accent: "accent-2",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
+  },
+  {
+    titleKey: "artifacts.memoryTitle",
+    descKey: "artifacts.memoryDesc",
+    href: "/docs/tools/ctx-knowledge",
+    accent: "accent-3",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M12 4h9"/><path d="M4 9h16"/><path d="M4 15h16"/><path d="M4 4h2v16H4z"/></svg>',
+  },
+  {
+    titleKey: "artifacts.trustTitle",
+    descKey: "artifacts.trustDesc",
+    href: "/context-os/verification",
+    accent: "accent",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  },
+];
+---
+
+<div class="artifacts-grid" role="region" aria-label={t("artifacts.ariaLabel")}>
+  {artifacts.map((a) => (
+    <a href={lp(a.href)} class="artifact-card group">
+      <div class:list={["artifact-icon", `text-${a.accent}`]} set:html={a.icon} />
+      <div class="artifact-body">
+        <div class="artifact-title font-display text-text-bright">{t(a.titleKey)}</div>
+        <div class="artifact-desc text-muted fluid-sm">{t(a.descKey)}</div>
+      </div>
+      <div class:list={["artifact-arrow", `text-${a.accent}`]} aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </div>
+    </a>
+  ))}
+</div>
+

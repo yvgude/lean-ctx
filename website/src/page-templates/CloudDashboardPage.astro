@@ -1,0 +1,378 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title={t('cloud.metaTitle')}
+  description={t('cloud.metaDesc')}
+  breadcrumbs={[{ name: t('cloud.breadcrumb'), url: lp('/cloud') }]}
+>
+
+<!-- ═══════ HERO ═══════ -->
+<PageHero
+  label={t('cloud.heroLabel')}
+  title={t('cloud.heroTitle')}
+  highlight={t('cloud.heroTitleHighlight')}
+  description={t('cloud.heroDesc')}
+  kickerTone="accent"
+  highlightStyle="italic"
+  descMaxWidth="48rem"
+>
+  <Fragment slot="actions">
+    <a href={lp('/dashboard')} class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      {t('cloud.heroLoginCta')}
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+    </a>
+    <a href={lp('/dashboard')} class="btn-outline inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      {t('cloud.heroDashboardCta')}
+    </a>
+    <a href={lp('/docs/cloud')} class="fluid-sm text-muted hover:text-text-bright transition-colors inline-flex items-center gap-1.5 font-medium">
+      {t('cloud.heroDocs')}
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </a>
+  </Fragment>
+</PageHero>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ WHY CLOUD ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('cloud.whyLabel')}
+      title={t('cloud.whyTitle')}
+      highlight={t('cloud.whyTitleHighlight')}
+      description={t('cloud.whyDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="56rem"
+    />
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-4" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        { icon: 'sync', title: t('cloud.why1Title'), desc: t('cloud.why1Desc'), tone: 'accent' },
+        { icon: 'insights', title: t('cloud.why2Title'), desc: t('cloud.why2Desc'), tone: 'accent-2' },
+        { icon: 'learn', title: t('cloud.why3Title'), desc: t('cloud.why3Desc'), tone: 'accent-3' },
+        { icon: 'shield', title: t('cloud.why4Title'), desc: t('cloud.why4Desc'), tone: 'accent' },
+      ].map((x, i) => (
+        <div class={`card animate-entrance stagger-${3 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-center gap-3 mb-3">
+            <div
+              class={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                x.tone === 'accent-2'
+                  ? 'bg-accent-2/10'
+                  : x.tone === 'accent-3'
+                    ? 'bg-accent-3/10'
+                    : 'bg-accent/10'
+              }`}
+            >
+              {x.icon === 'sync' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6M5 19a9 9 0 0014-7M19 5a9 9 0 00-14 7" />
+                </svg>
+              )}
+              {x.icon === 'insights' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 14l3-3 3 3 6-6" />
+                </svg>
+              )}
+              {x.icon === 'learn' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6l-8 4 8 4 8-4-8-4z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 10v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6" />
+                </svg>
+              )}
+              {x.icon === 'shield' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4" />
+                </svg>
+              )}
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">{x.title}</h3>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">{x.desc}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ WHAT GETS SYNCED ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-[1fr_1.1fr] items-start" style="gap: clamp(2rem, 1.5rem + 2vw, 3.5rem);">
+      <div>
+        <SectionHeading
+          label={t('cloud.syncLabel')}
+          title={t('cloud.syncTitle')}
+          highlight={t('cloud.syncTitleHighlight')}
+          description={t('cloud.syncDesc')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1.25rem, 1rem + 1vw, 2rem)"
+        />
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          {[
+            { title: t('cloud.sync1Title'), desc: t('cloud.sync1Desc'), tone: 'text-accent' },
+            { title: t('cloud.sync2Title'), desc: t('cloud.sync2Desc'), tone: 'text-accent-2' },
+            { title: t('cloud.sync3Title'), desc: t('cloud.sync3Desc'), tone: 'text-accent-3' },
+            { title: t('cloud.sync4Title'), desc: t('cloud.sync4Desc'), tone: 'text-accent' },
+            { title: t('cloud.sync5Title'), desc: t('cloud.sync5Desc'), tone: 'text-accent-2' },
+            { title: t('cloud.sync6Title'), desc: t('cloud.sync6Desc'), tone: 'text-accent-3' },
+          ].map((x, i) => (
+            <div class={`card animate-entrance stagger-${3 + i}`} style="padding: 1rem 1.25rem;">
+              <p class={`fluid-sm font-semibold ${x.tone}`} style="margin: 0 0 0.25rem 0;">{x.title}</p>
+              <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">{x.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="card animate-entrance stagger-4" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <p class="fluid-label text-muted" style="margin: 0 0 0.75rem 0;">{t('cloud.syncPayloadLabel')}</p>
+        <div class="font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem); line-height: 1.8;">
+          <div class="text-text-bright" style="margin-bottom: 0.5rem;">{t('cloud.syncPayloadTitle')}</div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">stats_daily</span> {'{'} date, tokens_saved, cache_hits, tool_calls {'}'}
+          </div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">command_stats</span> {'{'} command, count, tokens_saved {'}'}
+          </div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">cep_scores</span> {'{'} score, cache_hit_rate, compression_rate {'}'}
+          </div>
+          <div class="text-muted" style="margin-bottom: 0.75rem;">
+            <span class="text-text-bright">knowledge_entries</span> {'{'} category, key, value {'}'}
+          </div>
+          <div class="text-muted">
+            <span class="text-text-bright">gotchas</span>, <span class="text-text-bright">buddy_state</span>, <span class="text-text-bright">feedback_thresholds</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ HOW IT WORKS ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('cloud.howLabel')}
+      title={t('cloud.howTitle')}
+      highlight={t('cloud.howTitleHighlight')}
+      description={t('cloud.howDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+    />
+
+    <div class="cloud-steps animate-entrance stagger-3">
+      <div class="cloud-step">
+        <div class="cloud-step-num font-display">01</div>
+        <div class="cloud-step-content">
+          <h3 class="fluid-h3 font-semibold font-display text-text-bright">{t('cloud.step1Title')}</h3>
+          <p class="fluid-sm text-muted" style="margin: 0.5rem 0 1rem;">{t('cloud.step1Desc')}</p>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <code class="cloud-code">{t('cloud.step1OptionWeb')}</code>
+            <code class="cloud-code">lean-ctx login you@email.com</code>
+          </div>
+        </div>
+      </div>
+      <div class="cloud-step-connector"></div>
+      <div class="cloud-step">
+        <div class="cloud-step-num font-display">02</div>
+        <div class="cloud-step-content">
+          <h3 class="fluid-h3 font-semibold font-display text-text-bright">{t('cloud.step2Title')}</h3>
+          <p class="fluid-sm text-muted" style="margin: 0.5rem 0 1rem;">{t('cloud.step2Desc')}</p>
+          <code class="cloud-code">lean-ctx sync</code>
+        </div>
+      </div>
+      <div class="cloud-step-connector"></div>
+      <div class="cloud-step">
+        <div class="cloud-step-num font-display">03</div>
+        <div class="cloud-step-content">
+          <h3 class="fluid-h3 font-semibold font-display text-text-bright">{t('cloud.step3Title')}</h3>
+          <p class="fluid-sm text-muted" style="margin: 0.5rem 0;">{t('cloud.step3Desc')}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ FEATURES ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('cloud.featLabel')}
+      title={t('cloud.featTitle')}
+      highlight={t('cloud.featTitleHighlight')}
+      description={t('cloud.featDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="56rem"
+    />
+
+    {[
+      { icon: 'stats', title: t('cloud.feat1Title'), desc: t('cloud.feat1Desc'), detail: t('cloud.feat1Detail'), color: 'accent' },
+      { icon: 'terminal', title: t('cloud.feat2Title'), desc: t('cloud.feat2Desc'), detail: t('cloud.feat2Detail'), color: 'blue' },
+      { icon: 'gauge', title: t('cloud.feat3Title'), desc: t('cloud.feat3Desc'), detail: t('cloud.feat3Detail'), color: 'purple' },
+      { icon: 'brain', title: t('cloud.feat4Title'), desc: t('cloud.feat4Desc'), detail: t('cloud.feat4Detail'), color: 'accent' },
+      { icon: 'shield', title: t('cloud.feat5Title'), desc: t('cloud.feat5Desc'), detail: t('cloud.feat5Detail'), color: 'blue' },
+      { icon: 'spark', title: t('cloud.feat6Title'), desc: t('cloud.feat6Desc'), detail: t('cloud.feat6Detail'), color: 'purple' },
+    ].map((f, i) => (
+      <div class={`cloud-feature animate-entrance stagger-${3 + i}`}>
+        <div class={`cloud-feature-icon ${f.color === 'blue' ? 'cloud-feature-icon--blue' : f.color === 'purple' ? 'cloud-feature-icon--purple' : ''}`}>
+          {f.icon === 'stats' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>}
+          {f.icon === 'terminal' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16v12H4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M7 9l2 2-2 2"/><path stroke-linecap="round" stroke-linejoin="round" d="M11 13h4"/></svg>}
+          {f.icon === 'gauge' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 00-9 9 8.97 8.97 0 001.5 5h15A8.97 8.97 0 0021 12a9 9 0 00-9-9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 12l3-3"/></svg>}
+          {f.icon === 'brain' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7a3 3 0 016 0v1a3 3 0 010 6v3a2 2 0 01-2 2h-2a2 2 0 01-2-2v-3a3 3 0 010-6V7z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 10h.01M15 10h.01"/></svg>}
+          {f.icon === 'spark' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>}
+          {f.icon === 'shield' && <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4z"/></svg>}
+        </div>
+        <div class="cloud-feature-body">
+          <h3 class="font-display fluid-h3 font-semibold text-text-bright">{f.title}</h3>
+          <p class="fluid-sm text-muted" style="margin: 0.75rem 0;">{f.desc}</p>
+          <p class="fluid-sm text-muted">{f.detail}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ PRIVACY ═══════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('cloud.privacyLabel')}
+      title={t('cloud.privacyTitle')}
+      highlight={t('cloud.privacyTitleHighlight')}
+      description={t('cloud.privacyDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+    />
+
+    <div class="compare-grid animate-entrance stagger-3">
+      <div class="compare-card">
+        <div class="compare-header compare-header--good">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          {t('cloud.weCollect')}
+        </div>
+        <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+          <div class="compare-line"><span class="text-accent">{t('cloud.collect1')}</span></div>
+          <div class="compare-line"><span class="text-accent">{t('cloud.collect2')}</span></div>
+          <div class="compare-line"><span class="text-accent">{t('cloud.collect3')}</span></div>
+          <div class="compare-line"><span class="text-accent">{t('cloud.collect4')}</span></div>
+        </div>
+      </div>
+      <div class="compare-card">
+        <div class="compare-header compare-header--bad">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+          {t('cloud.weNeverCollect')}
+        </div>
+        <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+          <div class="compare-line"><span class="text-danger">{t('cloud.never1')}</span></div>
+          <div class="compare-line"><span class="text-danger">{t('cloud.never2')}</span></div>
+          <div class="compare-line"><span class="text-danger">{t('cloud.never3')}</span></div>
+          <div class="compare-line"><span class="text-danger">{t('cloud.never4')}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center animate-entrance stagger-4" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); margin-top: clamp(2rem, 1.5rem + 1vw, 3rem);">
+      <a href={lp('/dashboard')} class="btn-primary inline-flex items-center gap-2 rounded-lg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('cloud.heroLoginCta')}
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .cloud-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: 40rem;
+  }
+  .cloud-step {
+    display: flex;
+    gap: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    align-items: flex-start;
+  }
+  .cloud-step-num {
+    flex-shrink: 0;
+    width: 3rem;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: rgba(52, 211, 153, 0.08);
+    border: 1px solid rgba(52, 211, 153, 0.2);
+    color: var(--color-accent);
+    font-weight: 700;
+    font-size: 0.875rem;
+  }
+  .cloud-step-content { padding-bottom: 0.5rem; }
+  .cloud-step-connector {
+    width: 1px;
+    height: 2rem;
+    background: var(--color-border);
+    margin-left: 1.5rem;
+  }
+  .cloud-code {
+    display: block;
+    font-family: var(--font-mono, monospace);
+    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.8125rem);
+    color: var(--color-accent);
+    background: rgba(52, 211, 153, 0.06);
+    border: 1px solid rgba(52, 211, 153, 0.14);
+    border-radius: 8px;
+    padding: 0.625rem 1rem;
+  }
+  .cloud-feature {
+    display: flex;
+    gap: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    align-items: flex-start;
+    padding: clamp(1.5rem, 1.25rem + 0.75vw, 2.25rem) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .cloud-feature:last-child { border-bottom: none; }
+  .cloud-feature-icon {
+    flex-shrink: 0;
+    width: 3rem;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: rgba(52, 211, 153, 0.08);
+    color: var(--color-accent);
+  }
+  .cloud-feature-icon--blue { background: rgba(96, 165, 250, 0.08); color: #60a5fa; }
+  .cloud-feature-icon--purple { background: rgba(168, 85, 247, 0.08); color: #a855f7; }
+  .cloud-feature-body { flex: 1; min-width: 0; }
+</style>
+
+</BaseLayout>

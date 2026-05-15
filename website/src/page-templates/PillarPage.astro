@@ -1,0 +1,390 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import ProofArtifacts from '../components/ProofArtifacts.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getPillarById, pillars, type Pillar } from '../lib/contextOsPillars';
+import { getMcpManifest, getToolEnrichments, toolNameToSlug } from '../lib/mcpManifest';
+import '../styles/index.css';
+
+interface Props {
+  pillarId: string;
+}
+
+const { pillarId } = Astro.props;
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+const pillar = getPillarById(pillarId)!;
+const manifest = getMcpManifest();
+const enrichments = getToolEnrichments();
+
+const pillarTools = pillar.tools
+  .map(name => manifest.tools.granular.find(g => g.name === name))
+  .filter(Boolean);
+
+const accentTones = ['accent', 'accent-2', 'accent-3'];
+const relatedPillars = (pillar.relatedPillars ?? [])
+  .map(id => pillars.find(p => p.id === id))
+  .filter(Boolean) as Pillar[];
+---
+
+<BaseLayout
+  title={t(pillar.metaTitleKey)}
+  description={t(pillar.metaDescKey)}
+  breadcrumbs={[
+    { name: t('common.home'), url: lp('/') },
+    { name: t('nav.contextOs'), url: lp('/context-os') },
+    { name: t(pillar.titleKey), url: lp(`/context-os/${pillar.slug}`) },
+  ]}
+>
+
+<!-- 1. HERO -->
+<PageHero
+  label={t(pillar.titleKey)}
+  title={t(pillar.headlineKey)}
+  descriptionHtml={t(pillar.solutionKey)}
+  kickerTone="accent"
+  titleVariant="display"
+  highlightStyle="italic"
+  descMaxWidth="44rem"
+>
+  <Fragment slot="actions">
+    <a
+      href={lp('/docs/getting-started')}
+      class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg"
+      style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
+    >
+      {t('nav.getStarted')}
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+    </a>
+    <a
+      href={lp('/context-os')}
+      class="btn-outline inline-flex items-center gap-2 font-medium rounded-lg text-text"
+      style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);"
+    >
+      {t('nav.contextOs')}
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+    </a>
+  </Fragment>
+</PageHero>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 2. PROBLEM / SOLUTION SPLIT with Terminal Demo -->
+<section class="section-y">
+  <div class="content-grid-wide">
+    <div class="split split--visual-wide">
+      <div>
+        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+          <span class="kicker-pill">{t('contextOs.problemLabel')}</span>
+        </div>
+        <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); max-width: 54rem;">
+          {t(pillar.problemTitleKey)}
+        </h2>
+        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); max-width: 48rem;">
+          {t(pillar.problemKey)}
+        </p>
+        <p class="text-muted fluid-body animate-entrance stagger-3" style="margin: 0; max-width: 48rem;">
+          {t(pillar.demoDescKey)}
+        </p>
+      </div>
+
+      <TerminalChrome
+        title={`${pillar.demoCommands[0]?.tool ?? t(pillar.titleKey)}`}
+        chromeClass="animate-entrance stagger-3"
+        bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
+      >
+        {pillar.demoCommands[0] && (
+          <div>
+            <span class="text-accent">{pillar.demoCommands[0].tool}</span>{' '}
+            <span class="text-text-bright">{`(${pillar.demoCommands[0].args})`}</span>
+          </div>
+        )}
+        {pillar.demoCommands[0] && <div class="term-divider"></div>}
+        {pillar.demoCommands[0]?.output.map((line) => (
+          <div>
+            <span class="text-muted">-</span>{' '}
+            <span class="text-text">{line}</span>
+          </div>
+        ))}
+      </TerminalChrome>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 3. FEATURES DEEP DIVE - Alternating splits -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t(pillar.titleKey)}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem);">
+      {pillar.features.length} {t('contextOs.toolsLabel')}
+    </h2>
+
+    <div class="dimensions-grid animate-entrance stagger-2">
+      {pillar.features.map((f, i) => (
+        <div class="dimension-item">
+          <span class={`dimension-number font-display text-${accentTones[i % 3]}`}>
+            {String(i + 1).padStart(2, '0')}
+          </span>
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              <div class={`w-8 h-8 rounded-lg flex items-center justify-center bg-${accentTones[i % 3]}/10`}>
+                <span class={`w-4 h-4 text-${accentTones[i % 3]}`} set:html={f.icon} />
+              </div>
+              <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">
+                {t(f.titleKey)}
+              </h3>
+            </div>
+            <p class="fluid-sm text-muted leading-relaxed">{t(f.descKey)}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+{pillar.demoCommands.length > 1 && (
+  <>
+    <div class="section-divider content-grid"></div>
+    <section class="section-y">
+      <div class="content-grid-wide">
+        <div class="split split--visual-wide">
+          <div>
+            <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+              <span class="kicker-pill">{t('contextOs.liveLabel')}</span>
+            </div>
+            <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
+              {t('contextOs.liveTitle')}
+            </h2>
+            <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
+              {t(pillar.solutionKey)}
+            </p>
+          </div>
+
+          <TerminalChrome
+            title={`${pillar.demoCommands[1]?.tool ?? t(pillar.titleKey)}`}
+            chromeClass="animate-entrance stagger-3"
+            bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
+          >
+            {pillar.demoCommands[1] && (
+              <div>
+                <span class="text-accent">{pillar.demoCommands[1].tool}</span>{' '}
+                <span class="text-text-bright">{`(${pillar.demoCommands[1].args})`}</span>
+              </div>
+            )}
+            {pillar.demoCommands[1] && <div class="term-divider"></div>}
+            {pillar.demoCommands[1]?.output.map((line) => (
+              <div>
+                <span class="text-muted">-</span>{' '}
+                <span class="text-text">{line}</span>
+              </div>
+            ))}
+          </TerminalChrome>
+        </div>
+      </div>
+    </section>
+  </>
+)}
+
+<!-- 4. PROTOCOL (conditional) -->
+{pillar.protocol && (
+  <>
+    <div class="section-divider content-grid"></div>
+    <section class="section-y" id={pillar.protocol.legacySlug}>
+      <div class="content-grid-wide">
+        <div class="split split--visual-wide">
+          <div>
+            <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+              <span class="kicker-pill">{t('pillar.protocolLabel')}</span>
+            </div>
+            <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+              {t(pillar.protocol.titleKey)}
+            </h2>
+            <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
+              {t(pillar.protocol.descKey)}
+            </p>
+          </div>
+
+          <TerminalChrome
+            title={`${pillar.protocol.legacySlug.toUpperCase()} Protocol`}
+            chromeClass="animate-entrance stagger-3"
+            bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
+          >
+            <div><span class="text-accent">protocol</span> <span class="text-text-bright">{pillar.protocol.legacySlug.toUpperCase()}</span></div>
+            <div><span class="text-muted">version</span> <span class="text-text">v1</span></div>
+            <div><span class="text-muted">pillar</span> <span class="text-text">{t(pillar.titleKey)}</span></div>
+            <div class="term-divider"></div>
+            <div><span class="text-muted">status</span> <span class="text-accent">active</span></div>
+          </TerminalChrome>
+        </div>
+      </div>
+    </section>
+  </>
+)}
+
+<div class="section-divider content-grid"></div>
+
+<!-- 5. BY THE NUMBERS -->
+<section class="section-y-sm">
+  <div class="content-grid">
+    <div class="stats-panels animate-entrance">
+      {pillar.stats.map((s) => (
+        <div class="stat-panel">
+          <span class={`stat-number ${s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`}>
+            {t(s.valueKey)}
+          </span>
+          <span class="stat-desc">{t(s.labelKey)}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 6. TOOLS IN THIS PILLAR -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('contextOs.toolsLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
+      {pillarTools.length} MCP {t('contextOs.toolsLabel')}
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
+      {t(pillar.solutionKey)}
+    </p>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      {pillarTools.map((tool) => tool && (
+        <a href={lp(`/docs/tools/${toolNameToSlug(tool.name)}`)} class="card group" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-decoration: none;">
+          <code class="text-sm font-mono font-bold text-accent" style="display: block; margin-bottom: 0.375rem;">
+            {tool.name}
+          </code>
+          <p class="fluid-sm text-muted leading-relaxed tool-desc" style="margin: 0;">{tool.description}</p>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- 7. RELATED DOCS -->
+<section class="section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t(pillar.titleKey)}
+      title={t('contextOs.relatedTitle')}
+      variant="full"
+      breakHighlight={false}
+    />
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      {pillar.docsLinks.map((link) => (
+        <a
+          href={lp(link)}
+          class="card group"
+          style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); text-decoration: none;"
+        >
+          <span class="font-display fluid-sm font-semibold text-text-bright group-hover:text-accent transition-colors" style="text-transform: capitalize;">
+            {link.replace('/docs/', '').replace(/\//g, ' / ').replace(/-/g, ' ')}
+          </span>
+          <svg class="w-4 h-4 text-muted group-hover:text-accent transition-colors mt-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- PROOF ARTIFACTS -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">{t('contextOs.proofLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: 1.25rem; max-width: 58rem;">
+      {t('contextOs.proofTitle')}
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(2.5rem, 2rem + 2vw, 4rem); max-width: 56rem;">
+      {t('contextOs.proofDesc')}
+    </p>
+    <div class="animate-entrance stagger-3">
+      <ProofArtifacts />
+    </div>
+  </div>
+</section>
+
+{relatedPillars.length > 0 && (
+  <>
+    <div class="section-divider content-grid"></div>
+    <section class="section-y">
+      <div class="content-grid">
+        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+          <span class="kicker-pill">Related</span>
+        </div>
+        <h2 class="font-display fluid-h2 font-bold text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
+          Related Pillars
+        </h2>
+        <div class="grid md:grid-cols-2 animate-entrance stagger-2" style="gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          {relatedPillars.map(rp => (
+            <a href={lp(`/context-os/${rp.slug}`)} class="pillar-card-home" style="display: flex; align-items: flex-start; gap: 1rem;">
+              <span class="pillar-card-icon" set:html={rp.icon} style="flex-shrink: 0;" />
+              <div>
+                <h3 class="pillar-card-name" style="margin: 0 0 0.375rem;">{t(rp.titleKey)}</h3>
+                <p class="pillar-card-desc" style="margin: 0;">{t(rp.navDescKey)}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+    </section>
+  </>
+)}
+
+<div class="section-divider content-grid"></div>
+
+<!-- 8. CTA -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance">
+      <h2 class="font-display fluid-display font-bold text-text-bright" style="margin-bottom: clamp(1.5rem, 1rem + 1.5vw, 3rem); max-width: 48rem;">
+        {t(pillar.ctaKey)}
+      </h2>
+      <p class="text-muted fluid-body" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 36rem;">
+        {t(pillar.solutionKey)}
+      </p>
+
+      <div class="flex flex-wrap items-center" style="gap: clamp(0.875rem, 0.5rem + 0.75vw, 1.5rem);">
+        <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2.5" style="padding: clamp(0.875rem, 0.7rem + 0.4vw, 1.125rem) clamp(2rem, 1.5rem + 1vw, 3rem); font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
+          {t('nav.getStarted')}
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+        <a href={lp('/context-os')} class="btn-outline inline-flex items-center gap-2.5" style="padding: clamp(0.875rem, 0.7rem + 0.4vw, 1.125rem) clamp(2rem, 1.5rem + 1vw, 3rem); font-size: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);">
+          {t('nav.contextOs')}
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  .tool-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>

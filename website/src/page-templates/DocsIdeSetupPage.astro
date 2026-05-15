@@ -1,0 +1,186 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docsIdeSetup.sidebarTitle'),
+    items: [
+      { label: t('docsIdeSetup.sidebarOverview'), href: lp('/docs/ide-setup') },
+      { label: t('docsIdeSetup.sidebarOneShot'), href: lp('/docs/ide-setup') + '#one-shot-fix' },
+      { label: t('docsIdeSetup.sidebarMatrix'), href: lp('/docs/ide-setup') + '#matrix' },
+      { label: t('docsIdeSetup.sidebarTroubleshooting'), href: lp('/docs/ide-setup') + '#troubleshooting' },
+    ],
+  },
+  {
+    title: t('docsRemoteSetup.sidebarRelated'),
+    items: [
+      { label: t('docsRemoteSetup.sidebarGettingStarted'), href: lp('/docs/getting-started') },
+      { label: t('nav.docs.remoteSetup'), href: lp('/docs/remote-setup') },
+      { label: t('nav.docs.analytics'), href: lp('/docs/analytics') },
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docsIdeSetup.title')} description={t('docsIdeSetup.description')} sidebar={sidebar}>
+  <p set:html={t('docsIdeSetup.intro')} />
+
+  <hr />
+
+  <h2 id="one-shot-fix" set:html={t('docsIdeSetup.oneShotTitle')} />
+  <p set:html={t('docsIdeSetup.oneShotDesc')} />
+  <pre><code>lean-ctx init --global
+lean-ctx init --agent cursor
+lean-ctx doctor</code></pre>
+  <p set:html={t('docsIdeSetup.oneShotNote')} />
+
+  <hr />
+
+  <h2 id="matrix" set:html={t('docsIdeSetup.matrixTitle')} />
+  <p set:html={t('docsIdeSetup.matrixDesc')} />
+
+  <table>
+    <thead>
+      <tr>
+        <th>{t('docsIdeSetup.thTool')}</th>
+        <th>{t('docsIdeSetup.thMcpConfig')}</th>
+        <th>{t('docsIdeSetup.thFixCommand')}</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Cursor</td>
+        <td><code>~/.cursor/mcp.json</code></td>
+        <td><code>lean-ctx init --agent cursor</code></td>
+      </tr>
+      <tr>
+        <td>Claude Code</td>
+        <td><code>~/.claude.json</code></td>
+        <td><code>lean-ctx init --agent claude</code></td>
+      </tr>
+      <tr>
+        <td>Windsurf</td>
+        <td><code>~/.codeium/windsurf/mcp_config.json</code></td>
+        <td><code>lean-ctx init --agent windsurf</code></td>
+      </tr>
+      <tr>
+        <td>VS Code / Copilot</td>
+        <td><code>.../Code/User/mcp.json</code></td>
+        <td><code>lean-ctx init --agent copilot</code></td>
+      </tr>
+      <tr>
+        <td>Zed</td>
+        <td><code>.../zed/settings.json</code></td>
+        <td><code>lean-ctx setup</code></td>
+      </tr>
+      <tr>
+        <td>OpenCode</td>
+        <td><code>~/.config/opencode/opencode.json</code></td>
+        <td><code>lean-ctx setup</code></td>
+      </tr>
+      <tr>
+        <td>Crush</td>
+        <td><code>~/.config/crush/crush.json</code></td>
+        <td><code>lean-ctx init --agent crush</code></td>
+      </tr>
+      <tr>
+        <td>Pi Coding Agent</td>
+        <td><code>~/.pi/agent/mcp.json</code></td>
+        <td><code>lean-ctx init --agent pi</code></td>
+      </tr>
+      <tr>
+        <td>Gemini CLI</td>
+        <td><code>~/.gemini/settings.json</code></td>
+        <td><code>lean-ctx init --agent gemini</code></td>
+      </tr>
+      <tr>
+        <td>Qoder</td>
+        <td><code>~/.qoder/settings.json</code> (hooks) <span class="text-muted">+ optional</span> <code>~/.qoder/mcp.json</code></td>
+        <td><code>lean-ctx init --agent qoder</code></td>
+      </tr>
+      <tr>
+        <td>QoderWork</td>
+        <td><code>~/.qoderwork/mcp.json</code></td>
+        <td><code>lean-ctx init --agent qoderwork</code></td>
+      </tr>
+      <tr>
+        <td>Hermes Agent</td>
+        <td><code>~/.hermes/config.yaml</code></td>
+        <td><code>lean-ctx init --agent hermes</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="text-sm text-muted mt-2" set:html={t('docsIdeSetup.matrixNote')} />
+
+  <h3 id="hermes-notes">Hermes Agent notes</h3>
+  <p class="text-sm text-muted">
+    Hermes registers MCP tools as <code>mcp_&lt;server&gt;_&lt;tool&gt;</code>. For lean-ctx, this typically looks like
+    <code>mcp_lean_ctx_ctx_read</code>, <code>mcp_lean_ctx_ctx_shell</code>, etc. This is expected and avoids tool-name collisions.
+  </p>
+  <p class="text-sm text-muted">
+    If you want fewer tools (smaller context overhead), use an allowlist in <code>~/.hermes/config.yaml</code>:
+  </p>
+  <pre><code>{`mcp_servers:
+  lean-ctx:
+    command: "lean-ctx"
+    args: ["mcp"]
+    tools:
+      include: [ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_edit, ctx_session]`}</code></pre>
+
+  <hr />
+
+  <h2 id="troubleshooting" set:html={t('docsIdeSetup.troubleshootingTitle')} />
+
+  <h3 set:html={t('docsIdeSetup.troubleZeroSavedTitle')} />
+  <p set:html={t('docsIdeSetup.troubleZeroSavedDesc')} />
+  <pre><code>lean-ctx doctor
+lean-ctx gain --reset
+lean-ctx gain</code></pre>
+
+  <h3 set:html={t('docsIdeSetup.troubleStalePathTitle')} />
+  <p set:html={t('docsIdeSetup.troubleStalePathDesc')} />
+  <pre><code>lean-ctx init --agent cursor
+lean-ctx init --agent claude
+lean-ctx setup</code></pre>
+
+  <h3 set:html={t('docsIdeSetup.troubleBrewLinkTitle')} />
+  <p set:html={t('docsIdeSetup.troubleBrewLinkDesc')} />
+  <pre><code>brew unlink lean-ctx || true
+brew link --overwrite lean-ctx
+lean-ctx --version</code></pre>
+
+  <h3 set:html={t('docsIdeSetup.troubleAntigravityTitle')} />
+  <p set:html={t('docsIdeSetup.troubleAntigravityDesc')} />
+  <pre><code>{`# Find your binary path
+which lean-ctx
+
+# Edit ~/.gemini/antigravity/mcp_config.json
+{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "/full/path/to/lean-ctx",
+      "env": {
+        "LEAN_CTX_DATA_DIR": "/home/you/.lean-ctx"
+      }
+    }
+  }
+}`}</code></pre>
+  <p set:html={t('docsIdeSetup.troubleAntigravityNote')} />
+
+  <h3 set:html={t('docsIdeSetup.troublePathEscapeTitle')} />
+  <p set:html={t('docsIdeSetup.troublePathEscapeDesc')} />
+  <pre><code>{`# Allow a specific directory
+export LCTX_ALLOW_PATH="$HOME/.codex"
+
+# Allow multiple directories (colon-separated)
+export LCTX_ALLOW_PATH="$HOME/.codex:$HOME/.config/my-tool"`}</code></pre>
+  <p set:html={t('docsIdeSetup.troublePathEscapeNote')} />
+</DocsLayout>
+

@@ -1,0 +1,749 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Environment Variables',
+    items: [
+      { label: 'Overview', href: lp('/docs/configuration/env-vars') },
+      { label: 'Core', href: lp('/docs/configuration/env-vars') + '#core' },
+      { label: 'Shell', href: lp('/docs/configuration/env-vars') + '#shell' },
+      { label: 'Tools & Agent', href: lp('/docs/configuration/env-vars') + '#tools-agent' },
+      { label: 'Autonomy', href: lp('/docs/configuration/env-vars') + '#autonomy' },
+      { label: 'Tool Mode', href: lp('/docs/configuration/env-vars') + '#tool-mode' },
+      { label: 'Dashboard', href: lp('/docs/configuration/env-vars') + '#dashboard' },
+      { label: 'Archive (Premium)', href: lp('/docs/configuration/env-vars') + '#archive' },
+      { label: 'Compaction (Premium)', href: lp('/docs/configuration/env-vars') + '#compaction' },
+      { label: 'Safety Caps', href: lp('/docs/configuration/env-vars') + '#safety-caps' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'config.toml Reference', href: lp('/docs/configuration') },
+      { label: 'CLI Reference', href: lp('/docs/cli-reference') },
+      { label: 'Quick Reference', href: lp('/docs/quick-reference') },
+    ],
+  },
+];
+---
+
+<DocsLayout title="Environment Variables" description="Complete reference for all LEAN_CTX_* environment variables - grouped by area with types, defaults, and examples." sidebar={sidebar}>
+
+  <p>
+    lean-ctx behavior can be configured via <code>~/.lean-ctx/config.toml</code> <strong>or</strong> environment variables.
+    Env vars always take precedence over the config file, making them ideal for per-session overrides, CI/CD, and containerized environments.
+  </p>
+  <p>
+    All variables use the <code>LEAN_CTX_</code> prefix (with a few <code>LCTX_</code> exceptions for safety caps).
+    Boolean variables accept <code>true</code>/<code>false</code>, <code>1</code>/<code>0</code>, or simply being set/unset.
+  </p>
+
+  <hr />
+
+  <!-- ─── Core ─── -->
+  <h2 id="core">Core</h2>
+  <p>Fundamental settings that control data storage, caching, output protocols, and checkpointing.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_DATA_DIR</code></td>
+        <td>path</td>
+        <td><code>~/.lean-ctx</code></td>
+        <td>Base directory for all persistent data (stats, knowledge, agents, cache, sessions). All modules resolve paths through this single variable.</td>
+        <td>v2.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CACHE_TTL</code></td>
+        <td>number</td>
+        <td><code>300</code></td>
+        <td>Cache time-to-live in seconds. Cached file reads older than this value are automatically invalidated and re-read from disk.</td>
+        <td>v2.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CRP_MODE</code></td>
+        <td>string</td>
+        <td><code>tdd</code></td>
+        <td>Compact Response Protocol mode. Controls the format of lean-ctx's own output. <code>tdd</code> = test-driven-development optimized, <code>compact</code> = general compression, <code>off</code> = full verbose output.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_MEMORY_CLEANUP</code></td>
+        <td>string</td>
+        <td><code>aggressive</code></td>
+        <td>Controls idle memory cleanup aggressiveness. <code>aggressive</code>: clear caches after 5 min idle (single-IDE). <code>shared</code>: retain caches 30 min (multi-IDE/multi-model). Overrides <code>memory_cleanup</code> in config.toml. If <code>LEAN_CTX_CACHE_TTL</code> is also set, it takes precedence for the cache TTL value.</td>
+        <td>v3.5.15</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_MINIMAL</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Enable minimal overhead mode. Disables auto-checkpoints, meta-strings (savings notes, stale notes, shell hints), and session/knowledge blocks in MCP instructions. Equivalent to <code>minimal_overhead = true</code> in config. See <a href="/docs/configuration#minimal-overhead">Minimal Overhead</a>.</td>
+        <td>v3.4.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_NO_CHECKPOINT</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Disable auto-checkpoint injection without affecting other features. More targeted than <code>LEAN_CTX_MINIMAL</code>.</td>
+        <td>v3.4.1</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_NO_INDEX</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Skips all graph index scanning. Use in CI/CD or environments where indexing is not needed. Prevents background scans that can cause high CPU on first run.</td>
+        <td>v3.5.22</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
+        <td>number</td>
+        <td><code>15</code></td>
+        <td>Number of tool calls between automatic session checkpoints. Lower values increase resilience at the cost of slightly more overhead.</td>
+        <td>v2.5</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_OUTPUT_DENSITY</code></td>
+        <td>string</td>
+        <td><code>normal</code></td>
+        <td>Controls tool response compression (input tokens). <code>normal</code> = full output, <code>terse</code> = moderate compression (20-40% savings), <code>ultra</code> = maximum compression (50-70% savings).</td>
+        <td>v3.1</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Use a custom data directory (e.g. for containers)
+export LEAN_CTX_DATA_DIR=/data/lean-ctx
+
+# Increase cache TTL to 10 minutes
+export LEAN_CTX_CACHE_TTL=600
+
+# Switch to compact output mode
+export LEAN_CTX_CRP_MODE=compact
+
+# Checkpoint every 10 calls for maximum resilience
+export LEAN_CTX_CHECKPOINT_INTERVAL=10
+
+# Enable maximum compression on tool responses
+export LEAN_CTX_OUTPUT_DENSITY=ultra</code></pre>
+
+  <hr />
+
+  <!-- ─── Shell ─── -->
+  <h2 id="shell">Shell</h2>
+  <p>Control the shell hook behavior, timeouts, and shell binary selection.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_DISABLED</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>When set (any value), disables the shell hook entirely. Commands run without any lean-ctx interception or compression.</td>
+        <td>v1.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ENABLED</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Explicit enable toggle. Set to <code>0</code> to disable the shell hook. Useful in scripts where you want to temporarily turn off lean-ctx.</td>
+        <td>v1.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HOOK_CHILD</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Set automatically by the shell hook to prevent recursive lean-ctx invocations. Internal variable, not user-facing.</td>
+        <td>v3.5.22</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_RAW</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>When set, bypasses all compression for the current command. The shell output is returned verbatim. Also available as <code>ctx_shell(raw=true)</code>.</td>
+        <td>v2.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ACTIVE</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Set internally when the MCP server is running. When already set, prevents a second auto-start. Can be set manually to prevent auto-start entirely.</td>
+        <td>v2.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SHELL_TIMEOUT_MS</code></td>
+        <td>number</td>
+        <td><code>120000</code></td>
+        <td>Maximum time (in milliseconds) a shell command may run before being killed. Commands exceeding this timeout exit with code <code>124</code> (matching the <code>timeout</code> convention). Set to <code>0</code> to disable the timeout.</td>
+        <td>v3.3</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SHELL</code></td>
+        <td>path</td>
+        <td><em>auto-detect</em></td>
+        <td>Override which shell binary lean-ctx uses for <code>ctx_shell</code> and <code>lean-ctx -c</code>. Useful on Windows when PowerShell detection fails.</td>
+        <td>v2.5</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SHELL_ACTIVATION</code></td>
+        <td>string</td>
+        <td><code>always</code></td>
+        <td>Controls when lean-ctx shell aliases auto-activate. <code>always</code> (default): active in every interactive shell. <code>agents-only</code>: only when AI agent env vars are detected (<code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>). <code>off</code>: never auto-activate, user must call <code>lean-ctx-on</code> manually. Overrides <code>shell_activation</code> in config.toml. Since v3.5.19, these agent env vars also enable tracking in non-interactive (non-TTY) shells, e.g. Docker <code>bash -c</code> or Codex CLI containers.</td>
+        <td>v3.5.16</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Temporarily disable lean-ctx for a session
+export LEAN_CTX_DISABLED=1
+
+# Get raw output for a single command
+LEAN_CTX_RAW=1 lean-ctx -c "cat package.json"
+
+# Set a 5-minute shell timeout
+export LEAN_CTX_SHELL_TIMEOUT_MS=300000
+
+# Force a specific shell binary (Windows)
+export LEAN_CTX_SHELL="C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+# Control shell activation mode
+export LEAN_CTX_SHELL_ACTIVATION=agents-only</code></pre>
+
+  <hr />
+
+  <!-- ─── Tools & Agent ─── -->
+  <h2 id="tools-agent">Tools &amp; Agent</h2>
+  <p>Configure tool availability, agent behavior, rules injection, and model selection.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_RULES_SCOPE</code></td>
+        <td>string</td>
+        <td><code>both</code></td>
+        <td>Where lean-ctx injects its cursor rules. <code>global</code> = <code>~/.cursor/rules/</code> only, <code>project</code> = <code>.cursor/rules/</code> only, <code>both</code> = both locations.</td>
+        <td>v3.3</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_DISABLED_TOOLS</code></td>
+        <td>comma-separated</td>
+        <td><em>none</em></td>
+        <td>Exclude specific tools from the MCP tool list to reduce token overhead. Overrides <code>disabled_tools</code> in config.toml.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_AGENT_ROLE</code></td>
+        <td>string</td>
+        <td><em>none</em></td>
+        <td>Role identifier for automatic agent registration in multi-agent workflows. Used by <code>ctx_agent</code> to identify the agent in the registry.</td>
+        <td>v3.1</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_TERSE_AGENT</code></td>
+        <td>string</td>
+        <td><code>off</code></td>
+        <td>Bidirectional token optimization for agent output. <code>off</code> = disabled, <code>lite</code> = abbreviations + function refs, <code>full</code> = CEP v1 protocol with 150-token budget, <code>ultra</code> = maximum compression. Also accepts <code>true</code>/<code>false</code> for backward compatibility.</td>
+        <td>v3.3</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_QUIET</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Suppresses all informational output: savings footers (<code>[lean-ctx: X→Y tok, -Z%]</code>), session-start messages, tee-log hints, and verbose reroute messages. Shell compression still runs — only human-visible annotations are hidden. Set to <code>1</code> for production/agent environments. <em>(expanded in v3.5.24)</em></td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HEADLESS</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Start MCP server in headless mode - skips all auto-setup (rules injection, hook installation, CLAUDE.md modification, agent registry). Ideal for custom launchers and CI/CD.</td>
+        <td>v3.3</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_MODEL</code></td>
+        <td>string</td>
+        <td><em>auto</em></td>
+        <td>Model identifier used for token/gain calculations. Affects how <code>ctx_gain</code> estimates savings. Alias: <code>LCTX_MODEL</code>.</td>
+        <td>v3.1</td>
+      </tr>
+      <tr>
+        <td><code>LCTX_MODEL</code></td>
+        <td>string</td>
+        <td><em>auto</em></td>
+        <td>Alias for <code>LEAN_CTX_MODEL</code>. If both are set, <code>LEAN_CTX_MODEL</code> takes precedence.</td>
+        <td>v3.1</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HOOK_EXCLUDE</code></td>
+        <td>comma-separated</td>
+        <td><em>none</em></td>
+        <td>Glob patterns for files that bypass the hook redirect and go straight to the native Read tool. Overrides <code>redirect_exclude</code> in config.toml.</td>
+        <td>v2.21</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_MODELS_DIR</code></td>
+        <td>path</td>
+        <td><em>built-in</em></td>
+        <td>Override directory for model tokenizer definitions. Useful for custom or fine-tuned models not included in the default set.</td>
+        <td>v3.0</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Inject rules only in the project directory
+export LEAN_CTX_RULES_SCOPE=project
+
+# Disable expensive tools to save tokens
+export LEAN_CTX_DISABLED_TOOLS=ctx_benchmark,ctx_metrics,ctx_wrapped
+
+# Enable full terse agent mode
+export LEAN_CTX_TERSE_AGENT=full
+
+# Start MCP in headless mode (no auto-setup)
+export LEAN_CTX_HEADLESS=1
+
+# Set model for accurate gain calculation
+export LEAN_CTX_MODEL=claude-sonnet-4</code></pre>
+
+  <hr />
+
+  <!-- ─── Autonomy ─── -->
+  <h2 id="autonomy">Autonomy</h2>
+  <p>
+    Fine-grained control over lean-ctx's autonomous behaviors - preloading, deduplication, related file suggestions, and knowledge consolidation.
+    All autonomy env vars override the corresponding <code>[autonomy]</code> section in <code>config.toml</code>.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_AUTONOMY</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Master toggle for all autonomy features. When <code>false</code>, all auto-preload, auto-dedup, auto-related, and auto-consolidate are disabled regardless of individual settings.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_AUTO_PRELOAD</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>After <code>ctx_read</code>, automatically pre-cache files referenced via imports/includes.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_AUTO_DEDUP</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Automatically deduplicate the file cache when it exceeds the dedup threshold.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_AUTO_RELATED</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Suggest related files based on the import graph when reading a file.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_AUTO_CONSOLIDATE</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Periodically consolidate knowledge base entries to merge duplicates and prune stale entries.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SILENT_PRELOAD</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Pre-cache files silently without output in tool responses. Set to <code>false</code> to see which files were preloaded.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_DEDUP_THRESHOLD</code></td>
+        <td>number</td>
+        <td><code>8</code></td>
+        <td>Number of cached files that triggers automatic deduplication.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CONSOLIDATE_EVERY_CALLS</code></td>
+        <td>number</td>
+        <td><code>25</code></td>
+        <td>Run knowledge consolidation every N tool calls. Higher values reduce overhead but delay cleanup.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_CONSOLIDATE_COOLDOWN_SECS</code></td>
+        <td>number</td>
+        <td><code>300</code></td>
+        <td>Minimum seconds between two consecutive consolidation runs.</td>
+        <td>v3.0</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Disable all autonomy features
+export LEAN_CTX_AUTONOMY=false
+
+# Keep autonomy on but disable preloading
+export LEAN_CTX_AUTO_PRELOAD=false
+
+# Increase dedup threshold for large projects
+export LEAN_CTX_DEDUP_THRESHOLD=15
+
+# Consolidate less frequently
+export LEAN_CTX_CONSOLIDATE_EVERY_CALLS=50
+export LEAN_CTX_CONSOLIDATE_COOLDOWN_SECS=600</code></pre>
+
+  <hr />
+
+  <!-- ─── Tool Mode ─── -->
+  <h2 id="tool-mode">Tool Mode</h2>
+  <p>Control how lean-ctx exposes its tools to the AI agent - lazy discovery, single-tool mode, or full tool listing.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_LAZY_TOOLS</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Enable lazy tool discovery. Tools are only registered when first invoked, reducing initial tool list overhead.</td>
+        <td>v3.1</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_UNIFIED</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Single-tool mode. All 58 tools are accessed through a single <code>ctx</code> entry point. Reduces token overhead from tool descriptions by up to 90%.</td>
+        <td>v3.2</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_FULL_TOOLS</code></td>
+        <td>flag</td>
+        <td><em>unset</em></td>
+        <td>Show all tools in the MCP tool list, including those normally hidden or lazily loaded. Useful for debugging or exploration.</td>
+        <td>v3.1</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Enable lazy tool discovery
+export LEAN_CTX_LAZY_TOOLS=1
+
+# Use single-tool mode for minimal token overhead
+export LEAN_CTX_UNIFIED=1
+
+# Show all tools (debugging)
+export LEAN_CTX_FULL_TOOLS=1</code></pre>
+
+  <hr />
+
+  <!-- ─── Dashboard ─── -->
+  <h2 id="dashboard">Dashboard (Observatory)</h2>
+  <p>Configure the real-time Observatory dashboard binding and project selection.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_PORT</code></td>
+        <td>number</td>
+        <td><code>3117</code></td>
+        <td>Port for the Observatory web dashboard.</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HOST</code></td>
+        <td>string</td>
+        <td><code>127.0.0.1</code></td>
+        <td>Bind address for the Observatory. Set to <code>0.0.0.0</code> to expose on all interfaces (e.g. Docker).</td>
+        <td>v3.0</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_DASHBOARD_PROJECT</code></td>
+        <td>path</td>
+        <td><em>auto-detect</em></td>
+        <td>Override the project directory shown in the Observatory. Useful when running the dashboard separately from the project.</td>
+        <td>v3.1</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Run Observatory on a custom port
+export LEAN_CTX_PORT=8080
+
+# Expose dashboard in Docker
+export LEAN_CTX_HOST=0.0.0.0
+
+# Override project for dashboard
+export LEAN_CTX_DASHBOARD_PROJECT=/home/user/my-project</code></pre>
+
+  <hr />
+
+  <!-- ─── Archive (Premium) ─── -->
+  <h2 id="archive">Archive <span class="text-xs font-normal text-muted ml-2">Premium</span></h2>
+  <p>
+    The Tool Result Archive enables <strong>zero-loss compression</strong>: full tool outputs are saved to disk,
+    and the agent retrieves them on demand via <a href={lp('/docs/tools/core') + '#ctx_expand'}><code>ctx_expand</code></a>.
+    These env vars override the <code>[archive]</code> section in <code>config.toml</code>.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_ARCHIVE</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Master toggle for the Tool Result Archive. Set to <code>0</code> or <code>false</code> to disable completely. When enabled, tool outputs exceeding the threshold are archived to disk.</td>
+        <td>v3.3</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td>
+        <td>number</td>
+        <td><code>4096</code></td>
+        <td>Minimum size in characters before a tool result is archived. Outputs below this threshold are returned inline without archiving.</td>
+        <td>v3.3</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ARCHIVE_TTL</code></td>
+        <td>number</td>
+        <td><code>48</code></td>
+        <td>Time-to-live for archived entries in hours. Entries not accessed within this window are automatically cleaned up.</td>
+        <td>v3.3</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Enable the archive system
+export LEAN_CTX_ARCHIVE=true
+
+# Only archive large outputs (8k+ chars)
+export LEAN_CTX_ARCHIVE_THRESHOLD=8192
+
+# Keep archives for 72 hours
+export LEAN_CTX_ARCHIVE_TTL=72
+
+# Disable archive for a session
+export LEAN_CTX_ARCHIVE=0</code></pre>
+
+  <hr />
+
+  <!-- ─── Compaction (Premium) ─── -->
+  <h2 id="compaction">Compaction Resilience <span class="text-xs font-normal text-muted ml-2">Premium</span></h2>
+  <p>
+    Control how lean-ctx recovers when the IDE compacts (truncates) conversation history.
+    These env vars override the <code>[compaction]</code> section in <code>config.toml</code>.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LEAN_CTX_COMPACTION_RESUME</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Enable automatic context recovery after IDE compaction. When the IDE truncates conversation history, lean-ctx injects a resume block into the next tool response. Set to <code>0</code> to disable.</td>
+        <td>v3.3</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Disable compaction recovery
+export LEAN_CTX_COMPACTION_RESUME=0
+
+# Keep default behavior (auto-resume after compaction)
+unset LEAN_CTX_COMPACTION_RESUME</code></pre>
+
+  <hr />
+
+  <!-- ─── Safety Caps ─── -->
+  <h2 id="safety-caps">Safety Caps</h2>
+  <p>
+    These variables use the shorter <code>LCTX_</code> prefix and control hard limits that prevent accidental resource exhaustion.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Type</th>
+        <th>Default</th>
+        <th>Description</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>LCTX_MAX_READ_BYTES</code></td>
+        <td>number</td>
+        <td><code>5242880</code></td>
+        <td>Maximum file size in bytes that <code>ctx_read</code> / <code>ctx_edit</code> will process. Files exceeding this limit are rejected. Default: 5 MB.</td>
+        <td>v3.1</td>
+      </tr>
+      <tr>
+        <td><code>LCTX_MAX_SHELL_BYTES</code></td>
+        <td>number</td>
+        <td><code>1048576</code></td>
+        <td>Maximum shell output capture size in bytes for <code>ctx_shell</code>. Output exceeding this limit is truncated with a <code>[truncated]</code> marker. Default: 1 MB.</td>
+        <td>v3.1</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Examples</h3>
+  <pre><code># Allow reading files up to 10 MB
+export LCTX_MAX_READ_BYTES=10485760
+
+# Increase shell output cap to 5 MB
+export LCTX_MAX_SHELL_BYTES=5242880</code></pre>
+
+  <hr />
+
+  <!-- ─── Quick Reference ─── -->
+  <h2 id="quick-ref">Quick Reference</h2>
+  <p>All environment variables at a glance, sorted alphabetically.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Variable</th>
+        <th>Default</th>
+        <th>Section</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><code>LEAN_CTX_ACTIVE</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_AGENT_ROLE</code></td><td><em>none</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE</code></td><td><code>false</code></td><td><a href="#archive">Archive</a></td></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td><td><code>4096</code></td><td><a href="#archive">Archive</a></td></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE_TTL</code></td><td><code>48</code></td><td><a href="#archive">Archive</a></td></tr>
+      <tr><td><code>LEAN_CTX_AUTO_CONSOLIDATE</code></td><td><code>true</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_AUTO_DEDUP</code></td><td><code>true</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_AUTO_PRELOAD</code></td><td><code>true</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_AUTO_RELATED</code></td><td><code>true</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_AUTONOMY</code></td><td><code>true</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_CACHE_TTL</code></td><td><code>300</code></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td><td><code>15</code></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_COMPACTION_RESUME</code></td><td><code>true</code></td><td><a href="#compaction">Compaction</a></td></tr>
+      <tr><td><code>LEAN_CTX_CONSOLIDATE_COOLDOWN_SECS</code></td><td><code>300</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_CONSOLIDATE_EVERY_CALLS</code></td><td><code>25</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_CRP_MODE</code></td><td><code>tdd</code></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_DASHBOARD_PROJECT</code></td><td><em>auto</em></td><td><a href="#dashboard">Dashboard</a></td></tr>
+      <tr><td><code>LEAN_CTX_DATA_DIR</code></td><td><code>~/.lean-ctx</code></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_DEDUP_THRESHOLD</code></td><td><code>8</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_DISABLED</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_DISABLED_TOOLS</code></td><td><em>none</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_ENABLED</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_FULL_TOOLS</code></td><td><em>unset</em></td><td><a href="#tool-mode">Tool Mode</a></td></tr>
+      <tr><td><code>LEAN_CTX_HEADLESS</code></td><td><em>unset</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_HOOK_CHILD</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_HOOK_EXCLUDE</code></td><td><em>none</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_HOST</code></td><td><code>127.0.0.1</code></td><td><a href="#dashboard">Dashboard</a></td></tr>
+      <tr><td><code>LEAN_CTX_LAZY_TOOLS</code></td><td><em>unset</em></td><td><a href="#tool-mode">Tool Mode</a></td></tr>
+      <tr><td><code>LEAN_CTX_MEMORY_CLEANUP</code></td><td><code>aggressive</code></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_MODEL</code></td><td><em>auto</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_MODELS_DIR</code></td><td><em>built-in</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_NO_CHECKPOINT</code></td><td><em>unset</em></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_NO_INDEX</code></td><td><em>unset</em></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_OUTPUT_DENSITY</code></td><td><code>normal</code></td><td><a href="#core">Core</a></td></tr>
+      <tr><td><code>LEAN_CTX_PORT</code></td><td><code>3117</code></td><td><a href="#dashboard">Dashboard</a></td></tr>
+      <tr><td><code>LEAN_CTX_QUIET</code></td><td><em>unset</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_RAW</code></td><td><em>unset</em></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_RULES_SCOPE</code></td><td><code>both</code></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_SHELL</code></td><td><em>auto</em></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_SHELL_ACTIVATION</code></td><td><code>always</code></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_SHELL_TIMEOUT_MS</code></td><td><code>120000</code></td><td><a href="#shell">Shell</a></td></tr>
+      <tr><td><code>LEAN_CTX_SILENT_PRELOAD</code></td><td><code>true</code></td><td><a href="#autonomy">Autonomy</a></td></tr>
+      <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>off</code></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+      <tr><td><code>LEAN_CTX_UNIFIED</code></td><td><em>unset</em></td><td><a href="#tool-mode">Tool Mode</a></td></tr>
+      <tr><td><code>LCTX_MAX_READ_BYTES</code></td><td><code>5242880</code></td><td><a href="#safety-caps">Safety Caps</a></td></tr>
+      <tr><td><code>LCTX_MAX_SHELL_BYTES</code></td><td><code>1048576</code></td><td><a href="#safety-caps">Safety Caps</a></td></tr>
+      <tr><td><code>LCTX_MODEL</code></td><td><em>auto</em></td><td><a href="#tools-agent">Tools &amp; Agent</a></td></tr>
+    </tbody>
+  </table>
+
+</DocsLayout>

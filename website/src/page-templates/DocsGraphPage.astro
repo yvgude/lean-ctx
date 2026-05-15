@@ -1,0 +1,293 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docsGraph.sidebarGraph'),
+    items: [
+      { label: t('docsGraph.sidebarOverview'), href: lp('/docs/graph') },
+      { label: t('docsGraph.sidebarNodes'), href: lp('/docs/graph') + '#nodes' },
+      { label: t('docsGraph.sidebarEdges'), href: lp('/docs/graph') + '#edges' },
+      { label: t('docsGraph.sidebarEnrich'), href: lp('/docs/graph') + '#enrichment' },
+      { label: t('docsGraph.sidebarContext'), href: lp('/docs/graph') + '#context-query' },
+      { label: t('docsGraph.sidebarApi'), href: lp('/docs/graph') + '#api' },
+      { label: t('docsGraph.sidebarExportHtml'), href: lp('/docs/graph') + '#export-html' },
+    ],
+  },
+  {
+    title: t('docsGraph.sidebarRelated'),
+    items: [
+      { label: t('docsGraph.sidebarObservability'), href: lp('/docs/observability') },
+      { label: t('docsGraph.sidebarHarness'), href: lp('/docs/agent-harness') },
+      { label: t('docsGraph.sidebarDashboard'), href: lp('/dashboard') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docsGraph.title')} sidebar={sidebar}>
+  <div class="docs-content">
+    <h1>{t('docsGraph.heading')}</h1>
+    <p class="lead">{t('docsGraph.intro')}</p>
+
+    <!-- Node Types -->
+    <section id="nodes">
+      <h2>{t('docsGraph.nodesTitle')}</h2>
+      <p>{t('docsGraph.nodesDesc')}</p>
+
+      <div class="nodes-grid">
+        <div class="node-card">
+          <span class="node-icon">📄</span>
+          <code>File</code>
+          <p>{t('docsGraph.nodeFile')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🔣</span>
+          <code>Symbol</code>
+          <p>{t('docsGraph.nodeSymbol')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">📦</span>
+          <code>Module</code>
+          <p>{t('docsGraph.nodeModule')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">📝</span>
+          <code>Commit</code>
+          <p>{t('docsGraph.nodeCommit')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🧪</span>
+          <code>Test</code>
+          <p>{t('docsGraph.nodeTest')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🏗️</span>
+          <code>CIRun</code>
+          <p>{t('docsGraph.nodeCi')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🧠</span>
+          <code>Knowledge</code>
+          <p>{t('docsGraph.nodeKnowledge')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🎫</span>
+          <code>Issue</code>
+          <p>{t('docsGraph.nodeIssue')}</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Edge Types -->
+    <section id="edges">
+      <h2>{t('docsGraph.edgesTitle')}</h2>
+      <p>{t('docsGraph.edgesDesc')}</p>
+
+      <table class="edges-table">
+        <thead><tr><th>{t('docsGraph.edgeCol')}</th><th>{t('docsGraph.meaningCol')}</th><th>{t('docsGraph.exampleCol')}</th></tr></thead>
+        <tbody>
+          <tr><td><code>Imports</code></td><td>{t('docsGraph.edgeImports')}</td><td><code>A.ts → B.ts</code></td></tr>
+          <tr><td><code>Calls</code></td><td>{t('docsGraph.edgeCalls')}</td><td><code>fn_a → fn_b</code></td></tr>
+          <tr><td><code>Defines</code></td><td>{t('docsGraph.edgeDefines')}</td><td><code>mod → fn</code></td></tr>
+          <tr><td><code>TestedBy</code></td><td>{t('docsGraph.edgeTestedBy')}</td><td><code>utils.rs → test_utils.rs</code></td></tr>
+          <tr><td><code>ChangedIn</code></td><td>{t('docsGraph.edgeChangedIn')}</td><td><code>file → commit</code></td></tr>
+          <tr><td><code>MentionedIn</code></td><td>{t('docsGraph.edgeMentionedIn')}</td><td><code>file → knowledge</code></td></tr>
+          <tr><td><code>Affects</code></td><td>{t('docsGraph.edgeAffects')}</td><td><code>issue → file</code></td></tr>
+          <tr><td><code>Breaks</code></td><td>{t('docsGraph.edgeBreaks')}</td><td><code>commit → test</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Enrichment -->
+    <section id="enrichment">
+      <h2>{t('docsGraph.enrichTitle')}</h2>
+      <p>{t('docsGraph.enrichDesc')}</p>
+
+      <h3>{t('docsGraph.enrichGitTitle')}</h3>
+      <p>{t('docsGraph.enrichGit')}</p>
+
+      <h3>{t('docsGraph.enrichTestTitle')}</h3>
+      <p>{t('docsGraph.enrichTest')}</p>
+
+      <h3>{t('docsGraph.enrichKnowledgeTitle')}</h3>
+      <p>{t('docsGraph.enrichKnowledge')}</p>
+
+      <h3>{t('docsGraph.enrichMcpTitle')}</h3>
+      <pre><code class="language-text">{`ctx_graph enrich              # Enrich graph with git, tests, knowledge
+ctx_graph build               # Index code structure
+ctx_graph status              # Show node/edge counts`}</code></pre>
+
+      <h3>Community Detection (Louvain)</h3>
+      <p>
+        The Louvain algorithm clusters files into communities based on their dependency relationships.
+        Files that frequently import each other or share transitive dependencies are grouped together,
+        enabling smarter context preloading and relevance scoring for task-driven queries.
+        Since v3.5.16, Louvain runs on an <strong>O(m) edge-list-based</strong> representation instead
+        of the previous O(n²) adjacency scan, significantly improving performance on large codebases.
+      </p>
+
+      <h3>PageRank</h3>
+      <p>
+        Computes file importance scores based on the dependency graph structure. Files imported by many
+        others (structural hubs) receive higher PageRank, which is used by Spectral Relevance and
+        Boltzmann Allocation to prioritize high-impact files during context assembly.
+      </p>
+    </section>
+
+    <!-- Context Query -->
+    <section id="context-query">
+      <h2>{t('docsGraph.contextTitle')}</h2>
+      <p>{t('docsGraph.contextDesc')}</p>
+
+      <h3>{t('docsGraph.contextUsageTitle')}</h3>
+      <pre><code class="language-text">{`ctx_graph context "fix auth bug"       # Find relevant files for task
+ctx_graph related src/auth.rs          # Connected files
+ctx_graph impact src/auth.rs           # Blast radius analysis
+ctx_graph symbol src/auth.rs::verify   # Symbol definition/usages`}</code></pre>
+
+      <h3>{t('docsGraph.contextHowTitle')}</h3>
+      <ul>
+        <li>{t('docsGraph.contextPoint1')}</li>
+        <li>{t('docsGraph.contextPoint2')}</li>
+        <li>{t('docsGraph.contextPoint3')}</li>
+        <li>{t('docsGraph.contextPoint4')}</li>
+      </ul>
+    </section>
+
+    <!-- Interactive HTML Export -->
+    <section id="export-html">
+      <h2>{t('docsGraph.exportTitle')}</h2>
+      <p>{t('docsGraph.exportIntro')}</p>
+
+      <h3>{t('docsGraph.exportUsageTitle')}</h3>
+      <pre><code class="language-bash">{`# Export full graph (all nodes)
+lean-ctx graph export-html --out graph.html
+
+# Limit to 100 most-connected nodes
+lean-ctx graph export-html --out graph.html --max-nodes 100
+
+# Custom project root
+lean-ctx graph export-html --out graph.html --root /path/to/project`}</code></pre>
+
+      <h3>{t('docsGraph.exportFeaturesTitle')}</h3>
+      <div class="nodes-grid">
+        <div class="node-card">
+          <span class="node-icon">🔍</span>
+          <code>Search</code>
+          <p>{t('docsGraph.exportFeatureSearch')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🖱️</span>
+          <code>Pan & Zoom</code>
+          <p>{t('docsGraph.exportFeaturePanZoom')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">📋</span>
+          <code>Node Details</code>
+          <p>{t('docsGraph.exportFeatureDetails')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🔗</span>
+          <code>Reverse Deps</code>
+          <p>{t('docsGraph.exportFeatureReverse')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">🖼️</span>
+          <code>PNG Export</code>
+          <p>{t('docsGraph.exportFeaturePng')}</p>
+        </div>
+        <div class="node-card">
+          <span class="node-icon">📡</span>
+          <code>Offline</code>
+          <p>{t('docsGraph.exportFeatureOffline')}</p>
+        </div>
+      </div>
+
+      <h3>{t('docsGraph.exportTipsTitle')}</h3>
+      <ul>
+        <li>{t('docsGraph.exportTip1')}</li>
+        <li>{t('docsGraph.exportTip2')}</li>
+        <li>{t('docsGraph.exportTip3')}</li>
+        <li>{t('docsGraph.exportTip4')}</li>
+      </ul>
+    </section>
+
+    <!-- API -->
+    <section id="api">
+      <h2>{t('docsGraph.apiTitle')}</h2>
+      <table class="edges-table">
+        <thead><tr><th>{t('docsGraph.endpointCol')}</th><th>{t('docsGraph.descCol')}</th></tr></thead>
+        <tbody>
+          <tr><td><code>/api/graph/stats</code></td><td>{t('docsGraph.apiStats')}</td></tr>
+          <tr><td><code>/api/graph/enrich</code></td><td>{t('docsGraph.apiEnrich')}</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</DocsLayout>
+
+<style>
+  .lead {
+    font-size: 1.15rem;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+  }
+  .nodes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0 2rem;
+  }
+  .node-card {
+    background: var(--bg-card, #1a1a2e);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .node-icon {
+    font-size: 1.5rem;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  .node-card code {
+    color: var(--accent, #00d4ff);
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .node-card p {
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+  .edges-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+  }
+  .edges-table th,
+  .edges-table td {
+    border: 1px solid var(--border-color, #333);
+    padding: 0.5rem 1rem;
+    text-align: left;
+  }
+  .edges-table th {
+    background: var(--bg-card, #1a1a2e);
+  }
+  section {
+    margin-bottom: 3rem;
+  }
+  pre {
+    background: var(--bg-code, #0d0d1a);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+  }
+</style>

@@ -1,0 +1,626 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const readModes = [
+  { mode: 'full',       color: 'text-muted',   barColor: 'var(--color-muted)',    barPct: 0,  savings: t('benchmark.modeFullSavings'),       useCase: t('benchmark.modeFullUseCase'),       preserves: t('benchmark.modeFullPreserves') },
+  { mode: 'map',        color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 82, savings: t('benchmark.modeMapSavings'),        useCase: t('benchmark.modeMapUseCase'),        preserves: t('benchmark.modeMapPreserves') },
+  { mode: 'signatures', color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 78, savings: t('benchmark.modeSignaturesSavings'), useCase: t('benchmark.modeSignaturesUseCase'), preserves: t('benchmark.modeSignaturesPreserves') },
+  { mode: 'diff',       color: 'text-accent-2', barColor: 'var(--color-accent-2)', barPct: 90, savings: t('benchmark.modeDiffSavings'),       useCase: t('benchmark.modeDiffUseCase'),       preserves: t('benchmark.modeDiffPreserves') },
+  { mode: 'aggressive', color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 85, savings: t('benchmark.modeAggressiveSavings'), useCase: t('benchmark.modeAggressiveUseCase'), preserves: t('benchmark.modeAggressivePreserves') },
+  { mode: 'entropy',    color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 78, savings: t('benchmark.modeEntropySavings'),    useCase: t('benchmark.modeEntropyUseCase'),    preserves: t('benchmark.modeEntropyPreserves') },
+  { mode: 'task',       color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 77, savings: t('benchmark.modeTaskSavings'),       useCase: t('benchmark.modeTaskUseCase'),       preserves: t('benchmark.modeTaskPreserves') },
+  { mode: 'auto',       color: 'text-accent-2', barColor: 'var(--color-accent-2)', barPct: 88, savings: t('benchmark.modeAutoSavings'),      useCase: t('benchmark.modeAutoUseCase'),      preserves: t('benchmark.modeAutoPreserves') },
+  { mode: 'reference',  color: 'text-accent',   barColor: 'var(--color-accent)',   barPct: 80, savings: t('benchmark.modeReferenceSavings'), useCase: t('benchmark.modeReferenceUseCase'), preserves: t('benchmark.modeReferencePreserves') },
+  { mode: 'lines:N-M',  color: 'text-accent-3', barColor: 'var(--color-accent-3)', barPct: 95, savings: t('benchmark.modeLinesSavings'),     useCase: t('benchmark.modeLinesUseCase'),     preserves: t('benchmark.modeLinesPreserves') },
+];
+
+const realWorldExamples = [
+  { file: t('benchmark.realWorld1File'), detail: t('benchmark.realWorld1Detail'), tokens: t('benchmark.realWorld1Tokens'), savings: t('benchmark.realWorld1Savings'), barColor: 'var(--color-accent)',   textColor: 'var(--color-accent)' },
+  { file: t('benchmark.realWorld2File'), detail: t('benchmark.realWorld2Detail'), tokens: t('benchmark.realWorld2Tokens'), savings: t('benchmark.realWorld2Savings'), barColor: 'var(--color-accent-2)', textColor: 'var(--color-accent-2)' },
+  { file: t('benchmark.realWorld3File'), detail: t('benchmark.realWorld3Detail'), tokens: t('benchmark.realWorld3Tokens'), savings: t('benchmark.realWorld3Savings'), barColor: 'var(--color-accent)',   textColor: 'var(--color-accent)' },
+  { file: t('benchmark.realWorld4File'), detail: t('benchmark.realWorld4Detail'), tokens: t('benchmark.realWorld4Tokens'), savings: t('benchmark.realWorld4Savings'), barColor: 'var(--color-accent-3)', textColor: 'var(--color-accent-3)' },
+  { file: t('benchmark.realWorld5File'), detail: t('benchmark.realWorld5Detail'), tokens: t('benchmark.realWorld5Tokens'), savings: t('benchmark.realWorld5Savings'), barColor: 'var(--color-accent-2)', textColor: 'var(--color-accent-2)' },
+];
+---
+
+<BaseLayout title={t('benchmark.metaTitle')} description={t('benchmark.metaDescription')} breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: 'Context OS', url: lp('/context-os/') }, { name: t('benchmark.breadcrumb'), url: lp('/context-os/benchmark/') }]}>
+
+<!-- ═══════ 1. HERO ═══════ -->
+<PageHero
+  label={t('benchmark.heroLabel')}
+  title={t('benchmark.heroTitle')}
+  highlight={t('benchmark.heroTitleHighlight')}
+  descriptionHtml={t('benchmark.heroDesc')}
+  kickerTone="accent"
+  titleVariant="display"
+  highlightStyle="italic"
+  descMaxWidth="44rem"
+>
+  <Fragment slot="actions">
+    <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      {t('benchmark.ctaGetStarted')}
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+    </a>
+    <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2 font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+      {t('benchmark.ctaStarGithub')}
+    </a>
+  </Fragment>
+</PageHero>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 1b. FUNDAMENTALS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('benchmark.fundLabel')}
+      title={t('benchmark.fundTitle')}
+      highlight={t('benchmark.fundTitleHighlight')}
+      description={t('benchmark.fundDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="56rem"
+    />
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        {
+          icon: 'tokens',
+          title: t('benchmark.fund1Title'),
+          desc: t('benchmark.fund1Desc'),
+          meta: 'tiktoken o200k_base',
+          tone: 'accent',
+        },
+        {
+          icon: 'quality',
+          title: t('benchmark.fund2Title'),
+          desc: t('benchmark.fund2Desc'),
+          meta: t('benchmark.fund2Meta'),
+          tone: 'accent-2',
+        },
+        {
+          icon: 'local',
+          title: t('benchmark.fund3Title'),
+          desc: t('benchmark.fund3Desc'),
+          meta: t('benchmark.fund3Meta'),
+          tone: 'accent-3',
+        },
+      ].map((x, i) => (
+        <div class={`card animate-entrance stagger-${3 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-center gap-3 mb-3">
+            <div
+              class={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                x.tone === 'accent-2'
+                  ? 'bg-accent-2/10'
+                  : x.tone === 'accent-3'
+                    ? 'bg-accent-3/10'
+                    : 'bg-accent/10'
+              }`}
+            >
+              {x.icon === 'tokens' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c4.418 0 8-1.343 8-3s-3.582-3-8-3-8 1.343-8 3 3.582 3 8 3z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 8v4c0 1.657 3.582 3 8 3s8-1.343 8-3V8" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 12v4c0 1.657 3.582 3 8 3s8-1.343 8-3v-4" />
+                </svg>
+              )}
+              {x.icon === 'quality' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4" />
+                </svg>
+              )}
+              {x.icon === 'local' && (
+                <svg class={`w-4 h-4 ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z" />
+                </svg>
+              )}
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">{x.title}</h3>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.75rem 0;">{x.desc}</p>
+          <code class={`inline-flex items-center font-mono text-[11px] ${x.tone === 'accent-2' ? 'text-accent-2/80' : x.tone === 'accent-3' ? 'text-accent-3/80' : 'text-accent/80'}`}>
+            {x.meta}
+          </code>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 2. BEFORE / AFTER ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="split split--visual-wide">
+      <div>
+        <SectionHeading
+          label={t('benchmark.beforeAfterLabel')}
+          title={t('benchmark.beforeAfterTitle')}
+          highlight={t('benchmark.beforeAfterTitleHighlight')}
+          description={t('benchmark.beforeAfterDesc')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1rem, 0.75rem + 0.75vw, 1.75rem)"
+        />
+      </div>
+
+      <div class="animate-entrance stagger-3">
+        <div class="compare-grid">
+          <div class="compare-card">
+            <div class="compare-header compare-header--bad">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+              {t('benchmark.beforeTitle')}
+            </div>
+            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+              <div class="compare-line"><span class="text-muted">// src/auth.ts · mode=full</span></div>
+              <div class="compare-line"><span class="text-text-bright">import {'{'} jwt, verify, sign {'}'} from 'jsonwebtoken';</span></div>
+              <div class="compare-line"><span class="text-text-bright">import {'{'} bcrypt {'}'} from 'bcryptjs';</span></div>
+              <div class="compare-line"><span class="text-muted">…</span></div>
+              <div class="compare-line"><span class="text-danger font-semibold">{t('benchmark.beforeTokens')}</span></div>
+            </div>
+          </div>
+
+          <div class="compare-card">
+            <div class="compare-header compare-header--good">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              {t('benchmark.afterTitle')}
+            </div>
+            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
+              <div class="compare-line"><span class="text-muted">// src/auth.ts · mode=map</span></div>
+              <div class="compare-line"><span class="text-accent">exports: AuthService, validateToken, …</span></div>
+              <div class="compare-line"><span class="text-accent">deps: jsonwebtoken, bcryptjs, ioredis</span></div>
+              <div class="compare-line"><span class="text-muted">…</span></div>
+              <div class="compare-line"><span class="text-accent font-semibold">{t('benchmark.afterTokens')}</span></div>
+            </div>
+          </div>
+        </div>
+
+        <p class="fluid-sm text-muted" style="margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.75rem); margin-bottom: 0;">
+          <span class="text-accent font-semibold">{t('benchmark.savingsBadge')}</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 3. HOW IT WORKS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('benchmark.stepsLabel')}
+      title={t('benchmark.stepsTitle')}
+      highlight={t('benchmark.stepsTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+    />
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        { n: '01', tone: 'accent', title: t('benchmark.step1Title'), desc: t('benchmark.step1Desc'), code: 'lean-ctx benchmark run src/' },
+        { n: '02', tone: 'accent-2', title: t('benchmark.step2Title'), desc: t('benchmark.step2Desc'), code: 'tiktoken o200k_base' },
+        { n: '03', tone: 'accent-3', title: t('benchmark.step3Title'), desc: t('benchmark.step3Desc'), code: 'modes: 10' },
+      ].map((s, i) => (
+        <div class={`card animate-entrance stagger-${1 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-center gap-3" style="margin-bottom: 0.75rem;">
+            <div
+              class={`w-10 h-10 rounded-lg flex items-center justify-center font-display font-bold ${
+                s.tone === 'accent-2'
+                  ? 'bg-accent-2/10 text-accent-2'
+                  : s.tone === 'accent-3'
+                    ? 'bg-accent-3/10 text-accent-3'
+                    : 'bg-accent/10 text-accent'
+              }`}
+              style="font-size: 0.875rem;"
+            >
+              {s.n}
+            </div>
+            <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0;">{s.title}</h3>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.875rem 0;">{s.desc}</p>
+          <code class={`inline-flex font-mono text-[11px] ${s.tone === 'accent-2' ? 'text-accent-2/80' : s.tone === 'accent-3' ? 'text-accent-3/80' : 'text-accent/80'}`}>
+            {s.code}
+          </code>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 4. TERMINAL DEMO ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="split split--visual-wide">
+      <div>
+        <SectionHeading
+          label={t('benchmark.demoLabel')}
+          title={t('benchmark.demoTitle')}
+          highlight={t('benchmark.demoTitleHighlight')}
+          description={t('benchmark.demoDesc')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1rem, 0.75rem + 0.75vw, 1.75rem)"
+        />
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">{t('benchmark.demoBreakdown')}</span> {t('benchmark.demoBreakdownDesc')}</p>
+          <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">{t('benchmark.demoQuality')}</span> {t('benchmark.demoQualityDesc')}</p>
+          <p class="fluid-sm text-muted"><span class="text-text-bright font-medium">{t('benchmark.demoTotals')}</span> {t('benchmark.demoTotalsDesc')}</p>
+        </div>
+      </div>
+
+      <div class="terminal-chrome animate-entrance">
+        <div class="terminal-header px-4 py-3 flex items-center gap-2">
+          <span class="terminal-dot bg-[#ff5f57]"></span>
+          <span class="terminal-dot bg-[#febc2e]"></span>
+          <span class="terminal-dot bg-[#28c840]"></span>
+          <span class="text-xs text-muted font-mono ml-2">lean-ctx benchmark run</span>
+        </div>
+        <div class="terminal-body px-4 py-4 font-mono text-[11px] sm:text-[12px] leading-[1.8]">
+          <p class="text-muted">$ lean-ctx benchmark run src/auth.ts</p>
+          <p><span class="text-text-bright font-bold">◆ lean-ctx</span> <span class="text-muted">Benchmark</span></p>
+          <p class="text-border-light/40">────────────────────────────────────────</p>
+          <p class="text-text-bright mt-1">src/auth.ts <span class="text-muted">(123 lines, 3,517 tokens)</span></p>
+          <p class="text-border-light/40">────────────────────────────────────────</p>
+          <p class="mt-1"><span class="text-muted">Mode         Tokens   Saved   Rate</span></p>
+          <p><span class="text-text-bright">full         </span><span class="text-muted">3,517   </span><span class="text-muted">    0   </span><span class="text-muted"> 0%</span></p>
+          <p><span class="text-accent">map          </span><span class="text-accent">  412   </span><span class="text-accent">3,105   </span><span class="text-accent font-bold">88%</span></p>
+          <p><span class="text-accent">signatures   </span><span class="text-accent">  252   </span><span class="text-accent">3,265   </span><span class="text-accent font-bold">93%</span></p>
+          <p><span class="text-accent-2">diff         </span><span class="text-accent-2">  187   </span><span class="text-accent-2">3,330   </span><span class="text-accent-2 font-bold">95%</span></p>
+          <p><span class="text-accent">aggressive   </span><span class="text-accent">  298   </span><span class="text-accent">3,219   </span><span class="text-accent font-bold">92%</span></p>
+          <p><span class="text-accent">entropy      </span><span class="text-accent">  312   </span><span class="text-accent">3,205   </span><span class="text-accent font-bold">91%</span></p>
+          <p class="text-border-light/40 mt-2">────────────────────────────────────────</p>
+          <p class="text-muted">Quality: <span class="text-accent">AST 98%</span> | <span class="text-accent">Idents 97%</span> | <span class="text-accent">Lines 96%</span></p>
+          <p class="text-muted text-[10px]">Encoding: tiktoken o200k_base | Time: 12ms</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 5. READ MODES CARDS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('benchmark.modesLabel')}
+      title={t('benchmark.modesTitle')}
+      highlight={t('benchmark.modesTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+    />
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      {readModes.map((m) => (
+        <div class="card animate-entrance" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          <div class="flex justify-between items-baseline" style="margin-bottom: 0.75rem;">
+            <code class={`text-sm font-mono font-bold ${m.color}`}>{m.mode}</code>
+            <span class={`font-mono text-[12px] font-semibold ${m.color}`}>{m.savings}</span>
+          </div>
+          <div style="height: 4px; background: var(--color-surface-2); border-radius: 2px; margin-bottom: 0.875rem; overflow: hidden;">
+            <div style={`height: 100%; width: ${m.barPct}%; background: ${m.barColor}; border-radius: 2px;`}></div>
+          </div>
+          <p class="fluid-sm text-text-bright" style="margin-bottom: 0.25rem;">{m.useCase}</p>
+          <p class="text-[12px] text-muted">{m.preserves}</p>
+        </div>
+      ))}
+    </div>
+
+    <p class="fluid-sm text-muted mt-6 animate-entrance" set:html={t('benchmark.modesSmartRead')} />
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 5b. ADVANCED COMPRESSION PIPELINE ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('benchmark.advStage')}
+      title=""
+      titleHtml={t('benchmark.advPipelineTitle')}
+      descriptionHtml={t('benchmark.advPipelineDesc')}
+      variant="full"
+      titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+      descMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+      descMaxWidth="44rem"
+    />
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        { title: 'Thompson Sampling', effectHtml: t('benchmark.advThompsonEffect'), savings: '5–15%', tone: 'accent' },
+        { title: 'AST Pruning', effectHtml: t('benchmark.advAstEffect'), savings: '40–70%', tone: 'accent-2' },
+        { title: 'IDF Dedup', effectHtml: t('benchmark.advIdfEffect'), savings: '10–30%', tone: 'accent' },
+        { title: 'IB Filter', effectHtml: t('benchmark.advIbEffect'), savings: '15–25%', tone: 'accent-3' },
+        { title: 'Verbatim Compaction', effectHtml: t('benchmark.advVerbatimEffect'), savings: '5–20%', tone: 'accent-2' },
+      ].map((s, i) => (
+        <div class={`card animate-entrance stagger-${3 + i}`} style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+          <div class="flex items-baseline justify-between gap-4" style="margin-bottom: 0.75rem;">
+            <span class={`fluid-sm font-semibold font-display ${s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`}>
+              {s.title}
+            </span>
+            <span class={`fluid-sm font-mono ${s.tone === 'accent-2' ? 'text-accent-2/80' : s.tone === 'accent-3' ? 'text-accent-3/80' : 'text-accent/80'}`}>
+              {s.savings}
+            </span>
+          </div>
+          <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;" set:html={s.effectHtml} />
+        </div>
+      ))}
+    </div>
+
+    <p class="fluid-sm text-muted mt-6 animate-entrance" set:html={t('benchmark.advCumulative')} />
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 6. COMPRESSION QUALITY ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('benchmark.qualityLabel')}
+      title={t('benchmark.qualityTitle')}
+      highlight={t('benchmark.qualityTitleHighlight')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+    />
+
+    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
+      {[
+        { tone: 'accent', label: t('benchmark.stat1Label'), val: '95%', desc: t('benchmark.stat1Desc') },
+        { tone: 'accent-2', label: t('benchmark.stat2Label'), val: '15%', desc: t('benchmark.stat2Desc') },
+        { tone: 'accent-3', label: t('benchmark.stat3Label'), val: '50/30/20', desc: t('benchmark.stat3Desc') },
+      ].map((x, i) => (
+        <div class={`card animate-entrance stagger-${1 + i}`} style="padding: clamp(1.5rem, 1rem + 1vw, 2rem);">
+          <p class="fluid-label text-muted" style="margin: 0 0 0.5rem 0;">{x.label}</p>
+          <div
+            class={`font-display font-extrabold ${x.tone === 'accent-2' ? 'text-accent-2' : x.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`}
+            style="font-size: clamp(1.75rem, 1.5rem + 1vw, 2.5rem); letter-spacing: -0.04em; line-height: 1.05; margin: 0 0 0.75rem 0;"
+          >
+            {x.val}
+          </div>
+          <p class="fluid-sm text-muted" style="margin: 0;">{x.desc}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 7. WHY FEWER TOKENS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <div class="grid lg:grid-cols-2 items-start" style="gap: clamp(2rem, 1.5rem + 2vw, 3rem);">
+      <div>
+        <SectionHeading
+          label={t('benchmark.whyLabel')}
+          title={t('benchmark.whyTitle')}
+          highlight={t('benchmark.whyTitleHighlight')}
+          description={t('benchmark.whyDesc1')}
+          variant="split"
+          breakHighlight={false}
+          kickerMb="clamp(0.5rem, 0.35rem + 0.35vw, 0.875rem)"
+          titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+          descMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+        />
+        <p class="fluid-body text-muted">{t('benchmark.whyDesc2')}</p>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div class="card p-6 animate-entrance">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">{t('benchmark.signalTitle')}</span>
+          </div>
+          <p class="fluid-sm text-muted">{t('benchmark.signalDesc')}</p>
+        </div>
+
+        <div class="card p-6 animate-entrance stagger-1">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent-2/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">{t('benchmark.noiseTitle')}</span>
+          </div>
+          <p class="fluid-sm text-muted">{t('benchmark.noiseDesc')}</p>
+        </div>
+
+        <div class="card p-6 animate-entrance stagger-2">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-accent-3/10 flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <span class="fluid-sm font-semibold font-display text-text-bright">{t('benchmark.costTitle')}</span>
+          </div>
+          <p class="fluid-sm text-muted">{t('benchmark.costDesc')}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 8. REAL-WORLD RESULTS ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid">
+    <SectionHeading
+      label={t('benchmark.realWorldLabel')}
+      title={t('benchmark.realWorldTitle')}
+      highlight={t('benchmark.realWorldTitleHighlight')}
+      description={t('benchmark.realWorldDesc')}
+      variant="full"
+      breakHighlight={false}
+      titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+      descMb="clamp(2.5rem, 2rem + 2vw, 3.5rem)"
+      descMaxWidth="44rem"
+    />
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
+      {realWorldExamples.map((ex) => (
+        <div class="card animate-entrance" style="padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+          <div class="flex justify-between items-baseline" style="margin-bottom: 0.25rem;">
+            <span class="font-display font-semibold text-text-bright">{ex.file}</span>
+            <span class="font-display font-bold" style={`color: ${ex.textColor}; font-size: 1.25rem; letter-spacing: -0.03em;`}>{ex.savings}</span>
+          </div>
+          <p class="text-[12px] text-muted" style="margin-bottom: 0.75rem;">{ex.detail}</p>
+          <div style="margin-bottom: 0.625rem;">
+            <code class="text-[12px] font-mono text-muted">{ex.tokens}</code>
+          </div>
+          <div style="height: 4px; background: var(--color-surface-2); border-radius: 2px; overflow: hidden;">
+            <div style={`height: 100%; width: ${ex.savings}; background: ${ex.barColor}; border-radius: 2px;`}></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 9. METHODOLOGY ═══════ -->
+<section class="section-y" id="methodology">
+  <div class="content-grid">
+    <SectionHeading
+      label="Transparency"
+      title="Benchmark"
+      highlight="Methodology"
+      description="Every number on this page is reproducible. Here's exactly how we measure."
+      variant="full"
+    />
+
+    <div class="grid md:grid-cols-2 animate-entrance stagger-2" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem); max-width: 56rem; margin: 0 auto;">
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Tokenizer</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          All token counts use <strong>tiktoken</strong> with the <code>o200k_base</code> encoding — the same
+          tokenizer used by GPT-4o, Claude, and modern LLMs. No estimates or approximations.
+        </p>
+      </div>
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Quality Threshold</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          Compressed output is only used if the composite quality score stays at or above <strong>95%</strong>.
+          Composite = AST preservation (50%) + identifier preservation (30%) + line coverage (20%).
+        </p>
+      </div>
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Reproduce Locally</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          Run <code>lean-ctx benchmark run src/</code> on your own codebase. The output shows exact token counts
+          for each compression mode, savings percentage, and quality preservation scores.
+        </p>
+      </div>
+      <div class="card" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
+        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin-bottom: 0.75rem;">Disclaimer</h3>
+        <p class="fluid-sm text-muted leading-relaxed">
+          Results vary by file type, size, language, and read mode. The "60-99%" range reflects real-world
+          variance: small structured files compress more, large unstructured files compress less.
+          Cached re-reads (~13 tokens) represent the best case.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider content-grid"></div>
+
+<!-- ═══════ 10. CTA ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid" style="text-align: center;">
+    <SectionHeading
+      title={t('benchmark.ctaTitle')}
+      highlight={t('benchmark.ctaTitleHighlight')}
+      descriptionHtml={t('benchmark.ctaDesc')}
+      variant="full"
+      align="center"
+      breakHighlight={false}
+      titleMb="clamp(1rem, 0.75rem + 0.5vw, 1.5rem)"
+      descMb="clamp(2rem, 1.5rem + 1vw, 3rem)"
+      descMaxWidth="44rem"
+    />
+
+    <div class="bench-cta-cmd animate-entrance stagger-3">
+      <code class="font-mono text-accent">{t('benchmark.ctaCommand')}</code>
+      <button class="bench-cta-copy" data-copy="lean-ctx benchmark run src/" aria-label={t('benchmark.ctaCopy')}>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+      </button>
+    </div>
+    <p class="fluid-sm text-muted animate-entrance stagger-4" style="margin-bottom: clamp(2rem, 1.5rem + 1vw, 3rem);">{t('benchmark.ctaSubtext')}</p>
+
+    <div class="flex flex-wrap items-center justify-center animate-entrance stagger-5" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
+      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center gap-2 font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        {t('benchmark.ctaGetStarted')}
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="btn-outline inline-flex items-center gap-2 font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        {t('benchmark.ctaStarGithub')}
+      </a>
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  .bench-cta-cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    font-size: clamp(0.875rem, 0.83rem + 0.15vw, 1rem);
+    margin-bottom: 0.75rem;
+  }
+  .bench-cta-copy {
+    color: var(--color-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: color 0.15s ease;
+  }
+  .bench-cta-copy:hover {
+    color: var(--color-text-bright);
+  }
+</style>
+
+<script>
+  document.querySelectorAll('.bench-cta-copy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = btn.getAttribute('data-copy') || '';
+      navigator.clipboard.writeText(text);
+      btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+      setTimeout(() => {
+        btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+      }, 2000);
+    });
+  });
+</script>

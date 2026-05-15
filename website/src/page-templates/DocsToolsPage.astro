@@ -1,0 +1,176 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { toolNameToSlug } from '../lib/mcpManifest';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: t('docs.tools.sidebarCategories'),
+    items: [
+      { label: t('docs.tools.sidebarAllTools'), href: lp('/docs/tools') },
+      { label: t('docs.tools.sidebarCore'), href: lp('/docs/tools') + '#core-tools' },
+      { label: t('docs.tools.sidebarIntelligence'), href: lp('/docs/tools') + '#intelligence-engine' },
+      { label: t('docs.tools.sidebarSession'), href: lp('/docs/tools') + '#session-monitoring' },
+      { label: t('docs.tools.sidebarMemory'), href: lp('/docs/tools') + '#persistent-memory-multi-agent' },
+      { label: 'Workflow & Orchestration', href: lp('/docs/tools') + '#workflow-orchestration' },
+      { label: 'Analysis & Navigation', href: lp('/docs/tools') + '#analysis-navigation' },
+    ],
+  },
+  {
+    title: t('docs.tools.sidebarDeepDives'),
+    compact: true,
+    items: [
+      { label: t('docs.tools.sidebarCoreTools'), href: lp('/docs/tools/core') },
+      { label: t('docs.tools.sidebarIntelligenceTools'), href: lp('/docs/tools/intelligence') },
+      { label: t('docs.tools.sidebarSessionTools'), href: lp('/docs/tools/session') },
+      { label: t('docs.tools.sidebarMemoryTools'), href: lp('/docs/tools/memory') },
+      { label: 'Workflow Tools', href: lp('/docs/tools/workflow') },
+      { label: 'Analysis Tools', href: lp('/docs/tools/analysis') },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('nav.docs.analytics'), href: lp('/docs/analytics') },
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
+      { label: t('docsProfiles.sidebarProfiles'), href: lp('/docs/profiles') },
+      { label: t('nav.docs.quickReference'), href: lp('/docs/quick-reference') },
+      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings') },
+      { label: t('nav.docs.treeSitter'), href: lp('/docs/tree-sitter') },
+    ],
+  },
+];
+---
+
+<DocsLayout title={t('docs.tools.title')} description={t('docs.tools.description')} sidebar={sidebar}>
+  <p>{t('docs.tools.intro')}</p>
+
+  <h2 id="core-tools">{t('docs.tools.coreTitle')}</h2>
+  <p>{t('docs.tools.coreDesc')}</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.tools.thTool')}</th><th>{t('docs.tools.thWhatItDoes')}</th><th>{t('docs.tools.thSavings')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href={lp('/docs/tools/ctx-read')}><code>ctx_read</code></a></td><td>{t('docs.tools.coreReadDesc')}</td><td>up to 99%</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-multi-read')}><code>ctx_multi_read</code></a></td><td>{t('docs.tools.coreMultiReadDesc')}</td><td>{t('docs.tools.coreMultiReadSavings')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-tree')}><code>ctx_tree</code></a></td><td>{t('docs.tools.coreTreeDesc')}</td><td>34-60%</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-shell')}><code>ctx_shell</code></a></td><td set:html={t('docs.tools.coreShellDesc')} /></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-search')}><code>ctx_search</code></a></td><td>{t('docs.tools.coreSearchDesc')}</td><td>50-80%</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-edit')}><code>ctx_edit</code></a></td><td>Context-aware file editor with create, replace, and replace_all</td><td>-</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-delta')}><code>ctx_delta</code></a></td><td>Show only changed lines since last read</td><td>80-95%</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-smart-read')}><code>ctx_smart_read</code></a></td><td>Intelligent single-call read with auto-mode</td><td>varies</td></tr>
+    </tbody>
+  </table>
+  <p><a href={lp('/docs/tools/core')}>{t('docs.tools.viewCoreDocs')}</a></p>
+
+  <hr />
+
+  <h2 id="intelligence-engine">{t('docs.tools.intelligenceTitle')}</h2>
+  <p>{t('docs.tools.intelligenceDesc')}</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.tools.thTool')}</th><th>{t('docs.tools.thWhatItDoes')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href={lp('/docs/tools/ctx-fill')}><code>ctx_fill</code></a></td><td>{t('docs.tools.intelligenceFillDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-intent')}><code>ctx_intent</code></a></td><td>{t('docs.tools.intelligenceIntentDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-context')}><code>ctx_context</code></a></td><td>{t('docs.tools.intelligenceContextDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-graph')}><code>ctx_graph</code></a></td><td>{t('docs.tools.intelligenceGraphDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-dedup')}><code>ctx_dedup</code></a></td><td>{t('docs.tools.intelligenceDedupDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-response')}><code>ctx_response</code></a></td><td>{t('docs.tools.intelligenceResponseDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-discover')}><code>ctx_discover</code></a></td><td>{t('docs.tools.intelligenceDiscoverDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-preload')}><code>ctx_preload</code></a></td><td>{t('docs.tools.intelligencePreloadDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-semantic-search')}><code>ctx_semantic_search</code></a></td><td>{t('docs.tools.intelligenceSemanticSearchDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-overview')}><code>ctx_overview</code></a></td><td>Project overview with structure, entry points, and key files</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-prefetch')}><code>ctx_prefetch</code></a></td><td>Pre-load files based on task context and changed files</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-graph-diagram')}><code>ctx_graph_diagram</code></a></td><td>{t('docs.tools.intelligenceGraphDiagramDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-compress-memory')}><code>ctx_compress_memory</code></a></td><td>{t('docs.tools.intelligenceCompressMemoryDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-impact')}><code>ctx_impact</code></a></td><td>Impact analysis: trace dependency chains and build graphs</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-architecture')}><code>ctx_architecture</code></a></td><td>Graph-based architecture analysis: clusters, layers, cycles</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-analyze')}><code>ctx_analyze</code></a></td><td>Entropy analysis - recommends optimal compression mode</td></tr>
+    </tbody>
+  </table>
+  <p><a href={lp('/docs/tools/intelligence')}>{t('docs.tools.viewIntelligenceDocs')}</a></p>
+
+  <hr />
+
+  <h2 id="session-monitoring">{t('docs.tools.sessionTitle')}</h2>
+  <p>{t('docs.tools.sessionDesc')}</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.tools.thTool')}</th><th>{t('docs.tools.thWhatItDoes')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href={lp('/docs/tools/ctx-session')}><code>ctx_session</code></a></td><td>{t('docs.tools.sessionSessionDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-compress')}><code>ctx_compress</code></a></td><td>{t('docs.tools.sessionCompressDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-benchmark')}><code>ctx_benchmark</code></a></td><td>{t('docs.tools.sessionBenchmarkDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-metrics')}><code>ctx_metrics</code></a></td><td>{t('docs.tools.sessionMetricsDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-wrapped')}><code>ctx_wrapped</code></a></td><td>{t('docs.tools.sessionWrappedDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-cache')}><code>ctx_cache</code></a></td><td>{t('docs.tools.sessionCacheDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-gain')}><code>ctx_gain</code></a></td><td set:html={t('docs.tools.ctxGainDesc')} /></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-heatmap')}><code>ctx_heatmap</code></a></td><td>File access heatmap - find hot files and cold directories</td></tr>
+    </tbody>
+  </table>
+  <p><a href={lp('/docs/tools/session')}>{t('docs.tools.viewSessionDocs')}</a></p>
+
+  <hr />
+
+  <h2 id="persistent-memory-multi-agent">{t('docs.tools.memoryTitle')}</h2>
+  <p>{t('docs.tools.memoryDesc')}</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.tools.thTool')}</th><th>{t('docs.tools.thWhatItDoes')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href={lp('/docs/tools/ctx-knowledge')}><code>ctx_knowledge</code></a></td><td>{t('docs.tools.memoryKnowledgeDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-agent')}><code>ctx_agent</code></a></td><td>{t('docs.tools.memoryAgentDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-share')}><code>ctx_share</code></a></td><td>{t('docs.tools.memoryShareDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-task')}><code>ctx_task</code></a></td><td>Task delegation and tracking across agents</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-cost')}><code>ctx_cost</code></a></td><td>Cost attribution - track token spend per agent and tool</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-context')}><code>ctx_context</code></a></td><td>{t('docs.tools.intelligenceContextDesc')}</td></tr>
+    </tbody>
+  </table>
+  <p><a href={lp('/docs/tools/memory')}>{t('docs.tools.viewMemoryDocs')}</a></p>
+
+  <hr />
+
+  <h2 id="workflow-orchestration">Workflow & Orchestration</h2>
+  <p>State machines, context handoff, sandboxed code execution, and quality feedback loops.</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.tools.thTool')}</th><th>{t('docs.tools.thWhatItDoes')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href={lp('/docs/tools/ctx-workflow')}><code>ctx_workflow</code></a></td><td>State-machine workflows with step ordering and evidence</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-handoff')}><code>ctx_handoff</code></a></td><td>Context transfer between sessions or agents</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-execute')}><code>ctx_execute</code></a></td><td>Sandboxed code execution in 11 languages</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-feedback')}><code>ctx_feedback</code></a></td><td>Quality feedback: latency, token counts, model info</td></tr>
+    </tbody>
+  </table>
+  <p><a href={lp('/docs/tools/workflow')}>View Workflow & Orchestration docs →</a></p>
+
+  <hr />
+
+  <h2 id="analysis-navigation">Analysis & Navigation</h2>
+  <p>Tree-sitter-powered symbol navigation, call graphs, route extraction, and structural outlining.</p>
+  <table>
+    <thead>
+      <tr><th>{t('docs.tools.thTool')}</th><th>{t('docs.tools.thWhatItDoes')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href={lp('/docs/tools/ctx-symbol')}><code>ctx_symbol</code></a></td><td>Find symbol definitions across 18 languages</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-callers')}><code>ctx_callers</code></a></td><td>Find all call sites of a function</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-callees')}><code>ctx_callees</code></a></td><td>Find all functions called by a symbol</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-outline')}><code>ctx_outline</code></a></td><td>Structural outline of a file</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-routes')}><code>ctx_routes</code></a></td><td>Extract HTTP routes from web frameworks</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-smells')}><code>ctx_smells</code></a></td><td>Code smell detection with graph-enriched scoring (long functions, deep nesting, complexity)</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-smells')}><code>ctx_smells</code></a></td><td>Detect code smells and anti-patterns</td></tr>
+    </tbody>
+  </table>
+  <p><a href={lp('/docs/tools/analysis')}>View Analysis & Navigation docs →</a></p>
+</DocsLayout>

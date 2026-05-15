@@ -1,0 +1,239 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Read Modes',
+    items: [
+      { label: 'Overview', href: lp('/docs/concepts/read-modes') },
+      { label: 'Decision Tree', href: lp('/docs/concepts/read-modes') + '#decision-tree' },
+      { label: 'Mode Comparison', href: lp('/docs/concepts/read-modes') + '#comparison' },
+      { label: 'Auto Mode', href: lp('/docs/concepts/read-modes') + '#auto' },
+      { label: 'Task Mode', href: lp('/docs/concepts/read-modes') + '#task' },
+      { label: 'File Protection', href: lp('/docs/concepts/read-modes') + '#instruction-file-protection' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'ctx_read Reference', href: lp('/docs/tools/ctx-read') },
+      { label: 'Token Savings', href: lp('/docs/concepts/token-savings') },
+      { label: 'Quick Reference', href: lp('/docs/quick-reference') },
+      { label: 'Caching & Compression', href: lp('/docs/concepts/caching') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Read Modes - How lean-ctx Reads Files"
+  description="10 read modes for every situation: auto, full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M. Decision tree to pick the right one."
+  sidebar={sidebar}
+>
+  <p>
+    <code>ctx_read</code> supports <strong>10 distinct modes</strong>, each optimized for a different situation.
+    The right mode can save 74-99% of tokens compared to reading raw files.
+  </p>
+
+  <h2 id="decision-tree">Decision Tree: Which Mode?</h2>
+  <p>Start here to pick the optimal mode for your situation:</p>
+
+  <div class="not-prose">
+    <div class="bg-surface/50 rounded-xl p-6 border border-border/30 space-y-4 text-sm">
+      <div class="flex items-start gap-3">
+        <span class="text-accent font-bold shrink-0">Q1:</span>
+        <div>
+          <p class="text-text-bright font-medium">Will you edit this file?</p>
+          <p class="text-muted mt-1">
+            <strong>Yes →</strong> Use <code class="text-accent">full</code> (first read), then <code class="text-accent">diff</code> (subsequent reads)<br/>
+            <strong>No →</strong> Continue to Q2
+          </p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-accent font-bold shrink-0">Q2:</span>
+        <div>
+          <p class="text-text-bright font-medium">Do you need the file's role/API surface, or line-level detail?</p>
+          <p class="text-muted mt-1">
+            <strong>Role/API →</strong> Use <code class="text-accent">map</code> (85-95% savings)<br/>
+            <strong>Signatures →</strong> Use <code class="text-accent">signatures</code> (87% savings)<br/>
+            <strong>Line detail →</strong> Continue to Q3
+          </p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-accent font-bold shrink-0">Q3:</span>
+        <div>
+          <p class="text-text-bright font-medium">Is the file large (>500 lines) or contains boilerplate?</p>
+          <p class="text-muted mt-1">
+            <strong>Large + boilerplate →</strong> Use <code class="text-accent">entropy</code> (60-85% savings)<br/>
+            <strong>Large + comments →</strong> Use <code class="text-accent">aggressive</code> (20-40% savings)<br/>
+            <strong>Only specific lines →</strong> Use <code class="text-accent">lines:N-M</code><br/>
+            <strong>Not sure →</strong> Use <code class="text-accent">auto</code> (LeanCTX picks for you)
+          </p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-accent font-bold shrink-0">Q4:</span>
+        <div>
+          <p class="text-text-bright font-medium">Is there an active task set?</p>
+          <p class="text-muted mt-1">
+            <strong>Yes →</strong> Use <code class="text-accent">task</code> (filters to task-relevant lines + graph context)<br/>
+            <strong>Just a pointer →</strong> Use <code class="text-accent">reference</code> (~1 line, 0 content)
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 id="comparison">Mode Comparison Table</h2>
+  <table>
+    <thead>
+      <tr><th>Mode</th><th>Output</th><th>Token Savings</th><th>Best For</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>auto</code></td><td>Varies - selects best mode</td><td>Best-effort</td><td>When unsure which mode to use</td></tr>
+      <tr><td><code>full</code></td><td>Complete file + structured headers</td><td>~99% on re-reads</td><td>Files you'll edit</td></tr>
+      <tr><td><code>map</code></td><td>Dependencies, exports, API surface</td><td>85-95%</td><td>Understanding a file's role</td></tr>
+      <tr><td><code>signatures</code></td><td>All function/class/type signatures</td><td>~87%</td><td>Understanding API surfaces</td></tr>
+      <tr><td><code>diff</code></td><td>Only changed lines since last read</td><td>80-97%</td><td>Checking recent changes</td></tr>
+      <tr><td><code>aggressive</code></td><td>Full file minus comments + whitespace</td><td>20-40%</td><td>Verbose files with many comments</td></tr>
+      <tr><td><code>entropy</code></td><td>Shannon-filtered, deduplicated</td><td>60-85%</td><td>Files with repetitive patterns</td></tr>
+      <tr><td><code>task</code></td><td>Task-relevant lines + graph context</td><td>Highly variable</td><td>Task-driven development</td></tr>
+      <tr><td><code>reference</code></td><td>1-line pointer (no content)</td><td>~99.9%</td><td>Keeping track of files</td></tr>
+      <tr><td><code>lines:N-M</code></td><td>Specific line ranges</td><td>Proportional</td><td>Surgical edits in large files</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="auto">Auto Mode</h2>
+  <p>
+    When you use <code>mode=auto</code> (or omit the mode parameter), lean-ctx selects the optimal mode
+    based on file size, language, whether the file is cached, and the current task context. This is the
+    recommended starting point if you're unsure.
+  </p>
+  <pre><code>{`ctx_read src/server.rs --mode auto
+→ [auto] resolved to map
+  F2=server.rs [262L]
+  deps: rmcp::model::, rmcp::handler::...
+  exports: -
+  API: fn tool_def(...), fn execute_command(...)
+  [2135 tok saved (93%)]`}</code></pre>
+
+  <h2 id="full">Full Mode (Default)</h2>
+  <p>
+    Returns the complete file with structured headers (dependencies, exports, file references).
+    The content is cached with a BLAKE3 hash. Subsequent reads of the same unchanged file return a
+    compact cache-hit message (~13 tokens) instead of re-transmitting the full content.
+  </p>
+  <pre><code>{`# First read: full content
+ctx_read auth.ts
+→ F1=auth.ts 123L deps:db,crypto exports:createUser,validateSession
+  [complete file content...]
+
+# Second read: cache hit
+ctx_read auth.ts
+→ F1=auth.ts cached 2t 123L`}</code></pre>
+
+  <h2 id="map">Map Mode</h2>
+  <p>
+    Returns the dependency graph, export list, and API signatures without implementation details.
+    Uses <strong>tree-sitter AST parsing</strong> across 18 languages for accurate extraction.
+    Best when you need to understand a file's role without reading its implementation.
+  </p>
+
+  <h2 id="signatures">Signatures Mode</h2>
+  <p>
+    Extracts all function signatures, interface definitions, type aliases, and class declarations.
+    More detailed than <code>map</code> - includes private functions, nested types, and multi-line
+    signatures with compact type abbreviations (<code>:s</code> for string, <code>:n</code> for number).
+  </p>
+
+  <h2 id="diff">Diff Mode</h2>
+  <p>
+    Shows only the lines that changed since the file was last cached. Requires a prior read of the
+    same file. Only sends the delta, which can save 80-97% compared to re-reading the full file.
+  </p>
+
+  <h2 id="task">Task Mode (Graph-Driven)</h2>
+  <p>
+    The most intelligent mode. It filters the file down to task-relevant lines using an information
+    bottleneck filter, then appends a <strong>Graph Context</strong> footer with related files
+    (imports, imported-by, transitive dependencies, type providers).
+  </p>
+  <p>
+    <strong>Prerequisites:</strong>
+  </p>
+  <ol>
+    <li>Set a task via <code>ctx_session action=task value="your task description"</code></li>
+    <li>Optionally build the project graph with <code>ctx_graph action=build</code> for richer context</li>
+    <li>Read with <code>ctx_read path="..." mode=task</code></li>
+  </ol>
+  <pre><code>{`ctx_session action=task value="fix auth refresh token bug"
+ctx_read src/auth/service.rs --mode task
+→ F1=src/auth/service.rs 412L [task-filtered: 412→38]
+  ...task-relevant lines only...
+--- GRAPH CONTEXT (4 related files, 9180 tok) ---
+  src/auth/token.rs [imports]
+  src/http/middleware.rs [imported-by]
+--- END GRAPH CONTEXT ---`}</code></pre>
+
+  <h2 id="reference">Reference Mode</h2>
+  <p>
+    Ultra-compact: returns a single line with file metadata (line count, token estimate, type).
+    No content is transferred. Use to register a file as "known" without spending tokens on it.
+  </p>
+
+  <h2 id="lines">Lines Mode</h2>
+  <p>
+    Read only specific lines. Supports single lines, ranges, and comma-separated combinations:
+  </p>
+  <ul>
+    <li><code>lines:42</code> - single line</li>
+    <li><code>lines:10-80</code> - line range</li>
+    <li><code>lines:10-80,120,200-240</code> - multiple ranges</li>
+  </ul>
+
+  <h2 id="instruction-file-protection">Instruction File Protection <span class="text-muted text-sm">(v3.5.13)</span></h2>
+  <p>
+    Files recognized as agent instructions are <strong>always delivered in <code>full</code> mode</strong>,
+    regardless of the requested mode. This prevents critical agent instructions from being compressed or stripped.
+  </p>
+  <p>Protected files and directories:</p>
+  <ul>
+    <li><code>SKILL.md</code>, <code>AGENTS.md</code>, <code>RULES.md</code>, <code>.cursorrules</code></li>
+    <li>Files in <code>/skills/</code>, <code>/.cursor/rules/</code>, <code>/.claude/rules/</code> directories</li>
+  </ul>
+  <p>
+    The guard is applied in 5 code paths: <code>resolve_auto_mode</code>, <code>predict_from_defaults</code>,
+    <code>select_mode_with_task</code>, <code>auto_degrade_read_mode</code>, and CLI <code>read_cmd</code>.
+  </p>
+
+  <h3>Markdown File Exemption</h3>
+  <p>
+    <strong>Markdown files</strong> (<code>.md</code>, <code>.mdx</code>, <code>.txt</code>, <code>.rst</code>)
+    are exempt from the <code>aggressive</code> default bucket — they return <code>full</code> mode by default
+    to preserve prose content.
+  </p>
+
+  <hr />
+
+  <h2>Structured Headers</h2>
+  <p>Every <code>ctx_read</code> response includes a structured header with persistent file references:</p>
+  <pre><code>{`F1=auth.ts 123L
+ deps db,crypto
+ exports createUser,validateSession`}</code></pre>
+  <ul>
+    <li><code>F1</code>, <code>F2</code>, ... - file reference IDs (persist across the entire session)</li>
+    <li><code>deps</code> - imported modules (compact list)</li>
+    <li><code>exports</code> - exported names</li>
+  </ul>
+  <p>
+    Reference these IDs in subsequent operations instead of full paths to save tokens
+    (e.g., "edit F1:42" instead of "edit src/auth/service.ts line 42").
+  </p>
+</DocsLayout>

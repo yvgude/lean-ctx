@@ -1,0 +1,10 @@
+---
+import { getLocaleStaticPaths } from '../../../i18n/routing.ts';
+import { getLocaleFromUrl, getLocalizedPath } from '../../../i18n/utils';
+
+export const getStaticPaths = getLocaleStaticPaths;
+
+const locale = getLocaleFromUrl(Astro.url);
+const target = getLocalizedPath('/docs/team-server', locale);
+return Astro.redirect(target, 301);
+---

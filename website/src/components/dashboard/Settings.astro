@@ -1,0 +1,40 @@
+---
+interface Props {
+  t: (key: string) => string;
+}
+const { t } = Astro.props;
+---
+
+<div class="dash-view" data-panel="settings">
+  <!-- Profile -->
+  <div class="dash-card">
+    <div class="dash-card-head">{t('dash.settingsProfile')}</div>
+    <div class="dash-card-body" id="settingsProfile">
+      <div class="dash-skeleton dash-skeleton-line" style="width:60%"></div>
+      <div class="dash-skeleton dash-skeleton-line" style="width:40%"></div>
+    </div>
+  </div>
+
+  <!-- API Key -->
+  <div class="dash-card">
+    <div class="dash-card-head">{t('dash.settingsApiKey')}</div>
+    <div class="dash-card-body">
+      <p style="font-size:0.75rem;color:var(--color-muted);margin-bottom:0.75rem">{t('dash.settingsApiKeyDesc')}</p>
+      <div class="dash-api-key-wrap">
+        <input type="password" class="dash-api-key-input" id="apiKeyDisplay" readonly />
+        <button class="dash-copy-btn" id="toggleApiKey" type="button">{t('dash.settingsShow')}</button>
+        <button class="dash-copy-btn" id="copyApiKey" type="button">{t('dash.settingsCopy')}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLI Connection -->
+  <div class="dash-card">
+    <div class="dash-card-head">{t('dash.settingsCli')}</div>
+    <div class="dash-card-body">
+      <p style="font-size:0.75rem;color:var(--color-muted);margin-bottom:0.75rem">{t('dash.settingsCliDesc')}</p>
+      <code class="dash-code">lean-ctx login your@email.com</code>
+      <code class="dash-code" style="margin-top:0.5rem">lean-ctx sync</code>
+    </div>
+  </div>
+</div>

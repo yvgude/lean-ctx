@@ -1,0 +1,919 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Editor Integrations',
+    items: [
+      { label: 'Universal Setup', href: lp('/docs/guides/editor-integrations') + '#universal-setup' },
+      { label: 'How It Works', href: lp('/docs/guides/editor-integrations') + '#how-it-works' },
+    ],
+  },
+  {
+    title: 'Tier 1 - Full Setup',
+    compact: true,
+    items: [
+      { label: 'Claude Code', href: lp('/docs/guides/editor-integrations') + '#claude-code' },
+      { label: 'Cursor', href: lp('/docs/guides/editor-integrations') + '#cursor' },
+      { label: 'Codex CLI', href: lp('/docs/guides/editor-integrations') + '#codex' },
+      { label: 'Gemini CLI', href: lp('/docs/guides/editor-integrations') + '#gemini' },
+      { label: 'GitHub Copilot', href: lp('/docs/guides/editor-integrations') + '#copilot' },
+    ],
+  },
+  {
+    title: 'Tier 2 - Quick Setup',
+    compact: true,
+    items: [
+      { label: 'Windsurf', href: lp('/docs/guides/editor-integrations') + '#windsurf' },
+      { label: 'Cline / Roo Code', href: lp('/docs/guides/editor-integrations') + '#cline-roo' },
+      { label: 'Pi Coding Agent', href: lp('/docs/guides/editor-integrations') + '#pi' },
+      { label: 'AWS Kiro', href: lp('/docs/guides/editor-integrations') + '#kiro' },
+      { label: 'Zed', href: lp('/docs/guides/editor-integrations') + '#zed' },
+    ],
+  },
+  {
+    title: 'Tier 3 - Minimal Setup',
+    compact: true,
+    items: [
+      { label: 'Hermes Agent', href: lp('/docs/guides/editor-integrations') + '#hermes' },
+      { label: 'Amp', href: lp('/docs/guides/editor-integrations') + '#amp' },
+      { label: 'JetBrains IDEs', href: lp('/docs/guides/editor-integrations') + '#jetbrains' },
+      { label: 'OpenCode', href: lp('/docs/guides/editor-integrations') + '#opencode' },
+      { label: 'Others', href: lp('/docs/guides/editor-integrations') + '#others' },
+    ],
+  },
+  {
+    title: 'Quick Start',
+    items: [
+      { label: 'One-Shot Fix', href: lp('/docs/guides/editor-integrations') + '#one-shot-fix' },
+      { label: 'IDE Matrix', href: lp('/docs/guides/editor-integrations') + '#ide-matrix' },
+      { label: 'Troubleshooting', href: lp('/docs/guides/editor-integrations') + '#troubleshooting' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: lp('/docs/getting-started') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+      { label: 'First Session', href: lp('/docs/guides/first-session') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Editor Integrations"
+  description="Set up lean-ctx with 22+ AI coding agents and editors. Full configuration guides for Claude Code, Cursor, Codex, Gemini, Copilot, and more."
+  sidebar={sidebar}
+>
+  <!-- ─── Quick Start ─── -->
+
+  <h2 id="one-shot-fix">One-Shot Fix</h2>
+  <p>If something broke after an update, run these commands in order:</p>
+  <pre><code>lean-ctx init --global
+lean-ctx init --agent cursor
+lean-ctx doctor</code></pre>
+  <p>After configuring an IDE, <strong>restart the IDE completely</strong> so it reconnects to MCP. MCP changes do not apply to an already running process.</p>
+
+  <h2 id="ide-matrix">IDE Matrix</h2>
+  <p>Common MCP config locations and the fastest command to fix them:</p>
+
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>MCP config</th><th>Fix command</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Cursor</td><td><code>~/.cursor/mcp.json</code></td><td><code>lean-ctx init --agent cursor</code></td></tr>
+      <tr><td>Claude Code</td><td><code>~/.claude.json</code></td><td><code>lean-ctx init --agent claude</code></td></tr>
+      <tr><td>Windsurf</td><td><code>~/.codeium/windsurf/mcp_config.json</code></td><td><code>lean-ctx init --agent windsurf</code></td></tr>
+      <tr><td>VS Code / Copilot</td><td><code>.../Code/User/mcp.json</code></td><td><code>lean-ctx init --agent copilot</code></td></tr>
+      <tr><td>Zed</td><td><code>.../zed/settings.json</code></td><td><code>lean-ctx setup</code></td></tr>
+      <tr><td>OpenCode</td><td><code>~/.config/opencode/opencode.json</code></td><td><code>lean-ctx setup</code></td></tr>
+      <tr><td>Pi Coding Agent</td><td><code>~/.pi/agent/mcp.json</code></td><td><code>lean-ctx init --agent pi</code></td></tr>
+      <tr><td>Gemini CLI</td><td><code>~/.gemini/settings.json</code></td><td><code>lean-ctx init --agent gemini</code></td></tr>
+      <tr><td>Hermes Agent</td><td><code>~/.hermes/config.yaml</code></td><td><code>lean-ctx init --agent hermes</code></td></tr>
+    </tbody>
+  </table>
+  <p class="text-sm text-muted mt-2">If you are unsure, run <code>lean-ctx doctor</code> — it prints what it detected and what to fix.</p>
+
+  <hr />
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>It shows 0 tokens saved</h3>
+  <p>This usually means MCP tools are not being used yet, or not enough commands were executed since last reset:</p>
+  <pre><code>lean-ctx doctor
+lean-ctx gain --reset
+lean-ctx gain</code></pre>
+
+  <h3>MCP config points to an old binary path</h3>
+  <p>If you switched install method (Homebrew / cargo / install.sh), update the MCP entry:</p>
+  <pre><code>lean-ctx init --agent cursor
+lean-ctx init --agent claude
+lean-ctx setup</code></pre>
+
+  <h3>Homebrew link fails (binary already exists)</h3>
+  <p>If you previously installed via <code>cargo install</code>, Homebrew may fail to link:</p>
+  <pre><code>brew unlink lean-ctx || true
+brew link --overwrite lean-ctx
+lean-ctx --version</code></pre>
+
+  <hr />
+
+  <p>
+    lean-ctx integrates with <strong>29+ AI coding agents and editors</strong> using a combination of
+    <strong>shell compression hooks</strong> (where the client supports hook interception / a reliable terminal tool)
+    and <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> for cached reads and explicit <code>ctx_*</code> tools.
+    Each integration is auto-configured by <code>lean-ctx init</code> — or you can set it up manually using the guides below.
+  </p>
+  <p>
+    <strong>Modes:</strong> Every integration supports <code>--mode</code>:
+    <code>auto</code> (recommended), <code>hybrid</code> (MCP reads + shell hooks), <code>mcp</code> (MCP tools only).
+  </p>
+  <pre><code>{`# Recommended (auto-detect best mode per tool)
+lean-ctx init --agent cursor
+
+# Force MCP tools only (ctx_read, ctx_shell, ...)
+lean-ctx init --agent cursor --mode mcp
+
+# Force Hybrid (MCP reads + shell compression hooks)
+lean-ctx init --agent cursor --mode hybrid`}</code></pre>
+
+  <!-- ─── Universal Setup ─── -->
+
+  <h2 id="universal-setup">Universal Setup</h2>
+  <p>The fastest way to get lean-ctx running in any editor:</p>
+  <pre><code>{`# Install lean-ctx
+curl -fsSL https://leanctx.com/install.sh | sh
+
+# Auto-detect and configure all installed editors
+lean-ctx setup
+
+# Premium repair (merge-based, idempotent)
+lean-ctx install --repair
+
+# Premium integration health checks (Cursor/Claude Code)
+lean-ctx doctor integrations
+
+# Or configure a specific editor
+lean-ctx init --agent claude
+lean-ctx init --agent cursor
+lean-ctx init --agent codex
+lean-ctx init --agent gemini
+lean-ctx init --agent copilot`}</code></pre>
+
+  <p>
+    <code>lean-ctx setup</code> scans your system for installed editors and configures each one
+    automatically. For individual control, use <code>lean-ctx init --agent &lt;name&gt;</code> with
+    any of the agent keys listed below.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Agent Key</th><th>Editor / Agent</th><th>Config File</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>claude</code></td><td>Claude Code</td><td><code>~/.claude.json</code></td></tr>
+      <tr><td><code>cursor</code></td><td>Cursor</td><td><code>~/.cursor/hooks.json</code> <span class="text-muted">(shell hooks)</span> / <code>~/.cursor/mcp.json</code> <span class="text-muted">(MCP)</span></td></tr>
+      <tr><td><code>codex</code></td><td>Codex CLI</td><td><code>~/.codex/config.toml</code> <span class="text-muted">(or <code>$CODEX_HOME/</code>)</span></td></tr>
+      <tr><td><code>gemini</code></td><td>Gemini CLI / Antigravity</td><td><code>~/.gemini/settings.json</code></td></tr>
+      <tr><td><code>copilot</code></td><td>GitHub Copilot (VS Code)</td><td><code>.vscode/mcp.json</code> <span class="text-muted">(+</span> <code>.github/hooks/hooks.json</code><span class="text-muted">)</span></td></tr>
+      <tr><td><code>windsurf</code></td><td>Windsurf</td><td><code>~/.codeium/windsurf/mcp_config.json</code></td></tr>
+      <tr><td><code>cline</code></td><td>Cline</td><td>VS Code globalStorage MCP settings</td></tr>
+      <tr><td><code>roo</code></td><td>Roo Code</td><td>VS Code globalStorage MCP settings</td></tr>
+      <tr><td><code>pi</code></td><td>Pi Coding Agent</td><td><code>~/.pi/agent/mcp.json</code></td></tr>
+      <tr><td><code>kiro</code></td><td>AWS Kiro</td><td><code>~/.kiro/settings/mcp.json</code></td></tr>
+      <tr><td><code>hermes</code></td><td>Hermes Agent</td><td><code>~/.hermes/config.yaml</code></td></tr>
+      <tr><td><code>amp</code></td><td>Amp</td><td><code>~/.config/amp/settings.json</code></td></tr>
+      <tr><td><code>jetbrains</code></td><td>JetBrains IDEs</td><td><code>~/.jb-mcp.json</code></td></tr>
+      <tr><td><code>opencode</code></td><td>OpenCode</td><td><code>~/.config/opencode/opencode.json</code></td></tr>
+      <tr><td><code>crush</code></td><td>Crush</td><td><code>~/.config/crush/crush.json</code></td></tr>
+      <tr><td><code>verdent</code></td><td>Verdent</td><td><code>~/.verdent/mcp.json</code></td></tr>
+      <tr><td><code>qoder</code></td><td>Qoder</td><td><code>~/.qoder/settings.json</code> <span class="text-muted">(hooks)</span> / <code>~/.qoder/mcp.json</code> <span class="text-muted">(MCP/Hybrid)</span></td></tr>
+      <tr><td><code>qoderwork</code></td><td>QoderWork</td><td><code>~/.qoderwork/mcp.json</code></td></tr>
+      <tr><td><code>qwen</code></td><td>Qwen Code</td><td><code>~/.qwen/settings.json</code></td></tr>
+      <tr><td><code>trae</code></td><td>Trae</td><td><code>~/.trae/mcp.json</code></td></tr>
+      <tr><td><code>amazonq</code></td><td>Amazon Q Developer</td><td><code>~/.aws/amazonq/default.json</code></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ─── How It Works ─── -->
+
+  <h2 id="how-it-works">How It Works</h2>
+  <p>lean-ctx integrates with editors at three levels:</p>
+  <ol>
+    <li>
+      <strong>Shell hooks (part of Hybrid mode)</strong> — hook interception rewrites common
+      shell commands to <code>lean-ctx -c</code> for automatic output compression.
+    </li>
+    <li>
+      <strong>MCP Server (optional)</strong> - lean-ctx can also run as a stdio-based MCP server,
+      exposing <code>ctx_read</code>, <code>ctx_shell</code>, <code>ctx_search</code>, etc.
+      Use <code>--mode mcp</code> or <code>--mode hybrid</code> when you want explicit MCP tools.
+    </li>
+    <li>
+      <strong>Rules + Hook Scripts</strong> - editor-specific rule files (e.g. <code>.cursor/rules/lean-ctx.mdc</code>,
+      <code>CLAUDE.md</code>, <code>AGENTS.md</code>) set tool preferences, and hook scripts
+      (Claude Code, Cursor, Codex, Gemini, Copilot, Qoder) can rewrite terminal commands transparently.
+    </li>
+  </ol>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- TIER 1: Full Setup Guides                   -->
+  <!-- ═══════════════════════════════════════════ -->
+
+  <div class="tier-divider">
+    <h2 id="tier-1">Tier 1 - Full Setup Guides</h2>
+    <p>Editors with deep integration: hook scripts + rule injection (+ optional MCP via <code>--mode mcp</code>/<code>--mode hybrid</code>).</p>
+  </div>
+
+  <!-- ─── Claude Code ─── -->
+
+  <h3 id="claude-code">Claude Code</h3>
+  <p>
+    Claude Code gets the deepest integration: MCP server, PreToolUse hooks, CLAUDE.md rules,
+    a dedicated skill, and auto-approved tools. The 2048-character system prompt limit means
+    lean-ctx uses a layered approach.
+  </p>
+
+  <h4>Auto Setup</h4>
+  <pre><code>{`# Auto (recommended)
+lean-ctx init --agent claude
+
+# Force MCP tools
+lean-ctx init --agent claude --mode mcp`}</code></pre>
+
+  <h4>What Gets Configured</h4>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>~/.claude.json</code></td><td>MCP server entry under <code>mcpServers</code></td></tr>
+      <tr><td><code>~/.claude/settings.json</code></td><td>PreToolUse hook configuration</td></tr>
+      <tr><td><code>~/.claude/hooks/</code></td><td>Hook scripts (rewrite + redirect)</td></tr>
+      <tr><td><code>~/.claude/CLAUDE.md</code></td><td>Global rules (tool preferences)</td></tr>
+      <tr><td><code>~/.claude/rules/lean-ctx.md</code></td><td>Full lean-ctx rules file</td></tr>
+      <tr><td><code>~/.claude/skills/lean-ctx/</code></td><td>Skill file for auto-discovery</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MCP Configuration <span class="text-muted">(only in MCP/Hybrid mode)</span></h4>
+  <p>In <code>~/.claude.json</code> (managed via <code>claude mcp add-json</code> when available):</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": {
+        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
+      }
+    }
+  }
+}`}</code></pre>
+
+  <h4>PreToolUse Hooks</h4>
+  <p>In <code>~/.claude/settings.json</code>:</p>
+  <pre><code>{`{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|bash",
+        "hooks": [{
+          "type": "command",
+          "command": "lean-ctx hook rewrite"
+        }]
+      },
+      {
+        "matcher": "Read|read|ReadFile|Grep|grep|Search|search|ListFiles|ListDirectory",
+        "hooks": [{
+          "type": "command",
+          "command": "lean-ctx hook redirect"
+        }]
+      }
+    ]
+  }
+}`}</code></pre>
+
+  <p>
+    The <strong>rewrite</strong> hook intercepts shell commands and wraps them with
+    <code>lean-ctx -c</code> for output compression.
+    The <strong>redirect</strong> hook is intentionally a <em>pass-through</em> (native tools remain available,
+    which is required for reliable edits in many clients). Tool preference comes from injected rules:
+    use <code>ctx_*</code> tools in <code>--mode mcp</code>, or use both MCP reads and CLI shell hooks in <code>--mode hybrid</code> (recommended).
+  </p>
+
+  <h4>Project-Level Hooks</h4>
+  <p>For per-project hook configuration:</p>
+  <pre><code>{`# Creates .claude/settings.local.json in the current project
+lean-ctx init --agent claude --project`}</code></pre>
+
+  <h4>Quirks &amp; Notes</h4>
+  <ul>
+    <li>Claude Code has a <strong>2048-character limit</strong> for MCP server instructions - lean-ctx uses external rule files to work around this.</li>
+    <li>The <code>autoApprove</code> list covers all 46+ lean-ctx tools so they run without confirmation prompts.</li>
+    <li>If <code>claude</code> CLI is available, <code>lean-ctx init</code> uses <code>claude mcp add-json --scope user</code> for reliable config.</li>
+  </ul>
+
+  <!-- ─── Cursor ─── -->
+
+  <h3 id="cursor">Cursor</h3>
+  <p>
+    Cursor integrates via PreToolUse hooks and project rules. MCP is optional (use <code>--mode mcp</code> or <code>--mode hybrid</code>).
+  </p>
+
+  <h4>Auto Setup</h4>
+  <pre><code>{`lean-ctx init --agent cursor`}</code></pre>
+
+  <h4>What Gets Configured</h4>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>~/.cursor/mcp.json</code></td><td>MCP server entry <span class="text-muted">(only in MCP/Hybrid mode)</span></td></tr>
+      <tr><td><code>.cursor/rules/lean-ctx.mdc</code></td><td>Project rules (tool preferences + CEP protocol)</td></tr>
+      <tr><td><code>~/.cursor/hooks.json</code></td><td>PreToolUse hook configuration</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MCP Configuration <span class="text-muted">(only in MCP/Hybrid mode)</span></h4>
+  <p>In <code>~/.cursor/mcp.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": {
+        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
+      }
+    }
+  }
+}`}</code></pre>
+
+  <h4>Project Rules</h4>
+  <p>
+    The file <code>.cursor/rules/lean-ctx.mdc</code> is created in your project directory.
+    It contains the full lean-ctx instruction set including tool mapping, CEP protocol,
+    and CRP mode directives. In Hybrid mode it tells Cursor's AI to use <code>ctx_read</code> and <code>ctx_search</code>
+    (MCP) for reads/search, and <code>lean-ctx -c</code> (CLI) for shell commands.
+  </p>
+
+  <h4>PreToolUse Hooks</h4>
+  <p>In <code>~/.cursor/hooks.json</code>:</p>
+  <pre><code>{`{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "Shell",
+        "command": "lean-ctx hook rewrite"
+      },
+      {
+        "matcher": "Read|Grep",
+        "command": "lean-ctx hook redirect"
+      }
+    ]
+  }
+}`}</code></pre>
+
+  <h4>Quirks &amp; Notes</h4>
+  <ul>
+    <li>The <code>.mdc</code> rule file is Cursor-specific Markdown with metadata headers.</li>
+    <li>Restart Cursor after running <code>lean-ctx init --agent cursor</code> to activate hooks and rules (and MCP if you enabled it via <code>--mode mcp</code>/<code>--mode hybrid</code>).</li>
+    <li>If you use Cursor in multiple projects, the MCP config is global but rules are per-project.</li>
+  </ul>
+
+  <!-- ─── Codex ─── -->
+
+  <h3 id="codex">OpenAI Codex</h3>
+  <p>
+    Codex runs in <strong>Hybrid mode</strong>: MCP for Desktop and Cloud variants,
+    plus CLI hooks for the terminal variant. All three share <code>~/.codex/config.toml</code>.
+  </p>
+
+  <h4>Auto Setup</h4>
+  <pre><code>{`lean-ctx init --agent codex`}</code></pre>
+
+  <h4>What Gets Configured</h4>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>~/.codex/config.toml</code></td><td>MCP server entry (TOML format)</td></tr>
+      <tr><td><code>~/.codex/hooks.json</code></td><td>SessionStart + PreToolUse hooks</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>Project-level instructions</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MCP Configuration</h4>
+  <p>In <code>~/.codex/config.toml</code> (or <code>$CODEX_HOME/config.toml</code> if <code>CODEX_HOME</code> is set):</p>
+  <pre><code>{`[mcp_servers.lean-ctx]
+command = "lean-ctx"
+args = []
+
+[features]
+hooks = true`}</code></pre>
+
+  <h4>Hook Configuration</h4>
+  <p>In <code>~/.codex/hooks.json</code>:</p>
+  <pre><code>{`{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [{
+          "type": "command",
+          "command": "lean-ctx hook codex-session-start",
+          "timeout": 15
+        }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{
+          "type": "command",
+          "command": "lean-ctx hook codex-pretooluse",
+          "timeout": 15
+        }]
+      }
+    ]
+  }
+}`}</code></pre>
+
+  <h4>Quirks &amp; Notes</h4>
+  <ul>
+    <li>Codex uses <strong>TOML</strong> for MCP config - not JSON like most other editors.</li>
+    <li>The <code>hooks = true</code> feature flag must be enabled in <code>[features]</code> for hooks to work. The deprecated <code>codex_hooks = true</code> is automatically migrated to <code>hooks = true</code> during install.</li>
+    <li>If the <code>CODEX_HOME</code> environment variable is set, lean-ctx uses that directory instead of <code>~/.codex</code> for all Codex configuration files.</li>
+    <li><code>SessionStart</code> hooks run when a session starts, resumes, or is cleared.</li>
+    <li>lean-ctx auto-creates <code>AGENTS.md</code> in the project root with instructions.</li>
+  </ul>
+
+  <!-- ─── Gemini CLI / Antigravity ─── -->
+
+  <h3 id="gemini">Gemini CLI / Antigravity</h3>
+  <p>
+    Gemini CLI and Antigravity share the <code>~/.gemini</code> directory but use different
+    config formats. <strong>Important:</strong> Gemini CLI uses <code>~/.gemini/settings.json</code>
+    - not <code>mcp.json</code>.
+  </p>
+
+  <h4>Auto Setup</h4>
+  <pre><code>{`# Configures both Gemini CLI and Antigravity
+lean-ctx init --agent gemini`}</code></pre>
+
+  <h4>Gemini CLI Configuration</h4>
+  <p>In <code>~/.gemini/settings.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": {
+        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
+      },
+      "trust": true
+    }
+  }
+}`}</code></pre>
+
+  <h4>Gemini CLI Hooks</h4>
+  <p>Gemini CLI also supports <code>BeforeTool</code> hooks in <code>~/.gemini/settings.json</code>:</p>
+  <pre><code>{`{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "shell|execute_command|run_shell_command",
+        "hooks": [{
+          "type": "command",
+          "command": "lean-ctx hook rewrite"
+        }]
+      },
+      {
+        "matcher": "read_file|read_many_files|grep|search|list_dir",
+        "hooks": [{
+          "type": "command",
+          "command": "lean-ctx hook redirect"
+        }]
+      }
+    ]
+  }
+}`}</code></pre>
+
+  <h4>Antigravity Configuration</h4>
+  <p>Antigravity uses a separate MCP config file at <code>~/.gemini/antigravity/mcp_config.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": {
+        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
+      }
+    }
+  }
+}`}</code></pre>
+
+  <h4>Quirks &amp; Notes</h4>
+  <ul>
+    <li>Gemini CLI config is <code>~/.gemini/settings.json</code> - <strong>not</strong> <code>mcp.json</code>. This is a common mistake.</li>
+    <li>Antigravity does <strong>not</strong> receive <code>autoApprove</code> - it handles tool approval differently.</li>
+    <li>Gemini uses <code>BeforeTool</code> (not <code>PreToolUse</code>) as the hook event name.</li>
+    <li>The <code>"trust": true</code> flag is required for Gemini CLI to allow MCP tool execution.</li>
+  </ul>
+
+  <!-- ─── GitHub Copilot ─── -->
+
+  <h3 id="copilot">GitHub Copilot (VS Code)</h3>
+  <p>
+    GitHub Copilot uses the VS Code MCP settings format plus a dedicated hooks file.
+  </p>
+
+  <h4>Auto Setup</h4>
+  <pre><code>{`# Project-level (recommended)
+lean-ctx init --agent copilot
+
+# Global (VS Code User settings)
+lean-ctx init --agent copilot --global`}</code></pre>
+
+  <h4>What Gets Configured</h4>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>.vscode/mcp.json</code></td><td>MCP server entry (project-level)</td></tr>
+      <tr><td><code>.github/hooks/hooks.json</code></td><td>PreToolUse hook configuration</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MCP Configuration</h4>
+  <p>In <code>.vscode/mcp.json</code> (project) or VS Code User settings (global):</p>
+  <pre><code>{`{
+  "servers": {
+    "lean-ctx": {
+      "type": "stdio",
+      "command": "lean-ctx",
+      "args": [],
+      "env": {
+        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
+      }
+    }
+  }
+}`}</code></pre>
+
+  <h4>PreToolUse Hooks</h4>
+  <p>In <code>.github/hooks/hooks.json</code>:</p>
+  <pre><code>{`{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "lean-ctx hook rewrite",
+        "timeoutSec": 15
+      },
+      {
+        "type": "command",
+        "bash": "lean-ctx hook redirect",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}`}</code></pre>
+
+  <h4>Quirks &amp; Notes</h4>
+  <ul>
+    <li>VS Code MCP uses <code>"servers"</code> (not <code>"mcpServers"</code>) as the top-level key.</li>
+    <li>Copilot hooks use <code>"bash"</code> instead of <code>"command"</code> for the script field.</li>
+    <li>The <code>--global</code> flag writes to VS Code User-level settings instead of <code>.vscode/</code>.</li>
+    <li>Hook location is <code>.github/hooks/hooks.json</code> (project) or <code>~/.github/hooks/hooks.json</code> (global).</li>
+  </ul>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- TIER 2: Quick Setup                         -->
+  <!-- ═══════════════════════════════════════════ -->
+
+  <div class="tier-divider">
+    <h2 id="tier-2">Tier 2 - Quick Setup</h2>
+    <p>Editors with MCP server + rule injection, but no hook scripts.</p>
+  </div>
+
+  <!-- ─── Windsurf ─── -->
+
+  <h3 id="windsurf">Windsurf</h3>
+  <pre><code>{`lean-ctx init --agent windsurf`}</code></pre>
+
+  <h4>MCP Configuration</h4>
+  <p>In <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
+    }
+  }
+}`}</code></pre>
+
+  <h4>Project Rules</h4>
+  <p>
+    lean-ctx creates a <code>.windsurfrules</code> file in your project root with
+    shell-wrapping instructions. This tells Windsurf to prefix commands with
+    <code>lean-ctx -c</code> for compression.
+  </p>
+
+  <!-- ─── Cline / Roo Code ─── -->
+
+  <h3 id="cline-roo">Cline / Roo Code</h3>
+  <pre><code>{`lean-ctx init --agent cline
+lean-ctx init --agent roo`}</code></pre>
+
+  <h4>MCP Configuration</h4>
+  <p>Both use the VS Code extension globalStorage MCP settings format:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
+    }
+  }
+}`}</code></pre>
+
+  <h4>Project Rules</h4>
+  <p>
+    lean-ctx creates <code>.clinerules</code> in your project root with shell-wrapping instructions.
+  </p>
+
+  <h4>Quirks &amp; Notes</h4>
+  <ul>
+    <li>Config paths are in VS Code's <code>globalStorage</code> directory - platform-specific locations.</li>
+    <li>macOS: <code>~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/</code> (Cline)</li>
+    <li>macOS: <code>~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/</code> (Roo)</li>
+  </ul>
+
+  <!-- ─── Pi Coding Agent ─── -->
+
+  <h3 id="pi">Pi Coding Agent</h3>
+  <pre><code>{`lean-ctx init --agent pi`}</code></pre>
+
+  <h4>What Gets Configured</h4>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>~/.pi/agent/mcp.json</code></td><td>MCP server entry</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>Project-level instructions</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MCP Configuration</h4>
+  <p>In <code>~/.pi/agent/mcp.json</code>:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" },
+      "lifecycle": "lazy",
+      "directTools": true
+    }
+  }
+}`}</code></pre>
+
+  <p>
+    lean-ctx also installs the <code>pi-lean-ctx</code> Pi package
+    via <code>pi install npm:pi-lean-ctx</code>, which routes all Pi tools (bash, read, grep,
+    find, ls) through lean-ctx for compression.
+  </p>
+
+  <!-- ─── AWS Kiro ─── -->
+
+  <h3 id="kiro">AWS Kiro</h3>
+  <pre><code>{`lean-ctx init --agent kiro`}</code></pre>
+
+  <h4>What Gets Configured</h4>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>~/.kiro/settings/mcp.json</code></td><td>MCP server entry</td></tr>
+      <tr><td><code>.kiro/steering/lean-ctx.md</code></td><td>Project-level steering file</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MCP Configuration</h4>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
+    }
+  }
+}`}</code></pre>
+
+  <p>
+    Kiro uses <strong>steering files</strong> instead of rule files. lean-ctx creates
+    <code>.kiro/steering/lean-ctx.md</code> in your project root with tool preference instructions.
+  </p>
+
+  <!-- ─── Zed ─── -->
+
+  <h3 id="zed">Zed</h3>
+  <pre><code>{`lean-ctx setup  # Auto-detects Zed`}</code></pre>
+
+  <h4>MCP Configuration</h4>
+  <p>Zed uses a unique <code>context_servers</code> format in its settings:</p>
+  <pre><code>{`{
+  "context_servers": {
+    "lean-ctx": {
+      "source": "custom",
+      "command": "lean-ctx",
+      "args": [],
+      "env": {}
+    }
+  }
+}`}</code></pre>
+
+  <h4>Quirks &amp; Notes</h4>
+  <ul>
+    <li>Zed uses <code>"context_servers"</code> instead of <code>"mcpServers"</code>.</li>
+    <li>The <code>"source": "custom"</code> field is required for Zed to recognize the server.</li>
+    <li>Zed's config location is platform-specific: <code>~/.config/zed/settings.json</code> (Linux) or <code>~/Library/Application Support/Zed/settings.json</code> (macOS).</li>
+  </ul>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- TIER 3: Minimal Setup                       -->
+  <!-- ═══════════════════════════════════════════ -->
+
+  <div class="tier-divider">
+    <h2 id="tier-3">Tier 3 - Minimal Setup</h2>
+    <p>Editors with MCP server configuration only.</p>
+  </div>
+
+  <!-- ─── Hermes Agent ─── -->
+
+  <h3 id="hermes">Hermes Agent</h3>
+  <pre><code>{`lean-ctx init --agent hermes`}</code></pre>
+
+  <p>Hermes uses <strong>YAML</strong> configuration at <code>~/.hermes/config.yaml</code>:</p>
+  <pre><code>{`mcp_servers:
+  lean-ctx:
+    command: "lean-ctx"
+    env:
+      LEAN_CTX_DATA_DIR: "~/.lean-ctx"`}</code></pre>
+
+  <p>
+    lean-ctx also creates <code>~/.hermes/HERMES.md</code> with tool preference rules
+    and optionally a project-level <code>.hermes.md</code>.
+  </p>
+
+  <!-- ─── Amp ─── -->
+
+  <h3 id="amp">Amp</h3>
+  <pre><code>{`lean-ctx init --agent amp`}</code></pre>
+
+  <p>In <code>~/.config/amp/settings.json</code>:</p>
+  <pre><code>{`{
+  "amp.mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
+    }
+  }
+}`}</code></pre>
+
+  <p>Amp uses <code>"amp.mcpServers"</code> as the key - not <code>"mcpServers"</code>.</p>
+
+  <!-- ─── JetBrains IDEs ─── -->
+
+  <h3 id="jetbrains">JetBrains IDEs</h3>
+  <pre><code>{`lean-ctx init --agent jetbrains`}</code></pre>
+
+  <p>JetBrains uses an array-based server format at <code>~/.jb-mcp.json</code>:</p>
+  <pre><code>{`{
+  "servers": [
+    {
+      "name": "lean-ctx",
+      "command": "lean-ctx",
+      "args": [],
+      "env": {
+        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
+      }
+    }
+  ]
+}`}</code></pre>
+
+  <p>
+    Works with IntelliJ IDEA, WebStorm, PyCharm, GoLand, and all JetBrains IDEs
+    that support MCP.
+  </p>
+
+  <!-- ─── OpenCode ─── -->
+
+  <h3 id="opencode">OpenCode</h3>
+  <pre><code>{`lean-ctx init --agent opencode`}</code></pre>
+
+  <p>In <code>~/.config/opencode/opencode.json</code>:</p>
+  <pre><code>{`{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "lean-ctx": {
+      "type": "local",
+      "command": ["lean-ctx"],
+      "enabled": true,
+      "environment": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
+    }
+  }
+}`}</code></pre>
+
+  <p>
+    OpenCode uses <code>"type": "local"</code>, wraps <code>command</code> in an array,
+    and uses <code>"environment"</code> instead of <code>"env"</code>.
+    lean-ctx also installs an OpenCode plugin at <code>~/.config/opencode/plugins/lean-ctx.ts</code>.
+  </p>
+
+  <!-- ─── Others ─── -->
+
+  <h3 id="others">Other Editors</h3>
+  <p>
+    The following editors use standard <code>mcpServers</code> JSON format.
+    Run <code>lean-ctx init --agent &lt;key&gt;</code> or <code>lean-ctx setup</code> to auto-configure:
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Editor</th><th>Agent Key</th><th>Config Path</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Verdent</td><td><code>verdent</code></td><td><code>~/.verdent/mcp.json</code></td></tr>
+      <tr><td>Crush</td><td><code>crush</code></td><td><code>~/.config/crush/crush.json</code> (<code>mcp</code> key)</td></tr>
+      <tr><td>Qwen Code</td><td><code>qwen</code></td><td><code>~/.qwen/settings.json</code></td></tr>
+      <tr><td>Trae</td><td><code>trae</code></td><td><code>~/.trae/mcp.json</code></td></tr>
+      <tr><td>Amazon Q Developer</td><td><code>amazonq</code></td><td><code>~/.aws/amazonq/default.json</code></td></tr>
+    </tbody>
+  </table>
+
+  <p>Standard <code>mcpServers</code> JSON format (used by Verdent, Qwen, Trae, Amazon Q):</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx",
+      "env": { "LEAN_CTX_DATA_DIR": "~/.lean-ctx" }
+    }
+  }
+}`}</code></pre>
+
+  <p>Crush uses a slightly different structure with <code>"mcp"</code> as root key:</p>
+  <pre><code>{`{
+  "mcp": {
+    "lean-ctx": {
+      "type": "stdio",
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+
+  <!-- ─── Verification ─── -->
+
+  <h2 id="verify">Verifying Your Setup</h2>
+  <p>After configuring any editor, verify lean-ctx is connected:</p>
+  <pre><code>{`# Check lean-ctx health
+lean-ctx doctor
+
+# Premium integration health (Cursor/Claude Code)
+lean-ctx doctor integrations
+
+# Repair drift (safe, merge-based)
+lean-ctx install --repair
+
+# In Claude Code:
+/mcp          # Should show lean-ctx as connected
+/memory       # Should show CLAUDE.md loaded
+
+# In Cursor:
+# Check MCP panel in settings - lean-ctx should appear as "connected"
+
+# In any editor with MCP:
+# Call ctx_overview() - should return project summary`}</code></pre>
+
+</DocsLayout>
+
+<style>
+  .tier-divider {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .tier-divider h2 {
+    margin-top: 0;
+  }
+  .tier-divider p {
+    color: var(--color-muted);
+    font-size: 0.9375rem;
+  }
+</style>

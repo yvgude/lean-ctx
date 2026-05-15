@@ -1,0 +1,176 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Workflow Blueprint',
+    items: [
+      { label: 'Overview', href: lp('/docs/guides/workflow-blueprint') },
+      { label: 'Session 1: Orientation', href: lp('/docs/guides/workflow-blueprint') + '#session-1' },
+      { label: 'Session 2: Implementation', href: lp('/docs/guides/workflow-blueprint') + '#session-2' },
+      { label: 'Session 3: Deep Work', href: lp('/docs/guides/workflow-blueprint') + '#session-3' },
+      { label: 'Session 4: Testing', href: lp('/docs/guides/workflow-blueprint') + '#session-4' },
+      { label: 'Session 5: Wrap-up', href: lp('/docs/guides/workflow-blueprint') + '#session-5' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'First Session Guide', href: lp('/docs/guides/first-session') },
+      { label: 'Multi-Agent', href: lp('/docs/concepts/multi-agent') },
+      { label: 'Protocols', href: lp('/docs/concepts/protocols') },
+      { label: 'ctx_workflow', href: lp('/docs/tools/ctx-workflow') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Workflow Blueprint - 5-Session Project Pattern"
+  description="A complete workflow pattern for using lean-ctx across multiple sessions: orientation, implementation, deep work, testing, and wrap-up."
+  sidebar={sidebar}
+>
+  <p>
+    This blueprint shows the optimal lean-ctx workflow for a multi-session project. Each session
+    builds on the previous one, leveraging caching, knowledge persistence, and session handoff
+    to minimize redundant work.
+  </p>
+
+  <h2 id="overview">The 5-Session Pattern</h2>
+  <table>
+    <thead>
+      <tr><th>Session</th><th>Goal</th><th>Key Tools</th><th>Duration</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1. Orientation</td><td>Understand codebase structure</td><td>ctx_overview, ctx_preload, ctx_tree</td><td>15-30 min</td></tr>
+      <tr><td>2. Implementation</td><td>Write the core change</td><td>ctx_read, ctx_edit, ctx_shell</td><td>30-60 min</td></tr>
+      <tr><td>3. Deep Work</td><td>Handle edge cases, integration</td><td>ctx_graph, ctx_impact, ctx_callers</td><td>30-60 min</td></tr>
+      <tr><td>4. Testing</td><td>Write tests, fix failures</td><td>ctx_execute, ctx_benchmark, ctx_delta</td><td>20-40 min</td></tr>
+      <tr><td>5. Wrap-up</td><td>Review, document, clean up</td><td>ctx_gain, ctx_compress_memory, ctx_knowledge</td><td>15-30 min</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="session-1">Session 1: Orientation (15-30 min)</h2>
+  <p>Goal: Understand the project structure and identify the files relevant to your task.</p>
+
+  <h3>Step 1: Project Overview</h3>
+  <pre><code>{`ctx_overview task="add user authentication with JWT"
+→ Project: my-api (TypeScript/Express)
+  Structure: 4 main directories, 42 source files
+  Entry: src/index.ts → src/app.ts → src/routes/*
+  Key configs: tsconfig.json, package.json, .env.example
+  Preloaded: 5 files in optimal modes`}</code></pre>
+
+  <h3>Step 2: Explore the Project Tree</h3>
+  <pre><code>{`ctx_tree depth=3
+→ my-api/
+    src/ (42)
+      routes/ (8)
+      middleware/ (3)
+      models/ (6)
+      services/ (5)
+    tests/ (12)
+    docs/ (3)
+    package.json`}</code></pre>
+
+  <h3>Step 3: Read Key Files</h3>
+  <pre><code>{`# Read the entry point in map mode (understand structure, not details)
+ctx_read src/app.ts mode=map
+→ F1=app.ts [186L] deps:express,cors,helmet API:fn createApp()→Express
+
+# Read the existing auth if any
+ctx_read src/middleware/auth.ts mode=signatures
+→ F2=auth.ts [42L] fn requireAuth(req,res,next), fn optionalAuth(req,res,next)`}</code></pre>
+
+  <h3>Step 4: Save Session for Next Time</h3>
+  <pre><code>{`ctx_session action=save
+→ Session saved: 5 files cached (F1-F5), task context preserved`}</code></pre>
+
+  <h2 id="session-2">Session 2: Implementation (30-60 min)</h2>
+  <p>Goal: Write the core implementation, building on Session 1's cached context.</p>
+
+  <h3>Step 1: Restore Context</h3>
+  <pre><code>{`ctx_handoff action=load
+→ Restored: 5 cached files (F1-F5), task: "add user authentication with JWT"
+  All files still current (no changes detected)`}</code></pre>
+
+  <h3>Step 2: Implement</h3>
+  <pre><code>{`# Read the file you'll edit in full mode
+ctx_read src/middleware/auth.ts
+→ F2=auth.ts 42L [full content - ready to edit]
+
+# After editing, check changes
+ctx_read src/middleware/auth.ts mode=diff
+→ F2=auth.ts [diff]
+  L5: + import jwt from 'jsonwebtoken';
+  L12-28: + [new JWT validation logic]
+  [saved 890 tokens (97%)]`}</code></pre>
+
+  <h3>Step 3: Checkpoint</h3>
+  <pre><code>{`ctx_compress
+→ Checkpoint created: 8 files, 3 edits tracked`}</code></pre>
+
+  <h2 id="session-3">Session 3: Deep Work (30-60 min)</h2>
+  <p>Goal: Handle edge cases, understand impact of changes, integrate with rest of codebase.</p>
+
+  <h3>Step 1: Impact Analysis</h3>
+  <pre><code>{`ctx_impact action=analyze path="src/middleware/auth.ts"
+→ 8 files depend on auth.ts:
+  Direct: src/routes/users.ts, src/routes/admin.ts, src/routes/api.ts
+  Transitive: src/services/user.ts → src/models/user.ts
+  Tests: tests/auth.test.ts, tests/routes.test.ts`}</code></pre>
+
+  <h3>Step 2: Check Call Sites</h3>
+  <pre><code>{`ctx_callers symbol="requireAuth"
+→ 12 callers across 5 files:
+  src/routes/users.ts:14  router.get('/profile', requireAuth, ...)
+  src/routes/admin.ts:8   router.use(requireAuth)
+  ...`}</code></pre>
+
+  <h3>Step 3: Graph Visualization</h3>
+  <pre><code>{`ctx_graph_diagram file="src/middleware/auth.ts" depth=2
+→ [Mermaid diagram of auth.ts dependency graph]`}</code></pre>
+
+  <h2 id="session-4">Session 4: Testing (20-40 min)</h2>
+  <p>Goal: Write and run tests, fix failures.</p>
+
+  <pre><code>{`# Run existing tests
+ctx_shell command="npm test"
+→ 38 passed, 4 failed (2.1s)
+  FAIL tests/auth.test.ts:23 "should reject expired token"
+  FAIL tests/auth.test.ts:45 "should handle missing header"
+  [1,600 tok saved (90%)]
+
+# Quick code execution to validate logic
+ctx_execute language="typescript" code="
+  import jwt from 'jsonwebtoken';
+  const token = jwt.sign({userId: 1}, 'secret', {expiresIn: '1h'});
+  console.log(jwt.verify(token, 'secret'));
+"
+→ { userId: 1, iat: ..., exp: ... }  [12 ms]`}</code></pre>
+
+  <h2 id="session-5">Session 5: Wrap-up (15-30 min)</h2>
+  <p>Goal: Review changes, document decisions, save knowledge for future sessions.</p>
+
+  <h3>Step 1: Review Savings</h3>
+  <pre><code>{`ctx_gain
+→ Project total: 89.2% (142,850 tokens saved across 5 sessions)
+  Cost saved: ~$1.43 (Claude Sonnet) / ~$7.14 (Claude Opus)`}</code></pre>
+
+  <h3>Step 2: Save Knowledge</h3>
+  <pre><code>{`ctx_knowledge action=remember key="auth-pattern" value="JWT RS256 with 1h expiry, refresh tokens in httpOnly cookies"
+→ Knowledge saved: auth-pattern (persists across sessions)
+
+ctx_knowledge action=remember key="gotcha-auth" value="Token validation middleware must check both Authorization header AND cookie"
+→ Knowledge saved: gotcha-auth`}</code></pre>
+
+  <h3>Step 3: Compress Project Memory</h3>
+  <pre><code>{`ctx_compress_memory path=".cursorrules"
+→ Compressed .cursorrules: 2,400 → 890 tokens (63% savings)
+  Backup saved: .cursorrules.original.md`}</code></pre>
+</DocsLayout>
