@@ -2,7 +2,9 @@ use rmcp::model::Tool;
 use rmcp::ErrorData;
 use serde_json::{json, Map, Value};
 
-use crate::server::tool_trait::{get_str, get_str_array, McpTool, ToolContext, ToolOutput};
+use crate::server::tool_trait::{
+    get_bool, get_str, get_str_array, McpTool, ToolContext, ToolOutput,
+};
 use crate::tool_defs::tool_def;
 
 pub struct CtxMultiReadTool;
@@ -27,6 +29,10 @@ impl McpTool for CtxMultiReadTool {
                     "mode": {
                         "type": "string",
                         "description": "Compression mode (default: full). Same modes as ctx_read (auto, full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M)."
+                    },
+                    "fresh": {
+                        "type": "boolean",
+                        "description": "Bypass cache and force a full re-read for all paths. Use when running as a subagent that may not have the parent's context."
                     }
                 },
                 "required": ["paths"]
@@ -91,11 +97,13 @@ impl McpTool for CtxMultiReadTool {
                 session.task.as_ref().map(|t| t.description.clone())
             };
 
+            let fresh = get_bool(args, "fresh").unwrap_or(false);
             let mut cache = cache_lock.blocking_write();
-            let output = crate::tools::ctx_multi_read::handle_with_task(
+            let output = crate::tools::ctx_multi_read::handle_with_task_fresh(
                 &mut cache,
                 &paths,
                 &mode,
+                fresh,
                 ctx.crp_mode,
                 current_task.as_deref(),
             );

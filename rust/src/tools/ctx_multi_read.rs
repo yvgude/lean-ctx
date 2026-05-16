@@ -15,6 +15,17 @@ pub fn handle_with_task(
     crp_mode: CrpMode,
     task: Option<&str>,
 ) -> String {
+    handle_with_task_fresh(cache, paths, mode, false, crp_mode, task)
+}
+
+pub fn handle_with_task_fresh(
+    cache: &mut SessionCache,
+    paths: &[String],
+    mode: &str,
+    fresh: bool,
+    crp_mode: CrpMode,
+    task: Option<&str>,
+) -> String {
     let n = paths.len();
     if n == 0 {
         return "Read 0 files | 0 tokens saved".to_string();
@@ -30,7 +41,11 @@ pub fn handle_with_task(
         } else {
             mode
         };
-        let chunk = ctx_read::handle_with_task(cache, path, effective_mode, crp_mode, task);
+        let chunk = if fresh {
+            ctx_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
+        } else {
+            ctx_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
+        };
         let original = cache.get(path).map_or(0, |e| e.original_tokens);
         let sent = count_tokens(&chunk);
         heatmap::record_file_access(path, original, original.saturating_sub(sent));

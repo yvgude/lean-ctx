@@ -10,6 +10,9 @@ fn make_event(event_type: &str, tokens: usize, tool_name: Option<&str>) -> Radar
         tokens,
         tool_name: tool_name.map(String::from),
         detail: None,
+        content: None,
+        model: None,
+        conversation_id: None,
     }
 }
 
@@ -142,6 +145,9 @@ fn breakdown_lean_ctx_detection_by_detail() {
         tokens: 500,
         tool_name: Some("some_tool".to_string()),
         detail: Some("lean-ctx server".to_string()),
+        content: None,
+        model: None,
+        conversation_id: None,
     });
     let b = radar.budget_breakdown();
     assert_eq!(
@@ -160,6 +166,9 @@ fn breakdown_lean_ctx_detection_by_tool_prefix() {
         tokens: 300,
         tool_name: Some("ctx_search".to_string()),
         detail: None,
+        content: None,
+        model: None,
+        conversation_id: None,
     });
     let b = radar.budget_breakdown();
     assert_eq!(
@@ -456,6 +465,9 @@ fn perf_budget_breakdown_100k_events() {
                     None
                 },
                 detail: None,
+                content: None,
+                model: None,
+                conversation_id: None,
             }
         })
         .collect();

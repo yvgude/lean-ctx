@@ -19,6 +19,12 @@ pub struct RadarEvent {
     pub tool_name: Option<String>,
     #[serde(default)]
     pub detail: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub conversation_id: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -69,16 +75,27 @@ impl ContextRadar {
     }
 
     fn load_events(&mut self, data_dir: &Path) {
+        let mut all: Vec<RadarEvent> = Vec::new();
+
+        let prev_path = data_dir.join("context_radar.prev.jsonl");
+        if let Ok(content) = std::fs::read_to_string(&prev_path) {
+            for line in content.lines() {
+                if let Ok(ev) = serde_json::from_str::<RadarEvent>(line) {
+                    all.push(ev);
+                }
+            }
+        }
+
         let radar_path = data_dir.join("context_radar.jsonl");
-        let Ok(content) = std::fs::read_to_string(&radar_path) else {
-            return;
-        };
+        if let Ok(content) = std::fs::read_to_string(&radar_path) {
+            for line in content.lines() {
+                if let Ok(ev) = serde_json::from_str::<RadarEvent>(line) {
+                    all.push(ev);
+                }
+            }
+        }
 
         const MAX_EVENTS: usize = 50_000;
-        let all: Vec<RadarEvent> = content
-            .lines()
-            .filter_map(|line| serde_json::from_str::<RadarEvent>(line).ok())
-            .collect();
         if all.len() > MAX_EVENTS {
             self.events = all[all.len() - MAX_EVENTS..].to_vec();
         } else {
@@ -384,10 +401,12 @@ fn fmt_num(n: usize) -> String {
 
 /// Default context window size based on client name.
 pub fn default_window_for_client(client: &str) -> usize {
+    if let Some((_model, window)) = crate::hook_handlers::load_detected_model() {
+        return window;
+    }
     match client.to_lowercase().as_str() {
         "gemini" => 1_000_000,
         "windsurf" | "zed" | "copilot" => 128_000,
-        // cursor, claude-code, claude, codex, and others
         _ => 200_000,
     }
 }
@@ -405,30 +424,35 @@ mod tests {
         assert_eq!(b.available, 200_000);
     }
 
+    fn ev(
+        ts: u64,
+        event_type: &str,
+        tokens: usize,
+        tool_name: Option<&str>,
+        detail: Option<&str>,
+    ) -> RadarEvent {
+        RadarEvent {
+            ts,
+            event_type: event_type.to_string(),
+            tokens,
+            tool_name: tool_name.map(String::from),
+            detail: detail.map(String::from),
+            content: None,
+            model: None,
+            conversation_id: None,
+        }
+    }
+
     #[test]
     fn budget_breakdown_with_events() {
         let mut radar = ContextRadar::new(200_000);
-        radar.events.push(RadarEvent {
-            ts: 1000,
-            event_type: "user_message".to_string(),
-            tokens: 500,
-            tool_name: None,
-            detail: None,
-        });
-        radar.events.push(RadarEvent {
-            ts: 1001,
-            event_type: "agent_response".to_string(),
-            tokens: 2000,
-            tool_name: None,
-            detail: None,
-        });
-        radar.events.push(RadarEvent {
-            ts: 1002,
-            event_type: "shell".to_string(),
-            tokens: 300,
-            tool_name: None,
-            detail: Some("git status".to_string()),
-        });
+        radar.events.push(ev(1000, "user_message", 500, None, None));
+        radar
+            .events
+            .push(ev(1001, "agent_response", 2000, None, None));
+        radar
+            .events
+            .push(ev(1002, "shell", 300, None, Some("git status")));
         let b = radar.budget_breakdown();
         assert_eq!(b.user_message_tokens, 500);
         assert_eq!(b.agent_response_tokens, 2000);
@@ -440,27 +464,9 @@ mod tests {
     #[test]
     fn budget_breakdown_resets_after_compaction() {
         let mut radar = ContextRadar::new(100_000);
-        radar.events.push(RadarEvent {
-            ts: 1,
-            event_type: "user_message".to_string(),
-            tokens: 50_000,
-            tool_name: None,
-            detail: None,
-        });
-        radar.events.push(RadarEvent {
-            ts: 2,
-            event_type: "compaction".to_string(),
-            tokens: 0,
-            tool_name: None,
-            detail: None,
-        });
-        radar.events.push(RadarEvent {
-            ts: 3,
-            event_type: "user_message".to_string(),
-            tokens: 10_000,
-            tool_name: None,
-            detail: None,
-        });
+        radar.events.push(ev(1, "user_message", 50_000, None, None));
+        radar.events.push(ev(2, "compaction", 0, None, None));
+        radar.events.push(ev(3, "user_message", 10_000, None, None));
         let b = radar.budget_breakdown();
         assert_eq!(
             b.user_message_tokens, 10_000,
