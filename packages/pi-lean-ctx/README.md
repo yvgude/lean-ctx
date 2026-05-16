@@ -2,14 +2,25 @@
 
 [Pi Coding Agent](https://github.com/badlogic/pi-mono) extension that provides `ctx_`-prefixed tools backed by [lean-ctx](https://leanctx.com) for **60–90% token savings**.
 
-- **Default**: CLI-only (no MCP required)
+- **Default**: CLI-only, additive mode (no MCP required, Pi builtins preserved)
 - **Optional**: enable MCP tools (`LEAN_CTX_PI_ENABLE_MCP=1`) or run `lean-ctx init --agent pi --mode mcp`
+- **Optional**: replace mode (`LEAN_CTX_PI_MODE=replace`) disables Pi builtins
+
+## Tool Mode
+
+By default, pi-lean-ctx runs in **additive mode**: Pi's built-in tools (`read`, `bash`, `ls`, `find`, `grep`) remain available alongside the `ctx_*` tools. Agents can use either set.
+
+To switch to **replace mode** (disables Pi builtins, only `ctx_*` tools available):
+
+```bash
+export LEAN_CTX_PI_MODE=replace
+```
 
 ## What it does
 
 ### ctx_ Tools (CLI-backed)
 
-Replaces Pi's built-in `read`, `bash`, `ls`, `find`, `grep` with `ctx_`-prefixed versions:
+Adds `ctx_`-prefixed tools alongside Pi's builtins (or replaces them in `replace` mode):
 
 | Tool | Replaces | Compression |
 |------|----------|-------------|

@@ -35,8 +35,12 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const CODE_FULL_READ_MAX_BYTES = 8 * 1024;
 const CODE_SIGNATURES_MIN_BYTES = 96 * 1024;
 
-// Pi builtins we replace with ctx_ prefixed versions
+// Pi builtins that can be replaced with ctx_ prefixed versions.
+// LEAN_CTX_PI_MODE controls behavior:
+//   "additive" (default) — keep Pi builtins, add ctx_* alongside
+//   "replace"            — disable Pi builtins, only expose ctx_*
 const DISABLED_BUILTIN_TOOLS = new Set(["read", "bash", "ls", "find", "grep"]);
+const PI_MODE = (process.env.LEAN_CTX_PI_MODE || "additive").toLowerCase();
 // Max bytes constant for truncation warnings (same as Pi's DEFAULT_MAX_BYTES)
 const DEFAULT_MAX_BYTES = 8192;
 
@@ -288,11 +292,14 @@ async function execLeanCtx(pi: ExtensionAPI, args: string[]) {
 
 export default async function (pi: ExtensionAPI) {
   // Defer setActiveTools to session_start — runtime actions aren't available during extension load
-  // Must run on every session_start since active tools are per-session
-  pi.on("session_start", () => {
-    const activeTools = pi.getActiveTools().filter((name) => !DISABLED_BUILTIN_TOOLS.has(name));
-    pi.setActiveTools(activeTools);
-  });
+  // In "replace" mode, disable Pi builtins and only expose ctx_* tools.
+  // In "additive" mode (default), keep Pi builtins alongside ctx_* tools.
+  if (PI_MODE === "replace") {
+    pi.on("session_start", () => {
+      const activeTools = pi.getActiveTools().filter((name) => !DISABLED_BUILTIN_TOOLS.has(name));
+      pi.setActiveTools(activeTools);
+    });
+  }
 
   const baseBashTool = createBashToolDefinition(process.cwd(), {
     spawnHook: ({ command, cwd, env }) => {
