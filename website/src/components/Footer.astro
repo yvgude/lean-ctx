@@ -85,7 +85,7 @@ const year = new Date().getFullYear();
   @media (min-width: 768px) { .footer-top { grid-template-columns: 1.5fr 3fr; gap: clamp(4rem, 3rem + 4vw, 8rem); } }
   .footer-brand { display: flex; flex-direction: column; gap: 0.75rem; }
   .footer-logo { display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; }
-  .footer-logo-ascii { font-family: var(--font-mono); font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem); font-weight: 700; color: var(--color-text-bright); line-height: 1; }
+  .footer-logo-ascii { font-family: var(--font-mono); font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem); font-weight: 700; color: var(--color-text-bright); line-height: 1; font-variant-ligatures: none; -webkit-font-feature-settings: "liga" 0, "clig" 0; font-feature-settings: "liga" 0, "clig" 0; }
   .footer-logo-text { font-size: clamp(0.9rem, 0.85rem + 0.2vw, 1.1rem); font-weight: 700; }
   .footer-tagline { font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem); color: var(--color-muted); line-height: 1.5; max-width: 18rem; }
   .footer-columns { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(1.5rem, 1rem + 1.5vw, 3rem); }
