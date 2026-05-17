@@ -17,6 +17,17 @@ const sidebar = [
       { label: 'Audit Trail', href: lp('/docs/security#audit') },
       { label: 'Redaction Policies', href: lp('/docs/security#redaction') },
       { label: 'Secret Leak Prevention', href: lp('/docs/security#secrets') },
+      { label: 'OWASP Agentic Top 10', href: lp('/docs/security#owasp') },
+      { label: 'Capability-based Access', href: lp('/docs/security#capabilities') },
+      { label: 'OS-level Sandboxing', href: lp('/docs/security#os-sandbox') },
+      { label: 'Shell Allowlist', href: lp('/docs/security#shell-allowlist') },
+      { label: 'Signed Handoff Bundles', href: lp('/docs/security#signed-handoff') },
+      { label: 'Per-Agent Context Ledger', href: lp('/docs/security#agent-ledger') },
+      { label: 'Agent Token Budget', href: lp('/docs/security#token-budget') },
+      { label: 'Policy Engine', href: lp('/docs/security#policy-engine') },
+      { label: 'Compliance Reports', href: lp('/docs/security#compliance') },
+      { label: 'Auto-Reroot Protection', href: lp('/docs/security#auto-reroot') },
+      { label: 'Atomic Writes', href: lp('/docs/security#atomic-writes') },
       { label: 'v3.5.16 Hardening', href: lp('/docs/security#v3516-hardening') },
     ],
   },
@@ -43,7 +54,7 @@ const sidebar = [
   </ul>
 
   <h2 id="pathjail">PathJail Sandbox</h2>
-  <p>Every file operation is sandboxed by PathJail, which prevents AI agents from accessing files outside the project directory:</p>
+  <p>Every file operation is sandboxed by PathJail, which prevents AI agents from accessing files outside the project directory. PathJail enforces jail rules on 16 path-typed keys in tool arguments — not just <code>path</code>, <code>project_root</code>, and <code>root</code>, but also <code>file</code>, <code>directory</code>, <code>target</code>, <code>source</code>, <code>destination</code>, <code>old_path</code>, <code>new_path</code>, <code>working_directory</code>, <code>base_path</code>, <code>output</code>, <code>input</code>, <code>cwd</code>, and <code>folder</code>:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code><span class="text-muted">// PathJail enforces these rules:</span>
@@ -54,7 +65,7 @@ const sidebar = [
 <span class="text-danger">✗</span> ~/.ssh/id_rsa            <span class="text-muted">→ BLOCKED: outside project root</span></code></pre>
   </div>
 
-  <p>PathJail is always active and cannot be disabled. It resolves symlinks before checking, preventing bypass via symbolic links.</p>
+  <p>PathJail is always active and cannot be disabled. It resolves symlinks before checking, preventing bypass via symbolic links. On Unix systems, file reads use <code>O_NOFOLLOW</code> to prevent symlink-based TOCTOU (time-of-check-time-of-use) attacks — the file descriptor is opened directly without following symlinks, eliminating the race window between path resolution and file access.</p>
 
   <h2 id="scopes">Token Scopes & ACL</h2>
   <p>When using the Team Server, every API token has explicit scopes that limit what it can do:</p>
@@ -78,7 +89,7 @@ const sidebar = [
   </div>
 
   <h2 id="audit">Audit Trail</h2>
-  <p>The Team Server logs every tool execution, session mutation, and knowledge operation with full attribution:</p>
+  <p>LeanCTX logs every tool execution, session mutation, and knowledge operation in SHA-256 chained JSONL format. Each entry includes a hash of the previous entry, forming a tamper-evident chain that can be verified for integrity:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code><span class="text-muted">[2025-01-15 14:32:01]</span> agent=cursor token=alice tool=ctx_read path=src/auth.ts tokens=180
@@ -86,7 +97,7 @@ const sidebar = [
 <span class="text-muted">[2025-01-15 14:32:12]</span> agent=cursor token=alice tool=ctx_session action=mutate channel=feat/auth rev=15</code></pre>
   </div>
 
-  <p>Audit logs include: timestamp, agent identity, token name, tool called, arguments (redacted), result status, and token cost.</p>
+  <p>Audit logs include: timestamp, agent identity, token name, tool called, arguments (redacted), result status, and token cost. The chained format ensures any retroactive modification of log entries is detectable via hash mismatch. Run <code>lean-ctx audit --verify</code> to validate chain integrity.</p>
 
   <h2 id="redaction">Redaction Policies</h2>
   <p>LeanCTX automatically redacts sensitive patterns from tool outputs before they reach the AI agent:</p>
@@ -110,17 +121,219 @@ replacement = "[REDACTED_API_KEY]"`}</code></pre>
   </div>
 
   <h2 id="secrets">Secret Leak Prevention</h2>
-  <p>The verification pipeline scans all tool outputs for potential secret leaks before delivering them to the AI agent:</p>
+  <p>The verification pipeline scans all tool outputs using 8+ regex patterns for potential secret leaks before delivering them to the AI agent:</p>
 
   <ul>
-    <li>AWS access keys and secret keys</li>
-    <li>GitHub/GitLab personal access tokens</li>
+    <li>AWS access keys and secret keys (<code>AKIA...</code>, <code>aws_secret_access_key</code>)</li>
+    <li>OpenAI API keys (<code>sk-...</code>)</li>
+    <li>GitHub personal access tokens (<code>ghp_...</code>, <code>github_pat_...</code>)</li>
+    <li>GitLab personal/project tokens (<code>glpat-...</code>)</li>
     <li>Stripe, Twilio, SendGrid API keys</li>
     <li>Generic high-entropy strings matching key patterns</li>
     <li>Private keys (RSA, ECDSA, Ed25519)</li>
+    <li>Custom patterns configurable via <code>[secret_detection.patterns]</code></li>
   </ul>
 
-  <p>When a secret is detected, the verification step replaces it with <code>[REDACTED]</code> and logs a warning in the audit trail. This protection is enabled by default and works with all integration modes (CLI, Hybrid, MCP).</p>
+  <div class="not-prose">
+    <pre class="code-block"><code>{`[secret_detection]
+enabled = true
+redact = true  # automatically replace detected secrets
+
+[[secret_detection.patterns]]
+name = "internal-service-key"
+regex = "svc_[a-zA-Z0-9]{32,}"
+replacement = "[REDACTED_SERVICE_KEY]"`}</code></pre>
+  </div>
+
+  <p>When a secret is detected, the verification step replaces it with <code>[REDACTED]</code> and logs a warning in the audit trail. Optional automatic redaction can be enabled to strip secrets before they reach the AI agent. This protection is enabled by default and works with all integration modes (CLI, Hybrid, MCP).</p>
+
+  <h2 id="owasp">OWASP Agentic Top 10 Alignment</h2>
+  <p>LeanCTX maps its security controls to the <a href="https://owasp.org/www-project-agentic-ai-threats/">OWASP Agentic AI Top 10</a> threat categories, achieving Full coverage on 8 out of 10 items:</p>
+
+  <table>
+    <thead><tr><th>OWASP Category</th><th>Coverage</th></tr></thead>
+    <tbody>
+      <tr><td>A01 — Privilege Escalation</td><td><strong>Full</strong></td></tr>
+      <tr><td>A02 — Information Disclosure</td><td><strong>Full</strong></td></tr>
+      <tr><td>A03 — Improper Output Handling</td><td><strong>Full</strong></td></tr>
+      <tr><td>A04 — Tool Misuse</td><td><strong>Full</strong></td></tr>
+      <tr><td>A05 — Insecure Agent Communication</td><td><strong>Full</strong></td></tr>
+      <tr><td>A06 — Excessive Agency</td><td><strong>Full</strong></td></tr>
+      <tr><td>A07 — Insufficient Logging</td><td><strong>Full</strong></td></tr>
+      <tr><td>A08 — Supply Chain Vulnerabilities</td><td>Partial</td></tr>
+      <tr><td>A09 — Overreliance</td><td>Partial</td></tr>
+      <tr><td>A10 — Denial of Service</td><td><strong>Full</strong></td></tr>
+    </tbody>
+  </table>
+
+  <p>Run <code>lean-ctx audit</code> to view the full OWASP alignment mapping with details on which controls address each category.</p>
+
+  <h2 id="capabilities">Capability-based Access Control</h2>
+  <p>LeanCTX enforces capability-based access control at the tool dispatch layer. Each tool declares the capabilities it requires, and each agent role grants a specific set of capabilities:</p>
+
+  <table>
+    <thead><tr><th>Capability</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>FsRead</code></td><td>Read files within the PathJail boundary</td></tr>
+      <tr><td><code>FsWrite</code></td><td>Write or modify files within the PathJail boundary</td></tr>
+      <tr><td><code>NetOutbound</code></td><td>Make outbound network requests</td></tr>
+      <tr><td><code>Exec</code></td><td>Execute shell commands or subprocesses</td></tr>
+      <tr><td><code>CrossProject</code></td><td>Access files in other project roots (multi-repo)</td></tr>
+    </tbody>
+  </table>
+
+  <p>The dispatcher checks the requesting agent's capabilities against the tool's requirements before every invocation. If a capability is missing, the call is rejected and an audit event is logged.</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>{`[roles.readonly]
+capabilities = ["FsRead"]
+
+[roles.developer]
+capabilities = ["FsRead", "FsWrite", "Exec"]
+
+[roles.admin]
+capabilities = ["FsRead", "FsWrite", "NetOutbound", "Exec", "CrossProject"]`}</code></pre>
+  </div>
+
+  <h2 id="os-sandbox">OS-level Sandboxing</h2>
+  <p>Beyond PathJail's logical sandboxing, LeanCTX supports OS-level sandboxing for defense-in-depth. Sandboxing levels are configurable via <code>sandbox_level</code> in <code>config.toml</code>:</p>
+
+  <table>
+    <thead><tr><th>Level</th><th>Platform</th><th>Mechanism</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Level 0</strong></td><td>All</td><td>Subprocess isolation — child processes run with restricted environment and no inherited file descriptors</td></tr>
+      <tr><td><strong>Level 1</strong></td><td>macOS</td><td>Seatbelt (sandbox-exec) — restricts filesystem access, network, and IPC via Apple's sandbox framework</td></tr>
+      <tr><td><strong>Level 1</strong></td><td>Linux</td><td>Landlock LSM — restricts filesystem access paths via the Linux Security Module, no root required</td></tr>
+    </tbody>
+  </table>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>{`[security]
+sandbox_level = 1  # 0 = subprocess isolation, 1 = OS-level sandbox`}</code></pre>
+  </div>
+
+  <p>On macOS, Seatbelt profiles restrict the process to the project directory, deny network access by default, and block access to user keychain and sensitive system paths. On Linux, Landlock enforces filesystem restrictions without requiring root privileges or container runtimes.</p>
+
+  <h2 id="shell-allowlist">Shell Allowlist Mode</h2>
+  <p>For high-security environments, LeanCTX supports an opt-in allowlist mode for <code>ctx_shell</code>. When configured, only explicitly listed base commands are permitted — all other commands are rejected:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>{`[security]
+shell_allowlist = ["git", "cargo", "npm", "node", "python", "make"]`}</code></pre>
+  </div>
+
+  <p>The allowlist can also be set via the <code>LEAN_CTX_SHELL_ALLOWLIST</code> environment variable (comma-separated). When the allowlist is active, commands are parsed and only the base command (first argument) is checked — pipes, subshells, and command substitution are blocked entirely to prevent bypass.</p>
+
+  <h2 id="signed-handoff">Signed Handoff Bundles</h2>
+  <p>Agent-to-Agent transfer bundles are cryptographically signed with Ed25519 to ensure authenticity and prevent tampering:</p>
+
+  <ul>
+    <li><strong>Per-agent keypairs:</strong> Each agent identity has its own Ed25519 keypair stored in <code>~/.lean-ctx/keys/</code></li>
+    <li><strong>Sign on export:</strong> The sending agent signs the bundle payload with its private key</li>
+    <li><strong>Verify on import:</strong> The receiving agent verifies the signature before accepting the bundle</li>
+    <li><strong>Rejection on failure:</strong> Invalid or missing signatures cause the import to fail with a clear error</li>
+  </ul>
+
+  <p>This prevents man-in-the-middle modification of handoff data between agents, even when bundles are transferred via untrusted channels.</p>
+
+  <h2 id="agent-ledger">Per-Agent Context Ledger</h2>
+  <p>Each agent operates with an isolated context ledger, preventing cross-agent data contamination:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">~/.lean-ctx/ledger/</span>
+├── <span class="text-accent">agent-cursor-abc123.json</span>    <span class="text-muted">→ Cursor agent session</span>
+├── <span class="text-accent">agent-claude-def456.json</span>    <span class="text-muted">→ Claude agent session</span>
+└── <span class="text-accent">agent-subagent-ghi789.json</span>  <span class="text-muted">→ Subagent session</span></code></pre>
+  </div>
+
+  <p>Each ledger file at <code>~/.lean-ctx/ledger/{agent_id}.json</code> contains that agent's file read history, cached context, and session state. Agents cannot read or modify another agent's ledger, enforcing strict context isolation even in multi-agent workflows.</p>
+
+  <h2 id="token-budget">Agent Token Budget</h2>
+  <p>LeanCTX supports configurable per-agent token budgets to prevent runaway context consumption:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>{`[agent]
+agent_token_budget = 80000  # maximum tokens per agent session`}</code></pre>
+  </div>
+
+  <ul>
+    <li><strong>Enforcement:</strong> File reads are blocked when the agent's cumulative token usage exceeds the configured budget</li>
+    <li><strong>Warning threshold:</strong> A warning is emitted at 80% budget usage, giving the agent time to wrap up</li>
+    <li><strong>Audit logging:</strong> Budget exceeded events are recorded in the audit trail</li>
+    <li><strong>Per-agent isolation:</strong> Each agent's budget is tracked independently via the context ledger</li>
+  </ul>
+
+  <h2 id="policy-engine">Policy Engine</h2>
+  <p>LeanCTX includes a declarative policy engine that applies rules based on runtime conditions. Policies are evaluated before tool dispatch and can filter, pin, redact, or audit context:</p>
+
+  <table>
+    <thead><tr><th>Condition</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>AgentIs</code></td><td>Matches a specific agent identity</td></tr>
+      <tr><td><code>AgentRoleIs</code></td><td>Matches the agent's assigned role</td></tr>
+      <tr><td><code>ContentContainsSecret</code></td><td>Detects secrets in the content being accessed</td></tr>
+      <tr><td><code>SourceModifiedRecently</code></td><td>File was modified within a configurable time window</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>Action</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>Exclude</code></td><td>Block the content from reaching the agent</td></tr>
+      <tr><td><code>Pin</code></td><td>Always include the content regardless of compression</td></tr>
+      <tr><td><code>Redact</code></td><td>Strip matched patterns before delivery</td></tr>
+      <tr><td><code>Audit</code></td><td>Log the access to the audit trail without blocking</td></tr>
+    </tbody>
+  </table>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>{`[[policies]]
+condition = { type = "ContentContainsSecret" }
+action = "Redact"
+
+[[policies]]
+condition = { type = "AgentRoleIs", role = "readonly" }
+action = "Exclude"
+paths = ["*.env", "secrets/**"]`}</code></pre>
+  </div>
+
+  <h2 id="compliance">Compliance Reports</h2>
+  <p>The <code>lean-ctx audit</code> command generates comprehensive compliance reports covering all security-relevant activity:</p>
+
+  <ul>
+    <li><strong>File access log:</strong> Every file read with timestamps, agent identity, and compression ratios</li>
+    <li><strong>Security events:</strong> PathJail violations, secret detections, capability denials, policy triggers</li>
+    <li><strong>Budget usage:</strong> Per-agent token consumption with remaining budget</li>
+    <li><strong>OWASP alignment:</strong> Mapping of active controls to OWASP Agentic Top 10 categories</li>
+    <li><strong>Chain integrity:</strong> Verification status of the SHA-256 audit chain</li>
+  </ul>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> audit
+<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> audit --format json --output report.json
+<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> audit --verify</code></pre>
+  </div>
+
+  <h2 id="auto-reroot">Auto-Reroot Protection</h2>
+  <p>By default, LeanCTX prevents automatic project root changes that could inadvertently expand the PathJail boundary:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code>{`[security]
+allow_auto_reroot = false  # default: prevents automatic root expansion`}</code></pre>
+  </div>
+
+  <p>When an agent or tool attempts to change the project root (e.g., navigating to a parent directory), the operation is blocked and an audit event is recorded. This prevents a compromised agent from expanding its own sandbox. If <code>allow_auto_reroot = true</code> is set, re-root events are still logged to the audit trail for review.</p>
+
+  <h2 id="atomic-writes">Atomic Writes</h2>
+  <p>All internal JSON stores (context ledgers, knowledge base, session files, audit logs) use an atomic write pattern to prevent data corruption on crash or power loss:</p>
+
+  <ol>
+    <li>Write to a temporary file in the same directory</li>
+    <li>Call <code>fsync</code> to flush to disk</li>
+    <li>Atomically rename the temp file to the target path</li>
+  </ol>
+
+  <p>This ensures that files are either fully written or untouched — no partial writes can leave the system in an inconsistent state. The same pattern is used for audit trail entries to maintain chain integrity even under unexpected termination.</p>
 
   <h2 id="v3516-hardening">v3.5.16 Security Hardening</h2>
   <p>Version 3.5.16 introduced 40+ security fixes across all severity levels. Key protections:</p>

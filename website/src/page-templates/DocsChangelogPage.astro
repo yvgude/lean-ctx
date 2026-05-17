@@ -12,6 +12,7 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
+      { label: '3.7.0 (Upcoming)', href: lp('/docs/changelog') + '#v3.7.0' },
       { label: '3.5.25 (Current)', href: lp('/docs/changelog') + '#v3.5.25' },
       { label: '3.5.24', href: lp('/docs/changelog') + '#v3.5.24' },
       { label: '3.5.23', href: lp('/docs/changelog') + '#v3.5.23' },
@@ -60,6 +61,57 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.7.0 -->
+  <h2 id="v3.7.0">3.7.0 <span class="text-xs text-muted">(Upcoming — Hardening Release)</span></h2>
+  <p class="text-sm text-muted">Agent runtime hardening, multi-agent production features, governance & compliance, and full OWASP Agentic Top 10 alignment.</p>
+
+  <h3>Agent Runtime Hardening</h3>
+  <ul>
+    <li><strong>Capability-based tool access control</strong> — Fine-grained permissions per agent with declarative capability ACLs. Agents can only invoke tools they are explicitly granted access to.</li>
+    <li><strong>OS-level sandboxing</strong> — macOS Seatbelt and Linux Landlock integration at <code>sandbox_level=1</code>. Agent file system and network access is restricted at the kernel level.</li>
+    <li><strong>SHA-256 chained audit trail</strong> — Append-only JSONL audit log with hash-chained entries. Every tool call, policy decision, and agent action is cryptographically linked.</li>
+    <li><strong>Secret detection</strong> — 8+ regex patterns detect secrets (API keys, tokens, passwords) in tool inputs/outputs with optional redaction.</li>
+    <li><strong>Shell allowlist mode</strong> — <code>ctx_shell</code> can be restricted to a configurable set of allowed commands, blocking all others.</li>
+    <li><strong>Auto-reroot protection</strong> — <code>allow_auto_reroot=false</code> by default prevents agents from escaping their project root.</li>
+  </ul>
+
+  <h3>Multi-Agent Production</h3>
+  <ul>
+    <li><strong>Per-agent context ledger isolation</strong> — Each agent gets its own isolated context ledger, preventing cross-agent data leakage in multi-agent setups.</li>
+    <li><strong>Agent token budgets</strong> — Configurable per-agent token limits with enforcement. Budget overruns are logged and can trigger policy actions.</li>
+    <li><strong>Remote Agent Bus</strong> — HTTP-based agent registration with heartbeat monitoring and SSE event streaming for distributed multi-agent orchestration.</li>
+    <li><strong>Signed handoff bundles</strong> — Agent-to-agent handoffs are signed with Ed25519, ensuring bundle integrity and provenance.</li>
+  </ul>
+
+  <h3>Governance & Compliance</h3>
+  <ul>
+    <li><strong>Enhanced policy engine</strong> — Declarative rules with agent, content, and time-based conditions. Policies can allow, deny, or require approval for specific operations.</li>
+    <li><strong>Compliance reports via <code>lean-ctx audit</code></strong> — Generate compliance reports from the audit trail. Supports filtering by time range, agent, and event type.</li>
+    <li><strong>OWASP Agentic Top 10 alignment</strong> — 8 out of 10 categories have full coverage: Prompt Injection, Tool Misuse, Excessive Agency, Insecure Output, SSRF, Over-Reliance, Data Exfiltration, and Insufficient Logging.</li>
+  </ul>
+
+  <h3>Security Hardening</h3>
+  <ul>
+    <li><strong>PathJail expanded</strong> — 16 path-typed argument keys are now validated and jailed, preventing path traversal in all tool parameters.</li>
+    <li><strong>TOCTOU fix</strong> — <code>O_NOFOLLOW</code> on Unix prevents symlink race conditions during file operations.</li>
+    <li><strong>Atomic writes for all JSON stores</strong> — Crash-safe writes for config, sessions, knowledge base, and audit trail.</li>
+    <li><strong>Timing-safe authentication</strong> — All token and password comparisons use constant-time algorithms.</li>
+    <li><strong>Proxy header allowlist</strong> — Only explicitly allowed headers are forwarded through the LLM proxy.</li>
+    <li><strong>FILE_LOCKS LRU eviction</strong> — Prevents unbounded memory growth from accumulated file locks.</li>
+    <li><strong>Tool execution timeout</strong> — 120-second hard timeout for all tool executions, preventing runaway operations.</li>
+    <li><strong>TaskStore advisory file locks</strong> — Concurrent access to task stores is serialized via advisory locks.</li>
+  </ul>
+
+  <h3>MCP Alignment</h3>
+  <ul>
+    <li><strong>MCP Server Card</strong> — <code>.well-known/mcp-server.json</code> discovery endpoint for standardized server metadata.</li>
+    <li><strong>Reference results for large outputs</strong> — Tool responses exceeding size thresholds return references instead of inline data.</li>
+    <li><strong>Context gateway metrics</strong> — New metrics endpoint for monitoring context gateway throughput and latency.</li>
+    <li><strong>Dashboard audit events endpoint</strong> — <code>/api/audit</code> exposes audit trail events for the web dashboard.</li>
+  </ul>
+
+  <hr />
 
   <!-- 3.5.25 -->
   <h2 id="v3.5.25">3.5.25 <span class="text-xs text-muted">(May 2026)</span></h2>

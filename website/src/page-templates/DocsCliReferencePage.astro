@@ -24,6 +24,8 @@ const sidebar = [
       { label: t('docs.cliReference.sidebarProjectGraph'), href: lp('/docs/cli-reference#project-graph') },
       { label: t('docs.cliReference.sidebarHeatmap'), href: lp('/docs/cli-reference#heatmap') },
       { label: t('docs.cliReference.sidebarSafetyLevels'), href: lp('/docs/cli-reference#safety-levels') },
+      { label: 'Audit', href: lp('/docs/cli-reference#audit') },
+      { label: 'Shell Allowlist', href: lp('/docs/cli-reference#shell-allowlist') },
       { label: t('docs.cliReference.sidebarBypass'), href: lp('/docs/cli-reference#bypass') },
       { label: 'Cloud Auth', href: lp('/docs/cli-reference#login') },
       { label: t('docs.cliReference.sidebarShellAliases'), href: lp('/docs/cli-reference#shell-aliases') },
@@ -676,6 +678,71 @@ lean-ctx slow-log clear</code></pre>
   </table>
 
   <p><Fragment set:html={t('docs.cliReference.safetyLevelsGlobalNote')} /></p>
+
+  <hr />
+
+  <h2 id="audit">Audit</h2>
+
+  <p>
+    Generate a compliance report covering all lean-ctx activity in the current or specified project.
+    The audit report includes file reads, compression ratios, security events, per-agent budget usage,
+    and an OWASP alignment summary.
+  </p>
+
+  <h3 id="audit-cmd"><code>lean-ctx audit [flags]</code></h3>
+
+  <table>
+    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>(none)</code></td><td>Print full audit report to stdout</td></tr>
+      <tr><td><code>--period=&lt;p&gt;</code></td><td>Time period: <code>today</code>, <code>week</code>, <code>month</code>, <code>all</code></td></tr>
+      <tr><td><code>--project=&lt;path&gt;</code></td><td>Scope audit to a specific project directory</td></tr>
+      <tr><td><code>--json</code></td><td>Machine-readable JSON output for CI/CD integration</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx audit                                # full audit report
+lean-ctx audit --period=week                  # weekly audit
+lean-ctx audit --project=~/my-app --json      # JSON export for CI</code></pre>
+
+  <h3>Report Sections</h3>
+  <ul>
+    <li><strong>File Reads</strong> — total reads, unique files, cache hit rate, read modes used</li>
+    <li><strong>Compression Ratios</strong> — per-mode and aggregate token savings</li>
+    <li><strong>Security Events</strong> — cross-project boundary violations, blocked reads, secret detection hits</li>
+    <li><strong>Budget Usage</strong> — per-agent token consumption vs. configured limits</li>
+    <li><strong>OWASP Alignment</strong> — summary of how lean-ctx security controls map to OWASP LLM Top 10 categories</li>
+  </ul>
+
+  <hr />
+
+  <h2 id="shell-allowlist">Shell Allowlist</h2>
+
+  <p>
+    The <code>shell_allowlist</code> configuration restricts which commands <code>ctx_shell</code>
+    can execute. When enabled, only commands matching the allowlist patterns are permitted —
+    all others are rejected with an error. This provides an additional security layer on top of
+    the existing safety levels.
+  </p>
+
+  <pre><code># config.toml
+[shell_allowlist]
+enabled = true
+commands = [
+  "git *",
+  "cargo *",
+  "npm *",
+  "node *",
+  "ls *",
+  "cat *",
+  "grep *",
+]</code></pre>
+
+  <p>
+    When a command is blocked by the allowlist, <code>ctx_shell</code> returns an error
+    indicating the command is not permitted, along with the list of allowed patterns.
+    Use <code>lean-ctx config set shell_allowlist.enabled false</code> to disable.
+  </p>
 
   <hr />
 

@@ -16,6 +16,7 @@ const rows = [
   { label: t('compare.rowShell'),        noTool: t('compare.rowShellNoTool'), manual: t('compare.rowShellManual'), leanCtx: t('compare.rowShellLeanCtx'), leanIcon: 'check' },
   { label: t('compare.rowAnalysis'),     noTool: t('compare.rowAnalysisNoTool'), manual: t('compare.rowAnalysisManual'), leanCtx: t('compare.rowAnalysisLeanCtx'), leanIcon: 'check' },
   { label: t('compare.rowMaintenance'),  noTool: t('compare.rowMaintenanceNoTool'), manual: t('compare.rowMaintenanceManual'), leanCtx: t('compare.rowMaintenanceLeanCtx'), leanIcon: 'check' },
+  { label: 'Security & Governance', noTool: 'No enforcement', manual: 'Basic file ACL', leanCtx: 'OWASP aligned, OS sandbox, capability ACL, signed bundles, audit trail', leanIcon: 'check' },
 ];
 
 const altRows = [
@@ -27,6 +28,7 @@ const altRows = [
   { feature: t('compare.altRowGovernance'),       rtk: t('compare.altRtkGovernance'),       ctxPlus: t('compare.altCtxPlusGovernance'),       memgpt: t('compare.altMemgptGovernance'),       leanCtx: t('compare.altLeanGovernance') },
   { feature: t('compare.altRowLocalFirst'),       rtk: t('compare.altRtkLocalFirst'),       ctxPlus: t('compare.altCtxPlusLocalFirst'),       memgpt: t('compare.altMemgptLocalFirst'),       leanCtx: t('compare.altLeanLocalFirst') },
   { feature: t('compare.altRowMcpTools'),         rtk: t('compare.altRtkMcpTools'),         ctxPlus: t('compare.altCtxPlusMcpTools'),         memgpt: t('compare.altMemgptMcpTools'),         leanCtx: t('compare.altLeanMcpTools') },
+  { feature: 'Security Hardening',               rtk: 'None',                              ctxPlus: 'None',                                  memgpt: 'Basic auth',                             leanCtx: 'OWASP 8/10, OS sandbox, Ed25519 bundles, compliance reports' },
 ];
 ---
 

@@ -21,6 +21,8 @@ const sidebar = [
       { label: t('docsConfiguration.sidebarHookRedirect'), href: lp('/docs/configuration') + '#hook-redirect' },
       { label: t('docsConfiguration.sidebarCursorRule'), href: lp('/docs/configuration') + '#cursor-rule' },
       { label: 'Security Layer', href: lp('/docs/configuration') + '#security-layer' },
+      { label: 'Secret Detection', href: lp('/docs/configuration') + '#secret-detection' },
+      { label: 'Boundary Policy', href: lp('/docs/configuration') + '#boundary-policy' },
       { label: 'Data Directory', href: lp('/docs/configuration') + '#data-directory' },
       { label: 'CLI File Cache', href: lp('/docs/configuration') + '#cli-cache' },
       { label: 'Loop Detection', href: lp('/docs/configuration') + '#loop-detection' },
@@ -304,6 +306,36 @@ lean-ctx config schema</code></pre>
         <td>Maximum files scanned by the JSON graph index fallback. Increase for large monorepos. When the cap is reached, <code>lean-ctx gain</code> shows "(capped)" and a warning is emitted.</td>
       </tr>
       <tr>
+        <td><code>sandbox_level</code></td>
+        <td>u8</td>
+        <td><code>0</code></td>
+        <td>Sandbox level for code execution. <code>0</code> = subprocess isolation only, <code>1</code> = OS-level sandboxing (Seatbelt on macOS, Landlock on Linux). Also available via <code>LEAN_CTX_SANDBOX_LEVEL</code>.</td>
+      </tr>
+      <tr>
+        <td><code>shell_allowlist</code></td>
+        <td>list</td>
+        <td><code>[]</code></td>
+        <td>When non-empty, only listed commands are permitted by <code>ctx_shell</code>. All other commands are rejected. Also available via <code>LEAN_CTX_SHELL_ALLOWLIST</code> (comma-separated).</td>
+      </tr>
+      <tr>
+        <td><code>allow_auto_reroot</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Allow automatic project root re-rooting. When <code>false</code>, absolute paths outside the PathJail are rejected. Also available via <code>LEAN_CTX_ALLOW_REROOT</code>.</td>
+      </tr>
+      <tr>
+        <td><code>agent_token_budget</code></td>
+        <td>usize</td>
+        <td><code>0</code></td>
+        <td>Default per-agent token budget. <code>0</code> = unlimited. Override per-agent via <code>ctx_session</code>.</td>
+      </tr>
+      <tr>
+        <td><code>reference_results</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>When <code>true</code>, large tool outputs (&gt;4000 chars) are stored as references and a URI is returned instead of the full content. Also available via <code>LEAN_CTX_REFERENCE_RESULTS</code>.</td>
+      </tr>
+      <tr>
         <td><code>[archive]</code></td>
         <td>table</td>
         <td>-</td>
@@ -326,6 +358,18 @@ lean-ctx config schema</code></pre>
         <td>table</td>
         <td>-</td>
         <td>Memory subsystem configuration with sub-tables for knowledge, episodic, procedural, lifecycle, gotcha, and embeddings. See <a href="#memory">Memory</a>.</td>
+      </tr>
+      <tr>
+        <td><code>[secret_detection]</code></td>
+        <td>table</td>
+        <td>-</td>
+        <td>Regex-based secret detection in tool outputs. See <a href="#secret-detection">Secret Detection</a>.</td>
+      </tr>
+      <tr>
+        <td><code>[boundary_policy]</code></td>
+        <td>table</td>
+        <td>-</td>
+        <td>Cross-project access control and audit policy. See <a href="#boundary-policy">Boundary Policy</a>.</td>
       </tr>
       <tr>
         <td><code>[loop_detection]</code></td>
@@ -418,6 +462,26 @@ lean-ctx config schema</code></pre>
         <td><code>LEAN_CTX_SAVINGS_FOOTER</code></td>
         <td><code>auto</code> (default) / <code>always</code> / <code>never</code></td>
         <td>Controls visibility of token savings footers. <code>auto</code>: shown in CLI, suppressed in MCP/agent context. <code>always</code>: always shown. <code>never</code>: never shown. Overrides <code>savings_footer</code> in config.toml.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SANDBOX_LEVEL</code></td>
+        <td><code>0</code> (default) / <code>1</code></td>
+        <td>Override <code>sandbox_level</code> config. <code>0</code> = subprocess only, <code>1</code> = OS-level sandboxing (Seatbelt on macOS, Landlock on Linux).</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SHELL_ALLOWLIST</code></td>
+        <td>comma-separated commands</td>
+        <td>Override <code>shell_allowlist</code> config. When set, only listed commands are permitted by <code>ctx_shell</code>. Example: <code>git,cargo,npm,ls</code></td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_ALLOW_REROOT</code></td>
+        <td><code>true</code> / <code>false</code></td>
+        <td>Override <code>allow_auto_reroot</code> config. When <code>false</code> (default), absolute paths outside the PathJail are rejected.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_REFERENCE_RESULTS</code></td>
+        <td><code>true</code> / <code>false</code></td>
+        <td>Override <code>reference_results</code> config. When <code>true</code>, large tool outputs (&gt;4000 chars) are stored as references with a URI returned instead.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_ACTIVE</code></td>
@@ -644,6 +708,58 @@ replacement = ""</code></pre>
     time-of-check-to-time-of-use race conditions where a file could be swapped between
     the validation and write phases.
   </p>
+
+  <hr />
+
+  <h2 id="secret-detection">Secret Detection <span class="text-xs font-normal text-muted ml-2">v3.6.0</span></h2>
+  <p>
+    The <code>[secret_detection]</code> section configures regex-based secret detection in tool
+    outputs. When enabled, lean-ctx scans all tool responses for patterns matching API keys,
+    tokens, passwords, and other sensitive values.
+  </p>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+[secret_detection]
+enabled = true                # Enable regex-based secret detection (default: true)
+redact = false                # Automatically redact detected secrets (default: false)
+custom_patterns = []          # Additional regex patterns for detection (default: [])</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>secret_detection.enabled</code></td><td>bool</td><td><code>true</code></td><td>Enable regex-based secret detection. When enabled, tool outputs are scanned for patterns matching known secret formats (API keys, tokens, passwords, private keys).</td></tr>
+      <tr><td><code>secret_detection.redact</code></td><td>bool</td><td><code>false</code></td><td>Automatically redact detected secrets in tool output. When <code>true</code>, matched secrets are replaced with <code>[REDACTED]</code>. When <code>false</code>, secrets are flagged with a warning but passed through.</td></tr>
+      <tr><td><code>secret_detection.custom_patterns</code></td><td>list</td><td><code>[]</code></td><td>Additional regex patterns for secret detection, merged with the built-in patterns. Each entry is a regex string. Example: <code>["MYAPP_[A-Z0-9]{32}", "custom-secret-[a-f0-9]+"]</code></td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="boundary-policy">Boundary Policy <span class="text-xs font-normal text-muted ml-2">v3.6.0</span></h2>
+  <p>
+    The <code>[boundary_policy]</code> section controls cross-project access behavior. In monorepo
+    or multi-project setups, this determines whether agents can search or import files across
+    project boundaries, and whether such access is logged for audit.
+  </p>
+
+  <h3>Configuration</h3>
+  <pre><code># ~/.lean-ctx/config.toml
+[boundary_policy]
+allow_cross_project = false   # Allow cross-project search/import (default: false)
+audit_cross_project = false   # Log cross-project access events (default: false)</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>boundary_policy.allow_cross_project</code></td><td>bool</td><td><code>false</code></td><td>Allow cross-project search and import. When <code>false</code>, file operations are restricted to the current project root. Enable for monorepo setups where agents need access across project boundaries.</td></tr>
+      <tr><td><code>boundary_policy.audit_cross_project</code></td><td>bool</td><td><code>false</code></td><td>Log cross-project access events. When <code>true</code>, every cross-project file access is recorded in the audit trail for compliance and security review.</td></tr>
+    </tbody>
+  </table>
 
   <hr />
 

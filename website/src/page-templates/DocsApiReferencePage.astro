@@ -13,6 +13,9 @@ const sidebar = [
       { label: 'Overview', href: lp('/docs/api-reference') },
       { label: 'Authentication', href: lp('/docs/api-reference#auth') },
       { label: 'REST Endpoints', href: lp('/docs/api-reference#endpoints') },
+      { label: 'Agent Registry', href: lp('/docs/api-reference#agent-registry') },
+      { label: 'Audit & References', href: lp('/docs/api-reference#audit-references') },
+      { label: 'Discovery', href: lp('/docs/api-reference#discovery') },
       { label: 'Rate Limiting', href: lp('/docs/api-reference#rate-limiting') },
       { label: 'TypeScript SDK', href: lp('/docs/api-reference#sdk') },
       { label: 'HTTP MCP Contract', href: lp('/docs/api-reference#http-mcp') },
@@ -151,6 +154,132 @@ data: {"id":43,"workspaceId":"my-team","channelId":"feat/auth","kind":"session_m
   <div class="not-prose">
     <pre class="code-block"><code><span class="text-accent">GET</span> /health            <span class="text-muted"># Health check</span>
 <span class="text-accent">GET</span> /v1/metrics        <span class="text-muted"># JSON metrics snapshot (requires audit scope)</span></code></pre>
+  </div>
+
+  <h2 id="agent-registry">Agent Registry</h2>
+  <p>HTTP-backed agent registration and lifecycle management. These endpoints power the <a href={lp('/docs/concepts/multi-agent') + '#remote-agent-bus'}>Remote Agent Bus</a>.</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">POST</span> /v1/agents/register
+
+<span class="text-muted">Request:</span>
+{'{'}
+  "agent_type": "claude",
+  "role": "review",
+  "project_root": "/home/user/my-project"
+{'}'}
+
+<span class="text-muted">Response:</span>
+{'{'}
+  "agent_id": "d4e5f6",
+  "status": "active",
+  "registered_at": "2026-05-17T10:00:00Z"
+{'}'}</code></pre>
+  </div>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">POST</span> /v1/agents/heartbeat
+
+<span class="text-muted">Request:</span>
+{'{'} "agent_id": "d4e5f6" {'}'}
+
+<span class="text-muted">Response:</span>
+{'{'} "ok": true, "ttl_seconds": 60 {'}'}</code></pre>
+  </div>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/agents/list
+
+<span class="text-muted">Response:</span>
+{'{'}
+  "agents": [
+    {'{'}
+      "agent_id": "d4e5f6",
+      "agent_type": "claude",
+      "role": "review",
+      "status": "active",
+      "last_heartbeat": "2026-05-17T10:05:00Z"
+    {'}'}
+  ]
+{'}'}</code></pre>
+  </div>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">POST</span> /v1/agents/deregister
+
+<span class="text-muted">Request:</span>
+{'{'} "agent_id": "d4e5f6" {'}'}
+
+<span class="text-muted">Response:</span>
+{'{'} "ok": true, "deregistered_at": "2026-05-17T10:10:00Z" {'}'}</code></pre>
+  </div>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/agents/events  <span class="text-muted"># SSE stream of agent registry changes</span>
+
+<span class="text-muted">Response (SSE stream):</span>
+event: agent_joined
+data: {'{'}"agent_id":"d4e5f6","agent_type":"claude","role":"review"{'}'}
+
+event: agent_left
+data: {'{'}"agent_id":"a1b2c3","reason":"heartbeat_timeout"{'}'}</code></pre>
+  </div>
+
+  <h2 id="audit-references">Audit &amp; References</h2>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/audit/events?limit=50  <span class="text-muted"># Cross-project boundary events + audit trail</span>
+
+<span class="text-muted">Response:</span>
+{'{'}
+  "events": [
+    {'{'}
+      "timestamp": "2026-05-17T10:00:00Z",
+      "kind": "cross_project_read",
+      "agent_id": "a1b2c3",
+      "source_project": "/home/user/api",
+      "target_path": "/home/user/shared/types.ts",
+      "action": "blocked"
+    {'}'}
+  ],
+  "total": 142
+{'}'}</code></pre>
+  </div>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /v1/references/{'{'}id{'}'}  <span class="text-muted"># Resolve a reference result by ID</span>
+
+<span class="text-muted">Response:</span>
+{'{'}
+  "id": "ref_a7f3c2",
+  "type": "file_content",
+  "path": "src/auth.ts",
+  "content": "export function authenticate() ...",
+  "created_at": "2026-05-17T09:30:00Z",
+  "expires_at": "2026-05-17T10:30:00Z"
+{'}'}</code></pre>
+  </div>
+
+  <h2 id="discovery">Discovery</h2>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">GET</span>  /.well-known/mcp-server.json  <span class="text-muted"># MCP Server Card</span>
+
+<span class="text-muted">Response:</span>
+{'{'}
+  "name": "lean-ctx",
+  "version": "3.6.2",
+  "capabilities": ["tools", "resources", "prompts"],
+  "tool_categories": ["read", "search", "shell", "knowledge", "agent", "session"],
+  "security": {'{'}
+    "sandbox": true,
+    "secret_detection": true,
+    "shell_allowlist": true,
+    "signed_handoffs": true
+  {'}'},
+  "transport": ["stdio", "http"],
+  "a2a_compatible": true
+{'}'}</code></pre>
   </div>
 
   <h2 id="rate-limiting">Rate Limiting</h2>

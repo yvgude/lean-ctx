@@ -19,7 +19,11 @@ const sidebar = [
       { label: 'Google A2A Compat', href: lp('/docs/concepts/multi-agent') + '#google-a2a' },
       { label: 'Shared Cache', href: lp('/docs/concepts/multi-agent') + '#shared-cache' },
       { label: 'Diaries', href: lp('/docs/concepts/multi-agent') + '#diaries' },
+      { label: 'Remote Agent Bus', href: lp('/docs/concepts/multi-agent') + '#remote-agent-bus' },
+      { label: 'Per-Agent Ledger', href: lp('/docs/concepts/multi-agent') + '#per-agent-ledger' },
+      { label: 'Agent Token Budget', href: lp('/docs/concepts/multi-agent') + '#agent-token-budget' },
       { label: 'Context Handoff', href: lp('/docs/concepts/multi-agent') + '#handoff' },
+      { label: 'Signed Handoff Bundles', href: lp('/docs/concepts/multi-agent') + '#signed-handoff-bundles' },
       { label: 'Compaction Survival', href: lp('/docs/concepts/multi-agent') + '#compaction-survival' },
     ],
   },
@@ -119,6 +123,107 @@ ctx_agent action="poll_events" category="default" message="0"
   #2 [knowledge_remembered] actor=codex-test cl=eventual (14:31:05)
 cursor=2`}</code></pre>
 
+  <h2 id="remote-agent-bus">Remote Agent Bus</h2>
+  <p>
+    The Remote Agent Bus extends the local message bus over HTTP, enabling agents on different
+    machines or in different processes to coordinate. Agents register, maintain heartbeats,
+    and receive events through a standard REST + SSE interface.
+  </p>
+
+  <h3>Endpoints</h3>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>POST</code></td><td><code>/v1/agents/register</code></td><td>Register an agent (body: <code>agent_type</code>, <code>role</code>, <code>project_root</code>)</td></tr>
+      <tr><td><code>POST</code></td><td><code>/v1/agents/heartbeat</code></td><td>Send heartbeat to keep registration alive (body: <code>agent_id</code>)</td></tr>
+      <tr><td><code>GET</code></td><td><code>/v1/agents/list</code></td><td>List all active agents with status and metadata</td></tr>
+      <tr><td><code>POST</code></td><td><code>/v1/agents/deregister</code></td><td>Deregister an agent (body: <code>agent_id</code>)</td></tr>
+      <tr><td><code>GET</code></td><td><code>/v1/agents/events</code></td><td>SSE stream of agent registry changes (join, leave, heartbeat)</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Register a remote agent
+POST /v1/agents/register
+{
+  "agent_type": "claude",
+  "role": "review",
+  "project_root": "/home/user/my-project"
+}
+→ { "agent_id": "d4e5f6", "status": "active" }
+
+# Keep registration alive
+POST /v1/agents/heartbeat
+{ "agent_id": "d4e5f6" }
+→ { "ok": true, "ttl_seconds": 60 }
+
+# Subscribe to agent events (SSE)
+GET /v1/agents/events
+→ event: agent_joined
+  data: {"agent_id":"d4e5f6","agent_type":"claude","role":"review"}
+
+→ event: agent_left
+  data: {"agent_id":"a1b2c3","reason":"heartbeat_timeout"}`}</code></pre>
+  <p>
+    Agents that miss 3 consecutive heartbeats are automatically deregistered and an
+    <code>agent_left</code> event is emitted on the SSE stream.
+  </p>
+
+  <h2 id="per-agent-ledger">Per-Agent Context Ledger</h2>
+  <p>
+    Each agent gets its own isolated context ledger, preventing cross-contamination between
+    agents working in the same project. Ledger files are stored at
+    <code>~/.lean-ctx/ledger/{'{'}&lt;agent_id&gt;{'}'}.json</code>.
+    The default (non-multi-agent) session uses <code>context_ledger.json</code>.
+  </p>
+  <ul>
+    <li>Ledger tracks file reads, cache entries, knowledge mutations, and tool call history per agent</li>
+    <li>Agents cannot read or modify another agent's ledger</li>
+    <li>Ledger files are created on first registration and cleaned up on session end</li>
+    <li>The handoff system merges ledger state when transferring context between agents</li>
+  </ul>
+  <pre><code>{`# Ledger storage layout
+~/.lean-ctx/ledger/
+├── context_ledger.json      # default agent (single-agent mode)
+├── a1b2c3.json              # cursor-dev-1 ledger
+├── d4e5f6.json              # claude-review ledger
+└── g7h8i9.json              # codex-test ledger`}</code></pre>
+
+  <h2 id="agent-token-budget">Agent Token Budget</h2>
+  <p>
+    Configurable per-agent token limits prevent runaway context consumption. When an agent
+    exceeds its budget, further reads are blocked until the budget is reset or increased.
+    Warnings are emitted at <strong>&gt;80%</strong> usage.
+  </p>
+
+  <h3>Configuration</h3>
+  <pre><code>{`# config.toml
+[agent_token_budget]
+default = 500_000          # default budget per agent (tokens)
+cursor = 1_000_000         # override for cursor agents
+claude = 750_000           # override for claude agents
+warn_threshold = 0.80      # emit warning at 80% usage`}</code></pre>
+
+  <h3>Behavior</h3>
+  <table>
+    <thead>
+      <tr><th>Usage</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>&lt;80%</code></td><td>Normal operation</td></tr>
+      <tr><td><code>&ge;80%</code></td><td>Warning injected into tool responses</td></tr>
+      <tr><td><code>100%</code></td><td>Reads blocked — agent receives error with current usage stats</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>{`# Budget warning in tool response
+⚠ Token budget: 412,000 / 500,000 (82.4%) — consider archiving or compacting
+
+# Budget exceeded
+✗ Token budget exceeded: 500,000 / 500,000 (100%)
+  Use ctx_session action="compact" or ctx_agent action="reset_budget" to continue`}</code></pre>
+
   <h2 id="a2a-transport">A2A Transport</h2>
   <p>
     <strong>TransportEnvelopeV1</strong> enables cross-machine agent handoffs. Context packages and
@@ -215,6 +320,43 @@ ctx_handoff action="save" apply_knowledge=true apply_session=true apply_workflow
 ctx_handoff action="load"
 → Restored: 12 cached files (F1-F12), 3 knowledge entries, workflow "bugfix" at step "test"
   Ready to continue where Agent A left off.`}</code></pre>
+
+  <h2 id="signed-handoff-bundles">Signed Handoff Bundles</h2>
+  <p>
+    Handoff bundles (<code>HandoffTransferBundleV1</code>) are cryptographically signed with
+    Ed25519 to ensure integrity and authenticity. Each agent has its own keypair stored at
+    <code>~/.lean-ctx/keys/</code>, generated automatically on first registration.
+  </p>
+
+  <h3>Key Storage</h3>
+  <pre><code>{`~/.lean-ctx/keys/
+├── a1b2c3.pub              # cursor-dev-1 public key
+├── a1b2c3.key              # cursor-dev-1 private key (600 permissions)
+├── d4e5f6.pub              # claude-review public key
+└── d4e5f6.key              # claude-review private key`}</code></pre>
+
+  <h3>Signing &amp; Verification</h3>
+  <ul>
+    <li><code>sign_bundle()</code> — signs the serialized bundle with the agent's private key, appending the signature to the bundle envelope</li>
+    <li><code>verify_bundle_signature()</code> — verifies the signature against the sender's public key before importing</li>
+    <li>Import rejects bundles with invalid or missing signatures — no unsigned handoffs are accepted</li>
+    <li>Signatures cover the full bundle payload (cached files, knowledge, workflow state, session context)</li>
+  </ul>
+
+  <pre><code>{`# Saving a handoff (automatically signed)
+ctx_handoff action="save" apply_knowledge=true apply_session=true
+→ Context saved and signed: 12 files, 3 knowledge entries
+  Signature: Ed25519(a1b2c3) ✓
+
+# Loading a handoff (signature verified before import)
+ctx_handoff action="load"
+→ Signature verified: Ed25519(a1b2c3) ✓
+  Restored: 12 cached files, 3 knowledge entries
+
+# Rejected handoff (tampered bundle)
+ctx_handoff action="load"
+→ ✗ Signature verification failed — bundle rejected
+  Expected signer: a1b2c3, got: invalid signature`}</code></pre>
 
   <h2 id="compaction-survival">Compaction Survival</h2>
   <p>
