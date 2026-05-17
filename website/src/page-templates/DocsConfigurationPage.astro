@@ -372,6 +372,12 @@ lean-ctx config schema</code></pre>
         <td>Cross-project access control and audit policy. See <a href="#boundary-policy">Boundary Policy</a>.</td>
       </tr>
       <tr>
+        <td><code>bypass_hints</code></td>
+        <td>string</td>
+        <td><code>"gentle"</code></td>
+        <td>Controls bypass detection hints when agents use native Read/Grep instead of lean-ctx tools. Values: <code>"gentle"</code> (reminder after cooldown), <code>"firm"</code> (immediate reminder), <code>"off"</code> (disabled). Also available via <code>LEAN_CTX_BYPASS_HINTS</code>.</td>
+      </tr>
+      <tr>
         <td><code>[loop_detection]</code></td>
         <td>table</td>
         <td>-</td>
@@ -512,6 +518,16 @@ lean-ctx config schema</code></pre>
         <td><code>LEAN_CTX_DISABLED_TOOLS</code></td>
         <td>comma-separated tool names</td>
         <td>Exclude specific tools from the MCP tool list. Overrides <code>disabled_tools</code> in config.toml when set. Example: <code>ctx_benchmark,ctx_metrics,ctx_wrapped</code></td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_BYPASS_HINTS</code></td>
+        <td><code>gentle</code> (default) / <code>firm</code> / <code>off</code></td>
+        <td>Controls bypass detection hints. When agents use native Read/Grep instead of lean-ctx tools, a reminder is appended to the next response. <code>gentle</code>: reminder with cooldown (every 5 calls). <code>firm</code>: immediate reminder on every detection. <code>off</code>: disabled. Overrides <code>bypass_hints</code> in config.toml.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_HARDEN</code></td>
+        <td><code>1</code> / unset</td>
+        <td>Activate strict enforcement mode. When set, hook redirects deny native tool usage entirely and return an error message directing the agent to use lean-ctx tools. Set automatically by <code>lean-ctx harden</code>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_SHELL</code></td>

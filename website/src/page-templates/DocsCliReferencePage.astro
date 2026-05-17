@@ -389,6 +389,25 @@ lean-ctx register user@example.com --password mypassword</code></pre>
   <p><Fragment set:html={t('docs.cliReference.uninstallDesc')} /></p>
   <pre><code>lean-ctx uninstall</code></pre>
 
+  <h3 id="harden"><code>lean-ctx harden [--undo]</code></h3>
+  <p>{t('docs.cliReference.hardenDesc')}</p>
+  <pre><code>lean-ctx harden          # activate strict enforcement
+lean-ctx harden --undo   # revert to normal mode</code></pre>
+  <p>{t('docs.cliReference.hardenDetails')}</p>
+  <ul>
+    <li>{t('docs.cliReference.hardenStep1')}</li>
+    <li>{t('docs.cliReference.hardenStep2')}</li>
+  </ul>
+
+  <h3 id="export-rules"><code>lean-ctx export-rules [--format=mdc|agents|claude] [--project=&lt;path&gt;]</code></h3>
+  <p>{t('docs.cliReference.exportRulesDesc')}</p>
+  <pre><code>lean-ctx export-rules                          # auto-detect format
+lean-ctx export-rules --format=mdc             # Cursor .mdc rule file
+lean-ctx export-rules --format=agents          # AGENTS.md section
+lean-ctx export-rules --format=claude          # CLAUDE.md section
+lean-ctx export-rules --project=/path/to/repo  # specify project root</code></pre>
+  <p>{t('docs.cliReference.exportRulesNote')}</p>
+
   <hr />
 
   <h2 id="analytics">{t('docs.cliReference.analyticsTitle')}</h2>

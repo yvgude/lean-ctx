@@ -12,7 +12,9 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.4 (Current)', href: lp('/docs/changelog') + '#v3.6.4' },
+      { label: '3.6.6 (Current)', href: lp('/docs/changelog') + '#v3.6.6' },
+      { label: '3.6.5', href: lp('/docs/changelog') + '#v3.6.5' },
+      { label: '3.6.4', href: lp('/docs/changelog') + '#v3.6.4' },
       { label: '3.5.25', href: lp('/docs/changelog') + '#v3.5.25' },
       { label: '3.5.24', href: lp('/docs/changelog') + '#v3.5.24' },
       { label: '3.5.23', href: lp('/docs/changelog') + '#v3.5.23' },
@@ -61,6 +63,38 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.6 -->
+  <h2 id="v3.6.6">3.6.6 <span class="text-xs text-muted">(2026-05-17)</span></h2>
+  <p class="text-sm text-muted">ABC-inspired agent hardening, bypass detection, strict enforcement mode, knowledge export, and git compression fix.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Bypass Hints</strong> — Detects when agents use native Read/Grep instead of lean-ctx tools and emits a reminder. Configurable via <code>bypass_hints</code> config or <code>LEAN_CTX_BYPASS_HINTS</code> env (modes: <code>gentle</code>, <code>firm</code>, <code>off</code>).</li>
+    <li><strong>Tool Description Enhancement</strong> — All core tool descriptions now explicitly state "replaces native X" to guide AI agents directly from the MCP schema.</li>
+    <li><strong>Rules Deduplication</strong> — Removed redundant tool mapping tables from injected rules. Tool descriptions carry the mapping; rules focus on mode selection and anti-patterns.</li>
+    <li><strong><code>lean-ctx harden</code></strong> — Activates strict enforcement mode (<code>LEAN_CTX_HARDEN=1</code> in MCP configs). Optionally denies Bash in Claude Code's <code>permissions.deny</code>.</li>
+    <li><strong><code>lean-ctx export-rules</code></strong> — Exports high-confidence knowledge facts as editor-native rules (MDC for Cursor, <code>AGENTS.md</code>, <code>CLAUDE.md</code>).</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong><code>git status --porcelain</code> truncation</strong> — Shell compression no longer truncates <code>git status</code> output when it doesn't match section parsing. Developers always see full status.</li>
+    <li><strong><code>init --agent</code> rules injection</strong> — Global rules and skill file now correctly injected. Fixed data dir split causing empty <code>gain</code> field. (#238, #239)</li>
+  </ul>
+
+  <!-- 3.6.5 -->
+  <h2 id="v3.6.5">3.6.5 <span class="text-xs text-muted">(2026-05-17)</span></h2>
+  <p class="text-sm text-muted">Bug fixes for CLAUDE_CONFIG_DIR, OpenCode rules location, Linux CI warnings, and MCP resource notifications.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>CLAUDE_CONFIG_DIR support</strong> — MCP instructions and rules file paths now respect <code>CLAUDE_CONFIG_DIR</code> env var instead of hardcoding <code>~/.claude</code>. (#235)</li>
+    <li><strong>OpenCode rules location</strong> — Rules written to <code>~/.config/opencode/AGENTS.md</code> instead of path OpenCode never loads. (#237)</li>
+    <li><strong>Linux CI warnings</strong> — Fixed <code>unreachable_pub</code>, <code>borrow_as_ptr</code>, <code>unnecessary_wraps</code>, and <code>unused_variables</code> for platform-gated items.</li>
+    <li><strong>MCP Resource Notifications</strong> — <code>notifications/resources/updated</code> sent to subscribed clients after ledger changes.</li>
+    <li><strong><code>ctx_load_tools</code></strong> — New tool for explicit category management with <code>notifications/tools/list_changed</code> support.</li>
+  </ul>
 
   <!-- 3.6.4 -->
   <h2 id="v3.6.4">3.6.4 <span class="text-xs text-muted">(2026-05-17)</span></h2>
