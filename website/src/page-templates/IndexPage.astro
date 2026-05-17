@@ -317,6 +317,10 @@ const faqJsonLd = JSON.stringify({
   <div class="content-grid">
     <div class="stats-panels animate-entrance">
       <div class="stat-panel">
+        <span class="stat-number text-accent">Real-time</span>
+        <span class="stat-desc">{t('index.statsVisibility')}</span>
+      </div>
+      <div class="stat-panel">
         <span class="stat-number text-accent">60–99%</span>
         <span class="stat-desc">{t('index.statsReduction')}</span>
         <a href={lp('/context-os/benchmark')} class="stat-methodology-link">See methodology</a>
@@ -324,10 +328,6 @@ const faqJsonLd = JSON.stringify({
       <div class="stat-panel">
         <span class="stat-number">{manifest.counts.granular}</span>
         <span class="stat-desc">{t('index.statsTools')}</span>
-      </div>
-      <div class="stat-panel">
-        <span class="stat-number">{manifest.read_modes.count}</span>
-        <span class="stat-desc">{t('index.statsReadModes')}</span>
       </div>
       <div class="stat-panel">
         <span class="stat-number text-accent">0</span>
