@@ -200,27 +200,6 @@
   border-color: var(--color-accent);
 }
 
-/* Preview section: continuous scroll-driven terminal motion */
-[data-preview] [data-parallax] {
-  will-change: transform, filter, opacity;
-  transform: translate3d(0, 0, 0);
-  transition: transform 0.05s linear;
-}
-
-[data-preview] [data-parallax='a'] {
-  transform:
-    translate3d(0, calc(var(--pp) * -22px), 0)
-    rotate(calc(var(--pp) * -0.6deg));
-  filter: blur(calc(var(--pp) * 0.6px));
-}
-
-[data-preview] [data-parallax='b'] {
-  transform:
-    translate3d(0, calc(var(--pp) * 18px), 0)
-    rotate(calc(var(--pp) * 0.7deg));
-  filter: blur(calc(var(--pp) * 0.6px));
-}
-
 /* Stats strip */
 .stats-panels {
   display: grid;

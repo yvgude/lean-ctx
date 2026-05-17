@@ -149,6 +149,11 @@ const stepperId = `stepper-${Math.random().toString(36).slice(2)}`;
   root.addEventListener('pointerenter', function() { pausedUntil = Date.now() + 9999999; });
   root.addEventListener('pointerleave', function() { pausedUntil = Date.now() + 400; });
 
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) stop();
+    else start();
+  });
+
   setActive(0, 'init');
   start();
 })();

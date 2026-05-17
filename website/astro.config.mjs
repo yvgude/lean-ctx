@@ -154,7 +154,18 @@ export default defineConfig({
       filter: (page) => !page.includes('/index-backup/'),
     }),
   ],
+  image: {
+    service: { entrypoint: 'astro/assets/services/sharp' },
+  },
   vite: {
-    plugins: [tailwindcss()]
-  }
+    plugins: [tailwindcss()],
+    build: {
+      cssMinify: 'lightningcss',
+      rollupOptions: {
+        output: {
+          manualChunks: undefined,
+        },
+      },
+    },
+  },
 });

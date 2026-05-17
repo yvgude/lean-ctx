@@ -168,8 +168,8 @@ const tileHorizontally = (block: string, repeats: number) => {
   return padded.map(line => Array(repeats).fill(line).join('  ')).join('\n');
 };
 
-const tiledArt = tileHorizontally(art, 3);
-const fullArt = Array(5).fill(tiledArt).join('\n');
+const tiledArt = tileHorizontally(art, 2);
+const fullArt = Array(2).fill(tiledArt).join('\n');
 ---
 
 <div class="ascii-hero-bg" aria-hidden="true">
@@ -195,23 +195,14 @@ const fullArt = Array(5).fill(tiledArt).join('\n');
     user-select: none;
     opacity: 0.14;
     color: #34d399;
-    animation: ascii-color-pulse 10s ease-in-out infinite;
     transform: translateZ(0);
+    contain: strict;
     min-height: 100vh;
-  }
-  @keyframes ascii-color-pulse {
-    0%, 100% { color: #34d399; }
-    50% { color: #818cf8; }
   }
   @media (max-width: 768px) {
     .ascii-hero-bg pre {
       font-size: 7px;
       opacity: 0.3;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ascii-hero-bg pre {
-      animation: none;
     }
   }
 </style>

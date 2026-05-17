@@ -239,18 +239,7 @@ body::before {
   background-size: 160px 160px, 160px 160px;
   background-position: top left, top left;
   opacity: 0.7;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  inset: -20%;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    radial-gradient(circle, var(--noise-dot) 1px, transparent 1px);
-  background-size: 3px 3px;
-  opacity: 0.22;
+  contain: strict;
 }
 
 ::selection {

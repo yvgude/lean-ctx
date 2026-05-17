@@ -251,11 +251,14 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable site description" />
 
   <script is:inline>
-    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-    posthog.init('phc_J0Ac94FAcsmbFj0CWOAqo9tGGSE4i9F4LXXfnN796gN', {
-        api_host: 'https://eu.i.posthog.com',
-        defaults: '2026-01-30'
-    })
+    (function(){
+      function loadPostHog(){
+        !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+        posthog.init('phc_J0Ac94FAcsmbFj0CWOAqo9tGGSE4i9F4LXXfnN796gN',{api_host:'https://eu.i.posthog.com',defaults:'2026-01-30'});
+      }
+      if('requestIdleCallback' in window){requestIdleCallback(loadPostHog,{timeout:3500})}
+      else{setTimeout(loadPostHog,2000)}
+    })();
   </script>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -277,7 +280,10 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <script is:inline>
     (function() {
       var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (reduced) return;
+      if (reduced) {
+        document.querySelectorAll('.animate-entrance').forEach(function(el) { el.classList.add('is-visible'); });
+        return;
+      }
       if (!('IntersectionObserver' in window)) return;
 
       var io = new IntersectionObserver(function(entries) {
@@ -289,39 +295,18 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
         });
       }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
 
-      var els = Array.prototype.slice.call(document.querySelectorAll('.animate-entrance'));
-      els.forEach(function(el) { io.observe(el); });
-
-      function revealInViewport() {
-        var vh = window.innerHeight || 0;
-        els.forEach(function(el) {
-          if (el.classList.contains('is-visible')) return;
-          var r = el.getBoundingClientRect();
-          if (r.top < vh * 0.9) {
-            el.classList.add('is-visible');
-            io.unobserve(el);
-          }
-        });
-      }
-
-      requestAnimationFrame(revealInViewport);
-
-      setTimeout(function() {
-        els.forEach(function(el) {
-          if (!el.classList.contains('is-visible')) el.classList.add('is-visible');
-        });
-      }, 1500);
+      document.querySelectorAll('.animate-entrance').forEach(function(el) { io.observe(el); });
     })();
     (function() {
       var si = document.getElementById('scroll-indicator');
       if (!si) return;
-      var hidden = false;
-      window.addEventListener('scroll', function() {
-        if (!hidden && window.scrollY > 80) {
+      function onScroll() {
+        if (window.scrollY > 80) {
           si.classList.add('is-hidden');
-          hidden = true;
+          window.removeEventListener('scroll', onScroll);
         }
-      }, { passive: true });
+      }
+      window.addEventListener('scroll', onScroll, { passive: true });
     })();
   </script>
 </body>

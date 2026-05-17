@@ -458,32 +458,6 @@ const faqJsonLd = JSON.stringify({
   });
 
   if (reduceMotion) return;
-
-  var preview = document.querySelector('[data-preview]');
-  var ticking = false;
-
-  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-
-  function update() {
-    ticking = false;
-    var vh = window.innerHeight || 1;
-
-    if (preview) {
-      var pr = preview.getBoundingClientRect();
-      var pp = clamp01((-pr.top + vh * 0.15) / Math.max(1, pr.height - vh * 0.35));
-      preview.style.setProperty('--pp', pp.toFixed(4));
-    }
-  }
-
-  function onScroll() {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(update);
-  }
-
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', onScroll);
-  update();
 })();
 </script>
 

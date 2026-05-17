@@ -312,16 +312,6 @@ function isSectionActive(section: SidebarSection): boolean {
       );
 
       anchors.forEach(a => observer.observe(a.el));
-      window.addEventListener('scroll', () => {
-        let best = '';
-        const scrollY = window.scrollY + 140;
-        for (const a of anchors) {
-          const rect = a.el.getBoundingClientRect();
-          const absTop = rect.top + window.scrollY;
-          if (absTop <= scrollY) best = a.id;
-        }
-        applyActive(best);
-      }, { passive: true });
 
       if (window.location.hash) {
         applyActive(window.location.hash.slice(1));
