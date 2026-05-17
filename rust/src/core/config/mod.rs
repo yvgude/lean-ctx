@@ -370,6 +370,12 @@ pub struct Config {
     /// Override via `LEAN_CTX_RESPONSE_VERBOSITY` env var.
     #[serde(default)]
     pub response_verbosity: ResponseVerbosity,
+    /// Bypass hint mode. When agents use native Read/Grep instead of lean-ctx tools,
+    /// a hint is appended to the next tool response.
+    /// Values: "on" (default), "off", "aggressive" (hint on every call, no cooldown).
+    /// Override via LEAN_CTX_BYPASS_HINTS env var.
+    #[serde(default)]
+    pub bypass_hints: Option<String>,
     /// Cross-project boundary policy.
     /// Controls whether cross-project search/import is allowed and whether access is audited.
     #[serde(default)]
@@ -709,6 +715,7 @@ impl Default for Config {
             lsp: std::collections::HashMap::new(),
             ide_paths: HashMap::new(),
             response_verbosity: ResponseVerbosity::default(),
+            bypass_hints: None,
             boundary_policy: crate::core::memory_boundary::BoundaryPolicy::default(),
             secret_detection: SecretDetectionConfig::default(),
             allow_auto_reroot: false,

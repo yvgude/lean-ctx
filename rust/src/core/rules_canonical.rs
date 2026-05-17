@@ -79,14 +79,10 @@ const MCP_TABLE: &str = "\
 | `ctx_tree(path, depth)` | `ls` / `find` | Compact directory maps |";
 
 const MCP_INSTRUCTIONS_HYBRID: &str = "\
-MUST use ctx_read instead of Read/cat. MUST use ctx_search instead of Grep/rg. \
-MUST use `lean-ctx -c` via Shell instead of ctx_shell or raw Shell. \
-Edit/Write/Delete/Glob: use native tools normally.";
+lean-ctx tools replace Read/Grep/Shell/ls. See tool descriptions for details. Edit/Write/Glob: native.";
 
 const MCP_INSTRUCTIONS_MCP: &str = "\
-MUST use ctx_read instead of Read/cat. MUST use ctx_search instead of Grep/rg. \
-MUST use ctx_shell instead of Shell/bash. MUST use ctx_tree instead of ls/find. \
-Edit/Write/Delete/Glob: use native tools normally.";
+lean-ctx tools replace Read/Grep/Shell/ls. See tool descriptions for details. Edit/Write/Glob: native.";
 
 #[cfg(test)]
 mod tests {

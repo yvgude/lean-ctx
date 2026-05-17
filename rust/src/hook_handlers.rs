@@ -452,6 +452,10 @@ fn is_disabled() -> bool {
     std::env::var("LEAN_CTX_DISABLED").is_ok()
 }
 
+fn is_harden_active() -> bool {
+    matches!(std::env::var("LEAN_CTX_HARDEN"), Ok(v) if v.trim() == "1")
+}
+
 fn is_quiet() -> bool {
     matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
 }
@@ -793,6 +797,16 @@ fn redirect_read(tool_input: Option<&serde_json::Value>) {
         return;
     }
 
+    if is_harden_active() {
+        print!(
+            "{}",
+            build_dual_deny_output(
+                "Use ctx_read instead of native Read. lean-ctx harden mode is active."
+            )
+        );
+        return;
+    }
+
     let binary = resolve_binary();
     let temp_path = redirect_temp_path(path);
 
@@ -820,6 +834,16 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) {
 
     if pattern.is_empty() {
         print!("{}", build_dual_allow_output());
+        return;
+    }
+
+    if is_harden_active() {
+        print!(
+            "{}",
+            build_dual_deny_output(
+                "Use ctx_search instead of native Grep. lean-ctx harden mode is active."
+            )
+        );
         return;
     }
 

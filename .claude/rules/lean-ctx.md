@@ -1,14 +1,14 @@
 # lean-ctx — Context Engineering Layer
-<!-- lean-ctx-rules-v9 -->
+<!-- lean-ctx-rules-v10 -->
 
-PREFER lean-ctx MCP tools over native equivalents for token savings:
+CRITICAL: ALWAYS use lean-ctx tools instead of native equivalents. This is NOT optional.
 
-## Tool preference:
-| PREFER | OVER | Why |
-|--------|------|-----|
-| `ctx_read(path, mode)` | `Read` / `cat` | Cached, 10 read modes, re-reads ~13 tokens |
-| `ctx_shell(command)` | `Shell` / `bash` | Pattern compression for git/npm/cargo output |
+## Tool Mapping
+| MUST USE | NEVER USE | Why |
+|----------|-----------|-----|
+| `ctx_read(path, mode)` | `Read` / `cat` / `head` / `tail` | Cached, 10 read modes, re-reads ~13 tokens |
 | `ctx_search(pattern, path)` | `Grep` / `rg` | Compact, token-efficient results |
+| `ctx_shell(command)` | `Shell` / `bash` / terminal | Pattern compression for git/npm/cargo output |
 | `ctx_tree(path, depth)` | `ls` / `find` | Compact directory maps |
 | `ctx_edit(path, old_string, new_string)` | `Edit` (when Read unavailable) | Search-and-replace without native Read |
 
@@ -24,6 +24,16 @@ PREFER lean-ctx MCP tools over native equivalents for token savings:
 - `reference` — quote-friendly minimal excerpts
 - `lines:N-M` — specific range
 
+## Mode selection:
+1. Editing the file? → `full` first, then `diff` for re-reads
+2. Need API surface only? → `map` or `signatures`
+3. Large file, context only? → `entropy` or `aggressive`
+4. Specific lines? → `lines:N-M`
+5. Active task set? → `task`
+6. Unsure? → `auto` (system selects optimal mode)
+
+Anti-pattern: NEVER use `full` for files you won't edit — use `map` or `signatures`.
+
 ## File editing:
 Use native Edit/StrReplace if available. If Edit requires Read and Read is unavailable, use ctx_edit.
 Write, Delete, Glob → use normally. NEVER loop on Edit failures — switch to ctx_edit immediately.
@@ -31,14 +41,7 @@ Write, Delete, Glob → use normally. NEVER loop on Edit failures — switch to 
 ## Proactive (use without being asked):
 - `ctx_overview(task)` at session start
 - `ctx_compress` when context grows large
-<!-- /lean-ctx -->
 
-<!-- lean-ctx-compression -->
-OUTPUT STYLE: dense
-- Each statement = one atomic fact line
-- Use abbreviations: fn, cfg, impl, deps, req, res, ctx, err, ret
-- Diff lines only (+/-/~), never repeat unchanged code
-- Symbols: → (causes), + (adds), − (removes), ~ (modifies), ∴ (therefore)
-- No narration, no filler, no hedging
-- BUDGET: ≤200 tokens per response unless code block required
-<!-- /lean-ctx-compression -->
+Fallback only if a lean-ctx tool is unavailable: use native equivalents.
+REMINDER: You MUST use lean-ctx tools. NEVER use native Read, Grep, or Shell directly.
+<!-- /lean-ctx -->

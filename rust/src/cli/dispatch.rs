@@ -1243,6 +1243,14 @@ pub fn run() {
                 }
                 return;
             }
+            "harden" => {
+                super::harden::run(&rest);
+                return;
+            }
+            "export-rules" => {
+                super::export_rules::run(&rest);
+                return;
+            }
             "gotchas" | "bugs" => {
                 super::cloud::cmd_gotchas(&rest);
                 return;

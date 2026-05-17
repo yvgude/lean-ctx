@@ -1,3 +1,4 @@
+pub mod bypass_hint;
 pub mod context_gate;
 mod dispatch;
 pub mod dynamic_tools;
@@ -817,6 +818,15 @@ impl ServerHandler for LeanCtxServer {
                     last_original,
                     pre_hint_tokens,
                 ) {
+                    result_text = format!("{result_text}\n{hint}");
+                }
+            }
+        }
+
+        if !minimal && !is_raw_shell {
+            bypass_hint::record_lctx_call();
+            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+                if let Some(hint) = bypass_hint::check(&data_dir) {
                     result_text = format!("{result_text}\n{hint}");
                 }
             }

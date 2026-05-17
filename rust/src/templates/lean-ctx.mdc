@@ -1,26 +1,30 @@
 ---
-description: "lean-ctx: Use ctx_read/ctx_search/ctx_shell instead of native Read/Grep/Shell."
+description: "lean-ctx: context compression layer. Tools replace native Read/Grep/Shell — see tool descriptions."
 globs: **/*
 alwaysApply: true
 ---
 
 # lean-ctx — Context Engineering Layer
-<!-- lean-ctx-rules-v10 -->
+<!-- lean-ctx-rules-hybrid-v2 -->
 
-CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents:
+## Mode: Hybrid (MCP reads + CLI shell)
 
-| MUST USE | INSTEAD OF |
-|----------|------------|
-| `ctx_read(path, mode)` | `Read` / `cat` / `head` / `tail` |
-| `ctx_search(pattern, path)` | `Grep` / `rg` |
-| `lean-ctx -c "<cmd>"` (via Shell) | raw `Shell` |
-| `lean-ctx ls [path]` (via Shell) | `ls` / `find` |
+MCP tools for reads/search (cached, token-efficient):
+- `ctx_read(path, mode)` instead of `Read`
+- `ctx_search(pattern, path)` instead of `Grep`
 
-ctx_read modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M.
-Re-reads cost ~13 tokens. fresh=true bypasses cache.
+CLI for shell (no MCP schema overhead):
+- `lean-ctx -c "<cmd>"` instead of raw Shell
+- `lean-ctx ls [path]` instead of `ls`/`find`
 
-File editing: use native Edit/StrReplace. Write/Delete/Glob → use normally.
+## Mode Selection
+- Editing → `full` then `diff` for re-reads
+- Context only → `map` or `signatures`
+- Large file → `aggressive` or `entropy`
+- Specific lines → `lines:N-M`
+- Unsure → `auto`
+
+## File Editing
+Use native Edit/StrReplace. Write/Delete/Glob → use normally.
 If Edit fails, use `ctx_edit(path, old_string, new_string)` immediately.
-
-REMINDER: You MUST use lean-ctx tools. NEVER use native Read, Grep, or Shell directly.
 <!-- /lean-ctx -->

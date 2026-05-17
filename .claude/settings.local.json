@@ -1,5 +1,27 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "lean-ctx hook observe",
+            "type": "command"
+          }
+        ],
+        "matcher": ".*"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "lean-ctx hook observe",
+            "type": "command"
+          }
+        ],
+        "matcher": ".*"
+      }
+    ],
     "PreToolUse": [
       {
         "hooks": [
@@ -18,6 +40,28 @@
           }
         ],
         "matcher": "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "lean-ctx hook observe",
+            "type": "command"
+          }
+        ],
+        "matcher": ".*"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "lean-ctx hook observe",
+            "type": "command"
+          }
+        ],
+        "matcher": ".*"
       }
     ]
   }

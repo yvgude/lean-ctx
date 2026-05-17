@@ -7,7 +7,7 @@ pub fn granular_tool_defs() -> Vec<Tool> {
     vec![
         tool_def(
             "ctx_read",
-            "Read file with intelligent compression and caching.",
+            "Read file (replaces native Read). Cached, 10 modes, re-reads ~13 tok.\nALWAYS use instead of Read/cat/head/tail. Modes: full|map|signatures|diff|lines:N-M|auto.",
             json!({
                 "type": "object",
                 "properties": {
@@ -42,7 +42,7 @@ pub fn granular_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_tree",
-            "Directory listing with file counts.",
+            "Directory tree (replaces ls/find). Compact maps with file counts.\nALWAYS use instead of ls/find/dir.",
             json!({
                 "type": "object",
                 "properties": {
@@ -54,7 +54,7 @@ pub fn granular_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_shell",
-            "Run shell command with compressed output.",
+            "Run shell (replaces native Shell). Pattern compression for CLI output.\nALWAYS use instead of Shell/bash/terminal.",
             json!({
                 "type": "object",
                 "properties": {
@@ -67,7 +67,7 @@ pub fn granular_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_search",
-            "Search code with compressed results.",
+            "Search code (replaces native Grep/rg). Token-efficient with context.\nALWAYS use instead of Grep/rg/ripgrep.",
             json!({
                 "type": "object",
                 "properties": {
@@ -989,7 +989,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
     vec![
         tool_def(
             "ctx_read",
-            "Read file (cached, compressed). Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
+            "Read file (replaces native Read). Cached, re-reads ~13 tok. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1003,7 +1003,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_shell",
-            "Run shell command (compressed output). raw=true skips compression. cwd sets working directory.",
+            "Run shell (replaces native Shell). Compressed output. raw=true skips compression. cwd sets working directory.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1016,7 +1016,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_search",
-            "Regex code search (.gitignore aware).",
+            "Search code (replaces native Grep/rg). Regex, .gitignore aware, token-efficient.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1031,7 +1031,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_tree",
-            "Directory listing with file counts.",
+            "Directory tree (replaces ls/find). Compact maps with file counts.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1103,10 +1103,10 @@ task (A2A tasks), workflow (state machine), expand (retrieve archived output).",
 
 pub fn list_all_tool_defs() -> Vec<(&'static str, &'static str, Value)> {
     vec![
-        ("ctx_read", "Read file with intelligent compression and caching.", json!({"type": "object", "properties": {"path": {"type": "string"}, "mode": {"type": "string"}, "start_line": {"type": "integer"}, "fresh": {"type": "boolean"}}, "required": ["path"]})),
-        ("ctx_tree", "Directory listing with file counts.", json!({"type": "object", "properties": {"path": {"type": "string"}, "depth": {"type": "integer"}, "show_hidden": {"type": "boolean"}}})),
-        ("ctx_shell", "Run shell command with compressed output.", json!({"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}, "raw": {"type": "boolean"}, "bypass": {"type": "boolean"}}, "required": ["command"]})),
-        ("ctx_search", "Search code with compressed results.", json!({"type": "object", "properties": {"pattern": {"type": "string"}, "path": {"type": "string"}, "ext": {"type": "string"}, "max_results": {"type": "integer"}, "ignore_gitignore": {"type": "boolean"}}, "required": ["pattern"]})),
+        ("ctx_read", "Read file (replaces native Read). Cached, 10 modes, re-reads ~13 tok.", json!({"type": "object", "properties": {"path": {"type": "string"}, "mode": {"type": "string"}, "start_line": {"type": "integer"}, "fresh": {"type": "boolean"}}, "required": ["path"]})),
+        ("ctx_tree", "Directory tree (replaces ls/find). Compact maps with file counts.", json!({"type": "object", "properties": {"path": {"type": "string"}, "depth": {"type": "integer"}, "show_hidden": {"type": "boolean"}}})),
+        ("ctx_shell", "Run shell (replaces native Shell). Pattern compression for CLI output.", json!({"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}, "raw": {"type": "boolean"}, "bypass": {"type": "boolean"}}, "required": ["command"]})),
+        ("ctx_search", "Search code (replaces native Grep/rg). Token-efficient with context.", json!({"type": "object", "properties": {"pattern": {"type": "string"}, "path": {"type": "string"}, "ext": {"type": "string"}, "max_results": {"type": "integer"}, "ignore_gitignore": {"type": "boolean"}}, "required": ["pattern"]})),
         ("ctx_compress", "Context checkpoint for long conversations.", json!({"type": "object", "properties": {"include_signatures": {"type": "boolean"}}})),
         ("ctx_benchmark", "Benchmark compression modes for a file or project.", json!({"type": "object", "properties": {"path": {"type": "string"}, "action": {"type": "string"}, "format": {"type": "string"}}, "required": ["path"]})),
         ("ctx_metrics", "Session token stats, cache rates, per-tool savings.", json!({"type": "object", "properties": {}})),

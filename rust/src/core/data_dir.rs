@@ -185,19 +185,42 @@ mod tests {
     }
 
     #[test]
-    fn empty_legacy_dir_does_not_win() {
+    fn has_data_files_is_false_for_empty_dir() {
+        let dir = std::env::temp_dir().join("test_data_dir_no_data");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("random.txt"), "not a marker").unwrap();
+        assert!(!has_data_files(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn xdg_override_with_data_wins() {
         let _lock = test_env_lock();
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+
+        let xdg_base = std::env::temp_dir().join("test_xdg_override_wins");
+        let _ = std::fs::remove_dir_all(&xdg_base);
+        let xdg_dir = xdg_base.join("lean-ctx");
+        let _ = std::fs::create_dir_all(&xdg_dir);
+        std::fs::write(xdg_dir.join("stats.json"), r#"{"total_commands":1}"#).unwrap();
+
+        std::env::set_var("LEAN_CTX_DATA_DIR", "");
+        std::env::set_var("XDG_CONFIG_HOME", xdg_base.to_str().unwrap());
 
         let result = lean_ctx_data_dir().unwrap();
+
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("XDG_CONFIG_HOME");
+
         let home = dirs::home_dir().unwrap();
         let legacy = home.join(".lean-ctx");
-
-        if legacy.exists() && !has_data_files(&legacy) {
-            assert_ne!(
-                result, legacy,
-                "empty legacy dir should not be chosen over XDG"
+        if !has_data_files(&legacy) {
+            assert_eq!(
+                result, xdg_dir,
+                "XDG with data should win when legacy has no data"
             );
         }
+
+        let _ = std::fs::remove_dir_all(&xdg_base);
     }
 }

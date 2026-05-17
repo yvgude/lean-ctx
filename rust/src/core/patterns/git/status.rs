@@ -1,4 +1,4 @@
-use super::{ahead_re, compact_lines, status_branch_re};
+use super::{ahead_re, status_branch_re};
 
 pub(super) fn compress_status(output: &str) -> String {
     let mut branch = String::new();
@@ -63,7 +63,7 @@ pub(super) fn compress_status(output: &str) -> String {
     }
 
     if branch.is_empty() && staged.is_empty() && unstaged.is_empty() && untracked.is_empty() {
-        return compact_lines(output.trim(), 10);
+        return output.trim().to_string();
     }
 
     let mut parts = Vec::new();
