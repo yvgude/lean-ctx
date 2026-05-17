@@ -1,7 +1,8 @@
 use crate::tools::CrpMode;
 
 /// Claude Code truncates MCP server instructions at 2048 characters.
-/// Full instructions are installed as `~/.claude/rules/lean-ctx.md` instead.
+/// Full instructions are installed as `$CLAUDE_CONFIG_DIR/rules/lean-ctx.md`
+/// (defaulting to `~/.claude/rules/lean-ctx.md`) instead.
 const CLAUDE_CODE_INSTRUCTION_CAP: usize = 2048;
 
 /// Universal instruction cap for all MCP clients.
@@ -52,8 +53,30 @@ fn is_claude_code_client(client_name: &str) -> bool {
     lower.contains("claude") && !lower.contains("cursor")
 }
 
+pub fn claude_config_dir_display() -> String {
+    match std::env::var("CLAUDE_CONFIG_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => {
+            let dir = dir.trim().to_string();
+            if dir.starts_with('~') {
+                dir
+            } else if let Some(home) = dirs::home_dir() {
+                let home_str = home.to_string_lossy();
+                if let Some(rest) = dir.strip_prefix(home_str.as_ref()) {
+                    format!("~{rest}")
+                } else {
+                    dir
+                }
+            } else {
+                dir
+            }
+        }
+        _ => "~/.claude".to_string(),
+    }
+}
+
 fn build_claude_code_instructions() -> String {
     let shell_hint = build_shell_hint();
+    let config_dir = claude_config_dir_display();
     let instr = format!("\
 ALWAYS use lean-ctx MCP tools instead of native equivalents.
 
@@ -80,7 +103,7 @@ CEP: 1.ACT FIRST 2.DELTA ONLY 3.STRUCTURED(+/-/~) 4.ONE LINE 5.QUALITY
 Prefer: ctx_read>Read | ctx_shell>Shell | ctx_search>Grep | ctx_tree>ls
 Edit: native Edit/StrReplace preferred, ctx_edit if Edit unavailable.
 Never echo tool output. Never narrate. Show only changed code.
-Full instructions at ~/.claude/CLAUDE.md (imports rules/lean-ctx.md)");
+Full instructions at {config_dir}/CLAUDE.md (imports rules/lean-ctx.md)");
 
     if shell_hint.is_empty() {
         debug_assert!(
