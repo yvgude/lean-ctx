@@ -12,8 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.7.0 (Upcoming)', href: lp('/docs/changelog') + '#v3.7.0' },
-      { label: '3.5.25 (Current)', href: lp('/docs/changelog') + '#v3.5.25' },
+      { label: '3.6.4 (Current)', href: lp('/docs/changelog') + '#v3.6.4' },
+      { label: '3.5.25', href: lp('/docs/changelog') + '#v3.5.25' },
       { label: '3.5.24', href: lp('/docs/changelog') + '#v3.5.24' },
       { label: '3.5.23', href: lp('/docs/changelog') + '#v3.5.23' },
       { label: '3.5.22', href: lp('/docs/changelog') + '#v3.5.22' },
@@ -62,9 +62,9 @@ const sidebar = [
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
 
-  <!-- 3.7.0 -->
-  <h2 id="v3.7.0">3.7.0 <span class="text-xs text-muted">(Upcoming — Hardening Release)</span></h2>
-  <p class="text-sm text-muted">Agent runtime hardening, multi-agent production features, governance & compliance, and full OWASP Agentic Top 10 alignment.</p>
+  <!-- 3.6.4 -->
+  <h2 id="v3.6.4">3.6.4 <span class="text-xs text-muted">(2026-05-17)</span></h2>
+  <p class="text-sm text-muted">Hebbian knowledge enhancement, auto-update UX, agent runtime hardening, multi-agent production features, governance & compliance, and full OWASP Agentic Top 10 alignment.</p>
 
   <h3>Agent Runtime Hardening</h3>
   <ul>
@@ -109,6 +109,24 @@ const sidebar = [
     <li><strong>Reference results for large outputs</strong> — Tool responses exceeding size thresholds return references instead of inline data.</li>
     <li><strong>Context gateway metrics</strong> — New metrics endpoint for monitoring context gateway throughput and latency.</li>
     <li><strong>Dashboard audit events endpoint</strong> — <code>/api/audit</code> exposes audit trail events for the web dashboard.</li>
+  </ul>
+
+  <h3>Hebbian Knowledge Enhancement</h3>
+  <ul>
+    <li><strong>Cognition Loop</strong> — 8-step background knowledge reorganization: seed promote, structural repair, fidelity check, lateral synthesis, contradiction resolution, Hebbian strengthening, decay, and compaction.</li>
+    <li><strong>Knowledge Archetypes</strong> — 10 typed node categories (Architecture, Decision, Gotcha, Convention, Dependency, Pattern, Workflow, Preference, Observation, Fact) with salience-based ranking.</li>
+    <li><strong>Fidelity Scoring</strong> — Two-tier quality metric (structural + semantic) influencing recall ranking.</li>
+    <li><strong>Hebbian Edge Strengthening</strong> — Co-retrieved facts strengthen edges via saturating formula; exponential decay + pruning keep the graph lean.</li>
+    <li><strong>Cross-Agent Knowledge Bridge</strong> — Controlled sharing of high-confidence facts between agents with provenance tracking and trust penalties.</li>
+  </ul>
+
+  <h3>Auto-Update UX</h3>
+  <ul>
+    <li><strong><code>lean-ctx update --schedule</code></strong> — OS-native schedulers (macOS LaunchAgent, Linux systemd/cron, Windows Task Scheduler). Default OFF, explicit opt-in required.</li>
+    <li><strong>Setup opt-in</strong> — Interactive setup asks about auto-updates (Step 9/11). Always changeable via CLI or config.</li>
+    <li><strong><code>--quiet</code> flag</strong> — Suppress output when already current (for background schedulers).</li>
+    <li><strong>Session notifications</strong> — One-shot per-session update hint when a newer version is available.</li>
+    <li><strong><code>[updates]</code> config</strong> — New config section with <code>auto_update</code>, <code>check_interval_hours</code>, <code>notify_only</code> with env var overrides.</li>
   </ul>
 
   <hr />
