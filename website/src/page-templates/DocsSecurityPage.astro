@@ -246,7 +246,7 @@ shell_allowlist = ["git", "cargo", "npm", "node", "python", "make"]`}</code></pr
 └── <span class="text-accent">agent-subagent-ghi789.json</span>  <span class="text-muted">→ Subagent session</span></code></pre>
   </div>
 
-  <p>Each ledger file at <code>~/.lean-ctx/ledger/{agent_id}.json</code> contains that agent's file read history, cached context, and session state. Agents cannot read or modify another agent's ledger, enforcing strict context isolation even in multi-agent workflows.</p>
+  <p>Each ledger file at <code>~/.lean-ctx/ledger/{'{'}&lt;agent_id&gt;{'}'}.json</code> contains that agent's file read history, cached context, and session state. Agents cannot read or modify another agent's ledger, enforcing strict context isolation even in multi-agent workflows.</p>
 
   <h2 id="token-budget">Agent Token Budget</h2>
   <p>LeanCTX supports configurable per-agent token budgets to prevent runaway context consumption:</p>
