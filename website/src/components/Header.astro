@@ -122,7 +122,7 @@ const toolsColumns = [
   <nav class="content-grid-wide">
     <div class="header-inner">
       <a href={lp('/')} class="header-logo">
-        <span class="header-logo-ascii"><Fragment set:html={'&lt;<span class="header-logo-pipe">|</span>&gt;'} /></span>
+        <span class="header-logo-ascii"><Fragment set:html={'&lt;<span style="color:var(--color-accent)">|</span>&gt;'} /></span>
         <span class="header-logo-text font-display">
           <span class="text-text-bright">Lean</span><span class="text-accent">CTX</span>
         </span>
@@ -309,9 +309,6 @@ const toolsColumns = [
     font-weight: 700;
     color: var(--color-text-bright);
     line-height: 1;
-  }
-  .header-logo-pipe {
-    color: var(--color-accent);
   }
   .header-logo-text {
     font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);
