@@ -42,7 +42,7 @@ const faqJsonLd = JSON.stringify({
           <span class="kicker-pill">{t('index.heroLabel')}</span>
         </div>
         <h1 class="font-display text-text-bright animate-entrance hero-headline">
-          {t('index.heroHeadline')}
+          <em>Know</em> What's in Your Context. <em>Control</em> What Reaches the Model.
         </h1>
 
         <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-top: clamp(1.25rem, 1rem + 1vw, 2rem); max-width: 46rem;">
@@ -483,6 +483,10 @@ const faqJsonLd = JSON.stringify({
     letter-spacing: -0.03em;
     text-wrap: balance;
     max-width: 24ch;
+  }
+  .hero-headline em {
+    font-style: italic;
+    color: var(--color-accent);
   }
   .stat-methodology-link {
     display: block;
