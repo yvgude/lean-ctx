@@ -338,7 +338,7 @@ fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathB
         "Windsurf" => Some(home.join(".codeium/windsurf/rules/lean-ctx.md")),
         "Cline" => Some(home.join(".cline/rules/lean-ctx.md")),
         "Roo Code" => Some(home.join(".roo/rules/lean-ctx.md")),
-        "OpenCode" => Some(home.join(".config/opencode/rules/lean-ctx.md")),
+        "OpenCode" => Some(home.join(".config/opencode/AGENTS.md")),
         "AWS Kiro" => Some(home.join(".kiro/steering/lean-ctx.md")),
         "Verdent" => Some(home.join(".verdent/rules/lean-ctx.md")),
         "Trae" => Some(home.join(".trae/rules/lean-ctx.md")),

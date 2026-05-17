@@ -409,7 +409,10 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ("Zed", home.join(".config/zed/rules/lean-ctx.md")),
         ("Cline", home.join(".cline/rules/lean-ctx.md")),
         ("Roo Code", home.join(".roo/rules/lean-ctx.md")),
-        ("OpenCode", home.join(".config/opencode/rules/lean-ctx.md")),
+        (
+            "OpenCode (legacy)",
+            home.join(".config/opencode/rules/lean-ctx.md"),
+        ),
         ("Continue", home.join(".continue/rules/lean-ctx.md")),
         ("Amp", home.join(".ampcoder/rules/lean-ctx.md")),
         ("Qwen Code", home.join(".qwen/rules/lean-ctx.md")),
@@ -445,6 +448,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
                 .join("instructions.md"),
         ),
         ("VS Code / Copilot", copilot_instructions_path(home)),
+        ("OpenCode", home.join(".config/opencode/AGENTS.md")),
     ];
 
     let mut removed = false;

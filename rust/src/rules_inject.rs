@@ -553,8 +553,8 @@ fn build_rules_targets(home: &std::path::Path) -> Vec<RulesTarget> {
         },
         RulesTarget {
             name: "OpenCode",
-            path: home.join(".config/opencode/rules/lean-ctx.md"),
-            format: RulesFormat::DedicatedMarkdown,
+            path: home.join(".config/opencode/AGENTS.md"),
+            format: RulesFormat::SharedMarkdown,
         },
         RulesTarget {
             name: "Continue",
