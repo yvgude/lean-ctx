@@ -450,13 +450,6 @@
     padding: clamp(1rem, 0.875rem + 0.4vw, 1.5rem);
   }
 
-  .testimonial-list {
-    grid-template-columns: 1fr;
-  }
-
-  .testimonial-quote {
-    border-right: none !important;
-  }
 
   .pillars-grid {
     grid-template-columns: repeat(2, 1fr);

@@ -41,9 +41,7 @@ const faqJsonLd = JSON.stringify({
         <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
           <span class="kicker-pill">{t('index.heroLabel')}</span>
         </div>
-        <h1 class="font-display text-text-bright animate-entrance hero-headline">
-          <em>Know</em> What's in Your Context. <em>Control</em> What Reaches the Model.
-        </h1>
+        <h1 class="font-display text-text-bright animate-entrance hero-headline" set:html={t('index.heroHeadline')} />
 
         <p class="fluid-body text-muted animate-entrance stagger-1" style="margin-top: clamp(1.25rem, 1rem + 1vw, 2rem); max-width: 46rem;">
           {t('index.heroSubline')}
@@ -244,15 +242,15 @@ const faqJsonLd = JSON.stringify({
     <div class="grid md:grid-cols-3 animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem); gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
       <div class="trust-badge">
         <svg class="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
-        <span class="fluid-sm text-text-bright font-medium">OWASP Agentic Top 10 aligned (8/10)</span>
+        <span class="fluid-sm text-text-bright font-medium">OWASP Agentic Top 10 aligned</span>
       </div>
       <div class="trust-badge">
         <svg class="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span class="fluid-sm text-text-bright font-medium">OS-level sandboxing (Seatbelt + Landlock)</span>
+        <span class="fluid-sm text-text-bright font-medium">OS-level sandboxing</span>
       </div>
       <div class="trust-badge">
         <svg class="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
-        <span class="fluid-sm text-text-bright font-medium">SHA-256 chained audit trail</span>
+        <span class="fluid-sm text-text-bright font-medium">Full audit trail</span>
       </div>
     </div>
 
