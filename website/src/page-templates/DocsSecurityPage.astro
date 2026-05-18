@@ -65,7 +65,19 @@ const sidebar = [
 <span class="text-danger">✗</span> ~/.ssh/id_rsa            <span class="text-muted">→ BLOCKED: outside project root</span></code></pre>
   </div>
 
-  <p>PathJail is always active and cannot be disabled. It resolves symlinks before checking, preventing bypass via symbolic links. On Unix systems, file reads use <code>O_NOFOLLOW</code> to prevent symlink-based TOCTOU (time-of-check-time-of-use) attacks — the file descriptor is opened directly without following symlinks, eliminating the race window between path resolution and file access.</p>
+  <p>PathJail is active by default and resolves symlinks before checking, preventing bypass via symbolic links. On Unix systems, file reads use <code>O_NOFOLLOW</code> to prevent symlink-based TOCTOU (time-of-check-time-of-use) attacks — the file descriptor is opened directly without following symlinks, eliminating the race window between path resolution and file access.</p>
+
+  <h3>Disabling PathJail <span class="text-xs font-normal text-muted ml-2">v3.6.7</span></h3>
+  <p>In certain environments (Docker containers, monorepos with external mounts), PathJail may be too restrictive. There are three ways to disable it:</p>
+  <table>
+    <thead><tr><th>Method</th><th>Scope</th><th>Usage</th></tr></thead>
+    <tbody>
+      <tr><td><code>path_jail = false</code> in config.toml</td><td>Persistent</td><td>Disables PathJail permanently for this user</td></tr>
+      <tr><td><code>LEAN_CTX_NO_JAIL=1</code></td><td>Runtime</td><td>Disable for a single session or CI run</td></tr>
+      <tr><td>Container auto-detection</td><td>Automatic</td><td>PathJail auto-disables inside Docker/Podman containers</td></tr>
+    </tbody>
+  </table>
+  <p>When PathJail is disabled, lean-ctx still logs all file access paths but does not block operations outside the project root.</p>
 
   <h2 id="scopes">Token Scopes & ACL</h2>
   <p>When using the Team Server, every API token has explicit scopes that limit what it can do:</p>

@@ -216,6 +216,12 @@ lean-ctx config schema</code></pre>
         <td>Define custom shell command aliases for <code>ctx_shell</code>. Each entry maps a short name to a full command. See <a href="#custom-aliases">Custom Aliases</a> for examples.</td>
       </tr>
       <tr>
+        <td><code>path_jail</code></td>
+        <td>bool</td>
+        <td><code>true</code></td>
+        <td>Enable/disable PathJail sandbox. Set to <code>false</code> to allow file operations outside the project root. Useful in Docker containers or monorepos with external mounts. Also available via <code>LEAN_CTX_NO_JAIL=1</code>. See <a href="/docs/security#pathjail">Security: PathJail</a>. <span class="text-xs text-muted">v3.6.7</span></td>
+      </tr>
+      <tr>
         <td><code>redirect_exclude</code></td>
         <td>list</td>
         <td><code>[]</code></td>
@@ -568,6 +574,11 @@ lean-ctx config schema</code></pre>
         <td><code>LEAN_CTX_DATA_DIR</code></td>
         <td>path (default: <code>~/.lean-ctx</code>)</td>
         <td>Override the base directory for all lean-ctx persistent data (stats, knowledge, agents, cache, sessions). All modules resolve paths through this single env var. Useful for custom data locations or containerized environments.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_NO_JAIL</code></td>
+        <td><code>1</code> / <code>true</code></td>
+        <td>Disable PathJail sandbox for the current session. Useful in Docker/Podman containers or monorepos with external mounts. See <a href="/docs/security#pathjail">PathJail Sandbox</a>. <span class="text-xs text-muted">v3.6.7</span></td>
       </tr>
       <tr>
         <td><code>LCTX_MAX_READ_BYTES</code></td>

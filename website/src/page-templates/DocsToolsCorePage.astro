@@ -323,6 +323,7 @@ ctx_read src/auth/service.rs --mode task
     <tbody>
       <tr><td><code>command</code></td><td>string</td><td>Yes</td><td>Shell command to execute</td></tr>
       <tr><td><code>cwd</code></td><td>string</td><td>No</td><td>Working directory for command execution. Persists via <code>cd</code> tracking across calls.</td></tr>
+      <tr><td><code>env</code></td><td>object</td><td>No</td><td>Additional environment variables to set for the command. Keys are variable names, values are strings. Useful for passing agent runtime context (e.g. <code>&lbrace;"CODEX_THREAD_ID": "abc123"&rbrace;</code>). Additionally, <code>CODEX_*</code>, <code>CLAUDE_*</code>, <code>OPENCODE_*</code>, and <code>HERMES_*</code> env vars from the MCP server process are auto-forwarded. <span class="text-xs text-muted">v3.6.7</span></td></tr>
       <tr><td><code>raw</code></td><td>boolean</td><td>No</td><td>Skip compression and return full uncompressed output. Use for small outputs or when full detail is critical. Default: <code>false</code>.</td></tr>
     </tbody>
   </table>

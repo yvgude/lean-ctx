@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.6 (Current)', href: lp('/docs/changelog') + '#v3.6.6' },
+      { label: '3.6.7 (Current)', href: lp('/docs/changelog') + '#v3.6.7' },
+      { label: '3.6.6', href: lp('/docs/changelog') + '#v3.6.6' },
       { label: '3.6.5', href: lp('/docs/changelog') + '#v3.6.5' },
       { label: '3.6.4', href: lp('/docs/changelog') + '#v3.6.4' },
       { label: '3.5.25', href: lp('/docs/changelog') + '#v3.5.25' },
@@ -63,6 +64,33 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.7 -->
+  <h2 id="v3.6.7">3.6.7 <span class="text-xs text-muted">(2026-05-18)</span></h2>
+  <p class="text-sm text-muted">Model registry, PathJail container bypass, ctx_shell env forwarding, Copilot CLI support, benchmark honesty fixes.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>3-Layer Model Registry</strong> — Data-driven model context window registry replaces hardcoded substring matching. Supports bundled defaults, auto-updated local registry, and user overrides via <code>[model_context_windows]</code> in config.toml. Covers 40+ models including GPT-5.5, GPT-4.1, Gemini, Claude.</li>
+    <li><strong>ctx_shell <code>env</code> parameter</strong> — New optional object parameter lets agents explicitly pass environment variables to shell commands. Auto-forwards <code>CODEX_*</code>, <code>CLAUDE_*</code>, <code>OPENCODE_*</code>, <code>HERMES_*</code> from the MCP server process.</li>
+    <li><strong>PathJail container bypass</strong> — Auto-disables in Docker/Podman containers. Manual opt-out via <code>path_jail = false</code> in config.toml or <code>LEAN_CTX_NO_JAIL=1</code>.</li>
+    <li><strong>Copilot CLI support</strong> — Separate <code>CopilotCli</code> config type writes to <code>~/.copilot/mcp-config.json</code> with correct format (<code>mcpServers</code>, <code>"type": "local"</code>, <code>"tools": ["*"]</code>).</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Benchmark honesty</strong> — Structural modes (<code>map</code>, <code>signatures</code>) excluded from "best mode" for non-code files. Previous reports showed misleading 100% savings for JSON; corrected to accurate values.</li>
+    <li><strong>Copilot CLI config path</strong> — Now writes to <code>~/.copilot/mcp-config.json</code> instead of VS Code's Application Support path.</li>
+    <li><strong>PathJail CWD fallback</strong> — Guarded fallback with unsafe-root protection and differentiated error messages.</li>
+    <li><strong>Invalid JSON config handling</strong> — Text-based injection preserves invalid files instead of destructive overwrite.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>VS Code / Copilot split</strong> — Two separate targets: "VS Code" and "Copilot CLI" with distinct config paths and formats.</li>
+  </ul>
+
+  <hr />
 
   <!-- 3.6.6 -->
   <h2 id="v3.6.6">3.6.6 <span class="text-xs text-muted">(2026-05-17)</span></h2>
