@@ -21,7 +21,7 @@ const sidebar = [
     compact: true,
     items: tools.map(t => ({
       label: t.name,
-      href: lp(`/docs/tools/${t.slug}`),
+      href: lp('/docs/tools/workflow/') + `#${t.name}`,
     })),
   },
   {
@@ -55,9 +55,9 @@ const sidebar = [
       <tr><th>Tool</th><th>What It Does</th></tr>
     </thead>
     <tbody>
-      {tools.map(({ name, slug, tool }) => (
+      {tools.map(({ name, tool }) => (
         <tr>
-          <td><a href={lp(`/docs/tools/${slug}`)}><code>{name}</code></a></td>
+          <td><a href={`#${name}`}><code>{name}</code></a></td>
           <td>{tool!.description}</td>
         </tr>
       ))}
