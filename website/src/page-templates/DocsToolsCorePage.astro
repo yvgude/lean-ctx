@@ -11,13 +11,13 @@ const sidebar = [
     title: t('docsToolsCore.sidebarTitle'),
     compact: true,
     items: [
-      { label: 'ctx_read', href: lp('/docs/tools/core') + '#ctx_read' },
-      { label: 'ctx_multi_read', href: lp('/docs/tools/core') + '#ctx_multi_read' },
-      { label: 'ctx_tree', href: lp('/docs/tools/core') + '#ctx_tree' },
-      { label: 'ctx_shell', href: lp('/docs/tools/core') + '#ctx_shell' },
-      { label: 'ctx_search', href: lp('/docs/tools/core') + '#ctx_search' },
-      { label: 'ctx_execute', href: lp('/docs/tools/core') + '#ctx_execute' },
-      { label: 'ctx_expand', href: lp('/docs/tools/core') + '#ctx_expand' },
+      { label: 'ctx_read', href: lp('/docs/tools/core/') + '#ctx_read' },
+      { label: 'ctx_multi_read', href: lp('/docs/tools/core/') + '#ctx_multi_read' },
+      { label: 'ctx_tree', href: lp('/docs/tools/core/') + '#ctx_tree' },
+      { label: 'ctx_shell', href: lp('/docs/tools/core/') + '#ctx_shell' },
+      { label: 'ctx_search', href: lp('/docs/tools/core/') + '#ctx_search' },
+      { label: 'ctx_execute', href: lp('/docs/tools/core/') + '#ctx_execute' },
+      { label: 'ctx_expand', href: lp('/docs/tools/core/') + '#ctx_expand' },
     ],
   },
   {
@@ -211,7 +211,7 @@ ctx_read src/auth/service.rs --mode task
   <p>
     The session cache auto-clears after 5 minutes of inactivity. For explicit control, use the
     <code>fresh=true</code> parameter to bypass cache for a single read, or
-    <a href={lp('/docs/tools/session') + '#ctx_cache'}>ctx_cache</a> to manage the entire cache (clear, invalidate, status).
+    <a href={lp('/docs/tools/session/') + '#ctx_cache'}>ctx_cache</a> to manage the entire cache (clear, invalidate, status).
   </p>
 
   <h3>Mode Selection Guide</h3>
@@ -232,9 +232,6 @@ ctx_read src/auth/service.rs --mode task
       <tr><td>Not sure which mode to use</td><td><code>auto</code></td><td>Best-effort</td></tr>
     </tbody>
   </table>
-
-  <a href={lp('/docs/tools/ctx-read')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_multi_read">ctx_multi_read</h2>
   <p>
     Batch variant of <code>ctx_read</code>: pass multiple file paths in one call. Each file uses the same
@@ -256,9 +253,6 @@ ctx_read src/auth/service.rs --mode task
   <pre><code>ctx_multi_read paths=["/app/src/auth.ts","/app/src/db.ts"] --mode map
 → F1=auth.ts [88L] ...
   F2=db.ts [64L] ...</code></pre>
-
-  <a href={lp('/docs/tools/ctx-multi-read')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_tree">ctx_tree</h2>
   <p>
     <code>ctx_tree</code> generates compact project structure maps using indentation instead of
@@ -302,9 +296,6 @@ ctx_read src/auth/service.rs --mode task
     Tree output is already ultra-compact by design. TDD mode does not apply additional compression
     to <code>ctx_tree</code> - the output format is the same regardless of <code>CRP_MODE</code>.
   </p>
-
-  <a href={lp('/docs/tools/ctx-tree')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_shell">ctx_shell</h2>
   <p>
     <code>ctx_shell</code> executes shell commands and applies pattern-based compression to the output.
@@ -484,9 +475,6 @@ lean-ctx shell</code></pre>
     For unrecognized commands, generic compression applies: removes empty lines,
     strips ANSI codes, and truncates very long output with a summary.
   </p>
-
-  <a href={lp('/docs/tools/ctx-shell')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_search">ctx_search</h2>
   <p>
     <code>ctx_search</code> searches files for patterns using regex and returns only matching lines
@@ -539,9 +527,6 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     <li>Compact path shortening (home directory → <code>~</code>)</li>
     <li>Token savings summary appended to results</li>
   </ul>
-
-  <a href={lp('/docs/tools/ctx-search')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_execute">ctx_execute</h2>
   <p>
     <code>ctx_execute</code> runs code in isolated subprocesses across 11 languages. Only stdout enters
@@ -609,9 +594,6 @@ cache.rs:69 pub fn get(&self, path: &str) -> Option<&CacheEntry>
     <li>Large outputs are smart-truncated (60% head / 40% tail) to stay within token limits</li>
     <li>Only stdout enters the AI context - stderr is shown separately for debugging</li>
   </ul>
-
-  <a href={lp('/docs/tools/ctx-execute')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_expand">ctx_expand <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
   <p>
     <code>ctx_expand</code> retrieves the full uncompressed content of a previously archived tool result.
@@ -659,9 +641,6 @@ ctx_expand id="a1b2c3d4"
   <p>
     Configure the archive via <code>config.toml</code> - see <a href={lp('/docs/configuration') + '#archive'}>Archive Configuration</a>.
   </p>
-
-  <a href={lp('/docs/tools/ctx-expand')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <hr class="border-border my-12" />
 
   <h2 id="ctx_call">ctx_call <span class="text-xs font-normal text-muted ml-2">v3.4.0</span></h2>

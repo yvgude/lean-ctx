@@ -4867,5 +4867,6 @@
   "ce.ctaGetStarted": "Getting Started",
   "ce.ctaContextOs": "Architecture",
   "index.sixPillarsTitle": "Nine Pillars. One Runtime.",
-  "index.sixPillarsSubline": "Everything between your code and the AI, handled."
+  "index.sixPillarsSubline": "Everything between your code and the AI, handled.",
+  "docsToolsCore.sidebarWorkflow": "Workflow Tools"
 }

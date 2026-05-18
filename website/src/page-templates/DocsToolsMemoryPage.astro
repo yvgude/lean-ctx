@@ -11,12 +11,12 @@ const sidebar = [
     title: t('docsToolsMemory.sidebarTitle'),
     compact: true,
     items: [
-      { label: 'ctx_knowledge', href: lp('/docs/tools/memory') + '#ctx_knowledge' },
-      { label: 'ctx_agent', href: lp('/docs/tools/memory') + '#ctx_agent' },
-      { label: 'ctx_share', href: lp('/docs/tools/memory') + '#ctx_share' },
-      { label: 'ctx_overview', href: lp('/docs/tools/memory') + '#ctx_overview' },
-      { label: 'ctx_task', href: lp('/docs/tools/memory') + '#ctx_task' },
-      { label: 'ctx_cost', href: lp('/docs/tools/memory') + '#ctx_cost' },
+      { label: 'ctx_knowledge', href: lp('/docs/tools/memory/') + '#ctx_knowledge' },
+      { label: 'ctx_agent', href: lp('/docs/tools/memory/') + '#ctx_agent' },
+      { label: 'ctx_share', href: lp('/docs/tools/memory/') + '#ctx_share' },
+      { label: 'ctx_overview', href: lp('/docs/tools/memory/') + '#ctx_overview' },
+      { label: 'ctx_task', href: lp('/docs/tools/memory/') + '#ctx_task' },
+      { label: 'ctx_cost', href: lp('/docs/tools/memory/') + '#ctx_cost' },
     ],
   },
   {
@@ -170,9 +170,6 @@ ctx_knowledge action=embeddings_reset
 
 ctx_knowledge action=embeddings_reindex
 → Embeddings reindex ok (embedded 128 facts).</code></pre>
-
-  <a href={lp('/docs/tools/ctx-knowledge')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h3>{t('docsToolsMemory.knowledgeCliTitle')}</h3>
   <p>{t('docsToolsMemory.knowledgeCliDesc')}</p>
   <pre><code>lean-ctx knowledge remember "Uses JWT" --category auth --key token-type
@@ -250,9 +247,6 @@ ctx_agent action=diaries
     Agent registry and scratchpad: <code>~/.lean-ctx/agents/registry.json</code>.<br/>
     Agent diaries: <code>~/.lean-ctx/agents/diaries/&lt;agent-id&gt;.json</code>.
   </p>
-
-  <a href={lp('/docs/tools/ctx-agent')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_share">ctx_share - Multi-Agent Context Sharing</h2>
   <p>
     Enables agents to share cached file contents with each other. When one agent has read and cached files,
@@ -285,9 +279,6 @@ ctx_share action=pull
   <p>
     Shared contexts are stored at <code>~/.lean-ctx/agents/shared/</code> as JSON files.
   </p>
-
-  <a href={lp('/docs/tools/ctx-share')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_overview">ctx_overview - Task-Aware Project Map with Wake-Up Briefing</h2>
   <p>
     Provides a multi-resolution project map at session start. Uses the dependency graph and keyword
@@ -336,9 +327,6 @@ ctx_share action=pull
   LAST_TASK:Fix authentication middleware timeout
   RECENT_DECISIONS:Use refresh tokens|Add rate limiting
   AGENTS:cursor-a3f8(dev),claude-b7e2(review)</code></pre>
-
-  <a href={lp('/docs/tools/ctx-overview')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_task">ctx_task - A2A Task Delegation</h2>
   <p>
     Agent-to-Agent (A2A) task management following the Google A2A protocol. Agents can create,
@@ -385,9 +373,6 @@ ctx_task action=list
 
   <h3>Storage</h3>
   <p>Tasks are stored at <code>~/.lean-ctx/agents/tasks.json</code>.</p>
-
-  <a href={lp('/docs/tools/ctx-task')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_cost">ctx_cost - Token Cost Attribution</h2>
   <p>
     Tracks and reports token costs per agent and per tool. Provides detailed breakdowns of which
@@ -428,6 +413,4 @@ ctx_task action=list
 
   <h3>Storage</h3>
   <p>Cost data is stored at <code>~/.lean-ctx/costs.json</code> and resets per session.</p>
-
-  <a href={lp('/docs/tools/ctx-cost')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
 </DocsLayout>

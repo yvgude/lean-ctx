@@ -11,14 +11,14 @@ const sidebar = [
     title: t('docsToolsSession.sidebarTitle'),
     compact: true,
     items: [
-      { label: 'ctx_session', href: lp('/docs/tools/session') + '#ctx_session' },
-      { label: 'ctx_compress', href: lp('/docs/tools/session') + '#ctx_compress' },
-      { label: 'ctx_analyze', href: lp('/docs/tools/session') + '#ctx_analyze' },
-      { label: 'ctx_benchmark', href: lp('/docs/tools/session') + '#ctx_benchmark' },
-      { label: 'ctx_metrics', href: lp('/docs/tools/session') + '#ctx_metrics' },
-      { label: 'ctx_wrapped', href: lp('/docs/tools/session') + '#ctx_wrapped' },
-      { label: 'ctx_cache', href: lp('/docs/tools/session') + '#ctx_cache' },
-      { label: 'ctx_heatmap', href: lp('/docs/tools/session') + '#ctx_heatmap' },
+      { label: 'ctx_session', href: lp('/docs/tools/session/') + '#ctx_session' },
+      { label: 'ctx_compress', href: lp('/docs/tools/session/') + '#ctx_compress' },
+      { label: 'ctx_analyze', href: lp('/docs/tools/session/') + '#ctx_analyze' },
+      { label: 'ctx_benchmark', href: lp('/docs/tools/session/') + '#ctx_benchmark' },
+      { label: 'ctx_metrics', href: lp('/docs/tools/session/') + '#ctx_metrics' },
+      { label: 'ctx_wrapped', href: lp('/docs/tools/session/') + '#ctx_wrapped' },
+      { label: 'ctx_cache', href: lp('/docs/tools/session/') + '#ctx_cache' },
+      { label: 'ctx_heatmap', href: lp('/docs/tools/session/') + '#ctx_heatmap' },
     ],
   },
   {
@@ -129,9 +129,6 @@ ctx_session action=restore
     task description, findings, decisions, files touched with their cache state,
     and a timestamp for ordering.
   </p>
-
-  <a href={lp('/docs/tools/ctx-session')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_compress">ctx_compress</h2>
   <p>
     <code>ctx_compress</code> creates a compact snapshot of all files currently in the session cache.
@@ -180,9 +177,6 @@ LEAN_CTX_CHECKPOINT_INTERVAL=15
 
 # Disable auto-checkpoints
 LEAN_CTX_CHECKPOINT_INTERVAL=0`}</code></pre>
-
-  <a href={lp('/docs/tools/ctx-compress')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_analyze">ctx_analyze</h2>
   <p>
     <code>ctx_analyze</code> performs deep information-theoretic analysis on a file using Shannon entropy
@@ -219,9 +213,6 @@ Strategy Comparison:
   cache hit                  13 tok  -99%
 
 Recommendation: signatures (best first-read savings)`}</code></pre>
-
-  <a href={lp('/docs/tools/ctx-analyze')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_benchmark">ctx_benchmark</h2>
   <p>
     <code>ctx_benchmark</code> measures real token counts using tiktoken (o200k_base - the same tokenizer
@@ -306,9 +297,6 @@ entropy                         348  -567 (62%)
 cache hit                        13  -902 (99%)
 ──────────────────────────────────────────────
 Best: "cache hit" saves 902 tokens (99%)</code></pre>
-
-  <a href={lp('/docs/tools/ctx-benchmark')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_metrics">ctx_metrics</h2>
   <p>
     <code>ctx_metrics</code> displays comprehensive session statistics including token savings,
@@ -346,9 +334,6 @@ File Refs:
   F2=db.ts [89L 412t reads:3]
 
 Projected session savings (incl. thinking): $0.085</code></pre>
-
-  <a href={lp('/docs/tools/ctx-metrics')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_wrapped">ctx_wrapped</h2>
   <p>
     Generates a savings report card showing tokens saved, cost avoided,
@@ -376,9 +361,6 @@ Projected session savings (incl. thinking): $0.085</code></pre>
 ║                                         ║
 ║  Cache Hit Rate: 65%                    ║
 ╚══════════════════════════════════════════╝</code></pre>
-
-  <a href={lp('/docs/tools/ctx-wrapped')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_cache">ctx_cache</h2>
   <p>
     <code>ctx_cache</code> gives you explicit control over LeanCTX's in-memory session cache.
@@ -426,9 +408,6 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
     that handles new chats, context compaction, and session resets without relying on the LLM.
     Configure via the <code>LEAN_CTX_CACHE_TTL</code> environment variable (seconds, 0 to disable).
   </p>
-
-  <a href={lp('/docs/tools/ctx-cache')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_heatmap">ctx_heatmap - File Access Heatmap</h2>
   <p>
     Tracks and displays file access patterns across sessions. Shows which files are accessed most frequently,
@@ -459,9 +438,6 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
 
   <h3>Storage</h3>
   <p>Heatmap data is stored at <code>~/.lean-ctx/heatmap.json</code> and persists across sessions.</p>
-
-  <a href={lp('/docs/tools/ctx-heatmap')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <h2 id="ctx_gain">ctx_gain - Token Savings Report</h2>
   <p>
     Reports token savings for the current session or across all sessions. Shows per-tool breakdowns,
@@ -485,9 +461,6 @@ Invalidated cache for auth.ts. Next ctx_read will return full content.</code></p
     Read caching:    112,400 tok (54%)
     Shell compress:   58,200 tok (28%)
     Deduplication:    35,760 tok (17%)`}</code></pre>
-
-  <a href={lp('/docs/tools/ctx-gain')} class="inline-flex items-center gap-1 text-accent hover:text-accent-2 text-sm mt-2 transition-colors">Full reference →</a>
-
   <hr class="border-border my-12" />
 
   <h2 id="ctx_artifacts">ctx_artifacts <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
