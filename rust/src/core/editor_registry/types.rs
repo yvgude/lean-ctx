@@ -15,6 +15,7 @@ pub enum ConfigType {
     Zed,
     Codex,
     VsCodeMcp,
+    CopilotCli,
     OpenCode,
     Crush,
     JetBrains,

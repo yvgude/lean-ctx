@@ -46,6 +46,7 @@ pub fn write_config_with_options(
         ConfigType::Zed => write_zed_config(target, binary, opts),
         ConfigType::Codex => write_codex_config(target, binary),
         ConfigType::VsCodeMcp => write_vscode_mcp(target, binary, opts),
+        ConfigType::CopilotCli => write_copilot_cli(target, binary, opts),
         ConfigType::OpenCode => write_opencode_config(target, binary, opts),
         ConfigType::Crush => write_crush_config(target, binary, opts),
         ConfigType::JetBrains => write_jetbrains_config(target, binary, opts),
@@ -123,7 +124,9 @@ pub fn remove_lean_ctx_server(
         | ConfigType::JetBrains
         | ConfigType::GeminiSettings
         | ConfigType::QoderSettings => remove_lean_ctx_mcp_server(&target.config_path, opts),
-        ConfigType::VsCodeMcp => remove_lean_ctx_vscode_server(&target.config_path, opts),
+        ConfigType::VsCodeMcp | ConfigType::CopilotCli => {
+            remove_lean_ctx_vscode_server(&target.config_path, opts)
+        }
         ConfigType::Codex => remove_lean_ctx_codex_server(&target.config_path),
         ConfigType::OpenCode | ConfigType::Crush => {
             remove_lean_ctx_named_json_server(&target.config_path, "mcp", opts)
@@ -897,6 +900,88 @@ fn write_vscode_mcp_fresh(
             WriteAction::Created
         },
         note,
+    })
+}
+
+fn write_copilot_cli(
+    target: &EditorTarget,
+    binary: &str,
+    opts: WriteOptions,
+) -> Result<WriteResult, String> {
+    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
+        .map(|d| d.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let desired = serde_json::json!({
+        "type": "local",
+        "command": binary,
+        "args": ["mcp"],
+        "env": { "LEAN_CTX_DATA_DIR": data_dir },
+        "tools": ["*"]
+    });
+
+    if target.config_path.exists() {
+        let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
+        let mut json = match crate::core::jsonc::parse_jsonc(&content) {
+            Ok(v) => v,
+            Err(_e) => {
+                return handle_invalid_json_write(
+                    &target.config_path,
+                    &content,
+                    "mcpServers",
+                    "lean-ctx",
+                    &desired,
+                    opts.overwrite_invalid,
+                );
+            }
+        };
+        let obj = json
+            .as_object_mut()
+            .ok_or_else(|| "root JSON must be an object".to_string())?;
+
+        let servers = obj
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        let servers_obj = servers
+            .as_object_mut()
+            .ok_or_else(|| "\"mcpServers\" must be an object".to_string())?;
+
+        let existing = servers_obj.get("lean-ctx").cloned();
+        if existing.as_ref() == Some(&desired) {
+            return Ok(WriteResult {
+                action: WriteAction::Already,
+                note: None,
+            });
+        }
+
+        servers_obj.insert("lean-ctx".to_string(), desired);
+        let out = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
+        crate::config_io::write_atomic_with_backup(&target.config_path, &out)?;
+        return Ok(WriteResult {
+            action: WriteAction::Updated,
+            note: None,
+        });
+    }
+
+    // Fresh write
+    if let Some(parent) = target.config_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "mcpServers": {
+            "lean-ctx": {
+                "type": "local",
+                "command": binary,
+                "args": ["mcp"],
+                "env": { "LEAN_CTX_DATA_DIR": data_dir },
+                "tools": ["*"]
+            }
+        }
+    }))
+    .map_err(|e| e.to_string())?;
+    crate::config_io::write_atomic_with_backup(&target.config_path, &content)?;
+    Ok(WriteResult {
+        action: WriteAction::Created,
+        note: None,
     })
 }
 

@@ -137,7 +137,8 @@ fn integration_generic(
             checks.push(check_codex_hooks_enabled(home));
             checks.push(check_codex_hooks_json(home));
         }
-        crate::core::editor_registry::types::ConfigType::VsCodeMcp => {
+        crate::core::editor_registry::types::ConfigType::VsCodeMcp
+        | crate::core::editor_registry::types::ConfigType::CopilotCli => {
             checks.push(check_vscode_mcp(&target.config_path, binary, data_dir));
         }
         crate::core::editor_registry::types::ConfigType::OpenCode => {

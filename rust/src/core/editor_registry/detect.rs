@@ -90,7 +90,7 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             agent_key: "copilot".to_string(),
             config_path: home.join(".copilot/mcp-config.json"),
             detect_path: home.join(".copilot"),
-            config_type: ConfigType::VsCodeMcp,
+            config_type: ConfigType::CopilotCli,
         },
         EditorTarget {
             name: "OpenCode",
