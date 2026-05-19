@@ -52,6 +52,7 @@ pub mod poetry;
 pub mod prettier;
 pub mod prisma;
 pub mod psql;
+pub mod pytest;
 pub mod ruby;
 pub mod ruff;
 pub mod swift;
@@ -194,7 +195,7 @@ pub fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
         return mypy::compress(c, output);
     }
     if c.starts_with("pytest") || c.starts_with("python -m pytest") {
-        return test::compress(output);
+        return pytest::compress(c, output).or_else(|| test::compress(output));
     }
     if c.starts_with("ruff ") {
         return ruff::compress(c, output);
