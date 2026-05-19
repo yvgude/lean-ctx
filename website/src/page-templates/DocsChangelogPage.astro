@@ -12,7 +12,9 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.7 (Current)', href: lp('/docs/changelog') + '#v3.6.7' },
+      { label: '3.6.9 (Current)', href: lp('/docs/changelog') + '#v3.6.9' },
+      { label: '3.6.8', href: lp('/docs/changelog') + '#v3.6.8' },
+      { label: '3.6.7', href: lp('/docs/changelog') + '#v3.6.7' },
       { label: '3.6.6', href: lp('/docs/changelog') + '#v3.6.6' },
       { label: '3.6.5', href: lp('/docs/changelog') + '#v3.6.5' },
       { label: '3.6.4', href: lp('/docs/changelog') + '#v3.6.4' },
@@ -64,6 +66,43 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.9 -->
+  <h2 id="v3.6.9">3.6.9 <span class="text-xs text-muted">(2026-05-19)</span></h2>
+  <p class="text-sm text-muted">Workflow staleness auto-clear, cache message fix, Context IR hot-path, plugin-ready traits, pytest compression.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Context IR hot-path lineage</strong> — Every tool call now records source kind, tokens, duration, and content excerpt into the Context Intermediate Representation for full lineage tracking.</li>
+    <li><strong>Plugin-ready traits</strong> — Extracted <code>CompressionPattern</code> trait and <code>ContextProvider</code> trait for future plugin extensibility.</li>
+    <li><strong>Pytest verbose compression</strong> — Dedicated pattern for <code>pytest -v</code> output: consolidates per-test lines, strips fixtures/collection/metadata, preserves tracebacks and test identifiers.</li>
+    <li><strong>Active Context Gate</strong> — Pressure-based auto-downgrade: when context utilization exceeds 75%, reads are automatically downgraded (full→map, map→signatures).</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Workflow persistence blocking reads after crash</strong> — Workflows inactive &gt;30 minutes are now auto-expired. Read-only tools (<code>ctx_read</code>, <code>ctx_multi_read</code>, <code>ctx_smart_read</code>, <code>ctx_search</code>, <code>ctx_tree</code>) always pass through the workflow gate regardless of state.</li>
+    <li><strong>Misleading cache-hit message</strong> — Changed "Already in your context window" to neutral <code>[unchanged, use cached context]</code> with hint about <code>fresh=true</code> for forced re-read.</li>
+    <li><strong>Unable to clear context pressure (#244)</strong> — <code>ctx_ledger(action=reset)</code> now correctly clears all ledger state.</li>
+    <li><strong>Flaky CI tests</strong> — Serialized environment-variable tests, fixed anomaly persistence debounce race, relaxed stress thresholds for shared runners.</li>
+  </ul>
+
+  <!-- 3.6.8 -->
+  <h2 id="v3.6.8">3.6.8 <span class="text-xs text-muted">(2026-05-18)</span></h2>
+  <p class="text-sm text-muted">Post-RRF reranking pipeline, BM25 path enrichment, find_related search, workflow done-state fix.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Post-RRF Reranking Pipeline</strong> — 5 scientifically-grounded signals: Query-Type Classifier, Definition Boost, File Coherence Boost, Noise Penalties, MMR Diversity.</li>
+    <li><strong>BM25 Path-Enrichment</strong> — File stem and parent directory doubled into BM25 content for path-aware queries.</li>
+    <li><strong><code>find_related</code> action</strong> in <code>ctx_semantic_search</code> — Chunk-based similarity search given a file path + line.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Workflow "done" state blocks all tools permanently</strong> — <code>handle_complete</code> now clears the workflow file. Gate auto-clears stale "done" workflows.</li>
+    <li><strong><code>ctx_read</code> lines:N-M mode hangs on large files</strong> — Line-range reads no longer trigger expensive hint computations.</li>
+  </ul>
 
   <!-- 3.6.7 -->
   <h2 id="v3.6.7">3.6.7 <span class="text-xs text-muted">(2026-05-18)</span></h2>
