@@ -1,0 +1,295 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  getGranularToolByName,
+  getToolEnrichmentByName,
+  getCategoryForTool,
+  getToolEnrichments,
+  toolNameToSlug,
+} from '../lib/mcpManifest';
+
+interface Props {
+  toolName: string;
+}
+
+const { toolName } = Astro.props;
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const tool = getGranularToolByName(toolName);
+if (!tool) throw new Error(`Tool "${toolName}" not found in mcp-tools.json`);
+
+const enrichment = getToolEnrichmentByName(toolName);
+const categoryInfo = getCategoryForTool(toolName);
+const enrichments = getToolEnrichments();
+const repoBase = 'https://github.com/yvgude/lean-ctx/blob/main/';
+
+const repoRoot = path.resolve(process.cwd(), '..');
+const fallbackToolPath = `rust/src/tools/${toolName}.rs`;
+const fallbackExists = fs.existsSync(path.join(repoRoot, 'rust', 'src', 'tools', `${toolName}.rs`));
+const codePaths = (enrichment?.code_paths && enrichment.code_paths.length > 0)
+  ? enrichment.code_paths
+  : (fallbackExists ? [fallbackToolPath] : []);
+
+const schema = tool.input_schema;
+const properties = schema?.properties ?? {};
+const required = schema?.required ?? [];
+const paramNames = Object.keys(properties);
+
+const categoryKey = categoryInfo?.key ?? 'core';
+const categoryLabel = categoryInfo?.category.label ?? 'Tools';
+const categorySlug = {
+  core: 'core',
+  intelligence: 'intelligence',
+  memory: 'memory',
+  session: 'session',
+  workflow: 'workflow',
+  analysis: 'analysis',
+}[categoryKey] ?? 'core';
+
+const categoryMapToPage: Record<string, string> = {
+  core: '/docs/tools/core',
+  intelligence: '/docs/tools/intelligence',
+  session: '/docs/tools/session',
+  memory: '/docs/tools/memory',
+  workflow: '/docs/tools/workflow',
+  analysis: '/docs/tools/analysis',
+};
+
+const siblingTools = categoryInfo?.category.tools ?? [];
+const siblingLinks = siblingTools.map(name => ({
+  label: name,
+  href: lp(`/docs/tools/${toolNameToSlug(name)}`),
+  active: name === toolName,
+}));
+
+const sidebar = [
+  {
+    title: categoryLabel,
+    compact: true,
+    items: siblingLinks.map(l => ({ label: l.label, href: l.href })),
+  },
+  {
+    title: 'Navigation',
+    items: [
+      { label: 'All Tools', href: lp('/docs/tools') },
+      { label: `${categoryLabel} Overview`, href: lp(categoryMapToPage[categoryKey] ?? '/docs/tools') },
+      { label: 'Quick Reference', href: lp('/docs/quick-reference') },
+    ],
+  },
+];
+
+const hasActions = properties['action']?.enum && properties['action'].enum.length > 0;
+const actions = hasActions ? properties['action'].enum! : [];
+
+function formatType(prop: { type?: string; enum?: string[] }): string {
+  if (prop.enum) return prop.enum.map(v => `"${v}"`).join(' | ');
+  return prop.type ?? 'string';
+}
+---
+
+<DocsLayout
+  title={`${toolName} - Tool Reference`}
+  description={`${tool.description.slice(0, 160)}`}
+  keywords={`${toolName}, lean-ctx tool, MCP tool, ${categoryLabel.toLowerCase()}, AI token compression`}
+  sidebar={sidebar}
+>
+  <!-- Breadcrumb -->
+  <nav class="text-xs text-muted mb-4" aria-label="Breadcrumb">
+    <a href={lp('/docs/tools')} class="hover:text-accent transition-colors">Tools</a>
+    <span class="mx-1.5">›</span>
+    <a href={lp(categoryMapToPage[categoryKey] ?? '/docs/tools')} class="hover:text-accent transition-colors">{categoryLabel}</a>
+    <span class="mx-1.5">›</span>
+    <span class="text-text-bright">{toolName}</span>
+  </nav>
+
+  <!-- Tool Header -->
+  <div class="flex items-start gap-4 mb-6">
+    <div class="flex-1">
+      <div class="flex items-center gap-3 mb-2">
+        <code class="text-2xl font-bold text-accent">{toolName}</code>
+        <span class="px-2 py-0.5 text-xs rounded-full bg-accent/10 text-accent border border-accent/20">
+          {categoryLabel}
+        </span>
+      </div>
+      <p class="text-muted leading-relaxed">{tool.description}</p>
+    </div>
+  </div>
+
+  <!-- Quick Facts -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+    <div class="bg-surface/50 rounded-lg p-3 border border-border/30">
+      <div class="text-xs text-muted mb-1">Parameters</div>
+      <div class="text-lg font-semibold text-text-bright">{paramNames.length}</div>
+    </div>
+    <div class="bg-surface/50 rounded-lg p-3 border border-border/30">
+      <div class="text-xs text-muted mb-1">Required</div>
+      <div class="text-lg font-semibold text-text-bright">{required.length}</div>
+    </div>
+    {hasActions && (
+      <div class="bg-surface/50 rounded-lg p-3 border border-border/30">
+        <div class="text-xs text-muted mb-1">Actions</div>
+        <div class="text-lg font-semibold text-text-bright">{actions.length}</div>
+      </div>
+    )}
+    {enrichment?.token_impact && (
+      <div class="bg-surface/50 rounded-lg p-3 border border-border/30">
+        <div class="text-xs text-muted mb-1">Token Impact</div>
+        <div class="text-sm font-semibold text-emerald-400">{enrichment.token_impact}</div>
+      </div>
+    )}
+  </div>
+
+  <!-- When to Use / When Not to Use -->
+  {enrichment && (enrichment.when_to_use || enrichment.when_not_to_use) && (
+    <div class="grid sm:grid-cols-2 gap-4 mb-8">
+      {enrichment.when_to_use && (
+        <div class="bg-emerald-500/5 rounded-lg p-4 border border-emerald-500/20">
+          <h3 class="text-sm font-semibold text-emerald-400 mb-2 flex items-center gap-2">
+            <span>✓</span> When to Use
+          </h3>
+          <p class="text-sm text-muted leading-relaxed">{enrichment.when_to_use}</p>
+        </div>
+      )}
+      {enrichment.when_not_to_use && (
+        <div class="bg-amber-500/5 rounded-lg p-4 border border-amber-500/20">
+          <h3 class="text-sm font-semibold text-amber-400 mb-2 flex items-center gap-2">
+            <span>✗</span> When Not to Use
+          </h3>
+          <p class="text-sm text-muted leading-relaxed">{enrichment.when_not_to_use}</p>
+        </div>
+      )}
+    </div>
+  )}
+
+  <!-- Output contract -->
+  {enrichment?.output_contract && (
+    <>
+      <h2>Output contract</h2>
+      <p class="text-muted leading-relaxed">{enrichment.output_contract}</p>
+    </>
+  )}
+
+  <!-- Implementation -->
+  {codePaths.length > 0 && (
+    <>
+      <h2>Implementation</h2>
+      <p class="text-muted">Source paths in the LeanCTX repository:</p>
+      <ul class="list-disc pl-5 text-muted">
+        {codePaths.map((p) => (
+          <li>
+            <a href={`${repoBase}${p}`} target="_blank" rel="noopener" class="hover:text-accent transition-colors">
+              <code>{p}</code>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
+  )}
+
+  <!-- Parameters -->
+  {paramNames.length > 0 && (
+    <>
+      <h2>Parameters</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Type</th>
+            <th>Required</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {paramNames.map(name => {
+            const prop = properties[name];
+            const isRequired = required.includes(name);
+            return (
+              <tr>
+                <td><code>{name}</code></td>
+                <td><code class="text-xs">{formatType(prop)}</code></td>
+                <td>{isRequired ? 'Yes' : 'No'}</td>
+                <td>
+                  {prop.description ?? '-'}
+                  {prop.default !== undefined && (
+                    <span class="text-xs text-muted ml-1">(default: <code>{String(prop.default)}</code>)</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </>
+  )}
+
+  <!-- Actions Detail -->
+  {hasActions && (
+    <>
+      <h2>Actions</h2>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 not-prose">
+        {actions.map(action => (
+          <div class="bg-surface/50 rounded-lg p-4 border border-border/30 hover:border-accent/30 transition-colors">
+            <code class="text-accent font-semibold text-sm">{action}</code>
+            <p class="text-xs text-muted mt-1 leading-relaxed">
+              {toolName} action="{action}"
+            </p>
+          </div>
+        ))}
+      </div>
+    </>
+  )}
+
+  <!-- Examples -->
+  {enrichment?.examples && enrichment.examples.length > 0 && (
+    <>
+      <h2>Examples</h2>
+      {enrichment.examples.map(ex => (
+        <div class="mb-6">
+          <h4>{ex.title}</h4>
+          <pre><code>{ex.call}</code></pre>
+          {ex.description && <p class="text-sm text-muted mt-2">{ex.description}</p>}
+        </div>
+      ))}
+    </>
+  )}
+
+  <!-- CLI Equivalent -->
+  {enrichment?.cli_equivalent && (
+    <>
+      <h2>CLI Equivalent</h2>
+      <p>This tool is also available via the CLI:</p>
+      <pre><code>{enrichment.cli_equivalent}</code></pre>
+    </>
+  )}
+
+  <!-- Related Tools -->
+  {enrichment?.related && enrichment.related.length > 0 && (
+    <>
+      <h2>Related Tools</h2>
+      <div class="flex flex-wrap gap-2 not-prose">
+        {enrichment.related.map(relName => (
+          <a
+            href={lp(`/docs/tools/${toolNameToSlug(relName)}`)}
+            class="px-3 py-1.5 text-sm rounded-lg bg-surface/50 border border-border/30 hover:border-accent/30 hover:text-accent transition-colors"
+          >
+            {relName}
+          </a>
+        ))}
+      </div>
+    </>
+  )}
+
+  <!-- Schema Hash -->
+  <div class="mt-12 pt-6 border-t border-border/20">
+    <div class="flex items-center justify-between text-xs text-muted/60">
+      <span>Schema MD5: <code>{tool.schema_md5}</code></span>
+      <a href={lp('/docs/tools')} class="hover:text-accent transition-colors">← Back to all tools</a>
+    </div>
+  </div>
+</DocsLayout>
