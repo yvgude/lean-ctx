@@ -12,6 +12,10 @@ const sidebar = [
     items: [
       { label: 'Overview', href: lp('/docs/concepts/caching') },
       { label: 'Session Cache', href: lp('/docs/concepts/caching') + '#session-cache' },
+      { label: 'Predictive Coding', href: lp('/docs/concepts/caching') + '#predictive-coding' },
+      { label: 'Hebbian Cache', href: lp('/docs/concepts/caching') + '#hebbian-cache' },
+      { label: 'Predictive Prefetch', href: lp('/docs/concepts/caching') + '#predictive-prefetch' },
+      { label: 'Memory Guard', href: lp('/docs/concepts/caching') + '#memory-guard' },
       { label: 'File References', href: lp('/docs/concepts/caching') + '#file-references' },
       { label: 'Shell Compression', href: lp('/docs/concepts/caching') + '#shell-compression' },
       { label: 'Archive System', href: lp('/docs/concepts/caching') + '#archive' },
@@ -83,6 +87,111 @@ ctx_read src/auth.ts fresh=true
     </tbody>
   </table>
   <p>The cache auto-clears after 5 minutes of inactivity to prevent stale data.</p>
+
+  <h2 id="predictive-coding">Predictive Coding <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
+  <p>
+    Inspired by <strong>Rao & Ballard's Predictive Coding theory</strong> from neuroscience, lean-ctx transmits
+    only <em>prediction errors</em> (structural deltas) when a file is re-read in the same session. Instead of
+    resending the full content, only changes since the last read are sent — dramatically reducing token usage
+    for iterative development workflows.
+  </p>
+
+  <h3>How It Works</h3>
+  <ol>
+    <li><strong>First read:</strong> Full content is delivered and stored as the "prediction" baseline</li>
+    <li><strong>Subsequent reads:</strong> Only lines that differ from the baseline are sent as a delta</li>
+    <li><strong>Large refactors:</strong> If changes exceed 60% of lines, the system falls back to full output</li>
+  </ol>
+
+  <pre><code>{`# First read: full output (450 tokens)
+ctx_read src/auth.ts mode="signatures"
+→ pub fn authenticate(...) → Result<Token>
+  pub fn validate_jwt(...) → bool
+  pub fn refresh_token(...) → Token
+
+# After editing: only delta sent (~30 tokens instead of 450)
+ctx_read src/auth.ts mode="signatures"
+→ [delta:signatures] unchanged:2
+  + pub fn revoke_token(token_id: &str) → Result<()>`}</code></pre>
+
+  <p>
+    Token savings: <strong>90-97%</strong> for typical edit cycles where 1-3 functions change between reads.
+  </p>
+
+  <h2 id="hebbian-cache">Hebbian Co-Access Cache <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
+  <p>
+    Based on <strong>Hebb's rule</strong> ("neurons that fire together, wire together"), lean-ctx tracks which
+    files are accessed together and strengthens their association over time. This enables intelligent cache
+    eviction that preserves working-set coherence.
+  </p>
+
+  <h3>Co-Access Tracking</h3>
+  <p>
+    Files accessed within the same burst window (tool calls in rapid succession) build associative strength.
+    When cache pressure requires eviction, files with strong associations to the current working set are
+    preserved, while isolated files with weak associations are evicted first.
+  </p>
+
+  <h3>Boltzmann Temperature Eviction</h3>
+  <p>
+    Cache eviction uses a <strong>Boltzmann distribution</strong> from statistical physics. Each cache entry
+    has an "energy" score based on recency, access frequency, association strength, and graph centrality.
+    Memory pressure acts as "temperature":
+  </p>
+  <ul>
+    <li><strong>Low pressure (high T):</strong> Lenient eviction — even moderate-value entries survive</li>
+    <li><strong>High pressure (low T):</strong> Deterministic eviction of lowest-energy entries</li>
+  </ul>
+  <p>
+    This prevents both premature eviction of potentially useful entries and cache bloat from unused files.
+  </p>
+
+  <h2 id="predictive-prefetch">Predictive Prefetch <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
+  <p>
+    Using the <strong>Free Energy Principle</strong> from neuroscience, lean-ctx learns file access
+    transition patterns and proactively pre-loads files predicted to be needed next. This eliminates
+    cold-read latency for common workflows.
+  </p>
+
+  <h3>How It Works</h3>
+  <ol>
+    <li><strong>Observation:</strong> Every file access updates a transition probability matrix</li>
+    <li><strong>Prediction:</strong> After accessing file A, the model predicts B is next (based on learned patterns)</li>
+    <li><strong>Prefetch:</strong> High-confidence predictions trigger background pre-loading</li>
+    <li><strong>Feedback:</strong> Hit/miss tracking adjusts confidence thresholds via Active Inference</li>
+  </ol>
+
+  <p>
+    The system's "free energy" (prediction error rate) is continuously minimized — when predictions are
+    wrong, confidence thresholds increase; when predictions are correct, thresholds decrease for
+    more aggressive prefetching.
+  </p>
+
+  <h2 id="memory-guard">Homeostatic Memory Guard <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
+  <p>
+    Inspired by <strong>biological homeostasis</strong>, lean-ctx maintains system equilibrium through a
+    multi-level graduated response system. Rather than hard limits that cause abrupt failures, the memory
+    guard applies proportional responses to resource pressure:
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Level</th><th>Trigger</th><th>Action</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Nominal</strong></td><td>&lt;70% memory</td><td>None</td><td>Normal operation</td></tr>
+      <tr><td><strong>Elevated</strong></td><td>70-85%</td><td>Trim outputs</td><td>Compress oversized responses</td></tr>
+      <tr><td><strong>High</strong></td><td>85-93%</td><td>Evict entries</td><td>Remove low-energy cache entries</td></tr>
+      <tr><td><strong>Critical</strong></td><td>93-95%</td><td>Unload indices</td><td>Drop search indices (rebuildable)</td></tr>
+      <tr><td><strong>Emergency</strong></td><td>&gt;95%</td><td>Emergency drop</td><td>Aggressive cleanup to prevent OOM</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    A feedback loop tracks whether actions were effective. If pressure persists after intervention,
+    the system escalates to the next level. When pressure subsides, it resets to nominal — no permanent
+    degradation occurs.
+  </p>
 
   <h2 id="file-references">File References (F1, F2, ...)</h2>
   <p>

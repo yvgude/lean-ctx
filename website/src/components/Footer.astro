@@ -61,6 +61,8 @@ const year = new Date().getFullYear();
             <li><a href={lp('/docs/tools')}>{t('nav.tools.allTools')}</a></li>
             <li><a href={lp('/what-is-context-engineering')}>{t('nav.learn.contextEngineering')}</a></li>
             <li><a href={lp('/privacy')}>{t('footer.privacy')}</a></li>
+            <li><a href={lp('/terms')}>Terms of Service</a></li>
+            <li><a href={lp('/imprint')}>Impressum</a></li>
           </ul>
         </div>
       </div>
@@ -69,7 +71,7 @@ const year = new Date().getFullYear();
     <div class="footer-divider"></div>
 
     <div class="footer-bottom">
-      <p class="footer-copy">&copy; {year} LeanCTX &middot; Apache-2.0 &middot; <a href={lp('/privacy')} style="color:inherit;text-decoration:none;">{t('footer.privacy')}</a> &middot; {t('footer.madeWith')}</p>
+      <p class="footer-copy">&copy; {year} LeanCTX &middot; Apache-2.0 &middot; <a href={lp('/privacy')} style="color:inherit;text-decoration:none;">{t('footer.privacy')}</a> &middot; <a href={lp('/terms')} style="color:inherit;text-decoration:none;">Terms</a> &middot; <a href={lp('/imprint')} style="color:inherit;text-decoration:none;">Impressum</a> &middot; {t('footer.madeWith')}</p>
       <div class="footer-bottom-links">
         <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="footer-ascii-link">[git]</a>
         <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="footer-ascii-link">[dsc]</a>

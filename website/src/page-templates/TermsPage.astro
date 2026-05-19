@@ -1,0 +1,266 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const lastUpdated = 'May 2026';
+---
+
+<BaseLayout
+  title="Terms of Service — LeanCTX"
+  description="Terms of Service for lean-ctx software and leanctx.com services."
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: 'Terms of Service', url: lp('/terms/') }]}>
+
+<PageHero
+  label="Legal"
+  title="Terms of Service"
+  description={`Last updated: ${lastUpdated}`}
+  kickerTone="accent"
+  container="narrow"
+  containerStyle="max-width: 52rem;"
+  titleMaxWidth="52rem"
+  descMaxWidth="52rem"
+/>
+
+<div class="section-divider content-grid"></div>
+
+<section class="section-y">
+  <div class="content-grid legal-content">
+    <div class="animate-entrance">
+
+      <h2>1. Scope and Acceptance</h2>
+      <p>
+        These Terms of Service ("Terms") govern your use of the lean-ctx software (CLI, MCP server,
+        Chrome extension), the leanctx.com website, and any optional cloud services (collectively, the "Service").
+        By downloading, installing, or using lean-ctx, you agree to these Terms.
+      </p>
+      <p>
+        If you do not agree to these Terms, do not use the Service.
+      </p>
+
+      <h2>2. Software License</h2>
+      <p>
+        The lean-ctx source code is licensed under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache License 2.0</a>.
+        This license grants you the right to use, modify, and distribute the software under its terms.
+        The full license text is included in the source repository.
+      </p>
+      <p>
+        Pre-compiled binaries distributed via GitHub Releases, Homebrew, Cargo, npm, and AUR are provided
+        under the same Apache-2.0 license.
+      </p>
+
+      <h2>3. Permitted Use</h2>
+      <p>You may use lean-ctx for any lawful purpose, including:</p>
+      <ul>
+        <li>Personal and commercial software development</li>
+        <li>Integration with AI coding assistants and IDEs</li>
+        <li>Deployment in CI/CD pipelines and automated workflows</li>
+        <li>Modification and redistribution under the Apache-2.0 license terms</li>
+      </ul>
+
+      <h2>4. Prohibited Use</h2>
+      <p>You may not:</p>
+      <ul>
+        <li>Use the Service to process, store, or transmit malware or malicious code</li>
+        <li>Attempt to circumvent the security mechanisms (PathJail, shell allowlist, etc.) for malicious purposes</li>
+        <li>Use the optional cloud services to store illegal content</li>
+        <li>Misrepresent your identity or impersonate others when using team features</li>
+        <li>Use the Service in a way that violates applicable local, national, or international law</li>
+      </ul>
+
+      <h2>5. Disclaimer of Warranties</h2>
+      <p>
+        <strong>THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND,
+        EITHER EXPRESS OR IMPLIED.</strong> This includes, without limitation, implied warranties of
+        merchantability, fitness for a particular purpose, and non-infringement.
+      </p>
+      <p>
+        The maintainer does not warrant that:
+      </p>
+      <ul>
+        <li>The Service will be uninterrupted, secure, or error-free</li>
+        <li>Compression or caching will not alter the semantic meaning of processed content</li>
+        <li>The Service will be compatible with all environments, tools, or configurations</li>
+        <li>Defects will be corrected in a timely manner</li>
+      </ul>
+
+      <h2>6. Limitation of Liability</h2>
+      <p>
+        <strong>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW</strong>, the maintainer shall not
+        be liable for any indirect, incidental, special, consequential, or punitive damages, including
+        but not limited to:
+      </p>
+      <ul>
+        <li>Loss of data or code</li>
+        <li>Loss of profits or business opportunity</li>
+        <li>Service interruption or downtime</li>
+        <li>Damages arising from the use of AI-generated code in conjunction with lean-ctx</li>
+        <li>Security breaches caused by misconfiguration or misuse</li>
+      </ul>
+      <p>
+        This limitation applies regardless of the legal theory (contract, tort, negligence, or otherwise)
+        and even if the maintainer has been advised of the possibility of such damages.
+      </p>
+
+      <h2>7. Cloud Services (Optional)</h2>
+      <p>
+        Cloud features (team sync, remote knowledge sharing) are entirely optional and activated only
+        by explicit user action (<code>lean-ctx login</code>). For cloud services:
+      </p>
+      <ul>
+        <li><strong>Availability:</strong> Cloud services are provided on a best-effort basis with no guaranteed uptime SLA</li>
+        <li><strong>Data ownership:</strong> You retain full ownership of all data you upload to the cloud service</li>
+        <li><strong>Data deletion:</strong> You may request deletion of your account and all associated data at any time</li>
+        <li><strong>Service changes:</strong> Cloud features may be modified, suspended, or discontinued with reasonable notice</li>
+      </ul>
+
+      <h2>8. Intellectual Property</h2>
+      <p>
+        The "LeanCTX" name, logo, and website design are the intellectual property of the maintainer.
+        The Apache-2.0 license covers the source code but does not grant trademark rights.
+      </p>
+      <p>
+        You may not use the "LeanCTX" name or branding in a way that suggests official endorsement or
+        affiliation without prior written permission.
+      </p>
+
+      <h2>9. Third-Party Services</h2>
+      <p>
+        lean-ctx integrates with third-party AI tools (Cursor, Claude, Copilot, etc.) and package
+        registries (GitHub, Homebrew, crates.io, npm). These services are governed by their own terms
+        and privacy policies. The maintainer is not responsible for the availability, security, or
+        behavior of third-party services.
+      </p>
+
+      <h2>10. Security Reporting</h2>
+      <p>
+        If you discover a security vulnerability in lean-ctx, please report it responsibly via
+        <a href="mailto:security@leanctx.com">security@leanctx.com</a>. Do not disclose vulnerabilities
+        publicly until a fix has been released.
+      </p>
+
+      <h2>11. Changes to These Terms</h2>
+      <p>
+        These Terms may be updated from time to time. Material changes will be announced via the
+        <a href="https://github.com/yvgude/lean-ctx/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG</a>
+        and the "Last updated" date will be revised. Continued use of the Service after changes
+        constitutes acceptance of the revised Terms.
+      </p>
+
+      <h2>12. Governing Law</h2>
+      <p>
+        These Terms are governed by and construed in accordance with the laws of Switzerland.
+        Any disputes arising from or relating to these Terms shall be subject to the exclusive
+        jurisdiction of the courts of Switzerland.
+      </p>
+
+      <h2>13. Severability</h2>
+      <p>
+        If any provision of these Terms is found to be unenforceable or invalid, that provision
+        shall be limited or eliminated to the minimum extent necessary so that the remaining
+        provisions remain in full force and effect.
+      </p>
+
+      <h2>14. Contact</h2>
+      <p>
+        Questions regarding these Terms:<br/>
+        <a href="mailto:contact@leanctx.com">contact@leanctx.com</a><br/>
+        <a href="https://github.com/yvgude/lean-ctx/issues" target="_blank" rel="noopener">GitHub Issues</a>
+      </p>
+
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  .legal-content {
+    max-width: 52rem;
+  }
+
+  .legal-content h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+    margin-top: 2.5rem;
+    margin-bottom: 0.875rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .legal-content h2:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .legal-content h3 {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-bright);
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .legal-content p {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    line-height: 1.75;
+    margin-bottom: 1rem;
+  }
+
+  .legal-content ul {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.25rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .legal-content ul li {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    padding-inline-start: 1.5rem;
+    position: relative;
+    line-height: 1.65;
+  }
+
+  .legal-content ul li::before {
+    content: '–';
+    position: absolute;
+    left: 0;
+    color: var(--color-muted);
+  }
+
+  .legal-content strong {
+    color: var(--color-text-bright);
+    font-weight: 500;
+  }
+
+  .legal-content a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  .legal-content a:hover {
+    text-decoration: underline;
+  }
+
+  .legal-content code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--color-surface-2);
+    padding: 0.15em 0.4em;
+    border-radius: 0.25rem;
+    color: var(--color-accent);
+  }
+</style>

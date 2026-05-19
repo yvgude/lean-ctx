@@ -1,0 +1,171 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const lastUpdated = 'May 2026';
+---
+
+<BaseLayout
+  title="Impressum — LeanCTX"
+  description="Legal information and imprint (Impressum) for leanctx.com"
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: 'Impressum', url: lp('/imprint/') }]}>
+
+<PageHero
+  label="Legal"
+  title="Impressum"
+  description={`Last updated: ${lastUpdated}`}
+  kickerTone="accent"
+  container="narrow"
+  containerStyle="max-width: 52rem;"
+  titleMaxWidth="52rem"
+  descMaxWidth="52rem"
+/>
+
+<div class="section-divider content-grid"></div>
+
+<section class="section-y">
+  <div class="content-grid legal-content">
+    <div class="animate-entrance">
+
+      <h2>Information pursuant to Art. 3 UWG (CH) / § 5 TMG (DE)</h2>
+
+      <h3>Responsible for this website</h3>
+      <p>
+        Yves Gugger<br/>
+        Holzmoosrütisteig 1b<br/>
+        8820 Wädenswil<br/>
+        Switzerland
+      </p>
+
+      <h3>Contact</h3>
+      <p>
+        Email: <a href="mailto:contact@leanctx.com">contact@leanctx.com</a><br/>
+        Website: <a href="https://leanctx.com">https://leanctx.com</a>
+      </p>
+
+      <h2>Project Information</h2>
+      <p>
+        LeanCTX is an open-source software project licensed under the Apache License 2.0.
+        The source code is publicly available at
+        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener">github.com/yvgude/lean-ctx</a>.
+      </p>
+      <p>
+        LeanCTX is not a registered company. It is a personal open-source project maintained
+        by the individual named above.
+      </p>
+
+      <h2>Liability for Content (Haftung für Inhalte)</h2>
+      <p>
+        As a service provider, I am responsible for my own content on these pages according to
+        § 7 Abs.1 TMG (German Telemedia Act). According to §§ 8 to 10 TMG, I am not obligated
+        to monitor transmitted or stored third-party information or to investigate circumstances
+        that indicate illegal activity.
+      </p>
+      <p>
+        Obligations to remove or block the use of information under general law remain unaffected.
+        However, liability in this regard is only possible from the time of knowledge of a specific
+        legal violation. Upon becoming aware of such violations, I will remove the content immediately.
+      </p>
+
+      <h2>Liability for Links (Haftung für Links)</h2>
+      <p>
+        This website contains links to external third-party websites over whose content I have no
+        control. Therefore, I cannot accept any liability for this third-party content. The
+        respective provider or operator of the linked pages is always responsible for the content
+        of those pages.
+      </p>
+      <p>
+        The linked pages were checked for possible legal violations at the time of linking. Illegal
+        content was not apparent at the time of linking. However, permanent content monitoring of
+        the linked pages is not reasonable without concrete evidence of a legal violation. Upon
+        becoming aware of legal violations, I will remove such links immediately.
+      </p>
+
+      <h2>Copyright (Urheberrecht)</h2>
+      <p>
+        The software source code of lean-ctx is licensed under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache License 2.0</a>.
+        You may use, modify, and distribute the code under the terms of this license.
+      </p>
+      <p>
+        The content of this website (documentation, text, graphics, design) is created by the
+        operator and is protected by copyright. Reproduction, editing, distribution, and any
+        kind of use beyond the limits of copyright law require written consent. Downloads and
+        copies of this website are only permitted for private, non-commercial use.
+      </p>
+      <p>
+        Insofar as the content on this site was not created by the operator, the copyrights of
+        third parties are observed. Third-party content is identified as such. Should you
+        nevertheless become aware of a copyright infringement, please notify me accordingly.
+        Upon becoming aware of legal violations, I will remove such content immediately.
+      </p>
+
+      <h2>Dispute Resolution (Streitschlichtung)</h2>
+      <p>
+        The European Commission provides a platform for online dispute resolution (ODR):
+        <a href="https://ec.europa.eu/consumers/odr/" target="_blank" rel="noopener">https://ec.europa.eu/consumers/odr/</a>.
+      </p>
+      <p>
+        I am not willing or obliged to participate in dispute resolution proceedings before
+        a consumer arbitration board.
+      </p>
+
+    </div>
+  </div>
+</section>
+
+</BaseLayout>
+
+<style>
+  .legal-content {
+    max-width: 52rem;
+  }
+
+  .legal-content h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+    margin-top: 2.5rem;
+    margin-bottom: 0.875rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .legal-content h2:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .legal-content h3 {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-bright);
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .legal-content p {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    line-height: 1.75;
+    margin-bottom: 1rem;
+  }
+
+  .legal-content a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  .legal-content a:hover {
+    text-decoration: underline;
+  }
+
+</style>
