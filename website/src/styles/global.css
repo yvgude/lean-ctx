@@ -27,17 +27,20 @@
   --color-accent-2: #818cf8;
   --color-accent-2-bright: #a5b4fc;
 
-  --color-accent-3: #c084fc;
+  --color-accent-3: #d4a0ff;
 
   --color-danger: #f87171;
   --color-warning: #fbbf24;
+
+  --color-glow-neural: rgba(192, 132, 252, 0.06);
+  --color-glow-synapse: rgba(129, 140, 248, 0.04);
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
-  --card-radius: 4px;
-  --card-radius-lg: 6px;
+  --card-radius: 8px;
+  --card-radius-lg: 12px;
 }
 
 
@@ -100,9 +103,11 @@
     --color-accent-bright: #6ee7b7;
     --color-accent-2: #818cf8;
     --color-accent-2-bright: #a5b4fc;
-    --color-accent-3: #c084fc;
+    --color-accent-3: #d4a0ff;
     --color-danger: #f87171;
     --color-warning: #fbbf24;
+    --color-glow-neural: rgba(192, 132, 252, 0.06);
+    --color-glow-synapse: rgba(129, 140, 248, 0.04);
     --theme-color-meta: #050507;
 
     --overlay-heavy: rgba(255, 255, 255, 0.06);
@@ -141,9 +146,11 @@
   --color-accent-bright: #6ee7b7;
   --color-accent-2: #818cf8;
   --color-accent-2-bright: #a5b4fc;
-  --color-accent-3: #c084fc;
+  --color-accent-3: #d4a0ff;
   --color-danger: #f87171;
   --color-warning: #fbbf24;
+  --color-glow-neural: rgba(192, 132, 252, 0.06);
+  --color-glow-synapse: rgba(129, 140, 248, 0.04);
   --theme-color-meta: #050507;
 
   --overlay-heavy: rgba(255, 255, 255, 0.06);
@@ -238,8 +245,21 @@ body::before {
     linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size: 160px 160px, 160px 160px;
   background-position: top left, top left;
-  opacity: 0.7;
+  opacity: 0.4;
   contain: strict;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1200px;
+  height: 800px;
+  background: radial-gradient(ellipse, var(--color-glow-synapse), transparent 70%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 ::selection {
@@ -605,7 +625,17 @@ pre code {
   position: relative;
 }
 .glow-section::before {
-  display: none;
+  content: '';
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(ellipse, var(--color-glow-neural), transparent 70%);
+  pointer-events: none;
+  opacity: 0.5;
+  z-index: -1;
 }
 
 /* ── Screenshot-style helpers ─────────────────────────── */
@@ -666,10 +696,10 @@ pre code {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 20% 0%, var(--overlay-hover), transparent 45%),
-    radial-gradient(circle at 100% 10%, var(--overlay-faint), transparent 40%);
+    radial-gradient(ellipse at 20% 0%, var(--color-glow-neural), transparent 50%),
+    radial-gradient(circle at 80% 100%, var(--color-glow-synapse), transparent 45%);
   pointer-events: none;
-  opacity: 0.35;
+  opacity: 0.5;
 }
 
 .panel-inner {
