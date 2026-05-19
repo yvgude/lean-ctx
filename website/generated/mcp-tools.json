@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 58,
+    "granular": 59,
     "unified": 5
   },
   "read_modes": {
@@ -1455,6 +1455,32 @@
         },
         "name": "ctx_session",
         "schema_md5": "268597e55008f7da3c4f5be297e3c8f3"
+      },
+      {
+        "description": "Manage context pressure ledger. Actions: status (show current pressure and entries), reset (clear all entries and pressure), evict (remove specific paths and add exclusion overlays to prevent re-accumulation).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Ledger operation to perform",
+              "enum": [
+                "status",
+                "reset",
+                "evict"
+              ],
+              "type": "string"
+            },
+            "targets": {
+              "description": "Comma-separated file paths to evict (required for evict action)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_ledger",
+        "schema_md5": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
       },
       {
         "description": "Share cached file contexts between agents. Actions: push (share files from your cache to another agent), pull (receive files shared by other agents), list (show all shared contexts), clear (remove your shared contexts).",

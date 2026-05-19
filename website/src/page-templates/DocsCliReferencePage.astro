@@ -408,6 +408,15 @@ lean-ctx export-rules --format=claude          # CLAUDE.md section
 lean-ctx export-rules --project=/path/to/repo  # specify project root</code></pre>
   <p>{t('docs.cliReference.exportRulesNote')}</p>
 
+  <h3 id="ledger"><code>lean-ctx ledger [status|reset|evict &lt;paths...&gt;|prune]</code></h3>
+  <p>Manage the context pressure ledger. View current pressure, clear entries, evict specific files, or prune stale entries.</p>
+  <pre><code>lean-ctx ledger                    # show current pressure status
+lean-ctx ledger status             # same as above
+lean-ctx ledger reset              # clear all entries, reset pressure to zero
+lean-ctx ledger evict src/old.rs src/unused.ts  # evict specific paths
+lean-ctx ledger prune              # remove entries for files that no longer exist</code></pre>
+  <p>The <code>evict</code> action also adds exclusion overlays, preventing evicted paths from re-accumulating pressure. Use <code>reset</code> when switching task focus entirely.</p>
+
   <hr />
 
   <h2 id="analytics">{t('docs.cliReference.analyticsTitle')}</h2>

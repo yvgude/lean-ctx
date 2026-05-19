@@ -58,6 +58,7 @@
       "description": "Session state, metrics, heatmaps, caching, and token savings reports",
       "tools": [
         "ctx_session",
+        "ctx_ledger",
         "ctx_metrics",
         "ctx_gain",
         "ctx_heatmap",
@@ -183,15 +184,45 @@
       "cli_equivalent": null
     },
     "ctx_session": {
-      "when_to_use": "Persisting task context across chat sessions. Recording key findings and decisions for later recovery.",
+      "when_to_use": "Persisting task context across chat sessions. Recording key findings and decisions for later recovery. The reset action also clears the context ledger for a complete fresh start.",
       "when_not_to_use": "For short, one-off questions that don't need persistence.",
       "related": [
         "ctx_knowledge",
         "ctx_gain",
-        "ctx_metrics"
+        "ctx_metrics",
+        "ctx_ledger"
       ],
       "token_impact": "Session load recovers full context in ~200-500 tokens instead of re-reading files.",
       "cli_equivalent": null
+    },
+    "ctx_ledger": {
+      "when_to_use": "Managing context pressure. Check current pressure status, reset the ledger to clear accumulated pressure, or evict specific paths that are no longer needed.",
+      "when_not_to_use": "When context pressure is low and manageable. For session-wide resets, use ctx_session reset instead (which also clears the ledger).",
+      "related": [
+        "ctx_session",
+        "ctx_cache",
+        "ctx_gain",
+        "ctx_metrics"
+      ],
+      "token_impact": "Eviction reduces tracked token usage immediately. Reset clears all accumulated pressure to zero.",
+      "cli_equivalent": "lean-ctx ledger [status|reset|evict <paths...>]",
+      "examples": [
+        {
+          "title": "Check current pressure",
+          "call": "ctx_ledger action=\"status\"",
+          "description": "Shows current token usage, entry count, and pressure percentage."
+        },
+        {
+          "title": "Evict specific files",
+          "call": "ctx_ledger action=\"evict\" targets=\"src/old_module.rs,src/unused.ts\"",
+          "description": "Removes specified paths from the ledger and adds exclusion overlays to prevent re-accumulation."
+        },
+        {
+          "title": "Full reset",
+          "call": "ctx_ledger action=\"reset\"",
+          "description": "Clears all ledger entries and resets pressure to zero. Use when starting a new task focus."
+        }
+      ]
     },
     "ctx_gain": {
       "when_to_use": "Checking how many tokens lean-ctx saved in the current session. Useful for reporting and optimization.",
