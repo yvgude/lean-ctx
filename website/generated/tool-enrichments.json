@@ -89,6 +89,7 @@
         "ctx_callgraph",
         "ctx_callers",
         "ctx_callees",
+        "ctx_refactor",
         "ctx_outline",
         "ctx_routes",
         "ctx_review",

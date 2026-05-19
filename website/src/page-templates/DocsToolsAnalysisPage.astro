@@ -109,6 +109,34 @@ const sidebar = [
   src/api/graphql.rs:67     fn resolveUser
   tests/auth_test.rs:12     fn test_token_validation`}</code></pre>
 
+  <h2 id="ctx_refactor">ctx_refactor</h2>
+  <p>
+    <code>ctx_refactor</code> provides LSP-powered refactoring operations. Requires a running
+    language server (rust-analyzer, typescript-language-server, pylsp, gopls).
+    Run <code>lean-ctx doctor</code> to check LSP availability.
+  </p>
+  <h3>Parameters</h3>
+  <table>
+    <thead>
+      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td>Yes</td><td>One of: <code>rename</code>, <code>references</code>, <code>definition</code>, <code>implementations</code></td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>File path</td></tr>
+      <tr><td><code>line</code></td><td>integer</td><td>Yes</td><td>1-indexed line number</td></tr>
+      <tr><td><code>column</code></td><td>integer</td><td>No</td><td>0-indexed character offset</td></tr>
+      <tr><td><code>new_name</code></td><td>string</td><td>No</td><td>New name (only for <code>rename</code> action)</td></tr>
+    </tbody>
+  </table>
+  <h3>Example</h3>
+  <pre><code>{`ctx_refactor action="references" path="src/auth.rs" line=42
+→ 5 references:
+  src/http/middleware.rs:15:8
+  src/http/handler.rs:33:12
+  src/api/routes.rs:67:4
+  src/api/graphql.rs:89:20
+  tests/auth_test.rs:7:4`}</code></pre>
+
   <h2 id="ctx_review">ctx_review</h2>
   <p>
     <code>ctx_review</code> automates code review by combining impact analysis, caller tracking,
