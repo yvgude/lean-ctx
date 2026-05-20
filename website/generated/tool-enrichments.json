@@ -12,7 +12,6 @@
         "ctx_tree",
         "ctx_edit",
         "ctx_delta",
-        "ctx_call",
         "ctx_provider",
         "ctx_discover_tools"
       ]
@@ -31,14 +30,14 @@
         "ctx_discover",
         "ctx_semantic_search",
         "ctx_graph",
-        "ctx_graph_diagram",
         "ctx_impact",
         "ctx_architecture",
         "ctx_overview",
         "ctx_prefetch",
         "ctx_analyze",
         "ctx_expand",
-        "ctx_index"
+        "ctx_index",
+        "ctx_retrieve"
       ]
     },
     "memory": {
@@ -64,9 +63,11 @@
         "ctx_heatmap",
         "ctx_cache",
         "ctx_benchmark",
-        "ctx_wrapped",
         "ctx_artifacts",
-        "ctx_verify"
+        "ctx_verify",
+        "ctx_control",
+        "ctx_load_tools",
+        "ctx_radar"
       ]
     },
     "workflow": {
@@ -78,7 +79,9 @@
         "ctx_execute",
         "ctx_feedback",
         "ctx_pack",
-        "ctx_proof"
+        "ctx_proof",
+        "ctx_compile",
+        "ctx_plan"
       ]
     },
     "analysis": {
@@ -87,8 +90,6 @@
       "tools": [
         "ctx_symbol",
         "ctx_callgraph",
-        "ctx_callers",
-        "ctx_callees",
         "ctx_refactor",
         "ctx_outline",
         "ctx_routes",
@@ -327,7 +328,12 @@
     "ctx_smells": {
       "when_to_use": "Detecting code smells like long functions, deep nesting, and high complexity. Uses property graph for dependency-aware scoring.",
       "when_not_to_use": "When you need detailed AST analysis (use ctx_outline) or dependency graphs (use ctx_architecture).",
-      "related": ["ctx_review", "ctx_architecture", "ctx_outline", "ctx_analyze"],
+      "related": [
+        "ctx_review",
+        "ctx_architecture",
+        "ctx_outline",
+        "ctx_analyze"
+      ],
       "token_impact": "Returns compact smell report with graph-enriched scores.",
       "cli_equivalent": "lean-ctx smells [scan|summary|rules|file] [--rule=<r>] [--path=<p>] [--json]",
       "examples": []
@@ -335,7 +341,10 @@
     "ctx_discover_tools": {
       "when_to_use": "Finding available lean-ctx tools by keyword when you don't know the exact tool name. Useful for on-demand tool loading in lazy clients.",
       "when_not_to_use": "When you already know which tool to use. Use ctx_call to invoke tools directly.",
-      "related": ["ctx_call", "ctx_overview"],
+      "related": [
+        "ctx_call",
+        "ctx_overview"
+      ],
       "token_impact": "Minimal — returns matching tool names and descriptions only.",
       "cli_equivalent": null,
       "examples": []
