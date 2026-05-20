@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.11 (Current)', href: lp('/docs/changelog') + '#v3.6.11' },
+      { label: '3.6.12 (Current)', href: lp('/docs/changelog') + '#v3.6.12' },
+      { label: '3.6.11', href: lp('/docs/changelog') + '#v3.6.11' },
       { label: '3.6.10', href: lp('/docs/changelog') + '#v3.6.10' },
       { label: '3.6.9', href: lp('/docs/changelog') + '#v3.6.9' },
       { label: '3.6.8', href: lp('/docs/changelog') + '#v3.6.8' },
@@ -68,6 +69,33 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.12 -->
+  <h2 id="v3.6.12">3.6.12 <span class="text-xs text-muted">(2026-05-20)</span></h2>
+  <p class="text-sm text-muted">Context Cortex architecture, config-based data source providers, shell hook fix, Windows updater fix.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Context Cortex</strong> — Multi-source intelligence layer connecting code, issues, and external APIs. BM25 indexing, cross-source edge detection, saliency ranking, and active inference prefetching. <a href={lp('/docs/cortex')}>Read more</a>.</li>
+    <li><strong>Config-based data source providers</strong> — Connect any REST API by dropping a <code>.toml</code> or <code>.json</code> file into <code>~/.config/lean-ctx/providers/</code>. Supports Bearer, API-Key, Basic, Header, and no-auth methods. JSON response extraction via dot-notation paths. <a href={lp('/docs/data-sources')}>Read more</a>.</li>
+    <li><strong>Built-in GitHub, Jira, PostgreSQL providers</strong> — Activate with environment variables. Your AI agent can query issues, tickets, and database schemas through <code>ctx_provider</code>.</li>
+    <li><strong><code>ctx_call</code> meta-tool</strong> — Invoke any of 62 registered tools by name through a single dispatch interface.</li>
+    <li><strong>Cross-source hints in <code>ctx_read</code></strong> — When reading a file, the Cortex appends related context from providers (e.g., relevant GitHub issues or Jira tickets).</li>
+    <li><strong>Provider Bandit (Thompson sampling)</strong> — Automatically deprioritizes noisy providers and promotes ones that consistently deliver relevant context.</li>
+    <li><strong>Active inference in <code>ctx_preload</code></strong> — Predicts what context you'll need next based on recent tool call patterns and prefetches in the background.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong><code>_lc: command not found</code> in non-interactive subshells (<a href="https://github.com/yvgude/lean-ctx/issues/255">#255</a>)</strong> — Passthrough stubs for <code>_lc</code> and <code>_lc_compress</code> defined in <code>.zshenv</code>/<code>.bashenv</code> before the exec guard. Also added to <code>env.sh</code> for container scenarios.</li>
+    <li><strong>Windows update hangs with locked binary (<a href="https://github.com/yvgude/lean-ctx/issues/254">#254</a>)</strong> — Pre-update process stop, blocking PID visibility, 60s timeout with progress indicators, and manual recovery instructions.</li>
+  </ul>
+
+  <h3>Security</h3>
+  <ul>
+    <li><strong>MCP config credential protection</strong> — <code>.vscode/mcp.json</code> and <code>.github/mcp.json</code> added to <code>.gitignore</code> to prevent accidental credential commits.</li>
+    <li><strong>GitHub provider hardened</strong> — Parses <code>GITHUB_REPOSITORY=owner/repo</code> format correctly; improved remote fallback logic.</li>
+  </ul>
 
   <!-- 3.6.11 -->
   <h2 id="v3.6.11">3.6.11 <span class="text-xs text-muted">(2026-05-20)</span></h2>

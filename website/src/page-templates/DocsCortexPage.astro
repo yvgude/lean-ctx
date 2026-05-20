@@ -1,0 +1,235 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Context Cortex',
+    items: [
+      { label: 'Overview', href: lp('/docs/cortex') },
+      { label: 'Pipeline', href: lp('/docs/cortex') + '#pipeline' },
+      { label: 'Cross-Source Intelligence', href: lp('/docs/cortex') + '#cross-source' },
+      { label: 'Provider Bandit', href: lp('/docs/cortex') + '#bandit' },
+      { label: 'Active Inference', href: lp('/docs/cortex') + '#active-inference' },
+      { label: 'Consolidation', href: lp('/docs/cortex') + '#consolidation' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Data Source Providers', href: lp('/docs/data-sources') },
+      { label: 'Caching & Compression', href: lp('/docs/concepts/caching') },
+      { label: 'ctx_provider Tool', href: lp('/docs/tools/ctx-provider') },
+      { label: 'ctx_preload Tool', href: lp('/docs/tools/ctx-preload') },
+    ],
+  },
+];
+
+const pipelineSteps = [
+  { n: '01', tone: 'accent',   title: t('docs.cortex.pipelineStep1Title'), desc: t('docs.cortex.pipelineStep1Desc') },
+  { n: '02', tone: 'accent-2', title: t('docs.cortex.pipelineStep2Title'), desc: t('docs.cortex.pipelineStep2Desc') },
+  { n: '03', tone: 'accent-3', title: t('docs.cortex.pipelineStep3Title'), desc: t('docs.cortex.pipelineStep3Desc') },
+  { n: '04', tone: 'accent',   title: t('docs.cortex.pipelineStep4Title'), desc: t('docs.cortex.pipelineStep4Desc') },
+];
+---
+
+<DocsLayout
+  title={t('docs.cortex.title')}
+  description={t('docs.cortex.metaDesc')}
+  sidebar={sidebar}
+>
+  <p>{t('docs.cortex.introP1')}</p>
+  <p>{t('docs.cortex.introP2')}</p>
+
+  <!-- Pipeline -->
+  <h2 id="pipeline">{t('docs.cortex.pipelineTitle')}</h2>
+
+  <div class="pipeline-grid">
+    {pipelineSteps.map(step => (
+      <div class="pipeline-step">
+        <div class="pipeline-step-number" style={`color: var(--color-${step.tone});`}>{step.n}</div>
+        <h4>{step.title}</h4>
+        <p class="text-muted fluid-sm">{step.desc}</p>
+      </div>
+    ))}
+  </div>
+
+  <div class="pipeline-flow">
+    <div class="pipeline-flow-item">
+      <span class="text-accent font-mono text-sm">ctx_read</span>
+    </div>
+    <svg class="pipeline-arrow" viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M0 6h20m-4-4 4 4-4 4"/></svg>
+    <div class="pipeline-flow-item">
+      <span class="font-mono text-sm" style="color: var(--color-accent-2);">BM25 Index</span>
+    </div>
+    <svg class="pipeline-arrow" viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M0 6h20m-4-4 4 4-4 4"/></svg>
+    <div class="pipeline-flow-item">
+      <span class="font-mono text-sm" style="color: var(--color-accent-3);">Saliency</span>
+    </div>
+    <svg class="pipeline-arrow" viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M0 6h20m-4-4 4 4-4 4"/></svg>
+    <div class="pipeline-flow-item">
+      <span class="text-accent font-mono text-sm">Hints</span>
+    </div>
+  </div>
+
+  <!-- Cross-Source Intelligence -->
+  <h2 id="cross-source">{t('docs.cortex.crossSourceTitle')}</h2>
+  <p set:html={t('docs.cortex.crossSourceDesc')} />
+
+  <TerminalChrome title="ctx_read with cross-source hints" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+    <div><span class="text-accent">ctx_read</span>(<span class="text-text-bright">path: "src/auth.rs"</span>, mode: "map")</div>
+    <div class="term-divider"></div>
+    <div><span class="text-muted">exports:</span> <span class="text-text">authenticate(), validate_jwt(), refresh_token()</span></div>
+    <div><span class="text-muted">deps:</span> <span class="text-text">jsonwebtoken, chrono, serde</span></div>
+    <div><span class="text-muted">tokens:</span> <span class="text-text">2,400 → <span class="text-accent">120</span> (95% saved)</span></div>
+    <div class="term-divider"></div>
+    <div><span class="text-muted" style="color: var(--color-accent-2);">cross-source hints:</span></div>
+    <div>  <span class="text-muted">github#142</span> <span class="text-text">JWT expiry not handled in refresh flow</span></div>
+    <div>  <span class="text-muted">jira/AUTH-89</span> <span class="text-text">Refactor auth middleware for SSO support</span></div>
+  </TerminalChrome>
+
+  <!-- Provider Bandit -->
+  <h2 id="bandit">{t('docs.cortex.banditTitle')}</h2>
+  <p>{t('docs.cortex.banditDesc')}</p>
+
+  <div class="bandit-visual">
+    <div class="bandit-provider bandit-hot">
+      <div class="bandit-bar" style="width: 85%;"></div>
+      <span class="bandit-label">GitHub</span>
+      <span class="bandit-score text-accent">0.85</span>
+    </div>
+    <div class="bandit-provider">
+      <div class="bandit-bar" style="width: 62%;"></div>
+      <span class="bandit-label">Jira</span>
+      <span class="bandit-score" style="color: var(--color-accent-2);">0.62</span>
+    </div>
+    <div class="bandit-provider">
+      <div class="bandit-bar" style="width: 34%;"></div>
+      <span class="bandit-label">Internal API</span>
+      <span class="bandit-score text-muted">0.34</span>
+    </div>
+  </div>
+  <p class="text-muted fluid-sm" style="margin-top: 0.75rem;">
+    Thompson sampling adjusts query probability based on historical relevance scores. Higher-scoring providers receive more queries.
+  </p>
+
+  <!-- Active Inference -->
+  <h2 id="active-inference">{t('docs.cortex.activeInferenceTitle')}</h2>
+  <p set:html={t('docs.cortex.activeInferenceDesc')} />
+
+  <TerminalChrome title="Active inference prefetch" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+    <div><span class="text-muted"># Recent tool calls:</span></div>
+    <div><span class="text-accent">ctx_read</span> src/auth.rs</div>
+    <div><span class="text-accent">ctx_read</span> src/middleware.rs</div>
+    <div><span class="text-accent">ctx_search</span> "authenticate"</div>
+    <div class="term-divider"></div>
+    <div><span class="text-muted" style="color: var(--color-accent-2);">cortex prediction:</span></div>
+    <div>  <span class="text-muted">→</span> prefetch github issues tagged <span class="text-accent">"authentication"</span></div>
+    <div>  <span class="text-muted">→</span> prefetch jira sprint items for <span class="text-accent">"auth"</span></div>
+    <div>  <span class="text-muted">→</span> preload <span class="text-accent">src/routes/login.rs</span></div>
+  </TerminalChrome>
+
+  <!-- Consolidation -->
+  <h2 id="consolidation">Consolidation Engine</h2>
+  <p>
+    The consolidation engine merges provider chunks into the session cache. It deduplicates content across sources,
+    applies token budgets, and ensures the most relevant context is always available — even if the original provider
+    is temporarily unreachable.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Stage</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Collect</td><td>Gather chunks from all active providers</td></tr>
+      <tr><td>Deduplicate</td><td>Remove identical or near-identical content across sources</td></tr>
+      <tr><td>Rank</td><td>Score by saliency (recency + frequency + semantic match)</td></tr>
+      <tr><td>Budget</td><td>Trim to free energy budget (configurable token cap)</td></tr>
+      <tr><td>Cache</td><td>Merge surviving chunks into session cache for instant retrieval</td></tr>
+    </tbody>
+  </table>
+</DocsLayout>
+
+<style>
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+  }
+  .pipeline-step {
+    padding: 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+  }
+  .pipeline-step-number {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .pipeline-step h4 {
+    margin: 0 0 0.375rem;
+    font-size: clamp(0.875rem, 0.85rem + 0.1vw, 1rem);
+  }
+
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 1.5rem 0 2.5rem;
+    flex-wrap: wrap;
+  }
+  .pipeline-flow-item {
+    padding: 0.5rem 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+  }
+  .pipeline-arrow {
+    width: 24px;
+    height: 12px;
+    color: var(--color-muted);
+    flex-shrink: 0;
+  }
+
+  .bandit-visual {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+  }
+  .bandit-provider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    position: relative;
+  }
+  .bandit-bar {
+    height: 8px;
+    background: var(--color-border);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+  .bandit-hot .bandit-bar {
+    background: linear-gradient(90deg, var(--color-accent), var(--color-accent-2));
+  }
+  .bandit-label {
+    font-size: 0.8125rem;
+    min-width: 6rem;
+    color: var(--color-text);
+  }
+  .bandit-score {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+</style>

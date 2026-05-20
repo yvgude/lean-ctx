@@ -1,0 +1,269 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Data Sources',
+    items: [
+      { label: 'Overview', href: lp('/docs/data-sources') },
+      { label: 'Quick Start', href: lp('/docs/data-sources') + '#quick-start' },
+      { label: 'Configuration', href: lp('/docs/data-sources') + '#configuration' },
+      { label: 'Authentication', href: lp('/docs/data-sources') + '#authentication' },
+      { label: 'Resources', href: lp('/docs/data-sources') + '#resources' },
+      { label: 'Response Extraction', href: lp('/docs/data-sources') + '#extraction' },
+      { label: 'Auto-Discovery', href: lp('/docs/data-sources') + '#discovery' },
+      { label: 'Built-in Providers', href: lp('/docs/data-sources') + '#built-in' },
+      { label: 'Examples', href: lp('/docs/data-sources') + '#examples' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Context Cortex', href: lp('/docs/cortex') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+      { label: 'ctx_provider Tool', href: lp('/docs/tools/ctx-provider') },
+      { label: 'Getting Started', href: lp('/docs/getting-started') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title={t('docs.dataSources.title')}
+  description={t('docs.dataSources.metaDesc')}
+  sidebar={sidebar}
+>
+  <p set:html={t('docs.dataSources.introP1')} />
+  <p set:html={t('docs.dataSources.introP2')} />
+
+  <!-- Quick Start -->
+  <h2 id="quick-start">{t('docs.dataSources.quickStartTitle')}</h2>
+
+  <div class="steps-grid">
+    <div class="step-card">
+      <span class="step-number">1</span>
+      <h4>{t('docs.dataSources.quickStartStep1')}</h4>
+      <TerminalChrome title="shell" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+        <div><span class="text-muted">$</span> <span class="text-accent">mkdir</span> -p ~/.config/lean-ctx/providers</div>
+      </TerminalChrome>
+    </div>
+
+    <div class="step-card">
+      <span class="step-number">2</span>
+      <h4>{t('docs.dataSources.quickStartStep2')}</h4>
+      <TerminalChrome title="~/.config/lean-ctx/providers/github.toml" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+        <div><span class="text-muted">[provider]</span></div>
+        <div>id = <span class="text-accent">"github"</span></div>
+        <div>name = <span class="text-accent">"GitHub Issues"</span></div>
+        <div>base_url = <span class="text-accent">"https://api.github.com"</span></div>
+        <div></div>
+        <div><span class="text-muted">[auth]</span></div>
+        <div>type = <span class="text-accent">"bearer"</span></div>
+        <div>token_env = <span class="text-accent">"GITHUB_TOKEN"</span></div>
+        <div></div>
+        <div><span class="text-muted">[[resources]]</span></div>
+        <div>name = <span class="text-accent">"issues"</span></div>
+        <div>path = <span class="text-accent">"/repos/{'{owner}'}/{'{repo}'}/issues"</span></div>
+        <div></div>
+        <div><span class="text-muted">[resources.response]</span></div>
+        <div>items_path = <span class="text-accent">"[]"</span></div>
+        <div></div>
+        <div><span class="text-muted">[resources.response.fields]</span></div>
+        <div>title = <span class="text-accent">"title"</span></div>
+        <div>id = <span class="text-accent">"number"</span></div>
+        <div>description = <span class="text-accent">"body"</span></div>
+      </TerminalChrome>
+    </div>
+
+    <div class="step-card">
+      <span class="step-number">3</span>
+      <h4>{t('docs.dataSources.quickStartStep3')}</h4>
+      <TerminalChrome title="shell" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+        <div><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> stop && lean-ctx start</div>
+        <div><span class="text-muted">→</span> Discovered provider: <span class="text-accent">github</span> (1 resource)</div>
+      </TerminalChrome>
+    </div>
+  </div>
+
+  <!-- Configuration Reference -->
+  <h2 id="configuration">{t('docs.dataSources.configRefTitle')}</h2>
+
+  <table>
+    <thead>
+      <tr><th>Section</th><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>[provider]</code></td><td><code>id</code></td><td>string</td><td>Unique identifier (used in <code>ctx_provider query</code>)</td></tr>
+      <tr><td></td><td><code>name</code></td><td>string</td><td>Human-readable display name</td></tr>
+      <tr><td></td><td><code>base_url</code></td><td>string</td><td>API base URL (no trailing slash)</td></tr>
+      <tr><td></td><td><code>description</code></td><td>string?</td><td>Optional description shown in <code>ctx_provider list</code></td></tr>
+      <tr><td><code>[auth]</code></td><td><code>type</code></td><td>enum</td><td><code>bearer</code>, <code>api_key_header</code>, <code>api_key_query</code>, <code>basic</code>, <code>header</code>, <code>none</code></td></tr>
+      <tr><td></td><td><code>token_env</code></td><td>string?</td><td>Environment variable name for bearer token</td></tr>
+      <tr><td></td><td><code>key_env</code></td><td>string?</td><td>Environment variable name for API key</td></tr>
+      <tr><td></td><td><code>header_name</code></td><td>string?</td><td>Custom header name (for <code>api_key_header</code> / <code>header</code>)</td></tr>
+      <tr><td></td><td><code>username_env</code></td><td>string?</td><td>Environment variable for Basic auth username</td></tr>
+      <tr><td></td><td><code>password_env</code></td><td>string?</td><td>Environment variable for Basic auth password</td></tr>
+      <tr><td><code>[[resources]]</code></td><td><code>name</code></td><td>string</td><td>Resource name (used in <code>ctx_provider query</code>)</td></tr>
+      <tr><td></td><td><code>path</code></td><td>string</td><td>URL path with <code>{'{param}'}</code> placeholders</td></tr>
+      <tr><td></td><td><code>method</code></td><td>string?</td><td>HTTP method (default: <code>GET</code>)</td></tr>
+      <tr><td><code>[resources.response]</code></td><td><code>items_path</code></td><td>string</td><td>Dot-notation path to items array (e.g. <code>data.issues[]</code>)</td></tr>
+      <tr><td><code>[resources.response.fields]</code></td><td><code>title</code></td><td>string</td><td>JSON path for item title</td></tr>
+      <tr><td></td><td><code>id</code></td><td>string</td><td>JSON path for item ID</td></tr>
+      <tr><td></td><td><code>description</code></td><td>string?</td><td>JSON path for item body/description</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Authentication -->
+  <h2 id="authentication">{t('docs.dataSources.authTitle')}</h2>
+  <p>{t('docs.dataSources.authDesc')}</p>
+
+  <table>
+    <thead>
+      <tr><th>Type</th><th>Header Sent</th><th>Config Fields</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>bearer</code></td><td><code>Authorization: Bearer $TOKEN</code></td><td><code>token_env</code></td></tr>
+      <tr><td><code>api_key_header</code></td><td><code>X-Api-Key: $KEY</code> (customizable)</td><td><code>key_env</code>, <code>header_name</code></td></tr>
+      <tr><td><code>api_key_query</code></td><td>Appended as <code>?key=$KEY</code></td><td><code>key_env</code>, <code>query_param_name</code></td></tr>
+      <tr><td><code>basic</code></td><td><code>Authorization: Basic base64(user:pass)</code></td><td><code>username_env</code>, <code>password_env</code></td></tr>
+      <tr><td><code>header</code></td><td>Custom header with custom value</td><td><code>key_env</code>, <code>header_name</code></td></tr>
+      <tr><td><code>none</code></td><td>No authentication</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Response Extraction -->
+  <h2 id="extraction">{t('docs.dataSources.extractionTitle')}</h2>
+  <p set:html={t('docs.dataSources.extractionDesc')} />
+
+  <TerminalChrome title="Extraction Examples" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+    <div><span class="text-muted"># Simple array at root</span></div>
+    <div>items_path = <span class="text-accent">"[]"</span>        <span class="text-muted"># → response is the array</span></div>
+    <div></div>
+    <div><span class="text-muted"># Nested object path</span></div>
+    <div>items_path = <span class="text-accent">"data.issues[]"</span> <span class="text-muted"># → response.data.issues</span></div>
+    <div></div>
+    <div><span class="text-muted"># Field mapping with dot-notation</span></div>
+    <div>title = <span class="text-accent">"fields.summary"</span>   <span class="text-muted"># → item.fields.summary</span></div>
+    <div>id = <span class="text-accent">"key"</span>                 <span class="text-muted"># → item.key</span></div>
+  </TerminalChrome>
+
+  <!-- Auto-Discovery -->
+  <h2 id="discovery">{t('docs.dataSources.discoveryTitle')}</h2>
+  <p>{t('docs.dataSources.discoveryDesc')}</p>
+
+  <table>
+    <thead>
+      <tr><th>Directory</th><th>Scope</th><th>Formats</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>~/.config/lean-ctx/providers/</code></td><td>{t('docs.dataSources.discoveryGlobal')}</td><td><code>.toml</code>, <code>.json</code></td></tr>
+      <tr><td><code>.lean-ctx/providers/</code></td><td>{t('docs.dataSources.discoveryProject')}</td><td><code>.toml</code>, <code>.json</code></td></tr>
+    </tbody>
+  </table>
+
+  <!-- Built-in Providers -->
+  <h2 id="built-in">{t('docs.dataSources.builtInTitle')}</h2>
+  <p>{t('docs.dataSources.builtInDesc')}</p>
+
+  <table>
+    <thead>
+      <tr><th>Provider</th><th>Env Variables</th><th>Resources</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>GitHub</strong></td><td><code>GITHUB_TOKEN</code>, <code>GITHUB_REPOSITORY</code></td><td>Issues, Pull Requests, Actions</td></tr>
+      <tr><td><strong>Jira</strong></td><td><code>JIRA_BASE_URL</code>, <code>JIRA_TOKEN</code>, <code>JIRA_EMAIL</code></td><td>Issues, Sprints, Projects</td></tr>
+      <tr><td><strong>PostgreSQL</strong></td><td><code>DATABASE_URL</code></td><td>Tables, Schema, Queries</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Examples -->
+  <h2 id="examples">{t('docs.dataSources.examplesTitle')}</h2>
+
+  <h3>{t('docs.dataSources.exampleJiraTitle')}</h3>
+  <TerminalChrome title="~/.config/lean-ctx/providers/jira.toml" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+    <div><span class="text-muted">[provider]</span></div>
+    <div>id = <span class="text-accent">"jira"</span></div>
+    <div>name = <span class="text-accent">"Jira"</span></div>
+    <div>base_url = <span class="text-accent">"https://your-org.atlassian.net"</span></div>
+    <div></div>
+    <div><span class="text-muted">[auth]</span></div>
+    <div>type = <span class="text-accent">"basic"</span></div>
+    <div>username_env = <span class="text-accent">"JIRA_EMAIL"</span></div>
+    <div>password_env = <span class="text-accent">"JIRA_TOKEN"</span></div>
+    <div></div>
+    <div><span class="text-muted">[[resources]]</span></div>
+    <div>name = <span class="text-accent">"issues"</span></div>
+    <div>path = <span class="text-accent">"/rest/api/3/search?jql=project={'{project}'}"</span></div>
+    <div></div>
+    <div><span class="text-muted">[resources.response]</span></div>
+    <div>items_path = <span class="text-accent">"issues[]"</span></div>
+    <div></div>
+    <div><span class="text-muted">[resources.response.fields]</span></div>
+    <div>title = <span class="text-accent">"fields.summary"</span></div>
+    <div>id = <span class="text-accent">"key"</span></div>
+    <div>description = <span class="text-accent">"fields.description"</span></div>
+  </TerminalChrome>
+
+  <h3>{t('docs.dataSources.exampleCustomTitle')}</h3>
+  <TerminalChrome title=".lean-ctx/providers/internal-api.toml" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+    <div><span class="text-muted">[provider]</span></div>
+    <div>id = <span class="text-accent">"internal"</span></div>
+    <div>name = <span class="text-accent">"Internal Service"</span></div>
+    <div>base_url = <span class="text-accent">"https://api.internal.company.com"</span></div>
+    <div></div>
+    <div><span class="text-muted">[auth]</span></div>
+    <div>type = <span class="text-accent">"api_key_header"</span></div>
+    <div>key_env = <span class="text-accent">"INTERNAL_API_KEY"</span></div>
+    <div>header_name = <span class="text-accent">"X-Service-Key"</span></div>
+    <div></div>
+    <div><span class="text-muted">[[resources]]</span></div>
+    <div>name = <span class="text-accent">"deployments"</span></div>
+    <div>path = <span class="text-accent">"/v2/deployments?env={'{environment}'}"</span></div>
+    <div></div>
+    <div><span class="text-muted">[resources.response]</span></div>
+    <div>items_path = <span class="text-accent">"data.deployments[]"</span></div>
+    <div></div>
+    <div><span class="text-muted">[resources.response.fields]</span></div>
+    <div>title = <span class="text-accent">"service_name"</span></div>
+    <div>id = <span class="text-accent">"deploy_id"</span></div>
+    <div>description = <span class="text-accent">"status"</span></div>
+  </TerminalChrome>
+</DocsLayout>
+
+<style>
+  .steps-grid {
+    display: grid;
+    gap: 2rem;
+    margin: 2rem 0;
+  }
+  .step-card {
+    position: relative;
+    padding-left: 2.5rem;
+  }
+  .step-number {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--overlay-accent-green);
+    color: var(--color-accent);
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: var(--font-display);
+  }
+  .step-card h4 {
+    margin: 0 0 0.75rem;
+    font-size: clamp(0.875rem, 0.85rem + 0.1vw, 1rem);
+  }
+</style>
