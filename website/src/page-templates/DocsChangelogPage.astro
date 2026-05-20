@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.9 (Current)', href: lp('/docs/changelog') + '#v3.6.9' },
+      { label: '3.6.10 (Current)', href: lp('/docs/changelog') + '#v3.6.10' },
+      { label: '3.6.9', href: lp('/docs/changelog') + '#v3.6.9' },
       { label: '3.6.8', href: lp('/docs/changelog') + '#v3.6.8' },
       { label: '3.6.7', href: lp('/docs/changelog') + '#v3.6.7' },
       { label: '3.6.6', href: lp('/docs/changelog') + '#v3.6.6' },
@@ -66,6 +67,19 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.10 -->
+  <h2 id="v3.6.10">3.6.10 <span class="text-xs text-muted">(2026-05-20)</span></h2>
+  <p class="text-sm text-muted">Critical performance fix for knowledge recall, start_line no-op, git write-command safety.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Knowledge recall blocks all agents for 58s</strong> — Embedding engine loading no longer blocks recall. Non-blocking <code>try_shared_engine()</code> used for auto/hybrid mode; retrieval signal persistence moved to background thread.</li>
+    <li><strong><code>start_line=1</code> forces unnecessary disk re-reads (#253)</strong> — Clients that always send <code>start_line=1</code> no longer trigger mode override. Now correctly treated as a no-op.</li>
+    <li><strong>Git write-commands incorrectly compressed</strong> — <code>git commit</code>, <code>git push</code>, <code>git pull</code>, <code>git merge</code>, <code>git rebase</code>, <code>git cherry-pick</code>, <code>git tag</code>, <code>git reset</code> are now classified as verbatim (zero compression).</li>
+    <li><strong>PowerShell command wrapping</strong> — Single full-command strings no longer incorrectly wrapped in <code>&amp; '...'</code> quotes on PowerShell.</li>
+    <li><strong>Terse dictionary safety</strong> — Removed git subcommand abbreviations (<code>commit→cmt</code>, <code>branch→br</code>, etc.) from the GIT dictionary to prevent output corruption.</li>
+  </ul>
 
   <!-- 3.6.9 -->
   <h2 id="v3.6.9">3.6.9 <span class="text-xs text-muted">(2026-05-19)</span></h2>
