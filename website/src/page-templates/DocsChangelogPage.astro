@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.10 (Current)', href: lp('/docs/changelog') + '#v3.6.10' },
+      { label: '3.6.11 (Current)', href: lp('/docs/changelog') + '#v3.6.11' },
+      { label: '3.6.10', href: lp('/docs/changelog') + '#v3.6.10' },
       { label: '3.6.9', href: lp('/docs/changelog') + '#v3.6.9' },
       { label: '3.6.8', href: lp('/docs/changelog') + '#v3.6.8' },
       { label: '3.6.7', href: lp('/docs/changelog') + '#v3.6.7' },
@@ -67,6 +68,31 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.11 -->
+  <h2 id="v3.6.11">3.6.11 <span class="text-xs text-muted">(2026-05-20)</span></h2>
+  <p class="text-sm text-muted">Critical Linux restart loop fix, Windows hang prevention, manifest SSOT, performance hardening.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>Linux proxy restart loop (11258+ restarts)</strong> — When the binary is replaced during runtime, Linux marks <code>/proc/self/exe</code> with <code>(deleted)</code> suffix. The systemd unit generator wrote this corrupted path into <code>ExecStart</code>, causing <code>(deleted)</code> to appear as a CLI argument on every restart. Now uses <code>resolve_portable_binary()</code> which strips the suffix. CLI dispatch also defensively removes <code>(deleted)</code> from args for existing units.</li>
+    <li><strong>Windows ctx_read hangs</strong> — Session lock acquire and path canonicalization now have bounded timeouts (5s for RwLock, 2s for <code>canonicalize()</code>) preventing indefinite hangs on Windows reparse points and network paths.</li>
+    <li><strong>Manifest generator uses stale tool_defs</strong> — <code>gen_mcp_manifest</code> now reads from <code>ToolRegistry</code> (61 tools) instead of static <code>granular_tool_defs()</code> (56 tools).</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Context budget auto-escalation</strong> — <code>pressure_downgrade()</code> applies more aggressive mode downgrades based on <code>ContextPressure</code>.</li>
+    <li><strong>Cache-stable LITM output</strong> — Dynamic session statistics moved from output prefix to suffix for LLM prefix-caching compatibility.</li>
+    <li><strong>ToolRegistry as SSOT for list_tools</strong> — Eliminates schema drift between exposed schemas and handler implementations.</li>
+    <li><strong>OnceLock for project root</strong> — <code>find_project_root()</code> cached via <code>std::sync::OnceLock</code>, eliminating repeated <code>git rev-parse</code> calls.</li>
+    <li><strong>Compaction sync tail-seek</strong> — Reads only the last 4KB of <code>context_radar.jsonl</code> instead of the entire file.</li>
+  </ul>
+
+  <h3>Removed</h3>
+  <ul>
+    <li>Dead code cleanup: removed unused functions, <code>#[allow(dead_code)]</code> attributes replaced with <code>_</code> prefixes across 8 files.</li>
+  </ul>
 
   <!-- 3.6.10 -->
   <h2 id="v3.6.10">3.6.10 <span class="text-xs text-muted">(2026-05-20)</span></h2>
