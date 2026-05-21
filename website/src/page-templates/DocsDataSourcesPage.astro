@@ -19,6 +19,7 @@ const sidebar = [
       { label: 'Response Extraction', href: lp('/docs/data-sources') + '#extraction' },
       { label: 'Auto-Discovery', href: lp('/docs/data-sources') + '#discovery' },
       { label: 'Built-in Providers', href: lp('/docs/data-sources') + '#built-in' },
+      { label: 'MCP Bridges', href: lp('/docs/data-sources') + '#mcp-bridges' },
       { label: 'Examples', href: lp('/docs/data-sources') + '#examples' },
     ],
   },
@@ -177,10 +178,51 @@ const sidebar = [
     </thead>
     <tbody>
       <tr><td><strong>GitHub</strong></td><td><code>GITHUB_TOKEN</code>, <code>GITHUB_REPOSITORY</code></td><td>Issues, Pull Requests, Actions</td></tr>
+      <tr><td><strong>GitLab</strong></td><td><code>GITLAB_TOKEN</code>, <code>GITLAB_HOST</code></td><td>Issues, Merge Requests, Pipelines</td></tr>
       <tr><td><strong>Jira</strong></td><td><code>JIRA_BASE_URL</code>, <code>JIRA_TOKEN</code>, <code>JIRA_EMAIL</code></td><td>Issues, Sprints, Projects</td></tr>
       <tr><td><strong>PostgreSQL</strong></td><td><code>DATABASE_URL</code></td><td>Tables, Schema, Queries</td></tr>
     </tbody>
   </table>
+
+  <p class="text-muted fluid-sm" style="margin-top: 0.75rem;">
+    All provider data flows through the full consolidation pipeline — BM25 index, graph edges,
+    knowledge facts, and session cache. Controlled by <code>providers.auto_index = true</code> (default).
+  </p>
+
+  <!-- MCP Bridges -->
+  <h2 id="mcp-bridges">MCP Bridges</h2>
+  <p>
+    Connect external MCP servers as data sources. Each bridge gets a unique ID (<code>mcp:&lt;name&gt;</code>)
+    and supports listing resources, reading individual resources, and listing tools.
+  </p>
+
+  <TerminalChrome title="~/.config/lean-ctx/config.toml" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+    <div><span class="text-muted"># HTTP-based MCP server</span></div>
+    <div><span class="text-muted">[providers.mcp_bridges.knowledge-base]</span></div>
+    <div>url = <span class="text-accent">"http://localhost:8080"</span></div>
+    <div></div>
+    <div><span class="text-muted"># Stdio-based MCP server</span></div>
+    <div><span class="text-muted">[providers.mcp_bridges.github-mcp]</span></div>
+    <div>command = <span class="text-accent">"npx"</span></div>
+    <div>args = <span class="text-accent">["-y", "@modelcontextprotocol/server-github"]</span></div>
+    <div>auth_env = <span class="text-accent">"GITHUB_TOKEN"</span></div>
+  </TerminalChrome>
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>url</code></td><td>string?</td><td>HTTP endpoint for MCP server (for HTTP transport)</td></tr>
+      <tr><td><code>command</code></td><td>string?</td><td>Executable for stdio transport</td></tr>
+      <tr><td><code>args</code></td><td>string[]</td><td>Arguments for the command</td></tr>
+      <tr><td><code>auth_env</code></td><td>string?</td><td>Environment variable for authentication token</td></tr>
+    </tbody>
+  </table>
+
+  <p class="text-muted fluid-sm" style="margin-top: 0.75rem;">
+    Use <code>lean-ctx doctor</code> to validate MCP bridge configuration and connectivity.
+  </p>
 
   <!-- Examples -->
   <h2 id="examples">{t('docs.dataSources.examplesTitle')}</h2>

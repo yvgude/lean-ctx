@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 61,
+    "granular": 62,
     "unified": 5
   },
   "read_modes": {
@@ -231,6 +231,27 @@
         },
         "name": "ctx_cache",
         "schema_md5": "6872efabbc026966a84691009a91bc43a54f51e96ea669ef33dc0d98f20cfc07"
+      },
+      {
+        "description": "Invoke any of the 50+ lean-ctx tools by name. Use for tools not in the core set.\nCATEGORIES:\narch: ctx_architecture, ctx_impact, ctx_callgraph, ctx_refactor, ctx_symbol, ctx_routes, ctx_smells, ctx_index\ndebug: ctx_benchmark, ctx_verify, ctx_analyze, ctx_profile, ctx_proof, ctx_review\nmemory: ctx_semantic_search, ctx_artifacts\nbatch: ctx_fill, ctx_execute, ctx_expand, ctx_pack, ctx_plan, ctx_control, ctx_compile\nagent: ctx_agent, ctx_share, ctx_task, ctx_handoff, ctx_workflow\nutil: ctx_compress, ctx_cache, ctx_retrieve, ctx_metrics, ctx_radar, ctx_dedup, ctx_cost, ctx_gain, ctx_heatmap, ctx_feedback, ctx_ledger, ctx_preload\nExample: ctx_call({\"name\":\"ctx_architecture\",\"arguments\":{\"action\":\"overview\"}})",
+        "input_schema": {
+          "properties": {
+            "arguments": {
+              "description": "Arguments object to pass to the invoked tool",
+              "type": "object"
+            },
+            "name": {
+              "description": "Tool name to invoke (e.g. 'ctx_architecture', 'ctx_benchmark')",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_call",
+        "schema_md5": "f639fc63551ec0cc9637f5ec55a13dfa66b1acd63ce5d95d79e439e55fed804e"
       },
       {
         "description": "Unified call graph query. direction=callers|callees for a symbol. Returns file/symbol/line edges.",
@@ -1262,12 +1283,15 @@
         "schema_md5": "3d378e0c8c4ae9ee8524afd4bed37fb2b12a4b9c818fa5258b6b712457da66b8"
       },
       {
-        "description": "External context provider (GitLab-first). Actions: gitlab_issues (list), gitlab_issue (show by iid), gitlab_mrs (list MRs), gitlab_pipelines (list pipelines). Requires GITLAB_TOKEN or LEAN_CTX_GITLAB_TOKEN.",
+        "description": "External context providers (GitHub, GitLab, more). Use action=discover to list available providers. Use action=query with provider+resource for registry-based access. Legacy GitLab actions still supported. Set GITHUB_TOKEN or GITLAB_TOKEN to enable providers.",
         "input_schema": {
           "properties": {
             "action": {
-              "description": "Provider action",
+              "description": "Provider action. 'discover' lists all. 'query' uses registry routing. 'mcp_resources' lists MCP bridge resources.",
               "enum": [
+                "discover",
+                "query",
+                "mcp_resources",
                 "gitlab_issues",
                 "gitlab_issue",
                 "gitlab_mrs",
@@ -1276,30 +1300,49 @@
               "type": "string"
             },
             "iid": {
-              "description": "Issue/MR IID for single-item lookup",
+              "description": "Issue/MR IID for single-item lookup (GitLab)",
               "type": "integer"
             },
             "labels": {
-              "description": "Comma-separated labels filter",
+              "description": "Comma-separated labels filter (GitLab)",
               "type": "string"
             },
             "limit": {
               "description": "Max results (default 20, max 100)",
               "type": "integer"
             },
+            "mode": {
+              "description": "Output mode for action=query. 'compact' (default) returns formatted text. 'chunks' returns ContentChunk metadata for BM25/embedding ingest.",
+              "enum": [
+                "compact",
+                "chunks"
+              ],
+              "type": "string"
+            },
+            "provider": {
+              "description": "Provider ID (e.g. 'github', 'mcp:my-kb'). For action=query requires provider+resource.",
+              "type": "string"
+            },
+            "resource": {
+              "description": "Resource type for action=query (e.g. 'issues', 'pull_requests', 'read_resource')",
+              "type": "string"
+            },
             "state": {
-              "description": "Filter by state (opened, closed, merged, all)",
+              "description": "Filter by state (open, closed, merged, all)",
               "type": "string"
             },
             "status": {
-              "description": "Pipeline status filter (running, success, failed)",
+              "description": "Pipeline/Actions status filter (running, success, failed)",
               "type": "string"
             }
           },
+          "required": [
+            "action"
+          ],
           "type": "object"
         },
         "name": "ctx_provider",
-        "schema_md5": "0c2a8ed371b853b0c5826f54a11613e359d869e3891e4fdce404af3fd96ac8ea"
+        "schema_md5": "b7d237b4053a5861a0359254f50885aa8c6a77b9584f0006e7b858e302d279e6"
       },
       {
         "description": "Full context budget breakdown: system prompt, messages, tools, reads, shell — all tracked token usage.",
@@ -1337,7 +1380,7 @@
               "type": "string"
             },
             "start_line": {
-              "description": "Read from this line number to end of file. Implies fresh=true (disk re-read) to avoid stale snippets.",
+              "description": "Start reading from this line (only used when no explicit mode is set, or with mode=lines). Does NOT override explicit modes like map/signatures.",
               "type": "integer"
             }
           },
@@ -1347,7 +1390,7 @@
           "type": "object"
         },
         "name": "ctx_read",
-        "schema_md5": "ac8c1e3f6d8fab8be0e09f3b22544755c62f57fbb14f0abcb753abd1b08c9e7b"
+        "schema_md5": "8b1b1cb39f18e84b23e00e84ef5fa6c4277629de775777372d32cc4f7bd6b41c"
       },
       {
         "description": "LSP-powered refactoring. Actions: rename, references, definition, implementations. Requires a running language server (rust-analyzer, typescript-language-server, pylsp, gopls).",

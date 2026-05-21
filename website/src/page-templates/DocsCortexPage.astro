@@ -137,9 +137,9 @@ const pipelineSteps = [
   <!-- Consolidation -->
   <h2 id="consolidation">Consolidation Engine</h2>
   <p>
-    The consolidation engine merges provider chunks into the session cache. It deduplicates content across sources,
-    applies token budgets, and ensures the most relevant context is always available — even if the original provider
-    is temporarily unreachable.
+    The consolidation engine processes provider data into <strong>all four context stores</strong>,
+    making external knowledge a first-class citizen alongside your code. A background thread handles
+    the heavy lifting so tool responses stay fast.
   </p>
 
   <table>
@@ -151,9 +151,16 @@ const pipelineSteps = [
       <tr><td>Deduplicate</td><td>Remove identical or near-identical content across sources</td></tr>
       <tr><td>Rank</td><td>Score by saliency (recency + frequency + semantic match)</td></tr>
       <tr><td>Budget</td><td>Trim to free energy budget (configurable token cap)</td></tr>
-      <tr><td>Cache</td><td>Merge surviving chunks into session cache for instant retrieval</td></tr>
+      <tr><td>Index (BM25)</td><td>Ingest chunks into BM25 — searchable via <code>ctx_semantic_search</code></td></tr>
+      <tr><td>Graph</td><td>Create cross-source edges — file-to-issue/PR links for <code>ctx_read</code> hints</td></tr>
+      <tr><td>Knowledge</td><td>Extract facts — recallable via <code>ctx_knowledge</code> (bugs, features, data models)</td></tr>
+      <tr><td>Cache</td><td>Merge into session cache for instant retrieval</td></tr>
     </tbody>
   </table>
+
+  <p class="text-muted fluid-sm" style="margin-top: 0.75rem;">
+    Controlled by <code>providers.auto_index = true</code> (default). Set to <code>false</code> for cache-only mode.
+  </p>
 </DocsLayout>
 
 <style>

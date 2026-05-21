@@ -29,6 +29,7 @@ const sidebar = [
       { label: 'Pipe Guard', href: lp('/docs/configuration') + '#pipe-guard' },
       { label: 'Tool Result Archive', href: lp('/docs/configuration') + '#archive' },
       { label: 'Cloud', href: lp('/docs/configuration') + '#cloud' },
+      { label: 'Providers', href: lp('/docs/configuration') + '#providers' },
       { label: 'Proxy', href: lp('/docs/configuration') + '#proxy' },
       { label: 'Memory', href: lp('/docs/configuration') + '#memory' },
       { label: 'Terse Agent Mode', href: lp('/docs/configuration') + '#terse-agent' },
@@ -1321,6 +1322,45 @@ contribute_enabled = false    # Opt-in to anonymous usage telemetry (default: fa
     </thead>
     <tbody>
       <tr><td><code>cloud.contribute_enabled</code></td><td>bool</td><td><code>false</code></td><td>Opt-in to anonymous usage telemetry. When enabled, lean-ctx sends aggregated compression statistics to help improve the product. No code, file paths, or personal data is transmitted.</td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+
+  <h2 id="providers">Providers</h2>
+  <p>
+    The <code>[providers]</code> section controls external data sources. Provider data flows through the
+    full consolidation pipeline — BM25, graph edges, knowledge facts, and session cache.
+  </p>
+
+  <pre><code># ~/.lean-ctx/config.toml
+[providers]
+enabled = true            # Enable/disable all providers
+auto_index = true         # Index into BM25/Graph/Knowledge (not just cache)
+cache_ttl_secs = 120      # In-memory TTL for provider results
+
+# MCP bridge — HTTP transport
+[providers.mcp_bridges.knowledge-base]
+url = "http://localhost:8080"
+
+# MCP bridge — stdio transport
+[providers.mcp_bridges.github-mcp]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+auth_env = "GITHUB_TOKEN"</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>providers.enabled</code></td><td>bool</td><td><code>true</code></td><td>Master switch for all data source providers.</td></tr>
+      <tr><td><code>providers.auto_index</code></td><td>bool</td><td><code>true</code></td><td>Index provider data into BM25, Graph, and Knowledge. Set <code>false</code> for cache-only.</td></tr>
+      <tr><td><code>providers.cache_ttl_secs</code></td><td>u64</td><td><code>120</code></td><td>TTL for in-memory provider result cache.</td></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.url</code></td><td>string?</td><td>—</td><td>HTTP endpoint for MCP server.</td></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.command</code></td><td>string?</td><td>—</td><td>Executable for stdio-based MCP server.</td></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.args</code></td><td>string[]</td><td><code>[]</code></td><td>Arguments for the stdio command.</td></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.auth_env</code></td><td>string?</td><td>—</td><td>Environment variable for auth token injection.</td></tr>
     </tbody>
   </table>
 
