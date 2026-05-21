@@ -1,0 +1,305 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Plan Mode',
+    items: [
+      { label: 'Overview', href: lp('/docs/plan-mode') },
+      { label: 'IDE Compatibility', href: lp('/docs/plan-mode') + '#compatibility' },
+      { label: 'VS Code / Copilot', href: lp('/docs/plan-mode') + '#vscode' },
+      { label: 'Claude Code', href: lp('/docs/plan-mode') + '#claude-code' },
+      { label: 'Cursor', href: lp('/docs/plan-mode') + '#cursor' },
+      { label: 'Other IDEs', href: lp('/docs/plan-mode') + '#other-ides' },
+      { label: 'Read-Only Tools', href: lp('/docs/plan-mode') + '#tools' },
+      { label: 'Troubleshooting', href: lp('/docs/plan-mode') + '#troubleshooting' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Getting Started', href: lp('/docs/getting-started') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+      { label: 'CLI Reference', href: lp('/docs/cli-reference') },
+      { label: 'Tools Overview', href: lp('/docs/tools') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Plan Mode — IDE Compatibility"
+  description="How lean-ctx integrates with Plan Mode across different IDEs. Automatic configuration for VS Code Copilot, Claude Code, Cursor, Kiro, and more."
+  sidebar={sidebar}
+>
+  <p>
+    Many AI-powered IDEs offer a <strong>Plan Mode</strong> (or Plan Agent) that researches your codebase and creates implementation plans <em>before</em> writing any code. lean-ctx provides read-only tools that are ideal for this research phase — cached file reads, code search, directory maps, and project overviews.
+  </p>
+  <p>
+    Starting with v3.6.13, <code>lean-ctx setup</code> automatically configures plan mode support for IDEs that require it.
+  </p>
+
+  <h2 id="compatibility">IDE Compatibility Matrix</h2>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>IDE</th>
+          <th>Plan Mode</th>
+          <th>MCP in Plan?</th>
+          <th>Config needed?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>VS Code / Copilot</strong></td>
+          <td><code>/plan</code> agent</td>
+          <td>Only if configured</td>
+          <td><span class="badge badge-warn">Yes</span> — auto-configured by lean-ctx</td>
+        </tr>
+        <tr>
+          <td><strong>Claude Code</strong></td>
+          <td><code>plan</code> mode</td>
+          <td>Only if allowed</td>
+          <td><span class="badge badge-warn">Yes</span> — auto-configured by lean-ctx</td>
+        </tr>
+        <tr>
+          <td><strong>Cursor</strong></td>
+          <td>Shift+Tab</td>
+          <td>All MCP tools</td>
+          <td><span class="badge badge-ok">No</span></td>
+        </tr>
+        <tr>
+          <td><strong>Kiro</strong></td>
+          <td><code>/plan</code> agent</td>
+          <td>All MCP tools</td>
+          <td><span class="badge badge-ok">No</span></td>
+        </tr>
+        <tr>
+          <td><strong>Windsurf</strong></td>
+          <td>Plan mode</td>
+          <td>All MCP tools</td>
+          <td><span class="badge badge-ok">No</span></td>
+        </tr>
+        <tr>
+          <td><strong>Codex CLI</strong></td>
+          <td>Plan mode</td>
+          <td>All MCP tools</td>
+          <td><span class="badge badge-ok">No</span></td>
+        </tr>
+        <tr>
+          <td><strong>Zed</strong></td>
+          <td>No dedicated mode</td>
+          <td>Via Agent Panel</td>
+          <td><span class="badge badge-ok">No</span></td>
+        </tr>
+        <tr>
+          <td><strong>JetBrains</strong></td>
+          <td>No dedicated mode</td>
+          <td>Via AI Chat</td>
+          <td><span class="badge badge-ok">No</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="vscode">VS Code / GitHub Copilot</h2>
+
+  <p>
+    VS Code's Plan Agent (<code>/plan</code>) only has access to MCP tools that are explicitly listed in the
+    <code>github.copilot.chat.planAgent.additionalTools</code> setting. Without this, Copilot cannot use lean-ctx during the planning phase.
+  </p>
+
+  <h3>Automatic Setup</h3>
+  <p>Running <code>lean-ctx setup</code> or <code>lean-ctx init --agent vscode</code> automatically adds the required settings to your VS Code <code>settings.json</code>:</p>
+
+  <TerminalChrome title="VS Code settings.json" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+    <div>{"{"}</div>
+    <div>&nbsp;&nbsp;<span class="text-accent">"chat.mcp.enabled"</span>: <span class="text-green">true</span>,</div>
+    <div>&nbsp;&nbsp;<span class="text-accent">"github.copilot.chat.planAgent.additionalTools"</span>: [</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"lean-ctx_ctx_read"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"lean-ctx_ctx_search"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"lean-ctx_ctx_tree"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"lean-ctx_ctx_overview"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"lean-ctx_ctx_plan"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">...</span></div>
+    <div>&nbsp;&nbsp;]</div>
+    <div>{"}"}</div>
+  </TerminalChrome>
+
+  <h3>Manual Setup</h3>
+  <p>If you prefer manual configuration, add the tools to your VS Code <code>settings.json</code> (<kbd>Cmd+Shift+P</kbd> → "Open User Settings (JSON)"):</p>
+
+  <TerminalChrome title="settings.json" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+    <div><span class="text-accent">"github.copilot.chat.planAgent.additionalTools"</span>: [</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_read",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_search",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_tree",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_overview",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_plan",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_metrics",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_compress",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_session",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_knowledge",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_graph",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_retrieve",</div>
+    <div>&nbsp;&nbsp;"lean-ctx_ctx_provider"</div>
+    <div>]</div>
+  </TerminalChrome>
+
+  <div class="note">
+    <strong>Important:</strong> Make sure you're using <strong>Agent Mode</strong> in Copilot, not regular Chat mode. MCP tools are only available in Agent Mode. Switch via the dropdown in the Copilot chat panel.
+  </div>
+
+  <h2 id="claude-code">Claude Code</h2>
+
+  <p>
+    Claude Code blocks MCP tools in plan mode by default unless they are explicitly allowed in the permissions configuration.
+    This is a <a href="https://github.com/anthropics/claude-code/issues/12368" target="_blank" rel="noopener">known limitation</a>.
+  </p>
+
+  <h3>Automatic Setup</h3>
+  <p><code>lean-ctx setup</code> or <code>lean-ctx init --agent claude-code</code> automatically adds lean-ctx read-only tools to <code>~/.claude/settings.json</code>:</p>
+
+  <TerminalChrome title="~/.claude/settings.json" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+    <div>{"{"}</div>
+    <div>&nbsp;&nbsp;<span class="text-accent">"permissions"</span>: {"{"}</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-accent">"allow"</span>: [</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"mcp__lean-ctx__ctx_read"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"mcp__lean-ctx__ctx_search"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">"mcp__lean-ctx__ctx_tree"</span>,</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-muted">...</span></div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;]</div>
+    <div>&nbsp;&nbsp;{"}"}</div>
+    <div>{"}"}</div>
+  </TerminalChrome>
+
+  <h2 id="cursor">Cursor</h2>
+
+  <p>
+    Cursor's Plan Mode (activated via <kbd>Shift+Tab</kbd>) automatically has access to all MCP tools in read-only mode.
+    No additional configuration is needed — lean-ctx works out of the box.
+  </p>
+
+  <h2 id="other-ides">Other IDEs</h2>
+
+  <h3>Kiro (AWS)</h3>
+  <p>Kiro's Plan Agent (<code>/plan</code> or <kbd>Shift+Tab</kbd>) automatically accesses MCP tools during the research phase. No configuration needed.</p>
+
+  <h3>Windsurf</h3>
+  <p>Windsurf's Plan mode provides identical MCP tool access as Code mode. No configuration needed.</p>
+
+  <h3>Codex CLI</h3>
+  <p>Codex CLI's plan mode uses all configured MCP tools from <code>config.toml</code>. No configuration needed.</p>
+
+  <h2 id="tools">Read-Only Tools for Plan Mode</h2>
+
+  <p>The following tools are safe for plan/research phases — they only read data, never modify files:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Tool</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>ctx_read</code></td><td>Read files with 10 compression modes (cached)</td></tr>
+        <tr><td><code>ctx_search</code></td><td>Token-efficient code search across the project</td></tr>
+        <tr><td><code>ctx_tree</code></td><td>Compact directory maps with filtering</td></tr>
+        <tr><td><code>ctx_overview</code></td><td>Project overview with dependency graph</td></tr>
+        <tr><td><code>ctx_plan</code></td><td>Context-aware planning with budget estimation</td></tr>
+        <tr><td><code>ctx_metrics</code></td><td>Token savings and performance metrics</td></tr>
+        <tr><td><code>ctx_compress</code></td><td>Compress context when budget is tight</td></tr>
+        <tr><td><code>ctx_session</code></td><td>Session management and state tracking</td></tr>
+        <tr><td><code>ctx_knowledge</code></td><td>Knowledge graph: recall decisions and insights</td></tr>
+        <tr><td><code>ctx_graph</code></td><td>File dependency graph analysis</td></tr>
+        <tr><td><code>ctx_retrieve</code></td><td>Retrieve specific cached context</td></tr>
+        <tr><td><code>ctx_provider</code></td><td>Query external data sources (GitHub, Jira, etc.)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>lean-ctx tools not appearing in plan mode</h3>
+  <ol>
+    <li>Run <code>lean-ctx doctor</code> — check the "Plan mode" line for your IDE</li>
+    <li>Run <code>lean-ctx setup</code> to auto-configure plan mode settings</li>
+    <li>Restart your IDE after configuration changes</li>
+  </ol>
+
+  <h3>VS Code: "0 tool calls" in plan mode</h3>
+  <ol>
+    <li>Verify you're in <strong>Agent Mode</strong> (not Chat mode)</li>
+    <li>Check that <code>chat.mcp.enabled</code> is <code>true</code> in VS Code settings</li>
+    <li>Verify <code>planAgent.additionalTools</code> contains lean-ctx tools</li>
+    <li>Run <code>lean-ctx status</code> to confirm the MCP server is running</li>
+  </ol>
+
+  <h3>Client detected as "unknown (tier 4)"</h3>
+  <p>
+    If VS Code sends <code>"Visual Studio Code"</code> as the client name and lean-ctx shows <code>unknown (tier 4)</code>,
+    add <code>LEAN_CTX_CLIENT_HINT</code> to your MCP config as a workaround:
+  </p>
+  <TerminalChrome title=".vscode/mcp.json" bodyStyle="font-size: 0.75rem; line-height: 1.75;">
+    <div><span class="text-accent">"env"</span>: {"{"}</div>
+    <div>&nbsp;&nbsp;<span class="text-muted">"LEAN_CTX_DATA_DIR"</span>: "/path/to/.lean-ctx",</div>
+    <div>&nbsp;&nbsp;<span class="text-muted">"LEAN_CTX_CLIENT_HINT"</span>: "vscode-copilot"</div>
+    <div>{"}"}</div>
+  </TerminalChrome>
+  <p>This is fixed in v3.6.13+ where <code>"Visual Studio Code"</code> is automatically recognized.</p>
+
+</DocsLayout>
+
+<style>
+  .badge {
+    display: inline-block;
+    padding: 0.15em 0.5em;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+  }
+  .badge-ok {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+  }
+  .badge-warn {
+    background: rgba(250, 204, 21, 0.15);
+    color: #facc15;
+  }
+  .note {
+    background: rgba(59, 130, 246, 0.08);
+    border-left: 3px solid rgba(59, 130, 246, 0.5);
+    padding: 0.75rem 1rem;
+    border-radius: 0 6px 6px 0;
+    margin: 1.5rem 0;
+    font-size: 0.9375rem;
+  }
+  .table-wrapper {
+    overflow-x: auto;
+    margin: 1rem 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  th {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+  }
+</style>

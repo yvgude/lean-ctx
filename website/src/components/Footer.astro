@@ -72,6 +72,7 @@ const year = new Date().getFullYear();
 
     <div class="footer-bottom">
       <p class="footer-copy">&copy; {year} LeanCTX &middot; Apache-2.0 &middot; <a href={lp('/privacy')} style="color:inherit;text-decoration:none;">{t('footer.privacy')}</a> &middot; <a href={lp('/terms')} style="color:inherit;text-decoration:none;">Terms</a> &middot; <a href={lp('/imprint')} style="color:inherit;text-decoration:none;">Imprint</a> &middot; {t('footer.madeWith')}</p>
+      <p class="footer-swiss"><svg class="swiss-flag" viewBox="0 0 32 32" width="13" height="13" aria-hidden="true"><rect width="32" height="32" rx="4" fill="#D52B1E"/><rect x="6" y="13" width="20" height="6" rx="1" fill="#fff"/><rect x="13" y="6" width="6" height="20" rx="1" fill="#fff"/></svg> {t('footer.madeInSwitzerland')}</p>
       <div class="footer-bottom-links">
         <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="footer-ascii-link">[git]</a>
         <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="footer-ascii-link">[dsc]</a>
@@ -97,9 +98,11 @@ const year = new Date().getFullYear();
   .footer-links a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease; }
   .footer-links a:hover { color: var(--color-text-bright); }
   .footer-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--color-border), transparent); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); }
-  .footer-bottom { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
-  @media (min-width: 640px) { .footer-bottom { flex-direction: row; justify-content: space-between; } }
-  .footer-copy { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.7; }
+  .footer-bottom { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+  @media (min-width: 640px) { .footer-bottom { flex-direction: row; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1.5rem; } }
+  .footer-copy { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.7; margin: 0; }
+  .footer-swiss { display: inline-flex; align-items: center; gap: 0.35rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.7; margin: 0; }
+  .swiss-flag { flex-shrink: 0; }
   .footer-bottom-links { display: flex; align-items: center; gap: 0.75rem; }
   .footer-bottom-links a { color: var(--color-muted); transition: color 0.15s ease; opacity: 0.7; }
   .footer-bottom-links a:hover { color: var(--color-text-bright); opacity: 1; }

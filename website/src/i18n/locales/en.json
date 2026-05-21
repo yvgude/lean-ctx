@@ -2041,6 +2041,7 @@
   "footer.resources": "Resources",
   "footer.github": "GitHub",
   "footer.madeWith": "Made with Rust",
+  "footer.madeInSwitzerland": "Developed in Switzerland",
   "footer.product": "Product",
   "footer.tagline": "Lean Cortex — the cognitive context layer for agentic systems. Perceives, compresses, remembers, and routes what reaches the model.",
   "footer.toolApi": "Tool API ({mcpToolCount})",
