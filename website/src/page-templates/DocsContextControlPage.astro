@@ -1,0 +1,180 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Context Control',
+    items: [
+      { label: 'Overview', href: lp('/docs/context-control') },
+      { label: 'What is overlays.json?', href: lp('/docs/context-control') + '#what' },
+      { label: 'Storage Location', href: lp('/docs/context-control') + '#location' },
+      { label: 'Gitignore', href: lp('/docs/context-control') + '#gitignore' },
+      { label: 'Actions', href: lp('/docs/context-control') + '#actions' },
+      { label: 'Scopes', href: lp('/docs/context-control') + '#scopes' },
+      { label: 'Staleness', href: lp('/docs/context-control') + '#staleness' },
+      { label: 'Examples', href: lp('/docs/context-control') + '#examples' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Budgets & SLOs', href: lp('/docs/budgets-and-slos') },
+      { label: 'Observatory', href: lp('/docs/observatory') },
+      { label: 'Session Tools', href: lp('/docs/tools/session') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title={t('docs.contextControl.title')}
+  description={t('docs.contextControl.metaDesc')}
+  sidebar={sidebar}
+>
+  <p set:html={t('docs.contextControl.intro')} />
+
+  <h2 id="what">{t('docs.contextControl.whatTitle')}</h2>
+  <p set:html={t('docs.contextControl.whatDesc')} />
+
+  <div class="info-card">
+    <strong>File format:</strong> JSON array of overlay objects, each with a target (file path), operation (include/exclude/pin/…), scope, and timestamp.
+  </div>
+
+  <h2 id="location">{t('docs.contextControl.locationTitle')}</h2>
+  <p set:html={t('docs.contextControl.locationDesc')} />
+
+  <TerminalChrome title="Overlay storage path">
+    <pre><code>&lt;project_root&gt;/.lean-ctx/overlays.json</code></pre>
+  </TerminalChrome>
+
+  <h2 id="gitignore">{t('docs.contextControl.gitignoreTitle')}</h2>
+  <p set:html={t('docs.contextControl.gitignoreDesc')} />
+
+  <TerminalChrome title=".gitignore">
+    <pre><code># lean-ctx local state
+.lean-ctx/</code></pre>
+  </TerminalChrome>
+
+  <h2 id="actions">{t('docs.contextControl.actionsTitle')}</h2>
+  <p set:html={t('docs.contextControl.actionsDesc')} />
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>Effect</th>
+          <th>Example</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>include</code></td><td>Force a file into context</td><td><code>ctx_control action=include target=src/auth.rs</code></td></tr>
+        <tr><td><code>exclude</code></td><td>Remove a file from context</td><td><code>ctx_control action=exclude target=vendor/</code></td></tr>
+        <tr><td><code>pin</code></td><td>Keep a file permanently in context</td><td><code>ctx_control action=pin target=README.md</code></td></tr>
+        <tr><td><code>unpin</code></td><td>Remove a pin</td><td><code>ctx_control action=unpin target=README.md</code></td></tr>
+        <tr><td><code>set_view</code></td><td>Set a read mode for a file</td><td><code>ctx_control action=set_view target=large.rs value=signatures</code></td></tr>
+        <tr><td><code>set_priority</code></td><td>Adjust ranking priority</td><td><code>ctx_control action=set_priority target=core.rs value=high</code></td></tr>
+        <tr><td><code>mark_outdated</code></td><td>Flag content as stale</td><td><code>ctx_control action=mark_outdated target=cache.rs</code></td></tr>
+        <tr><td><code>list</code></td><td>Show all active overlays</td><td><code>ctx_control action=list</code></td></tr>
+        <tr><td><code>history</code></td><td>Show overlay change log</td><td><code>ctx_control action=history</code></td></tr>
+        <tr><td><code>clear</code></td><td>Remove all overlays</td><td><code>ctx_control action=clear</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="scopes">{t('docs.contextControl.scopesTitle')}</h2>
+  <p set:html={t('docs.contextControl.scopesDesc')} />
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Scope</th>
+          <th>Lifetime</th>
+          <th>Use Case</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>call</code></td><td>Single tool call</td><td>Temporary context for one operation</td></tr>
+        <tr><td><code>session</code></td><td>Current session (pruned after 24h)</td><td>Focus on specific files during a task</td></tr>
+        <tr><td><code>project</code></td><td>Persists across sessions</td><td>Always exclude generated files</td></tr>
+        <tr><td><code>agent</code></td><td>Tied to a specific agent ID</td><td>Agent-specific context preferences</td></tr>
+        <tr><td><code>global</code></td><td>Permanent</td><td>Organization-wide exclusions</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="staleness">{t('docs.contextControl.stalenessTitle')}</h2>
+  <p set:html={t('docs.contextControl.stalenessDesc')} />
+
+  <h2 id="examples">{t('docs.contextControl.examplesTitle')}</h2>
+
+  <h3>Exclude noisy vendor files</h3>
+  <TerminalChrome title="MCP">
+    <pre><code>ctx_control action=exclude target=node_modules/ scope=project
+ctx_control action=exclude target=vendor/ scope=project</code></pre>
+  </TerminalChrome>
+
+  <h3>Pin critical files for a debugging session</h3>
+  <TerminalChrome title="MCP">
+    <pre><code>ctx_control action=pin target=src/auth/middleware.rs scope=session
+ctx_control action=pin target=src/auth/jwt.rs scope=session</code></pre>
+  </TerminalChrome>
+
+  <h3>Force signatures-only view for a large file</h3>
+  <TerminalChrome title="MCP">
+    <pre><code>ctx_control action=set_view target=src/generated/schema.rs value=signatures</code></pre>
+  </TerminalChrome>
+
+  <h3>List and clear overlays</h3>
+  <TerminalChrome title="MCP">
+    <pre><code>ctx_control action=list
+ctx_control action=clear scope=session</code></pre>
+  </TerminalChrome>
+</DocsLayout>
+
+<style>
+  .info-card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-accent);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+  }
+  .table-wrapper {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  th {
+    color: var(--color-muted);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  td code {
+    font-size: 0.8125rem;
+    background: var(--overlay-light);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+  }
+</style>

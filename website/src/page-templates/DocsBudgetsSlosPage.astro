@@ -1,0 +1,301 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Budgets & SLOs',
+    items: [
+      { label: 'Overview', href: lp('/docs/budgets-and-slos') },
+      { label: 'BudgetWarning', href: lp('/docs/budgets-and-slos') + '#budget-warning' },
+      { label: 'SessionContextTokens', href: lp('/docs/budgets-and-slos') + '#session-context-tokens' },
+      { label: 'Key Difference', href: lp('/docs/budgets-and-slos') + '#difference' },
+      { label: 'Configuring Roles', href: lp('/docs/budgets-and-slos') + '#roles' },
+      { label: 'Configuring SLOs', href: lp('/docs/budgets-and-slos') + '#slos' },
+      { label: 'Default Values', href: lp('/docs/budgets-and-slos') + '#defaults' },
+      { label: 'Built-in Roles', href: lp('/docs/budgets-and-slos') + '#built-in-roles' },
+      { label: 'Resetting & Switching', href: lp('/docs/budgets-and-slos') + '#reset' },
+      { label: 'Blocking Mode', href: lp('/docs/budgets-and-slos') + '#blocking' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Observatory', href: lp('/docs/observatory') },
+      { label: 'Context Control', href: lp('/docs/context-control') },
+      { label: 'Session Tools', href: lp('/docs/tools/session') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title={t('docs.budgets.title')}
+  description={t('docs.budgets.metaDesc')}
+  sidebar={sidebar}
+>
+  <p set:html={t('docs.budgets.intro')} />
+
+  <h2 id="budget-warning">{t('docs.budgets.warningTitle')}</h2>
+  <p set:html={t('docs.budgets.warningDesc')} />
+
+  <div class="event-card warning">
+    <span class="event-icon">$$</span>
+    <span class="event-text">budget · coder tokens 82% WARNING</span>
+  </div>
+
+  <h2 id="session-context-tokens">{t('docs.budgets.sloTitle')}</h2>
+  <p set:html={t('docs.budgets.sloDesc')} />
+
+  <div class="event-card violation">
+    <span class="event-icon">!!</span>
+    <span class="event-text">slo · context_budget violated → warn</span>
+  </div>
+
+  <h2 id="difference">{t('docs.budgets.differenceTitle')}</h2>
+  <p set:html={t('docs.budgets.differenceDesc')} />
+
+  <div class="comparison-grid">
+    <div class="compare-card">
+      <h4>BudgetWarning</h4>
+      <div class="compare-rows">
+        <div><span class="label">Trigger</span><span class="value">≥80% of budget</span></div>
+        <div><span class="label">Default</span><span class="value">~160,000 tokens</span></div>
+        <div><span class="label">Config</span><span class="value">Role files (<code>.lean-ctx/roles/</code>)</span></div>
+        <div><span class="label">Blocks?</span><span class="value">No (default)</span></div>
+      </div>
+    </div>
+    <div class="compare-card">
+      <h4>SessionContextTokens</h4>
+      <div class="compare-rows">
+        <div><span class="label">Trigger</span><span class="value">&gt;threshold (200k)</span></div>
+        <div><span class="label">Default</span><span class="value">200,000 tokens</span></div>
+        <div><span class="label">Config</span><span class="value"><code>slos.toml</code></span></div>
+        <div><span class="label">Blocks?</span><span class="value">No (warn only)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 id="roles">{t('docs.budgets.rolesTitle')}</h2>
+  <p set:html={t('docs.budgets.rolesDesc')} />
+
+  <TerminalChrome title="~/.lean-ctx/roles/heavy.toml">
+    <pre><code>[limits]
+max_context_tokens = 500000
+max_shell_invocations = 200
+max_cost_usd = 10.0
+warn_at_percent = 90
+block_at_percent = 255  # 255 = never block</code></pre>
+  </TerminalChrome>
+
+  <p>Activate the role:</p>
+  <TerminalChrome title="MCP">
+    <pre><code>ctx_session action=role value=heavy</code></pre>
+  </TerminalChrome>
+
+  <h2 id="slos">{t('docs.budgets.sloConfigTitle')}</h2>
+  <p set:html={t('docs.budgets.sloConfigDesc')} />
+
+  <TerminalChrome title="~/.lean-ctx/slos.toml">
+    <pre><code>[[slo]]
+name = "context_budget"
+metric = "session_context_tokens"
+threshold = 500000
+direction = "max"
+action = "warn"
+
+[[slo]]
+name = "compression_quality"
+metric = "compression_ratio"
+threshold = 40.0
+direction = "min"
+action = "warn"</code></pre>
+  </TerminalChrome>
+
+  <p>Reload after editing:</p>
+  <TerminalChrome title="MCP">
+    <pre><code>ctx_session action=slo value=reload</code></pre>
+  </TerminalChrome>
+
+  <h3>Available SLO Metrics</h3>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Metric</th><th>What it measures</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>session_context_tokens</code></td><td>Total tokens output this session</td><td>200,000</td></tr>
+        <tr><td><code>session_cost_usd</code></td><td>Estimated session cost</td><td>—</td></tr>
+        <tr><td><code>compression_ratio</code></td><td>Overall compression percentage</td><td>—</td></tr>
+        <tr><td><code>shell_invocations</code></td><td>Shell commands this session</td><td>—</td></tr>
+        <tr><td><code>tool_calls_total</code></td><td>Total MCP tool calls</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="defaults">{t('docs.budgets.defaultsTitle')}</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Parameter</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>max_context_tokens</code></td><td>200,000</td></tr>
+        <tr><td><code>max_shell_invocations</code></td><td>100</td></tr>
+        <tr><td><code>max_cost_usd</code></td><td>5.00</td></tr>
+        <tr><td><code>warn_at_percent</code></td><td>80</td></tr>
+        <tr><td><code>block_at_percent</code></td><td>255 (never)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="built-in-roles">{t('docs.budgets.builtinTitle')}</h2>
+  <p set:html={t('docs.budgets.builtinDesc')} />
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Role</th><th>Typical Use</th></tr></thead>
+      <tbody>
+        <tr><td><code>coder</code></td><td>Default role — balanced limits for development</td></tr>
+        <tr><td><code>reviewer</code></td><td>Code review — lower token budget, read-focused</td></tr>
+        <tr><td><code>debugger</code></td><td>Debugging — higher shell invocation limit</td></tr>
+        <tr><td><code>ops</code></td><td>Operations — higher cost limit for deployment tasks</td></tr>
+        <tr><td><code>admin</code></td><td>Full access — highest limits across all dimensions</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="reset">{t('docs.budgets.resetTitle')}</h2>
+  <p set:html={t('docs.budgets.resetDesc')} />
+
+  <TerminalChrome title="Common commands">
+    <pre><code># Reset token counter
+ctx_session action=reset
+
+# Switch role (also resets budget)
+ctx_session action=role value=heavy
+
+# View current role and budget
+ctx_session action=role
+
+# Reload SLOs after editing slos.toml
+ctx_session action=slo value=reload
+
+# View SLO violation history
+ctx_session action=slo value=history</code></pre>
+  </TerminalChrome>
+
+  <h2 id="blocking">{t('docs.budgets.blockingTitle')}</h2>
+  <p set:html={t('docs.budgets.blockingDesc')} />
+
+  <TerminalChrome title="Enable hard blocking at 100%">
+    <pre><code>[limits]
+max_context_tokens = 200000
+warn_at_percent = 80
+block_at_percent = 100  # tools will be blocked at 100%</code></pre>
+  </TerminalChrome>
+
+  <div class="info-card">
+    <strong>Tip:</strong> Frequent BudgetWarning/SLO violations usually mean your limits are too low for your workflow. Raise <code>max_context_tokens</code> and <code>threshold</code> rather than ignoring the warnings.
+  </div>
+</DocsLayout>
+
+<style>
+  .event-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    margin: 1rem 0 1.5rem;
+  }
+  .event-card.warning {
+    background: rgba(234, 179, 8, 0.08);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    color: #eab308;
+  }
+  .event-card.violation {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+  }
+  .event-icon {
+    font-weight: 700;
+    font-size: 0.875rem;
+  }
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .compare-card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .compare-card h4 {
+    margin: 0 0 0.75rem;
+    font-size: 0.9375rem;
+    color: var(--color-text-bright);
+  }
+  .compare-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+  }
+  .compare-rows > div {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--overlay-light);
+  }
+  .compare-rows .label {
+    color: var(--color-muted);
+  }
+  .compare-rows .value {
+    color: var(--color-text-bright);
+  }
+  .info-card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-accent);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+  }
+  .table-wrapper {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  th {
+    color: var(--color-muted);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  td code {
+    font-size: 0.8125rem;
+    background: var(--overlay-light);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+  }
+</style>

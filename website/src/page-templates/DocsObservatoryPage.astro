@@ -1,0 +1,259 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Observatory',
+    items: [
+      { label: 'Overview', href: lp('/docs/observatory') },
+      { label: 'How to Access', href: lp('/docs/observatory') + '#access' },
+      { label: 'Event Types', href: lp('/docs/observatory') + '#events' },
+      { label: 'Budget & SLO Events', href: lp('/docs/observatory') + '#budget-events' },
+      { label: 'Dashboard Panels', href: lp('/docs/observatory') + '#panels' },
+      { label: 'REST API', href: lp('/docs/observatory') + '#api' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Budgets & SLOs', href: lp('/docs/budgets-and-slos') },
+      { label: 'Context Control', href: lp('/docs/context-control') },
+      { label: 'CLI Reference', href: lp('/docs/cli-reference') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title={t('docs.observatory.title')}
+  description={t('docs.observatory.metaDesc')}
+  sidebar={sidebar}
+>
+  <p set:html={t('docs.observatory.intro')} />
+
+  <h2 id="access">{t('docs.observatory.accessTitle')}</h2>
+  <p set:html={t('docs.observatory.accessDesc')} />
+
+  <div class="access-grid">
+    <div class="access-card">
+      <h4>🖥 Terminal (TUI)</h4>
+      <TerminalChrome title="Terminal">
+        <pre><code>lean-ctx watch</code></pre>
+      </TerminalChrome>
+      <p>Real-time event stream in your terminal. Filter with arrow keys, search with <code>/</code>.</p>
+    </div>
+    <div class="access-card">
+      <h4>🌐 Web Dashboard</h4>
+      <TerminalChrome title="Terminal">
+        <pre><code>lean-ctx dashboard</code></pre>
+      </TerminalChrome>
+      <p>Opens the full dashboard in your browser at <code>http://127.0.0.1:3333</code>. Includes all panels, charts, and the live event feed.</p>
+    </div>
+  </div>
+
+  <h2 id="events">{t('docs.observatory.eventsTitle')}</h2>
+  <p set:html={t('docs.observatory.eventsDesc')} />
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Category</th><th>Icon</th><th>Examples</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Tool Calls</strong></td><td><code>→</code></td><td><code>ctx_read</code>, <code>ctx_shell</code>, <code>ctx_search</code></td></tr>
+        <tr><td><strong>Compression</strong></td><td><code>↓</code></td><td>File read compressed 84%, shell output compressed 72%</td></tr>
+        <tr><td><strong>Budget</strong></td><td><code>$$</code></td><td>BudgetWarning: tokens at 82%</td></tr>
+        <tr><td><strong>SLO</strong></td><td><code>!!</code></td><td>SessionContextTokens violated</td></tr>
+        <tr><td><strong>Cache</strong></td><td><code>⚡</code></td><td>Cache hit (13 tokens), cache miss</td></tr>
+        <tr><td><strong>Session</strong></td><td><code>○</code></td><td>Session start, role change, agent handoff</td></tr>
+        <tr><td><strong>Autonomy</strong></td><td><code>⟡</code></td><td>Auto-preload, auto-dedup, auto-related</td></tr>
+        <tr><td><strong>Error</strong></td><td><code>✗</code></td><td>Tool error, path jail violation, timeout</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="budget-events">{t('docs.observatory.budgetEventsTitle')}</h2>
+  <p set:html={t('docs.observatory.budgetEventsDesc')} />
+
+  <div class="events-example">
+    <div class="event-line warning">
+      <span class="ts">14:32:05</span>
+      <span class="icon">$$</span>
+      <span>budget · coder tokens 82% WARNING</span>
+    </div>
+    <div class="event-line violation">
+      <span class="ts">14:45:12</span>
+      <span class="icon">!!</span>
+      <span>slo · context_budget violated · SessionContextTokens &gt; 200000 → warn</span>
+    </div>
+    <div class="event-line info">
+      <span class="ts">14:45:12</span>
+      <span class="icon">ℹ</span>
+      <span>hint: Occasional violations are normal; frequent ones may indicate a configuration issue.</span>
+    </div>
+  </div>
+
+  <div class="info-card">
+    <strong>Seeing lots of these?</strong> Your token budget is too low for your workflow. See <a href="/docs/budgets-and-slos">Budgets & SLOs</a> to raise the limits.
+  </div>
+
+  <h2 id="panels">{t('docs.observatory.dashboardTitle')}</h2>
+  <p set:html={t('docs.observatory.dashboardDesc')} />
+
+  <div class="panels-grid">
+    <div class="panel-card">
+      <h4>Overview</h4>
+      <p>Session stats: tokens saved, compression ratio, tool calls, active time.</p>
+    </div>
+    <div class="panel-card">
+      <h4>Live Feed</h4>
+      <p>Real-time event stream with filtering by category, severity, and text search.</p>
+    </div>
+    <div class="panel-card">
+      <h4>Health</h4>
+      <p>SLO status cards — green/red indicators for each configured SLO with current values.</p>
+    </div>
+    <div class="panel-card">
+      <h4>Agents</h4>
+      <p>Multi-agent view: token usage per agent, handoff history, context budgets.</p>
+    </div>
+    <div class="panel-card">
+      <h4>Compression Lab</h4>
+      <p>Per-file and per-tool compression breakdown. Identify which patterns save the most tokens.</p>
+    </div>
+    <div class="panel-card">
+      <h4>Context Map</h4>
+      <p>Visual graph of file relationships, import chains, and cross-source connections.</p>
+    </div>
+  </div>
+
+  <h2 id="api">{t('docs.observatory.apiTitle')}</h2>
+  <p set:html={t('docs.observatory.apiDesc')} />
+
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Endpoint</th><th>Method</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/api/events</code></td><td>GET</td><td>Recent events (JSON array)</td></tr>
+        <tr><td><code>/api/events/stream</code></td><td>GET</td><td>Server-Sent Events (live stream)</td></tr>
+        <tr><td><code>/api/slos</code></td><td>GET</td><td>Current SLO status for all definitions</td></tr>
+        <tr><td><code>/api/stats</code></td><td>GET</td><td>Session statistics (tokens, compression)</td></tr>
+        <tr><td><code>/api/agents</code></td><td>GET</td><td>Active agents and their budgets</td></tr>
+        <tr><td><code>/metrics</code></td><td>GET</td><td>Prometheus-compatible metrics</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <TerminalChrome title="Example: fetch current SLO status">
+    <pre><code>curl http://127.0.0.1:3333/api/slos | jq</code></pre>
+  </TerminalChrome>
+</DocsLayout>
+
+<style>
+  .access-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+    margin: 1.5rem 0;
+  }
+  .access-card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .access-card h4 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+  }
+  .access-card p {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    margin: 0.5rem 0 0;
+  }
+  .events-example {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    margin: 1rem 0 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .event-line {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+  }
+  .event-line .ts { color: var(--color-muted); min-width: 5rem; }
+  .event-line .icon { min-width: 1.5rem; text-align: center; }
+  .event-line.warning { color: #eab308; }
+  .event-line.violation { color: #ef4444; }
+  .event-line.info { color: var(--color-muted); font-style: italic; }
+  .panels-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .panel-card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 1rem;
+  }
+  .panel-card h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-accent);
+  }
+  .panel-card p {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+  }
+  .info-card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-accent);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+  }
+  .table-wrapper {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  th {
+    color: var(--color-muted);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  td code {
+    font-size: 0.8125rem;
+    background: var(--overlay-light);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+  }
+</style>

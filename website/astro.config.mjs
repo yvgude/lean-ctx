@@ -45,8 +45,8 @@ export default defineConfig({
     '/context-os/sdk/': '/context-os/',
 
     // Deleted docs → appropriate targets
-    '/docs/agent-harness/': '/docs/getting-started/',
-    '/docs/analytics/': '/docs/getting-started/',
+    '/docs/agent-harness/': '/docs/budgets-and-slos/',
+    '/docs/analytics/': '/docs/observatory/',
     '/docs/ccp/': '/docs/concepts/protocols/',
     '/docs/cep/': '/docs/concepts/protocols/',
     '/docs/tdd/': '/docs/getting-started/',
@@ -58,7 +58,7 @@ export default defineConfig({
     '/docs/graph/': '/docs/tools/',
     '/docs/ide-setup/': '/docs/getting-started/',
     '/docs/intelligence-layer/': '/docs/concepts/read-modes/',
-    '/docs/observability/': '/docs/getting-started/',
+    '/docs/observability/': '/docs/observatory/',
     '/docs/profiles/': '/docs/configuration/',
     '/docs/remote-setup/': '/docs/getting-started/',
     '/docs/replayability/': '/docs/getting-started/',
