@@ -1629,9 +1629,12 @@ fn write_qoder_settings(
 // ---------------------------------------------------------------------------
 
 /// Fixed UUIDv4-shaped id reserved for lean-ctx in Augment's VS Code MCP list.
-/// Last 12 hex chars spell "leanctx" (6c=l, 65=e, 61=a, 6e=n, 63=c, 74=t, 78=x
-/// minus a char to keep the segment 12 long). The exact value never matters
-/// semantically — only stability matters for idempotent upserts.
+/// The first segment hex-encodes "lean" (6c 65 61 6e) and the last segment
+/// hex-encodes "leanct" (6c 65 61 6e 63 74) — a 6-byte ASCII tag that fits
+/// exactly in the 12-hex-char node field. The middle bytes preserve the
+/// version-4 / variant-RFC-4122 nibbles so the value parses as a valid UUID.
+/// Only stability matters — the writer uses this id to locate and update its
+/// own entry idempotently without colliding with user-added servers.
 const LEAN_CTX_AUGMENT_VSCODE_ID: &str = "6c65616e-c747-4000-8000-6c65616e6374";
 
 fn lean_ctx_augment_vscode_entry(binary: &str, data_dir: &str) -> Value {

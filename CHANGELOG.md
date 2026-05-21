@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **First-class support for the Augment AI coding agent** — `lean-ctx init --agent augment` now wires up both Augment configuration surfaces in a single invocation: the Auggie CLI (`~/.augment/settings.json`, standard `mcpServers` map) and the Augment VS Code extension (`globalStorage/augment.vscode-augment/augment-global-state/mcpServers.json`, top-level JSON array with stable UUID-keyed upserts that preserve sibling entries). User rules are injected at `~/.augment/rules/lean-ctx.md` (the documented User Rules folder, recursively scanned and always applied). `lean-ctx doctor` reports per-surface MCP drift, including a dedicated check that flags entries the user has toggled off via `"disabled": true`. `lean-ctx uninstall --agent augment` symmetrically removes all four surfaces. Cross-platform paths handled for Linux, macOS, and Windows. Brings Augment to parity with Cursor, Claude Code, Codex, Windsurf, and the other 30+ supported agents in the compatibility matrix.
+
 ## [3.6.13] — 2026-05-21
 
 ### Added

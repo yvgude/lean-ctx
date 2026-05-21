@@ -237,6 +237,25 @@ mod augment_tests {
             home.join("Library/Application Support/Code/User/globalStorage/augment.vscode-augment/augment-global-state/mcpServers.json")
         );
     }
+
+    /// On Windows we honour `%APPDATA%` when set, falling back to a
+    /// home-relative path only when it is missing. We can't reliably mutate
+    /// process-wide env vars in a parallel test runner, so this test only
+    /// asserts the invariant tail (which is platform-agnostic) and that the
+    /// final segment is the expected file name. Both branches share that tail.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn augment_vscode_mcp_path_ends_with_globalstorage_tail() {
+        let home = Path::new("C:/Users/tester");
+        let path = augment_vscode_mcp_path(home);
+        let s = path.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.ends_with(
+                "Code/User/globalStorage/augment.vscode-augment/augment-global-state/mcpServers.json"
+            ),
+            "unexpected windows path: {s}"
+        );
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

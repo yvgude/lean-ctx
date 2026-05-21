@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use super::paths::{
-    augment_cli_settings_path, claude_mcp_json_path, cline_mcp_path, qoder_all_mcp_paths,
-    qoderwork_mcp_path, roo_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+    augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path, cline_mcp_path,
+    qoder_all_mcp_paths, qoderwork_mcp_path, roo_mcp_path, vscode_mcp_path, zed_config_dir,
+    zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -47,6 +48,13 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             config_path: augment_cli_settings_path(home),
             detect_path: detect_augment_path(home),
             config_type: ConfigType::McpJson,
+        },
+        EditorTarget {
+            name: "Augment (VS Code)",
+            agent_key: "augment".to_string(),
+            config_path: augment_vscode_mcp_path(home),
+            detect_path: detect_augment_vscode_path(home),
+            config_type: ConfigType::AugmentVsCode,
         },
         EditorTarget {
             name: "Windsurf",
@@ -364,6 +372,80 @@ pub fn detect_augment_path(home: &Path) -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
+/// Locate the Augment VS Code extension on disk.
+///
+/// Returns a `PathBuf` that callers use as a "yes/no presence" signal via
+/// `.exists()`. There are three positive-detection paths, in order of
+/// specificity:
+///
+///   1. `mcpServers.json` itself exists → return that file path. Strongest
+///      signal: the user has already configured at least one MCP server.
+///   2. The `augment-global-state/` directory exists (parent-of-parent of
+///      the mcp file) → return that directory. The extension has run at
+///      least once but no MCP servers have been registered yet.
+///   3. The extension's `globalStorage/augment.vscode-augment/` directory
+///      exists → return the (still-nonexistent) `mcpServers.json` path.
+///      The extension is installed but has never written persistent state;
+///      callers will see `.exists() == false` here, which is intentional —
+///      it signals "extension present, file not yet created" so `setup`
+///      can create it.
+///
+/// On no match, returns `/nonexistent` so `.exists()` is unambiguously false.
+pub fn detect_augment_vscode_path(home: &Path) -> PathBuf {
+    let mcp_path = augment_vscode_mcp_path(home);
+    if mcp_path.exists() {
+        return mcp_path;
+    }
+    let extension_state = mcp_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(Path::to_path_buf);
+    if let Some(path) = extension_state {
+        if path.exists() {
+            return path;
+        }
+    }
+    if detect_extension_installed(home, "augment.vscode-augment") {
+        return mcp_path;
+    }
+    PathBuf::from("/nonexistent")
+}
+
+fn detect_extension_installed(home: &Path, extension_id: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if home
+            .join(format!(
+                "Library/Application Support/Code/User/globalStorage/{extension_id}"
+            ))
+            .exists()
+        {
+            return true;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if home
+            .join(format!(".config/Code/User/globalStorage/{extension_id}"))
+            .exists()
+        {
+            return true;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            if PathBuf::from(appdata)
+                .join(format!("Code/User/globalStorage/{extension_id}"))
+                .exists()
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub fn detect_codex_path(home: &Path) -> PathBuf {
     let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
     if codex_dir.exists() {
@@ -537,6 +619,18 @@ mod augment_tests {
         assert_eq!(target.name, "Augment CLI");
         assert_eq!(target.config_path, home.join(".augment/settings.json"));
         assert!(matches!(target.config_type, ConfigType::McpJson));
+    }
+
+    #[test]
+    fn build_targets_includes_augment_vscode_entry() {
+        let home = Path::new("/home/tester");
+        let target = build_targets(home)
+            .into_iter()
+            .find(|t| t.name == "Augment (VS Code)")
+            .expect("augment vscode target should be registered");
+        assert_eq!(target.agent_key, "augment");
+        assert_eq!(target.config_path, augment_vscode_mcp_path(home));
+        assert!(matches!(target.config_type, ConfigType::AugmentVsCode));
     }
 
     // Writer-layer round-trip: verifies the McpJson writer preserves unrelated

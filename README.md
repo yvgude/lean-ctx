@@ -203,7 +203,7 @@ lean-ctx is a standard **MCP server**, so it works with any MCP-compatible clien
 |---|:---:|:---:|---|
 | Cursor | ● | | `lean-ctx init --agent cursor` |
 | Claude Code | ● | | `lean-ctx init --agent claude` |
-| Augment CLI | ● | | `lean-ctx init --agent augment` |
+| Augment CLI / VS Code | ● | | `lean-ctx init --agent augment` |
 | Codex CLI | ● | | `lean-ctx init --agent codex` |
 | Gemini CLI | ● | | `lean-ctx init --agent gemini` |
 | Windsurf | ● | | `lean-ctx init --agent windsurf` |

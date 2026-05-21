@@ -207,6 +207,7 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
         || (needle == "continue" && tn.contains("continue"))
         || (needle == "qwen" && tn.contains("qwen"))
         || (needle == "antigravity" && tn.contains("antigravity"))
+        || (needle == "augment" && tn.contains("augment"))
         || (needle == "vscode" && (tn.contains("vs code") || tn.contains("vscode")))
 }
 
@@ -1043,6 +1044,7 @@ mod tests {
         assert!(match_agent_name("continue", "Continue"));
         assert!(match_agent_name("antigravity", "Antigravity"));
         assert!(match_agent_name("gemini", "Gemini CLI"));
+        assert!(match_agent_name("augment", "Augment"));
     }
 
     #[test]

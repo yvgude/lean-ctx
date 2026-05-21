@@ -356,6 +356,7 @@ fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathB
         "Amazon Q Developer" => Some(home.join(".aws/amazonq/rules/lean-ctx.md")),
         "JetBrains IDEs" => Some(home.join(".jb-rules/lean-ctx.md")),
         "Antigravity" => Some(home.join(".gemini/antigravity/rules/lean-ctx.md")),
+        "Augment CLI" | "Augment (VS Code)" => Some(home.join(".augment/rules/lean-ctx.md")),
         "Pi Coding Agent" => Some(home.join(".pi/rules/lean-ctx.md")),
         "Crush" => Some(home.join(".config/crush/rules/lean-ctx.md")),
         _ => None,
@@ -499,13 +500,21 @@ fn check_augment_vscode_mcp(path: &std::path::Path, binary: &str, data_dir: &str
         .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
         .and_then(|d| d.as_str())
         .is_some_and(|d| d.trim() == data_dir.trim());
+    // The Augment VS Code panel persists user toggles via the `disabled` flag.
+    // An entry with `disabled: true` is present-but-inert, so doctor must
+    // surface that as drift instead of silently passing. A missing key,
+    // explicit `false`, or any non-boolean value is treated as enabled — only
+    // an explicit `true` counts as a user-initiated disable.
+    let not_disabled = e.get("disabled").and_then(serde_json::Value::as_bool) != Some(true);
 
-    let ok = ty_ok && cmd_ok && env_ok;
+    let ok = ty_ok && cmd_ok && env_ok && not_disabled;
     NamedCheck {
         name: "Augment VS Code MCP".to_string(),
         ok,
         detail: if ok {
             format!("ok ({})", path.display())
+        } else if !not_disabled {
+            format!("disabled ({})", path.display())
         } else {
             format!("drift ({})", path.display())
         },
