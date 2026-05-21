@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.13 (Current)', href: lp('/docs/changelog') + '#v3.6.13' },
+      { label: '3.6.14 (Current)', href: lp('/docs/changelog') + '#v3.6.14' },
+      { label: '3.6.13', href: lp('/docs/changelog') + '#v3.6.13' },
       { label: '3.6.12', href: lp('/docs/changelog') + '#v3.6.12' },
       { label: '3.6.11', href: lp('/docs/changelog') + '#v3.6.11' },
       { label: '3.6.10', href: lp('/docs/changelog') + '#v3.6.10' },
@@ -70,6 +71,33 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.14 -->
+  <h2 id="v3.6.14">3.6.14 <span class="text-xs text-muted">(2026-05-22)</span></h2>
+  <p class="text-sm text-muted">UTF-8 safety hardening, Augment agent support, context package (.ctxpkg) overhaul, degradation warnings, multi_read output cap.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Augment AI agent support</strong> — <code>lean-ctx init --agent augment</code> wires up Auggie CLI and VS Code extension surfaces. Rules injected at <code>~/.augment/rules/lean-ctx.md</code>. Doctor reports drift and <code>"disabled": true</code> detection. Cross-platform. (Contributed by @parker-brown-family, #264, #267)</li>
+    <li><strong>Context packages renamed to <code>.ctxpkg</code></strong> — Package format, CLI, transport, and docs all use <code>.ctxpkg</code> extension. Legacy <code>.lctxpkg</code> files remain importable.</li>
+    <li><strong><code>ctx_multi_read</code> output cap</strong> — Server-side 512KB cap (configurable via <code>LCTX_MAX_MULTI_READ_BYTES</code>) prevents MCP client truncation. Skipped files reported with warning. (#263)</li>
+    <li><strong>Degradation policy warning</strong> — <code>mode=full</code> downgrade to <code>mode=map</code> under context pressure now emits an explicit <code>⚠ Context pressure</code> warning with bypass hint. (#262)</li>
+    <li><strong>28 regression tests</strong> — UTF-8 boundary tests (Cyrillic, CJK, emoji), degradation verdict tests, multi_read cap tests.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>UTF-8 character boundary panics</strong> — 13 string truncation sites hardened with <code>floor_char_boundary()</code>/<code>ceil_char_boundary()</code>. Prevents crashes on Cyrillic, CJK, emoji content. (Report by @cburgess, #265)</li>
+    <li><strong>Context package hardening</strong> — Fixed <code>receive --apply</code>, Graph edge import, Session/Patterns/Insights import, auto-load caching, HMAC signing, CLI flag parsing, memory leaks.</li>
+    <li><strong><code>lean-ctx update</code> proxy race condition</strong> — Proxy now fully healthy before <code>ANTHROPIC_BASE_URL</code> is written. (#234)</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li>Removed dead <code>PackageLayer::Artifacts</code> enum variant</li>
+    <li>Expanded manifest validation (hex hash format, byte_size, duplicate layers)</li>
+    <li>Import hardened with extension + size limit checks</li>
+  </ul>
 
   <!-- 3.6.13 -->
   <h2 id="v3.6.13">3.6.13 <span class="text-xs text-muted">(2026-05-21)</span></h2>
