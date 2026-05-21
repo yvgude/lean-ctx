@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.12 (Current)', href: lp('/docs/changelog') + '#v3.6.12' },
+      { label: '3.6.13 (Current)', href: lp('/docs/changelog') + '#v3.6.13' },
+      { label: '3.6.12', href: lp('/docs/changelog') + '#v3.6.12' },
       { label: '3.6.11', href: lp('/docs/changelog') + '#v3.6.11' },
       { label: '3.6.10', href: lp('/docs/changelog') + '#v3.6.10' },
       { label: '3.6.9', href: lp('/docs/changelog') + '#v3.6.9' },
@@ -69,6 +70,41 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.13 -->
+  <h2 id="v3.6.13">3.6.13 <span class="text-xs text-muted">(2026-05-21)</span></h2>
+  <p class="text-sm text-muted">Plan mode for VS Code/Claude Code, production-wired provider pipeline, GitLab provider, shell hook fixes, 50+ new integration tests.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Plan mode support</strong> — lean-ctx tools now work in IDE plan/read-only modes. VS Code <code>planAgent.additionalTools</code> and Claude Code <code>permissions.allow</code> are auto-configured via <code>lean-ctx setup</code>. 12 curated read-only tools available in plan mode.</li>
+    <li><strong>MCP <code>readOnlyHint</code> annotations</strong> — All read-only tools declare <code>readOnlyHint: true</code>, enabling IDE plan agents to use them without user approval.</li>
+    <li><strong>Dynamic tool filtering</strong> — Plan-mode clients see only read-only tools; full-mode clients see all 62 tools.</li>
+    <li><strong>GitLab provider</strong> — Built-in data source for GitLab issues, merge requests, and pipelines. Activates with <code>GITLAB_TOKEN</code>.</li>
+    <li><strong>Provider consolidation pipeline (production-wired)</strong> — Provider data now flows into BM25, Graph, Knowledge, and Session Cache via background threads. External data is fully searchable, generates cross-source hints in <code>ctx_read</code>, and contributes knowledge facts.</li>
+    <li><strong>MCP Bridge stdio transport</strong> — MCP bridges now support stdio-based servers via <code>command</code> + <code>args</code> config, in addition to HTTP.</li>
+    <li><strong>External result attribution in <code>ctx_semantic_search</code></strong> — Results from providers show type labels: <code>[Issue]</code>, <code>[PR]</code>, <code>[Ticket]</code>, <code>[Schema]</code>, <code>[Wiki]</code>.</li>
+    <li><strong><code>lean-ctx doctor</code> enhancements</strong> — New MCP bridge diagnostics and plan mode status checks.</li>
+    <li><strong>50+ new integration tests</strong> — Wiring proofs, E2E pipeline, plan mode, power user worksession, lock contention hardening scenarios.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>PowerShell <code>@args</code> splatting</strong> — <code>_lc</code> now resolves native commands via <code>Get-Command</code> before invocation.</li>
+    <li><strong>Fish/Bash/Zsh <code>lean-ctx-off</code></strong> — Now exports <code>LEAN_CTX_ENABLED=0</code> instead of unsetting the variable.</li>
+    <li><strong>Provider init ignores project root</strong> — <code>ctx_provider</code> and <code>ctx_preload</code> now pass the real project root to provider discovery.</li>
+    <li><strong>Windows CI: dead code warning</strong> — Removed unused <code>is_running_in_powershell()</code> function.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong><code>providers.auto_index</code> default is now <code>true</code></strong> — New installations automatically index provider data into all stores.</li>
+  </ul>
+
+  <h3>Removed</h3>
+  <ul>
+    <li>Dead code cleanup: <code>providers_mcp_bridges()</code>, <code>hints_from_index()</code>, <code>is_running_in_powershell()</code>.</li>
+  </ul>
 
   <!-- 3.6.12 -->
   <h2 id="v3.6.12">3.6.12 <span class="text-xs text-muted">(2026-05-21)</span></h2>
