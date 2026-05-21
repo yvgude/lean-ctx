@@ -71,30 +71,47 @@ const sidebar = [
   </p>
 
   <!-- 3.6.12 -->
-  <h2 id="v3.6.12">3.6.12 <span class="text-xs text-muted">(2026-05-20)</span></h2>
-  <p class="text-sm text-muted">Context Cortex architecture, config-based data source providers, shell hook fix, Windows updater fix.</p>
+  <h2 id="v3.6.12">3.6.12 <span class="text-xs text-muted">(2026-05-21)</span></h2>
+  <p class="text-sm text-muted">Context Cortex, config-based data source providers, output sanitizer, stale proxy fix, 3 new docs pages.</p>
 
   <h3>Added</h3>
   <ul>
     <li><strong>Context Cortex</strong> — Multi-source intelligence layer connecting code, issues, and external APIs. BM25 indexing, cross-source edge detection, saliency ranking, and active inference prefetching. <a href={lp('/docs/cortex')}>Read more</a>.</li>
-    <li><strong>Config-based data source providers</strong> — Connect any REST API by dropping a <code>.toml</code> or <code>.json</code> file into <code>~/.config/lean-ctx/providers/</code>. Supports Bearer, API-Key, Basic, Header, and no-auth methods. JSON response extraction via dot-notation paths. <a href={lp('/docs/data-sources')}>Read more</a>.</li>
-    <li><strong>Built-in GitHub, Jira, PostgreSQL providers</strong> — Activate with environment variables. Your AI agent can query issues, tickets, and database schemas through <code>ctx_provider</code>.</li>
+    <li><strong>Config-based data source providers</strong> — Connect any REST API by dropping a <code>.toml</code> or <code>.json</code> file into <code>~/.config/lean-ctx/providers/</code>. Supports 6 auth methods, dot-notation response extraction. <a href={lp('/docs/data-sources')}>Read more</a>.</li>
+    <li><strong>Built-in GitHub, Jira, PostgreSQL providers</strong> — Activate with environment variables. Query issues, tickets, and database schemas through <code>ctx_provider</code>.</li>
     <li><strong><code>ctx_call</code> meta-tool</strong> — Invoke any of 62 registered tools by name through a single dispatch interface.</li>
-    <li><strong>Cross-source hints in <code>ctx_read</code></strong> — When reading a file, the Cortex appends related context from providers (e.g., relevant GitHub issues or Jira tickets).</li>
-    <li><strong>Provider Bandit (Thompson sampling)</strong> — Automatically deprioritizes noisy providers and promotes ones that consistently deliver relevant context.</li>
-    <li><strong>Active inference in <code>ctx_preload</code></strong> — Predicts what context you'll need next based on recent tool call patterns and prefetches in the background.</li>
+    <li><strong>Cross-source hints in <code>ctx_read</code></strong> — The Cortex appends related context from providers when reading files (e.g., relevant GitHub issues).</li>
+    <li><strong>Provider Bandit (Thompson sampling)</strong> — Automatically deprioritizes noisy providers and promotes relevant ones.</li>
+    <li><strong>Active inference in <code>ctx_preload</code></strong> — Predicts what context you'll need next based on recent tool call patterns.</li>
+    <li><strong>Output sanitizer</strong> — Last-pass filter that detects and removes degenerate CJK runs, symbol floods, and garbled artifacts from tool output.</li>
+    <li><strong><code>lean-ctx proxy cleanup</code></strong> — Removes stale <code>ANTHROPIC_BASE_URL</code> entries from Claude Code/Codex settings when the proxy is disabled.</li>
+    <li><strong><code>lean-ctx doctor</code> stale proxy check</strong> — Detects when <code>ANTHROPIC_BASE_URL</code> points to local proxy but proxy is not enabled.</li>
+    <li><strong>Self-healing I/O protection</strong> — <code>safe_canonicalize_bounded()</code> with timeouts on all platforms; 12 tools use <code>bounded_lock</code> helpers with adaptive timeouts.</li>
+    <li><strong>New docs pages</strong> — <a href={lp('/docs/context-control')}>Context Control & Overlays</a>, <a href={lp('/docs/budgets-and-slos')}>Budgets & SLOs</a>, <a href={lp('/docs/observatory')}>Observatory</a>.</li>
   </ul>
 
   <h3>Fixed</h3>
   <ul>
-    <li><strong><code>_lc: command not found</code> in non-interactive subshells (<a href="https://github.com/yvgude/lean-ctx/issues/255">#255</a>)</strong> — Passthrough stubs for <code>_lc</code> and <code>_lc_compress</code> defined in <code>.zshenv</code>/<code>.bashenv</code> before the exec guard. Also added to <code>env.sh</code> for container scenarios.</li>
-    <li><strong>Windows update hangs with locked binary (<a href="https://github.com/yvgude/lean-ctx/issues/254">#254</a>)</strong> — Pre-update process stop, blocking PID visibility, 60s timeout with progress indicators, and manual recovery instructions.</li>
+    <li><strong>Garbled Chinese characters in Cursor Thought panel (<a href="https://github.com/yvgude/lean-ctx/issues/257">#257</a>)</strong> — Unicode-heavy compression symbols confused Cursor's Thought summarizer. Three-layer fix: output sanitizer, Cursor-aware ASCII-safe symbols in prompts, ASCII-only TDD shortcuts.</li>
+    <li><strong>Stale ANTHROPIC_BASE_URL after proxy disable (<a href="https://github.com/yvgude/lean-ctx/issues/256">#256</a>)</strong> — Users who disabled the proxy were left with stale URL causing 401 errors. <code>doctor --fix</code> and <code>proxy cleanup</code> auto-detect and remove stale URLs.</li>
+    <li><strong><code>_lc: command not found</code> in non-interactive subshells (<a href="https://github.com/yvgude/lean-ctx/issues/255">#255</a>)</strong> — Passthrough stubs defined in <code>.zshenv</code>/<code>.bashenv</code> before the exec guard.</li>
+    <li><strong>Windows update hangs with locked binary (<a href="https://github.com/yvgude/lean-ctx/issues/254">#254</a>)</strong> — Pre-update process stop, blocking PID visibility, 60s timeout with progress indicators.</li>
+    <li><strong>Random freezes on WSL2/NFS/FUSE</strong> — Auto-detects slow environments; 3+ freezes in 60s triggers degraded mode.</li>
+    <li><strong>Proxy auto-starts without explicit enable</strong> — Now checks <code>proxy_enabled == Some(true)</code> before spawning.</li>
+    <li><strong>Multi-user port conflict</strong> — Deterministic per-user port via UID-based assignment.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>MCP tool count 61 → 62</strong> — Added <code>ctx_provider</code>.</li>
+    <li><strong>Compression symbols → ASCII-safe</strong> — TDD shortcuts use <code>-></code> instead of <code>→</code>, <code>ok</code> instead of <code>✓</code> for downstream model compatibility.</li>
+    <li><strong>Cursor-specific rules injection</strong> — <code>.cursorrules</code> and <code>.cursor/rules/</code> receive ASCII-safe compression prompts.</li>
   </ul>
 
   <h3>Security</h3>
   <ul>
-    <li><strong>MCP config credential protection</strong> — <code>.vscode/mcp.json</code> and <code>.github/mcp.json</code> added to <code>.gitignore</code> to prevent accidental credential commits.</li>
-    <li><strong>GitHub provider hardened</strong> — Parses <code>GITHUB_REPOSITORY=owner/repo</code> format correctly; improved remote fallback logic.</li>
+    <li><strong>MCP config credential protection</strong> — <code>.vscode/mcp.json</code> and <code>.github/mcp.json</code> added to <code>.gitignore</code>.</li>
+    <li><strong>GitHub provider hardened</strong> — Parses <code>GITHUB_REPOSITORY=owner/repo</code> correctly.</li>
   </ul>
 
   <!-- 3.6.11 -->
