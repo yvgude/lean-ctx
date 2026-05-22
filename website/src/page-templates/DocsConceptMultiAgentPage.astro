@@ -230,7 +230,7 @@ warn_threshold = 0.80      # emit warning at 80% usage`}</code></pre>
     handoff bundles are wrapped with agent identity and HMAC-SHA256 signatures for integrity.
   </p>
   <pre><code>{`# Send a context package to a remote daemon
-lean-ctx pack send myproject.lctxpkg --target=http://remote:3344 --secret=mykey
+lean-ctx pack send myproject.ctxpkg --target=http://remote:3344 --secret=mykey
 
 # Receive and verify on the other end
 lean-ctx pack receive envelope.json --secret=mykey --apply`}</code></pre>

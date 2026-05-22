@@ -1051,13 +1051,13 @@ lean-ctx pack create --name full-snapshot --version 2.0.0</code></pre>
   <pre><code>lean-ctx pack info my-pkg</code></pre>
 
   <h3 id="pack-export"><code>lean-ctx pack export &lt;name&gt; [-o &lt;file&gt;]</code></h3>
-  <p>Export a package to a portable <code>.lctxpkg</code> file. Default output is <code>&lt;name&gt;.lctxpkg</code>.</p>
+  <p>Export a package to a portable <code>.ctxpkg</code> file. Default output is <code>&lt;name&gt;.ctxpkg</code>.</p>
   <pre><code>lean-ctx pack export my-pkg
-lean-ctx pack export my-pkg -o shared/my-pkg.lctxpkg</code></pre>
+lean-ctx pack export my-pkg -o shared/my-pkg.ctxpkg</code></pre>
 
   <h3 id="pack-import"><code>lean-ctx pack import &lt;file&gt;</code></h3>
-  <p>Import a package from a <code>.lctxpkg</code> file. Verifies SHA-256 integrity before installing.</p>
-  <pre><code>lean-ctx pack import my-pkg.lctxpkg</code></pre>
+  <p>Import a package from a <code>.ctxpkg</code> file. Verifies SHA-256 integrity before installing.</p>
+  <pre><code>lean-ctx pack import my-pkg.ctxpkg</code></pre>
 
   <h3 id="pack-install"><code>lean-ctx pack install &lt;name&gt;</code></h3>
   <p>Merge a package's context into the current project — knowledge facts, graph nodes, and gotchas.</p>
