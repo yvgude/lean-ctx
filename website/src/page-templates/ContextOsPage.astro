@@ -484,13 +484,12 @@ const stats = [
           {t('contextOs.cftCliDesc')}
         </p>
       </div>
-      <a href={lp('/docs/tools')} class="card group animate-entrance stagger-9" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease;">
+      <a href="https://ctxpkg.org" target="_blank" rel="noopener" class="card group animate-entrance stagger-9" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease;">
         <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
           {t('contextOs.contextPkgTitle')}
+          <span class="text-accent font-mono font-normal" style="font-size: 0.6875rem; margin-left: 0.5rem;">.ctxpkg</span>
         </h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
-          {t('contextOs.contextPkgDesc')}
-        </p>
+        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;" set:html={t('contextOs.contextPkgDesc')} />
       </a>
     </div>
   </div>

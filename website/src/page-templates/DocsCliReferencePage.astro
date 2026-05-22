@@ -1024,6 +1024,13 @@ lean-ctx pet off               # alias - disable buddy</code></pre>
 
   <h2 id="context-packages">{t('docs.cliReference.packTitle')}</h2>
 
+  <div class="card" style="padding: 1rem 1.25rem; margin-bottom: 1.5rem; border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface)); display: flex; align-items: center; gap: 0.75rem;">
+    <svg class="shrink-0 text-accent" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="fluid-sm">
+      The <code>.ctxpkg</code> format is an open file format. See the specification at <a href="https://ctxpkg.org" target="_blank" rel="noopener" style="color: var(--color-accent); font-weight: 600;">ctxpkg.org</a>
+    </span>
+  </div>
+
   <p><Fragment set:html={t('docs.cliReference.packDesc')} /></p>
 
   <h3 id="pack-create"><code>lean-ctx pack create --name &lt;name&gt; [--layers &lt;layers&gt;]</code></h3>
