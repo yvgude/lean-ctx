@@ -39,17 +39,17 @@ const learnColumns = [
   {
     title: t('nav.getStarted.installSetup'),
     items: [
-      { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: t('nav.learn.startHereBadge') },
-      { label: t('nav.learn.quickReference'), href: lp('/docs/quick-reference'), description: t('nav.learn.quickReferenceDesc'), icon: ico.list },
-      { label: t('nav.getStarted.compatibility'), href: lp('/compatibility'), description: t('nav.getStarted.compatibilityDesc'), icon: ico.gear },
+      { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started/'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: t('nav.learn.startHereBadge') },
+      { label: t('nav.learn.quickReference'), href: lp('/docs/quick-reference/'), description: t('nav.learn.quickReferenceDesc'), icon: ico.list },
+      { label: t('nav.getStarted.compatibility'), href: lp('/compatibility/'), description: t('nav.getStarted.compatibilityDesc'), icon: ico.gear },
     ],
   },
   {
     title: t('nav.learn.understand'),
     items: [
-      { label: t('nav.learn.howItWorks'), href: lp('/how-it-works'), description: t('nav.learn.howItWorksDesc'), icon: ico.flow },
-      { label: t('nav.getStarted.compare'), href: lp('/compare'), description: t('nav.getStarted.compareDesc'), icon: ico.bar },
-      { label: t('nav.learn.benchmark'), href: lp('/context-os/benchmark'), description: t('nav.learn.benchmarkDesc'), icon: ico.bar },
+      { label: t('nav.learn.howItWorks'), href: lp('/how-it-works/'), description: t('nav.learn.howItWorksDesc'), icon: ico.flow },
+      { label: t('nav.getStarted.compare'), href: lp('/compare/'), description: t('nav.getStarted.compareDesc'), icon: ico.bar },
+      { label: t('nav.learn.benchmark'), href: lp('/context-os/benchmark/'), description: t('nav.learn.benchmarkDesc'), icon: ico.bar },
     ],
   },
 ];
@@ -58,19 +58,19 @@ const contextOsColumns = [
   {
     title: t('nav.arch.coreConcepts'),
     items: [
-      { label: t('nav.arch.overview'), href: lp('/context-os'), description: t('nav.arch.overviewDesc'), icon: ico.grid, badge: t('nav.learn.startHereBadge') },
-      { label: t('nav.docs.concepts.readModes'), href: lp('/docs/concepts/read-modes'), description: t('nav.docs.concepts.readModesDesc'), icon: ico.book },
-      { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: ico.term },
-      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: ico.dollar },
+      { label: t('nav.arch.overview'), href: lp('/context-os/'), description: t('nav.arch.overviewDesc'), icon: ico.grid, badge: t('nav.learn.startHereBadge') },
+      { label: t('nav.docs.concepts.readModes'), href: lp('/docs/concepts/read-modes/'), description: t('nav.docs.concepts.readModesDesc'), icon: ico.book },
+      { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns/'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: ico.term },
+      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings/'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: ico.dollar },
     ],
   },
   {
     title: t('nav.arch.advanced'),
     items: [
-      { label: t('nav.docs.concepts.caching'), href: lp('/docs/concepts/caching'), description: t('nav.docs.concepts.cachingDesc'), icon: ico.server },
-      { label: t('docs.sidebarMultiAgent'), href: lp('/docs/concepts/multi-agent'), description: t('nav.docs.concepts.multiAgentDesc'), icon: ico.share },
-      { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols'), description: t('nav.docs.concepts.protocolsDesc'), icon: ico.flow },
-      { label: t('nav.learn.contextEngineering'), href: lp('/what-is-context-engineering'), description: t('nav.learn.contextEngineeringDesc'), icon: ico.bulb },
+      { label: t('nav.docs.concepts.caching'), href: lp('/docs/concepts/caching/'), description: t('nav.docs.concepts.cachingDesc'), icon: ico.server },
+      { label: t('docs.sidebarMultiAgent'), href: lp('/docs/concepts/multi-agent/'), description: t('nav.docs.concepts.multiAgentDesc'), icon: ico.share },
+      { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols/'), description: t('nav.docs.concepts.protocolsDesc'), icon: ico.flow },
+      { label: t('nav.learn.contextEngineering'), href: lp('/what-is-context-engineering/'), description: t('nav.learn.contextEngineeringDesc'), icon: ico.bulb },
     ],
   },
 ];
@@ -79,23 +79,28 @@ const docsColumns = [
   {
     title: t('nav.docs.reference'),
     items: [
-      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
-      { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference'), description: t('nav.docs.apiReferenceDesc'), icon: ico.code },
-      { label: t('nav.docs.configuration'), href: lp('/docs/configuration'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference/'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
+      { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference/'), description: t('nav.docs.apiReferenceDesc'), icon: ico.code },
+      { label: t('nav.docs.configuration'), href: lp('/docs/configuration/'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
+      { label: t('nav.docs.security'), href: lp('/docs/security/'), description: t('nav.docs.securityDesc'), icon: ico.shield },
+      { label: t('nav.docs.changelog'), href: lp('/docs/changelog/'), description: t('nav.docs.changelogDesc'), icon: ico.clock },
     ],
   },
   {
-    title: t('nav.docs.more'),
+    title: 'Features',
     items: [
-      { label: t('nav.docs.dataSources'), href: lp('/docs/data-sources'), description: t('nav.docs.dataSourcesDesc'), icon: ico.flow, badge: 'NEW' },
-      { label: t('nav.docs.cortex'), href: lp('/docs/cortex'), description: t('nav.docs.cortexDesc'), icon: ico.bulb, badge: 'NEW' },
-      { label: 'Plan Mode', href: lp('/docs/plan-mode'), description: 'IDE plan mode compatibility and setup', icon: ico.doc, badge: 'NEW' },
-      { label: t('nav.docs.contextControl'), href: lp('/docs/context-control'), description: t('nav.docs.contextControlDesc'), icon: ico.sliders, badge: 'NEW' },
-      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos'), description: t('nav.docs.budgetsDesc'), icon: ico.dollar, badge: 'NEW' },
-      { label: t('nav.docs.observatory'), href: lp('/docs/observatory'), description: t('nav.docs.observatoryDesc'), icon: ico.monitor, badge: 'NEW' },
-      { label: 'Context Packages', href: lp('/docs/context-packages'), description: 'Layers, CLI, auto-load, integrity', icon: ico.doc },
-      { label: t('nav.docs.security'), href: lp('/docs/security'), description: t('nav.docs.securityDesc'), icon: ico.shield },
-      { label: t('nav.docs.changelog'), href: lp('/docs/changelog'), description: t('nav.docs.changelogDesc'), icon: ico.clock },
+      { label: t('nav.docs.dataSources'), href: lp('/docs/data-sources/'), description: t('nav.docs.dataSourcesDesc'), icon: ico.flow, badge: 'NEW' },
+      { label: t('nav.docs.cortex'), href: lp('/docs/cortex/'), description: t('nav.docs.cortexDesc'), icon: ico.bulb, badge: 'NEW' },
+      { label: 'Context Packages', href: lp('/docs/context-packages/'), description: 'Layers, CLI, auto-load, integrity', icon: ico.doc },
+      { label: t('nav.docs.contextControl'), href: lp('/docs/context-control/'), description: t('nav.docs.contextControlDesc'), icon: ico.sliders, badge: 'NEW' },
+      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos/'), description: t('nav.docs.budgetsDesc'), icon: ico.dollar, badge: 'NEW' },
+    ],
+  },
+  {
+    title: 'Configuration',
+    items: [
+      { label: 'Plan Mode', href: lp('/docs/plan-mode/'), description: 'IDE plan mode compatibility and setup', icon: ico.doc, badge: 'NEW' },
+      { label: t('nav.docs.observatory'), href: lp('/docs/observatory/'), description: t('nav.docs.observatoryDesc'), icon: ico.monitor, badge: 'NEW' },
     ],
   },
 ];
@@ -104,18 +109,18 @@ const toolsColumns = [
   {
     title: t('nav.tools.browse'),
     items: [
-      { label: t('nav.tools.allTools'), href: lp('/docs/tools'), description: t('nav.tools.allToolsDesc'), icon: ico.wrench, badge: t('nav.tools.toolsBadge') },
+      { label: t('nav.tools.allTools'), href: lp('/docs/tools/'), description: t('nav.tools.allToolsDesc'), icon: ico.wrench, badge: t('nav.tools.toolsBadge') },
     ],
   },
   {
     title: t('nav.tools.categories'),
     items: [
-      { label: t('nav.tools.coreTools'), href: lp('/docs/tools/core'), description: t('nav.tools.coreToolsDesc'), icon: ico.doc },
-      { label: t('nav.tools.intelligence'), href: lp('/docs/tools/intelligence'), description: t('nav.tools.intelligenceDesc'), icon: ico.bulb },
-      { label: t('nav.tools.memorySession'), href: lp('/docs/tools/memory'), description: t('nav.tools.memorySessionDesc'), icon: ico.grid },
-      { label: t('nav.tools.sessionTools'), href: lp('/docs/tools/session'), description: t('nav.tools.sessionToolsDesc'), icon: ico.server },
-      { label: t('nav.tools.workflowAnalysis'), href: lp('/docs/tools/workflow'), description: t('nav.tools.workflowAnalysisDesc'), icon: ico.graph },
-      { label: t('nav.tools.analysisTools'), href: lp('/docs/tools/analysis'), description: t('nav.tools.analysisToolsDesc'), icon: ico.bar },
+      { label: t('nav.tools.coreTools'), href: lp('/docs/tools/core/'), description: t('nav.tools.coreToolsDesc'), icon: ico.doc },
+      { label: t('nav.tools.intelligence'), href: lp('/docs/tools/intelligence/'), description: t('nav.tools.intelligenceDesc'), icon: ico.bulb },
+      { label: t('nav.tools.memorySession'), href: lp('/docs/tools/memory/'), description: t('nav.tools.memorySessionDesc'), icon: ico.grid },
+      { label: t('nav.tools.sessionTools'), href: lp('/docs/tools/session/'), description: t('nav.tools.sessionToolsDesc'), icon: ico.server },
+      { label: t('nav.tools.workflowAnalysis'), href: lp('/docs/tools/workflow/'), description: t('nav.tools.workflowAnalysisDesc'), icon: ico.graph },
+      { label: t('nav.tools.analysisTools'), href: lp('/docs/tools/analysis/'), description: t('nav.tools.analysisToolsDesc'), icon: ico.bar },
     ],
   },
 ];
