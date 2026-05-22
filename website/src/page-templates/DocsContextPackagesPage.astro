@@ -1,0 +1,201 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import TerminalChrome from '../components/TerminalChrome.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Context Packages',
+    items: [
+      { label: 'Overview', href: lp('/docs/context-packages') },
+      { label: 'Layers', href: lp('/docs/context-packages#layers') },
+      { label: 'CLI Commands', href: lp('/docs/context-packages#cli') },
+      { label: 'Auto-Load', href: lp('/docs/context-packages#auto-load') },
+      { label: 'Integrity', href: lp('/docs/context-packages#integrity') },
+      { label: 'Integration', href: lp('/docs/context-packages#integration') },
+    ],
+  },
+  {
+    title: t('docs.common.related'),
+    items: [
+      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference#context-packages') },
+      { label: 'Multi-Agent', href: lp('/docs/concepts/multi-agent#a2a-transport') },
+      { label: '.ctxpkg Specification', href: 'https://ctxpkg.org' },
+    ],
+  },
+];
+
+const layers = [
+  { key: 'knowledge', icon: '📖', color: 'accent' },
+  { key: 'graph', icon: '🔗', color: 'accent-2' },
+  { key: 'session', icon: '💬', color: 'accent-3' },
+  { key: 'patterns', icon: '⚙️', color: 'accent' },
+  { key: 'gotchas', icon: '⚠️', color: 'accent-2' },
+];
+
+const cliCommands = [
+  { cmd: t('contextPkg.cliCreate'), desc: t('contextPkg.cliCreateDesc') },
+  { cmd: t('contextPkg.cliList'), desc: t('contextPkg.cliListDesc') },
+  { cmd: t('contextPkg.cliInfo'), desc: t('contextPkg.cliInfoDesc') },
+  { cmd: t('contextPkg.cliExport'), desc: t('contextPkg.cliExportDesc') },
+  { cmd: t('contextPkg.cliImport'), desc: t('contextPkg.cliImportDesc') },
+  { cmd: t('contextPkg.cliInstall'), desc: t('contextPkg.cliInstallDesc') },
+  { cmd: t('contextPkg.cliRemove'), desc: t('contextPkg.cliRemoveDesc') },
+  { cmd: t('contextPkg.cliAutoLoad'), desc: t('contextPkg.cliAutoLoadDesc') },
+];
+---
+
+<DocsLayout
+  title={t('contextPkg.metaTitle')}
+  description={t('contextPkg.metaDesc')}
+  sidebar={sidebar}
+>
+
+  <div class="card" style="padding: 1rem 1.25rem; margin-bottom: 2rem; border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface)); display: flex; align-items: center; gap: 0.75rem;">
+    <svg class="shrink-0 text-accent" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span class="text-sm">
+      The <code>.ctxpkg</code> file format is an open standard. Read the specification at <a href="https://ctxpkg.org" target="_blank" rel="noopener" style="color: var(--color-accent); font-weight: 600;">ctxpkg.org</a>
+    </span>
+  </div>
+
+  <p>{t('contextPkg.heroDesc')}</p>
+
+  <!-- ═══ Layers ═══ -->
+  <h2 id="layers">{t('contextPkg.layersTitle')}</h2>
+  <p>{t('contextPkg.layersDesc')}</p>
+
+  <div class="not-prose grid gap-3 sm:grid-cols-2 lg:grid-cols-3 my-8">
+    {layers.map(({ key, color }) => (
+      <div class="card" style={`padding: 1.25rem; border-color: var(--color-${color === 'accent' ? 'border' : 'border'});`}>
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 0.9375rem; font-weight: 600; color: var(--color-text-bright);">
+          {t(`contextPkg.layer${key.charAt(0).toUpperCase() + key.slice(1)}`)}
+        </h3>
+        <p style="margin: 0; font-size: 0.8125rem; color: var(--color-muted); line-height: 1.65;">
+          {t(`contextPkg.layer${key.charAt(0).toUpperCase() + key.slice(1)}Desc`)}
+        </p>
+      </div>
+    ))}
+  </div>
+
+  <!-- ═══ CLI ═══ -->
+  <h2 id="cli">{t('contextPkg.cliTitle')}</h2>
+  <p>{t('contextPkg.cliDesc')}</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Command</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {cliCommands.map(({ cmd, desc }) => (
+        <tr>
+          <td><code>{cmd}</code></td>
+          <td>{desc}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <h3>Create and export a package</h3>
+
+  <TerminalChrome title="lean-ctx pack" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+    <div><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> pack create --name security-review --layers knowledge,gotchas</div>
+    <div><span class="text-muted">→</span> <span class="text-text">Created package: security-review v1.0.0</span></div>
+    <div><span class="text-muted">→</span> <span class="text-text">Layers: knowledge (142 facts), gotchas (18 entries)</span></div>
+    <div><span class="text-muted">→</span> <span class="text-accent">SHA-256: a1b2c3d4...</span></div>
+    <div class="term-divider"></div>
+    <div><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> pack export security-review -o security-review.ctxpkg</div>
+    <div><span class="text-muted">→</span> <span class="text-text">Exported to security-review.ctxpkg (48 KB)</span></div>
+  </TerminalChrome>
+
+  <h3>Import and install from a file</h3>
+
+  <TerminalChrome title="lean-ctx pack" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+    <div><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> pack import security-review.ctxpkg</div>
+    <div><span class="text-muted">→</span> <span class="text-text">Verifying SHA-256 integrity...</span> <span class="text-accent">OK</span></div>
+    <div><span class="text-muted">→</span> <span class="text-text">Imported: security-review v1.0.0</span></div>
+    <div class="term-divider"></div>
+    <div><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> pack install security-review</div>
+    <div><span class="text-muted">→</span> <span class="text-text">Merged 142 knowledge facts, 18 gotchas</span></div>
+    <div><span class="text-muted">→</span> <span class="text-accent">Context updated</span></div>
+  </TerminalChrome>
+
+  <!-- ═══ Auto-Load ═══ -->
+  <h2 id="auto-load">{t('contextPkg.autoLoadTitle')}</h2>
+  <p>{t('contextPkg.autoLoadDesc')}</p>
+
+  <pre><code>{`lean-ctx pack auto-load security-review on
+
+# On next session start, ctx_overview will merge
+# knowledge, graph, and gotchas from this package
+# into the active project context automatically.`}</code></pre>
+
+  <!-- ═══ Integrity ═══ -->
+  <h2 id="integrity">{t('contextPkg.integrityTitle')}</h2>
+  <p>{t('contextPkg.integrityDesc')}</p>
+
+  <TerminalChrome title="lean-ctx pack info" bodyStyle="font-size: 0.8125rem; line-height: 1.75;">
+    <div><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> pack info security-review</div>
+    <div class="term-divider"></div>
+    <div><span class="text-muted">name</span>       <span class="text-text-bright">security-review</span></div>
+    <div><span class="text-muted">version</span>    <span class="text-text-bright">1.0.0</span></div>
+    <div><span class="text-muted">layers</span>     <span class="text-text">knowledge, gotchas</span></div>
+    <div><span class="text-muted">facts</span>      <span class="text-accent">142</span></div>
+    <div><span class="text-muted">gotchas</span>    <span class="text-accent">18</span></div>
+    <div><span class="text-muted">sha256</span>     <span class="text-text">a1b2c3d4e5f6...</span></div>
+    <div><span class="text-muted">auto-load</span>  <span class="text-accent">on</span></div>
+  </TerminalChrome>
+
+  <!-- ═══ Integration ═══ -->
+  <h2 id="integration">{t('contextPkg.integrationTitle')}</h2>
+  <p>{t('contextPkg.integrationDesc')}</p>
+
+  <div class="not-prose grid gap-3 sm:grid-cols-2 my-8">
+    <div class="card" style="padding: 1.25rem;">
+      <h3 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 600; color: var(--color-text-bright);">Knowledge merge</h3>
+      <p style="margin: 0; font-size: 0.8125rem; color: var(--color-muted); line-height: 1.65;">
+        Imported facts merge with existing knowledge. Confidence scores are capped to prevent overriding local context.
+      </p>
+    </div>
+    <div class="card" style="padding: 1.25rem;">
+      <h3 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 600; color: var(--color-text-bright);">Graph merge</h3>
+      <p style="margin: 0; font-size: 0.8125rem; color: var(--color-muted); line-height: 1.65;">
+        Nodes and edges are added to the property graph. Existing relationships are preserved.
+      </p>
+    </div>
+    <div class="card" style="padding: 1.25rem;">
+      <h3 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 600; color: var(--color-text-bright);">Gotcha deduplication</h3>
+      <p style="margin: 0; font-size: 0.8125rem; color: var(--color-muted); line-height: 1.65;">
+        Gotchas are deduplicated by ID. If the same pitfall exists locally and in the package, the local version is kept.
+      </p>
+    </div>
+    <div class="card" style="padding: 1.25rem;">
+      <h3 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 600; color: var(--color-text-bright);">Session enrichment</h3>
+      <p style="margin: 0; font-size: 0.8125rem; color: var(--color-muted); line-height: 1.65;">
+        Session findings from the package are appended to the session history, providing historical context from other projects.
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══ CTA ═══ -->
+  <hr />
+
+  <h2>{t('contextPkg.ctaTitle')}</h2>
+  <p>{t('contextPkg.ctaDesc')}</p>
+
+  <pre><code>{`# Install LeanCTX
+curl -fsSL https://leanctx.com/install.sh | sh
+
+# Create your first package
+lean-ctx pack create --name my-project --layers knowledge,gotchas
+
+# Export it
+lean-ctx pack export my-project -o my-project.ctxpkg`}</code></pre>
+
+</DocsLayout>
