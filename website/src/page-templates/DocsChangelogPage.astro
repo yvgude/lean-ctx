@@ -12,7 +12,9 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.14 (Current)', href: lp('/docs/changelog') + '#v3.6.14' },
+      { label: '3.6.16 (Current)', href: lp('/docs/changelog') + '#v3.6.16' },
+      { label: '3.6.15', href: lp('/docs/changelog') + '#v3.6.15' },
+      { label: '3.6.14', href: lp('/docs/changelog') + '#v3.6.14' },
       { label: '3.6.13', href: lp('/docs/changelog') + '#v3.6.13' },
       { label: '3.6.12', href: lp('/docs/changelog') + '#v3.6.12' },
       { label: '3.6.11', href: lp('/docs/changelog') + '#v3.6.11' },
@@ -71,6 +73,50 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.16 -->
+  <h2 id="v3.6.16">3.6.16 <span class="text-xs text-muted">(2026-05-22)</span></h2>
+  <p class="text-sm text-muted">OpenClaw agent support, .ctxpkg v2 graph-native architecture, ctx_session em-dash panic fix (#272).</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>OpenClaw agent support</strong> — <code>lean-ctx init --agent openclaw</code> writes MCP config to <code>~/.openclaw/openclaw.json</code> under <code>mcp.servers.lean-ctx</code>, installs rules and SKILL.md. <code>lean-ctx doctor</code> detects OpenClaw. <code>lean-ctx setup</code> auto-configures when <code>~/.openclaw/</code> exists.</li>
+    <li><strong>.ctxpkg v2 graph-native architecture</strong> — New <code>ContextGraph</code> data model with <code>ContextNode</code>/<code>ContextEdge</code>, activation weights, and temporal metadata. Graph-merge composition with conflict detection and contradiction resolution. Ed25519 package signing. Manifest schema v2 with scoped names (<code>@scope/name</code>) and conformance levels (Basic, Graph, Cognitive).</li>
+    <li><strong>LeanCTX Custom GPT docs</strong> — Knowledge base and system prompt prepared for ChatGPT Custom GPT (gitignored).</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong><code>ctx_session</code> finding panic on em-dash (#272)</strong> — <code>parse_finding_value</code> crashed on multi-byte separators like <code>" — "</code> (U+2014, 5 bytes) because of hardcoded 3-byte assumption. Now uses dynamic separator length. 6 regression tests added.</li>
+    <li><strong>Panic handler <code>isError: false</code></strong> — MCP server <code>catch_unwind</code> returned panics as successful tool results. Now correctly returns <code>CallToolResult::error</code> with <code>isError: true</code>.</li>
+  </ul>
+
+  <!-- 3.6.15 -->
+  <h2 id="v3.6.15">3.6.15 <span class="text-xs text-muted">(2026-05-22)</span></h2>
+  <p class="text-sm text-muted">MCP crash vector elimination, dashboard cleanup, configurable proxy timeout.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>MCP crash: "Cannot read properties of undefined"</strong> — 4 crash vectors fixed (#271): 5 <code>Mutex::lock().unwrap()</code> calls replaced with graceful fallbacks, <code>memory_guard</code> hard exit replaced with 3-attempt eviction, nested <code>block_in_place</code> eliminated, CSPRNG <code>expect()</code> replaced with time-based fallback.</li>
+    <li><strong><code>parse().unwrap()</code> for SocketAddr</strong> in dashboard routes replaced with direct construction.</li>
+    <li><strong><code>tempfile().expect()</code> in <code>ctx_execute</code></strong> replaced with graceful error return.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Dashboard modular route architecture</strong> — Monolithic <code>context.rs</code> and <code>graph.rs</code> split into focused sub-modules.</li>
+    <li><strong>Dashboard API consolidation</strong> — 3 new aggregated endpoints reduce parallel fetches from 18 to 11.</li>
+    <li><strong>Shared frontend utilities</strong> — Extracted gauges, formatters, API layer with TTL cache.</li>
+    <li>Removed legacy <code>dashboard.html</code> (3057 lines) and <code>CockpitContextLayer</code>.</li>
+  </ul>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Context Commander</strong> — New dashboard component with context pressure visualization and risk analysis.</li>
+    <li><strong>Configurable proxy timeout</strong> — <code>LEAN_CTX_PROXY_TIMEOUT_MS</code> env var / <code>proxy_timeout_ms</code> in config.toml (default: 200ms). (#270)</li>
+    <li><strong>Dynamic tool categories</strong> — <code>LCTX_DEFAULT_CATEGORIES</code> env var to control active categories.</li>
+    <li><strong>Global degradation disable</strong> — <code>LCTX_NO_DEGRADE=1</code> env var to disable all read mode degradation.</li>
+  </ul>
 
   <!-- 3.6.14 -->
   <h2 id="v3.6.14">3.6.14 <span class="text-xs text-muted">(2026-05-22)</span></h2>
