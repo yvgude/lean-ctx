@@ -53,7 +53,6 @@ export default defineConfig({
     '/docs/cloud/': '/docs/getting-started/',
     '/docs/http-mcp/': '/docs/api-reference/',
     '/docs/context-field-theory/': '/docs/concepts/read-modes/',
-    '/docs/context-packages/': '/docs/tools/',
     '/docs/contracts/': '/docs/concepts/protocols/',
     '/docs/graph/': '/docs/tools/',
     '/docs/ide-setup/': '/docs/getting-started/',
