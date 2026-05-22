@@ -226,7 +226,7 @@ warn_threshold = 0.80      # emit warning at 80% usage`}</code></pre>
 
   <h2 id="a2a-transport">A2A Transport</h2>
   <p>
-    <strong>TransportEnvelopeV1</strong> enables cross-machine agent handoffs. Context packages and
+    <strong>TransportEnvelopeV1</strong> enables cross-machine agent handoffs. Context packages (using the open <a href="https://ctxpkg.org" target="_blank" rel="noopener" class="text-accent hover:opacity-80">.ctxpkg</a> format) and
     handoff bundles are wrapped with agent identity and HMAC-SHA256 signatures for integrity.
   </p>
   <pre><code>{`# Send a context package to a remote daemon
