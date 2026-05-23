@@ -18,6 +18,10 @@ End-user documentation lives at **https://leanctx.com/docs/getting-started**.
 - Cookbook (real examples + `@leanctx/sdk`): [`cookbook/`](../cookbook/)
 - Editor integrations: [`packages/`](../packages/)
 
+## Guides
+
+- Monorepo usage: [`guides/monorepo.md`](guides/monorepo.md)
+
 ## Design notes / tickets
 
 - Cache correctness + heatmap plan: [`premium-cache-heatmap.md`](premium-cache-heatmap.md)

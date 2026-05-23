@@ -297,6 +297,7 @@ lean-ctx benchmark report .
 - Comparison (vs RTK, Context+, MemGPT): https://leanctx.com/compare/
 - FAQ: [discord-faq.md](discord-faq.md)
 - Feature catalog (SSOT snapshot): [LEANCTX_FEATURE_CATALOG.md](LEANCTX_FEATURE_CATALOG.md)
+- Monorepo guide: [docs/guides/monorepo.md](docs/guides/monorepo.md)
 - Architecture: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Vision: [VISION.md](VISION.md)
 
