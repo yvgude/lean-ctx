@@ -8,26 +8,35 @@ pub fn parse_jsonc(input: &str) -> Result<Value, serde_json::Error> {
 }
 
 fn strip_json_comments(input: &str) -> String {
+    // Scan as bytes for ASCII delimiters (", /, *, \, \n) — these never appear
+    // inside multi-byte UTF-8 sequences, so byte-position math stays on char
+    // boundaries. Emit content via `push_str(&input[..])` slicing so multi-byte
+    // characters (e.g. "ó") roundtrip verbatim instead of being decomposed into
+    // Latin-1 codepoints and re-encoded (which would double their byte length
+    // on every pass).
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut out = String::with_capacity(len);
     let mut i = 0;
+    let mut copy_from = 0;
 
     while i < len {
         let b = bytes[i];
 
         if b == b'"' {
-            out.push('"');
+            // Walk past the string literal, including its contents. The bytes
+            // remain part of the current copy segment and will be flushed when
+            // we hit a comment or the end of input.
             i += 1;
             while i < len {
                 let c = bytes[i];
-                out.push(c as char);
-                i += 1;
-                if c == b'\\' && i < len {
-                    out.push(bytes[i] as char);
-                    i += 1;
+                if c == b'\\' && i + 1 < len {
+                    i += 2;
                 } else if c == b'"' {
+                    i += 1;
                     break;
+                } else {
+                    i += 1;
                 }
             }
             continue;
@@ -35,13 +44,16 @@ fn strip_json_comments(input: &str) -> String {
 
         if b == b'/' && i + 1 < len {
             if bytes[i + 1] == b'/' {
+                out.push_str(&input[copy_from..i]);
                 i += 2;
                 while i < len && bytes[i] != b'\n' {
                     i += 1;
                 }
+                copy_from = i;
                 continue;
             }
             if bytes[i + 1] == b'*' {
+                out.push_str(&input[copy_from..i]);
                 i += 2;
                 while i + 1 < len {
                     if bytes[i] == b'*' && bytes[i + 1] == b'/' {
@@ -50,14 +62,15 @@ fn strip_json_comments(input: &str) -> String {
                     }
                     i += 1;
                 }
+                copy_from = i;
                 continue;
             }
         }
 
-        out.push(b as char);
         i += 1;
     }
 
+    out.push_str(&input[copy_from..len]);
     out
 }
 
@@ -131,6 +144,34 @@ mod tests {
         let v = parse_jsonc(input).unwrap();
         assert_eq!(v["key"], "value");
         assert_eq!(v["num"], 42);
+    }
+
+    #[test]
+    fn preserves_non_ascii_strings_byte_for_byte() {
+        // Regression: strip_json_comments used to do `out.push(byte as char)`,
+        // which decomposed multi-byte UTF-8 sequences into Latin-1 codepoints
+        // and silently doubled their byte length on every roundtrip. Repeated
+        // install/repair cycles drove ~/.claude/settings.json past 2 GiB and
+        // segfaulted Claude Code.
+        let input = r#"{"msg": "Verificando optimización para iPhone/Safari..."}"#;
+        let original_len = input.len();
+        let mut current = input.to_string();
+        for _ in 0..5 {
+            let parsed = parse_jsonc(&current).unwrap();
+            current = serde_json::to_string(&parsed).unwrap();
+        }
+        // After 5 roundtrips the size must be stable, not exponentially growing.
+        assert!(
+            current.len() <= original_len + 4,
+            "roundtrip should be size-stable, got {} bytes (started at {})",
+            current.len(),
+            original_len
+        );
+        let v: Value = serde_json::from_str(&current).unwrap();
+        assert_eq!(
+            v["msg"], "Verificando optimización para iPhone/Safari...",
+            "non-ASCII string content must roundtrip unchanged"
+        );
     }
 
     #[test]
