@@ -67,7 +67,10 @@ const sidebar = [
           <button data-v="codex" class="pg-btn">Codex</button>
           <button data-v="crush" class="pg-btn">Crush</button>
           <button data-v="gemini" class="pg-btn">Gemini</button>
-          <button data-v="antigravity" class="pg-btn">Antigravity</button>
+          <button data-v="antigravity" class="pg-btn">Antigravity IDE</button>
+          <button data-v="antigravity-cli" class="pg-btn">Antigravity CLI</button>
+          <button data-v="openclaw" class="pg-btn">OpenClaw</button>
+          <button data-v="augment" class="pg-btn">Augment</button>
           <button data-v="hermes" class="pg-btn">Hermes</button>
           <button data-v="zed" class="pg-btn">Zed</button>
           <button data-v="cline" class="pg-btn">Cline</button>
@@ -227,7 +230,7 @@ const sidebar = [
         restart: 'Restart Gemini CLI.'
       },
       antigravity: {
-        name: 'Antigravity',
+        name: 'Antigravity IDE',
         note: 'lean-ctx setup auto-detects Antigravity IDE.',
         manual: [
           'If auto-setup fails, create ~/.gemini/antigravity/mcp_config.json:',
@@ -240,6 +243,45 @@ const sidebar = [
         ],
         agentKey: 'antigravity',
         restart: 'Restart Antigravity IDE.'
+      },
+      'antigravity-cli': {
+        name: 'Antigravity CLI',
+        note: 'Antigravity CLI 2.0 uses a separate config from the IDE.',
+        manual: [
+          'Create ~/.gemini/antigravity-cli/mcp_config.json:',
+          '{',
+          '  "mcpServers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }',
+          '}',
+          '(Get path from: which lean-ctx)'
+        ],
+        agentKey: 'antigravity-cli',
+        restart: 'Restart Antigravity CLI.'
+      },
+      openclaw: {
+        name: 'OpenClaw',
+        note: 'OpenClaw uses ~/.openclaw/openclaw.json for MCP config.',
+        manual: [
+          'Run lean-ctx init --agent openclaw to auto-configure.',
+          'Manual: create ~/.openclaw/openclaw.json:',
+          '{',
+          '  "mcp": { "servers": {',
+          '    "lean-ctx": { "command": "lean-ctx" }',
+          '  }}',
+          '}'
+        ],
+        agentKey: 'openclaw',
+        restart: 'Restart OpenClaw.'
+      },
+      augment: {
+        name: 'Augment Code',
+        note: 'Augment supports MCP via its settings.',
+        manual: [
+          'Run lean-ctx init --agent augment to auto-configure.'
+        ],
+        agentKey: 'augment',
+        restart: 'Restart Augment.'
       },
       hermes: {
         name: 'Hermes Agent',
@@ -977,10 +1019,10 @@ notepad "$env:USERPROFILE\.gemini\settings.json"</code></pre>
   </ol>
   <p set:html={t('docs.gettingStarted.editorGeminiIssue')} />
 
-  <h3 id="editor-antigravity">{t('docs.gettingStarted.editorAntigravityTitle')}</h3>
-  <p set:html={t('docs.gettingStarted.editorAntigravityDesc')} />
+  <h3 id="editor-antigravity">Antigravity IDE</h3>
+  <p>Antigravity IDE uses <code>~/.gemini/antigravity/mcp_config.json</code>. Auto-detected by <code>lean-ctx setup</code>.</p>
   <ol>
-    <li>{t('docs.gettingStarted.editorAntigravityStep1')}
+    <li>Create the config directory and file:
       <pre><code># macOS / Linux:
 mkdir -p ~/.gemini/antigravity
 nano ~/.gemini/antigravity/mcp_config.json
@@ -989,7 +1031,7 @@ nano ~/.gemini/antigravity/mcp_config.json
 mkdir -Force "$env:USERPROFILE\.gemini\antigravity"
 notepad "$env:USERPROFILE\.gemini\antigravity\mcp_config.json"</code></pre>
     </li>
-    <li>{t('docs.gettingStarted.editorAntigravityStep2')}
+    <li>Add the MCP server entry:
       <pre><code>{`{
   "mcpServers": {
     "lean-ctx": {
@@ -997,12 +1039,36 @@ notepad "$env:USERPROFILE\.gemini\antigravity\mcp_config.json"</code></pre>
     }
   }
 }`}</code></pre>
-      <p set:html={t('docs.gettingStarted.editorAntigravityFullPath')} />
+      <p>If <code>lean-ctx</code> is not in your PATH, use the full path (run <code>which lean-ctx</code> to find it).</p>
     </li>
-    <li set:html={t('docs.gettingStarted.editorAntigravityStep3')} />
-    <li>{t('docs.gettingStarted.editorAntigravityStep4')}</li>
+    <li>Run <code>lean-ctx init --agent antigravity</code> to auto-configure.</li>
+    <li>Restart Antigravity IDE.</li>
   </ol>
-  <p>{t('docs.gettingStarted.editorAntigravityManage')}</p>
+
+  <h3 id="editor-antigravity-cli">Antigravity CLI 2.0</h3>
+  <p>Antigravity CLI uses a separate config at <code>~/.gemini/antigravity-cli/mcp_config.json</code>.</p>
+  <ol>
+    <li>Create the config directory and file:
+      <pre><code># macOS / Linux:
+mkdir -p ~/.gemini/antigravity-cli
+nano ~/.gemini/antigravity-cli/mcp_config.json
+
+# Windows (PowerShell):
+mkdir -Force "$env:USERPROFILE\.gemini\antigravity-cli"
+notepad "$env:USERPROFILE\.gemini\antigravity-cli\mcp_config.json"</code></pre>
+    </li>
+    <li>Add the MCP server entry:
+      <pre><code>{`{
+  "mcpServers": {
+    "lean-ctx": {
+      "command": "lean-ctx"
+    }
+  }
+}`}</code></pre>
+    </li>
+    <li>Run <code>lean-ctx init --agent antigravity-cli</code> to auto-configure.</li>
+    <li>Restart Antigravity CLI.</li>
+  </ol>
 
   <h3 id="editor-opencode">{t('docs.gettingStarted.editorOpenCodeTitle')}</h3>
   <ol>

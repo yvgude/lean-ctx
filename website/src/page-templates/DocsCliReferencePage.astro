@@ -257,7 +257,10 @@ lean-ctx init powershell | Invoke-Expression  # PowerShell: add to $PROFILE</cod
       <tr><td><code>claude</code></td><td>Claude Code / Claude Desktop</td></tr>
       <tr><td><code>codex</code></td><td>OpenAI Codex CLI</td></tr>
       <tr><td><code>gemini</code></td><td>Google Gemini CLI</td></tr>
-      <tr><td><code>antigravity</code></td><td>Alias for <code>gemini</code></td></tr>
+      <tr><td><code>antigravity</code></td><td>Antigravity IDE (<code>~/.gemini/antigravity/</code>)</td></tr>
+      <tr><td><code>antigravity-cli</code></td><td>Antigravity CLI 2.0 (<code>~/.gemini/antigravity-cli/</code>)</td></tr>
+      <tr><td><code>openclaw</code></td><td>OpenClaw (<code>~/.openclaw/openclaw.json</code>)</td></tr>
+      <tr><td><code>augment</code></td><td>Augment Code</td></tr>
       <tr><td><code>windsurf</code></td><td>Windsurf IDE</td></tr>
       <tr><td><code>copilot</code></td><td>GitHub Copilot</td></tr>
       <tr><td><code>cline</code></td><td>Cline (VS Code extension)</td></tr>
@@ -279,7 +282,10 @@ lean-ctx init powershell | Invoke-Expression  # PowerShell: add to $PROFILE</cod
 lean-ctx init --agent claude
 lean-ctx init --agent codex
 lean-ctx init --agent gemini
-lean-ctx init --agent antigravity  # alias for gemini
+lean-ctx init --agent antigravity      # Antigravity IDE
+lean-ctx init --agent antigravity-cli  # Antigravity CLI 2.0
+lean-ctx init --agent openclaw
+lean-ctx init --agent augment
 lean-ctx init --agent windsurf
 lean-ctx init --agent copilot
 lean-ctx init --agent cline
@@ -351,8 +357,12 @@ lean-ctx config validate && echo "OK"      # CI gate - fails on invalid config</
     <li>{t('docs.cliReference.doctorCheck9')}</li>
     <li>{t('docs.cliReference.doctorCheck10')}</li>
     <li>{t('docs.cliReference.doctorCheck11')}</li>
+    <li>Linux: <code>systemctl --user is-active</code> daemon state and <code>loginctl enable-linger</code> warning</li>
+    <li>Crash-loop log: restart count and log file path</li>
   </ul>
-  <pre><code>lean-ctx doctor</code></pre>
+  <pre><code>lean-ctx doctor
+lean-ctx doctor integrations   # premium integration checks
+lean-ctx doctor --fix --json   # repair + machine-readable report</code></pre>
 
   <h3 id="update"><code>lean-ctx update [--check]</code></h3>
   <p>{t('docs.cliReference.updateDesc')}</p>
@@ -385,9 +395,12 @@ lean-ctx register user@example.com --password mypassword</code></pre>
   </p>
   <pre><code>lean-ctx forgot-password user@example.com</code></pre>
 
-  <h3 id="uninstall"><code>lean-ctx uninstall</code></h3>
+  <h3 id="uninstall"><code>lean-ctx uninstall [--keep-config]</code></h3>
   <p><Fragment set:html={t('docs.cliReference.uninstallDesc')} /></p>
-  <pre><code>lean-ctx uninstall</code></pre>
+  <p>Removes shell hooks, MCP configurations from all detected editors, <code>.bak</code> files, <code>~/.config/lean-ctx</code>, project-local <code>.lean-ctx/</code> and <code>.lean-ctx-id</code>, Claude CLI MCP entries, and daemon/proxy services.</p>
+  <p>Use <code>--keep-config</code> to preserve MCP configs and rules for reinstall.</p>
+  <pre><code>lean-ctx uninstall
+lean-ctx uninstall --keep-config</code></pre>
 
   <h3 id="harden"><code>lean-ctx harden [--undo]</code></h3>
   <p>{t('docs.cliReference.hardenDesc')}</p>
@@ -674,6 +687,26 @@ lean-ctx slow-log clear</code></pre>
   <h3 id="graph-build"><code>lean-ctx graph build</code></h3>
   <p>{t('docs.cliReference.graphBuildDesc')}</p>
   <pre><code>lean-ctx graph build</code></pre>
+
+  <h3 id="graph-status"><code>lean-ctx graph status</code></h3>
+  <p>Show graph index statistics: file count, symbol count, edge count, language breakdown, and storage path.</p>
+  <pre><code>lean-ctx graph status</code></pre>
+
+  <h3 id="graph-related"><code>lean-ctx graph related &lt;file&gt;</code></h3>
+  <p>List files related to a given file based on import/dependency edges in the project graph.</p>
+  <pre><code>lean-ctx graph related src/server/mod.rs</code></pre>
+
+  <h3 id="graph-impact"><code>lean-ctx graph impact &lt;file&gt;</code></h3>
+  <p>Show the blast radius — all files that depend on the given file and would be affected by changes to it.</p>
+  <pre><code>lean-ctx graph impact src/core/cache.rs</code></pre>
+
+  <h3 id="graph-symbol"><code>lean-ctx graph symbol &lt;spec&gt;</code></h3>
+  <p>Inspect a specific symbol definition. The spec format is <code>file.rs::function_name</code>.</p>
+  <pre><code>lean-ctx graph symbol src/core/cache.rs::SessionCache</code></pre>
+
+  <h3 id="graph-context"><code>lean-ctx graph context &lt;query&gt;</code></h3>
+  <p>Query the property graph for a concept or keyword. Searches nodes by name and returns matching definitions.</p>
+  <pre><code>lean-ctx graph context "authentication"</code></pre>
 
   <hr />
 
