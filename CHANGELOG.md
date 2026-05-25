@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`lean-ctx config show`** — New CLI command showing all effective configuration values with their source (env/config/default/derived). Displays simplified high-level settings and proportionally derived downstream limits.
+- **Simplified config scaling** — `max_disk_mb` now proportionally scales memory limits (max_facts, max_patterns, max_episodes, max_procedures) when set. Factor = `max_disk_mb / 500`, clamped 0.5x–10x.
+- **Doctor capacity warnings expanded** — `lean-ctx doctor` now checks archive disk usage and graph index file count against configured limits (80% WARN, 95% CRIT).
+- **kubectl compression pattern** — Full compression for `kubectl get` (status aggregation for >5 resources), `describe` (event extraction), `apply`/`delete` (action summaries), `logs` (timestamp dedup). Previously blocked by verbatim policy.
 - **`ctx_ledger` MCP Tool** — New tool for managing context pressure: `status` (view current pressure), `reset` (clear all entries), `evict` (remove specific paths + add exclusion overlays). Evicted paths cannot re-accumulate pressure thanks to integrated overlay exclusions.
 - **`lean-ctx ledger` CLI subcommand** — CLI equivalent with `status`, `reset`, `evict`, and `prune` actions. Works both via daemon delegation and direct ledger manipulation.
 - **Active Context Gate** — Pressure-based auto-downgrade: when context utilization exceeds 75%, reads are automatically downgraded (full→map, map→signatures). Reinjection plan retroactively marks existing "full" entries as "map" under pressure. Φ scores now computed with real task context from SessionState.
@@ -15,6 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **False accusation of native Read/Grep (#292)** — Bypass hint now only counts actual Read/Grep tool events (not Edit/Write/Shell), filters by session ID (no subagent cross-talk), and ignores IDE-internal `beforeReadFile` events without a tool_name.
 - **Unable to clear context pressure (#244)** — Complete fix for pressure management: cross-process file locking (`flock`) on ledger, eliminated double-booking of tokens (dispatch no longer records for `ctx_read`), actionable eviction hints (`ctx_ledger(action="evict", targets="...")`), session reset now clears the persistent ledger.
 - **Actionable eviction hints** — Context gate and elicitation hints now emit directly usable `ctx_ledger(action="evict", targets="...")` commands instead of vague suggestions.
 - **Session reset completeness** — `ctx_session(action="reset")` now also clears the persistent `ContextLedger`, ensuring a true fresh start.

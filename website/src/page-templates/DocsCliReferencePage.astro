@@ -343,6 +343,15 @@ lean-ctx config schema > config-schema.json  # save for editor integration</code
   <pre><code>lean-ctx config validate                   # validate ~/.lean-ctx/config.toml
 lean-ctx config validate && echo "OK"      # CI gate - fails on invalid config</code></pre>
 
+  <h3 id="config-show"><code>lean-ctx config show</code> <span class="text-xs font-normal text-muted ml-2">v3.6.18</span></h3>
+  <p>
+    Shows all effective configuration values with their source (env, config, or default).
+    Displays simplified high-level settings and their derived downstream limits in a structured view.
+    Useful for understanding how <code>max_disk_mb</code> scales memory limits proportionally.
+  </p>
+  <pre><code>lean-ctx config show                       # show effective values with sources
+lean-ctx config effective                  # alias for 'show'</code></pre>
+
   <h3 id="doctor"><code>lean-ctx doctor</code></h3>
   <p>{t('docs.cliReference.doctorDesc')}</p>
   <ul>

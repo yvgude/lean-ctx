@@ -419,6 +419,58 @@ lean-ctx config schema</code></pre>
 
   <hr />
 
+  <h2 id="simplified-configuration">Simplified Configuration <span class="text-xs font-normal text-muted ml-2">v3.6.18</span></h2>
+  <p>
+    Instead of tuning dozens of individual limits, you can set a few high-level parameters that
+    automatically derive downstream values. When simplified settings are used and individual limits
+    are still at their defaults, the derived values take effect.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Setting</th><th>Effect</th><th>Scale</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>max_disk_mb</code></td>
+        <td>Distributes to <code>archive.max_disk_mb</code> (25%), <code>bm25_max_cache_mb</code> (10%), and proportionally scales memory limits (facts, patterns, episodes, procedures)</td>
+        <td>Factor = <code>max_disk_mb / 500</code>, clamped to 0.5x–10x</td>
+      </tr>
+      <tr>
+        <td><code>max_staleness_days</code></td>
+        <td>Flows into <code>archive.max_age_hours</code> (days × 24)</td>
+        <td>Direct conversion</td>
+      </tr>
+      <tr>
+        <td><code>compression_level</code></td>
+        <td>Sets terse agent, output density, and CRP mode in one knob</td>
+        <td><code>Off</code> / <code>Lite</code> / <code>Standard</code> / <code>Max</code></td>
+      </tr>
+      <tr>
+        <td><code>max_ram_percent</code></td>
+        <td>RAM Guardian eviction threshold</td>
+        <td>1–50% of system RAM</td>
+      </tr>
+      <tr>
+        <td><code>memory_profile</code></td>
+        <td>Preset for BM25 cache and runtime memory usage</td>
+        <td><code>low</code> (64MB) / <code>balanced</code> (128MB) / <code>performance</code> (512MB)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    Use <code>lean-ctx config show</code> to see all effective values with their source
+    (env / config / default / derived).
+  </p>
+
+  <pre><code># Example: 2GB disk budget → facts=800, patterns=200, episodes=2000, procedures=400
+max_disk_mb = 2000
+compression_level = "Standard"
+max_staleness_days = 30</code></pre>
+
+  <hr />
+
   <h2 id="environment-variables" set:html={t('docsConfiguration.envVarsTitle')} />
 
   <table>
