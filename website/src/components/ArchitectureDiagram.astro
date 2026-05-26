@@ -1,218 +1,118 @@
 ---
-const capabilities = [
-  {
-    id: "understand",
-    label: "Understand",
-    color: "green",
-    features: [
-      "10 read modes",
-      "Context visibility",
-      "Token counting",
-      "Intent detection",
-    ],
-  },
-  {
-    id: "compress",
-    label: "Compress",
-    color: "green",
-    features: [
-      "Tree-sitter AST (18 langs)",
-      "95+ shell patterns",
-      "CDC reorder (Rabin-Karp)",
-      "64 KB budget, 500 ms deadline",
-    ],
-  },
-  {
-    id: "remember",
-    label: "Remember",
-    color: "indigo",
-    features: [
-      "Session cache (zstd, in-memory)",
-      "13-token re-reads",
-      "Knowledge graph (SQLite)",
-      "Cross-session memory",
-    ],
-  },
-  {
-    id: "verify",
-    label: "Verify",
-    color: "indigo",
-    features: [
-      "PathJail sandbox",
-      "OS-level isolation",
-      "Shell allowlist (deny-by-default)",
-      "Full audit trail",
-    ],
-  },
-  {
-    id: "connect",
-    label: "Connect",
-    color: "purple",
-    features: [
-      "GitHub · GitLab · Jira · Linear",
-      "Postgres · REST · MCP Bridge",
-      "Hybrid search (BM25 + semantic)",
-      "Config-based providers (TOML)",
-    ],
-  },
+const steps = [
+  { label: "Understand", color: "green" },
+  { label: "Compress", color: "green" },
+  { label: "Remember", color: "indigo" },
+  { label: "Verify", color: "indigo" },
+  { label: "Connect", color: "purple" },
+];
+
+const layers = [
+  { label: "Smart I/O", detail: "10 modes · AST · 95+ patterns", color: "green" },
+  { label: "Intelligence", detail: "Search · Knowledge · Memory", color: "indigo" },
+  { label: "Security", detail: "PathJail · Sandbox · Audit", color: "purple" },
 ];
 ---
 
-<div class="diagram animate-entrance" role="img" aria-label="lean-ctx architecture diagram">
+<div class="dia animate-entrance" role="img" aria-label="lean-ctx architecture">
 
-  <!-- TOP: AI Tool -->
-  <div class="dia-node dia-node--dashed">
-    <span class="dia-node-title">Your AI Tool</span>
-    <span class="dia-node-sub">Cursor · Claude Code · Copilot · Windsurf · 24+ more</span>
+  <!-- TOP NODE -->
+  <div class="dia-node">
+    <span class="dia-node-label">Your AI Tool</span>
   </div>
 
-  <!-- CONNECTOR -->
-  <div class="dia-pipe">
-    <div class="dia-pipe-line"></div>
-    <span class="dia-pipe-label">MCP · CLI · HTTP</span>
-    <div class="dia-pipe-line"></div>
-    <svg class="dia-pipe-arrow" width="14" height="10" viewBox="0 0 14 10"><path d="M1 1l6 8 6-8" stroke="var(--color-border-light)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </div>
+  <div class="dia-line"></div>
 
-  <!-- MAIN: lean-ctx runtime -->
-  <div class="dia-runtime">
-    <div class="dia-runtime-head">
-      <span class="dia-runtime-title font-display">lean-ctx</span>
-      <span class="dia-runtime-sub">Context Runtime · Single Rust binary · 62 MCP tools</span>
+  <!-- MAIN BOX -->
+  <div class="dia-box">
+    <div class="dia-box-head">
+      <span class="dia-box-title font-display">lean-ctx</span>
     </div>
 
-    <div class="dia-runtime-body">
-      <!-- PIPELINE: 5 capabilities -->
-      <div class="dia-flow">
-        {capabilities.map((cap, i) => (
-          <div class="dia-cap-wrap">
-            <div class={`dia-cap dia-cap--${cap.color}`}>
-              <div class="dia-cap-head">
-                <span class="dia-cap-num">{String(i + 1).padStart(2, '0')}</span>
-                <span class="dia-cap-title">{cap.label}</span>
-              </div>
-              <ul class="dia-cap-list">
-                {cap.features.map((f) => (
-                  <li>{f}</li>
-                ))}
-              </ul>
-            </div>
-            {i < capabilities.length - 1 && (
-              <div class="dia-flow-arrow">
-                <svg width="24" height="14" viewBox="0 0 24 14"><path d="M0 7h18m0 0l-5-5m5 5l-5 5" stroke="var(--color-muted)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/></svg>
-              </div>
-            )}
+    <!-- PIPELINE -->
+    <div class="dia-pipeline">
+      {steps.map((s, i) => (
+        <div class="dia-step-group">
+          <div class={`dia-step dia-step--${s.color}`}>
+            <span class="dia-step-label">{s.label}</span>
           </div>
-        ))}
-      </div>
+          {i < steps.length - 1 && (
+            <svg class="dia-arrow" viewBox="0 0 20 12" width="20" height="12">
+              <path d="M2 6h12m0 0l-4-4m4 4l-4 4" stroke="var(--color-border-light)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          )}
+        </div>
+      ))}
+    </div>
 
-      <!-- STATS BAR -->
-      <div class="dia-stats">
-        <span class="dia-stat">
-          <strong>96%</strong> avg. compression on first read
-        </span>
-        <span class="dia-stat-sep"></span>
-        <span class="dia-stat">
-          <strong>13</strong> tokens per cached re-read
-        </span>
-        <span class="dia-stat-sep"></span>
-        <span class="dia-stat">
-          <strong>18</strong> languages with AST parsing
-        </span>
-      </div>
+    <!-- LAYER BAR -->
+    <div class="dia-layers">
+      {layers.map((l) => (
+        <div class={`dia-layer dia-layer--${l.color}`}>
+          <span class="dia-layer-label">{l.label}</span>
+          <span class="dia-layer-detail">{l.detail}</span>
+        </div>
+      ))}
     </div>
   </div>
 
-  <!-- CONNECTOR -->
-  <div class="dia-pipe">
-    <svg class="dia-pipe-arrow" style="transform: rotate(180deg);" width="14" height="10" viewBox="0 0 14 10"><path d="M1 1l6 8 6-8" stroke="var(--color-border-light)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    <div class="dia-pipe-line"></div>
-    <span class="dia-pipe-label">optimized context · ~96% fewer tokens</span>
-    <div class="dia-pipe-line"></div>
-    <svg class="dia-pipe-arrow" width="14" height="10" viewBox="0 0 14 10"><path d="M1 1l6 8 6-8" stroke="var(--color-border-light)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </div>
+  <div class="dia-line"></div>
 
-  <!-- BOTTOM: LLM -->
-  <div class="dia-node dia-node--dashed">
-    <span class="dia-node-title">LLM</span>
-    <span class="dia-node-sub">Less noise · Higher signal · Better results</span>
+  <!-- BOTTOM NODE -->
+  <div class="dia-node">
+    <span class="dia-node-label">LLM</span>
+    <span class="dia-node-sub">~96% fewer tokens</span>
   </div>
 </div>
 
 <style>
-  .diagram {
+  .dia {
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0;
   }
 
-  /* ── Endpoint nodes ── */
+  /* ── Nodes (top/bottom) ── */
 
   .dia-node {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
-    padding: clamp(0.875rem, 0.75rem + 0.4vw, 1.25rem) clamp(1.5rem, 1rem + 1vw, 2.5rem);
+    gap: 0.125rem;
+    padding: 0.625rem 1.75rem;
+    border: 1.5px dashed var(--color-border-light);
     border-radius: 999px;
     background: var(--color-surface);
-    text-align: center;
-    width: fit-content;
-    max-width: 100%;
   }
 
-  .dia-node--dashed {
-    border: 1.5px dashed var(--color-border-light);
-  }
-
-  .dia-node-title {
+  .dia-node-label {
     font-family: var(--font-display);
-    font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);
+    font-size: clamp(0.9375rem, 0.88rem + 0.2vw, 1.125rem);
     font-weight: 700;
     color: var(--color-text-bright);
-    line-height: 1.2;
   }
 
   .dia-node-sub {
-    font-size: clamp(0.75rem, 0.7rem + 0.15vw, 0.875rem);
-    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
+    color: var(--color-accent);
+    font-weight: 600;
   }
 
-  /* ── Vertical pipe/connector ── */
+  /* ── Connector line ── */
 
-  .dia-pipe {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.125rem;
-    padding: 0.25rem 0;
-  }
-
-  .dia-pipe-line {
+  .dia-line {
     width: 1.5px;
-    height: 16px;
+    height: clamp(24px, 2vw, 36px);
     background: var(--color-border);
   }
 
-  .dia-pipe-label {
-    font-family: var(--font-mono);
-    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
-    color: var(--color-muted);
-    letter-spacing: 0.02em;
-    padding: 0.125rem 0.5rem;
-    white-space: nowrap;
-  }
+  /* ── Main box ── */
 
-  .dia-pipe-arrow {
-    flex-shrink: 0;
-  }
-
-  /* ── Main runtime box ── */
-
-  .dia-runtime {
+  .dia-box {
     width: 100%;
+    max-width: 56rem;
     border: 2px solid var(--color-border-light);
     border-radius: clamp(12px, 1vw, 20px);
     background: var(--color-surface);
@@ -221,224 +121,118 @@ const capabilities = [
   }
 
   @keyframes glow {
-    0%, 100% { box-shadow: 0 0 30px rgba(52, 211, 153, 0.04); }
-    50% { box-shadow: 0 0 50px rgba(52, 211, 153, 0.1), 0 0 100px rgba(52, 211, 153, 0.03); }
+    0%, 100% { box-shadow: 0 0 40px rgba(52, 211, 153, 0.04); }
+    50% { box-shadow: 0 0 60px rgba(52, 211, 153, 0.1); }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .dia-runtime { animation: none; }
+    .dia-box { animation: none; }
   }
 
-  .dia-runtime-head {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.375rem;
-    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem) clamp(1.5rem, 1rem + 1vw, 2.5rem);
+  .dia-box-head {
+    padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    text-align: center;
     border-bottom: 1.5px solid var(--color-border);
     background: linear-gradient(180deg, rgba(52, 211, 153, 0.03) 0%, transparent 100%);
   }
 
-  .dia-runtime-title {
-    font-size: clamp(1.5rem, 1.25rem + 0.8vw, 2.25rem);
+  .dia-box-title {
+    font-size: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
     font-weight: 800;
     letter-spacing: -0.04em;
     color: var(--color-text-bright);
-    line-height: 1;
   }
 
-  .dia-runtime-sub {
-    font-family: var(--font-mono);
-    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-    color: var(--color-muted);
-    text-align: center;
-  }
+  /* ── Pipeline (horizontal flow) ── */
 
-  .dia-runtime-body {
-    padding: clamp(1.5rem, 1rem + 1vw, 2.5rem);
-    display: flex;
-    flex-direction: column;
-    gap: clamp(1.5rem, 1rem + 1vw, 2.5rem);
-  }
-
-  /* ── Capability flow ── */
-
-  .dia-flow {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    justify-content: center;
-    gap: 0;
-  }
-
-  .dia-cap-wrap {
+  .dia-pipeline {
     display: flex;
     align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
     gap: 0;
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
   }
 
-  .dia-cap {
+  .dia-step-group {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+  }
+
+  .dia-step {
+    padding: clamp(0.5rem, 0.4rem + 0.2vw, 0.75rem) clamp(0.875rem, 0.7rem + 0.4vw, 1.25rem);
     border: 1.5px solid var(--color-border);
-    border-radius: clamp(8px, 0.6vw, 12px);
-    background: var(--color-bg);
-    overflow: hidden;
-    min-width: 0;
-    width: clamp(160px, 14vw, 210px);
-    transition: border-color 0.25s ease, transform 0.25s ease;
-  }
-
-  .dia-cap:hover {
-    transform: translateY(-3px);
-  }
-
-  .dia-cap--green { border-color: rgba(52, 211, 153, 0.2); }
-  .dia-cap--green:hover { border-color: rgba(52, 211, 153, 0.5); }
-  .dia-cap--indigo { border-color: rgba(129, 140, 248, 0.2); }
-  .dia-cap--indigo:hover { border-color: rgba(129, 140, 248, 0.5); }
-  .dia-cap--purple { border-color: rgba(212, 160, 255, 0.2); }
-  .dia-cap--purple:hover { border-color: rgba(212, 160, 255, 0.5); }
-
-  .dia-cap-head {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: clamp(0.5rem, 0.4rem + 0.25vw, 0.75rem) clamp(0.625rem, 0.5rem + 0.3vw, 1rem);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .dia-cap--green .dia-cap-head { background: rgba(52, 211, 153, 0.04); }
-  .dia-cap--indigo .dia-cap-head { background: rgba(129, 140, 248, 0.04); }
-  .dia-cap--purple .dia-cap-head { background: rgba(212, 160, 255, 0.04); }
-
-  .dia-cap-num {
-    font-family: var(--font-mono);
-    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
-    font-weight: 700;
-    opacity: 0.35;
-    line-height: 1;
-  }
-
-  .dia-cap--green .dia-cap-num { color: var(--color-accent); }
-  .dia-cap--indigo .dia-cap-num { color: var(--color-accent-2); }
-  .dia-cap--purple .dia-cap-num { color: var(--color-accent-3); }
-
-  .dia-cap-title {
-    font-family: var(--font-display);
-    font-size: clamp(0.875rem, 0.82rem + 0.18vw, 1.0625rem);
-    font-weight: 700;
-    color: var(--color-text-bright);
-    line-height: 1.2;
-  }
-
-  .dia-cap-list {
-    list-style: none;
-    margin: 0;
-    padding: clamp(0.5rem, 0.4rem + 0.25vw, 0.75rem) clamp(0.625rem, 0.5rem + 0.3vw, 1rem);
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-
-  .dia-cap-list li {
-    font-size: clamp(0.6875rem, 0.66rem + 0.1vw, 0.8125rem);
-    color: var(--color-muted);
-    line-height: 1.4;
-    padding-left: 1rem;
-    position: relative;
-  }
-
-  .dia-cap-list li::before {
-    content: '›';
-    position: absolute;
-    left: 0;
-    font-weight: 700;
-    opacity: 0.5;
-  }
-
-  .dia-cap--green .dia-cap-list li::before { color: var(--color-accent); }
-  .dia-cap--indigo .dia-cap-list li::before { color: var(--color-accent-2); }
-  .dia-cap--purple .dia-cap-list li::before { color: var(--color-accent-3); }
-
-  .dia-flow-arrow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 clamp(0.125rem, 0.1vw, 0.375rem);
-    flex-shrink: 0;
-  }
-
-  /* ── Stats bar ── */
-
-  .dia-stats {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);
-    padding: clamp(0.75rem, 0.5rem + 0.5vw, 1rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-    border: 1px solid var(--color-border);
     border-radius: 8px;
     background: var(--color-bg);
+    transition: border-color 0.2s, transform 0.2s;
+    cursor: default;
   }
 
-  .dia-stat {
-    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
-    color: var(--color-muted);
+  .dia-step:hover { transform: translateY(-2px); }
+  .dia-step--green { border-color: rgba(52, 211, 153, 0.25); }
+  .dia-step--green:hover { border-color: rgba(52, 211, 153, 0.6); }
+  .dia-step--indigo { border-color: rgba(129, 140, 248, 0.25); }
+  .dia-step--indigo:hover { border-color: rgba(129, 140, 248, 0.6); }
+  .dia-step--purple { border-color: rgba(212, 160, 255, 0.25); }
+  .dia-step--purple:hover { border-color: rgba(212, 160, 255, 0.6); }
+
+  .dia-step-label {
+    font-family: var(--font-display);
+    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
     white-space: nowrap;
   }
 
-  .dia-stat strong {
-    color: var(--color-accent);
-    font-family: var(--font-mono);
+  .dia-arrow {
+    flex-shrink: 0;
+    margin: 0 clamp(0.125rem, 0.1vw, 0.375rem);
+  }
+
+  /* ── Layer bar (bottom of box) ── */
+
+  .dia-layers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-top: 1.5px solid var(--color-border);
+  }
+
+  .dia-layer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    padding: clamp(0.75rem, 0.5rem + 0.5vw, 1.125rem) 0.5rem;
+    text-align: center;
+  }
+
+  .dia-layer + .dia-layer {
+    border-left: 1px solid var(--color-border);
+  }
+
+  .dia-layer-label {
+    font-family: var(--font-display);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
     font-weight: 700;
   }
 
-  .dia-stat-sep {
-    width: 1px;
-    height: 1rem;
-    background: var(--color-border);
-    flex-shrink: 0;
+  .dia-layer--green .dia-layer-label { color: var(--color-accent); }
+  .dia-layer--indigo .dia-layer-label { color: var(--color-accent-2); }
+  .dia-layer--purple .dia-layer-label { color: var(--color-accent-3); }
+
+  .dia-layer-detail {
+    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
+    color: var(--color-muted);
   }
 
-  /* ── Responsive ── */
+  /* ── Mobile ── */
 
-  @media (max-width: 1100px) {
-    .dia-flow {
-      gap: clamp(0.375rem, 0.25rem + 0.3vw, 0.625rem);
-    }
-
-    .dia-flow-arrow {
-      display: none;
-    }
-
-    .dia-cap {
-      width: calc(33.333% - 0.5rem);
-      min-width: 140px;
-      flex: 1 1 auto;
-    }
-  }
-
-  @media (max-width: 700px) {
-    .dia-cap {
-      width: calc(50% - 0.25rem);
-    }
-
-    .dia-stats {
-      flex-direction: column;
-      gap: 0.375rem;
-    }
-
-    .dia-stat-sep {
-      width: 3rem;
-      height: 1px;
-    }
-  }
-
-  @media (max-width: 420px) {
-    .dia-cap {
-      width: 100%;
-    }
+  @media (max-width: 640px) {
+    .dia-pipeline { gap: 0.375rem; }
+    .dia-arrow { display: none; }
+    .dia-step-group { flex: 1; min-width: calc(50% - 0.25rem); }
+    .dia-step { width: 100%; text-align: center; }
+    .dia-layers { grid-template-columns: 1fr; }
+    .dia-layer + .dia-layer { border-left: none; border-top: 1px solid var(--color-border); }
   }
 </style>
