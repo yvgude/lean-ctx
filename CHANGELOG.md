@@ -5,6 +5,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [3.6.18] — 2026-05-26
+
+### Added
+
+- **Structured read modes for non-code files** — `ctx_read` mode `map` now produces token-efficient semantic summaries for Markdown (heading outline with nesting), JSON (key structure with types and counts), YAML (key hierarchy), TOML (section headers + top-level keys), and lock files (workspace crate dependency summaries for Cargo.lock, package counts for package-lock.json/yarn.lock/go.sum). Up to 95% token savings vs. full reads on large config and documentation files (#299)
+- **Unified AutoModeResolver** — New centralized module (`auto_mode_resolver.rs`) consolidates all auto-mode selection logic that was previously scattered across `mode_predictor.rs`, `context_gate.rs`, and `intent_router.rs`. Single entry point `resolve()` produces a deterministic mode decision with full trace logging. Config/data files like `Cargo.toml`, `package.json` correctly get `full` mode while structured formats (JSON, YAML, TOML, lock files) are routed to `map` mode (#297)
+- **GraphProvider unified facade** — `GraphProvider` enum now wraps both `PropertyGraph` (SQLite, symbol-level) and `ProjectIndex` (JSON, file-level) behind a single API. New methods: `file_catalog()`, `file_info()`, `files_in_dir()`, `index_dir()`. All 12 consumer modules (`ctx_overview`, `ctx_graph`, `ctx_impact`, `ctx_symbol`, `ctx_prefetch`, `ctx_preload`, `heatmap`, `task_relevance`, `graph_export`, `dashboard`) migrated from direct `ProjectIndex` usage to `GraphProvider` (#298)
+- **Template instructions SSoT** — New `rules_canonical.rs` module provides `canonical_hybrid_instructions()` as the single source of truth for all template instruction generation. `CLAUDE.md`, `lean-ctx.mdc`, and daemon LITM injection all derive from the same canonical table, eliminating instruction drift (#296)
+- **CLI graph query commands** — Five new CLI subcommands for querying the code graph without the daemon: `lean-ctx graph related <file>`, `lean-ctx graph impact <file>`, `lean-ctx graph symbol <name>`, `lean-ctx graph context <file>`, `lean-ctx graph status`
+- **UTF-8 locale enforcement** — `apply_utf8_locale()` sets `LC_CTYPE=C.UTF-8` as fallback when no UTF-8 locale is inherited from the parent process. Applied to all 5 shell spawn paths (MCP `execute_command_with_env`, CLI `exec_direct`/`exec_inherit`/`exec_buffered`, CLI `passthrough`). Fixes Cyrillic/CJK/emoji M-notation mangling on Linux where Cursor spawns without user shell profile
+
+### Fixed
+
+- **`mode=full` silently downgraded** (#295) — Explicit `mode=full` requests were being overridden by the pressure degradation system and context gate heuristics. `full` mode is now treated as an explicit user intent that bypasses all degradation, bounce tracking, and overlay-based downgrades
+- **Shell allowlist blocking legitimate commands** (#294) — Expanded allowlist for Cursor workflows: `$()` command substitution relaxed to only block dangerous patterns (not all subshells), argument-position backticks allowed, `gh` data commands (`pr list`, `issue list`, `api`, `run list`) now compressible instead of passthrough. Prevents agent retry loops on blocked commands
+- **Bypass hint false positives** (#292) — Reduced false "you should use lean-ctx tools" warnings when agents legitimately use native Read/Grep for specific use cases. Doctor warnings for config downstream improved
+- **`ctx_prefetch` crash without graph** — `ctx_prefetch` now gracefully falls back to direct prefetching of `changed_files` when no graph is available, instead of returning "no graph available" error. Fixes failures in fresh/temporary project directories
+- **PropertyGraph race condition on Windows** — Background graph build populates symbol nodes and edges before `file_catalog` entries, causing `ctx_overview` to report "0 files". `open_best_effort` now requires `file_catalog_count > 0` on both the early-return and fallback paths before considering a PropertyGraph as populated
+- **UTF-8 locale for shell commands** — MCP server and CLI now set `LC_CTYPE=C.UTF-8` fallback for child processes, fixing Cyrillic and CJK output mangling on Linux
+
+### Changed
+
+- **Token efficiency optimizations** — Comprehensive audit-driven improvements across the engine:
+  - BM25 index cache uses `Arc<BM25Index>` instead of `clone()` — eliminates full index copies on every access
+  - Stats now adjusted after post-processing (terse, hints) to reflect actual tokens sent to models
+  - Cache hit token benchmark uses dynamic `count_tokens()` measurement instead of hardcoded constant
+  - Compression floor lowered from 50 to 30 tokens, enabling pattern compression for small outputs
+  - `INSTRUCTION_CAP` switched from byte-based (4096) to token-based (1200 tokens) for accurate truncation
+  - Graph index scan shares content cache with edge builder, eliminating redundant file I/O
+  - Deduplicated `extract_content_hint` into single shared function
+  - SessionCache eviction upgraded from segmented LRU to RRF (Reciprocal Rank Fusion) scoring combining recency, frequency, and size signals
+- **Dead code removal** — Removed unused `migrate_index_to_property_graph` and `remove_file_catalog` functions after graph consolidation
+
 ## [3.6.17] — 2026-05-25
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "lean-ctx-bin",
-  "version": "3.6.17",
+  "version": "3.6.18",
   "description": "lean-ctx \u2014 the token-efficient context tool for LLM coding agents. Installs a pre-built binary, no Rust required.",
   "keywords": [
     "lean-ctx",
