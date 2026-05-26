@@ -1,23 +1,21 @@
 ---
 const rows = [
-  { label: 'File reads (cached)', without: 30000, withCtx: 195, saved: 99 },
-  { label: 'git status / log / diff', without: 8000, withCtx: 2400, saved: 70 },
-  { label: 'ls / find', without: 6400, withCtx: 1280, saved: 80 },
-  { label: 'Test runners', without: 10000, withCtx: 1000, saved: 90 },
+  { label: 'File read (map mode)', without: 4200, withCtx: 180, saved: 96 },
+  { label: 'git status / log / diff', without: 2500, withCtx: 750, saved: 70 },
+  { label: 'ls / find', without: 1800, withCtx: 360, saved: 80 },
+  { label: 'Test output (cargo test)', without: 3500, withCtx: 350, saved: 90 },
 ];
 
 const maxTokens = Math.max(...rows.map((r) => r.without));
 
 const summary = {
-  before: '~89,800',
-  after: '~10,620',
-  saved: 88,
+  before: '~12,000',
+  after: '~1,640',
+  saved: 86,
 };
 ---
 
-<section class="token-bars-section relative py-20 sm:py-32">
-  <div class="max-w-4xl mx-auto px-4 sm:px-6">
-    <div class="token-bars-container" data-token-bars>
+<div class="token-bars-container" data-token-bars>
       {rows.map((row, i) => {
         const withPercent = (row.withCtx / maxTokens) * 100;
         return (
@@ -49,9 +47,7 @@ const summary = {
         </span>
         <span class="summary-badge">{summary.saved}% saved</span>
       </div>
-    </div>
-  </div>
-</section>
+</div>
 
 <style>
   .token-bars-container {

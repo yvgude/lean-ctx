@@ -1,33 +1,29 @@
 ---
 const counters = [
-  { value: 99, suffix: '%', label: 'Max token savings' },
-  { value: 56, suffix: '+', label: 'MCP tools' },
-  { value: 13, suffix: '', label: 'Tokens per re-read' },
-  { value: 1, suffix: '', prefix: '<', label: 'Overhead per operation', unit: 'ms' },
+  { value: 96, suffix: '%', label: 'First-read savings (map mode)' },
+  { value: 62, suffix: '', label: 'MCP tools' },
+  { value: 13, suffix: '', label: 'Tokens per cached re-read' },
+  { value: 18, suffix: '', label: 'Languages with AST parsing' },
 ];
 ---
 
-<section class="counter-section relative py-20 sm:py-32">
-  <div class="max-w-7xl mx-auto px-4 sm:px-6">
-    <div class="counter-grid">
-      {counters.map((c, i) => (
-        <div
-          class="counter-card animate-entrance"
-          style={`--stagger: ${i}`}
-          data-target={c.value}
-          data-suffix={c.suffix || ''}
-          data-prefix={c.prefix || ''}
-          data-unit={c.unit || ''}
-        >
-          <span class="counter-value font-display">
-            {c.prefix || ''}{c.value}{c.unit || ''}{c.suffix || ''}
-          </span>
-          <span class="counter-label">{c.label}</span>
-        </div>
-      ))}
+<div class="counter-grid">
+  {counters.map((c, i) => (
+    <div
+      class="counter-card animate-entrance"
+      style={`--stagger: ${i}`}
+      data-target={c.value}
+      data-suffix={c.suffix || ''}
+      data-prefix={c.prefix || ''}
+      data-unit={c.unit || ''}
+    >
+      <span class="counter-value font-display">
+        {c.prefix || ''}{c.value}{c.unit || ''}{c.suffix || ''}
+      </span>
+      <span class="counter-label">{c.label}</span>
     </div>
-  </div>
-</section>
+  ))}
+</div>
 
 <style>
   .counter-grid {
