@@ -1,15 +1,15 @@
 ---
 const points = [
   { id: 'full',       x: 100, y: 100, label: 'full',       dim: true },
-  { id: 'map',        x: 26,  y: 88,  label: 'map',        dim: false },
-  { id: 'auto',       x: 18,  y: 90,  label: 'auto',       dim: false },
-  { id: 'entropy',    x: 12,  y: 78,  label: 'entropy',    dim: false },
-  { id: 'signatures', x: 8,   y: 65,  label: 'signatures', dim: false },
-  { id: 'aggressive', x: 5,   y: 60,  label: 'aggressive', dim: false },
+  { id: 'map',        x: 25,  y: 85,  label: 'map',        dim: false },
+  { id: 'auto',       x: 18,  y: 82,  label: 'auto',       dim: false },
+  { id: 'entropy',    x: 12,  y: 72,  label: 'entropy',    dim: false },
+  { id: 'signatures', x: 7,   y: 55,  label: 'signatures', dim: false },
+  { id: 'aggressive', x: 4,   y: 40,  label: 'aggressive', dim: false },
 ];
 
 const xMin = 0, xMax = 100;
-const yMin = 50, yMax = 100;
+const yMin = 30, yMax = 100;
 const svgLeft = 80, svgRight = 560;
 const svgTop = 40, svgBottom = 350;
 
@@ -20,7 +20,7 @@ function toSvgY(val: number) {
   return svgBottom - ((val - yMin) / (yMax - yMin)) * (svgBottom - svgTop);
 }
 
-const yTicks = [50, 60, 70, 80, 90, 100];
+const yTicks = [40, 50, 60, 70, 80, 90, 100];
 const xTicks = [0, 20, 40, 60, 80, 100];
 
 const mapped = points.map((p, i) => ({

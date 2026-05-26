@@ -1,17 +1,17 @@
 ---
 const rows = [
-  { label: 'File read (map mode)', without: 4200, withCtx: 180, saved: 96 },
-  { label: 'git status / log / diff', without: 2500, withCtx: 750, saved: 70 },
-  { label: 'ls / find', without: 1800, withCtx: 360, saved: 80 },
-  { label: 'Test output (cargo test)', without: 3500, withCtx: 350, saved: 90 },
+  { label: 'Source file → map mode', without: 3000, withCtx: 750, saved: 75 },
+  { label: 'Source file → auto mode', without: 3000, withCtx: 540, saved: 82 },
+  { label: 'Shell: git diff', without: 2000, withCtx: 500, saved: 75 },
+  { label: 'Shell: cargo test', without: 2500, withCtx: 300, saved: 88 },
 ];
 
 const maxTokens = Math.max(...rows.map((r) => r.without));
 
 const summary = {
-  before: '~12,000',
-  after: '~1,640',
-  saved: 86,
+  before: '~10,500',
+  after: '~2,090',
+  saved: 80,
 };
 ---
 
