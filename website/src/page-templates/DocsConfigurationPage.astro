@@ -271,6 +271,12 @@ lean-ctx config schema</code></pre>
         <td>Additional glob patterns to exclude from <code>ctx_tree</code>, <code>ctx_search</code>, and file discovery. These are merged with the built-in ignore list (node_modules, .git, etc.). Example: <code>["*.generated.ts", "vendor/**", "dist/**"]</code></td>
       </tr>
       <tr>
+        <td><code>profile</code></td>
+        <td>string</td>
+        <td><code>"coder"</code></td>
+        <td>Active profile name. Overridden by <code>LEAN_CTX_PROFILE</code> env var. Resolution order: env var → config.toml → "coder". Built-in profiles: <code>"coder"</code> (balanced compression), <code>"passthrough"</code> (full content, zero compression). Set via <code>lean-ctx config set profile &lt;name&gt;</code>.</td>
+      </tr>
+      <tr>
         <td><code>theme</code></td>
         <td>string</td>
         <td><code>"default"</code></td>
@@ -563,6 +569,16 @@ max_staleness_days = 30</code></pre>
         <td><code>LEAN_CTX_ACTIVE</code></td>
         <td>set / unset</td>
         <td set:html={t('docsConfiguration.activeDesc')} />
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_PROFILE</code></td>
+        <td>profile name</td>
+        <td>Override active profile. Takes precedence over <code>profile</code> in config.toml. Built-in profiles: <code>coder</code> (default, balanced compression), <code>passthrough</code> (full content, zero compression). <span class="text-xs text-muted">v3.6.19</span></td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_FULL_TOOLS</code></td>
+        <td><code>1</code> / <code>true</code> / <code>0</code> / <code>false</code></td>
+        <td>Register all MCP tools (including advanced/intelligence tools). Set to <code>0</code> or <code>false</code> to disable. <span class="text-xs text-muted">Fixed in v3.6.19: <code>=0</code> was previously treated as enabled</span></td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_DISABLED</code></td>

@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.18 (Current)', href: lp('/docs/changelog') + '#v3.6.18' },
+      { label: '3.6.19 (Current)', href: lp('/docs/changelog') + '#v3.6.19' },
+      { label: '3.6.18', href: lp('/docs/changelog') + '#v3.6.18' },
       { label: '3.6.17', href: lp('/docs/changelog') + '#v3.6.17' },
       { label: '3.6.16', href: lp('/docs/changelog') + '#v3.6.16' },
       { label: '3.6.15', href: lp('/docs/changelog') + '#v3.6.15' },
@@ -75,6 +76,24 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.19 -->
+  <h2 id="v3.6.19">3.6.19 <span class="text-xs text-muted">(2026-05-26)</span></h2>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Built-in <code>passthrough</code> profile</strong> — No output modification: always full content, zero compression. Use via <code>LEAN_CTX_PROFILE=passthrough</code> or <code>lean-ctx config set profile passthrough</code>. Includes <code>default_mode=full</code>, <code>crp_mode=off</code>, <code>degradation.enforce=false</code>.</li>
+    <li><strong>Persistent profile selection via config.toml</strong> — New <code>profile</code> field provides a fallback when <code>LEAN_CTX_PROFILE</code> env var is not set. Resolution order: env var → config.toml → "coder" default.</li>
+    <li><strong>Profile config schema entry</strong> — <code>lean-ctx config show</code> now displays the <code>profile</code> key.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong><code>LEAN_CTX_FULL_TOOLS=0</code> incorrectly treated as ON</strong> — Setting the variable to <code>0</code> or <code>false</code> is now correctly interpreted as disabled.</li>
+    <li><strong><code>mode=full</code> returning stubs/deltas in passthrough mode</strong> — Cache stubs and auto-deltas are now skipped when <code>no_degrade=true</code> or when the active profile has <code>default_mode=full</code> + <code>crp_mode=off</code>.</li>
+    <li><strong>MCP schema claimed default mode was <code>full</code></strong> — The <code>ctx_read</code> tool description now correctly states <code>default: auto</code>, matching actual behavior.</li>
+    <li><strong>Silent fallback to <code>coder</code> profile</strong> — When a requested profile doesn't exist, lean-ctx now logs a warning with creation instructions instead of silently falling back.</li>
+  </ul>
 
   <!-- 3.6.18 -->
   <h2 id="v3.6.18">3.6.18 <span class="text-xs text-muted">(2026-05-26)</span></h2>
