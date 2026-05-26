@@ -402,6 +402,13 @@
 
   .hero-terminal {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .terminal-body {
+    font-size: 0.625rem !important;
+    line-height: 1.6 !important;
+    padding: 0.75rem !important;
   }
 }
 
@@ -432,6 +439,17 @@
 
   .compare-grid.is-stacked {
     grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .compare-body {
+    font-size: 0.6875rem !important;
+    padding: 0.75rem !important;
+  }
+
+  .compare-header {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.75rem;
   }
 
   .stats-panels {
@@ -474,6 +492,17 @@
 
 .benchmark-panel {
   min-width: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .benchmark-split {
+    gap: 1.5rem;
+  }
+
+  .benchmark-panel h3 {
+    font-size: 0.875rem;
+  }
 }
 
 /* ── Six Pillars ────────────────────────────────────────── */

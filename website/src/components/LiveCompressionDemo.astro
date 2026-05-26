@@ -136,6 +136,25 @@ const inputTokens = '4,200';
   @media (max-width: 767px) {
     .lcd-panels {
       grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .lcd-panel {
+      border-radius: 0;
+    }
+
+    .lcd-panel:first-child {
+      border-radius: var(--card-radius) var(--card-radius) 0 0;
+    }
+
+    .lcd-panel:last-child {
+      border-radius: 0 0 var(--card-radius) var(--card-radius);
+      border-top: none;
+    }
+
+    .lcd-code {
+      min-height: 120px;
+      font-size: 11px;
     }
   }
 
@@ -199,10 +218,36 @@ const inputTokens = '4,200';
     .lcd-arrow {
       flex-direction: row;
       gap: 0.75rem;
-      padding: 0.75rem 1rem;
+      padding: 0.625rem 1rem;
+      background: var(--color-surface-2);
+      border-left: 1px solid var(--color-border);
+      border-right: 1px solid var(--color-border);
     }
     .lcd-arrow-line {
       flex-direction: row !important;
+    }
+    .lcd-arrow-symbol {
+      transform: rotate(90deg);
+    }
+
+    .lcd-footer {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.75rem;
+    }
+
+    .lcd-counter {
+      justify-content: space-between;
+    }
+
+    .lcd-modes {
+      width: 100%;
+    }
+
+    .lcd-mode-btn {
+      flex: 1;
+      text-align: center;
+      padding: 0.5rem 0.5rem;
     }
   }
 

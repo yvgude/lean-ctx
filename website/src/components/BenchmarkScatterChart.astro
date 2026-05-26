@@ -106,12 +106,15 @@ const mapped = points.map((p, i) => ({
   .scatter-chart {
     width: 100%;
     max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .scatter-chart svg {
     width: 100%;
     height: auto;
     display: block;
+    min-width: 400px;
   }
 
   .scatter-tick {

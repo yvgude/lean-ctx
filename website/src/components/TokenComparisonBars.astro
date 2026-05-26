@@ -168,6 +168,34 @@ const summary = {
     border: 1px solid rgba(52, 211, 153, 0.2);
   }
 
+  @media (max-width: 640px) {
+    .token-bars-container {
+      gap: 1.25rem;
+    }
+
+    .bar-track {
+      height: 2rem;
+    }
+
+    .bar-label {
+      font-size: 0.75rem;
+    }
+
+    .bar-tokens {
+      font-size: 0.625rem;
+    }
+
+    .summary-line {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .summary-text {
+      font-size: 0.75rem;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .bar-fill {
       transition: none;
