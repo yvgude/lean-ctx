@@ -100,6 +100,16 @@ ctx_read auth.ts
   <p>
     Supports 18 languages via tree-sitter AST parsing (TS/JS, Rust, Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala, Elixir, Zig). Savings: <strong>85-95%</strong>.
   </p>
+  <p>
+    <strong>Non-code files</strong> (v3.6.18+): <code>map</code> mode also produces structured summaries for non-code files:
+  </p>
+  <ul>
+    <li><strong>Markdown</strong> — heading outline with nesting depth</li>
+    <li><strong>JSON</strong> — key structure with types and array counts</li>
+    <li><strong>YAML</strong> — key hierarchy with nested structure</li>
+    <li><strong>TOML</strong> — section headers and top-level key=value pairs</li>
+    <li><strong>Lock files</strong> — workspace crate dependency summaries (Cargo.lock), package counts (package-lock.json, yarn.lock, go.sum)</li>
+  </ul>
 
   <h3>Mode: signatures</h3>
   <p>

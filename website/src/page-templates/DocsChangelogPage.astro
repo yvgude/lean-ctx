@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.17 (Current)', href: lp('/docs/changelog') + '#v3.6.17' },
+      { label: '3.6.18 (Current)', href: lp('/docs/changelog') + '#v3.6.18' },
+      { label: '3.6.17', href: lp('/docs/changelog') + '#v3.6.17' },
       { label: '3.6.16', href: lp('/docs/changelog') + '#v3.6.16' },
       { label: '3.6.15', href: lp('/docs/changelog') + '#v3.6.15' },
       { label: '3.6.14', href: lp('/docs/changelog') + '#v3.6.14' },
@@ -74,6 +75,34 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.18 -->
+  <h2 id="v3.6.18">3.6.18 <span class="text-xs text-muted">(2026-05-26)</span></h2>
+  <p class="text-sm text-muted">Structured read modes for non-code files, unified AutoModeResolver, GraphProvider facade, token efficiency optimizations, UTF-8 locale fix.</p>
+
+  <h3>Added</h3>
+  <ul>
+    <li><strong>Structured read modes for non-code files</strong> — <code>ctx_read</code> mode <code>map</code> now produces token-efficient semantic summaries for Markdown (heading outline), JSON (key structure with types), YAML (key hierarchy), TOML (section headers), and lock files (workspace dependency summaries). Up to 95% token savings on large config/doc files (#299).</li>
+    <li><strong>Unified AutoModeResolver</strong> — Centralized auto-mode selection logic in <code>auto_mode_resolver.rs</code>. Single <code>resolve()</code> entry point with deterministic mode decisions and full trace logging. Config files like <code>Cargo.toml</code> get <code>full</code> mode while structured formats (JSON, YAML, TOML, lock) are routed to <code>map</code> (#297).</li>
+    <li><strong>GraphProvider unified facade</strong> — <code>GraphProvider</code> wraps both <code>PropertyGraph</code> (SQLite, symbol-level) and <code>ProjectIndex</code> (JSON, file-level) behind a single API. New methods: <code>file_catalog()</code>, <code>file_info()</code>, <code>files_in_dir()</code>, <code>index_dir()</code>. All consumer modules migrated (#298).</li>
+    <li><strong>Template instructions SSoT</strong> — <code>rules_canonical.rs</code> provides <code>canonical_hybrid_instructions()</code> as single source of truth for all template instruction generation. <code>CLAUDE.md</code>, <code>lean-ctx.mdc</code>, and daemon LITM injection all derive from the same canonical table (#296).</li>
+    <li><strong>UTF-8 locale enforcement</strong> — <code>apply_utf8_locale()</code> sets <code>LC_CTYPE=C.UTF-8</code> fallback on all 5 shell spawn paths. Fixes Cyrillic/CJK/emoji M-notation mangling on Linux.</li>
+  </ul>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong><code>mode=full</code> silently downgraded (#295)</strong> — Explicit <code>mode=full</code> now bypasses all pressure degradation, bounce tracking, and overlay-based downgrades.</li>
+    <li><strong>Shell allowlist blocking Cursor commands (#294)</strong> — <code>$()</code> substitution relaxed, argument-position backticks allowed, <code>gh</code> data commands now compressible. Prevents agent retry loops.</li>
+    <li><strong>Bypass hint false positives (#292)</strong> — Reduced false warnings when agents legitimately use native Read/Grep.</li>
+    <li><strong><code>ctx_prefetch</code> crash without graph</strong> — Graceful fallback to direct prefetching of <code>changed_files</code> when no graph is available.</li>
+    <li><strong>PropertyGraph race condition on Windows</strong> — <code>open_best_effort</code> now requires <code>file_catalog_count &gt; 0</code> before considering a PropertyGraph as populated.</li>
+  </ul>
+
+  <h3>Changed</h3>
+  <ul>
+    <li><strong>Token efficiency optimizations</strong> — BM25 index cache uses <code>Arc</code> instead of clone, stats adjusted after post-processing, compression floor lowered (50→30 tokens), <code>INSTRUCTION_CAP</code> switched to token-based (1200), graph index shares content cache with edge builder, SessionCache eviction upgraded to RRF scoring.</li>
+    <li><strong>Dead code removal</strong> — Removed unused <code>migrate_index_to_property_graph</code> and <code>remove_file_catalog</code> after graph consolidation.</li>
+  </ul>
 
   <!-- 3.6.17 -->
   <h2 id="v3.6.17">3.6.17 <span class="text-xs text-muted">(2026-05-25)</span></h2>
