@@ -325,6 +325,12 @@ lean-ctx config schema</code></pre>
         <td>When non-empty, only listed commands are permitted by <code>ctx_shell</code>. All other commands are rejected. Also available via <code>LEAN_CTX_SHELL_ALLOWLIST</code> (comma-separated).</td>
       </tr>
       <tr>
+        <td><code>no_degrade</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>When <code>true</code>, disables all automatic read mode degradation. Explicit <code>mode=full</code> is never downgraded by pressure or context gate. Also available via <code>LCTX_NO_DEGRADE=1</code>. <span class="text-xs text-muted">v3.6.15</span></td>
+      </tr>
+      <tr>
         <td><code>allow_auto_reroot</code></td>
         <td>bool</td>
         <td><code>false</code></td>
@@ -537,6 +543,11 @@ max_staleness_days = 30</code></pre>
         <td><code>LEAN_CTX_SHELL_ALLOWLIST</code></td>
         <td>comma-separated commands</td>
         <td>Override <code>shell_allowlist</code> config. When set, only listed commands are permitted by <code>ctx_shell</code>. Example: <code>git,cargo,npm,ls</code></td>
+      </tr>
+      <tr>
+        <td><code>LCTX_NO_DEGRADE</code></td>
+        <td><code>1</code></td>
+        <td>Disable all automatic read mode degradation. Explicit <code>mode=full</code> is never downgraded by pressure.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_ALLOW_REROOT</code></td>

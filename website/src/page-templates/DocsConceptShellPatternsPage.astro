@@ -282,15 +282,22 @@ docker compose up    # Docker container logs
 kubectl logs -f      # Streaming pod logs
 tail -f              # File watching`}</code></pre>
 
-  <h3>2. Interactive GitHub CLI Commands</h3>
+  <h3>2. GitHub CLI Commands</h3>
   <p>
-    <code>gh pr</code> commands and similar interactive flows are passed through to preserve
-    formatting and interactivity:
+    GitHub CLI commands are split by type. Interactive/auth commands are passed through;
+    data commands are compressed for token savings:
   </p>
-  <pre><code>{`gh pr create         # PR creation flow
-gh pr view           # PR detail view
-gh pr checks         # CI status display
-gh issue create      # Issue creation`}</code></pre>
+  <pre><code>{`# Passthrough (interactive/auth):
+gh auth login        # Auth flow
+gh browse            # Opens browser
+gh codespace         # Interactive session
+
+# Compressible (data queries, since v3.6.18):
+gh pr list           # Pattern-compressed
+gh issue list        # Pattern-compressed
+gh run list          # Pattern-compressed
+gh pr view           # Pattern-compressed
+gh pr checks         # Pattern-compressed`}</code></pre>
 
   <h3>3. Smart Script-Runner Detection</h3>
   <p>

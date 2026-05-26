@@ -144,9 +144,9 @@ const sidebar = [
   </p>
   <div class="border border-accent/20 rounded-lg p-4 mb-4 bg-accent/5">
     <p class="mt-0 mb-0 text-sm text-muted">
-      <strong>Graph strategy:</strong> <code>ctx_graph</code> stores a lightweight JSON index for fast navigation
-      (symbols/related/quick impact). For deeper analysis, prefer <code>ctx_impact</code> and <code>ctx_architecture</code>,
-      which use the SQLite-backed property graph as the authoritative backend.
+      <strong>Graph strategy:</strong> All graph tools (<code>ctx_graph</code>, <code>ctx_impact</code>, <code>ctx_architecture</code>)
+      use the unified <code>GraphProvider</code> facade, which automatically selects the best available backend
+      (SQLite property graph or JSON index). No manual backend selection needed.
     </p>
   </div>
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -440,7 +440,7 @@ const sidebar = [
   <p>
     The <code>task</code> read mode is task-conditioned: it runs an Information Bottleneck (IB) filter to keep only
     task-relevant lines, and appends a compact <strong>Graph Context</strong> footer with the most relevant related files.
-    Graph context is best-effort and uses an existing project graph (prefers the SQLite property graph; falls back to the lightweight JSON index).
+    Graph context is best-effort and uses the unified <code>GraphProvider</code> to query the project graph.
     To enable it, build a graph once per project with <code>ctx_graph action=build</code> or <code>ctx_impact action=build</code>.
   </p>
 

