@@ -1,0 +1,264 @@
+---
+type IntegrationMode = "MCP" | "Shell Hook" | "CLI-Redirect";
+
+interface Tool {
+  name: string;
+  mode: IntegrationMode;
+}
+
+interface Category {
+  label: string;
+  tools: Tool[];
+}
+
+const modeAccent: Record<IntegrationMode, string> = {
+  "MCP": "accent",
+  "Shell Hook": "accent-2",
+  "CLI-Redirect": "accent-3",
+};
+
+const categories: Category[] = [
+  {
+    label: "IDE & Editor",
+    tools: [
+      { name: "Cursor", mode: "CLI-Redirect" },
+      { name: "VS Code", mode: "MCP" },
+      { name: "Windsurf", mode: "MCP" },
+      { name: "JetBrains", mode: "MCP" },
+      { name: "Zed", mode: "MCP" },
+      { name: "Sublime Text", mode: "MCP" },
+      { name: "Emacs", mode: "MCP" },
+      { name: "Neovim", mode: "MCP" },
+      { name: "Continue", mode: "MCP" },
+      { name: "Trae", mode: "MCP" },
+    ],
+  },
+  {
+    label: "CLI Agent",
+    tools: [
+      { name: "Claude Code", mode: "CLI-Redirect" },
+      { name: "GitHub Copilot", mode: "MCP" },
+      { name: "Codex CLI", mode: "CLI-Redirect" },
+      { name: "Gemini CLI", mode: "CLI-Redirect" },
+      { name: "Cline", mode: "MCP" },
+      { name: "Roo Code", mode: "MCP" },
+      { name: "OpenCode", mode: "MCP" },
+      { name: "Aider", mode: "Shell Hook" },
+      { name: "Amp", mode: "Shell Hook" },
+    ],
+  },
+  {
+    label: "Platform",
+    tools: [
+      { name: "Amazon Q", mode: "MCP" },
+      { name: "AWS Kiro", mode: "MCP" },
+      { name: "Antigravity", mode: "MCP" },
+      { name: "Pi", mode: "MCP" },
+      { name: "Qwen Code", mode: "MCP" },
+      { name: "Verdent", mode: "MCP" },
+      { name: "Hermes", mode: "MCP" },
+      { name: "Crush", mode: "MCP" },
+    ],
+  },
+];
+
+let globalIndex = 0;
+---
+
+<div class="tig-root" role="region" aria-label="Tool integrations">
+  {categories.map((cat) => (
+    <div class="tig-category">
+      <p class="tig-category-label fluid-label">{cat.label}</p>
+      <div class="tig-grid">
+        {cat.tools.map((tool) => {
+          const i = globalIndex++;
+          const accent = modeAccent[tool.mode];
+          return (
+            <div
+              class="tig-card animate-entrance"
+              style={`--card-i: ${i}`}
+              data-accent={accent}
+            >
+              <span class="tig-card-name">{tool.name}</span>
+              <span class={`tig-mode tig-mode--${accent}`}>{tool.mode}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ))}
+
+  <div class="tig-footer animate-entrance">
+    <a href="/compatibility" class="tig-link">
+      View full compatibility matrix
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+    </a>
+  </div>
+</div>
+
+<script is:inline>
+(function () {
+  const root = document.querySelector('.tig-root');
+  if (!root || typeof IntersectionObserver === 'undefined') return;
+
+  const cards = root.querySelectorAll('.tig-card');
+  if (!cards.length) return;
+
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (prefersReduced) {
+    cards.forEach(function (c) { c.classList.add('is-visible'); });
+    return;
+  }
+
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        var card = entry.target;
+        var i = parseInt(card.style.getPropertyValue('--card-i'), 10) || 0;
+        card.style.transitionDelay = (i * 0.035) + 's';
+        card.classList.add('is-visible');
+        observer.unobserve(card);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+  cards.forEach(function (c) { observer.observe(c); });
+})();
+</script>
+
+<style>
+  .tig-root {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+  }
+
+  /* ── Category ───────────────────────── */
+  .tig-category-label {
+    color: var(--color-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+
+  /* ── Grid ────────────────────────────── */
+  .tig-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem;
+  }
+
+  @media (min-width: 640px) {
+    .tig-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  @media (min-width: 1024px) {
+    .tig-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  }
+
+  /* ── Card ────────────────────────────── */
+  .tig-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    background: var(--color-surface);
+    transition:
+      transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.25s ease,
+      box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.5s ease;
+  }
+
+  .tig-card:not(.is-visible) {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  .tig-card.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .tig-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+
+  .tig-card[data-accent="accent"]:hover { border-color: var(--color-accent); }
+  .tig-card[data-accent="accent-2"]:hover { border-color: var(--color-accent-2); }
+  .tig-card[data-accent="accent-3"]:hover { border-color: var(--color-accent-3); }
+
+  .tig-card-name {
+    font-family: var(--font-display);
+    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
+    font-weight: 600;
+    color: var(--color-text-bright);
+    line-height: 1.2;
+  }
+
+  /* ── Mode badge ─────────────────────── */
+  .tig-mode {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: clamp(0.5625rem, 0.55rem + 0.05vw, 0.6875rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+
+  .tig-mode--accent {
+    background: rgba(52, 211, 153, 0.1);
+    color: var(--color-accent);
+    border: 1px solid rgba(52, 211, 153, 0.2);
+  }
+
+  .tig-mode--accent-2 {
+    background: rgba(129, 140, 248, 0.1);
+    color: var(--color-accent-2);
+    border: 1px solid rgba(129, 140, 248, 0.2);
+  }
+
+  .tig-mode--accent-3 {
+    background: rgba(212, 160, 255, 0.1);
+    color: var(--color-accent-3);
+    border: 1px solid rgba(212, 160, 255, 0.2);
+  }
+
+  /* ── Footer link ────────────────────── */
+  .tig-footer {
+    padding-top: 0.5rem;
+  }
+
+  .tig-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
+    font-weight: 600;
+    color: var(--color-accent);
+    transition: color 0.2s ease;
+  }
+
+  .tig-link:hover {
+    color: var(--color-accent-bright);
+  }
+
+  /* ── Reduced motion ─────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .tig-card {
+      opacity: 1;
+      transform: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .tig-card:hover {
+      transform: none;
+    }
+  }
+</style>

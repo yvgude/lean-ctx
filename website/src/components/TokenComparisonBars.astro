@@ -1,0 +1,219 @@
+---
+const rows = [
+  { label: 'File reads (cached)', without: 30000, withCtx: 195, saved: 99 },
+  { label: 'git status / log / diff', without: 8000, withCtx: 2400, saved: 70 },
+  { label: 'ls / find', without: 6400, withCtx: 1280, saved: 80 },
+  { label: 'Test runners', without: 10000, withCtx: 1000, saved: 90 },
+];
+
+const maxTokens = Math.max(...rows.map((r) => r.without));
+
+const summary = {
+  before: '~89,800',
+  after: '~10,620',
+  saved: 88,
+};
+---
+
+<section class="token-bars-section relative py-20 sm:py-32">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6">
+    <div class="token-bars-container" data-token-bars>
+      {rows.map((row, i) => {
+        const withPercent = (row.withCtx / maxTokens) * 100;
+        return (
+          <div
+            class="bar-row"
+            style={`--row-delay: ${i * 0.1}s; --without-width: 100%; --with-width: ${withPercent}%`}
+          >
+            <div class="bar-header">
+              <span class="bar-label">{row.label}</span>
+              <span class="bar-saved">-{row.saved}%</span>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-without" aria-label={`Without lean-ctx: ${row.without.toLocaleString()} tokens`}>
+                <span class="bar-tokens">{row.without.toLocaleString()} tok</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-with" aria-label={`With lean-ctx: ${row.withCtx.toLocaleString()} tokens`}>
+                <span class="bar-tokens">{row.withCtx.toLocaleString()} tok</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      <div class="summary-line">
+        <span class="summary-text">
+          Typical session: {summary.before} → {summary.after} tokens
+        </span>
+        <span class="summary-badge">{summary.saved}% saved</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .token-bars-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .bar-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .bar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.125rem;
+  }
+
+  .bar-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text-bright);
+  }
+
+  .bar-saved {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    background: rgba(52, 211, 153, 0.08);
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(52, 211, 153, 0.15);
+  }
+
+  .bar-track {
+    position: relative;
+    height: 1.75rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 0.375rem;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+  }
+
+  .bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    padding: 0 0.625rem;
+    width: 0;
+    transition: width 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: var(--row-delay);
+  }
+
+  .bar-without {
+    background: linear-gradient(90deg, rgba(94, 94, 120, 0.3), rgba(94, 94, 120, 0.15));
+  }
+
+  .bar-with {
+    background: linear-gradient(90deg, rgba(52, 211, 153, 0.25), rgba(52, 211, 153, 0.1));
+    border: 1px solid rgba(52, 211, 153, 0.2);
+  }
+
+  .is-visible .bar-without {
+    width: var(--without-width);
+  }
+
+  .is-visible .bar-with {
+    width: var(--with-width);
+  }
+
+  .bar-tokens {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    white-space: nowrap;
+  }
+
+  .bar-without .bar-tokens {
+    color: var(--color-muted);
+  }
+
+  .bar-with .bar-tokens {
+    color: var(--color-accent);
+  }
+
+  .summary-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .summary-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+  }
+
+  .summary-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--color-accent);
+    background: rgba(52, 211, 153, 0.1);
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(52, 211, 153, 0.2);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bar-fill {
+      transition: none;
+    }
+    .bar-without {
+      width: var(--without-width);
+    }
+    .bar-with {
+      width: var(--with-width);
+    }
+  }
+</style>
+
+<script is:inline>
+(function () {
+  var containers = document.querySelectorAll('[data-token-bars]');
+
+  var prefersReducedMotion = window.matchMedia(
+    '(prefers-reduced-motion: reduce)'
+  ).matches;
+
+  if (prefersReducedMotion) {
+    containers.forEach(function (c) {
+      c.classList.add('is-visible');
+    });
+    return;
+  }
+
+  var observer = new IntersectionObserver(
+    function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.2 }
+  );
+
+  containers.forEach(function (c) {
+    observer.observe(c);
+  });
+})();
+</script>

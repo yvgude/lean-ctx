@@ -1,6 +1,12 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
+import LiveCompressionDemo from '../components/LiveCompressionDemo.astro';
+import AnimatedCounters from '../components/AnimatedCounters.astro';
+import BenchmarkScatterChart from '../components/BenchmarkScatterChart.astro';
+import TokenComparisonBars from '../components/TokenComparisonBars.astro';
+import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
+import ToolIntegrationGrid from '../components/ToolIntegrationGrid.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 import '../styles/index.css';
@@ -277,105 +283,96 @@ const faqJsonLd = JSON.stringify({
 
 
 <!-- ═══════════════════════════════════════════════════════
-     4. LIVE DEMO — Terminal preview
+     4. LIVE COMPRESSION DEMO
      ═══════════════════════════════════════════════════════ -->
-<section class="section-y" data-preview style="--pp: 0;">
+<section class="section-y">
   <div class="content-grid-wide">
-    <div class="split split--visual-wide">
-      <div>
-        <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-          <span class="kicker-pill">{t('index.previewLabel')}</span>
-        </div>
-        <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t('index.previewTitle')}
-        </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
-          {t('index.previewDesc')}
-        </p>
-      </div>
-
-      <TerminalChrome
-        title={`${tRead} - map`}
-        chromeClass="animate-entrance stagger-3"
-        bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
-      >
-        <div>
-          <span class="text-accent">{t('index.demoAiCallsLabel')}</span>{' '}
-          <span class="text-text-bright">{`${tRead}({ path: "src/lib/mcpManifest.ts", mode: "map" })`}</span>
-        </div>
-        <div class="term-divider"></div>
-        <div><span class="text-muted">schema_version</span> <span class="text-text-bright">{manifest.schema_version}</span></div>
-        <div><span class="text-muted">tools.granular</span> <span class="text-accent font-semibold">{manifest.counts.granular}</span></div>
-        <div><span class="text-muted">tools.unified</span> <span class="text-text-bright">{manifest.counts.unified}</span></div>
-        <div><span class="text-muted">read_modes</span> <span class="text-text-bright">{manifest.read_modes.count}</span></div>
-        <div class="term-divider"></div>
-        <div class="text-muted">modes: <span class="text-text">{manifest.read_modes.modes.slice(0, 6).join(', ')}</span></div>
-      </TerminalChrome>
+    <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      <span class="kicker-pill">{t('index.compressionLabel')}</span>
     </div>
+    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem); max-width: 48rem;">
+      {t('index.compressionTitle')}
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      {t('index.compressionDesc')}
+    </p>
+    <LiveCompressionDemo />
   </div>
 </section>
 
 
 <!-- ═══════════════════════════════════════════════════════
-     5. NUMBERS STRIP
+     5. BENCHMARK SUPER-SECTION — Scatter + Token Bars
      ═══════════════════════════════════════════════════════ -->
-<section class="section-y-sm">
+<section class="section-y">
   <div class="content-grid">
-    <div class="stats-panels animate-entrance">
-      <div class="stat-panel">
-        <span class="stat-number text-accent">Real-time</span>
-        <span class="stat-desc">{t('index.statsVisibility')}</span>
-      </div>
-      <div class="stat-panel">
-        <span class="stat-number text-accent">60–99%</span>
-        <span class="stat-desc">{t('index.statsReduction')}</span>
-        <a href={lp('/context-os/benchmark')} class="stat-methodology-link">See methodology</a>
-      </div>
-      <div class="stat-panel">
-        <span class="stat-number">{manifest.counts.granular}</span>
-        <span class="stat-desc">{t('index.statsTools')}</span>
-      </div>
-      <div class="stat-panel">
-        <span class="stat-number text-accent">0</span>
-        <span class="stat-desc">{t('index.statsConfig')}</span>
-      </div>
+    <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      <span class="kicker-pill">{t('index.benchmarkLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
+      {t('index.benchmarkTitle')} <span class="italic-accent">{t('index.benchmarkTitleHighlight')}</span>
+    </h2>
+
+    <div class="animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem);">
+      <h3 class="fluid-body font-semibold text-text-bright" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">{t('index.benchmarkScatterTitle')}</h3>
+      <BenchmarkScatterChart />
+    </div>
+
+    <div class="animate-entrance stagger-3">
+      <h3 class="fluid-body font-semibold text-text-bright" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">{t('index.benchmarkBarsTitle')}</h3>
+      <TokenComparisonBars />
     </div>
   </div>
 </section>
 
 
 <!-- ═══════════════════════════════════════════════════════
-     6. COMPATIBILITY
+     6. ANIMATED COUNTERS
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      <span class="kicker-pill">{t('index.counterLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      {t('index.counterTitle')}
+    </h2>
+    <AnimatedCounters />
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     7. ARCHITECTURE DIAGRAM
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid">
+    <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+      <span class="kicker-pill">{t('index.archLabel')}</span>
+    </div>
+    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      {t('index.archTitle')} <span class="italic-accent">{t('index.archTitleHighlight')}</span>
+    </h2>
+    <ArchitectureDiagram />
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     8. TOOL INTEGRATION GRID
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
   <div class="content-grid">
     <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('index.compatLabel')}</span>
+      <span class="kicker-pill">{t('index.toolGridLabel')}</span>
     </div>
     <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('index.compatTitle')}
+      {t('index.toolGridTitle')}
     </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 42rem;">
-      {t('index.compatDesc')}
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 42rem;">
+      {t('index.toolGridDesc')}
     </p>
-
-    <div class="compat-grid animate-entrance stagger-3">
-      {[
-        'Aider', 'Amazon Q', 'Amp', 'Antigravity', 'AWS Kiro', 'Claude Code',
-        'Cline', 'Continue', 'Cursor', 'Emacs', 'Gemini CLI', 'GitHub Copilot',
-        'JetBrains', 'Neovim', 'OpenAI Codex', 'OpenCode', 'Pi', 'Qwen Code',
-        'Roo Code', 'Sublime Text', 'Trae', 'Verdent', 'Windsurf', 'Zed',
-      ].map(name => (
-        <span class="compat-item">{name}</span>
-      ))}
-    </div>
-
-    <div class="animate-entrance stagger-4" style="margin-top: clamp(2.5rem, 2rem + 1.5vw, 4rem);">
-      <a href={lp('/compatibility')} class="fluid-sm text-muted hover:text-text-bright transition-colors inline-flex items-center gap-1.5">
-        {t('index.compatMatrix')}
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-      </a>
-    </div>
+    <ToolIntegrationGrid />
   </div>
 </section>
 

@@ -1,0 +1,178 @@
+---
+const counters = [
+  { value: 99, suffix: '%', label: 'Max token savings' },
+  { value: 56, suffix: '+', label: 'MCP tools' },
+  { value: 13, suffix: '', label: 'Tokens per re-read' },
+  { value: 1, suffix: '', prefix: '<', label: 'Overhead per operation', unit: 'ms' },
+];
+---
+
+<section class="counter-section relative py-20 sm:py-32">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="counter-grid">
+      {counters.map((c, i) => (
+        <div
+          class="counter-card animate-entrance"
+          style={`--stagger: ${i}`}
+          data-target={c.value}
+          data-suffix={c.suffix || ''}
+          data-prefix={c.prefix || ''}
+          data-unit={c.unit || ''}
+        >
+          <span class="counter-value font-display">
+            {c.prefix || ''}{c.value}{c.unit || ''}{c.suffix || ''}
+          </span>
+          <span class="counter-label">{c.label}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .counter-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .counter-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .counter-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  .counter-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    border-radius: 1rem;
+    border: 1px solid var(--color-border);
+    background: linear-gradient(
+      135deg,
+      rgba(10, 10, 15, 0.6),
+      rgba(10, 10, 15, 0.3)
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    opacity: 0;
+    transform: scale(0.95);
+    transition:
+      opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.3s ease;
+    transition-delay: calc(var(--stagger) * 0.1s);
+  }
+
+  .counter-card:hover {
+    border-color: rgba(52, 211, 153, 0.2);
+  }
+
+  .counter-card.is-visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .counter-value {
+    font-size: clamp(2.5rem, 5vw, 3.5rem);
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-accent);
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .counter-label {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .counter-card {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+</style>
+
+<script is:inline>
+(function () {
+  const prefersReducedMotion = window.matchMedia(
+    '(prefers-reduced-motion: reduce)'
+  ).matches;
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function formatCounterValue(current, prefix, suffix, unit) {
+    return prefix + current + unit + suffix;
+  }
+
+  function animateCounter(card) {
+    const target = parseInt(card.dataset.target, 10);
+    const suffix = card.dataset.suffix || '';
+    const prefix = card.dataset.prefix || '';
+    const unit = card.dataset.unit || '';
+    const valueEl = card.querySelector('.counter-value');
+    if (!valueEl) return;
+
+    if (prefersReducedMotion) {
+      valueEl.textContent = formatCounterValue(target, prefix, suffix, unit);
+      return;
+    }
+
+    const duration = 1800;
+    let start = null;
+
+    function step(timestamp) {
+      if (!start) start = timestamp;
+      var progress = Math.min((timestamp - start) / duration, 1);
+      var easedProgress = easeOutCubic(progress);
+      var current = Math.round(easedProgress * target);
+      valueEl.textContent = formatCounterValue(current, prefix, suffix, unit);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      }
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  var cards = document.querySelectorAll('.counter-card');
+
+  var observer = new IntersectionObserver(
+    function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          animateCounter(entry.target);
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.3 }
+  );
+
+  cards.forEach(function (card) {
+    if (prefersReducedMotion) {
+      card.classList.add('is-visible');
+      animateCounter(card);
+    } else {
+      observer.observe(card);
+    }
+  });
+})();
+</script>
