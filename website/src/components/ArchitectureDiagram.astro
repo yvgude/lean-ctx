@@ -1,106 +1,180 @@
 ---
 const layers = [
   {
-    id: "io",
-    label: "Smart I/O",
+    id: "integration",
+    label: "Integration",
+    accent: "muted",
+    items: [
+      { name: "MCP stdio", desc: "JSON-RPC transport" },
+      { name: "CLI", desc: "lean-ctx -c, grep, ls, read" },
+      { name: "HTTP/SSE", desc: "Streamable MCP server" },
+      { name: "LLM Proxy", desc: "Anthropic / OpenAI / Gemini" },
+      { name: "Hooks", desc: "Cursor, Claude, Codex, ..." },
+      { name: "Dashboard", desc: "Web cockpit (:3333)" },
+    ],
+  },
+  {
+    id: "protocol",
+    label: "MCP Protocol",
+    accent: "accent-3",
+    items: [
+      { name: "ServerHandler", desc: "rmcp ServerHandler impl" },
+      { name: "ToolRegistry", desc: "62 tools via McpTool trait" },
+      { name: "Guards", desc: "Role, budget, workflow, loop detection" },
+      { name: "Dispatch", desc: "PathJail resolve per arg" },
+      { name: "Instructions", desc: "Token-capped MCP instructions" },
+      { name: "Dynamic Tools", desc: "Lazy categories + filtering" },
+    ],
+  },
+];
+
+const coreClusters = [
+  {
+    id: "compression",
+    label: "Compression",
     accent: "accent",
-    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`,
     groups: [
       {
         title: "Read Modes",
         items: ["full", "map", "signatures", "aggressive", "entropy", "auto", "diff", "lines", "task", "reference"],
       },
       {
-        title: "Shell Compression",
-        items: ["95+ patterns", "git", "npm/yarn", "cargo", "docker", "kubectl", "pytest", "make"],
+        title: "Terse Pipeline",
+        items: ["Pattern compress", "Direct compress", "CDC reorder (Rabin-Karp)", "64KB budget", "500ms deadline"],
       },
       {
-        title: "Parsing",
-        items: ["Tree-sitter AST", "18 languages", "Markdown headings", "JSON/YAML/TOML keys", "Lock file summaries"],
+        title: "Shell Patterns",
+        items: ["95+ patterns", "git", "npm/yarn", "cargo", "docker", "kubectl", "pytest", "make", "tsc"],
       },
       {
-        title: "Caching",
-        items: ["Session cache", "Content-hash dedup", "13-token re-reads", "TTL eviction"],
+        title: "AST Parsing",
+        items: ["Tree-sitter", "18 languages", "Structured outlines", "Lock file summaries"],
       },
     ],
   },
   {
-    id: "intel",
+    id: "intelligence",
     label: "Intelligence",
     accent: "accent-2",
-    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 12l8-2"/></svg>`,
     groups: [
       {
-        title: "Search",
-        items: ["BM25 index", "Semantic embeddings", "Graph proximity", "RRF fusion", "Adaptive pipeline"],
+        title: "Hybrid Search (RRF k=60)",
+        items: ["BM25 index", "Dense embeddings", "Graph proximity", "HNSW", "SPLADE retrieval"],
       },
       {
         title: "Knowledge",
-        items: ["Knowledge graph", "Cross-session memory", "Context checkpoints", "Project facts"],
+        items: ["Project facts", "Claim extraction", "Cross-session memory", "Auto-consolidation"],
       },
       {
-        title: "Compression Quality",
-        items: ["AST preservation (50%)", "Identifier preservation (30%)", "Line preservation (20%)", "Minimum density (15% ρ)", "Quality threshold (≥95%)"],
+        title: "Graph",
+        items: ["PropertyGraph (SQLite)", "CodeGraph nodes/edges", "PageRank", "Call graph", "Import graph"],
       },
       {
         title: "Context Control",
-        items: ["Intent classification", "Progressive throttling", "Token budgets", "Terse mode", "Profile-based access"],
+        items: ["Intent classification", "Progressive throttling", "Token budgets", "Context IR", "Context Ledger"],
       },
     ],
   },
   {
-    id: "integrations",
-    label: "Integrations",
-    accent: "accent-3",
-    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`,
+    id: "memory",
+    label: "Memory & Session",
+    accent: "accent",
     groups: [
       {
-        title: "Integration Modes",
-        items: ["CLI-Redirect", "Hybrid MCP", "Full MCP", "HTTP/SSE server"],
+        title: "Session Cache",
+        items: ["zstd in-memory", "Content-hash dedup", "13-token re-reads", "500K token budget", "TTL eviction"],
       },
       {
-        title: "Tooling",
-        items: ["24+ AI tools", "Auto-setup", "Shell hooks", "LaunchAgent daemon"],
+        title: "Session State",
+        items: ["Task progress", "Findings", "Decisions", "Files touched", "Project-scoped"],
+      },
+      {
+        title: "Memory Systems",
+        items: ["Episodic memory", "Procedural memory", "Memory consolidation", "Handoff ledger"],
+      },
+      {
+        title: "Context OS",
+        items: ["SharedSessionStore", "ContextBus (SSE)", "Multi-agent coordination", "Staleness guard"],
+      },
+    ],
+  },
+  {
+    id: "providers",
+    label: "Providers & Data",
+    accent: "accent-3",
+    groups: [
+      {
+        title: "Consolidation Pipeline",
+        items: ["ProviderResult → ConsolidationArtifacts", "→ BM25 index", "→ Graph edges", "→ Knowledge facts", "→ Session cache"],
       },
       {
         title: "Data Sources",
-        items: ["GitHub / GitLab", "Jira / Linear", "Postgres / REST", "Config-based providers", "TOML definitions"],
-      },
-      {
-        title: "Security",
-        items: ["PathJail sandbox", "Shell allowlist", "Bounded locks", "Full audit trail", "OWASP aligned"],
+        items: ["GitHub / GitLab", "Jira / Linear", "Postgres", "REST APIs", "MCP Bridge", "Config-based (TOML)"],
       },
     ],
   },
 ];
+
+const securityItems = [
+  { name: "PathJail", desc: "Canonicalize + prefix check" },
+  { name: "Shell Allowlist", desc: "Deny-by-default, pipeline-aware" },
+  { name: "Sandbox", desc: "Seatbelt (macOS) / Landlock (Linux)" },
+  { name: "Roles & Policies", desc: "Per-tool access control" },
+  { name: "Bounded Locks", desc: "Timeout RwLock (anti-DoS)" },
+  { name: "Secret Detection", desc: "Redaction in search output" },
+  { name: "Audit Trail", desc: "Full call logging" },
+];
 ---
 
-<div class="arch-root animate-entrance" role="region" aria-label="Architecture diagram">
+<div class="arch animate-entrance" role="region" aria-label="lean-ctx architecture">
+
   <div class="arch-core">
-    <div class="arch-core-inner">
-      <span class="arch-core-title font-display">lean-ctx</span>
-      <span class="arch-core-subtitle">Context Runtime for AI Agents</span>
-    </div>
+    <span class="arch-core-title font-display">lean-ctx</span>
+    <span class="arch-core-sub">Single Rust binary · 3 runtime modes · 62 MCP tools</span>
   </div>
 
-  <div class="arch-columns">
-    {layers.map((layer) => (
-      <div class={`arch-col arch-col--${layer.accent}`}>
-        <div class="arch-col-header">
-          <span class="arch-col-icon" set:html={layer.icon} />
-          <span class="arch-col-title">{layer.label}</span>
-        </div>
+  <div class="arch-flow-arrow">
+    <svg width="24" height="32" viewBox="0 0 24 32" fill="none"><path d="M12 0v24m0 0l-7-7m7 7l7-7" stroke="var(--color-border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
 
-        <div class="arch-col-body">
-          {layer.groups.map((group) => (
+  {layers.map((layer) => (
+    <div class="arch-layer-row">
+      <div class="arch-layer-label">
+        <span class="arch-layer-name">{layer.label}</span>
+      </div>
+      <div class="arch-layer-items">
+        {layer.items.map((item) => (
+          <div class={`arch-item arch-item--${layer.accent}`}>
+            <span class="arch-item-name">{item.name}</span>
+            <span class="arch-item-desc">{item.desc}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  ))}
+
+  <div class="arch-flow-arrow">
+    <svg width="24" height="32" viewBox="0 0 24 32" fill="none"><path d="M12 0v24m0 0l-7-7m7 7l7-7" stroke="var(--color-border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="arch-flow-label">LeanCtxServer (central state: cache, session, ledger, registry)</span>
+  </div>
+
+  <div class="arch-section-header">
+    <span class="arch-section-title">Domain Core</span>
+  </div>
+
+  <div class="arch-core-grid">
+    {coreClusters.map((cluster) => (
+      <div class={`arch-cluster arch-cluster--${cluster.accent}`}>
+        <div class="arch-cluster-header">
+          <span class="arch-cluster-title">{cluster.label}</span>
+        </div>
+        <div class="arch-cluster-body">
+          {cluster.groups.map((group) => (
             <div class="arch-group">
               <span class="arch-group-title">{group.title}</span>
               <div class="arch-group-items">
-                {group.items.map((item, j) => (
-                  <span
-                    class={`arch-pill arch-pill--${layer.accent}`}
-                    style={`--pill-i: ${j}`}
-                  >{item}</span>
+                {group.items.map((item) => (
+                  <span class={`arch-pill arch-pill--${cluster.accent}`}>{item}</span>
                 ))}
               </div>
             </div>
@@ -109,73 +183,186 @@ const layers = [
       </div>
     ))}
   </div>
+
+  <div class="arch-section-header" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem);">
+    <span class="arch-section-title">Security (defense-in-depth)</span>
+  </div>
+
+  <div class="arch-security-row">
+    {securityItems.map((item) => (
+      <div class="arch-sec-item">
+        <span class="arch-sec-name">{item.name}</span>
+        <span class="arch-sec-desc">{item.desc}</span>
+      </div>
+    ))}
+  </div>
 </div>
 
 <style>
-  .arch-root {
+  .arch {
     width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);
   }
 
   .arch-core {
     display: flex;
-    justify-content: center;
-    margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);
-  }
-
-  .arch-core-inner {
-    display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
-    padding: 1.25rem 2.5rem;
+    gap: 0.25rem;
+    padding: 1.25rem 2rem;
     border: 1px solid var(--color-border);
     border-radius: var(--card-radius-lg);
     background: var(--color-surface);
+    text-align: center;
     animation: core-glow 4s ease-in-out infinite;
   }
 
   .arch-core-title {
-    font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+    font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
     font-weight: 700;
     letter-spacing: -0.04em;
     color: var(--color-text-bright);
     line-height: 1;
   }
 
-  .arch-core-subtitle {
-    font-size: clamp(0.6875rem, 0.65rem + 0.12vw, 0.8125rem);
+  .arch-core-sub {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
     color: var(--color-muted);
+    font-family: var(--font-mono);
   }
 
   @keyframes core-glow {
-    0%, 100% {
-      box-shadow: 0 0 20px rgba(52, 211, 153, 0.06), 0 0 60px rgba(52, 211, 153, 0.03);
-    }
-    50% {
-      box-shadow: 0 0 30px rgba(52, 211, 153, 0.12), 0 0 80px rgba(52, 211, 153, 0.06);
-    }
+    0%, 100% { box-shadow: 0 0 20px rgba(52, 211, 153, 0.05), 0 0 60px rgba(52, 211, 153, 0.02); }
+    50% { box-shadow: 0 0 30px rgba(52, 211, 153, 0.1), 0 0 80px rgba(52, 211, 153, 0.05); }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .arch-core-inner {
-      animation: none;
-      box-shadow: 0 0 20px rgba(52, 211, 153, 0.06);
-    }
+    .arch-core { animation: none; box-shadow: 0 0 20px rgba(52, 211, 153, 0.05); }
   }
 
-  .arch-columns {
+  .arch-flow-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .arch-flow-label {
+    font-family: var(--font-mono);
+    font-size: clamp(0.5625rem, 0.55rem + 0.05vw, 0.6875rem);
+    color: var(--color-muted);
+    text-align: center;
+  }
+
+  .arch-layer-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);
+    align-items: start;
+  }
+
+  .arch-layer-label {
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0;
+  }
+
+  .arch-layer-name {
+    font-family: var(--font-display);
+    font-size: clamp(0.6875rem, 0.66rem + 0.08vw, 0.75rem);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+  }
+
+  .arch-layer-items {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.375rem;
+  }
+
+  @media (min-width: 640px) {
+    .arch-layer-items { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  @media (min-width: 1024px) {
+    .arch-layer-items { grid-template-columns: repeat(6, 1fr); }
+  }
+
+  .arch-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    transition: border-color 0.2s ease;
+  }
+
+  .arch-item:hover { border-color: var(--color-border-light); }
+
+  .arch-item--accent-3:hover { border-color: color-mix(in srgb, var(--color-accent-3) 30%, var(--color-border)); }
+
+  .arch-item-name {
+    font-family: var(--font-mono);
+    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
+    font-weight: 600;
+    color: var(--color-text-bright);
+    line-height: 1.2;
+  }
+
+  .arch-item-desc {
+    font-size: clamp(0.5625rem, 0.55rem + 0.04vw, 0.625rem);
+    color: var(--color-muted);
+    line-height: 1.3;
+  }
+
+  .arch-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+  }
+
+  .arch-section-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-border);
+  }
+
+  .arch-section-title {
+    font-family: var(--font-display);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+    white-space: nowrap;
+  }
+
+  .arch-core-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: clamp(1rem, 0.75rem + 0.5vw, 1.25rem);
+    gap: clamp(0.625rem, 0.5rem + 0.3vw, 0.875rem);
   }
 
   @media (min-width: 768px) {
-    .arch-columns {
-      grid-template-columns: repeat(3, 1fr);
-    }
+    .arch-core-grid { grid-template-columns: repeat(2, 1fr); }
   }
 
-  .arch-col {
+  @media (min-width: 1280px) {
+    .arch-core-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  .arch-cluster {
     border: 1px solid var(--color-border);
     border-radius: var(--card-radius-lg);
     background: var(--color-surface);
@@ -183,87 +370,126 @@ const layers = [
     transition: border-color 0.25s ease;
   }
 
-  .arch-col--accent:hover { border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border)); }
-  .arch-col--accent-2:hover { border-color: color-mix(in srgb, var(--color-accent-2) 30%, var(--color-border)); }
-  .arch-col--accent-3:hover { border-color: color-mix(in srgb, var(--color-accent-3) 30%, var(--color-border)); }
+  .arch-cluster--accent:hover { border-color: color-mix(in srgb, var(--color-accent) 25%, var(--color-border)); }
+  .arch-cluster--accent-2:hover { border-color: color-mix(in srgb, var(--color-accent-2) 25%, var(--color-border)); }
+  .arch-cluster--accent-3:hover { border-color: color-mix(in srgb, var(--color-accent-3) 25%, var(--color-border)); }
 
-  .arch-col-header {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: clamp(0.875rem, 0.75rem + 0.3vw, 1.125rem) clamp(1rem, 0.875rem + 0.4vw, 1.25rem);
+  .arch-cluster-header {
+    padding: 0.625rem 0.875rem;
     border-bottom: 1px solid var(--color-border);
   }
 
-  .arch-col-icon {
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 8px;
-  }
+  .arch-cluster--accent .arch-cluster-header { border-bottom-color: rgba(52, 211, 153, 0.12); }
+  .arch-cluster--accent-2 .arch-cluster-header { border-bottom-color: rgba(129, 140, 248, 0.12); }
+  .arch-cluster--accent-3 .arch-cluster-header { border-bottom-color: rgba(212, 160, 255, 0.12); }
 
-  .arch-col--accent .arch-col-icon { color: var(--color-accent); background: rgba(52, 211, 153, 0.08); }
-  .arch-col--accent-2 .arch-col-icon { color: var(--color-accent-2); background: rgba(129, 140, 248, 0.08); }
-  .arch-col--accent-3 .arch-col-icon { color: var(--color-accent-3); background: rgba(212, 160, 255, 0.08); }
-
-  .arch-col-title {
+  .arch-cluster-title {
     font-family: var(--font-display);
-    font-size: clamp(0.9375rem, 0.9rem + 0.15vw, 1.0625rem);
+    font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.9375rem);
     font-weight: 700;
     color: var(--color-text-bright);
   }
 
-  .arch-col-body {
-    padding: clamp(0.875rem, 0.75rem + 0.3vw, 1.125rem) clamp(1rem, 0.875rem + 0.4vw, 1.25rem);
+  .arch-cluster-body {
+    padding: 0.75rem 0.875rem;
     display: flex;
     flex-direction: column;
-    gap: clamp(1rem, 0.75rem + 0.5vw, 1.25rem);
+    gap: 0.75rem;
   }
 
   .arch-group-title {
     display: block;
-    font-size: clamp(0.6875rem, 0.66rem + 0.08vw, 0.75rem);
+    font-size: clamp(0.5625rem, 0.55rem + 0.06vw, 0.6875rem);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     color: var(--color-muted);
-    margin-bottom: 0.375rem;
+    margin-bottom: 0.25rem;
   }
 
   .arch-group-items {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
+    gap: 0.25rem;
   }
 
   .arch-pill {
     display: inline-flex;
     align-items: center;
-    padding: 0.1875rem 0.5rem;
-    border-radius: 4px;
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
     font-family: var(--font-mono);
-    font-size: clamp(0.5625rem, 0.55rem + 0.06vw, 0.6875rem);
+    font-size: clamp(0.5rem, 0.48rem + 0.05vw, 0.625rem);
     font-weight: 500;
-    line-height: 1.2;
+    line-height: 1.3;
   }
 
   .arch-pill--accent {
     background: rgba(52, 211, 153, 0.06);
-    border: 1px solid rgba(52, 211, 153, 0.14);
+    border: 1px solid rgba(52, 211, 153, 0.12);
     color: var(--color-accent);
   }
 
   .arch-pill--accent-2 {
     background: rgba(129, 140, 248, 0.06);
-    border: 1px solid rgba(129, 140, 248, 0.14);
+    border: 1px solid rgba(129, 140, 248, 0.12);
     color: var(--color-accent-2);
   }
 
   .arch-pill--accent-3 {
     background: rgba(212, 160, 255, 0.06);
-    border: 1px solid rgba(212, 160, 255, 0.14);
+    border: 1px solid rgba(212, 160, 255, 0.12);
     color: var(--color-accent-3);
+  }
+
+  .arch-security-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.375rem;
+  }
+
+  @media (min-width: 640px) {
+    .arch-security-row { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  @media (min-width: 1280px) {
+    .arch-security-row { grid-template-columns: repeat(7, 1fr); }
+  }
+
+  .arch-sec-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.0625rem;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: rgba(255, 95, 87, 0.02);
+    border-color: rgba(255, 95, 87, 0.1);
+  }
+
+  .arch-sec-name {
+    font-family: var(--font-mono);
+    font-size: clamp(0.5625rem, 0.55rem + 0.05vw, 0.6875rem);
+    font-weight: 600;
+    color: var(--color-text-bright);
+    line-height: 1.2;
+  }
+
+  .arch-sec-desc {
+    font-size: clamp(0.5rem, 0.48rem + 0.04vw, 0.5625rem);
+    color: var(--color-muted);
+    line-height: 1.3;
+  }
+
+  @media (max-width: 640px) {
+    .arch-layer-row {
+      grid-template-columns: 1fr;
+    }
+
+    .arch-layer-label {
+      writing-mode: horizontal-tb;
+      transform: none;
+      padding: 0;
+    }
   }
 </style>
