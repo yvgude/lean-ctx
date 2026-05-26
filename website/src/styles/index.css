@@ -457,6 +457,25 @@
   }
 }
 
+/* ── Benchmark split layout ──────────────────────────────── */
+
+.benchmark-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+}
+
+@media (min-width: 1024px) {
+  .benchmark-split {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.benchmark-panel {
+  min-width: 0;
+}
+
 /* ── Six Pillars ────────────────────────────────────────── */
 
 .pillars-section {

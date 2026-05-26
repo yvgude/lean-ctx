@@ -2,7 +2,6 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
 import LiveCompressionDemo from '../components/LiveCompressionDemo.astro';
-import AnimatedCounters from '../components/AnimatedCounters.astro';
 import BenchmarkScatterChart from '../components/BenchmarkScatterChart.astro';
 import TokenComparisonBars from '../components/TokenComparisonBars.astro';
 import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
@@ -309,44 +308,30 @@ const faqJsonLd = JSON.stringify({
     <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
       <span class="kicker-pill">{t('index.benchmarkLabel')}</span>
     </div>
-    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
+    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
       {t('index.benchmarkTitle')} <span class="italic-accent">{t('index.benchmarkTitleHighlight')}</span>
     </h2>
 
-    <div class="animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem);">
-      <h3 class="fluid-body font-semibold text-text-bright" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">{t('index.benchmarkScatterTitle')}</h3>
-      <BenchmarkScatterChart />
-    </div>
-
-    <div class="animate-entrance stagger-3">
-      <h3 class="fluid-body font-semibold text-text-bright" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">{t('index.benchmarkBarsTitle')}</h3>
-      <TokenComparisonBars />
+    <div class="benchmark-split animate-entrance stagger-2">
+      <div class="benchmark-panel">
+        <h3 class="fluid-body font-semibold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('index.benchmarkScatterTitle')}</h3>
+        <BenchmarkScatterChart />
+      </div>
+      <div class="benchmark-panel">
+        <h3 class="fluid-body font-semibold text-text-bright" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">{t('index.benchmarkBarsTitle')}</h3>
+        <TokenComparisonBars />
+      </div>
     </div>
   </div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════
-     6. ANIMATED COUNTERS
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      <span class="kicker-pill">{t('index.counterLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
-      {t('index.counterTitle')}
-    </h2>
-    <AnimatedCounters />
-  </div>
-</section>
 
 
 <!-- ═══════════════════════════════════════════════════════
      7. ARCHITECTURE DIAGRAM
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
-  <div class="content-grid">
+  <div class="content-grid-wide">
     <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
       <span class="kicker-pill">{t('index.archLabel')}</span>
     </div>

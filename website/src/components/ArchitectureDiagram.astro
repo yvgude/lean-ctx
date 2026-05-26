@@ -1,63 +1,81 @@
 ---
-const readModes = [
-  "full", "map", "signatures", "aggressive", "entropy",
-  "auto", "diff", "lines", "task", "reference",
-];
-
 const layers = [
   {
     id: "io",
     label: "Smart I/O",
-    brief: "10 read modes, 95+ shell patterns",
     accent: "accent",
-    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`,
-    badges: [
-      ...readModes,
-      "AST Parser (18 langs)",
-      "95+ Shell Patterns",
-      "Session Cache",
-      "Terse Mode",
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`,
+    groups: [
+      {
+        title: "Read Modes",
+        items: ["full", "map", "signatures", "aggressive", "entropy", "auto", "diff", "lines", "task", "reference"],
+      },
+      {
+        title: "Shell Compression",
+        items: ["95+ patterns", "git", "npm/yarn", "cargo", "docker", "kubectl", "pytest", "make"],
+      },
+      {
+        title: "Parsing",
+        items: ["Tree-sitter AST", "18 languages", "Markdown headings", "JSON/YAML/TOML keys", "Lock file summaries"],
+      },
+      {
+        title: "Caching",
+        items: ["Session cache", "Content-hash dedup", "13-token re-reads", "TTL eviction"],
+      },
     ],
   },
   {
     id: "intel",
     label: "Intelligence",
-    brief: "Intent engine, hybrid search",
     accent: "accent-2",
-    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
-    badges: [
-      "Intent Classification",
-      "BM25 Search",
-      "Semantic Embeddings",
-      "Graph Proximity",
-      "RRF Fusion",
-      "Knowledge Graph",
-      "Adaptive Pipeline",
-      "Progressive Throttling",
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 12l8-2"/></svg>`,
+    groups: [
+      {
+        title: "Search",
+        items: ["BM25 index", "Semantic embeddings", "Graph proximity", "RRF fusion", "Adaptive pipeline"],
+      },
+      {
+        title: "Knowledge",
+        items: ["Knowledge graph", "Cross-session memory", "Context checkpoints", "Project facts"],
+      },
+      {
+        title: "Compression Quality",
+        items: ["AST preservation (50%)", "Identifier preservation (30%)", "Line preservation (20%)", "Minimum density (15% ρ)", "Quality threshold (≥95%)"],
+      },
+      {
+        title: "Context Control",
+        items: ["Intent classification", "Progressive throttling", "Token budgets", "Terse mode", "Profile-based access"],
+      },
     ],
   },
   {
     id: "integrations",
     label: "Integrations",
-    brief: "24+ AI tools, 3 modes",
     accent: "accent-3",
-    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`,
-    badges: [
-      "CLI-Redirect",
-      "Hybrid MCP",
-      "Full MCP",
-      "HTTP/SSE Mode",
-      "24+ AI Tools",
-      "Shell Hook",
-      "LaunchAgent Daemon",
-      "Auto-Setup",
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`,
+    groups: [
+      {
+        title: "Integration Modes",
+        items: ["CLI-Redirect", "Hybrid MCP", "Full MCP", "HTTP/SSE server"],
+      },
+      {
+        title: "Tooling",
+        items: ["24+ AI tools", "Auto-setup", "Shell hooks", "LaunchAgent daemon"],
+      },
+      {
+        title: "Data Sources",
+        items: ["GitHub / GitLab", "Jira / Linear", "Postgres / REST", "Config-based providers", "TOML definitions"],
+      },
+      {
+        title: "Security",
+        items: ["PathJail sandbox", "Shell allowlist", "Bounded locks", "Full audit trail", "OWASP aligned"],
+      },
     ],
   },
 ];
 ---
 
-<div class="arch-diagram animate-entrance" role="region" aria-label="Architecture diagram">
-  <!-- Central block -->
+<div class="arch-root animate-entrance" role="region" aria-label="Architecture diagram">
   <div class="arch-core">
     <div class="arch-core-inner">
       <span class="arch-core-title font-display">lean-ctx</span>
@@ -65,58 +83,51 @@ const layers = [
     </div>
   </div>
 
-  <!-- Connecting spine + layers -->
-  <div class="arch-layers">
-    {layers.map((layer, i) => (
-      <details class={`arch-layer arch-layer--${layer.accent}`} data-layer={layer.id}>
-        <summary class="arch-layer-summary">
-          <span class="arch-layer-icon" set:html={layer.icon} />
-          <span class="arch-layer-meta">
-            <span class="arch-layer-label">{layer.label}</span>
-            <span class="arch-layer-brief">{layer.brief}</span>
-          </span>
-          <span class="arch-layer-toggle" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </span>
-        </summary>
-        <div class="arch-layer-content">
-          <div class="arch-badges">
-            {layer.badges.map((badge, j) => (
-              <span
-                class={`arch-badge arch-badge--${layer.accent}`}
-                style={`--badge-i: ${j}`}
-              >
-                {badge}
-              </span>
-            ))}
-          </div>
+  <div class="arch-columns">
+    {layers.map((layer) => (
+      <div class={`arch-col arch-col--${layer.accent}`}>
+        <div class="arch-col-header">
+          <span class="arch-col-icon" set:html={layer.icon} />
+          <span class="arch-col-title">{layer.label}</span>
         </div>
-      </details>
+
+        <div class="arch-col-body">
+          {layer.groups.map((group) => (
+            <div class="arch-group">
+              <span class="arch-group-title">{group.title}</span>
+              <div class="arch-group-items">
+                {group.items.map((item, j) => (
+                  <span
+                    class={`arch-pill arch-pill--${layer.accent}`}
+                    style={`--pill-i: ${j}`}
+                  >{item}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     ))}
   </div>
 </div>
 
 <style>
-  .arch-diagram {
-    --glow-color: var(--color-accent);
-    max-width: 100%;
+  .arch-root {
+    width: 100%;
   }
 
-  /* ── Central block ──────────────────── */
   .arch-core {
-    position: relative;
     display: flex;
     justify-content: center;
-    padding-bottom: 2rem;
+    margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);
   }
 
   .arch-core-inner {
-    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.375rem;
-    padding: 1.5rem 2.5rem;
+    padding: 1.25rem 2.5rem;
     border: 1px solid var(--color-border);
     border-radius: var(--card-radius-lg);
     background: var(--color-surface);
@@ -124,7 +135,7 @@ const layers = [
   }
 
   .arch-core-title {
-    font-size: clamp(1.75rem, 1.4rem + 1.5vw, 2.5rem);
+    font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
     font-weight: 700;
     letter-spacing: -0.04em;
     color: var(--color-text-bright);
@@ -132,21 +143,16 @@ const layers = [
   }
 
   .arch-core-subtitle {
-    font-size: clamp(0.75rem, 0.7rem + 0.15vw, 0.875rem);
+    font-size: clamp(0.6875rem, 0.65rem + 0.12vw, 0.8125rem);
     color: var(--color-muted);
-    letter-spacing: 0.01em;
   }
 
   @keyframes core-glow {
     0%, 100% {
-      box-shadow:
-        0 0 20px rgba(52, 211, 153, 0.06),
-        0 0 60px rgba(52, 211, 153, 0.03);
+      box-shadow: 0 0 20px rgba(52, 211, 153, 0.06), 0 0 60px rgba(52, 211, 153, 0.03);
     }
     50% {
-      box-shadow:
-        0 0 30px rgba(52, 211, 153, 0.12),
-        0 0 80px rgba(52, 211, 153, 0.06);
+      box-shadow: 0 0 30px rgba(52, 211, 153, 0.12), 0 0 80px rgba(52, 211, 153, 0.06);
     }
   }
 
@@ -157,217 +163,107 @@ const layers = [
     }
   }
 
-  /* ── Spine (connecting line) ────────── */
-  .arch-layers {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    padding-left: 1.5rem;
+  .arch-columns {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.25rem);
   }
 
-  .arch-layers::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 1.5rem;
-    bottom: 0;
-    width: 1px;
-    background: linear-gradient(
-      to bottom,
-      var(--color-accent) 0%,
-      var(--color-accent-2) 50%,
-      var(--color-accent-3) 100%
-    );
-    opacity: 0.25;
+  @media (min-width: 768px) {
+    .arch-columns {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
 
-  /* ── Layer card ─────────────────────── */
-  .arch-layer {
-    position: relative;
-    margin-left: 1.5rem;
+  .arch-col {
     border: 1px solid var(--color-border);
-    border-radius: var(--card-radius);
+    border-radius: var(--card-radius-lg);
     background: var(--color-surface);
+    overflow: hidden;
     transition: border-color 0.25s ease;
   }
 
-  .arch-layer + .arch-layer {
-    margin-top: 0.75rem;
-  }
+  .arch-col--accent:hover { border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border)); }
+  .arch-col--accent-2:hover { border-color: color-mix(in srgb, var(--color-accent-2) 30%, var(--color-border)); }
+  .arch-col--accent-3:hover { border-color: color-mix(in srgb, var(--color-accent-3) 30%, var(--color-border)); }
 
-  /* Horizontal connector from spine to card */
-  .arch-layer::before {
-    content: '';
-    position: absolute;
-    top: 1.25rem;
-    left: -1.5rem;
-    width: 1.5rem;
-    height: 1px;
-  }
-
-  .arch-layer--accent::before { background: var(--color-accent); opacity: 0.35; }
-  .arch-layer--accent-2::before { background: var(--color-accent-2); opacity: 0.35; }
-  .arch-layer--accent-3::before { background: var(--color-accent-3); opacity: 0.35; }
-
-  .arch-layer--accent:hover,
-  .arch-layer--accent[open] { border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border)); }
-  .arch-layer--accent-2:hover,
-  .arch-layer--accent-2[open] { border-color: color-mix(in srgb, var(--color-accent-2) 30%, var(--color-border)); }
-  .arch-layer--accent-3:hover,
-  .arch-layer--accent-3[open] { border-color: color-mix(in srgb, var(--color-accent-3) 30%, var(--color-border)); }
-
-  /* ── Summary row ────────────────────── */
-  .arch-layer-summary {
-    list-style: none;
-    cursor: pointer;
+  .arch-col-header {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-    user-select: none;
+    gap: 0.625rem;
+    padding: clamp(0.875rem, 0.75rem + 0.3vw, 1.125rem) clamp(1rem, 0.875rem + 0.4vw, 1.25rem);
+    border-bottom: 1px solid var(--color-border);
   }
 
-  .arch-layer-summary::-webkit-details-marker { display: none; }
-
-  .arch-layer-icon {
+  .arch-col-icon {
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 6px;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 8px;
   }
 
-  .arch-layer--accent .arch-layer-icon { color: var(--color-accent); background: rgba(52, 211, 153, 0.08); }
-  .arch-layer--accent-2 .arch-layer-icon { color: var(--color-accent-2); background: rgba(129, 140, 248, 0.08); }
-  .arch-layer--accent-3 .arch-layer-icon { color: var(--color-accent-3); background: rgba(212, 160, 255, 0.08); }
+  .arch-col--accent .arch-col-icon { color: var(--color-accent); background: rgba(52, 211, 153, 0.08); }
+  .arch-col--accent-2 .arch-col-icon { color: var(--color-accent-2); background: rgba(129, 140, 248, 0.08); }
+  .arch-col--accent-3 .arch-col-icon { color: var(--color-accent-3); background: rgba(212, 160, 255, 0.08); }
 
-  .arch-layer-meta {
-    flex: 1;
+  .arch-col-title {
+    font-family: var(--font-display);
+    font-size: clamp(0.9375rem, 0.9rem + 0.15vw, 1.0625rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+  }
+
+  .arch-col-body {
+    padding: clamp(0.875rem, 0.75rem + 0.3vw, 1.125rem) clamp(1rem, 0.875rem + 0.4vw, 1.25rem);
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
-    min-width: 0;
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.25rem);
   }
 
-  .arch-layer-label {
-    font-family: var(--font-display);
-    font-size: clamp(0.875rem, 0.85rem + 0.15vw, 1rem);
+  .arch-group-title {
+    display: block;
+    font-size: clamp(0.6875rem, 0.66rem + 0.08vw, 0.75rem);
     font-weight: 600;
-    color: var(--color-text-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+    margin-bottom: 0.375rem;
+  }
+
+  .arch-group-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .arch-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: clamp(0.5625rem, 0.55rem + 0.06vw, 0.6875rem);
+    font-weight: 500;
     line-height: 1.2;
   }
 
-  .arch-layer-brief {
-    font-size: clamp(0.6875rem, 0.66rem + 0.1vw, 0.8125rem);
-    color: var(--color-muted);
-    line-height: 1.4;
-  }
-
-  /* Toggle indicator (+ / −) */
-  .arch-layer-toggle {
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    color: var(--color-muted);
-    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  details[open] > .arch-layer-summary .arch-layer-toggle {
-    transform: rotate(45deg);
-  }
-
-  /* ── Expanded content ───────────────── */
-  .arch-layer-content {
-    overflow: hidden;
-    padding: 0 1rem 1rem;
-  }
-
-  /* ── Badges ─────────────────────────── */
-  .arch-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-  }
-
-  .arch-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.625rem;
-    border-radius: 4px;
-    font-family: var(--font-mono);
-    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    line-height: 1;
-    opacity: 0;
-    transform: translateY(4px);
-    animation: badge-in 0.35s ease forwards;
-    animation-delay: calc(var(--badge-i) * 0.04s);
-    animation-play-state: paused;
-  }
-
-  details[open] .arch-badge {
-    animation-play-state: running;
-  }
-
-  .arch-badge--accent {
-    background: rgba(52, 211, 153, 0.08);
-    border: 1px solid rgba(52, 211, 153, 0.18);
+  .arch-pill--accent {
+    background: rgba(52, 211, 153, 0.06);
+    border: 1px solid rgba(52, 211, 153, 0.14);
     color: var(--color-accent);
   }
 
-  .arch-badge--accent-2 {
-    background: rgba(129, 140, 248, 0.08);
-    border: 1px solid rgba(129, 140, 248, 0.18);
+  .arch-pill--accent-2 {
+    background: rgba(129, 140, 248, 0.06);
+    border: 1px solid rgba(129, 140, 248, 0.14);
     color: var(--color-accent-2);
   }
 
-  .arch-badge--accent-3 {
-    background: rgba(212, 160, 255, 0.08);
-    border: 1px solid rgba(212, 160, 255, 0.18);
+  .arch-pill--accent-3 {
+    background: rgba(212, 160, 255, 0.06);
+    border: 1px solid rgba(212, 160, 255, 0.14);
     color: var(--color-accent-3);
-  }
-
-  @keyframes badge-in {
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .arch-badge {
-      opacity: 1;
-      transform: none;
-      animation: none;
-    }
-  }
-
-  /* ── Responsive ─────────────────────── */
-  @media (max-width: 480px) {
-    .arch-layers {
-      padding-left: 1rem;
-    }
-
-    .arch-layers::before {
-      left: 1rem;
-    }
-
-    .arch-layer {
-      margin-left: 1rem;
-    }
-
-    .arch-layer::before {
-      left: -1rem;
-      width: 1rem;
-    }
-
-    .arch-core-inner {
-      padding: 1.25rem 1.75rem;
-    }
   }
 </style>
