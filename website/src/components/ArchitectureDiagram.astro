@@ -1,238 +1,462 @@
 ---
-const steps = [
-  { label: "Understand", color: "green" },
-  { label: "Compress", color: "green" },
-  { label: "Remember", color: "indigo" },
-  { label: "Verify", color: "indigo" },
-  { label: "Connect", color: "purple" },
-];
-
-const layers = [
-  { label: "Smart I/O", detail: "10 modes · AST · 95+ patterns", color: "green" },
-  { label: "Intelligence", detail: "Search · Knowledge · Memory", color: "indigo" },
-  { label: "Security", detail: "PathJail · Sandbox · Audit", color: "purple" },
+const capabilities = [
+  {
+    label: "Understand",
+    icon: "⚡",
+    color: "green",
+    features: [
+      "10 read modes",
+      "Context visibility",
+      "Token counting",
+      "Intent detection",
+    ],
+  },
+  {
+    label: "Compress",
+    icon: "📦",
+    color: "green",
+    features: [
+      "Tree-sitter AST (18 langs)",
+      "95+ shell patterns",
+      "CDC reorder (Rabin-Karp)",
+      "64 KB budget, 500 ms deadline",
+    ],
+  },
+  {
+    label: "Remember",
+    icon: "🧠",
+    color: "indigo",
+    features: [
+      "Session cache (zstd, in-memory)",
+      "13-token re-reads",
+      "Knowledge graph (SQLite)",
+      "Cross-session memory",
+    ],
+  },
+  {
+    label: "Verify",
+    icon: "🛡",
+    color: "indigo",
+    features: [
+      "PathJail sandbox",
+      "OS-level isolation",
+      "Shell allowlist (deny-by-default)",
+      "Full audit trail",
+    ],
+  },
+  {
+    label: "Connect",
+    icon: "🔗",
+    color: "purple",
+    features: [
+      "GitHub · GitLab · Jira · Linear",
+      "Postgres · REST · MCP Bridge",
+      "Hybrid search (BM25 + semantic)",
+      "Config-based providers (TOML)",
+    ],
+  },
 ];
 ---
 
 <div class="dia animate-entrance" role="img" aria-label="lean-ctx architecture">
 
-  <!-- TOP NODE -->
-  <div class="dia-node">
-    <span class="dia-node-label">Your AI Tool</span>
+  <!-- ── TOP NODE ── -->
+  <div class="dia-endpoint">
+    <div class="dia-endpoint-dot"></div>
+    <span class="dia-endpoint-label">Your AI Tool</span>
+    <span class="dia-endpoint-sub">Cursor · Claude Code · Copilot · Windsurf</span>
   </div>
 
-  <div class="dia-line"></div>
+  <!-- ── CONNECTOR DOWN ── -->
+  <div class="dia-connector">
+    <div class="dia-connector-line"></div>
+    <div class="dia-connector-tag">MCP · CLI · HTTP</div>
+    <div class="dia-connector-line"></div>
+    <div class="dia-connector-chevron">
+      <svg width="16" height="10" viewBox="0 0 16 10"><path d="M2 2l6 6 6-6" stroke="var(--color-accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
 
-  <!-- MAIN BOX -->
-  <div class="dia-box">
-    <div class="dia-box-head">
-      <span class="dia-box-title font-display">lean-ctx</span>
+  <!-- ── MAIN RUNTIME BOX ── -->
+  <div class="dia-runtime">
+
+    <!-- Header -->
+    <div class="dia-header">
+      <span class="dia-title font-display">lean-ctx</span>
+      <span class="dia-subtitle">Context Runtime · Single binary · 62 tools</span>
     </div>
 
-    <!-- PIPELINE -->
+    <!-- Pipeline -->
     <div class="dia-pipeline">
-      {steps.map((s, i) => (
-        <div class="dia-step-group">
-          <div class={`dia-step dia-step--${s.color}`}>
-            <span class="dia-step-label">{s.label}</span>
+      {capabilities.map((cap, i) => (
+        <div class="dia-cell">
+          <div class={`dia-card dia-card--${cap.color}`}>
+            <div class="dia-card-head">
+              <span class="dia-card-icon">{cap.icon}</span>
+              <span class="dia-card-title">{cap.label}</span>
+            </div>
+            <ul class="dia-card-features">
+              {cap.features.map((f) => (
+                <li>{f}</li>
+              ))}
+            </ul>
           </div>
-          {i < steps.length - 1 && (
-            <svg class="dia-arrow" viewBox="0 0 20 12" width="20" height="12">
-              <path d="M2 6h12m0 0l-4-4m4 4l-4 4" stroke="var(--color-border-light)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+          {i < capabilities.length - 1 && (
+            <div class="dia-card-arrow">
+              <svg width="28" height="16" viewBox="0 0 28 16">
+                <path d="M2 8h18m0 0l-5-5m5 5l-5 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
           )}
         </div>
       ))}
     </div>
 
-    <!-- LAYER BAR -->
-    <div class="dia-layers">
-      {layers.map((l) => (
-        <div class={`dia-layer dia-layer--${l.color}`}>
-          <span class="dia-layer-label">{l.label}</span>
-          <span class="dia-layer-detail">{l.detail}</span>
-        </div>
-      ))}
+    <!-- Stats -->
+    <div class="dia-stats">
+      <div class="dia-stat"><strong>96%</strong><span>avg. compression</span></div>
+      <div class="dia-stat-dot"></div>
+      <div class="dia-stat"><strong>13</strong><span>tokens re-read</span></div>
+      <div class="dia-stat-dot"></div>
+      <div class="dia-stat"><strong>18</strong><span>languages AST</span></div>
     </div>
   </div>
 
-  <div class="dia-line"></div>
+  <!-- ── CONNECTOR DOWN ── -->
+  <div class="dia-connector">
+    <div class="dia-connector-chevron" style="transform: rotate(180deg);">
+      <svg width="16" height="10" viewBox="0 0 16 10"><path d="M2 2l6 6 6-6" stroke="var(--color-accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="dia-connector-line"></div>
+    <div class="dia-connector-tag">optimized context</div>
+    <div class="dia-connector-line"></div>
+    <div class="dia-connector-chevron">
+      <svg width="16" height="10" viewBox="0 0 16 10"><path d="M2 2l6 6 6-6" stroke="var(--color-accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
 
-  <!-- BOTTOM NODE -->
-  <div class="dia-node">
-    <span class="dia-node-label">LLM</span>
-    <span class="dia-node-sub">~96% fewer tokens</span>
+  <!-- ── BOTTOM NODE ── -->
+  <div class="dia-endpoint">
+    <div class="dia-endpoint-dot dia-endpoint-dot--accent"></div>
+    <span class="dia-endpoint-label">LLM</span>
+    <span class="dia-endpoint-sub">Less noise · Higher signal · Better results</span>
   </div>
 </div>
 
 <style>
   .dia {
+    --dia-border: var(--color-border);
+    --dia-border-light: var(--color-border-light);
+    --dia-green: 52, 211, 153;
+    --dia-indigo: 129, 140, 248;
+    --dia-purple: 212, 160, 255;
+
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
 
-  /* ── Nodes (top/bottom) ── */
+  /* ═══ Endpoint nodes ═══ */
 
-  .dia-node {
+  .dia-endpoint {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.125rem;
-    padding: 0.625rem 1.75rem;
-    border: 1.5px dashed var(--color-border-light);
+    gap: 0.25rem;
+    padding: clamp(1rem, 0.8rem + 0.5vw, 1.5rem) clamp(2rem, 1.5rem + 1vw, 3rem);
+    border: 2px dashed var(--dia-border-light);
     border-radius: 999px;
     background: var(--color-surface);
+    position: relative;
   }
 
-  .dia-node-label {
+  .dia-endpoint-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--dia-border-light);
+    margin-bottom: 0.125rem;
+  }
+
+  .dia-endpoint-dot--accent {
+    background: var(--color-accent);
+    box-shadow: 0 0 12px rgba(var(--dia-green), 0.4);
+  }
+
+  .dia-endpoint-label {
     font-family: var(--font-display);
-    font-size: clamp(0.9375rem, 0.88rem + 0.2vw, 1.125rem);
+    font-size: clamp(1.0625rem, 1rem + 0.2vw, 1.25rem);
     font-weight: 700;
     color: var(--color-text-bright);
   }
 
-  .dia-node-sub {
+  .dia-endpoint-sub {
+    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
+    color: var(--color-muted);
+  }
+
+  /* ═══ Vertical connectors ═══ */
+
+  .dia-connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 0.125rem 0;
+  }
+
+  .dia-connector-line {
+    width: 2px;
+    height: clamp(14px, 1.2vw, 20px);
+    background: linear-gradient(180deg, var(--dia-border), var(--color-accent));
+    opacity: 0.5;
+  }
+
+  .dia-connector-tag {
     font-family: var(--font-mono);
-    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
-    color: var(--color-accent);
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
     font-weight: 600;
+    color: var(--color-muted);
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--dia-border);
+    border-radius: 999px;
+    background: var(--color-surface);
+    letter-spacing: 0.03em;
   }
 
-  /* ── Connector line ── */
-
-  .dia-line {
-    width: 1.5px;
-    height: clamp(24px, 2vw, 36px);
-    background: var(--color-border);
+  .dia-connector-chevron {
+    line-height: 0;
   }
 
-  /* ── Main box ── */
+  /* ═══ Main runtime box ═══ */
 
-  .dia-box {
+  .dia-runtime {
     width: 100%;
-    max-width: 56rem;
-    border: 2px solid var(--color-border-light);
-    border-radius: clamp(12px, 1vw, 20px);
+    border: 2px solid var(--dia-border-light);
+    border-radius: clamp(16px, 1.2vw, 24px);
     background: var(--color-surface);
     overflow: hidden;
-    animation: glow 4s ease-in-out infinite;
+    position: relative;
+    animation: dia-glow 4s ease-in-out infinite;
   }
 
-  @keyframes glow {
-    0%, 100% { box-shadow: 0 0 40px rgba(52, 211, 153, 0.04); }
-    50% { box-shadow: 0 0 60px rgba(52, 211, 153, 0.1); }
+  .dia-runtime::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(var(--dia-green), 0.03) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(var(--dia-indigo), 0.03) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  @keyframes dia-glow {
+    0%, 100% { box-shadow: 0 0 40px rgba(var(--dia-green), 0.04), 0 4px 24px rgba(0,0,0,0.08); }
+    50% { box-shadow: 0 0 60px rgba(var(--dia-green), 0.1), 0 4px 24px rgba(0,0,0,0.08); }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .dia-box { animation: none; }
+    .dia-runtime { animation: none; }
   }
 
-  .dia-box-head {
-    padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
-    text-align: center;
-    border-bottom: 1.5px solid var(--color-border);
-    background: linear-gradient(180deg, rgba(52, 211, 153, 0.03) 0%, transparent 100%);
+  /* Header */
+  .dia-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    border-bottom: 2px solid var(--dia-border);
+    background: linear-gradient(180deg, rgba(var(--dia-green), 0.04) 0%, transparent 100%);
+    position: relative;
   }
 
-  .dia-box-title {
-    font-size: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
+  .dia-title {
+    font-size: clamp(1.75rem, 1.4rem + 1vw, 2.5rem);
     font-weight: 800;
     letter-spacing: -0.04em;
     color: var(--color-text-bright);
+    line-height: 1;
   }
 
-  /* ── Pipeline (horizontal flow) ── */
+  .dia-subtitle {
+    font-family: var(--font-mono);
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
+    color: var(--color-muted);
+  }
+
+  /* ═══ Pipeline grid ═══ */
 
   .dia-pipeline {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: clamp(1.5rem, 1rem + 1vw, 2.5rem);
+    gap: 0;
+    position: relative;
+  }
+
+  .dia-cell {
+    display: flex;
+    align-items: center;
+  }
+
+  .dia-card {
+    display: flex;
+    flex-direction: column;
+    width: clamp(155px, 13vw, 200px);
+    border: 2px solid var(--dia-border);
+    border-radius: clamp(10px, 0.8vw, 14px);
+    background: var(--color-bg);
+    overflow: hidden;
+    transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .dia-card:hover {
+    transform: translateY(-4px);
+  }
+
+  .dia-card--green { border-color: rgba(var(--dia-green), 0.25); }
+  .dia-card--green:hover {
+    border-color: rgba(var(--dia-green), 0.6);
+    box-shadow: 0 8px 24px rgba(var(--dia-green), 0.1);
+  }
+  .dia-card--indigo { border-color: rgba(var(--dia-indigo), 0.25); }
+  .dia-card--indigo:hover {
+    border-color: rgba(var(--dia-indigo), 0.6);
+    box-shadow: 0 8px 24px rgba(var(--dia-indigo), 0.1);
+  }
+  .dia-card--purple { border-color: rgba(var(--dia-purple), 0.25); }
+  .dia-card--purple:hover {
+    border-color: rgba(var(--dia-purple), 0.6);
+    box-shadow: 0 8px 24px rgba(var(--dia-purple), 0.1);
+  }
+
+  /* Card head */
+  .dia-card-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: clamp(0.625rem, 0.5rem + 0.25vw, 0.875rem) clamp(0.75rem, 0.6rem + 0.3vw, 1rem);
+    border-bottom: 1px solid var(--dia-border);
+  }
+
+  .dia-card--green .dia-card-head { background: rgba(var(--dia-green), 0.05); }
+  .dia-card--indigo .dia-card-head { background: rgba(var(--dia-indigo), 0.05); }
+  .dia-card--purple .dia-card-head { background: rgba(var(--dia-purple), 0.05); }
+
+  .dia-card-icon {
+    font-size: clamp(1.125rem, 1rem + 0.4vw, 1.5rem);
+    line-height: 1;
+  }
+
+  .dia-card-title {
+    font-family: var(--font-display);
+    font-size: clamp(0.9375rem, 0.88rem + 0.18vw, 1.0625rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+  }
+
+  /* Card features */
+  .dia-card-features {
+    list-style: none;
+    margin: 0;
+    padding: clamp(0.625rem, 0.5rem + 0.25vw, 0.875rem) clamp(0.75rem, 0.6rem + 0.3vw, 1rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    flex: 1;
+  }
+
+  .dia-card-features li {
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+    color: var(--color-muted);
+    line-height: 1.35;
+    padding-left: 1.125rem;
+    position: relative;
+  }
+
+  .dia-card-features li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    font-size: 0.75em;
+    font-weight: 700;
+    opacity: 0.5;
+  }
+
+  .dia-card--green .dia-card-features li::before { color: rgb(var(--dia-green)); }
+  .dia-card--indigo .dia-card-features li::before { color: rgb(var(--dia-indigo)); }
+  .dia-card--purple .dia-card-features li::before { color: rgb(var(--dia-purple)); }
+
+  /* Flow arrows between cards */
+  .dia-card-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 clamp(0.25rem, 0.2vw, 0.5rem);
+    color: var(--color-muted);
+    opacity: 0.4;
+    flex-shrink: 0;
+  }
+
+  /* ═══ Stats bar ═══ */
+
+  .dia-stats {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 0;
-    padding: clamp(1.25rem, 1rem + 0.75vw, 2rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    padding: clamp(1rem, 0.75rem + 0.5vw, 1.25rem);
+    border-top: 2px solid var(--dia-border);
+    background: rgba(var(--dia-green), 0.02);
   }
 
-  .dia-step-group {
+  .dia-stat {
     display: flex;
-    align-items: center;
+    align-items: baseline;
+    gap: 0.375rem;
   }
 
-  .dia-step {
-    padding: clamp(0.5rem, 0.4rem + 0.2vw, 0.75rem) clamp(0.875rem, 0.7rem + 0.4vw, 1.25rem);
-    border: 1.5px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-bg);
-    transition: border-color 0.2s, transform 0.2s;
-    cursor: default;
+  .dia-stat strong {
+    font-family: var(--font-mono);
+    font-size: clamp(1.125rem, 1rem + 0.4vw, 1.375rem);
+    font-weight: 800;
+    color: var(--color-accent);
+    line-height: 1;
   }
 
-  .dia-step:hover { transform: translateY(-2px); }
-  .dia-step--green { border-color: rgba(52, 211, 153, 0.25); }
-  .dia-step--green:hover { border-color: rgba(52, 211, 153, 0.6); }
-  .dia-step--indigo { border-color: rgba(129, 140, 248, 0.25); }
-  .dia-step--indigo:hover { border-color: rgba(129, 140, 248, 0.6); }
-  .dia-step--purple { border-color: rgba(212, 160, 255, 0.25); }
-  .dia-step--purple:hover { border-color: rgba(212, 160, 255, 0.6); }
-
-  .dia-step-label {
-    font-family: var(--font-display);
-    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
-    font-weight: 700;
-    color: var(--color-text-bright);
-    white-space: nowrap;
-  }
-
-  .dia-arrow {
-    flex-shrink: 0;
-    margin: 0 clamp(0.125rem, 0.1vw, 0.375rem);
-  }
-
-  /* ── Layer bar (bottom of box) ── */
-
-  .dia-layers {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border-top: 1.5px solid var(--color-border);
-  }
-
-  .dia-layer {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.125rem;
-    padding: clamp(0.75rem, 0.5rem + 0.5vw, 1.125rem) 0.5rem;
-    text-align: center;
-  }
-
-  .dia-layer + .dia-layer {
-    border-left: 1px solid var(--color-border);
-  }
-
-  .dia-layer-label {
-    font-family: var(--font-display);
-    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
-    font-weight: 700;
-  }
-
-  .dia-layer--green .dia-layer-label { color: var(--color-accent); }
-  .dia-layer--indigo .dia-layer-label { color: var(--color-accent-2); }
-  .dia-layer--purple .dia-layer-label { color: var(--color-accent-3); }
-
-  .dia-layer-detail {
-    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
+  .dia-stat span {
+    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
     color: var(--color-muted);
   }
 
-  /* ── Mobile ── */
+  .dia-stat-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--dia-border-light);
+    flex-shrink: 0;
+  }
 
-  @media (max-width: 640px) {
-    .dia-pipeline { gap: 0.375rem; }
-    .dia-arrow { display: none; }
-    .dia-step-group { flex: 1; min-width: calc(50% - 0.25rem); }
-    .dia-step { width: 100%; text-align: center; }
-    .dia-layers { grid-template-columns: 1fr; }
-    .dia-layer + .dia-layer { border-left: none; border-top: 1px solid var(--color-border); }
+  /* ═══ Responsive ═══ */
+
+  @media (max-width: 1100px) {
+    .dia-pipeline { gap: clamp(0.5rem, 0.3rem + 0.4vw, 0.75rem); }
+    .dia-card-arrow { display: none; }
+    .dia-card { width: calc(33.333% - 0.75rem); min-width: 145px; flex: 1 1 auto; }
+  }
+
+  @media (max-width: 700px) {
+    .dia-card { width: calc(50% - 0.375rem); }
+    .dia-stats { flex-direction: column; gap: 0.5rem; }
+    .dia-stat-dot { display: none; }
+  }
+
+  @media (max-width: 420px) {
+    .dia-card { width: 100%; }
   }
 </style>
