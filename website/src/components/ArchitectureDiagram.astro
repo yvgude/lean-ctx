@@ -2,7 +2,7 @@
 const capabilities = [
   {
     label: "Understand",
-    icon: "⚡",
+    iconPath: "M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
     color: "green",
     features: [
       "10 read modes",
@@ -13,7 +13,7 @@ const capabilities = [
   },
   {
     label: "Compress",
-    icon: "📦",
+    iconPath: "M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25",
     color: "green",
     features: [
       "Tree-sitter AST (18 langs)",
@@ -24,7 +24,7 @@ const capabilities = [
   },
   {
     label: "Remember",
-    icon: "🧠",
+    iconPath: "M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125",
     color: "indigo",
     features: [
       "Session cache (zstd, in-memory)",
@@ -35,7 +35,7 @@ const capabilities = [
   },
   {
     label: "Verify",
-    icon: "🛡",
+    iconPath: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z",
     color: "indigo",
     features: [
       "PathJail sandbox",
@@ -46,7 +46,7 @@ const capabilities = [
   },
   {
     label: "Connect",
-    icon: "🔗",
+    iconPath: "M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.364-3.06a4.5 4.5 0 00-6.364 0l-4.5 4.5a4.5 4.5 0 006.364 6.364l1.757-1.757",
     color: "purple",
     features: [
       "GitHub · GitLab · Jira · Linear",
@@ -92,7 +92,7 @@ const capabilities = [
         <div class="dia-cell">
           <div class={`dia-card dia-card--${cap.color}`}>
             <div class="dia-card-head">
-              <span class="dia-card-icon">{cap.icon}</span>
+              <svg class="dia-card-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d={cap.iconPath}/></svg>
               <span class="dia-card-title">{cap.label}</span>
             </div>
             <ul class="dia-card-features">
@@ -114,11 +114,11 @@ const capabilities = [
 
     <!-- Stats -->
     <div class="dia-stats">
-      <div class="dia-stat"><strong>96%</strong><span>avg. compression</span></div>
+      <div class="dia-stat"><strong>up to 90%</strong><span>compression</span></div>
       <div class="dia-stat-dot"></div>
       <div class="dia-stat"><strong>13</strong><span>tokens re-read</span></div>
       <div class="dia-stat-dot"></div>
-      <div class="dia-stat"><strong>18</strong><span>languages AST</span></div>
+      <div class="dia-stat"><strong>62</strong><span>MCP tools</span></div>
     </div>
   </div>
 
@@ -348,9 +348,14 @@ const capabilities = [
   .dia-card--purple .dia-card-head { background: rgba(var(--dia-purple), 0.05); }
 
   .dia-card-icon {
-    font-size: clamp(1.125rem, 1rem + 0.4vw, 1.5rem);
-    line-height: 1;
+    width: clamp(1.125rem, 1rem + 0.3vw, 1.375rem);
+    height: clamp(1.125rem, 1rem + 0.3vw, 1.375rem);
+    flex-shrink: 0;
   }
+
+  .dia-card--green .dia-card-icon { color: rgb(var(--dia-green)); }
+  .dia-card--indigo .dia-card-icon { color: rgb(var(--dia-indigo)); }
+  .dia-card--purple .dia-card-icon { color: rgb(var(--dia-purple)); }
 
   .dia-card-title {
     font-family: var(--font-display);
