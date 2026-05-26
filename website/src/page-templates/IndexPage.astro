@@ -196,87 +196,21 @@ const faqJsonLd = JSON.stringify({
 
 
 <!-- ═══════════════════════════════════════════════════════
-     3. HOW IT WORKS — Four capabilities
+     3. HOW IT WORKS + ARCHITECTURE (merged)
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
-  <div class="content-grid">
+  <div class="content-grid-wide">
     <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
       <span class="kicker-pill">{t('index.howItWorksLabel')}</span>
     </div>
     <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
       {t('index.howItWorksTitle')} <span class="italic-accent">{t('index.howItWorksTitleHighlight')}</span>
     </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(4rem, 3rem + 4vw, 7rem); max-width: 48rem;">
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
       {t('index.howItWorksDesc')}
     </p>
 
-    <div class="grid md:grid-cols-2 lg:grid-cols-5 animate-entrance stagger-3" style="gap: clamp(1.5rem, 1rem + 1.5vw, 2.5rem);">
-      <a href={lp('/docs/concepts/read-modes')} class="what-card group" style="text-decoration: none;">
-        <div class="what-icon" style="color: var(--color-accent);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks1Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks1Desc')}</p>
-      </a>
-
-      <a href={lp('/docs/concepts/caching')} class="what-card group" style="text-decoration: none;">
-        <div class="what-icon" style="color: var(--color-accent-2);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks2Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks2Desc')}</p>
-      </a>
-
-      <a href={lp('/docs/configuration')} class="what-card group" style="text-decoration: none;">
-        <div class="what-icon" style="color: var(--color-accent-3);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks3Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks3Desc')}</p>
-      </a>
-
-      <a href={lp('/docs/security')} class="what-card group" style="text-decoration: none;">
-        <div class="what-icon" style="color: var(--color-accent);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.745 3.745 0 011.043 3.296A3.745 3.745 0 0121 12z"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks4Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks4Desc')}</p>
-      </a>
-
-      <a href={lp('/docs/data-sources')} class="what-card group" style="text-decoration: none;">
-        <div class="what-icon" style="color: var(--color-accent-2);">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.364-3.06a4.5 4.5 0 00-6.364 0l-4.5 4.5a4.5 4.5 0 006.364 6.364l1.757-1.757"/></svg>
-        </div>
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 1.25rem 0 0.625rem;">{t('index.howItWorks5Title')}</h3>
-        <p class="fluid-sm text-muted leading-relaxed">{t('index.howItWorks5Desc')}</p>
-      </a>
-    </div>
-
-    <div class="grid md:grid-cols-3 animate-entrance stagger-4" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem); gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);">
-      <div class="trust-badge">
-        <svg class="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
-        <span class="fluid-sm text-text-bright font-medium">OWASP Agentic Top 10 aligned</span>
-      </div>
-      <div class="trust-badge">
-        <svg class="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span class="fluid-sm text-text-bright font-medium">OS-level sandboxing</span>
-      </div>
-      <div class="trust-badge">
-        <svg class="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
-        <span class="fluid-sm text-text-bright font-medium">Full audit trail</span>
-      </div>
-    </div>
-
-    <div class="animate-entrance stagger-5" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem); display: flex; flex-wrap: wrap; gap: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      <a href={lp('/context-os')} class="fluid-sm text-muted hover:text-text-bright transition-colors inline-flex items-center gap-1.5">
-        {t('index.heroCtaSecondary')}
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-      </a>
-      <a href={lp('/docs/concepts/shell-patterns')} class="fluid-sm text-muted hover:text-text-bright transition-colors inline-flex items-center gap-1.5">
-        {t('index.shellPatternsLink')}
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-      </a>
-    </div>
+    <ArchitectureDiagram />
   </div>
 </section>
 
@@ -327,20 +261,6 @@ const faqJsonLd = JSON.stringify({
 
 
 
-<!-- ═══════════════════════════════════════════════════════
-     7. ARCHITECTURE DIAGRAM
-     ═══════════════════════════════════════════════════════ -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-      <span class="kicker-pill">{t('index.archLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
-      {t('index.archTitle')} <span class="italic-accent">{t('index.archTitleHighlight')}</span>
-    </h2>
-    <ArchitectureDiagram />
-  </div>
-</section>
 
 
 <!-- ═══════════════════════════════════════════════════════

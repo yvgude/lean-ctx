@@ -1,495 +1,324 @@
 ---
-const layers = [
-  {
-    id: "integration",
-    label: "Integration",
-    accent: "muted",
-    items: [
-      { name: "MCP stdio", desc: "JSON-RPC transport" },
-      { name: "CLI", desc: "lean-ctx -c, grep, ls, read" },
-      { name: "HTTP/SSE", desc: "Streamable MCP server" },
-      { name: "LLM Proxy", desc: "Anthropic / OpenAI / Gemini" },
-      { name: "Hooks", desc: "Cursor, Claude, Codex, ..." },
-      { name: "Dashboard", desc: "Web cockpit (:3333)" },
-    ],
-  },
-  {
-    id: "protocol",
-    label: "MCP Protocol",
-    accent: "accent-3",
-    items: [
-      { name: "ServerHandler", desc: "rmcp ServerHandler impl" },
-      { name: "ToolRegistry", desc: "62 tools via McpTool trait" },
-      { name: "Guards", desc: "Role, budget, workflow, loop detection" },
-      { name: "Dispatch", desc: "PathJail resolve per arg" },
-      { name: "Instructions", desc: "Token-capped MCP instructions" },
-      { name: "Dynamic Tools", desc: "Lazy categories + filtering" },
-    ],
-  },
+const capabilities = [
+  { label: "Understand", sub: "Context visibility", color: "accent" },
+  { label: "Compress", sub: "10 read modes", color: "accent" },
+  { label: "Remember", sub: "Cross-session memory", color: "accent-2" },
+  { label: "Verify", sub: "Quality & budgets", color: "accent-2" },
+  { label: "Connect", sub: "Any data source", color: "accent-3" },
 ];
 
-const coreClusters = [
+const architectureLayers = [
   {
-    id: "compression",
-    label: "Compression",
-    accent: "accent",
-    groups: [
-      {
-        title: "Read Modes",
-        items: ["full", "map", "signatures", "aggressive", "entropy", "auto", "diff", "lines", "task", "reference"],
-      },
-      {
-        title: "Terse Pipeline",
-        items: ["Pattern compress", "Direct compress", "CDC reorder (Rabin-Karp)", "64KB budget", "500ms deadline"],
-      },
-      {
-        title: "Shell Patterns",
-        items: ["95+ patterns", "git", "npm/yarn", "cargo", "docker", "kubectl", "pytest", "make", "tsc"],
-      },
-      {
-        title: "AST Parsing",
-        items: ["Tree-sitter", "18 languages", "Structured outlines", "Lock file summaries"],
-      },
-    ],
+    label: "Smart I/O",
+    color: "accent",
+    items: ["Tree-sitter AST (18 langs)", "95+ shell patterns", "Session cache (zstd)", "13-token re-reads"],
   },
   {
-    id: "intelligence",
     label: "Intelligence",
-    accent: "accent-2",
-    groups: [
-      {
-        title: "Hybrid Search (RRF k=60)",
-        items: ["BM25 index", "Dense embeddings", "Graph proximity", "HNSW", "SPLADE retrieval"],
-      },
-      {
-        title: "Knowledge",
-        items: ["Project facts", "Claim extraction", "Cross-session memory", "Auto-consolidation"],
-      },
-      {
-        title: "Graph",
-        items: ["PropertyGraph (SQLite)", "CodeGraph nodes/edges", "PageRank", "Call graph", "Import graph"],
-      },
-      {
-        title: "Context Control",
-        items: ["Intent classification", "Progressive throttling", "Token budgets", "Context IR", "Context Ledger"],
-      },
-    ],
+    color: "accent-2",
+    items: ["Hybrid search (BM25 + semantic)", "Knowledge graph (SQLite)", "Intent classification", "Progressive throttling"],
   },
   {
-    id: "memory",
-    label: "Memory & Session",
-    accent: "accent",
-    groups: [
-      {
-        title: "Session Cache",
-        items: ["zstd in-memory", "Content-hash dedup", "13-token re-reads", "500K token budget", "TTL eviction"],
-      },
-      {
-        title: "Session State",
-        items: ["Task progress", "Findings", "Decisions", "Files touched", "Project-scoped"],
-      },
-      {
-        title: "Memory Systems",
-        items: ["Episodic memory", "Procedural memory", "Memory consolidation", "Handoff ledger"],
-      },
-      {
-        title: "Context OS",
-        items: ["SharedSessionStore", "ContextBus (SSE)", "Multi-agent coordination", "Staleness guard"],
-      },
-    ],
+    label: "Security",
+    color: "accent-3",
+    items: ["PathJail sandbox", "Shell allowlist", "OS-level isolation", "Full audit trail"],
   },
-  {
-    id: "providers",
-    label: "Providers & Data",
-    accent: "accent-3",
-    groups: [
-      {
-        title: "Consolidation Pipeline",
-        items: ["ProviderResult → ConsolidationArtifacts", "→ BM25 index", "→ Graph edges", "→ Knowledge facts", "→ Session cache"],
-      },
-      {
-        title: "Data Sources",
-        items: ["GitHub / GitLab", "Jira / Linear", "Postgres", "REST APIs", "MCP Bridge", "Config-based (TOML)"],
-      },
-    ],
-  },
-];
-
-const securityItems = [
-  { name: "PathJail", desc: "Canonicalize + prefix check" },
-  { name: "Shell Allowlist", desc: "Deny-by-default, pipeline-aware" },
-  { name: "Sandbox", desc: "Seatbelt (macOS) / Landlock (Linux)" },
-  { name: "Roles & Policies", desc: "Per-tool access control" },
-  { name: "Bounded Locks", desc: "Timeout RwLock (anti-DoS)" },
-  { name: "Secret Detection", desc: "Redaction in search output" },
-  { name: "Audit Trail", desc: "Full call logging" },
 ];
 ---
 
-<div class="arch animate-entrance" role="region" aria-label="lean-ctx architecture">
+<div class="ad animate-entrance" role="img" aria-label="lean-ctx architecture diagram">
 
-  <div class="arch-core">
-    <span class="arch-core-title font-display">lean-ctx</span>
-    <span class="arch-core-sub">Single Rust binary · 3 runtime modes · 62 MCP tools</span>
+  <div class="ad-endpoint ad-endpoint--top">
+    <span class="ad-endpoint-label">Your AI Tool</span>
+    <span class="ad-endpoint-sub">Cursor · Claude Code · Copilot · 24+ more</span>
   </div>
 
-  <div class="arch-flow-arrow">
-    <svg width="24" height="32" viewBox="0 0 24 32" fill="none"><path d="M12 0v24m0 0l-7-7m7 7l7-7" stroke="var(--color-border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <div class="ad-connector">
+    <svg width="2" height="28" viewBox="0 0 2 28"><line x1="1" y1="0" x2="1" y2="28" stroke="var(--color-border)" stroke-width="1.5"/></svg>
   </div>
 
-  {layers.map((layer) => (
-    <div class="arch-layer-row">
-      <div class="arch-layer-label">
-        <span class="arch-layer-name">{layer.label}</span>
-      </div>
-      <div class="arch-layer-items">
-        {layer.items.map((item) => (
-          <div class={`arch-item arch-item--${layer.accent}`}>
-            <span class="arch-item-name">{item.name}</span>
-            <span class="arch-item-desc">{item.desc}</span>
-          </div>
-        ))}
-      </div>
+  <div class="ad-runtime">
+    <div class="ad-runtime-header">
+      <span class="ad-runtime-title font-display">lean-ctx</span>
+      <span class="ad-runtime-sub">Context Runtime · Single binary · 62 MCP tools</span>
     </div>
-  ))}
 
-  <div class="arch-flow-arrow">
-    <svg width="24" height="32" viewBox="0 0 24 32" fill="none"><path d="M12 0v24m0 0l-7-7m7 7l7-7" stroke="var(--color-border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    <span class="arch-flow-label">LeanCtxServer (central state: cache, session, ledger, registry)</span>
-  </div>
-
-  <div class="arch-section-header">
-    <span class="arch-section-title">Domain Core</span>
-  </div>
-
-  <div class="arch-core-grid">
-    {coreClusters.map((cluster) => (
-      <div class={`arch-cluster arch-cluster--${cluster.accent}`}>
-        <div class="arch-cluster-header">
-          <span class="arch-cluster-title">{cluster.label}</span>
+    <div class="ad-pipeline">
+      {capabilities.map((cap, i) => (
+        <div class="ad-step-wrap">
+          <div class={`ad-step ad-step--${cap.color}`}>
+            <span class="ad-step-label">{cap.label}</span>
+            <span class="ad-step-sub">{cap.sub}</span>
+          </div>
+          {i < capabilities.length - 1 && (
+            <svg class="ad-arrow" width="20" height="12" viewBox="0 0 20 12">
+              <path d="M0 6h14m0 0l-4-4m4 4l-4 4" stroke="var(--color-muted)" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+            </svg>
+          )}
         </div>
-        <div class="arch-cluster-body">
-          {cluster.groups.map((group) => (
-            <div class="arch-group">
-              <span class="arch-group-title">{group.title}</span>
-              <div class="arch-group-items">
-                {group.items.map((item) => (
-                  <span class={`arch-pill arch-pill--${cluster.accent}`}>{item}</span>
-                ))}
-              </div>
-            </div>
-          ))}
+      ))}
+    </div>
+
+    <div class="ad-divider">
+      <span class="ad-divider-label">powered by</span>
+    </div>
+
+    <div class="ad-layers">
+      {architectureLayers.map((layer) => (
+        <div class={`ad-layer ad-layer--${layer.color}`}>
+          <span class="ad-layer-title">{layer.label}</span>
+          <ul class="ad-layer-list">
+            {layer.items.map((item) => (
+              <li class="ad-layer-item">{item}</li>
+            ))}
+          </ul>
         </div>
-      </div>
-    ))}
+      ))}
+    </div>
   </div>
 
-  <div class="arch-section-header" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem);">
-    <span class="arch-section-title">Security (defense-in-depth)</span>
+  <div class="ad-connector">
+    <svg width="2" height="28" viewBox="0 0 2 28"><line x1="1" y1="0" x2="1" y2="28" stroke="var(--color-border)" stroke-width="1.5"/></svg>
   </div>
 
-  <div class="arch-security-row">
-    {securityItems.map((item) => (
-      <div class="arch-sec-item">
-        <span class="arch-sec-name">{item.name}</span>
-        <span class="arch-sec-desc">{item.desc}</span>
-      </div>
-    ))}
+  <div class="ad-endpoint ad-endpoint--bottom">
+    <span class="ad-endpoint-label">LLM</span>
+    <span class="ad-endpoint-sub">Optimized context · less noise · higher signal</span>
   </div>
 </div>
 
 <style>
-  .arch {
+  .ad {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1rem);
+    align-items: center;
+    gap: 0;
   }
 
-  .arch-core {
+  .ad-endpoint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.75rem 1.5rem;
+    border: 1px dashed var(--color-border);
+    border-radius: 2rem;
+    background: var(--color-surface);
+    text-align: center;
+  }
+
+  .ad-endpoint-label {
+    font-family: var(--font-display);
+    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
+    font-weight: 600;
+    color: var(--color-text-bright);
+  }
+
+  .ad-endpoint-sub {
+    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
+    color: var(--color-muted);
+  }
+
+  .ad-connector {
+    display: flex;
+    justify-content: center;
+  }
+
+  .ad-runtime {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--color-surface);
+    overflow: hidden;
+    animation: runtime-glow 4s ease-in-out infinite;
+  }
+
+  @keyframes runtime-glow {
+    0%, 100% { box-shadow: 0 0 24px rgba(52, 211, 153, 0.04), 0 0 64px rgba(52, 211, 153, 0.02); }
+    50% { box-shadow: 0 0 32px rgba(52, 211, 153, 0.08), 0 0 80px rgba(52, 211, 153, 0.04); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ad-runtime { animation: none; }
+  }
+
+  .ad-runtime-header {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.25rem;
-    padding: 1.25rem 2rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius-lg);
-    background: var(--color-surface);
-    text-align: center;
-    animation: core-glow 4s ease-in-out infinite;
+    padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
+    border-bottom: 1px solid var(--color-border);
   }
 
-  .arch-core-title {
-    font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  .ad-runtime-title {
+    font-size: clamp(1.25rem, 1rem + 0.8vw, 1.75rem);
     font-weight: 700;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.03em;
     color: var(--color-text-bright);
     line-height: 1;
   }
 
-  .arch-core-sub {
-    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
-    color: var(--color-muted);
-    font-family: var(--font-mono);
-  }
-
-  @keyframes core-glow {
-    0%, 100% { box-shadow: 0 0 20px rgba(52, 211, 153, 0.05), 0 0 60px rgba(52, 211, 153, 0.02); }
-    50% { box-shadow: 0 0 30px rgba(52, 211, 153, 0.1), 0 0 80px rgba(52, 211, 153, 0.05); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .arch-core { animation: none; box-shadow: 0 0 20px rgba(52, 211, 153, 0.05); }
-  }
-
-  .arch-flow-arrow {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .arch-flow-label {
+  .ad-runtime-sub {
     font-family: var(--font-mono);
     font-size: clamp(0.5625rem, 0.55rem + 0.05vw, 0.6875rem);
     color: var(--color-muted);
-    text-align: center;
   }
 
-  .arch-layer-row {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);
-    align-items: start;
-  }
-
-  .arch-layer-label {
-    writing-mode: vertical-lr;
-    transform: rotate(180deg);
+  .ad-pipeline {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.5rem 0;
+    flex-wrap: wrap;
+    gap: 0;
+    padding: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
   }
 
-  .arch-layer-name {
-    font-family: var(--font-display);
-    font-size: clamp(0.6875rem, 0.66rem + 0.08vw, 0.75rem);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-muted);
+  .ad-step-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0;
   }
 
-  .arch-layer-items {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.375rem;
-  }
-
-  @media (min-width: 640px) {
-    .arch-layer-items { grid-template-columns: repeat(3, 1fr); }
-  }
-
-  @media (min-width: 1024px) {
-    .arch-layer-items { grid-template-columns: repeat(6, 1fr); }
-  }
-
-  .arch-item {
+  .ad-step {
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 0.125rem;
-    padding: 0.5rem 0.625rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 8px;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-surface);
-    transition: border-color 0.2s ease;
+    background: var(--color-bg);
+    text-align: center;
+    transition: border-color 0.2s ease, transform 0.2s ease;
   }
 
-  .arch-item:hover { border-color: var(--color-border-light); }
+  .ad-step:hover {
+    transform: translateY(-2px);
+  }
 
-  .arch-item--accent-3:hover { border-color: color-mix(in srgb, var(--color-accent-3) 30%, var(--color-border)); }
+  .ad-step--accent:hover { border-color: rgba(52, 211, 153, 0.3); }
+  .ad-step--accent-2:hover { border-color: rgba(129, 140, 248, 0.3); }
+  .ad-step--accent-3:hover { border-color: rgba(212, 160, 255, 0.3); }
 
-  .arch-item-name {
-    font-family: var(--font-mono);
-    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
-    font-weight: 600;
+  .ad-step-label {
+    font-family: var(--font-display);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
+    font-weight: 700;
     color: var(--color-text-bright);
     line-height: 1.2;
   }
 
-  .arch-item-desc {
+  .ad-step-sub {
     font-size: clamp(0.5625rem, 0.55rem + 0.04vw, 0.625rem);
     color: var(--color-muted);
-    line-height: 1.3;
+    white-space: nowrap;
   }
 
-  .arch-section-header {
+  .ad-arrow {
+    flex-shrink: 0;
+    margin: 0 0.125rem;
+  }
+
+  .ad-divider {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    margin-top: 0.25rem;
+    padding: 0 clamp(1rem, 0.75rem + 0.5vw, 1.5rem);
   }
 
-  .arch-section-header::after {
+  .ad-divider::before,
+  .ad-divider::after {
     content: '';
     flex: 1;
     height: 1px;
     background: var(--color-border);
   }
 
-  .arch-section-title {
-    font-family: var(--font-display);
-    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
-    font-weight: 700;
+  .ad-divider-label {
+    font-family: var(--font-mono);
+    font-size: clamp(0.5625rem, 0.55rem + 0.04vw, 0.625rem);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.1em;
     color: var(--color-muted);
     white-space: nowrap;
   }
 
-  .arch-core-grid {
+  .ad-layers {
     display: grid;
     grid-template-columns: 1fr;
-    gap: clamp(0.625rem, 0.5rem + 0.3vw, 0.875rem);
+    gap: 0;
   }
 
   @media (min-width: 768px) {
-    .arch-core-grid { grid-template-columns: repeat(2, 1fr); }
+    .ad-layers { grid-template-columns: repeat(3, 1fr); }
   }
 
-  @media (min-width: 1280px) {
-    .arch-core-grid { grid-template-columns: repeat(4, 1fr); }
+  .ad-layer {
+    padding: clamp(0.875rem, 0.75rem + 0.3vw, 1.25rem);
+    border-top: 1px solid var(--color-border);
   }
 
-  .arch-cluster {
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius-lg);
-    background: var(--color-surface);
-    overflow: hidden;
-    transition: border-color 0.25s ease;
+  @media (min-width: 768px) {
+    .ad-layer { border-top: none; }
+    .ad-layer + .ad-layer { border-left: 1px solid var(--color-border); }
   }
 
-  .arch-cluster--accent:hover { border-color: color-mix(in srgb, var(--color-accent) 25%, var(--color-border)); }
-  .arch-cluster--accent-2:hover { border-color: color-mix(in srgb, var(--color-accent-2) 25%, var(--color-border)); }
-  .arch-cluster--accent-3:hover { border-color: color-mix(in srgb, var(--color-accent-3) 25%, var(--color-border)); }
-
-  .arch-cluster-header {
-    padding: 0.625rem 0.875rem;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .arch-cluster--accent .arch-cluster-header { border-bottom-color: rgba(52, 211, 153, 0.12); }
-  .arch-cluster--accent-2 .arch-cluster-header { border-bottom-color: rgba(129, 140, 248, 0.12); }
-  .arch-cluster--accent-3 .arch-cluster-header { border-bottom-color: rgba(212, 160, 255, 0.12); }
-
-  .arch-cluster-title {
+  .ad-layer-title {
+    display: block;
     font-family: var(--font-display);
-    font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.9375rem);
+    font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.875rem);
     font-weight: 700;
-    color: var(--color-text-bright);
+    margin-bottom: 0.5rem;
+    line-height: 1;
   }
 
-  .arch-cluster-body {
-    padding: 0.75rem 0.875rem;
+  .ad-layer--accent .ad-layer-title { color: var(--color-accent); }
+  .ad-layer--accent-2 .ad-layer-title { color: var(--color-accent-2); }
+  .ad-layer--accent-3 .ad-layer-title { color: var(--color-accent-3); }
+
+  .ad-layer-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .arch-group-title {
-    display: block;
-    font-size: clamp(0.5625rem, 0.55rem + 0.06vw, 0.6875rem);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-muted);
-    margin-bottom: 0.25rem;
-  }
-
-  .arch-group-items {
-    display: flex;
-    flex-wrap: wrap;
     gap: 0.25rem;
   }
 
-  .arch-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.125rem 0.375rem;
-    border-radius: 3px;
-    font-family: var(--font-mono);
-    font-size: clamp(0.5rem, 0.48rem + 0.05vw, 0.625rem);
-    font-weight: 500;
-    line-height: 1.3;
-  }
-
-  .arch-pill--accent {
-    background: rgba(52, 211, 153, 0.06);
-    border: 1px solid rgba(52, 211, 153, 0.12);
-    color: var(--color-accent);
-  }
-
-  .arch-pill--accent-2 {
-    background: rgba(129, 140, 248, 0.06);
-    border: 1px solid rgba(129, 140, 248, 0.12);
-    color: var(--color-accent-2);
-  }
-
-  .arch-pill--accent-3 {
-    background: rgba(212, 160, 255, 0.06);
-    border: 1px solid rgba(212, 160, 255, 0.12);
-    color: var(--color-accent-3);
-  }
-
-  .arch-security-row {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.375rem;
-  }
-
-  @media (min-width: 640px) {
-    .arch-security-row { grid-template-columns: repeat(4, 1fr); }
-  }
-
-  @media (min-width: 1280px) {
-    .arch-security-row { grid-template-columns: repeat(7, 1fr); }
-  }
-
-  .arch-sec-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.0625rem;
-    padding: 0.375rem 0.5rem;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    background: rgba(255, 95, 87, 0.02);
-    border-color: rgba(255, 95, 87, 0.1);
-  }
-
-  .arch-sec-name {
-    font-family: var(--font-mono);
-    font-size: clamp(0.5625rem, 0.55rem + 0.05vw, 0.6875rem);
-    font-weight: 600;
-    color: var(--color-text-bright);
-    line-height: 1.2;
-  }
-
-  .arch-sec-desc {
-    font-size: clamp(0.5rem, 0.48rem + 0.04vw, 0.5625rem);
+  .ad-layer-item {
+    font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem);
     color: var(--color-muted);
-    line-height: 1.3;
+    line-height: 1.4;
+    padding-left: 0.75rem;
+    position: relative;
+  }
+
+  .ad-layer-item::before {
+    content: '·';
+    position: absolute;
+    left: 0;
+    color: var(--color-border);
+    font-weight: 700;
   }
 
   @media (max-width: 640px) {
-    .arch-layer-row {
-      grid-template-columns: 1fr;
+    .ad-pipeline {
+      gap: 0.25rem;
     }
 
-    .arch-layer-label {
-      writing-mode: horizontal-tb;
-      transform: none;
-      padding: 0;
+    .ad-arrow {
+      display: none;
+    }
+
+    .ad-step-wrap {
+      flex: 1;
+      min-width: calc(50% - 0.25rem);
+    }
+
+    .ad-step {
+      width: 100%;
     }
   }
 </style>
