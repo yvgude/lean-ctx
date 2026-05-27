@@ -34,9 +34,13 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), String> {
     check_all_segments(cmd, &allowlist)
 }
 
-/// Remove backslash-newline continuations so the parser sees what the shell sees.
+/// Normalize the command string: remove backslash-newline continuations and
+/// replace Unicode line separators (U+2028, U+2029) with newlines.
 fn normalize_line_continuations(command: &str) -> String {
-    command.replace("\\\r\n", "").replace("\\\n", "")
+    command
+        .replace("\\\r\n", "")
+        .replace("\\\n", "")
+        .replace(['\u{2028}', '\u{2029}'], "\n")
 }
 
 /// WARN-FIRST: Log warning (or block if strict) for $(), backticks, <() in arguments.
@@ -192,6 +196,48 @@ fn check_unconditional_blocked_only(command: &str) -> Result<(), String> {
                  Command: {command}"
             ));
         }
+        check_inline_env_block(seg)?;
+        check_interpreter_eval_only(seg)?;
+        check_dangerous_flags(seg)?;
+    }
+    Ok(())
+}
+
+/// Like `check_interpreter_abuse` but only checks for eval flags on interpreters.
+/// Skips delegation-command checks (which require an allowlist for membership test).
+/// Used in blocklist-only mode where there is no allowlist.
+fn check_interpreter_eval_only(segment: &str) -> Result<(), String> {
+    let trimmed = skip_env_assignments(segment.trim());
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    if tokens.is_empty() {
+        return Ok(());
+    }
+    let base = tokens[0].rsplit('/').next().unwrap_or(tokens[0]);
+    if !INTERPRETER_COMMANDS.contains(&base) {
+        return Ok(());
+    }
+    for &tok in &tokens[1..] {
+        if EVAL_FLAGS.contains(&tok) {
+            return Err(format!(
+                "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with inline code execution \
+                 flag '{tok}' is blocked. Use a script file instead.\n\
+                 This is a permanent security restriction."
+            ));
+        }
+        if has_eval_flag_prefix(tok) {
+            return Err(format!(
+                "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with combined flag '{tok}' \
+                 containing eval flag is blocked.\n\
+                 This is a permanent security restriction."
+            ));
+        }
+    }
+    if tokens[1..].iter().any(|t| t.contains("<<")) {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with heredoc stdin is blocked. \
+             Use a script file instead.\n\
+             This is a permanent security restriction."
+        ));
     }
     Ok(())
 }
@@ -1310,6 +1356,24 @@ mod tests {
         assert!(
             result.is_err(),
             ". must be blocked even with empty allowlist"
+        );
+    }
+
+    #[test]
+    fn unicode_line_separators_normalized() {
+        let normalized = normalize_line_continuations("echo ok\u{2028}curl evil");
+        assert!(
+            normalized.contains('\n'),
+            "U+2028 must be normalized to newline"
+        );
+    }
+
+    #[test]
+    fn unicode_paragraph_separator_normalized() {
+        let normalized = normalize_line_continuations("echo ok\u{2029}curl evil");
+        assert!(
+            normalized.contains('\n'),
+            "U+2029 must be normalized to newline"
         );
     }
 

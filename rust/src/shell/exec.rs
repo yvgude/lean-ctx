@@ -149,6 +149,10 @@ fn exec_direct(args: &[String]) -> i32 {
 }
 
 pub fn exec(command: &str) -> i32 {
+    if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(command) {
+        tracing::warn!("[CLI] Command would be blocked in MCP mode: {msg}");
+    }
+
     let (shell, shell_flag) = super::platform::shell_and_flag();
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let command = command.as_str();

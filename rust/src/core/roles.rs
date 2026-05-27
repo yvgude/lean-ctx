@@ -350,6 +350,16 @@ fn roles_dir_global() -> Option<PathBuf> {
 }
 
 fn roles_dir_project() -> Option<PathBuf> {
+    roles_dir_project_from(None)
+}
+
+fn roles_dir_project_from(project_root: Option<&str>) -> Option<PathBuf> {
+    if let Some(root) = project_root {
+        let candidate = PathBuf::from(root).join(".lean-ctx").join("roles");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
     let mut dir = std::env::current_dir().ok()?;
     loop {
         let candidate = dir.join(".lean-ctx").join("roles");
