@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.20 (Current)', href: lp('/docs/changelog') + '#v3.6.20' },
+      { label: '3.6.21 (Current)', href: lp('/docs/changelog') + '#v3.6.21' },
+      { label: '3.6.20', href: lp('/docs/changelog') + '#v3.6.20' },
       { label: '3.6.19', href: lp('/docs/changelog') + '#v3.6.19' },
       { label: '3.6.18', href: lp('/docs/changelog') + '#v3.6.18' },
       { label: '3.6.17', href: lp('/docs/changelog') + '#v3.6.17' },
@@ -77,6 +78,25 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.21 -->
+  <h2 id="v3.6.21">3.6.21 <span class="text-xs text-muted">(2026-05-27)</span></h2>
+  <p class="text-sm text-muted">RAM Guardian now performs real cache eviction under memory pressure.</p>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>RAM Guardian performs real cache eviction (#300)</strong> — Previously, the <code>memory_guard</code> eviction callback only called <code>jemalloc_purge()</code>, which returns already-freed pages to the OS but never evicts actual data. Now a new <code>EvictionOrchestrator</code> bridges the RSS-based memory guardian to the <code>HomeostasisController</code>, enabling 5-stage graduated eviction: trim compressed outputs → evict probationary entries → unload BM25 index → evict protected entries → emergency full cache clear.</li>
+    <li><strong><code>jemalloc_purge()</code> error handling</strong> — Previously swallowed errors silently. Now logs failures via <code>tracing::debug</code>.</li>
+    <li><strong><code>is_under_pressure()</code> optimized</strong> — Was calling <code>MemorySnapshot::capture()</code> (with <code>Config::load()</code> + syscalls) on every invocation in BM25/graph index builders. Now reads a cached <code>AtomicU8</code> flag — O(1), zero allocations.</li>
+  </ul>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong><code>EvictionOrchestrator</code></strong> — New module connecting <code>memory_guard</code> to <code>HomeostasisController</code> with non-blocking cache access.</li>
+    <li><strong>SessionCache eviction methods</strong> — <code>trim_compressed_outputs()</code>, <code>evict_probationary()</code>, <code>evict_to_budget()</code>, <code>approximate_bytes()</code>, <code>trim_shared_blocks()</code>.</li>
+    <li><strong>BM25 cache management</strong> — <code>unload()</code> drops cached index, <code>memory_usage()</code> reports heap size.</li>
+    <li><strong>Doctor pressure hints</strong> — Shows active pressure level and recommends config changes when under pressure.</li>
+  </ul>
 
   <!-- 3.6.20 -->
   <h2 id="v3.6.20">3.6.20 <span class="text-xs text-muted">(2026-05-27)</span></h2>
@@ -517,7 +537,7 @@ const sidebar = [
 
   <!-- 3.5.25 -->
   <h2 id="v3.5.25">3.5.25 <span class="text-xs text-muted">(May 2026)</span></h2>
-  <p class="text-sm text-muted">Current stable release — CPU hotspot fixes, canonical rules policy, full registry migration.</p>
+  <p class="text-sm text-muted">CPU hotspot fixes, canonical rules policy, full registry migration.</p>
 
   <h3>Added</h3>
   <ul>
