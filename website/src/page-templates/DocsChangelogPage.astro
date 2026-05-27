@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.19 (Current)', href: lp('/docs/changelog') + '#v3.6.19' },
+      { label: '3.6.20 (Current)', href: lp('/docs/changelog') + '#v3.6.20' },
+      { label: '3.6.19', href: lp('/docs/changelog') + '#v3.6.19' },
       { label: '3.6.18', href: lp('/docs/changelog') + '#v3.6.18' },
       { label: '3.6.17', href: lp('/docs/changelog') + '#v3.6.17' },
       { label: '3.6.16', href: lp('/docs/changelog') + '#v3.6.16' },
@@ -76,6 +77,15 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.20 -->
+  <h2 id="v3.6.20">3.6.20 <span class="text-xs text-muted">(2026-05-27)</span></h2>
+  <p class="text-sm text-muted">Critical hotfix: fixes OnceLock reentrancy deadlock that caused all commands to hang on v3.6.19.</p>
+
+  <h3>Fixed</h3>
+  <ul>
+    <li><strong>OnceLock reentrancy deadlock (#301)</strong> — All shell hook commands (<code>ls</code>, <code>cat</code>, etc.), <code>lean-ctx setup</code>, and <code>lean-ctx update</code> hung indefinitely on v3.6.19. Root cause: <code>active_profile_name()</code> called <code>Config::load()</code>, creating a circular dependency through <code>OnceLock::get_or_init()</code>. Fixed by reading <code>config.toml</code> directly without <code>Config::load()</code>, and preventing <code>normalize_loaded_session()</code> from calling <code>active_profile()</code> during config initialization.</li>
+  </ul>
 
   <!-- 3.6.19 -->
   <h2 id="v3.6.19">3.6.19 <span class="text-xs text-muted">(2026-05-26)</span></h2>
