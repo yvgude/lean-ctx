@@ -216,33 +216,6 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
 
   <title>{title}</title>
 
-  <script is:inline>
-  (function() {
-    var SUPPORTED = ['en','de','ar','zh','hi','es','fr','bn','pt','ru','ja'];
-    var STORAGE_KEY = 'leanctx-locale';
-
-    if (localStorage.getItem(STORAGE_KEY)) return;
-
-    var path = window.location.pathname;
-    var firstSeg = path.split('/').filter(Boolean)[0];
-    if (firstSeg && SUPPORTED.indexOf(firstSeg) !== -1) return;
-
-    var langs = navigator.languages || [navigator.language];
-    var match = null;
-    for (var i = 0; i < langs.length; i++) {
-      var code = langs[i].toLowerCase().split('-')[0];
-      if (SUPPORTED.indexOf(code) !== -1 && code !== 'en') {
-        match = code;
-        break;
-      }
-    }
-    if (match) {
-      localStorage.setItem(STORAGE_KEY, match);
-      window.location.replace('/' + match + path + window.location.search + window.location.hash);
-    }
-  })();
-  </script>
-
   {isHome && <script type="application/ld+json" set:html={softwareJsonLd} />}
   {webSiteJsonLd && <script type="application/ld+json" set:html={webSiteJsonLd} />}
   {webPageJsonLd && <script type="application/ld+json" set:html={webPageJsonLd} />}
