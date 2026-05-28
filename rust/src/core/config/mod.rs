@@ -932,6 +932,7 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
         "yarn",
         "pnpm",
         "bun",
+        "bunx",
         "make",
         "cmake",
         "pip",
