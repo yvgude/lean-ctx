@@ -2,12 +2,13 @@
 
 mod fix;
 mod integrations;
+mod workspace_scope;
 
 use std::net::TcpListener;
 use std::path::PathBuf;
 
 pub(super) const GREEN: &str = "\x1b[32m";
-const RED: &str = "\x1b[31m";
+pub(super) const RED: &str = "\x1b[31m";
 pub(super) const BOLD: &str = "\x1b[1m";
 pub(super) const RST: &str = "\x1b[0m";
 pub(super) const DIM: &str = "\x1b[2m";
@@ -533,19 +534,36 @@ fn mcp_config_outcome() -> Outcome {
     }
 }
 
-fn has_lean_ctx_mcp_entry(content: &str) -> bool {
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-        if let Some(servers) = json.get("mcpServers").and_then(|v| v.as_object()) {
-            return servers.contains_key("lean-ctx");
+pub(super) fn has_lean_ctx_mcp_entry(content: &str) -> bool {
+    // Parse as JSONC: editor config files (VS Code settings.json / mcp.json,
+    // Cursor, Windsurf, …) commonly contain comments and trailing commas which
+    // strict JSON rejects. See issue #311.
+    if let Ok(json) = crate::core::jsonc::parse_jsonc(content) {
+        // Known container keys across editors that hold a map of MCP servers:
+        //   mcpServers       — most agents (Cursor, Claude, Windsurf, …)
+        //   servers          — VS Code mcp.json
+        //   context_servers  — Zed settings.json
+        for key in ["mcpServers", "servers", "context_servers"] {
+            if let Some(servers) = json.get(key).and_then(|v| v.as_object()) {
+                if servers.contains_key("lean-ctx") {
+                    return true;
+                }
+            }
         }
+        // mcp.servers.lean-ctx (OpenCode et al.)
         if let Some(servers) = json
             .get("mcp")
             .and_then(|v| v.get("servers"))
             .and_then(|v| v.as_object())
         {
-            return servers.contains_key("lean-ctx");
+            if servers.contains_key("lean-ctx") {
+                return true;
+            }
         }
+        // Parsed cleanly but no lean-ctx entry under any known key.
+        return false;
     }
+    // Unparseable even as JSONC: fall back to a substring heuristic.
     content.contains("lean-ctx")
 }
 
@@ -1002,6 +1020,15 @@ pub fn run() {
     }
     print_check(&mcp);
 
+    // 8) Workspace-scope MCP (optional; only when a project-local config exists)
+    let workspace_scope = workspace_scope::workspace_scope_outcome(mcp.ok);
+    if let Some(ref ws) = workspace_scope {
+        if ws.ok {
+            passed += 1;
+        }
+        print_check(ws);
+    }
+
     // 9) SKILL.md
     let skill = skill_files_outcome();
     if skill.ok {
@@ -1251,6 +1278,9 @@ pub fn run() {
     if stale_env.is_some() {
         effective_total += 1;
     }
+    if workspace_scope.is_some() {
+        effective_total += 1;
+    }
     println!();
     println!("  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{effective_total}{RST} checks passed");
     println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
@@ -1414,7 +1444,7 @@ fn stale_proxy_env_outcome() -> Option<Outcome> {
     let settings_dir = crate::core::editor_registry::claude_state_dir(&home);
     let settings_path = settings_dir.join("settings.json");
     let content = std::fs::read_to_string(&settings_path).ok()?;
-    let doc: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let doc: serde_json::Value = crate::core::jsonc::parse_jsonc(&content).ok()?;
 
     let base_url = doc
         .get("env")

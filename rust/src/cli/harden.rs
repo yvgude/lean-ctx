@@ -61,7 +61,7 @@ fn set_env_in_mcp_configs() -> bool {
 
     for path in targets {
         if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
                 if let Some(servers) = find_lean_ctx_server_mut(&mut json) {
                     let env = servers
                         .as_object_mut()
@@ -97,7 +97,7 @@ fn set_env_in_mcp_configs() -> bool {
 fn remove_env_from_mcp_configs() {
     for path in discover_mcp_configs() {
         if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
                 if let Some(servers) = find_lean_ctx_server_mut(&mut json) {
                     if let Some(env) = servers
                         .as_object_mut()
@@ -121,7 +121,7 @@ fn apply_claude_permissions_deny() -> Option<&'static str> {
 
     let mut json = if settings_path.exists() {
         let content = std::fs::read_to_string(&settings_path).ok()?;
-        serde_json::from_str::<serde_json::Value>(&content).ok()?
+        crate::core::jsonc::parse_jsonc(&content).ok()?
     } else {
         serde_json::json!({})
     };
@@ -160,7 +160,7 @@ fn remove_claude_permissions_deny() {
     let Ok(content) = std::fs::read_to_string(&settings_path) else {
         return;
     };
-    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) else {
+    let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) else {
         return;
     };
 

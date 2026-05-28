@@ -1,10 +1,15 @@
 use serde_json::Value;
 
-/// Strip `//` line comments and `/* */` block comments from JSONC,
-/// then parse with serde_json. String contents are preserved verbatim.
+/// Strip `//` line comments, `/* */` block comments and trailing commas from
+/// JSONC, then parse with serde_json. String contents are preserved verbatim.
+///
+/// This makes lean-ctx tolerant of the JSONC dialect that editors like VS Code
+/// use for `settings.json` / `mcp.json` (comments + trailing commas are valid
+/// there but rejected by strict JSON). See issue #311.
 pub fn parse_jsonc(input: &str) -> Result<Value, serde_json::Error> {
     let stripped = strip_json_comments(input);
-    serde_json::from_str(&stripped)
+    let cleaned = strip_trailing_commas(&stripped);
+    serde_json::from_str(&cleaned)
 }
 
 fn strip_json_comments(input: &str) -> String {
@@ -51,6 +56,55 @@ fn strip_json_comments(input: &str) -> String {
                     }
                     i += 1;
                 }
+                seg = i;
+                continue;
+            }
+        }
+
+        i += 1;
+    }
+
+    out.push_str(&input[seg..]);
+    out
+}
+
+/// Remove trailing commas that appear before a closing `}` or `]`.
+/// String contents are preserved verbatim (commas inside strings are ignored).
+///
+/// Operates on already comment-stripped input. Uses byte-segment copying so
+/// multi-byte UTF-8 sequences are never split (all decision bytes are ASCII).
+fn strip_trailing_commas(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len);
+    let mut i = 0;
+    let mut seg = 0;
+
+    while i < len {
+        let b = bytes[i];
+
+        if b == b'"' {
+            i += 1;
+            while i < len {
+                let c = bytes[i];
+                i += 1;
+                if c == b'\\' && i < len {
+                    i += 1;
+                } else if c == b'"' {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if b == b',' {
+            let mut j = i + 1;
+            while j < len && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j < len && (bytes[j] == b'}' || bytes[j] == b']') {
+                out.push_str(&input[seg..i]);
+                i += 1;
                 seg = i;
                 continue;
             }
@@ -125,6 +179,70 @@ mod tests {
     #[test]
     fn empty_input() {
         assert!(parse_jsonc("").is_err());
+    }
+
+    // --- #311: trailing comma support (VS Code / JSONC dialect) ---
+
+    #[test]
+    fn strips_trailing_comma_in_object() {
+        let input = r#"{
+  "a": 1,
+  "b": 2,
+}"#;
+        let v = parse_jsonc(input).unwrap();
+        assert_eq!(v["a"], 1);
+        assert_eq!(v["b"], 2);
+    }
+
+    #[test]
+    fn strips_trailing_comma_in_array() {
+        let input = r#"{"list": [1, 2, 3,]}"#;
+        let v = parse_jsonc(input).unwrap();
+        assert_eq!(v["list"][2], 3);
+    }
+
+    #[test]
+    fn strips_trailing_comma_with_whitespace_and_newlines() {
+        let input = "{\n  \"a\": 1  ,\n\n}";
+        let v = parse_jsonc(input).unwrap();
+        assert_eq!(v["a"], 1);
+    }
+
+    #[test]
+    fn strips_nested_trailing_commas() {
+        let input = r#"{
+  "outer": {
+    "inner": [
+      "x",
+      "y",
+    ],
+  },
+}"#;
+        let v = parse_jsonc(input).unwrap();
+        assert_eq!(v["outer"]["inner"][1], "y");
+    }
+
+    #[test]
+    fn preserves_comma_inside_string_before_brace() {
+        // A comma inside a string value must not be treated as trailing.
+        let input = r#"{"msg": "hello, world"}"#;
+        let v = parse_jsonc(input).unwrap();
+        assert_eq!(v["msg"], "hello, world");
+    }
+
+    #[test]
+    fn issue_311_vscode_settings_with_trailing_comma_and_comments() {
+        // Mirrors the real VS Code user settings.json that triggered #311:
+        // "trailing comma at line 4 column 5" plus JSONC comments.
+        let input = r#"{
+  // editor settings
+  "editor.fontSize": 14,
+  "editor.tabSize": 2,
+  "chat.mcp.enabled": true,
+}"#;
+        let v = parse_jsonc(input).unwrap();
+        assert_eq!(v["editor.fontSize"], 14);
+        assert!(v["chat.mcp.enabled"].as_bool().unwrap());
     }
 
     #[test]
