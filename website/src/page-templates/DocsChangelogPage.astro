@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.22 (Current)', href: lp('/docs/changelog') + '#v3.6.22' },
+      { label: '3.6.23 (Current)', href: lp('/docs/changelog') + '#v3.6.23' },
+      { label: '3.6.22', href: lp('/docs/changelog') + '#v3.6.22' },
       { label: '3.6.21', href: lp('/docs/changelog') + '#v3.6.21' },
       { label: '3.6.20', href: lp('/docs/changelog') + '#v3.6.20' },
       { label: '3.6.19', href: lp('/docs/changelog') + '#v3.6.19' },
@@ -79,6 +80,23 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.23 -->
+  <h2 id="v3.6.23">3.6.23 <span class="text-xs text-muted">(2026-05-28)</span></h2>
+  <p class="text-sm text-muted">Shell hook only installed for available shells, generic <code>config set</code> for all keys, gain dashboard improvements.</p>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong><code>lean-ctx update</code> creates <code>.zshenv</code> without zsh (#309)</strong> — Shell hooks were written for both zsh and bash regardless of whether the shell was installed. Now checks for the shell binary (<code>/bin/zsh</code>, <code>/usr/bin/zsh</code>, etc.) before installing. Bash-only systems no longer get a spurious <code>.zshenv</code>.</li>
+    <li><strong><code>lean-ctx config set</code> rejects valid keys (#308)</strong> — The command only supported ~12 hardcoded keys while the schema defines 80+. A new generic schema-based setter validates any key, parses by type (bool, integer, float, string, enum, string[]), and round-trips through TOML with full validation. Keys like <code>proxy_enabled</code>, <code>profile</code>, <code>compression_level</code> now work.</li>
+  </ul>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong><code>lean-ctx gain</code>: 30-day USD savings (#307)</strong> — The dashboard now shows a "past 30 days" line with estimated dollar savings, in addition to the all-time total — useful for choosing a monthly LLM subscription tier.</li>
+    <li><strong><code>lean-ctx gain</code>: version in Recent Days header (#307)</strong> — The "Recent Days" section now displays the current lean-ctx version for easier troubleshooting from screenshots.</li>
+    <li><strong>Enum validation in <code>config set</code></strong> — Setting an enum key with an invalid value now lists the allowed values instead of a generic error.</li>
+  </ul>
 
   <!-- 3.6.22 -->
   <h2 id="v3.6.22">3.6.22 <span class="text-xs text-muted">(2026-05-28)</span></h2>
@@ -316,15 +334,15 @@ const sidebar = [
 
   <!-- 3.6.12 -->
   <h2 id="v3.6.12">3.6.12 <span class="text-xs text-muted">(2026-05-21)</span></h2>
-  <p class="text-sm text-muted">Context Cortex, config-based data source providers, output sanitizer, stale proxy fix, 3 new docs pages.</p>
+  <p class="text-sm text-muted">Context Engine, config-based data source providers, output sanitizer, stale proxy fix, 3 new docs pages.</p>
 
   <h3>Added</h3>
   <ul>
-    <li><strong>Context Cortex</strong> — Multi-source intelligence layer connecting code, issues, and external APIs. BM25 indexing, cross-source edge detection, saliency ranking, and active inference prefetching. <a href={lp('/docs/cortex')}>Read more</a>.</li>
+    <li><strong>Context Engine</strong> — Multi-source intelligence layer connecting code, issues, and external APIs. BM25 indexing, cross-source edge detection, saliency ranking, and active inference prefetching. <a href={lp('/docs/cortex')}>Read more</a>.</li>
     <li><strong>Config-based data source providers</strong> — Connect any REST API by dropping a <code>.toml</code> or <code>.json</code> file into <code>~/.config/lean-ctx/providers/</code>. Supports 6 auth methods, dot-notation response extraction. <a href={lp('/docs/data-sources')}>Read more</a>.</li>
     <li><strong>Built-in GitHub, Jira, PostgreSQL providers</strong> — Activate with environment variables. Query issues, tickets, and database schemas through <code>ctx_provider</code>.</li>
     <li><strong><code>ctx_call</code> meta-tool</strong> — Invoke any of 62 registered tools by name through a single dispatch interface.</li>
-    <li><strong>Cross-source hints in <code>ctx_read</code></strong> — The Cortex appends related context from providers when reading files (e.g., relevant GitHub issues).</li>
+    <li><strong>Cross-source hints in <code>ctx_read</code></strong> — The Context Engine appends related context from providers when reading files (e.g., relevant GitHub issues).</li>
     <li><strong>Provider Bandit (Thompson sampling)</strong> — Automatically deprioritizes noisy providers and promotes relevant ones.</li>
     <li><strong>Active inference in <code>ctx_preload</code></strong> — Predicts what context you'll need next based on recent tool call patterns.</li>
     <li><strong>Output sanitizer</strong> — Last-pass filter that detects and removes degenerate CJK runs, symbol floods, and garbled artifacts from tool output.</li>

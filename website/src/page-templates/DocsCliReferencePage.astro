@@ -312,6 +312,7 @@ lean-ctx config set tee_on_error true  # log errors to ~/.lean-ctx/tee/
 lean-ctx config set checkpoint_interval 20</code></pre>
 
   <h4>Settable Configuration Keys</h4>
+  <p class="text-sm text-muted">Since v3.6.23, <code>config set</code> accepts <strong>any</strong> key defined in the config schema (run <code>lean-ctx config schema</code> for the full list). Values are validated by type, and enum keys list their allowed values on invalid input. Commonly used keys:</p>
   <table>
     <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
@@ -319,6 +320,8 @@ lean-ctx config set checkpoint_interval 20</code></pre>
       <tr><td><code>tee_mode</code></td><td>string</td><td><code>"off"</code></td><td>Tee logging mode: <code>off</code>, <code>on_error</code>, <code>always</code></td></tr>
       <tr><td><code>checkpoint_interval</code></td><td>int</td><td><code>15</code></td><td>Number of MCP calls between automatic checkpoints</td></tr>
       <tr><td><code>theme</code></td><td>string</td><td><code>"default"</code></td><td>Dashboard and TUI theme (<code>default</code>, <code>dark</code>, <code>light</code>, <code>neon</code>)</td></tr>
+      <tr><td><code>compression_level</code></td><td>enum</td><td><code>"standard"</code></td><td>Output compression level: <code>off</code>, <code>lite</code>, <code>standard</code>, <code>max</code></td></tr>
+      <tr><td><code>profile</code></td><td>string</td><td><code>"coder"</code></td><td>Active profile (e.g. <code>coder</code>, <code>passthrough</code>)</td></tr>
       <tr><td><code>slow_command_threshold_ms</code></td><td>int</td><td><code>5000</code></td><td>Threshold in milliseconds for slow-log entries</td></tr>
       <tr><td><code>passthrough_urls</code></td><td>string[]</td><td><code>[]</code></td><td>URL patterns that bypass compression (comma-separated)</td></tr>
       <tr><td><code>rules_scope</code></td><td>string</td><td><code>"project"</code></td><td>Scope for rules loading: <code>project</code>, <code>global</code>, or <code>both</code></td></tr>
