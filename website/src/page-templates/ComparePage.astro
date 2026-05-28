@@ -19,6 +19,16 @@ const rows = [
   { label: 'Security & Governance', noTool: 'No enforcement', manual: 'Basic file ACL', leanCtx: 'OWASP aligned, OS sandbox, capability ACL, signed bundles, audit trail', leanIcon: 'check' },
 ];
 
+const faqJsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    { '@type': 'Question', name: 'How does LeanCTX compare to manual prompt engineering?', acceptedAnswer: { '@type': 'Answer', text: 'Manual prompt engineering requires hand-crafting every context window. LeanCTX automates this with 10 read modes, AST-aware compression, and session memory — saving 88%+ tokens with zero manual effort.' } },
+    { '@type': 'Question', name: 'Is LeanCTX better than other MCP context tools?', acceptedAnswer: { '@type': 'Answer', text: 'LeanCTX is not just an MCP server — it is a full context runtime with CLI integration, shell hooks, 62 MCP tools, persistent memory, code intelligence graphs, and a governance layer with roles and budgets.' } },
+    { '@type': 'Question', name: 'Does LeanCTX work with my AI coding tool?', acceptedAnswer: { '@type': 'Answer', text: 'Yes — LeanCTX supports 24+ AI tools including Cursor, Claude Code, GitHub Copilot, Windsurf, Gemini CLI, Codex, and JetBrains IDEs. Run lean-ctx setup for automatic configuration.' } },
+  ],
+});
+
 const altRows = [
   { feature: t('compare.altRowReadModes'),       rtk: t('compare.altRtkReadModes'),       ctxPlus: t('compare.altCtxPlusReadModes'),       memgpt: t('compare.altMemgptReadModes'),       leanCtx: t('compare.altLeanReadModes') },
   { feature: t('compare.altRowShellCompress'),    rtk: t('compare.altRtkShellCompress'),    ctxPlus: t('compare.altCtxPlusShellCompress'),    memgpt: t('compare.altMemgptShellCompress'),    leanCtx: t('compare.altLeanShellCompress') },
@@ -35,7 +45,8 @@ const altRows = [
 <BaseLayout
   title={t('compare.title')}
   description={t('compare.metaDescription')}
-  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('compare.breadcrumb'), url: lp('/compare/') }]}>
+  breadcrumbs={[{ name: t('common.home'), url: lp('/') }, { name: t('compare.breadcrumb'), url: lp('/compare/') }]}
+  extraJsonLd={faqJsonLd}>
 
 <!-- ═══════ HERO ═══════ -->
 <PageHero

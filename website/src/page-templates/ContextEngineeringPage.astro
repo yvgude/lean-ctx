@@ -9,11 +9,22 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
+
+const faqJsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    { '@type': 'Question', name: 'What is context engineering?', acceptedAnswer: { '@type': 'Answer', text: 'Context engineering is the discipline of managing what information an AI agent sees, remembers, and acts on. It replaces ad-hoc prompt engineering with a systematic runtime that compresses, caches, verifies, and governs AI context.' } },
+    { '@type': 'Question', name: 'Why does context engineering matter for AI coding?', acceptedAnswer: { '@type': 'Answer', text: 'AI coding agents waste thousands of tokens rereading files, parsing noisy shell output, and losing context between sessions. Context engineering reduces this waste by up to 99%, making agents faster, cheaper, and more reliable.' } },
+    { '@type': 'Question', name: 'How is context engineering different from prompt engineering?', acceptedAnswer: { '@type': 'Answer', text: 'Prompt engineering focuses on crafting individual prompts. Context engineering manages the entire information lifecycle — what the agent reads, how it is compressed, what is cached, what is remembered across sessions, and what is verified before delivery.' } },
+  ],
+});
 ---
 
 <BaseLayout
   title={t('ce.title')}
   description={t('ce.metaDesc')}
+  extraJsonLd={faqJsonLd}
   breadcrumbs={[{ name: t('ce.breadcrumbHome'), url: lp('/') }, { name: t('ce.breadcrumbTitle'), url: lp('/what-is-context-engineering/') }]}>
 
 <!-- ═══════ HERO ═══════ -->
