@@ -280,6 +280,7 @@ ctx_read src/auth/service.rs --mode task
       <tr><td><code>path</code></td><td>string</td><td>No</td><td>Directory to list (default: project root)</td></tr>
       <tr><td><code>depth</code></td><td>number</td><td>No</td><td>Maximum depth (default: 3)</td></tr>
       <tr><td><code>show_hidden</code></td><td>boolean</td><td>No</td><td>Include hidden files and directories (default: false)</td></tr>
+      <tr><td><code>respect_gitignore</code></td><td>boolean</td><td>No</td><td>Filter out <code>.gitignore</code>'d files (default: true). Set <code>false</code> to show all files including build artifacts and ignored directories.</td></tr>
     </tbody>
   </table>
 

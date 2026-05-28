@@ -142,23 +142,26 @@ lean-ctx grep "async fn.*Result" rust/src/</code></pre>
   <pre><code>lean-ctx find "*.rs" src/
 lean-ctx find "test_*" .</code></pre>
 
-  <h3 id="ls"><code>lean-ctx ls [path] [--all|-a] [--depth N]</code></h3>
+  <h3 id="ls"><code>lean-ctx ls [path] [--all|-a] [--depth N] [--no-gitignore]</code></h3>
   <p>{t('docs.cliReference.lsDesc')}</p>
   <table>
     <thead><tr><th>Flag</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>--all</code> / <code>-a</code></td><td>Include hidden files (dotfiles)</td></tr>
       <tr><td><code>--depth N</code></td><td>Limit directory tree depth (default: 3)</td></tr>
+      <tr><td><code>--no-gitignore</code></td><td>Show all files regardless of <code>.gitignore</code> rules. Useful for inspecting build artifacts, <code>node_modules/</code>, or <code>target/</code> directories.</td></tr>
     </tbody>
   </table>
   <pre><code>lean-ctx ls
 lean-ctx ls src/components/
 lean-ctx ls --all .
-lean-ctx ls --depth 5 src/</code></pre>
+lean-ctx ls --depth 5 src/
+lean-ctx ls --no-gitignore build/</code></pre>
   <p class="text-sm text-muted">
     <strong>Note:</strong> <code>lean-ctx ls</code> is a compressed tree view, not a drop-in <code>ls</code> replacement.
     Flags like <code>-la</code>, <code>-l</code>, <code>-R</code> are rejected with a clear error. Use the shell
-    hook (<code>ls -la</code> directly) for standard <code>ls</code> behavior.
+    hook (<code>ls -la</code> directly) for standard <code>ls</code> behavior. By default, <code>.gitignore</code>
+    rules are respected — use <code>--no-gitignore</code> to override.
   </p>
 
   <h3 id="deps"><code>lean-ctx deps [path]</code></h3>

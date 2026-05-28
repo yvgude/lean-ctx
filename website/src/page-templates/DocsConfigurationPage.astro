@@ -548,7 +548,12 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_SHELL_ALLOWLIST</code></td>
         <td>comma-separated commands</td>
-        <td>Override <code>shell_allowlist</code> config. When set, only listed commands are permitted by <code>ctx_shell</code>. Example: <code>git,cargo,npm,ls</code></td>
+        <td>Override <code>shell_allowlist</code> config. When set, only listed commands are permitted by <code>ctx_shell</code>. Merges with config defaults. Example: <code>git,cargo,npm,ls</code></td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE</code></td>
+        <td>comma-separated commands</td>
+        <td>Completely replaces the shell allowlist (no merging with config). Use for deterministic testing environments. Empty value (<code>""</code>) creates an empty allowlist (blocklist-only mode).</td>
       </tr>
       <tr>
         <td><code>LCTX_NO_DEGRADE</code></td>
@@ -613,7 +618,7 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_HARDEN</code></td>
         <td><code>1</code> / unset</td>
-        <td>Activate strict enforcement mode. When set, hook redirects deny native tool usage entirely and return an error message directing the agent to use lean-ctx tools. Set automatically by <code>lean-ctx harden</code>.</td>
+        <td>Activate strict enforcement mode. When set, hook redirects strongly encourage lean-ctx tools by returning ALLOW JSON with embedded guidance (since v3.6.22, hooks never return DENY to avoid agent retry loops). Set automatically by <code>lean-ctx harden</code>.</td>
       </tr>
       <tr>
         <td><code>LEAN_CTX_SHELL</code></td>

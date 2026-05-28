@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.21 (Current)', href: lp('/docs/changelog') + '#v3.6.21' },
+      { label: '3.6.22 (Current)', href: lp('/docs/changelog') + '#v3.6.22' },
+      { label: '3.6.21', href: lp('/docs/changelog') + '#v3.6.21' },
       { label: '3.6.20', href: lp('/docs/changelog') + '#v3.6.20' },
       { label: '3.6.19', href: lp('/docs/changelog') + '#v3.6.19' },
       { label: '3.6.18', href: lp('/docs/changelog') + '#v3.6.18' },
@@ -78,6 +79,31 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.22 -->
+  <h2 id="v3.6.22">3.6.22 <span class="text-xs text-muted">(2026-05-28)</span></h2>
+  <p class="text-sm text-muted">Security Hardening V2 (8 phases), hook reliability, adaptive exec limits, index rebuild improvements.</p>
+
+  <h3>{t('changelog.security') || 'Security'}</h3>
+  <ul>
+    <li><strong>Security Hardening V2 (8 phases)</strong> — Comprehensive security audit and hardening: shell substitution blocking (<code>eval</code>, <code>exec</code>, <code>source</code>), role system hardening, PathJail bypass removal, secret detection unification, dangerous flag detection (<code>--checkpoint-action</code>, <code>GIT_SSH=</code>), HTTP/audit hardening, and Unicode normalization (U+2028/U+2029 line separators).</li>
+  </ul>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>preToolUse hook DENY loop (#306)</strong> — AI agents entered infinite retry loops when hooks returned DENY. Eliminated all DENY paths — hooks now always return valid ALLOW JSON, even for disabled mode or invalid payloads.</li>
+    <li><strong>Graph index disappears after upgrade</strong> — CLI <code>index build-full</code> and Dashboard used different project root hashes. Unified <code>detect_project_root()</code> to always promote to git root.</li>
+    <li><strong><code>index build-full</code> incomplete rebuild</strong> — Now also clears <code>call_graph.json.zst</code>, <code>graph.db</code>, and <code>graph.meta.json</code>, then rebuilds the SQLite property graph. Timeout increased to 5 minutes.</li>
+    <li><strong>Knowledge overflow from <code>finding-auto</code> duplicates</strong> — Auto-consolidated findings without a file reference received identical keys, creating hundreds of duplicate facts and <code>contradict</code> event spam. Keys are now generated from the finding summary.</li>
+    <li><strong><code>cargo build</code> output truncated</strong> — Heavy build commands hit the 8MB/120s output limit. Added adaptive exec limits: build tools get 32MB/10min.</li>
+  </ul>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong><code>ctx_tree</code> / <code>lean-ctx ls</code> gitignore toggle</strong> — New <code>respect_gitignore</code> parameter (MCP) / <code>--no-gitignore</code> flag (CLI) to show files regardless of <code>.gitignore</code> rules.</li>
+    <li><strong><code>LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE</code> env var</strong> — Completely replaces the config-based allowlist (unlike <code>LEAN_CTX_SHELL_ALLOWLIST</code> which merges).</li>
+    <li><strong>Adaptive exec limits</strong> — 37 heavy-command prefixes (<code>cargo build</code>, <code>npm install</code>, <code>docker build</code>, etc.) automatically get 32MB/10min instead of 8MB/2min.</li>
+  </ul>
 
   <!-- 3.6.21 -->
   <h2 id="v3.6.21">3.6.21 <span class="text-xs text-muted">(2026-05-27)</span></h2>
