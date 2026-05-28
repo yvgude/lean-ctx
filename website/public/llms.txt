@@ -1,19 +1,19 @@
-# LeanCTX — The Context OS for AI Development
+# LeanCTX — The Context Runtime for AI Agents
 
 > LeanCTX is an open-source context runtime that sits between AI coding agents and codebases. It compresses file reads by up to 99%, persists memory across sessions, verifies outputs, and works with 24+ AI tools. Single Rust binary, CLI-first, privacy-first. Zero telemetry.
 
 ## What is LeanCTX?
 
-LeanCTX (lean-ctx) is the operating system for AI context. It intercepts every file read, shell command, and search query between your AI tool and codebase, then compresses, caches, and verifies the output before it reaches the model.
+LeanCTX (lean-ctx) is a context engineering layer for AI agents. It intercepts every file read, shell command, and search query between your AI tool and codebase, then compresses, caches, and verifies the output before it reaches the model.
 
 Three integration modes:
 - **CLI-Redirect** (recommended): Zero MCP overhead. AI agents call `lean-ctx` via shell commands. Used by Cursor, Claude Code, Codex, Gemini CLI.
 - **Hybrid**: MCP for cached reads (13 tokens per re-read) + CLI for shell/search. Used by Windsurf, Amp, Antigravity.
-- **Full MCP**: 56 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
+- **Full MCP**: 62 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
 
-## Six Pillars of the Context OS
+## Six Pillars of the Context Runtime
 
-1. **Smart I/O**: 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto). AST-aware compression via tree-sitter for 18 languages. Graph-aware reads with dependency hints. 95+ shell compression patterns.
+1. **Smart I/O**: 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto). AST-aware compression via tree-sitter for 18 languages. Graph-aware reads with dependency hints. 60+ shell compression patterns.
 2. **Intelligence**: Intent classification (What/How/Do), adaptive pipeline, graph-powered hybrid search (BM25 + semantic embeddings + graph proximity via RRF), knowledge-enriched overview, progressive search throttling, terse mode.
 3. **Memory**: Persistent sessions, project knowledge with temporal facts, multi-edge dependency graphs (imports, calls, exports, type_ref, tested_by), agent handoffs, session survival engine with structured recovery queries.
 4. **Governance**: 5 built-in roles (Admin, Coder, Debugger, Reviewer, Ops), workflow gates, token/cost/shell budgets, SLOs with automatic throttling.
@@ -34,23 +34,31 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 ## Key Facts
 
-- Version: 3.5.13
-- License: MIT + Apache-2.0 (dual-licensed)
-- Language: Rust (single binary)
-- Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `pi install npm:pi-lean-ctx`
+- Version: 3.6.22
+- License: Apache-2.0
+- Language: Rust (single binary, ~15MB)
+- Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `brew install yvgude/lean-ctx/lean-ctx` or `pi install npm:pi-lean-ctx`
 - Setup: `lean-ctx setup` (auto-configures shell + all detected editors)
 - Telemetry: Zero. None. Ever. Everything runs 100% locally.
 - Repository: https://github.com/yvgude/lean-ctx
 - Website: https://leanctx.com
 - Discord: https://discord.gg/pTHkG9Hew9
+- Changelog: https://leanctx.com/docs/changelog/
 
 ## Supported AI Tools (24+)
 
 Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CLI, Gemini CLI, Cline, Roo Code, Google Antigravity, OpenCode, Aider, Amp, AWS Kiro, JetBrains IDEs, Amazon Q Developer, Trae, Continue, Crush, Hermes, Sublime Text, Emacs, Neovim.
 
-Pi has a dedicated first-class package: `pi install npm:pi-lean-ctx` — see https://pi.dev/packages/pi-lean-ctx
+## Security Features (v3.6.22)
 
-## MCP Tools
+- **PathJail**: Prevents file access outside the project directory (sandbox)
+- **Shell Allowlist**: Opt-in command allowlisting with AST-based multi-segment validation
+- **Dangerous Pattern Blocking**: Unconditionally blocks eval, exec, source, interpreter eval flags, pipe-to-shell, dangerous flags, Unicode injection
+- **Secret Detection**: Automatic redaction of API keys, passwords, tokens in shell output
+- **Role-Based Access**: 5 built-in roles with configurable permissions
+- **OS-Level Sandbox**: Optional Seatbelt (macOS) / Landlock (Linux) process isolation
+
+## MCP Tools (62)
 
 Full tool manifest with schemas: https://leanctx.com/generated/mcp-tools.json
 
@@ -59,24 +67,20 @@ Core tools: ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_overview, ctx_session
 ## Pages
 
 - [Home](https://leanctx.com/)
-- [Context OS](https://leanctx.com/context-os/): Architecture, pipeline, integration modes
-- [Smart I/O](https://leanctx.com/context-os/smart-io/): File compression, read modes, shell patterns
-- [Intelligence](https://leanctx.com/context-os/intelligence/): Intent routing, adaptive pipeline, hybrid search
-- [Memory](https://leanctx.com/context-os/memory/): Sessions, knowledge, dependency graphs
-- [Governance](https://leanctx.com/context-os/governance/): Roles, budgets, SLOs, workflow gates
-- [Verification](https://leanctx.com/context-os/verification/): Proof artifacts, output checks, security
-- [Integrations](https://leanctx.com/context-os/integrations/): 24+ tools, CLI-Redirect, Hybrid, MCP modes
-- [Benchmark](https://leanctx.com/context-os/benchmark/): Token savings verification
 - [How It Works](https://leanctx.com/how-it-works/): Data flow and compression pipeline
-- [Getting Started](https://leanctx.com/docs/getting-started/): Installation guide
-- [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands
-- [Tool Reference](https://leanctx.com/docs/tools/): All MCP tools documented
+- [Context OS](https://leanctx.com/context-os/): Architecture overview
 - [Compatibility](https://leanctx.com/compatibility/): All supported AI tools
+- [Getting Started](https://leanctx.com/docs/getting-started/): Installation guide
+- [Configuration](https://leanctx.com/docs/configuration/): Config, env vars, hooks, security
+- [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands
+- [Tool Reference](https://leanctx.com/docs/tools/): All 62 MCP tools documented
+- [Security](https://leanctx.com/docs/security/): PathJail, allowlist, sandbox, roles
+- [Changelog](https://leanctx.com/docs/changelog/): Version history
 
 ## FAQ
 
 **How much does lean-ctx cost?**
-Free and open source. MIT + Apache-2.0 dual-licensed.
+Free and open source. Apache-2.0 licensed.
 
 **How much money does lean-ctx save?**
 Active developers save $30-100+ per month on API costs. Use `lean-ctx gain --score` to measure your savings.
@@ -88,7 +92,10 @@ Yes — 24+ AI tools supported. Run `lean-ctx setup` for automatic configuration
 No. <1ms overhead per operation. Most users report faster AI responses because less data means faster LLM inference.
 
 **Is it safe?**
-Zero telemetry. Everything runs locally. PathJail sandbox, size caps, TOCTOU mitigation, prompt injection hardening — all active by default.
+Zero telemetry. Everything runs locally. PathJail sandbox, shell allowlist, secret redaction, TOCTOU mitigation, prompt injection hardening — all active by default.
 
-**What is Context OS?**
-Context OS is the architecture that manages the full lifecycle of AI context: what your agent sees, remembers, verifies, and delivers. It replaces ad-hoc prompt engineering with a systematic runtime.
+**What is context engineering?**
+Context engineering is the discipline of managing what information an AI agent sees, remembers, and acts on. LeanCTX automates this with compression, caching, verification, and governance.
+
+**What is the difference between lean-ctx and other MCP tools?**
+lean-ctx is not just an MCP server — it's a full context runtime with CLI integration, shell hooks, persistent memory, code intelligence, and a governance layer. It works with or without MCP.

@@ -23,7 +23,7 @@ const {
   description = `Reduce Claude Code, Cursor & Copilot token costs by 99%. Open-source MCP server + shell hook with ${getMcpManifest().counts.granular} tools and 60+ compression patterns. Single Rust binary, privacy-first.`,
   ogImage = '/og-image-v4.png',
   noindex = false,
-  keywords = 'lean-ctx, lean cortex, cognitive context layer, agentic systems, reduce AI token costs, MCP server, Claude Code costs, Cursor token optimization, Copilot API costs, context compression, Rust, Gemini CLI, Windsurf, context engineering, agentic coding',
+  keywords = 'lean-ctx, leanctx, context engineering, context runtime, MCP server, MCP tools, reduce AI token costs, Claude Code costs, Cursor token optimization, Copilot API costs, context compression, AI coding agent, agentic coding, Rust, Gemini CLI, Windsurf, shell hook, token savings, code intelligence, AI context window, context management',
   breadcrumbs,
   extraJsonLd,
   hideAscii = false,
@@ -37,6 +37,7 @@ const isHome = Astro.url.pathname === '/';
 
 const manifest = getMcpManifest();
 const todayIso = new Date().toISOString().slice(0, 10);
+const siteVersion = (await import('fs')).readFileSync(new URL('../../public/version.txt', import.meta.url), 'utf-8').trim();
 
 const orgJsonLd = {
   '@type': 'Organization',
@@ -60,8 +61,8 @@ const softwareJsonLd = JSON.stringify({
   operatingSystem: 'macOS, Linux, Windows',
   url: 'https://leanctx.com',
   downloadUrl: 'https://crates.io/crates/lean-ctx',
-  softwareVersion: '3.6.15',
-  license: ['https://www.apache.org/licenses/LICENSE-2.0', 'https://opensource.org/licenses/MIT'],
+  softwareVersion: siteVersion,
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
   description: `Lean Cortex — the cognitive context layer for agentic systems. Reduce Claude Code, Cursor & Copilot token costs by up to 99%. ${manifest.counts.granular} MCP tools, 60+ shell compression patterns, 10 read modes. Privacy-first, open source.`,
   featureList: 'Intelligent file compression, Session memory, Graph-powered intelligence, Output verification, Multi-agent governance, 24+ IDE integrations',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
@@ -70,7 +71,6 @@ const softwareJsonLd = JSON.stringify({
   codeRepository: 'https://github.com/yvgude/lean-ctx',
   programmingLanguage: 'Rust',
   dateModified: todayIso,
-  aggregateRating: { '@type': 'AggregateRating', ratingValue: '5', bestRating: '5', worstRating: '1', ratingCount: '1' },
 });
 
 const webSiteJsonLd = isHome ? JSON.stringify({
@@ -221,7 +221,20 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   {webPageJsonLd && <script type="application/ld+json" set:html={webPageJsonLd} />}
   {breadcrumbJsonLd && <script type="application/ld+json" set:html={breadcrumbJsonLd} />}
   {extraJsonLd && <script type="application/ld+json" set:html={extraJsonLd} />}
-  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable site description" />
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable site summary" />
+  <link rel="alternate" type="text/plain" href="/llms-full.txt" title="LLM-readable full documentation index" />
+  <link rel="alternate" type="text/plain" href="/ai.txt" title="AI agent guidance" />
+
+  <script type="speculationrules">
+  {
+    "prerender": [
+      { "where": { "href_matches": ["/docs/*", "/how-it-works/", "/context-os/", "/compatibility/"] }, "eagerness": "moderate" }
+    ],
+    "prefetch": [
+      { "where": { "href_matches": "/*" }, "eagerness": "conservative" }
+    ]
+  }
+  </script>
 
   <script is:inline>
     (function(){

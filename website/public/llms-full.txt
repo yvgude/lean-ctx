@@ -1,43 +1,59 @@
-# LeanCTX
+# LeanCTX — Full Documentation Index
 
-> Open-source context intelligence layer for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry.
+> Open-source context runtime for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry. Version 3.6.22.
 
 ## Documentation
 
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation, setup, and first steps
-- [Configuration](https://leanctx.com/docs/configuration/): config.toml, security layer, environment variables
-- [Tool API Reference](https://leanctx.com/docs/tools/): All MCP tools with schemas and examples
-- [CLI Reference](https://leanctx.com/cli/): Terminal commands and flags
+- [Configuration](https://leanctx.com/docs/configuration/): config.toml, security, environment variables, hooks
+- [Tool API Reference](https://leanctx.com/docs/tools/): All 62 MCP tools with schemas and examples
+- [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands and flags
 - [Quick Reference](https://leanctx.com/docs/quick-reference/): Daily workflow cheat sheet
+- [Security](https://leanctx.com/docs/security/): PathJail, shell allowlist, sandbox, roles, secret detection
+- [Budgets & SLOs](https://leanctx.com/docs/budgets-and-slos/): Token/cost budgets and service level objectives
+- [Observatory](https://leanctx.com/docs/observatory/): Real-time dashboard and analytics
+- [Changelog](https://leanctx.com/docs/changelog/): Version history with detailed release notes
 
 ## Features
 
 - [How It Works](https://leanctx.com/how-it-works/): Data flow, compression pipeline, quality preservation
-- [MCP Server](https://leanctx.com/mcp-server/): MCP tools documentation and read modes
-- [Shell Hook](https://leanctx.com/shell-hook/): 95+ command patterns with before/after examples
-- [Intelligence Layer](https://leanctx.com/docs/intelligence-layer/): 6 scientific compression algorithms
-- [Tree-sitter Engine](https://leanctx.com/docs/tree-sitter/): AST parsing for 18 languages
-- [Protocols](https://leanctx.com/protocols/): CEP, CCP, and TDD communication protocols
+- [Context OS](https://leanctx.com/context-os/): Architecture overview — 6 pillars of the context runtime
+- [Compatibility](https://leanctx.com/compatibility/): 24+ AI coding tools with setup commands
 
-## Compatibility
+## Concepts
 
-- [Supported AI Tools](https://leanctx.com/compatibility/): 24 AI coding tools with setup commands
-- [Benchmark](https://leanctx.com/benchmark/): Token savings measurement and verification
+- [Read Modes](https://leanctx.com/docs/concepts/read-modes/): 10 modes for different file reading strategies
+- [Token Savings](https://leanctx.com/docs/concepts/token-savings/): How compression works and what it saves
+- [Protocols](https://leanctx.com/docs/concepts/protocols/): CEP, CCP, and TDD communication protocols
+
+## Tool Categories
+
+- [Core Tools](https://leanctx.com/docs/tools/core/): ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_overview, ctx_multi_read, ctx_expand, ctx_preload, ctx_prefetch, ctx_delta, ctx_dedup, ctx_compress, ctx_fill, ctx_context, ctx_provider, ctx_cache
+- [Session Tools](https://leanctx.com/docs/tools/session/): ctx_session, ctx_agent, ctx_handoff, ctx_share
+- [Memory Tools](https://leanctx.com/docs/tools/memory/): ctx_knowledge, ctx_compress_memory
+- [Intelligence Tools](https://leanctx.com/docs/tools/intelligence/): ctx_intent, ctx_graph, ctx_graph_diagram, ctx_index, ctx_symbol, ctx_impact, ctx_callers, ctx_callees, ctx_callgraph, ctx_semantic_search, ctx_discover, ctx_discover_tools
+- [Analysis Tools](https://leanctx.com/docs/tools/analysis/): ctx_architecture, ctx_analyze, ctx_smells, ctx_review, ctx_outline, ctx_routes, ctx_benchmark, ctx_metrics, ctx_cost, ctx_heatmap, ctx_gain
+- [Workflow Tools](https://leanctx.com/docs/tools/workflow/): ctx_workflow, ctx_task, ctx_verify, ctx_proof, ctx_execute, ctx_pack, ctx_wrapped, ctx_call, ctx_response, ctx_feedback, ctx_artifacts
 
 ## API
 
-- [MCP Tools Manifest](https://leanctx.com/generated/mcp-tools.json): Machine-readable tool schemas
-- [MCP Discovery](https://leanctx.com/.well-known/mcp.json): MCP server discovery endpoint
+- [MCP Tools Manifest](https://leanctx.com/generated/mcp-tools.json): Machine-readable tool schemas (JSON)
+- [API Reference](https://leanctx.com/docs/api-reference/): HTTP API documentation
 
 ## Resources
 
-- [GitHub Repository](https://github.com/yvgude/lean-ctx): Source code
+- [GitHub Repository](https://github.com/yvgude/lean-ctx): Source code, issues, discussions
 - [npm Package](https://www.npmjs.com/package/lean-ctx-bin): Binary distribution
 - [crates.io](https://crates.io/crates/lean-ctx): Rust crate
-- [Discord](https://discord.gg/pTHkG9Hew9): Community
-- [Privacy Policy](https://leanctx.com/privacy/): Data handling and privacy
+- [Pi Package](https://pi.dev/packages/pi-lean-ctx): Pi.dev distribution
+- [AUR Package](https://aur.archlinux.org/packages/lean-ctx): Arch Linux
+- [Homebrew](https://github.com/yvgude/homebrew-lean-ctx): macOS/Linux via Homebrew
+- [Discord](https://discord.gg/pTHkG9Hew9): Community and support
+- [Privacy Policy](https://leanctx.com/privacy/): Data handling
+- [Terms of Service](https://leanctx.com/terms/): Usage terms
 
 ## Optional
 
-- [Home](https://leanctx.com/): Marketing overview and quick start
-- [Manifest](https://leanctx.com/manifest/): Architecture and design philosophy
+- [Home](https://leanctx.com/): Overview and quick start
+- [What is Context Engineering?](https://leanctx.com/what-is-context-engineering/): Concept explainer
+- [Comparison](https://leanctx.com/compare/): Feature comparison with alternatives

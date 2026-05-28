@@ -5,3 +5,8 @@ Disallow: /checkout/
 Disallow: /admin/
 
 Sitemap: https://leanctx.com/sitemap-index.xml
+
+# LLM / AI agent discovery
+# See https://llmstxt.org/ for the llms.txt standard
+# llms.txt: concise project summary for AI agents
+# llms-full.txt: complete documentation index
