@@ -6,6 +6,7 @@ import AsciiHeroBg from '../components/AsciiHeroBg.astro';
 import { locales, isRtl, type Locale } from '../i18n/config';
 import { getLocaleFromUrl, getLocalizedPath, removeLocalePrefix } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
+import siteVersionRaw from '../../public/version.txt?raw';
 
 interface Props {
   title: string;
@@ -37,7 +38,7 @@ const isHome = Astro.url.pathname === '/';
 
 const manifest = getMcpManifest();
 const todayIso = new Date().toISOString().slice(0, 10);
-const siteVersion = (await import('fs')).readFileSync(new URL('../../public/version.txt', import.meta.url), 'utf-8').trim();
+const siteVersion = siteVersionRaw.trim();
 
 const orgJsonLd = {
   '@type': 'Organization',
@@ -63,7 +64,7 @@ const softwareJsonLd = JSON.stringify({
   downloadUrl: 'https://crates.io/crates/lean-ctx',
   softwareVersion: siteVersion,
   license: 'https://www.apache.org/licenses/LICENSE-2.0',
-  description: `Lean Cortex — the cognitive context layer for agentic systems. Reduce Claude Code, Cursor & Copilot token costs by up to 99%. ${manifest.counts.granular} MCP tools, 60+ shell compression patterns, 10 read modes. Privacy-first, open source.`,
+  description: `Lean Context — the cognitive context layer for agentic systems. Reduce Claude Code, Cursor & Copilot token costs by up to 99%. ${manifest.counts.granular} MCP tools, 60+ shell compression patterns, 10 read modes. Privacy-first, open source.`,
   featureList: 'Intelligent file compression, Session memory, Graph-powered intelligence, Output verification, Multi-agent governance, 24+ IDE integrations',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
   author: { '@type': 'Person', name: 'Yves Gugger', url: 'https://github.com/yvgude' },
@@ -79,7 +80,7 @@ const webSiteJsonLd = isHome ? JSON.stringify({
   name: 'LeanCTX',
   alternateName: 'lean-ctx',
   url: 'https://leanctx.com',
-  description: 'Lean Cortex — the cognitive context layer for agentic systems',
+  description: 'Lean Context — the cognitive context layer for agentic systems',
   publisher: orgJsonLd,
 }) : null;
 
