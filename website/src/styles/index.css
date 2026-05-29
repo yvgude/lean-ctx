@@ -212,8 +212,7 @@
   align-items: center;
   border: 1px solid var(--color-border);
   border-radius: var(--card-radius-lg);
-  background: var(--overlay-faint);
-  backdrop-filter: blur(10px);
+  background: var(--color-surface);
   overflow: hidden;
 }
 
@@ -239,14 +238,11 @@
 
 .trust-stat-num {
   font-size: clamp(1.75rem, 1.2rem + 2vw, 3rem);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
   letter-spacing: -0.04em;
   color: var(--color-text-bright);
-  background: linear-gradient(180deg, var(--color-text-bright), var(--color-accent));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-variant-numeric: tabular-nums;
 }
 
 .trust-stat-label {
