@@ -91,10 +91,25 @@ const sidebar = [
       <tr><td><code>export</code></td><td>-</td><td>Export all knowledge as structured JSON</td></tr>
       <tr><td><code>gotcha</code></td><td><code>trigger</code>, <code>resolution</code>, <code>severity</code></td><td>Record a bug/mistake to never repeat</td></tr>
       <tr><td><code>embeddings_status</code></td><td>-</td><td>Show semantic embeddings status (model present/missing, auto-download flag, index size)</td></tr>
+      <tr><td><code>judge</code></td><td><code>key_a</code>, <code>key_b</code>, <code>verdict</code></td><td>Resolve a cross-key conflict: <code>supersedes</code> (archives target), <code>compatible</code> (marks as related), <code>unrelated</code> (suppresses future noise)</td></tr>
       <tr><td><code>embeddings_reset</code></td><td>-</td><td>Delete the local embeddings index for this project</td></tr>
       <tr><td><code>embeddings_reindex</code></td><td>-</td><td>Rebuild embeddings index from current (non-archived) facts</td></tr>
     </tbody>
   </table>
+
+  <h3>Revision Tracking</h3>
+  <p>
+    Every fact tracks its <code>revision_count</code>. Confirmations (same key, same value) increment it.
+    Supersedes (same key, new value) carry the count forward. Recall output shows <code>rev N</code> for
+    multi-revision facts, enabling agents to see how established a fact is.
+  </p>
+
+  <h3>Cross-Key Conflict Surfacing</h3>
+  <p>
+    When <code>remember</code> stores a fact, lean-ctx compares its value against facts under <em>different</em> keys
+    using Jaccard similarity. Similar facts (>35% overlap) are surfaced in a <code>SIMILAR FACTS</code> section.
+    The <code>judge</code> action lets agents resolve these pairs — judged pairs are suppressed in future runs.
+  </p>
 
   <h3>Temporal Facts & Contradiction Detection</h3>
   <p>

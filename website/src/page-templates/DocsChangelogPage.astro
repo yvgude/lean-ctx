@@ -83,30 +83,39 @@ const sidebar = [
   </p>
 
   <!-- 3.6.24 -->
-  <h2 id="v3.6.24">3.6.24 <span class="text-xs text-muted">(2026-05-29)</span></h2>
-  <p class="text-sm text-muted">New <code>ctx_compose</code> tool, friendlier defaults, major internal quality improvements.</p>
+  <h2 id="v3.6.24">3.6.24 <span class="text-xs text-muted">(2026-05-30)</span></h2>
+  <p class="text-sm text-muted">Knowledge Intelligence, RAM guardian fix, <code>ctx_compose</code>, Jira Cloud migration, friendlier defaults.</p>
 
   <h3>{t('changelog.added')}</h3>
   <ul>
-    <li><strong><code>ctx_compose</code> — multi-source context composer</strong> — New MCP tool that combines BM25 ranking, semantic search, and associative retrieval into a single rich response. Uses submodular maximization for optimal symbol selection within token budget. Leverages Hebbian co-access learning for context-aware file suggestions.</li>
+    <li><strong>Knowledge Intelligence — Revision Tracking</strong> — <code>KnowledgeFact</code> gains a <code>revision_count</code> field. Confirmations increment it, supersedes carry it forward. Output distinguishes "Remembered (revision 1)" vs "Confirmed (revision N)" vs "Updated → revision N". Recall shows <code>rev N</code> for multi-revision facts.</li>
+    <li><strong>Knowledge Intelligence — Cross-Key Conflict Surfacing</strong> — <code>find_cross_key_similar()</code> detects semantically similar facts across different keys using Jaccard similarity. When <code>remember</code> stores a fact, similar facts are surfaced with similarity percentages. New <code>judge</code> action lets agents resolve pairs as <code>supersedes</code>/<code>compatible</code>/<code>unrelated</code>.</li>
+    <li><strong>Knowledge Intelligence — Activity-weighted Nudges</strong> — Replaces the fixed 30-call counter with weighted activity scoring. Edits +4, shell test/build +3, new file read +1, knowledge calls reset. Contextual nudge text based on dominant tool type.</li>
+    <li><strong><code>ctx_compose</code> — multi-source context composer</strong> — New MCP tool that combines BM25 ranking, semantic search, and associative retrieval into a single rich response. Uses submodular maximization for optimal symbol selection within token budget.</li>
     <li><strong>Hebbian co-access graph</strong> — Persistent, decaying file co-access associations inspired by neurobiology (LTP, pruning). Contributes to associative retrieval across sessions.</li>
     <li><strong>Spreading activation ranker</strong> — ACT-R-style associative ranker that spreads relevance across structural + learned co-access graphs.</li>
-    <li><strong>Bloom filter tier for large monorepos</strong> — Memory-efficient search index tier for repositories with 50k+ files. Zero false negatives with downstream regex verification.</li>
+    <li><strong>Bloom filter tier for large monorepos</strong> — Memory-efficient search index tier for repositories with 50k+ files. Zero false negatives.</li>
+    <li><strong><code>bunx</code> in default shell allowlist</strong> (#310).</li>
   </ul>
 
   <h3>{t('changelog.changed')}</h3>
   <ul>
-    <li><strong>Default <code>compression_level</code> → <code>"lite"</code></strong> — New installs now default to <code>"lite"</code> (abbreviations only) instead of <code>"off"</code>. Existing configs are not changed. Override with <code>lean-ctx config set compression_level off</code> if preferred.</li>
+    <li><strong>Default <code>compression_level</code> → <code>"lite"</code></strong> — New installs now default to <code>"lite"</code> (abbreviations only) instead of <code>"off"</code>. Existing configs are not changed.</li>
     <li><strong>Friendlier <code>--help</code> and quickstart output</strong> — Bare <code>lean-ctx</code> invocation now shows a concise quickstart guide. <code>--help</code> is reorganized by usage frequency.</li>
-    <li><strong>Codebase quality</strong> — Split 5 large files (2000+ lines each) into focused modules. Zero behavior change, improved maintainability. Added 38 CLI characterization tests as safety net.</li>
+    <li><strong>Reverted thinking-mode guard</strong> (#313) — The defensive check in PreToolUse hooks was removed — the upstream bug it worked around has been fixed.</li>
+    <li><strong>Codebase quality</strong> — Split 5 large files (2000+ lines each) into focused modules. Added 38 CLI characterization tests.</li>
   </ul>
 
   <h3>{t('changelog.fixed')}</h3>
   <ul>
-    <li><strong>Background thread panics no longer crash the process</strong> — BM25 cache refresh and <code>ctx_compose</code> background threads now use <code>catch_unwind</code> with warning logs instead of propagating panics.</li>
-    <li><strong>Silent <code>save()</code> failures now logged</strong> — Session, semantic index, cost attribution, and agent registry save failures produce <code>tracing::warn!</code> instead of being silently swallowed.</li>
-    <li><strong><code>config set</code> no longer panics on invalid intermediate keys</strong> — Returns a helpful error message instead.</li>
-    <li><strong>Token-cap truncation performance</strong> — Rewrote from O(n) iterative to O(log n) binary search. Eliminates pathological slowdowns under coverage tooling.</li>
+    <li><strong>RAM Guardian measures daemon RSS</strong> (#317) — <code>lean-ctx doctor</code> was showing the CLI's ~14 MB instead of the daemon's actual memory. Added <code>get_rss_bytes_for_pid(pid)</code> for Linux and macOS. Doctor now reports real daemon RSS.</li>
+    <li><strong>Orphan MCP processes no longer accumulate RAM</strong> (#317) — Added parent-process watchdog (exits when IDE closes) and startup orphan cleanup. Prevents MCP server processes from surviving after IDE restarts.</li>
+    <li><strong><code>lean-ctx restart</code> no longer kills active MCP servers</strong> (#317) — <code>find_killable_pids()</code> excludes MCP server processes from force-kill during restart.</li>
+    <li><strong>Jira Cloud 410 Gone error</strong> (#315) — Migrated from deprecated <code>GET /rest/api/3/search</code> to <code>POST /rest/api/3/search/jql</code> with <code>nextPageToken</code> pagination.</li>
+    <li><strong>Provider discovery ignores project root</strong> (#316) — <code>handle_discover()</code> now passes <code>project_root</code> for project-local provider config discovery.</li>
+    <li><strong>JSONC parser tolerates trailing commas</strong> (#311, #312) — Prevents parse failures in MCP config files with trailing commas.</li>
+    <li><strong>Token-cap truncation performance</strong> — Rewrote from O(n) to O(log n) binary search.</li>
+    <li><strong>Silent <code>save()</code> failures now logged</strong> — Failures produce <code>tracing::warn!</code> instead of being swallowed.</li>
   </ul>
 
   <!-- 3.6.23 -->
