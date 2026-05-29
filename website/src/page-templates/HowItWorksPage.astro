@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
+import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 
@@ -130,6 +131,27 @@ const faqSchema = JSON.stringify({
         <p class="fluid-sm text-muted leading-relaxed">{t('howItWorks.flowLlmDesc')}</p>
       </div>
     </div>
+  </div>
+</section>
+
+
+<div class="section-divider content-grid"></div>
+
+
+<!-- ═══════ ARCHITECTURE DIAGRAM ═══════ -->
+<section class="relative section-y">
+  <div class="content-grid-wide">
+    <SectionHeading
+      label={t('howItWorks.archDiagramLabel')}
+      title={t('howItWorks.archDiagramTitle')}
+      highlight={t('howItWorks.archDiagramTitleHighlight')}
+      description={t('howItWorks.archDiagramDesc')}
+      variant="full"
+      breakHighlight={false}
+      descMaxWidth="48rem"
+      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
+    />
+    <ArchitectureDiagram />
   </div>
 </section>
 

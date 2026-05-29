@@ -1,0 +1,144 @@
+---
+interface Step {
+  num: string;
+  title: string;
+  desc: string;
+  proof: string;
+  iconPath: string;
+}
+
+const steps: Step[] = [
+  {
+    num: "01",
+    title: "See",
+    desc: "Real-time visibility into every file, token count, and rule cost — before a single token is wasted on noise.",
+    proof: "ctx_read → 12 files · 4,200 tok visible",
+    iconPath:
+      "M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
+  },
+  {
+    num: "02",
+    title: "Compress",
+    desc: "10 read modes and AST parsing for 18 languages cut what your AI reads by up to 99% — keeping the signal, dropping the noise.",
+    proof: "4,200 → 180 tokens (96% saved)",
+    iconPath:
+      "M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25",
+  },
+  {
+    num: "03",
+    title: "Remember",
+    desc: "Findings, decisions, and touched files persist and auto-restore into every new session — so you never re-explain context.",
+    proof: "session restored · 0 tokens re-read",
+    iconPath:
+      "M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z",
+  },
+];
+---
+
+<div class="hiw-steps">
+  {
+    steps.map((step, i) => (
+      <div class="hiw-step animate-entrance" style={`--i:${i}`}>
+        <span class="hiw-step-num font-display">{step.num}</span>
+        <div class="hiw-step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d={step.iconPath} />
+          </svg>
+        </div>
+        <h3 class="hiw-step-title font-display">{step.title}</h3>
+        <p class="hiw-step-desc">{step.desc}</p>
+        <code class="hiw-step-proof font-mono">{step.proof}</code>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .hiw-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: clamp(1rem, 0.6rem + 1.5vw, 2rem);
+  }
+
+  .hiw-step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: clamp(0.75rem, 0.6rem + 0.4vw, 1.1rem);
+    padding: clamp(1.5rem, 1.1rem + 1.2vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--overlay-faint);
+    overflow: hidden;
+    transition: border-color 0.25s ease, transform 0.25s ease;
+  }
+
+  .hiw-step:hover {
+    border-color: var(--color-border-light);
+    transform: translateY(-3px);
+  }
+
+  .hiw-step-num {
+    position: absolute;
+    top: clamp(0.5rem, 0.25rem + 0.5vw, 1rem);
+    right: clamp(0.75rem, 0.5rem + 0.5vw, 1.5rem);
+    font-size: clamp(2.5rem, 1.5rem + 4vw, 4.5rem);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.05em;
+    color: var(--color-text-bright);
+    opacity: 0.06;
+    pointer-events: none;
+  }
+
+  .hiw-step-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(2.5rem, 2rem + 1vw, 3.25rem);
+    height: clamp(2.5rem, 2rem + 1vw, 3.25rem);
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-medium);
+    color: var(--color-accent);
+  }
+
+  .hiw-step-icon svg {
+    width: 55%;
+    height: 55%;
+  }
+
+  .hiw-step-title {
+    font-size: clamp(1.25rem, 1rem + 0.75vw, 1.625rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-text-bright);
+    margin: 0;
+  }
+
+  .hiw-step-desc {
+    font-size: clamp(0.875rem, 0.82rem + 0.15vw, 1rem);
+    line-height: 1.6;
+    color: var(--color-muted);
+    margin: 0;
+  }
+
+  .hiw-step-proof {
+    margin-top: auto;
+    font-size: clamp(0.7rem, 0.66rem + 0.1vw, 0.8125rem);
+    color: var(--color-text);
+    background: var(--overlay-medium);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 860px) {
+    .hiw-steps {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

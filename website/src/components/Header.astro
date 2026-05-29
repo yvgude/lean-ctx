@@ -35,42 +35,23 @@ const ico = {
   wrench: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
 };
 
-const learnColumns = [
+const productColumns = [
   {
-    title: t('nav.getStarted.installSetup'),
+    title: t('nav.getStartedLabel'),
     items: [
       { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started/'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: t('nav.learn.startHereBadge') },
       { label: t('nav.learn.quickReference'), href: lp('/docs/quick-reference/'), description: t('nav.learn.quickReferenceDesc'), icon: ico.list },
       { label: t('nav.getStarted.compatibility'), href: lp('/compatibility/'), description: t('nav.getStarted.compatibilityDesc'), icon: ico.gear },
+      { label: t('nav.learn.benchmark'), href: lp('/context-os/benchmark/'), description: t('nav.learn.benchmarkDesc'), icon: ico.bar },
     ],
   },
   {
     title: t('nav.learn.understand'),
     items: [
       { label: t('nav.learn.howItWorks'), href: lp('/how-it-works/'), description: t('nav.learn.howItWorksDesc'), icon: ico.flow },
-      { label: t('nav.getStarted.compare'), href: lp('/compare/'), description: t('nav.getStarted.compareDesc'), icon: ico.bar },
-      { label: t('nav.learn.benchmark'), href: lp('/context-os/benchmark/'), description: t('nav.learn.benchmarkDesc'), icon: ico.bar },
-    ],
-  },
-];
-
-const contextOsColumns = [
-  {
-    title: t('nav.arch.coreConcepts'),
-    items: [
-      { label: t('nav.arch.overview'), href: lp('/context-os/'), description: t('nav.arch.overviewDesc'), icon: ico.grid, badge: t('nav.learn.startHereBadge') },
+      { label: t('nav.arch.overview'), href: lp('/context-os/'), description: t('nav.arch.overviewDesc'), icon: ico.grid },
       { label: t('nav.docs.concepts.readModes'), href: lp('/docs/concepts/read-modes/'), description: t('nav.docs.concepts.readModesDesc'), icon: ico.book },
-      { label: t('nav.docs.concepts.shellPatterns'), href: lp('/docs/concepts/shell-patterns/'), description: t('nav.docs.concepts.shellPatternsDesc'), icon: ico.term },
-      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings/'), description: t('nav.docs.concepts.tokenSavingsDesc'), icon: ico.dollar },
-    ],
-  },
-  {
-    title: t('nav.arch.advanced'),
-    items: [
-      { label: t('nav.docs.concepts.caching'), href: lp('/docs/concepts/caching/'), description: t('nav.docs.concepts.cachingDesc'), icon: ico.server },
-      { label: t('docs.sidebarMultiAgent'), href: lp('/docs/concepts/multi-agent/'), description: t('nav.docs.concepts.multiAgentDesc'), icon: ico.share },
-      { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols/'), description: t('nav.docs.concepts.protocolsDesc'), icon: ico.flow },
-      { label: t('nav.learn.contextEngineering'), href: lp('/what-is-context-engineering/'), description: t('nav.learn.contextEngineeringDesc'), icon: ico.bulb },
+      { label: t('nav.getStarted.compare'), href: lp('/compare/'), description: t('nav.getStarted.compareDesc'), icon: ico.bar },
     ],
   },
 ];
@@ -141,8 +122,7 @@ const toolsColumns = [
       </a>
 
       <div class="header-center">
-        <MegaDropdown id="learn" label={t('nav.getStartedLabel')} columns={learnColumns} />
-        <MegaDropdown id="context-os" label={t('nav.architectureLabel')} columns={contextOsColumns} />
+        <MegaDropdown id="product" label={t('nav.productLabel')} columns={productColumns} />
         <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
         <MegaDropdown id="tools" label={t('nav.tools')} columns={toolsColumns} />
       </div>
@@ -208,25 +188,15 @@ const toolsColumns = [
   <div id="mobile-menu" class="mobile-menu-closed">
     <div class="mobile-menu-inner">
       <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.getStartedLabel')}</span>
+        <span class="mobile-section-title">{t('nav.productLabel')}</span>
         <a href={lp('/docs/getting-started')} class="mobile-nav-link">{t('nav.learn.gettingStarted')}</a>
         <a href={lp('/docs/quick-reference')} class="mobile-nav-link">{t('nav.learn.quickReference')}</a>
         <a href={lp('/compatibility')} class="mobile-nav-link">{t('nav.getStarted.compatibility')}</a>
-        <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.learn.howItWorks')}</a>
-        <a href={lp('/compare')} class="mobile-nav-link">{t('nav.getStarted.compare')}</a>
         <a href={lp('/context-os/benchmark')} class="mobile-nav-link">{t('nav.learn.benchmark')}</a>
-      </div>
-
-      <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.architectureLabel')}</span>
+        <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.learn.howItWorks')}</a>
         <a href={lp('/context-os')} class="mobile-nav-link">{t('nav.arch.overview')}</a>
         <a href={lp('/docs/concepts/read-modes')} class="mobile-nav-link">{t('nav.docs.concepts.readModes')}</a>
-        <a href={lp('/docs/concepts/shell-patterns')} class="mobile-nav-link">{t('nav.docs.concepts.shellPatterns')}</a>
-        <a href={lp('/docs/concepts/token-savings')} class="mobile-nav-link">{t('nav.docs.concepts.tokenSavings')}</a>
-        <a href={lp('/docs/concepts/caching')} class="mobile-nav-link">{t('nav.docs.concepts.caching')}</a>
-        <a href={lp('/docs/concepts/protocols')} class="mobile-nav-link">{t('nav.docs.concepts.protocols')}</a>
-        <a href={lp('/docs/concepts/multi-agent')} class="mobile-nav-link">{t('docs.sidebarMultiAgent')}</a>
-        <a href={lp('/what-is-context-engineering')} class="mobile-nav-link">{t('nav.learn.contextEngineering')}</a>
+        <a href={lp('/compare')} class="mobile-nav-link">{t('nav.getStarted.compare')}</a>
       </div>
 
       <div class="mobile-section">

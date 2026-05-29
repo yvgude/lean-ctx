@@ -1,0 +1,237 @@
+---
+interface Row {
+  type: string;
+  iconPath: string;
+  does: string;
+  gets: string;
+  savings: string;
+}
+
+const rows: Row[] = [
+  {
+    type: "Source file read",
+    iconPath:
+      "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
+    does: "AST signatures + delta-loading",
+    gets: "Function & type skeleton — bodies on demand",
+    savings: "75–96%",
+  },
+  {
+    type: "Cached re-read",
+    iconPath:
+      "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99",
+    does: "Returns the cached delta, not the file",
+    gets: "~13 tokens — regardless of file size",
+    savings: "up to 99%",
+  },
+  {
+    type: "Shell output",
+    iconPath: "M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z",
+    does: "95+ pattern modules (git, cargo, npm, docker…)",
+    gets: "Status + the lines that matter",
+    savings: "70–90%",
+  },
+  {
+    type: "Code search",
+    iconPath: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z",
+    does: "BM25 + dense ranking, deduplicated",
+    gets: "Top hits with exact locations",
+    savings: "60–85%",
+  },
+  {
+    type: "Directory scan",
+    iconPath:
+      "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z",
+    does: "Depth-limited structural map",
+    gets: "The tree, without the clutter",
+    savings: "50–80%",
+  },
+];
+---
+
+<div class="comp-table animate-entrance">
+  <div class="comp-row comp-row--head">
+    <span class="comp-col-type">What your AI does</span>
+    <span class="comp-col-does">What lean-ctx does</span>
+    <span class="comp-col-gets">What reaches the model</span>
+    <span class="comp-col-savings">Typical savings</span>
+  </div>
+
+  {
+    rows.map((row) => (
+      <div class="comp-row">
+        <span class="comp-col-type">
+          <span class="comp-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d={row.iconPath} />
+            </svg>
+          </span>
+          <span class="comp-type-label">{row.type}</span>
+        </span>
+        <span class="comp-col-does">{row.does}</span>
+        <span class="comp-col-gets">{row.gets}</span>
+        <span class="comp-col-savings">
+          <span class="comp-savings-pill font-mono">{row.savings}</span>
+        </span>
+      </div>
+    ))
+  }
+</div>
+
+<p class="comp-note animate-entrance">
+  <svg class="comp-note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+  <span>
+    <strong>Nothing is lost.</strong> Compression is reversible — the full content is one
+    <code class="font-mono">ctx_retrieve</code> away, and lean-ctx tells your AI exactly when to ask for it.
+  </span>
+</p>
+
+<style>
+  .comp-table {
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    overflow: hidden;
+    background: var(--overlay-faint);
+  }
+
+  .comp-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1.4fr 1.4fr 0.7fr;
+    align-items: center;
+    gap: clamp(0.75rem, 0.5rem + 0.75vw, 1.5rem);
+    padding: clamp(1rem, 0.8rem + 0.6vw, 1.5rem) clamp(1.1rem, 0.9rem + 0.6vw, 1.75rem);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .comp-row:first-child {
+    border-top: none;
+  }
+
+  .comp-row--head {
+    background: var(--overlay-medium);
+  }
+
+  .comp-row--head span {
+    font-size: clamp(0.6875rem, 0.65rem + 0.08vw, 0.8125rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+  }
+
+  .comp-col-type {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .comp-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    border-radius: 9px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-medium);
+    color: var(--color-accent);
+  }
+
+  .comp-icon svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .comp-type-label {
+    font-size: clamp(0.875rem, 0.83rem + 0.12vw, 1rem);
+    font-weight: 600;
+    color: var(--color-text-bright);
+  }
+
+  .comp-col-does,
+  .comp-col-gets {
+    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
+    color: var(--color-muted);
+    line-height: 1.45;
+  }
+
+  .comp-col-savings {
+    text-align: right;
+  }
+
+  .comp-savings-pill {
+    display: inline-block;
+    font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);
+    font-weight: 600;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    white-space: nowrap;
+  }
+
+  .comp-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+    font-size: clamp(0.875rem, 0.83rem + 0.15vw, 1rem);
+    line-height: 1.6;
+    color: var(--color-muted);
+  }
+
+  .comp-note strong {
+    color: var(--color-text-bright);
+  }
+
+  .comp-note code {
+    color: var(--color-accent);
+    font-size: 0.9em;
+  }
+
+  .comp-note-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+    color: var(--color-accent);
+  }
+
+  /* Mobile: stack each row into a card */
+  @media (max-width: 760px) {
+    .comp-row--head {
+      display: none;
+    }
+
+    .comp-row {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+      padding: clamp(1.1rem, 0.9rem + 0.6vw, 1.5rem);
+    }
+
+    .comp-col-type {
+      justify-content: flex-start;
+    }
+
+    .comp-col-does::before {
+      content: "Does: ";
+      color: var(--color-text);
+      font-weight: 600;
+    }
+
+    .comp-col-gets::before {
+      content: "Model gets: ";
+      color: var(--color-text);
+      font-weight: 600;
+    }
+
+    .comp-col-savings {
+      text-align: left;
+      margin-top: 0.15rem;
+    }
+  }
+</style>
