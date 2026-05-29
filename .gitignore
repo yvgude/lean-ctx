@@ -42,6 +42,10 @@ memory-bank/
 docs/LEANCTX_CONSOLIDATION_TICKETS.md
 deploy_checklist.md
 
+# ── Astro fonts build cache (regenerated on build) ──
+website/.astro/fonts/
+website/.astro/fonts.d.ts
+
 # ── Local artifacts ──
 lean-ctx-chrome-extension.zip
 /docs/_local/

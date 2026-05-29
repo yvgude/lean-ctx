@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { Font } from 'astro:assets';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import AsciiHeroBg from '../components/AsciiHeroBg.astro';
@@ -205,10 +206,9 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <link rel="sitemap" href="/sitemap-index.xml" />
 
   <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" /></noscript>
+  <Font cssVariable="--font-inter" preload />
+  <Font cssVariable="--font-space-grotesk" preload />
+  <Font cssVariable="--font-jetbrains-mono" />
 
   <title>{title}</title>
 

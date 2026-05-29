@@ -35,9 +35,9 @@
   --color-glow-neural: rgba(192, 132, 252, 0.06);
   --color-glow-synapse: rgba(129, 140, 248, 0.04);
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: var(--font-inter, 'Inter'), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: var(--font-space-grotesk, 'Space Grotesk'), var(--font-inter, 'Inter'), -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono, 'JetBrains Mono'), 'Fira Code', 'Cascadia Code', monospace;
 
   --card-radius: 8px;
   --card-radius-lg: 12px;
@@ -922,47 +922,6 @@ pre code {
 @media (prefers-reduced-motion: reduce) {
   .scroll-indicator { animation: none; }
 }
-
-/* ── RTL Support (Arabic) ────────────────────────────── */
-
-[dir="rtl"] {
-  text-align: right;
-  font-family: 'Noto Sans Arabic', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-[dir="rtl"] pre,
-[dir="rtl"] code,
-[dir="rtl"] .terminal-body,
-[dir="rtl"] .font-mono {
-  direction: ltr;
-  text-align: left;
-}
-
-[dir="rtl"] .docs-prose pre {
-  direction: ltr;
-  text-align: left;
-}
-
-[dir="rtl"] .docs-prose table {
-  direction: ltr;
-}
-
-[dir="rtl"] .header-inner {
-  flex-direction: row-reverse;
-}
-
-[dir="rtl"] .header-center {
-  flex-direction: row-reverse;
-}
-
-[dir="rtl"] .header-right {
-  flex-direction: row-reverse;
-}
-
-[dir="rtl"] .header-logo {
-  flex-direction: row-reverse;
-}
-
 
 /* ── Mobile ───────────────────────────────────────────── */
 
