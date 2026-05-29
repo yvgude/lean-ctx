@@ -4935,14 +4935,12 @@
   "nav.docs.dataSourcesDesc": "Connect any API or data source via config",
   "nav.docs.cortex": "Context Engine",
   "nav.docs.cortexDesc": "Cross-source intelligence and active inference",
-
   "nav.docs.contextControl": "Context Control",
   "nav.docs.contextControlDesc": "Overlays, pinning, and context manipulation",
   "nav.docs.budgets": "Budgets & SLOs",
   "nav.docs.budgetsDesc": "Token budgets, roles, and service level objectives",
   "nav.docs.observatory": "Observatory",
   "nav.docs.observatoryDesc": "Live event monitoring and dashboard",
-
   "docs.contextControl.title": "Context Control & Overlays",
   "docs.contextControl.metaDesc": "Control which files are included, excluded, or pinned in your AI context using overlays.",
   "docs.contextControl.intro": "Context Control lets you manipulate what your AI sees without modifying source files. Every include, exclude, or pin creates a <strong>reversible overlay</strong> stored in <code>.lean-ctx/overlays.json</code>.",
@@ -4959,7 +4957,6 @@
   "docs.contextControl.stalenessTitle": "Staleness Detection",
   "docs.contextControl.stalenessDesc": "Overlays store a hash of the target at creation time. If the file changes, the overlay is flagged as <strong>stale</strong> and the agent is notified. Session and call-scoped overlays are automatically pruned after 24 hours.",
   "docs.contextControl.examplesTitle": "Examples",
-
   "docs.budgets.title": "Budgets, Roles & SLOs",
   "docs.budgets.metaDesc": "Configure token budgets, role-based limits, and SLO monitoring for lean-ctx sessions.",
   "docs.budgets.intro": "lean-ctx tracks token usage per session and provides two monitoring systems: <strong>Budget Warnings</strong> (role-based limits) and <strong>SLO Violations</strong> (service level objectives). Both help you stay aware of context consumption.",
@@ -4981,7 +4978,6 @@
   "docs.budgets.blockingDesc": "By default, budgets only warn (never block). To enable hard blocking, set <code>block_at_percent = 100</code> in your role file. The default <code>255</code> means \"never block\".",
   "docs.budgets.builtinTitle": "Built-in Roles",
   "docs.budgets.builtinDesc": "lean-ctx ships with default roles: <code>coder</code>, <code>reviewer</code>, <code>debugger</code>, <code>ops</code>, <code>admin</code>. View the active role with <code>ctx_session action=role</code>.",
-
   "docs.observatory.title": "Observatory & Dashboard",
   "docs.observatory.metaDesc": "Monitor lean-ctx events, budgets, and compression in real-time with the Observatory.",
   "docs.observatory.intro": "The Observatory is lean-ctx's real-time monitoring system. It shows every event — tool calls, budget warnings, SLO violations, compression stats — as a live stream you can filter and inspect.",
@@ -4995,18 +4991,16 @@
   "docs.observatory.dashboardDesc": "The web dashboard (<code>lean-ctx dashboard</code>) provides additional panels beyond the live event feed:",
   "docs.observatory.apiTitle": "REST API",
   "docs.observatory.apiDesc": "The dashboard exposes a REST API for programmatic access:",
-
   "index.counterLabel": "By the Numbers",
   "index.counterTitle": "Real benchmarks. Real savings.",
   "index.counter1Value": "96%",
   "index.counter1Label": "First-read savings (map mode)",
-  "index.counter2Value": "62",
+  "index.counter2Value": "63",
   "index.counter2Label": "MCP tools",
   "index.counter3Value": "13",
   "index.counter3Label": "Tokens per cached re-read",
   "index.counter4Value": "18",
   "index.counter4Label": "Languages with AST parsing",
-
   "index.benchmarkLabel": "Benchmark",
   "index.benchmarkTitle": "Same model.",
   "index.benchmarkTitleHighlight": "Fraction of the tokens.",
@@ -5019,7 +5013,6 @@
   "index.benchmarkBarWithout": "Without",
   "index.benchmarkBarWith": "With lean-ctx",
   "index.benchmarkBarSummary": "Typical session: ~54,400 → ~4,875 tokens (91% saved)",
-
   "index.compressionLabel": "Live Demo",
   "index.compressionTitle": "See compression in action.",
   "index.compressionDesc": "Real TypeScript code. Real lean-ctx output. Pick a mode and watch the transformation.",
@@ -5027,7 +5020,6 @@
   "index.compressionOutputTitle": "ctx_read output",
   "index.compressionArrowLabel": "lean-ctx",
   "index.compressionSaved": "saved",
-
   "index.archLabel": "Architecture",
   "index.archTitle": "One binary.",
   "index.archTitleHighlight": "Three layers.",
@@ -5039,7 +5031,6 @@
   "index.archLayer2Desc": "Intent engine, hybrid search",
   "index.archLayer3Title": "Integrations",
   "index.archLayer3Desc": "24+ AI tools, 3 modes",
-
   "index.toolGridLabel": "Compatibility",
   "index.toolGridTitle": "Works with every AI coding tool.",
   "index.toolGridDesc": "One install. Zero config per tool. lean-ctx auto-detects and integrates with all major AI coding tools.",

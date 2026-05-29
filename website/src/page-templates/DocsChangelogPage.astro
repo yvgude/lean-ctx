@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.23 (Current)', href: lp('/docs/changelog') + '#v3.6.23' },
+      { label: '3.6.24 (Current)', href: lp('/docs/changelog') + '#v3.6.24' },
+      { label: '3.6.23', href: lp('/docs/changelog') + '#v3.6.23' },
       { label: '3.6.22', href: lp('/docs/changelog') + '#v3.6.22' },
       { label: '3.6.21', href: lp('/docs/changelog') + '#v3.6.21' },
       { label: '3.6.20', href: lp('/docs/changelog') + '#v3.6.20' },
@@ -80,6 +81,33 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.24 -->
+  <h2 id="v3.6.24">3.6.24 <span class="text-xs text-muted">(2026-05-29)</span></h2>
+  <p class="text-sm text-muted">New <code>ctx_compose</code> tool, friendlier defaults, major internal quality improvements.</p>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong><code>ctx_compose</code> — multi-source context composer</strong> — New MCP tool that combines BM25 ranking, semantic search, and associative retrieval into a single rich response. Uses submodular maximization for optimal symbol selection within token budget. Leverages Hebbian co-access learning for context-aware file suggestions.</li>
+    <li><strong>Hebbian co-access graph</strong> — Persistent, decaying file co-access associations inspired by neurobiology (LTP, pruning). Contributes to associative retrieval across sessions.</li>
+    <li><strong>Spreading activation ranker</strong> — ACT-R-style associative ranker that spreads relevance across structural + learned co-access graphs.</li>
+    <li><strong>Bloom filter tier for large monorepos</strong> — Memory-efficient search index tier for repositories with 50k+ files. Zero false negatives with downstream regex verification.</li>
+  </ul>
+
+  <h3>{t('changelog.changed')}</h3>
+  <ul>
+    <li><strong>Default <code>compression_level</code> → <code>"lite"</code></strong> — New installs now default to <code>"lite"</code> (abbreviations only) instead of <code>"off"</code>. Existing configs are not changed. Override with <code>lean-ctx config set compression_level off</code> if preferred.</li>
+    <li><strong>Friendlier <code>--help</code> and quickstart output</strong> — Bare <code>lean-ctx</code> invocation now shows a concise quickstart guide. <code>--help</code> is reorganized by usage frequency.</li>
+    <li><strong>Codebase quality</strong> — Split 5 large files (2000+ lines each) into focused modules. Zero behavior change, improved maintainability. Added 38 CLI characterization tests as safety net.</li>
+  </ul>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>Background thread panics no longer crash the process</strong> — BM25 cache refresh and <code>ctx_compose</code> background threads now use <code>catch_unwind</code> with warning logs instead of propagating panics.</li>
+    <li><strong>Silent <code>save()</code> failures now logged</strong> — Session, semantic index, cost attribution, and agent registry save failures produce <code>tracing::warn!</code> instead of being silently swallowed.</li>
+    <li><strong><code>config set</code> no longer panics on invalid intermediate keys</strong> — Returns a helpful error message instead.</li>
+    <li><strong>Token-cap truncation performance</strong> — Rewrote from O(n) iterative to O(log n) binary search. Eliminates pathological slowdowns under coverage tooling.</li>
+  </ul>
 
   <!-- 3.6.23 -->
   <h2 id="v3.6.23">3.6.23 <span class="text-xs text-muted">(2026-05-28)</span></h2>
@@ -305,7 +333,7 @@ const sidebar = [
   <ul>
     <li><strong>Plan mode support</strong> — lean-ctx tools now work in IDE plan/read-only modes. VS Code <code>planAgent.additionalTools</code> and Claude Code <code>permissions.allow</code> are auto-configured via <code>lean-ctx setup</code>. 12 curated read-only tools available in plan mode.</li>
     <li><strong>MCP <code>readOnlyHint</code> annotations</strong> — All read-only tools declare <code>readOnlyHint: true</code>, enabling IDE plan agents to use them without user approval.</li>
-    <li><strong>Dynamic tool filtering</strong> — Plan-mode clients see only read-only tools; full-mode clients see all 62 tools.</li>
+    <li><strong>Dynamic tool filtering</strong> — Plan-mode clients see only read-only tools; full-mode clients see all 63 tools.</li>
     <li><strong>GitLab provider</strong> — Built-in data source for GitLab issues, merge requests, and pipelines. Activates with <code>GITLAB_TOKEN</code>.</li>
     <li><strong>Provider consolidation pipeline (production-wired)</strong> — Provider data now flows into BM25, Graph, Knowledge, and Session Cache via background threads. External data is fully searchable, generates cross-source hints in <code>ctx_read</code>, and contributes knowledge facts.</li>
     <li><strong>MCP Bridge stdio transport</strong> — MCP bridges now support stdio-based servers via <code>command</code> + <code>args</code> config, in addition to HTTP.</li>

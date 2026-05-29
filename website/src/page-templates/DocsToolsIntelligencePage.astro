@@ -32,6 +32,7 @@ const sidebar = [
       { label: 'ctx_compress_memory', href: lp('/docs/tools/intelligence/') + '#ctx_compress_memory' },
       { label: 'ctx_impact', href: lp('/docs/tools/intelligence/') + '#ctx_impact' },
       { label: 'ctx_architecture', href: lp('/docs/tools/intelligence/') + '#ctx_architecture' },
+      { label: 'ctx_compose', href: lp('/docs/tools/intelligence/') + '#ctx_compose' },
     ],
   },
   {
@@ -412,6 +413,37 @@ const sidebar = [
   Dependencies:
     API → Service → Data → Config
     API → Config (direct)</code></pre>
+
+  <h2 id="ctx_compose">ctx_compose - Multi-Source Context Composer</h2>
+  <p>
+    Combines BM25 lexical ranking, semantic search, and associative retrieval (Hebbian co-access graph + spreading activation)
+    into a single rich response. Uses submodular maximization for optimal symbol selection within token budget.
+  </p>
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <ul>
+    <li><code>task</code> (required) - natural language description of what you're working on</li>
+    <li><code>path</code> (optional) - project root or subdirectory to scope the search</li>
+  </ul>
+  <h3>Example</h3>
+  <pre><code>ctx_compose task="implement caching for the user service"
+→ COMPOSED CONTEXT
+
+  Keywords: cache, user, service, invalidation, ttl
+  
+  Ranked Files (8):
+    1. src/services/user_service.rs (0.92)
+    2. src/core/cache.rs (0.87)
+    3. src/config/mod.rs (0.71)
+    ...
+
+  Associative Neighbours:
+    user_service.rs ↔ auth_middleware.rs (co-access: 0.84)
+    cache.rs ↔ redis_pool.rs (co-access: 0.76)
+
+  Symbol Bodies (budget-optimized):
+    fn get_user(...) → ...
+    struct CacheConfig { ... }</code></pre>
+
   <h2>Adaptive Compression (Wave 5)</h2>
   <p>
     Starting with v2.21, lean-ctx includes adaptive compression that learns from usage patterns

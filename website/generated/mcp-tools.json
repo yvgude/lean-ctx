@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 62,
+    "granular": 63,
     "unified": 5
   },
   "read_modes": {
@@ -295,6 +295,27 @@
         },
         "name": "ctx_compile",
         "schema_md5": "0f555cc82a27927d9e107692a377ed2de4ad02f2fac6a364ab249ed6701a9841"
+      },
+      {
+        "description": "Task composer: one call returns keywords + semantically ranked files + exact match locations + the top symbol's body inline. Replaces the search→read→outline→read chain.",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            },
+            "task": {
+              "description": "Natural-language task or question",
+              "type": "string"
+            }
+          },
+          "required": [
+            "task"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_compose",
+        "schema_md5": "12daa86afdd7c337ee182b333722c7c67bb04292e9631207c82ab8fde2c49cbd"
       },
       {
         "description": "Context checkpoint for long conversations.",
@@ -1372,7 +1393,7 @@
               "type": "boolean"
             },
             "mode": {
-              "description": "Compression mode (default: full). Use 'map' for context-only files. For line ranges: 'lines:N-M' (e.g. 'lines:400-500').",
+              "description": "Compression mode (default: auto — resolved per file type/size). Explicit 'full' for guaranteed complete content. Use 'map' for context-only files. For line ranges: 'lines:N-M' (e.g. 'lines:400-500').",
               "type": "string"
             },
             "path": {
@@ -1390,7 +1411,7 @@
           "type": "object"
         },
         "name": "ctx_read",
-        "schema_md5": "8b1b1cb39f18e84b23e00e84ef5fa6c4277629de775777372d32cc4f7bd6b41c"
+        "schema_md5": "73e5f39b8e99e7998b24fa391192d9dd8e0e7e3eec5088c43869542c3c703a79"
       },
       {
         "description": "LSP-powered refactoring. Actions: rename, references, definition, implementations. Requires a running language server (rust-analyzer, typescript-language-server, pylsp, gopls).",
@@ -1519,7 +1540,7 @@
         "schema_md5": "4ed344c62c9f3272079e05f58011c86a0a48e6909c7084bedd094d0bfe433d29"
       },
       {
-        "description": "Regex code search (.gitignore aware, compact results). Deterministic ordering. Secret-like files (e.g. .env, *.pem) are skipped unless role allows. ignore_gitignore requires explicit policy.",
+        "description": "Regex code search (.gitignore aware, compact results). Supports multi-root via `paths` array. Secret-like files skipped unless role allows.",
         "input_schema": {
           "properties": {
             "ext": {
@@ -1538,6 +1559,13 @@
               "description": "Directory to search",
               "type": "string"
             },
+            "paths": {
+              "description": "Multiple directories to search (alternative to path)",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "pattern": {
               "description": "Regex pattern",
               "type": "string"
@@ -1549,7 +1577,7 @@
           "type": "object"
         },
         "name": "ctx_search",
-        "schema_md5": "72bd844a9a8e4ed463cfc114b0f295c59ea1d3b5312431c8e5fc97609e56fb06"
+        "schema_md5": "7208141d4d15e7ab739941129c005f50e074cd70dd75885f87e3b543e95ae8de"
       },
       {
         "description": "Semantic code search (BM25 + embeddings/hybrid + reranking). action=reindex|find_related.",
@@ -1852,7 +1880,7 @@
         "schema_md5": "936db09b3f42a34458f96e583916c5288e2104b5d2ea2e811bd36b421961a9f8"
       },
       {
-        "description": "Directory listing with file counts.",
+        "description": "Directory listing with file counts. Supports multi-root via `paths` array.",
         "input_schema": {
           "properties": {
             "depth": {
@@ -1863,6 +1891,17 @@
               "description": "Directory path (default: .)",
               "type": "string"
             },
+            "paths": {
+              "description": "Multiple directories to list (alternative to path)",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "respect_gitignore": {
+              "description": "Filter out .gitignore'd files (default: true). Set false to show all files.",
+              "type": "boolean"
+            },
             "show_hidden": {
               "description": "Show hidden files",
               "type": "boolean"
@@ -1871,7 +1910,7 @@
           "type": "object"
         },
         "name": "ctx_tree",
-        "schema_md5": "4ff92533c457fcd38ae4bc9b6d1b0a5f4b836ecf548510d4515d5a338bee5aad"
+        "schema_md5": "cfd00265b30de5427c9bd26af06c035aa6aeb550831a3a24e77cc1072d67b8a6"
       },
       {
         "description": "Verification observability. Actions: stats (tool call statistics), proof|v2 (ContextProofV2 claim-based verification with Lean4 proofs).",

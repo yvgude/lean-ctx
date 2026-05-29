@@ -20,24 +20,25 @@
       "label": "Intelligence Tools",
       "description": "Adaptive compression, intent detection, semantic search, and AST-powered analysis",
       "tools": [
-        "ctx_fill",
-        "ctx_intent",
-        "ctx_preload",
-        "ctx_dedup",
+        "ctx_analyze",
+        "ctx_architecture",
+        "ctx_compose",
         "ctx_compress",
         "ctx_compress_memory",
-        "ctx_response",
+        "ctx_dedup",
         "ctx_discover",
-        "ctx_semantic_search",
+        "ctx_expand",
+        "ctx_fill",
         "ctx_graph",
         "ctx_impact",
-        "ctx_architecture",
+        "ctx_index",
+        "ctx_intent",
         "ctx_overview",
         "ctx_prefetch",
-        "ctx_analyze",
-        "ctx_expand",
-        "ctx_index",
-        "ctx_retrieve"
+        "ctx_preload",
+        "ctx_response",
+        "ctx_retrieve",
+        "ctx_semantic_search"
       ]
     },
     "memory": {
@@ -345,9 +346,23 @@
         "ctx_call",
         "ctx_overview"
       ],
-      "token_impact": "Minimal — returns matching tool names and descriptions only.",
+      "token_impact": "Minimal \u2014 returns matching tool names and descriptions only.",
       "cli_equivalent": null,
       "examples": []
+    },
+    "ctx_compose": {
+      "emoji": "\ud83e\udde9",
+      "tagline": "Compose multi-source context into a single rich response",
+      "useCases": [
+        "Combine semantic search, BM25 ranking, and associative retrieval into one response",
+        "Get a unified task overview with keywords, ranked files, and symbol bodies",
+        "Leverage Hebbian co-access learning for context-aware file suggestions"
+      ],
+      "tips": [
+        "Provide a clear task description for best keyword extraction",
+        "Results include associative neighbours from co-access patterns",
+        "Uses submodular maximization for optimal symbol selection within token budget"
+      ]
     }
   }
 }

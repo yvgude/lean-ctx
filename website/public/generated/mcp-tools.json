@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 62,
+    "granular": 63,
     "unified": 5
   },
   "read_modes": {
@@ -295,6 +295,27 @@
         },
         "name": "ctx_compile",
         "schema_md5": "0f555cc82a27927d9e107692a377ed2de4ad02f2fac6a364ab249ed6701a9841"
+      },
+      {
+        "description": "Task composer: one call returns keywords + semantically ranked files + exact match locations + the top symbol's body inline. Replaces the search→read→outline→read chain.",
+        "input_schema": {
+          "properties": {
+            "path": {
+              "description": "Project root (default: .)",
+              "type": "string"
+            },
+            "task": {
+              "description": "Natural-language task or question",
+              "type": "string"
+            }
+          },
+          "required": [
+            "task"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_compose",
+        "schema_md5": "12daa86afdd7c337ee182b333722c7c67bb04292e9631207c82ab8fde2c49cbd"
       },
       {
         "description": "Context checkpoint for long conversations.",

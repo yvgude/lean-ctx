@@ -12,7 +12,7 @@
 
 <p align="center">
   <strong>Reduce token waste in Cursor, Claude Code, Copilot, Windsurf, Codex, Gemini & more by 60–95% (up to 99% on cached reads)</strong><br/>
-  Shell Hook + MCP Server · 49 tools · 10 read modes · 90+ patterns · Single Rust binary
+  Shell Hook + MCP Server · 63 tools · 10 read modes · 90+ patterns · Single Rust binary
 </p>
 
 <p align="center">

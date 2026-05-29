@@ -171,7 +171,7 @@ lean-ctx config schema</code></pre>
       <tr>
         <td><code>compression_level</code></td>
         <td>string</td>
-        <td><code>"off"</code></td>
+        <td><code>"lite"</code></td>
         <td>Unified compression level controlling the 4-layer terse engine. <code>"off"</code> = no compression, <code>"lite"</code> = abbreviations only, <code>"standard"</code> = balanced compression, <code>"max"</code> = maximum token savings. Replaces the legacy <code>output_density</code> and <code>terse_agent</code> settings. See <a href="#compression-level">Compression Level</a>.</td>
       </tr>
       <tr>
@@ -1078,7 +1078,7 @@ max_disk_mb = 500             # Maximum total disk usage for archive (default: 5
 
   <h3>Configuration</h3>
   <pre><code># ~/.lean-ctx/config.toml
-compression_level = "off"    # off (default) | lite | standard | max
+compression_level = "lite"    # lite (default) | off | standard | max
 
 # Legacy settings still accepted for backward compatibility:
 # terse_agent = "full"            # maps to compression_level = "standard"
