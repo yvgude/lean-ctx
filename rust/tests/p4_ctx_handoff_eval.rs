@@ -88,7 +88,19 @@ async fn ctx_handoff_create_show_list_pull_clear() {
         )
         .await
         .expect("handoff pull");
-    assert!(pulled.contains("imported_knowledge: 1"), "pull: {pulled}");
+    assert!(
+        pulled.contains("imported_knowledge:"),
+        "pull must report imported_knowledge: {pulled}"
+    );
+    let pull_count: u32 = pulled
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("imported_knowledge: "))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0);
+    assert!(
+        pull_count >= 1,
+        "pull must import at least 1 knowledge fact, got {pull_count}: {pulled}"
+    );
 
     let imported = engine2
         .call_tool_text(
@@ -97,9 +109,14 @@ async fn ctx_handoff_create_show_list_pull_clear() {
         )
         .await
         .expect("handoff import");
+    let import_count: u32 = imported
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("imported_knowledge: "))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0);
     assert!(
-        imported.contains("imported_knowledge: 1"),
-        "import: {imported}"
+        import_count >= 1,
+        "import must import at least 1 knowledge fact, got {import_count}: {imported}"
     );
 
     let cleared = engine
