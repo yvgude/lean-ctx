@@ -410,6 +410,27 @@ lean-ctx register user@example.com --password mypassword</code></pre>
   </p>
   <pre><code>lean-ctx forgot-password user@example.com</code></pre>
 
+  <h3 id="provider"><code>lean-ctx provider &lt;auth|list|logout&gt;</code> <span class="text-xs font-normal text-muted ml-2">v3.6.25</span></h3>
+  <p>
+    Manage OAuth credentials for context providers. Currently supports <strong>Jira Cloud OAuth 2.0 (3LO)</strong>
+    as an alternative to Basic auth (email + API token).
+  </p>
+  <pre><code>lean-ctx provider auth jira      # run the interactive OAuth flow for Jira
+lean-ctx provider list           # show configured providers and credential status
+lean-ctx provider logout jira    # remove stored Jira OAuth credentials</code></pre>
+  <p>
+    <code>provider auth jira</code> opens your browser for consent, captures the redirect on a local
+    loopback port, discovers your accessible site (<code>cloudId</code>), and stores tokens in
+    <code>~/.lean-ctx/credentials/jira-oauth.json</code> (<code>0600</code>). Access tokens are refreshed
+    automatically with refresh-token rotation. lean-ctx ships no embedded client secret — register your own
+    Atlassian OAuth app and provide its credentials via env (see
+    <a href={lp('/docs/configuration') + '#jira-oauth'}>Configuration → Jira OAuth</a>).
+  </p>
+  <p>
+    To select OAuth for a data source, set <code>JIRA_AUTH=oauth</code> (or simply have a stored credential);
+    Basic auth via <code>JIRA_EMAIL</code> + <code>JIRA_API_TOKEN</code> continues to work unchanged.
+  </p>
+
   <h3 id="uninstall"><code>lean-ctx uninstall [--keep-config]</code></h3>
   <p><Fragment set:html={t('docs.cliReference.uninstallDesc')} /></p>
   <p>Removes shell hooks, MCP configurations from all detected editors, <code>.bak</code> files, <code>~/.config/lean-ctx</code>, project-local <code>.lean-ctx/</code> and <code>.lean-ctx-id</code>, Claude CLI MCP entries, and daemon/proxy services.</p>

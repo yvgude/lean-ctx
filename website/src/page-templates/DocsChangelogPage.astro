@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.24 (Current)', href: lp('/docs/changelog') + '#v3.6.24' },
+      { label: '3.6.25 (Current)', href: lp('/docs/changelog') + '#v3.6.25' },
+      { label: '3.6.24', href: lp('/docs/changelog') + '#v3.6.24' },
       { label: '3.6.23', href: lp('/docs/changelog') + '#v3.6.23' },
       { label: '3.6.22', href: lp('/docs/changelog') + '#v3.6.22' },
       { label: '3.6.21', href: lp('/docs/changelog') + '#v3.6.21' },
@@ -81,6 +82,23 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.25 -->
+  <h2 id="v3.6.25">3.6.25 <span class="text-xs text-muted">(2026-05-30)</span></h2>
+  <p class="text-sm text-muted">Jira Cloud OAuth 2.0, context-pressure triage in the cockpit, offline-first dashboard with ⌘K palette, and a concurrent-edit fix.</p>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong>Jira Cloud OAuth 2.0 (3LO)</strong> (#318) — Authenticate built-in and custom Jira data sources via the standard 3-legged OAuth flow instead of Basic auth + API token. <code>lean-ctx provider auth jira</code> runs the interactive flow (loopback redirect, browser consent, <code>cloudId</code> discovery), persists tokens to <code>~/.lean-ctx/credentials/jira-oauth.json</code> (<code>0600</code>) and auto-refreshes with refresh-token rotation. <code>provider list</code> / <code>provider logout</code> round out the surface. Secret-free: you register your own Atlassian OAuth app and supply the client id/secret via env. Basic auth keeps working; OAuth is selected automatically when a credential exists or <code>JIRA_AUTH=oauth</code> is set.</li>
+    <li><strong>Context-pressure triage in the Context Cockpit</strong> (#249) — The Context Manager moves from observation to triage. The <em>Files in Context</em> table gains sortable <strong>Used</strong> (re-read count), <strong>Last</strong> (recency) and <strong>Evict</strong> columns — the Evict score combines high token cost + long idle + rarely re-read, so the best eviction candidate is one click away. A triage banner maps the live pressure band to a concrete next action (Healthy / Elevated → prefer <code>map</code>+<code>signatures</code> / High → compress or evict / Critical → evict or handoff pack).</li>
+    <li><strong>Offline-first Context Cockpit</strong> — Chart.js, D3 and the UI fonts are now self-hosted (no external CDN), so the dashboard renders identically offline and on large sessions. A dashboard-wide <strong>⌘K / Ctrl+K command palette</strong> adds fuzzy search across every view, quick actions (refresh, theme toggle) and full keyboard navigation.</li>
+  </ul>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong><code>ctx_edit</code> concurrent-edit timeout under multi-agent load</strong> (#320) — The global cache write-lock was held across the entire disk I/O of an edit, so a second agent editing a <em>different</em> file could time out. Edits now serialize per file via a shared lock registry, do disk I/O with no global lock, and take the global cache lock only briefly. Concurrent edits to different files now run in parallel; same-file edits stay correctly serialized.</li>
+    <li><strong>Cross-platform CI hardening</strong> — Fixed a path-separator bug in the eval harness (recall/MRR collapsed to 0 on Windows), made the <code>ctx_tree</code> savings test deterministic, and de-flaked a timing-sensitive lock test on slow runners.</li>
+  </ul>
 
   <!-- 3.6.24 -->
   <h2 id="v3.6.24">3.6.24 <span class="text-xs text-muted">(2026-05-30)</span></h2>

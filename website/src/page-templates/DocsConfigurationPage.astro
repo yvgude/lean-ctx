@@ -1448,6 +1448,36 @@ auth_env = "GITHUB_TOKEN"</code></pre>
     </tbody>
   </table>
 
+  <h3 id="jira-oauth">Jira Cloud OAuth 2.0 (3LO) <span class="text-xs font-normal text-muted ml-2">v3.6.25</span></h3>
+  <p>
+    The built-in Jira provider supports OAuth 2.0 (3-legged) as an alternative to Basic auth
+    (<code>JIRA_EMAIL</code> + <code>JIRA_API_TOKEN</code>). lean-ctx ships no embedded client secret, so you
+    register your own free Atlassian OAuth app at
+    <a href="https://developer.atlassian.com/console/myapps/" target="_blank" rel="noopener">developer.atlassian.com/console/myapps</a>
+    (callback URL <code>http://localhost</code>), then export its credentials:
+  </p>
+  <pre><code>export JIRA_OAUTH_CLIENT_ID=...        # from your Atlassian 3LO app
+export JIRA_OAUTH_CLIENT_SECRET=...    # from your Atlassian 3LO app
+export JIRA_AUTH=oauth                 # optional: force OAuth over Basic auth
+
+lean-ctx provider auth jira            # one-time interactive consent</code></pre>
+  <table>
+    <thead>
+      <tr><th>Env Var</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>JIRA_OAUTH_CLIENT_ID</code></td><td>yes</td><td>Client id of your Atlassian OAuth 2.0 (3LO) app.</td></tr>
+      <tr><td><code>JIRA_OAUTH_CLIENT_SECRET</code></td><td>yes</td><td>Client secret of the same app.</td></tr>
+      <tr><td><code>JIRA_OAUTH_SCOPES</code></td><td>no</td><td>Space-separated scopes. Default: <code>read:jira-work read:jira-user offline_access</code> (<code>offline_access</code> enables refresh tokens).</td></tr>
+      <tr><td><code>JIRA_AUTH</code></td><td>no</td><td>Set to <code>oauth</code> to force OAuth. Otherwise OAuth is used automatically when a stored credential exists; Basic auth is the fallback.</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Tokens are stored in <code>~/.lean-ctx/credentials/jira-oauth.json</code> (<code>0600</code>) and refreshed
+    automatically with refresh-token rotation. Manage credentials via the
+    <a href={lp('/docs/cli-reference') + '#provider'}><code>lean-ctx provider</code></a> command.
+  </p>
+
   <hr />
 
   <h2 id="proxy">Proxy</h2>
