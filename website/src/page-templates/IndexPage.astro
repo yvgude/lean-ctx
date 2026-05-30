@@ -7,6 +7,8 @@ import TokenComparisonBars from '../components/TokenComparisonBars.astro';
 import HowItWorksSteps from '../components/HowItWorksSteps.astro';
 import CompressionTable from '../components/CompressionTable.astro';
 import ToolIntegrationGrid from '../components/ToolIntegrationGrid.astro';
+import UseCases from '../components/UseCases.astro';
+import WhyNotX from '../components/WhyNotX.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 import '../styles/index.css';
@@ -224,6 +226,25 @@ const faqJsonLd = JSON.stringify({
 
 
 <!-- ═══════════════════════════════════════════════════════
+     2b. WHAT YOU CAN DO — jobs to be done
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid-wide">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">What you can do</span>
+    </div>
+    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
+      Four jobs, <span class="italic-accent">one binary.</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      You don't need to learn 63 tools. Install it, and these are the things it quietly does for you every day.
+    </p>
+    <UseCases />
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
      3. HOW IT WORKS — 3 steps (See / Compress / Remember)
      ═══════════════════════════════════════════════════════ -->
 <section class="section-y">
@@ -265,6 +286,25 @@ const faqJsonLd = JSON.stringify({
       {t('index.compressTableDesc')}
     </p>
     <CompressionTable />
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     3c. WHY NOT JUST USE X — objections answered
+     ═══════════════════════════════════════════════════════ -->
+<section class="section-y">
+  <div class="content-grid-wide">
+    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
+      <span class="kicker-pill">Why not just…</span>
+    </div>
+    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
+      You already have tools. <span class="italic-accent">Here's the difference.</span>
+    </h2>
+    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
+      lean-ctx isn't a replacement for grep or your editor — it's the layer that decides what's worth your AI's attention.
+    </p>
+    <WhyNotX />
   </div>
 </section>
 

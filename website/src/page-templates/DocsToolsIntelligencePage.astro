@@ -425,11 +425,11 @@ const sidebar = [
     <li><code>path</code> (optional) - project root or subdirectory to scope the search</li>
   </ul>
   <h3>Example</h3>
-  <pre><code>ctx_compose task="implement caching for the user service"
+  <pre><code>{`ctx_compose task="implement caching for the user service"
 → COMPOSED CONTEXT
 
   Keywords: cache, user, service, invalidation, ttl
-  
+
   Ranked Files (8):
     1. src/services/user_service.rs (0.92)
     2. src/core/cache.rs (0.87)
@@ -442,7 +442,7 @@ const sidebar = [
 
   Symbol Bodies (budget-optimized):
     fn get_user(...) → ...
-    struct CacheConfig { ... }</code></pre>
+    struct CacheConfig { ... }`}</code></pre>
 
   <h2>Adaptive Compression (Wave 5)</h2>
   <p>

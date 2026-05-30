@@ -1,0 +1,85 @@
+---
+interface Objection {
+  question: string;
+  answer: string;
+}
+
+const objections: Objection[] = [
+  {
+    question: "Why not just grep?",
+    answer:
+      "grep finds text. lean-ctx finds the right symbols, ranks them by relevance, and returns budgeted, structural context — not 500 raw matches you still have to read and filter.",
+  },
+  {
+    question: "Why not just read the files?",
+    answer:
+      "A raw read dumps 4,200 tokens when ~920 carry the signal. lean-ctx keeps the signal and drops the noise — and a cached re-read costs about 13 tokens instead of the whole file again.",
+  },
+  {
+    question: "Why not just compact more often?",
+    answer:
+      "Compaction throws away history you might still need. lean-ctx compresses losslessly: the full output is archived on disk and your agent retrieves it on demand — nothing is silently lost.",
+  },
+  {
+    question: "Why not another MCP server?",
+    answer:
+      "Most MCP servers add tool-definition overhead and hand back raw output. lean-ctx is a full context runtime — caching, persistent memory, shell hooks, and a governance layer — in one local binary.",
+  },
+];
+---
+
+<div class="wnx-grid">
+  {
+    objections.map((o, i) => (
+      <div class="wnx-card animate-entrance" style={`--i:${i}`}>
+        <h3 class="wnx-q font-display">{o.question}</h3>
+        <p class="wnx-a">{o.answer}</p>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .wnx-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: clamp(1rem, 0.6rem + 1.5vw, 1.75rem);
+  }
+
+  .wnx-card {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(0.5rem, 0.4rem + 0.3vw, 0.875rem);
+    padding: clamp(1.5rem, 1.1rem + 1.2vw, 2.25rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--overlay-faint);
+    transition: border-color 0.25s ease, transform 0.25s ease;
+  }
+
+  .wnx-card:hover {
+    border-color: var(--color-border-light);
+    transform: translateY(-3px);
+  }
+
+  .wnx-q {
+    font-size: clamp(1.05rem, 0.9rem + 0.55vw, 1.375rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-accent);
+    margin: 0;
+  }
+
+  .wnx-a {
+    font-size: clamp(0.875rem, 0.82rem + 0.15vw, 1rem);
+    line-height: 1.65;
+    color: var(--color-muted);
+    margin: 0;
+  }
+
+  @media (max-width: 860px) {
+    .wnx-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
