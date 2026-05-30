@@ -107,6 +107,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .route("/health", get(health))
         .route("/status", get(status_handler))
         .route("/v1/messages", any(anthropic::handler))
+        .route("/v1/messages/count_tokens", any(anthropic::handler))
         .route("/v1/chat/completions", any(openai::handler))
         .route("/v1/references/{id}", get(v1_resolve_reference))
         .fallback(fallback_router)
