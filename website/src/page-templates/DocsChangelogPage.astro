@@ -12,7 +12,8 @@ const sidebar = [
   {
     title: 'Versions',
     items: [
-      { label: '3.6.25 (Current)', href: lp('/docs/changelog') + '#v3.6.25' },
+      { label: '3.6.26 (Current)', href: lp('/docs/changelog') + '#v3.6.26' },
+      { label: '3.6.25', href: lp('/docs/changelog') + '#v3.6.25' },
       { label: '3.6.24', href: lp('/docs/changelog') + '#v3.6.24' },
       { label: '3.6.23', href: lp('/docs/changelog') + '#v3.6.23' },
       { label: '3.6.22', href: lp('/docs/changelog') + '#v3.6.22' },
@@ -82,6 +83,29 @@ const sidebar = [
     Complete version history for lean-ctx. Each release includes new features,
     improvements, and bug fixes. lean-ctx follows semantic versioning.
   </p>
+
+  <!-- 3.6.26 -->
+  <h2 id="v3.6.26">3.6.26 <span class="text-xs text-muted">(2026-05-30)</span></h2>
+  <p class="text-sm text-muted">EPIC 6 — Perfect-First: cross-project session correctness, bounded disk footprint, and a useful cold-start overview.</p>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>Project root never resolves to HOME / <code>/</code> / agent sandbox dirs</strong> (#2361) — Root detection now rejects broad/unsafe directories even when a client reports one, eliminating cross-project context bleed (the "HOME mega-session").</li>
+    <li><strong>Cross-project session leakage</strong> (#2362) — Session loads are strictly project-scoped: <code>load_latest()</code> no longer falls back to a global pointer and returns nothing for an unsafe working directory, so a new session in a project only ever recalls <em>that</em> project's knowledge.</li>
+    <li><strong>Noise auto-findings suppressed</strong> (#2363) — Findings from VCS/dependency/build/cache dirs, virtualenvs, vendored code, home dotfiles (<code>~/.ssh/config</code> …) and binary/log files are dropped, and unidentified <code>?</code> search patterns no longer create junk findings. Knowledge recall now boosts exact key matches.</li>
+    <li><strong>Useful cold-start <code>ctx_overview</code></strong> (#2365) — While the knowledge graph indexes, the overview now returns detected project markers, a depth-2 tree and known facts instead of only "try again in a minute".</li>
+  </ul>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong><code>lean-ctx sessions doctor [--apply]</code></strong> (#2362) — Detects sessions rooted at a broad/unsafe path and non-destructively quarantines them.</li>
+    <li><strong>Archive FTS disk-cap enforcement</strong> (#2364) — The archive index now enforces an on-disk size cap (default 500 MB, override via <code>LEAN_CTX_ARCHIVE_DB_MAX_MB</code>) by pruning the oldest entries, a daemon-safe startup pass prunes accumulated quarantined BM25 indexes, and <code>lean-ctx doctor</code> reports the archive footprint.</li>
+  </ul>
+
+  <h3>{t('changelog.changed')}</h3>
+  <ul>
+    <li><strong>Self-healing rules refresh</strong> (#2365) — When an outdated rules file is detected, lean-ctx auto-refreshes it on disk instead of only nudging you to run <code>lean-ctx setup</code>.</li>
+  </ul>
 
   <!-- 3.6.25 -->
   <h2 id="v3.6.25">3.6.25 <span class="text-xs text-muted">(2026-05-30)</span></h2>
