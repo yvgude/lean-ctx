@@ -13,8 +13,8 @@ interface Category {
 
 const modeAccent: Record<IntegrationMode, string> = {
   "MCP": "accent",
-  "Shell Hook": "accent-2",
-  "CLI-Redirect": "accent-3",
+  "Shell Hook": "muted",
+  "CLI-Redirect": "muted",
 };
 
 const categories: Category[] = [
@@ -191,8 +191,7 @@ let globalIndex = 0;
   }
 
   .tig-card[data-accent="accent"]:hover { border-color: var(--color-accent); }
-  .tig-card[data-accent="accent-2"]:hover { border-color: var(--color-accent-2); }
-  .tig-card[data-accent="accent-3"]:hover { border-color: var(--color-accent-3); }
+  .tig-card[data-accent="muted"]:hover { border-color: var(--color-border-light); }
 
   .tig-card-name {
     font-family: var(--font-display);
@@ -217,21 +216,15 @@ let globalIndex = 0;
   }
 
   .tig-mode--accent {
-    background: rgba(52, 211, 153, 0.1);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
     color: var(--color-accent);
-    border: 1px solid rgba(52, 211, 153, 0.2);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
   }
 
-  .tig-mode--accent-2 {
-    background: rgba(129, 140, 248, 0.1);
-    color: var(--color-accent-2);
-    border: 1px solid rgba(129, 140, 248, 0.2);
-  }
-
-  .tig-mode--accent-3 {
-    background: rgba(212, 160, 255, 0.1);
-    color: var(--color-accent-3);
-    border: 1px solid rgba(212, 160, 255, 0.2);
+  .tig-mode--muted {
+    background: var(--color-surface-3);
+    color: var(--color-muted);
+    border: 1px solid var(--color-border);
   }
 
   /* ── Footer link ────────────────────── */

@@ -11,7 +11,7 @@ interface Props {
   variant?: 'full' | 'split';
   align?: 'left' | 'center';
 
-  kickerTone?: 'muted' | 'accent' | 'accent-2' | 'accent-3' | 'bright';
+  kickerTone?: 'muted' | 'accent' | 'bright';
   highlightStyle?: 'italic' | 'gradient';
   breakHighlight?: boolean;
 
@@ -46,13 +46,9 @@ const {
 const kickerClass =
   kickerTone === 'accent'
     ? 'text-accent'
-    : kickerTone === 'accent-2'
-      ? 'text-accent-2'
-      : kickerTone === 'accent-3'
-        ? 'text-accent-3'
-        : kickerTone === 'bright'
-          ? 'text-text-bright'
-          : 'text-muted';
+    : kickerTone === 'bright'
+      ? 'text-text-bright'
+      : 'text-muted';
 
 const highlightClass = highlightStyle === 'gradient' ? 'gradient-text' : 'italic-accent';
 const titleSizeClass = 'fluid-h1';

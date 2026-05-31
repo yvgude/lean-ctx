@@ -3,6 +3,7 @@ import BaseLayout from './BaseLayout.astro';
 import DocsSidebar from '../components/DocsSidebar.astro';
 import PageHero from '../components/PageHero.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { getDocsPager } from '../lib/docsNav';
 
 interface SidebarItem {
   label: string;
@@ -34,6 +35,8 @@ const breadcrumbs = [
   { name: t('docs.documentation'), url: lp('/docs/getting-started') },
   { name: title, url: Astro.url.pathname },
 ];
+
+const { prev, next } = getDocsPager(Astro.url.pathname);
 ---
 
 <BaseLayout
@@ -62,6 +65,26 @@ const breadcrumbs = [
       <DocsSidebar sections={sidebar} />
       <article class="min-w-0 docs-prose">
         <slot />
+        {(prev || next) && (
+          <nav class="docs-pager not-prose" aria-label="Documentation pages">
+            {prev ? (
+              <a class="docs-pager__link docs-pager__prev" href={lp(prev.href)} rel="prev">
+                <span class="docs-pager__dir">← Previous</span>
+                <span class="docs-pager__title">{prev.label}</span>
+              </a>
+            ) : (
+              <span class="docs-pager__spacer" aria-hidden="true"></span>
+            )}
+            {next ? (
+              <a class="docs-pager__link docs-pager__next" href={lp(next.href)} rel="next">
+                <span class="docs-pager__dir">Next →</span>
+                <span class="docs-pager__title">{next.label}</span>
+              </a>
+            ) : (
+              <span class="docs-pager__spacer" aria-hidden="true"></span>
+            )}
+          </nav>
+        )}
       </article>
       <aside class="docs-toc" aria-label="On this page">
         <div class="docs-toc__inner">
@@ -92,6 +115,57 @@ const breadcrumbs = [
   }
   .heading-anchor:hover {
     opacity: 1 !important;
+  }
+
+  /* Prev / next pager */
+  .docs-pager {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: clamp(3rem, 2rem + 2vw, 4.5rem);
+    padding-top: clamp(1.5rem, 1rem + 1vw, 2.5rem);
+    border-top: 1px solid var(--color-border);
+  }
+  .docs-pager__link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg, 12px);
+    background: var(--color-surface);
+    text-decoration: none;
+    transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  }
+  .docs-pager__next { text-align: end; align-items: flex-end; }
+  .docs-pager__link:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));
+    transform: translateY(-2px);
+  }
+  .docs-pager__dir {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+  }
+  .docs-pager__title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(0.9375rem, 0.9rem + 0.2vw, 1.0625rem);
+    color: var(--color-text-bright);
+  }
+  .docs-pager__link:hover .docs-pager__title { color: var(--color-accent); }
+  .docs-pager__spacer { display: block; }
+  @media (max-width: 640px) {
+    .docs-pager { grid-template-columns: 1fr; }
+    .docs-pager__next { text-align: start; align-items: flex-start; }
+    .docs-pager__spacer { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .docs-pager__link { transition: border-color 0.2s ease; }
+    .docs-pager__link:hover { transform: none; }
   }
 
   /* Docs shell: sidebar | content | on-this-page */

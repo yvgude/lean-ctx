@@ -18,7 +18,7 @@ export interface PillarDemoCommand {
 export interface PillarStat {
   valueKey: string;
   labelKey: string;
-  tone: 'accent' | 'accent-2' | 'accent-3';
+  tone: 'accent';
 }
 
 export interface Pillar {
@@ -82,8 +82,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.smartIo.stat1Value', labelKey: 'pillar.smartIo.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.smartIo.stat2Value', labelKey: 'pillar.smartIo.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.smartIo.stat3Value', labelKey: 'pillar.smartIo.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.smartIo.stat2Value', labelKey: 'pillar.smartIo.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.smartIo.stat3Value', labelKey: 'pillar.smartIo.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.smartIo.feature1Title', descKey: 'pillar.smartIo.feature1Desc', icon: featureIcon },
@@ -135,8 +135,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.intelligence.stat1Value', labelKey: 'pillar.intelligence.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.intelligence.stat2Value', labelKey: 'pillar.intelligence.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.intelligence.stat3Value', labelKey: 'pillar.intelligence.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.intelligence.stat2Value', labelKey: 'pillar.intelligence.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.intelligence.stat3Value', labelKey: 'pillar.intelligence.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.intelligence.feature1Title', descKey: 'pillar.intelligence.feature1Desc', icon: featureIcon },
@@ -193,8 +193,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.memory.stat1Value', labelKey: 'pillar.memory.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.memory.stat2Value', labelKey: 'pillar.memory.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.memory.stat3Value', labelKey: 'pillar.memory.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.memory.stat2Value', labelKey: 'pillar.memory.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.memory.stat3Value', labelKey: 'pillar.memory.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.memory.feature1Title', descKey: 'pillar.memory.feature1Desc', icon: featureIcon },
@@ -245,8 +245,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.governance.stat1Value', labelKey: 'pillar.governance.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.governance.stat2Value', labelKey: 'pillar.governance.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.governance.stat3Value', labelKey: 'pillar.governance.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.governance.stat2Value', labelKey: 'pillar.governance.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.governance.stat3Value', labelKey: 'pillar.governance.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.governance.feature1Title', descKey: 'pillar.governance.feature1Desc', icon: featureIcon },
@@ -297,8 +297,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.verification.stat1Value', labelKey: 'pillar.verification.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.verification.stat2Value', labelKey: 'pillar.verification.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.verification.stat3Value', labelKey: 'pillar.verification.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.verification.stat2Value', labelKey: 'pillar.verification.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.verification.stat3Value', labelKey: 'pillar.verification.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.verification.feature1Title', descKey: 'pillar.verification.feature1Desc', icon: featureIcon },
@@ -360,8 +360,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.integrations.stat1Value', labelKey: 'pillar.integrations.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.integrations.stat2Value', labelKey: 'pillar.integrations.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.integrations.stat3Value', labelKey: 'pillar.integrations.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.integrations.stat2Value', labelKey: 'pillar.integrations.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.integrations.stat3Value', labelKey: 'pillar.integrations.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.integrations.feature1Title', descKey: 'pillar.integrations.feature1Desc', icon: featureIcon },
@@ -415,8 +415,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.sharedSessions.stat1Value', labelKey: 'pillar.sharedSessions.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.sharedSessions.stat2Value', labelKey: 'pillar.sharedSessions.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.sharedSessions.stat3Value', labelKey: 'pillar.sharedSessions.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.sharedSessions.stat2Value', labelKey: 'pillar.sharedSessions.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.sharedSessions.stat3Value', labelKey: 'pillar.sharedSessions.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.sharedSessions.feature1Title', descKey: 'pillar.sharedSessions.feature1Desc', icon: featureIcon },
@@ -472,8 +472,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.contextBus.stat1Value', labelKey: 'pillar.contextBus.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.contextBus.stat2Value', labelKey: 'pillar.contextBus.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.contextBus.stat3Value', labelKey: 'pillar.contextBus.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.contextBus.stat2Value', labelKey: 'pillar.contextBus.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.contextBus.stat3Value', labelKey: 'pillar.contextBus.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.contextBus.feature1Title', descKey: 'pillar.contextBus.feature1Desc', icon: featureIcon },
@@ -527,8 +527,8 @@ export const pillars: Pillar[] = [
     ],
     stats: [
       { valueKey: 'pillar.sdk.stat1Value', labelKey: 'pillar.sdk.stat1Label', tone: 'accent' },
-      { valueKey: 'pillar.sdk.stat2Value', labelKey: 'pillar.sdk.stat2Label', tone: 'accent-2' },
-      { valueKey: 'pillar.sdk.stat3Value', labelKey: 'pillar.sdk.stat3Label', tone: 'accent-3' },
+      { valueKey: 'pillar.sdk.stat2Value', labelKey: 'pillar.sdk.stat2Label', tone: 'accent' },
+      { valueKey: 'pillar.sdk.stat3Value', labelKey: 'pillar.sdk.stat3Label', tone: 'accent' },
     ],
     features: [
       { titleKey: 'pillar.sdk.feature1Title', descKey: 'pillar.sdk.feature1Desc', icon: featureIcon },

@@ -285,11 +285,11 @@ const altRows = [
   .cmp-shine-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--color-accent); margin-bottom: 0.75rem; }
   .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
   .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
-  .compare-header--warn { background: rgba(251, 191, 36, 0.04); color: var(--color-accent-3); }
+  .compare-header--warn { background: color-mix(in srgb, var(--color-warning) 5%, var(--color-surface)); color: var(--color-warning); }
   .compare-body { background: var(--color-surface); }
   .cmp-limit-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.625rem; }
   .cmp-limit-list li { font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem); color: var(--color-text); padding-inline-start: 1.5rem; position: relative; line-height: 1.6; }
-  .cmp-limit-list li::before { content: '–'; position: absolute; left: 0; color: var(--color-accent-3); font-weight: 600; }
+  .cmp-limit-list li::before { content: '–'; position: absolute; left: 0; color: var(--color-muted); font-weight: 600; }
 </style>
 
 </BaseLayout>

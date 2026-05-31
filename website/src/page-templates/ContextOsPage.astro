@@ -26,12 +26,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 const manifest = getMcpManifest();
 
 const pipelineSteps = [
-  { n: '01', tone: 'accent',   label: t('contextOs.pipeInput'),     desc: t('contextOs.pipeInputDesc') },
-  { n: '02', tone: 'accent-2', label: t('contextOs.pipeIntent'),    desc: t('contextOs.pipeIntentDesc') },
-  { n: '03', tone: 'accent',   label: t('contextOs.pipeRelevance'), desc: t('contextOs.pipeRelevanceDesc') },
-  { n: '04', tone: 'accent-3', label: t('contextOs.pipeCompress'),  desc: t('contextOs.pipeCompressDesc') },
-  { n: '05', tone: 'accent-2', label: t('contextOs.pipeVerify'),    desc: t('contextOs.pipeVerifyDesc') },
-  { n: '06', tone: 'accent',   label: t('contextOs.pipeDeliver'),   desc: t('contextOs.pipeDeliverDesc') },
+  { n: '01', label: t('contextOs.pipeInput'),     desc: t('contextOs.pipeInputDesc') },
+  { n: '02', label: t('contextOs.pipeIntent'),    desc: t('contextOs.pipeIntentDesc') },
+  { n: '03', label: t('contextOs.pipeRelevance'), desc: t('contextOs.pipeRelevanceDesc') },
+  { n: '04', label: t('contextOs.pipeCompress'),  desc: t('contextOs.pipeCompressDesc') },
+  { n: '05', label: t('contextOs.pipeVerify'),    desc: t('contextOs.pipeVerifyDesc') },
+  { n: '06', label: t('contextOs.pipeDeliver'),   desc: t('contextOs.pipeDeliverDesc') },
 ];
 
 ---
@@ -110,8 +110,8 @@ const pipelineSteps = [
             </div>
             <div class="flex flex-wrap justify-center gap-1 mt-2" style="font-size: 0.6875rem;">
               <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">I/O</span>
-              <span class="px-2 py-0.5 rounded bg-accent-2/10 text-accent-2 font-mono">Intelligence</span>
-              <span class="px-2 py-0.5 rounded bg-accent-3/10 text-accent-3 font-mono">Memory</span>
+              <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">Intelligence</span>
+              <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">Memory</span>
               <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">Verify</span>
             </div>
           </div>
@@ -147,9 +147,7 @@ const pipelineSteps = [
       {pipelineSteps.map((s, i) => (
         <div class="pipeline-step">
           <div class="pipeline-step-indicator">
-            <span class={`pipeline-step-dot ${
-              s.tone === 'accent-2' ? 'dot-accent-2' : s.tone === 'accent-3' ? 'dot-accent-3' : 'dot-accent'
-            }`}>
+            <span class="pipeline-step-dot">
               <span class="pipeline-step-num">{s.n}</span>
             </span>
             {i < pipelineSteps.length - 1 && <div class="pipeline-step-line" />}
@@ -195,12 +193,12 @@ const pipelineSteps = [
       </div>
 
       <div class="compare-card animate-entrance stagger-5">
-        <div class="compare-header" style="background: color-mix(in srgb, var(--color-accent-3) 12%, var(--color-surface)); border-color: var(--color-accent-3);">
+        <div class="compare-header" style="background: var(--color-surface-2); border-color: var(--color-border);">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008V18m-3 0h.008v.008h-.008V18m-3 0h.008v.008h-.008V18"/></svg>
           {t('contextOs.modeMcpTitle')}
         </div>
         <div class="compare-body" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-          <div class="compare-line"><span class="text-accent-3 font-semibold">{t('contextOs.modeMcpTag')}</span></div>
+          <div class="compare-line"><span class="text-text-bright font-semibold">{t('contextOs.modeMcpTag')}</span></div>
           <div class="compare-line"><span class="text-muted">{t('contextOs.modeMcpDesc')}</span></div>
           <div class="compare-line" style="margin-top: 0.5rem;">
             <code class="font-mono text-text-bright" style="font-size: 0.6875rem;">{manifest.counts.granular} tools via MCP + lazy tool set</code>
@@ -382,14 +380,6 @@ const pipelineSteps = [
     z-index: 1;
     border: 2px solid var(--color-accent);
     background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
-  }
-  .pipeline-step-dot.dot-accent-2 {
-    border-color: var(--color-accent-2);
-    background: color-mix(in srgb, var(--color-accent-2) 12%, var(--color-bg));
-  }
-  .pipeline-step-dot.dot-accent-3 {
-    border-color: var(--color-accent-3);
-    background: color-mix(in srgb, var(--color-accent-3) 12%, var(--color-bg));
   }
   .pipeline-step-num {
     font-family: var(--font-display);

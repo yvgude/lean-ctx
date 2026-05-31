@@ -504,6 +504,14 @@ pre code {
   outline-offset: 3px;
 }
 
+/* Global keyboard focus ring (a11y — styleguide §11). :where() keeps specificity 0
+   so any component-specific focus styles still win. */
+:where(a, button, [role="button"], [role="tab"], summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 
 /* ── Gradient Text ────────────────────────────────────── */
 

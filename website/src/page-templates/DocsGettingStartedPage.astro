@@ -121,13 +121,13 @@ const sidebar = [
       font-weight: 500;
       border-radius: 8px;
       cursor: pointer;
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.08);
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
       color: var(--color-muted);
       transition: all 0.15s ease;
     }
-    .pg-btn:hover { border-color: rgba(52,211,153,0.3); color: var(--color-text); }
-    .pg-btn.active { background: rgba(52,211,153,0.1); border-color: rgba(52,211,153,0.3); color: var(--color-accent); }
+    .pg-btn:hover { border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border)); color: var(--color-text); }
+    .pg-btn.active { background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface)); border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border)); color: var(--color-accent); }
   </style>
 
   <script is:inline>

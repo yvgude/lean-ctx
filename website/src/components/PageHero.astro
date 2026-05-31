@@ -11,7 +11,7 @@ interface Props {
   actionsMt?: string;
   titleVariant?: 'h1' | 'display';
   highlightStyle?: 'italic' | 'gradient';
-  kickerTone?: 'muted' | 'accent' | 'accent-2' | 'accent-3' | 'bright';
+  kickerTone?: 'muted' | 'accent' | 'bright';
   sectionClass?: string;
   container?: 'standard' | 'wide' | 'narrow';
   containerStyle?: string;
@@ -50,13 +50,9 @@ const resolvedTitleVariant =
 const kickerClass =
   kickerTone === 'accent'
     ? 'text-accent'
-    : kickerTone === 'accent-2'
-      ? 'text-accent-2'
-      : kickerTone === 'accent-3'
-        ? 'text-accent-3'
-        : kickerTone === 'bright'
-          ? 'text-text-bright'
-          : 'text-muted';
+    : kickerTone === 'bright'
+      ? 'text-text-bright'
+      : 'text-muted';
 
 const highlightClass = highlightStyle === 'gradient' ? 'gradient-text' : 'italic-accent';
 const titleSizeClass = resolvedTitleVariant === 'display' ? 'fluid-display' : 'fluid-h1';
