@@ -1,7 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
-import SectionHeading from '../components/SectionHeading.astro';
 import TerminalChrome from '../components/TerminalChrome.astro';
 import ProofArtifacts from '../components/ProofArtifacts.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
@@ -35,12 +34,6 @@ const pipelineSteps = [
   { n: '06', tone: 'accent',   label: t('contextOs.pipeDeliver'),   desc: t('contextOs.pipeDeliverDesc') },
 ];
 
-const stats = [
-  { value: String(manifest.counts.granular), label: t('contextOs.statMcpTools'),     tone: 'accent' },
-  { value: '60+',                            label: t('contextOs.statShellPatterns'), tone: 'accent-2' },
-  { value: '30+',                            label: t('contextOs.statIntegrations'),  tone: 'accent-3' },
-  { value: '99%',                            label: t('contextOs.statTokenSavings'),  tone: 'accent' },
-];
 ---
 
 <BaseLayout
@@ -82,56 +75,6 @@ const stats = [
     </a>
   </Fragment>
 </PageHero>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 2. PROBLEM / SOLUTION SPLIT with Compare Cards -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="split split--visual-wide">
-      <div>
-        <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-          <span class="kicker-pill">{t('contextOs.problemLabel')}</span>
-        </div>
-        <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t('contextOs.problemTitle')}
-        </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 52rem;">
-          {t('contextOs.problemDesc')}
-        </p>
-      </div>
-
-      <div class="animate-entrance stagger-3">
-        <div class="compare-grid is-stacked">
-          <div class="compare-card">
-            <div class="compare-header compare-header--bad">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-              {t('contextOs.withoutLabel')}
-            </div>
-            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-              <div class="compare-line"><span class="text-danger">{t('contextOs.without1')}</span></div>
-              <div class="compare-line"><span class="text-danger">{t('contextOs.without2')}</span></div>
-              <div class="compare-line"><span class="text-muted">{t('contextOs.without3')}</span></div>
-              <div class="compare-line"><span class="text-danger">{t('contextOs.without4')}</span></div>
-            </div>
-          </div>
-          <div class="compare-card">
-            <div class="compare-header compare-header--good">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-              {t('contextOs.withLabel')}
-            </div>
-            <div class="compare-body font-mono" style="font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-              <div class="compare-line"><span class="text-accent">{t('contextOs.with1')}</span></div>
-              <div class="compare-line"><span class="text-accent">{t('contextOs.with2')}</span></div>
-              <div class="compare-line"><span class="text-muted">{t('contextOs.with3')}</span></div>
-              <div class="compare-line"><span class="text-accent">{t('contextOs.with4')}</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
 
 <div class="section-divider content-grid"></div>
 
@@ -265,6 +208,14 @@ const stats = [
         </div>
       </div>
     </div>
+
+    <p class="text-muted animate-entrance stagger-6" style="margin-top: clamp(2rem, 1.5rem + 1vw, 3rem); text-align: center; font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+      {t('contextOs.modesFootnote')}{' '}
+      <a href={lp('/compatibility')} class="text-accent hover:underline inline-flex items-center gap-1 font-medium">
+        {t('contextOs.modesFootnoteLink')}
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </p>
   </div>
 </section>
 
@@ -304,193 +255,6 @@ const stats = [
         <div><span class="text-muted">cache</span>   <span class="text-accent">247 entries</span> <span class="text-muted">(hit rate 94.2%)</span></div>
         <div><span class="text-muted">memory</span>  <span class="text-text">12.4 MB</span></div>
       </TerminalChrome>
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 4d. AGENT MATRIX -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('contextOs.agentMatrixLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('contextOs.agentMatrixTitle')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
-      {t('contextOs.agentMatrixDesc')}
-    </p>
-
-    <div class="animate-entrance stagger-3" style="overflow-x: auto;">
-      <table class="agent-matrix" style="width: 100%; border-collapse: collapse; font-size: clamp(0.75rem, 0.7rem + 0.12vw, 0.875rem);">
-        <thead>
-          <tr>
-            <th class="matrix-th matrix-th-agent">Agent</th>
-            <th class="matrix-th matrix-th-mode"><span class="matrix-mode-dot dot-hybrid"></span>Hybrid</th>
-            <th class="matrix-th matrix-th-mode"><span class="matrix-mode-dot dot-mcp"></span>MCP</th>
-            <th class="matrix-th matrix-th-setup">Setup</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            { name: 'Cursor',      mode: 'hybrid', cmd: 'lean-ctx init --agent cursor' },
-            { name: 'Claude Code', mode: 'hybrid', cmd: 'lean-ctx init --agent claude' },
-            { name: 'Codex',       mode: 'hybrid', cmd: 'lean-ctx init --agent codex' },
-            { name: 'OpenCode',    mode: 'hybrid', cmd: 'lean-ctx init --agent opencode' },
-            { name: 'Gemini CLI',  mode: 'hybrid', cmd: 'lean-ctx init --agent gemini' },
-            { name: 'CRUSH',       mode: 'hybrid', cmd: 'lean-ctx init --agent crush' },
-            { name: 'Hermes',      mode: 'hybrid', cmd: 'lean-ctx init --agent hermes' },
-            { name: 'Pi',          mode: 'hybrid', cmd: 'lean-ctx init --agent pi' },
-            { name: 'Qoder',       mode: 'hybrid', cmd: 'lean-ctx init --agent qoder' },
-            { name: 'Windsurf',    mode: 'hybrid', cmd: 'lean-ctx init --agent windsurf' },
-            { name: 'Copilot',     mode: 'hybrid', cmd: 'lean-ctx init --agent copilot' },
-            { name: 'Amp',         mode: 'hybrid', cmd: 'lean-ctx init --agent amp' },
-            { name: 'Cline',       mode: 'hybrid', cmd: 'lean-ctx init --agent cline' },
-            { name: 'Roo Code',    mode: 'hybrid', cmd: 'lean-ctx init --agent roo' },
-            { name: 'Kiro',        mode: 'hybrid', cmd: 'lean-ctx init --agent kiro' },
-            { name: 'Antigravity', mode: 'hybrid', cmd: 'lean-ctx init --agent antigravity' },
-            { name: 'Amazon Q',    mode: 'hybrid', cmd: 'lean-ctx init --agent amazonq' },
-            { name: 'Qwen',        mode: 'hybrid', cmd: 'lean-ctx init --agent qwen' },
-            { name: 'Trae',        mode: 'hybrid', cmd: 'lean-ctx init --agent trae' },
-            { name: 'Verdent',     mode: 'hybrid', cmd: 'lean-ctx init --agent verdent' },
-            { name: 'JetBrains',   mode: 'mcp', cmd: 'lean-ctx init --agent jetbrains' },
-            { name: 'QoderWork',   mode: 'mcp', cmd: 'lean-ctx init --agent qoderwork' },
-            { name: 'VS Code',     mode: 'mcp', cmd: 'lean-ctx init --agent vscode' },
-            { name: 'Zed',         mode: 'mcp', cmd: 'lean-ctx init --agent zed' },
-            { name: 'Neovim',      mode: 'mcp', cmd: 'lean-ctx init --agent neovim' },
-            { name: 'Emacs',       mode: 'mcp', cmd: 'lean-ctx init --agent emacs' },
-            { name: 'Sublime Text',mode: 'mcp', cmd: 'lean-ctx init --agent sublime' },
-            { name: 'Aider',       mode: 'mcp', cmd: 'lean-ctx init --agent aider' },
-            { name: 'Continue',    mode: 'mcp', cmd: 'lean-ctx init --agent continue' },
-          ].map((a) => (
-            <tr class="matrix-row">
-              <td class="matrix-td matrix-td-agent">{a.name}</td>
-              <td class="matrix-td matrix-td-check">{a.mode === 'hybrid' ? <span class="matrix-dot matrix-dot-hybrid" aria-label="Hybrid">●</span>      : <span class="matrix-empty">–</span>}</td>
-              <td class="matrix-td matrix-td-check">{a.mode === 'mcp'    ? <span class="matrix-dot matrix-dot-mcp" aria-label="MCP">●</span>             : <span class="matrix-empty">–</span>}</td>
-              <td class="matrix-td matrix-td-setup"><code>{a.cmd}</code></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 4c. CONTEXT FIELD THEORY -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="animate-entrance" style="margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);">
-      <span class="kicker-pill">{t('contextOs.cftLabel')}</span>
-    </div>
-    <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem);">
-      {t('contextOs.cftTitle')}
-    </h2>
-    <p class="text-muted fluid-body animate-entrance stagger-2" style="margin-bottom: clamp(3rem, 2rem + 2vw, 5rem); max-width: 48rem;">
-      {t('contextOs.cftDesc')}
-    </p>
-
-    <!-- Phi Formula Card -->
-    <div class="card animate-entrance stagger-3" style="padding: clamp(1.5rem, 1.25rem + 0.75vw, 2.25rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));">
-      <h3 class="font-display fluid-h3 font-semibold text-accent" style="margin: 0 0 1rem 0;">
-        {t('contextOs.cftPhiTitle')}
-      </h3>
-      <div class="font-mono text-accent fluid-sm" style="margin-bottom: 1.25rem; padding: 1rem; background: var(--color-bg); border-radius: 0.5rem; border: 1px solid var(--color-border); overflow-x: auto; white-space: nowrap;">
-        {t('contextOs.cftPhiFormula')}
-      </div>
-      <p class="text-muted fluid-sm" style="margin: 0 0 1rem 0;">
-        {t('contextOs.cftPhiDesc')}
-      </p>
-      <div class="grid md:grid-cols-2" style="gap: 0.5rem;">
-        <div class="flex items-start gap-2">
-          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">R</span>
-          <span class="fluid-sm text-muted">{t('contextOs.cftPhiR')}</span>
-        </div>
-        <div class="flex items-start gap-2">
-          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">S</span>
-          <span class="fluid-sm text-muted">{t('contextOs.cftPhiS')}</span>
-        </div>
-        <div class="flex items-start gap-2">
-          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">G</span>
-          <span class="fluid-sm text-muted">{t('contextOs.cftPhiG')}</span>
-        </div>
-        <div class="flex items-start gap-2">
-          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">H</span>
-          <span class="fluid-sm text-muted">{t('contextOs.cftPhiH')}</span>
-        </div>
-        <div class="flex items-start gap-2">
-          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">C</span>
-          <span class="fluid-sm text-muted">{t('contextOs.cftPhiC')}</span>
-        </div>
-        <div class="flex items-start gap-2">
-          <span class="text-accent font-mono font-bold" style="min-width: 1.25rem;">D</span>
-          <span class="fluid-sm text-muted">{t('contextOs.cftPhiD')}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Three CFT Pillars -->
-    <div class="grid md:grid-cols-2 lg:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem); margin-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);">
-      <div class="card animate-entrance stagger-4" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
-          {t('contextOs.cftHandlesTitle')}
-        </h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
-          {t('contextOs.cftHandlesDesc')}
-        </p>
-      </div>
-      <div class="card animate-entrance stagger-5" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
-          {t('contextOs.cftOverlaysTitle')}
-        </h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
-          {t('contextOs.cftOverlaysDesc')}
-        </p>
-      </div>
-      <div class="card animate-entrance stagger-6" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
-          {t('contextOs.cftCompilerTitle')}
-        </h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
-          {t('contextOs.cftCompilerDesc')}
-        </p>
-      </div>
-    </div>
-
-    <!-- Policy Engine + CLI + Context Packages -->
-    <div class="grid md:grid-cols-3" style="gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);">
-      <div class="card animate-entrance stagger-7" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
-          {t('contextOs.cftPolicyTitle')}
-        </h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0 0 0.75rem 0;">
-          {t('contextOs.cftPolicyDesc')}
-        </p>
-        <div class="flex flex-wrap gap-1" style="font-size: 0.625rem;">
-          <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">Declarative rules</span>
-          <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">Capability ACL</span>
-          <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">OWASP aligned</span>
-          <span class="px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">Compliance reports</span>
-        </div>
-      </div>
-      <div class="card animate-entrance stagger-8" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);">
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
-          {t('contextOs.cftCliTitle')}
-        </h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;">
-          {t('contextOs.cftCliDesc')}
-        </p>
-      </div>
-      <a href={lp('/docs/context-packages')} class="card group animate-entrance stagger-9" style="padding: clamp(1.25rem, 1rem + 0.75vw, 1.75rem); text-decoration: none; transition: border-color 0.25s ease;">
-        <h3 class="font-display fluid-h3 font-semibold text-text-bright" style="margin: 0 0 0.75rem 0;">
-          {t('contextOs.contextPkgTitle')}
-          <span class="text-accent font-mono font-normal" style="font-size: 0.6875rem; margin-left: 0.5rem;">.ctxpkg</span>
-        </h3>
-        <p class="fluid-sm text-muted leading-relaxed" style="margin: 0;" set:html={t('contextOs.contextPkgDesc')} />
-      </a>
     </div>
   </div>
 </section>
@@ -543,62 +307,6 @@ const stats = [
 
 <div class="section-divider content-grid"></div>
 
-<!-- 6. LIVE DEMO - Split with Terminal -->
-<section class="section-y">
-  <div class="content-grid-wide">
-    <div class="split split--visual-wide">
-      <div>
-        <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
-          <span class="kicker-pill">{t('contextOs.liveLabel')}</span>
-        </div>
-        <h2 class="font-display fluid-h1 text-text-bright animate-entrance stagger-1" style="margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 54rem;">
-          {t('contextOs.liveTitle')}
-        </h2>
-        <p class="text-muted fluid-body animate-entrance stagger-2" style="margin: 0; max-width: 48rem;">
-          {t('contextOs.liveDesc')}
-        </p>
-      </div>
-
-      <TerminalChrome
-        title="ctx_read - map"
-        chromeClass="animate-entrance stagger-3"
-        bodyStyle="font-size: clamp(0.72rem, 0.68rem + 0.1vw, 0.8125rem); line-height: 1.75;"
-      >
-        <div>
-          <span class="text-accent">ctx_read</span>{' '}
-          <span class="text-text-bright">{`({ path: "src/lib/auth.ts", mode: "map" })`}</span>
-        </div>
-        <div class="term-divider"></div>
-        <div><span class="text-muted">exports</span> <span class="text-text-bright">authenticate(), validateToken(), refreshSession()</span></div>
-        <div><span class="text-muted">deps</span> <span class="text-text-bright">jsonwebtoken, bcrypt, redis</span></div>
-        <div><span class="text-muted">lines</span> <span class="text-text-bright">247</span></div>
-        <div class="term-divider"></div>
-        <div><span class="text-muted">original</span> <span class="text-text">4,200 tokens</span></div>
-        <div><span class="text-muted">compressed</span> <span class="text-accent font-semibold">180 tokens (96% saved)</span></div>
-        <div><span class="text-muted">cached</span> <span class="text-accent">13 tokens on re-read</span></div>
-      </TerminalChrome>
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 7. STATS -->
-<section class="section-y-sm">
-  <div class="content-grid">
-    <div class="stats-panels animate-entrance">
-      {stats.map((s) => (
-        <div class="stat-panel">
-          <span class={`stat-number ${s.tone === 'accent-2' ? 'text-accent-2' : s.tone === 'accent-3' ? 'text-accent-3' : 'text-accent'}`}>{s.value}</span>
-          <span class="stat-desc">{s.label}</span>
-        </div>
-      ))}
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
 <!-- 8. PROOF ARTIFACTS -->
 <section class="section-y">
   <div class="content-grid">
@@ -613,26 +321,6 @@ const stats = [
     </p>
     <div class="animate-entrance stagger-3">
       <ProofArtifacts />
-    </div>
-  </div>
-</section>
-
-<div class="section-divider content-grid"></div>
-
-<!-- 8b. HOW TO GET STARTED CTA -->
-<section class="section-y">
-  <div class="content-grid">
-    <div class="card animate-entrance" style="padding: clamp(2rem, 1.5rem + 1vw, 3rem); border-color: color-mix(in srgb, var(--color-accent-2) 22%, transparent); background: color-mix(in srgb, var(--color-accent-2) 4%, var(--color-surface));">
-      <h3 class="fluid-h2 font-display text-text-bright" style="margin: 0 0 0.75rem 0;">
-        {t('contextOs.hiwCtaTitle')}
-      </h3>
-      <p class="fluid-sm text-muted" style="margin: 0 0 1.5rem 0; max-width: 44rem;">
-        {t('contextOs.hiwCtaDesc')}
-      </p>
-      <a href={lp('/how-it-works')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.6rem, 0.5rem + 0.25vw, 0.8rem) clamp(1.25rem, 0.9rem + 0.6vw, 1.75rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('contextOs.hiwCtaLink')}
-        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-      </a>
     </div>
   </div>
 </section>
@@ -719,88 +407,6 @@ const stats = [
     padding: clamp(0.25rem, 0.125rem + 0.25vw, 0.5rem) 0 clamp(2rem, 1.5rem + 1vw, 3rem) 0;
   }
 
-  /* Agent Matrix */
-  .agent-matrix {
-    border: 1px solid var(--color-border);
-    border-radius: 0.75rem;
-    overflow: hidden;
-  }
-  .matrix-th {
-    padding: 0.625rem 0.75rem;
-    font-weight: 600;
-    color: var(--color-text-bright);
-    background: color-mix(in srgb, var(--color-surface) 60%, var(--color-bg));
-    border-bottom: 1px solid var(--color-border);
-    white-space: nowrap;
-  }
-  .matrix-th-agent {
-    text-align: left;
-    min-width: 8rem;
-  }
-  .matrix-th-mode {
-    text-align: center;
-    font-size: 0.6875rem;
-    letter-spacing: 0.02em;
-  }
-  .matrix-th-setup {
-    text-align: left;
-    font-size: 0.6875rem;
-  }
-  .matrix-mode-dot {
-    display: inline-block;
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    margin-right: 0.375rem;
-    vertical-align: middle;
-  }
-  .matrix-mode-dot.dot-cli { background: var(--color-accent); }
-  .matrix-mode-dot.dot-hybrid { background: var(--color-accent-2); }
-  .matrix-mode-dot.dot-mcp { background: var(--color-accent-3); }
-
-  .matrix-row {
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
-    transition: background 0.15s ease;
-  }
-  .matrix-row:hover {
-    background: color-mix(in srgb, var(--color-surface) 40%, transparent);
-  }
-  .matrix-row:last-child {
-    border-bottom: none;
-  }
-  .matrix-td {
-    padding: 0.4rem 0.75rem;
-  }
-  .matrix-td-agent {
-    color: var(--color-text-bright);
-    font-weight: 500;
-  }
-  .matrix-td-check {
-    text-align: center;
-    font-size: 0.875rem;
-  }
-  .matrix-td-setup code {
-    font-size: 0.625rem;
-    opacity: 0.55;
-    letter-spacing: -0.01em;
-  }
-  .matrix-dot {
-    font-size: 1rem;
-    line-height: 1;
-  }
-  .matrix-dot-cli { color: var(--color-accent); }
-  .matrix-dot-hybrid { color: var(--color-accent-2); }
-  .matrix-dot-mcp { color: var(--color-accent-3); }
-  .matrix-empty {
-    color: var(--color-border);
-    font-size: 0.75rem;
-  }
-
-  @media (max-width: 640px) {
-    .matrix-th-setup, .matrix-td-setup { display: none; }
-    .matrix-th-mode { font-size: 0.5625rem; padding: 0.5rem 0.375rem; }
-    .matrix-td-check { padding: 0.4rem 0.375rem; }
-  }
 </style>
 
 </BaseLayout>

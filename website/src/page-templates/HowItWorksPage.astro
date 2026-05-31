@@ -244,7 +244,10 @@ const faqSchema = JSON.stringify({
     <div class="animate-entrance" style="margin-top: clamp(3rem, 2rem + 2vw, 5rem);">
       <h3 class="fluid-h3 font-semibold font-display text-text-bright mb-2" set:html={t('howItWorks.rrfTitle')} />
       <p class="fluid-sm text-muted mb-3" set:html={t('howItWorks.rrfDesc')} />
-      <p class="fluid-sm text-muted" set:html={t('howItWorks.rrfFormula')} />
+      <a href={lp('/docs/concepts/caching')} class="fluid-sm text-accent hover:underline inline-flex items-center gap-1.5 font-medium">
+        {t('howItWorks.rrfCta')}
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </a>
     </div>
   </div>
 </section>

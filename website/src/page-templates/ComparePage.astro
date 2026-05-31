@@ -38,7 +38,7 @@ const altRows = [
   { feature: t('compare.altRowGovernance'),       rtk: t('compare.altRtkGovernance'),       ctxPlus: t('compare.altCtxPlusGovernance'),       memgpt: t('compare.altMemgptGovernance'),       leanCtx: t('compare.altLeanGovernance') },
   { feature: t('compare.altRowLocalFirst'),       rtk: t('compare.altRtkLocalFirst'),       ctxPlus: t('compare.altCtxPlusLocalFirst'),       memgpt: t('compare.altMemgptLocalFirst'),       leanCtx: t('compare.altLeanLocalFirst') },
   { feature: t('compare.altRowMcpTools'),         rtk: t('compare.altRtkMcpTools'),         ctxPlus: t('compare.altCtxPlusMcpTools'),         memgpt: t('compare.altMemgptMcpTools'),         leanCtx: t('compare.altLeanMcpTools') },
-  { feature: 'Security Hardening',               rtk: 'None',                              ctxPlus: 'None',                                  memgpt: 'Basic auth',                             leanCtx: 'OWASP 8/10, OS sandbox, Ed25519 bundles, compliance reports' },
+  { feature: 'Security Hardening',               rtk: 'None',                              ctxPlus: 'None',                                  memgpt: 'Basic auth',                             leanCtx: 'Sandboxing, signed bundles, audit reports' },
 ];
 ---
 
@@ -252,41 +252,6 @@ const altRows = [
 <div class="section-divider content-grid"></div>
 
 
-<!-- ═══════ REAL NUMBERS ═══════ -->
-<section class="relative section-y">
-  <div class="content-grid">
-    <SectionHeading
-      label={t('compare.statsLabel')}
-      title={t('compare.statsTitle')}
-      highlight={t('compare.statsTitleHighlight')}
-      description={t('compare.statsDesc')}
-      variant="full"
-      breakHighlight={false}
-      descMaxWidth="48rem"
-      descMb="clamp(3rem, 2rem + 3vw, 6rem)"
-    />
-
-    <div class="stats-grid animate-entrance stagger-3">
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent">{t('compare.stat1Value')}</span>
-        <span class="stat-desc">{t('compare.stat1Desc')}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent-2">{t('compare.stat2Value')}</span>
-        <span class="stat-desc">{t('compare.stat2Desc')}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-number font-display text-accent-3">{t('compare.stat3Value')}</span>
-        <span class="stat-desc">{t('compare.stat3Desc')}</span>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<div class="section-divider content-grid"></div>
-
-
 <!-- ═══════ CTA ═══════ -->
 <section class="section-y">
   <div class="content-grid">
@@ -318,11 +283,6 @@ const altRows = [
   .cmp-cell-dim { opacity: 0.5; }
   .cmp-cell-accent { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--color-accent); font-weight: 600; font-family: var(--font-mono); font-size: 0.8125rem; }
   .cmp-shine-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--color-accent); margin-bottom: 0.75rem; }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
-  .stat-item { display: flex; flex-direction: column; padding: clamp(1.25rem, 1rem + 1vw, 2rem); background: var(--color-bg); }
-  .stat-number { font-size: clamp(2rem, 1.5rem + 2vw, 3.5rem); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin-bottom: 0.625rem; }
-  .stat-desc { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); color: var(--color-muted); line-height: 1.5; }
-  @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
   .compare-card { border: 1px solid var(--color-border); border-radius: clamp(10px, 0.8vw, 14px); overflow: hidden; }
   .compare-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); }
   .compare-header--warn { background: rgba(251, 191, 36, 0.04); color: var(--color-accent-3); }
