@@ -892,8 +892,9 @@ pre code {
   background: var(--color-surface-3);
   padding: 0.1em 0.4em;
   border-radius: 6px;
-  color: var(--color-accent-2-bright);
+  color: var(--color-text-bright);
   font-size: 11px;
+  font-weight: 500;
   border: 1px solid var(--color-border);
 }
 .docs-prose pre {
@@ -1005,6 +1006,50 @@ pre code {
   .docs-prose table th { padding-inline: 6px; }
   .docs-prose table td:last-child { min-width: 100px; }
 }
+
+
+/* ── Docs Callouts (note / warn / danger) ─────────────── */
+
+.docs-callout {
+  display: flex;
+  gap: 0.75rem;
+  padding: clamp(0.875rem, 0.75rem + 0.4vw, 1.25rem);
+  border-radius: var(--card-radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  margin-block: 1.5rem;
+}
+.docs-callout__icon {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-top: 0.15rem;
+  color: var(--color-accent);
+}
+.docs-callout__body { min-width: 0; }
+.docs-callout__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--color-text-bright);
+  font-size: 0.875rem;
+  margin: 0 0 0.25rem;
+}
+.docs-callout__body > p { margin: 0; color: var(--color-muted); line-height: 1.7; font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem); }
+.docs-callout--note {
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 5%, var(--color-surface));
+}
+.docs-callout--note .docs-callout__icon { color: var(--color-accent); }
+.docs-callout--warn {
+  border-color: color-mix(in srgb, var(--color-warning) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 6%, var(--color-surface));
+}
+.docs-callout--warn .docs-callout__icon { color: var(--color-warning); }
+.docs-callout--danger {
+  border-color: color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+}
+.docs-callout--danger .docs-callout__icon { color: var(--color-danger); }
 
 
 /* ── Inline Code ──────────────────────────────────────── */

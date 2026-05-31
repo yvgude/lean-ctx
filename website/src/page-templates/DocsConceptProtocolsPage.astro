@@ -20,14 +20,6 @@ const sidebar = [
     ],
   },
   {
-    title: 'On This Page',
-    items: [
-      { label: 'CEP — Compact Expression', href: '#cep' },
-      { label: 'CCP — Context Compaction', href: '#ccp' },
-      { label: 'TDD — Token-Driven Dev', href: '#tdd' },
-    ],
-  },
-  {
     title: 'Related Tools',
     compact: true,
     items: [
@@ -46,9 +38,9 @@ const sidebar = [
   sidebar={sidebar}
 >
   <p>
-    lean-ctx defines <strong>5 protocols</strong> that govern how context is managed, compressed,
-    communicated, and shared between agents. They activate automatically based on session state,
-    but understanding them helps you get the most out of the system.
+    lean-ctx runs <strong>5 protocols</strong> that manage, compress, and share context between agents.
+    The good news: they all activate automatically — you don't need to memorize them. The map below
+    shows what each one does and when it kicks in, so you always know what's happening under the hood.
   </p>
 
   <h2 id="protocol-map">Protocol Map</h2>

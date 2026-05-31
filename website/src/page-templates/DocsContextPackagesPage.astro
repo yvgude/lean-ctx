@@ -30,11 +30,11 @@ const sidebar = [
 ];
 
 const layers = [
-  { key: 'knowledge', icon: '📖', color: 'accent' },
-  { key: 'graph', icon: '🔗', color: 'accent-2' },
-  { key: 'session', icon: '💬', color: 'accent-3' },
-  { key: 'patterns', icon: '⚙️', color: 'accent' },
-  { key: 'gotchas', icon: '⚠️', color: 'accent-2' },
+  { key: 'knowledge' },
+  { key: 'graph' },
+  { key: 'session' },
+  { key: 'patterns' },
+  { key: 'gotchas' },
 ];
 
 const cliCommands = [
@@ -69,8 +69,8 @@ const cliCommands = [
   <p>{t('contextPkg.layersDesc')}</p>
 
   <div class="not-prose grid gap-3 sm:grid-cols-2 lg:grid-cols-3 my-8">
-    {layers.map(({ key, color }) => (
-      <div class="card" style={`padding: 1.25rem; border-color: var(--color-${color === 'accent' ? 'border' : 'border'});`}>
+    {layers.map(({ key }) => (
+      <div class="card" style="padding: 1.25rem;">
         <h3 style="margin: 0 0 0.5rem 0; font-size: 0.9375rem; font-weight: 600; color: var(--color-text-bright);">
           {t(`contextPkg.layer${key.charAt(0).toUpperCase() + key.slice(1)}`)}
         </h3>

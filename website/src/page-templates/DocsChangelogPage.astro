@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../layouts/DocsLayout.astro';
+import DocsCallout from '../components/DocsCallout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 
@@ -80,9 +81,13 @@ const sidebar = [
   sidebar={sidebar}
 >
   <p>
-    Complete version history for lean-ctx. Each release includes new features,
-    improvements, and bug fixes. lean-ctx follows semantic versioning.
+    Every lean-ctx release, newest first. We follow semantic versioning, so patch
+    releases are always safe drop-in updates.
   </p>
+
+  <DocsCallout variant="note" title="Just here to upgrade?">
+    <p>Update lean-ctx the same way you installed it — Homebrew, npm, cargo, or the install script. New to lean-ctx? Start with <a href={lp('/docs/getting-started')}>Getting Started</a>.</p>
+  </DocsCallout>
 
   <!-- 3.6.26 -->
   <h2 id="v3.6.26">3.6.26 <span class="text-xs text-muted">(2026-05-30)</span></h2>

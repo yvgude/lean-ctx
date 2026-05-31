@@ -100,9 +100,11 @@ const sidebar = [
 
     <div class="terminal-chrome">
       <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
-        <span class="font-mono text-[9px] text-[#ef4444]">[x]</span>
-        <span class="font-mono text-[9px] text-[#eab308]">[-]</span>
-        <span class="font-mono text-[9px] text-[#34d399]">[o]</span>
+        <span class="term-dots" aria-hidden="true">
+          <span class="term-dot"></span>
+          <span class="term-dot"></span>
+          <span class="term-dot term-dot--live"></span>
+        </span>
         <span class="text-muted text-[11px] ml-2">{t('docs.gettingStarted.labelGeneratedPrompt')}</span>
         <button id="pg-copy" class="ml-auto px-3 py-1 text-[11px] font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer border border-accent/20">{t('docs.gettingStarted.btnCopy')}</button>
       </div>
@@ -568,9 +570,11 @@ const sidebar = [
 
   <div class="not-prose terminal-chrome mb-8">
     <div class="terminal-header flex items-center gap-1.5 px-4 py-2.5">
-      <span class="font-mono text-[9px] text-[#ef4444]">[x]</span>
-      <span class="font-mono text-[9px] text-[#eab308]">[-]</span>
-      <span class="font-mono text-[9px] text-[#34d399]">[o]</span>
+      <span class="term-dots" aria-hidden="true">
+        <span class="term-dot"></span>
+        <span class="term-dot"></span>
+        <span class="term-dot term-dot--live"></span>
+      </span>
       <span class="text-muted text-[11px] ml-2">{t('docs.gettingStarted.threeStepsTermLabel')}</span>
     </div>
     <div class="terminal-body px-4 py-3 font-mono text-[13px]">

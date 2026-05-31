@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../layouts/DocsLayout.astro';
+import DocsCallout from '../components/DocsCallout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -59,6 +60,10 @@ const sidebar = [
 <DocsLayout title={t('docsConfiguration.title')} description={t('docsConfiguration.description')} sidebar={sidebar}>
 
   <p set:html={t('docsConfiguration.intro')} />
+
+  <DocsCallout variant="note" title="Most people don't change anything">
+    <p><code>lean-ctx setup</code> configures everything automatically. If you tune one thing, it's usually <code>compression_level</code> (how aggressively output is compressed) or <code>profile</code>. Treat the rest of this page as a reference — reach for it only when you need a specific knob.</p>
+  </DocsCallout>
 
   <hr />
 

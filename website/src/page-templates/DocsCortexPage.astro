@@ -32,8 +32,8 @@ const sidebar = [
 
 const pipelineSteps = [
   { n: '01', tone: 'accent',   title: t('docs.cortex.pipelineStep1Title'), desc: t('docs.cortex.pipelineStep1Desc') },
-  { n: '02', tone: 'accent-2', title: t('docs.cortex.pipelineStep2Title'), desc: t('docs.cortex.pipelineStep2Desc') },
-  { n: '03', tone: 'accent-3', title: t('docs.cortex.pipelineStep3Title'), desc: t('docs.cortex.pipelineStep3Desc') },
+  { n: '02', tone: 'accent',   title: t('docs.cortex.pipelineStep2Title'), desc: t('docs.cortex.pipelineStep2Desc') },
+  { n: '03', tone: 'accent',   title: t('docs.cortex.pipelineStep3Title'), desc: t('docs.cortex.pipelineStep3Desc') },
   { n: '04', tone: 'accent',   title: t('docs.cortex.pipelineStep4Title'), desc: t('docs.cortex.pipelineStep4Desc') },
 ];
 ---
@@ -65,11 +65,11 @@ const pipelineSteps = [
     </div>
     <svg class="pipeline-arrow" viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M0 6h20m-4-4 4 4-4 4"/></svg>
     <div class="pipeline-flow-item">
-      <span class="font-mono text-sm" style="color: var(--color-accent-2);">BM25 Index</span>
+      <span class="font-mono text-sm text-text-bright">BM25 Index</span>
     </div>
     <svg class="pipeline-arrow" viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M0 6h20m-4-4 4 4-4 4"/></svg>
     <div class="pipeline-flow-item">
-      <span class="font-mono text-sm" style="color: var(--color-accent-3);">Saliency</span>
+      <span class="font-mono text-sm text-text-bright">Saliency</span>
     </div>
     <svg class="pipeline-arrow" viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M0 6h20m-4-4 4 4-4 4"/></svg>
     <div class="pipeline-flow-item">
@@ -88,7 +88,7 @@ const pipelineSteps = [
     <div><span class="text-muted">deps:</span> <span class="text-text">jsonwebtoken, chrono, serde</span></div>
     <div><span class="text-muted">tokens:</span> <span class="text-text">2,400 → <span class="text-accent">120</span> (95% saved)</span></div>
     <div class="term-divider"></div>
-    <div><span class="text-muted" style="color: var(--color-accent-2);">cross-source hints:</span></div>
+    <div><span class="text-accent">cross-source hints:</span></div>
     <div>  <span class="text-muted">github#142</span> <span class="text-text">JWT expiry not handled in refresh flow</span></div>
     <div>  <span class="text-muted">jira/AUTH-89</span> <span class="text-text">Refactor auth middleware for SSO support</span></div>
   </TerminalChrome>
@@ -106,7 +106,7 @@ const pipelineSteps = [
     <div class="bandit-provider">
       <div class="bandit-bar" style="width: 62%;"></div>
       <span class="bandit-label">Jira</span>
-      <span class="bandit-score" style="color: var(--color-accent-2);">0.62</span>
+      <span class="bandit-score text-text-bright">0.62</span>
     </div>
     <div class="bandit-provider">
       <div class="bandit-bar" style="width: 34%;"></div>
@@ -128,7 +128,7 @@ const pipelineSteps = [
     <div><span class="text-accent">ctx_read</span> src/middleware.rs</div>
     <div><span class="text-accent">ctx_search</span> "authenticate"</div>
     <div class="term-divider"></div>
-    <div><span class="text-muted" style="color: var(--color-accent-2);">cortex prediction:</span></div>
+    <div><span class="text-accent">cortex prediction:</span></div>
     <div>  <span class="text-muted">→</span> prefetch github issues tagged <span class="text-accent">"authentication"</span></div>
     <div>  <span class="text-muted">→</span> prefetch jira sprint items for <span class="text-accent">"auth"</span></div>
     <div>  <span class="text-muted">→</span> preload <span class="text-accent">src/routes/login.rs</span></div>
@@ -227,7 +227,7 @@ const pipelineSteps = [
     transition: width 0.5s ease;
   }
   .bandit-hot .bandit-bar {
-    background: linear-gradient(90deg, var(--color-accent), var(--color-accent-2));
+    background: linear-gradient(90deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 35%, transparent));
   }
   .bandit-label {
     font-size: 0.8125rem;

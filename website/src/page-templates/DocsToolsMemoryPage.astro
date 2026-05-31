@@ -38,15 +38,16 @@ const sidebar = [
 
   <h2 id="memory-runtime">Memory Runtime (Autopilot)</h2>
   <p>
-    The Memory Runtime is a biologically-inspired memory model that runs <strong>silently</strong> in the
-    background. No verbose outputs, no agent compliance needed - install and it just works.
+    The Memory Runtime runs <strong>silently</strong> in the background — it records what matters,
+    keeps the useful facts close, and lets the rest fade. No verbose output, no agent setup needed:
+    install and it just works.
   </p>
   <ul>
     <li><strong>Ingestion</strong>: Tool receipts + compact session signals are recorded automatically.</li>
     <li><strong>Deterministic Salience Tagging</strong>: Every fact gets a salience score based on frequency, recency, and confirmation count. High-salience facts surface first; low-salience facts decay into archives.</li>
     <li><strong>Consolidation Engine</strong>: <code>consolidate_latest</code> promotes salient findings/decisions into permanent <code>ctx_knowledge</code> (budgeted, no prose).</li>
     <li><strong>Adaptive Forgetting</strong>: Active sets stay small via time-decay and salience thresholds. Low-value facts are archived (not deleted) and can be rehydrated on demand.</li>
-    <li><strong>Dual-Process Retrieval</strong>: Fast <strong>System-1</strong> recall (keyword + salience lookup) for immediate answers. Deep <strong>System-2</strong> recall (semantic search + archive rehydration) when System-1 misses.</li>
+    <li><strong>Fast &amp; deep recall</strong>: A fast keyword + salience lookup answers most queries instantly; a deeper semantic search (with archive rehydration) kicks in only when the fast path misses.</li>
     <li><strong>Prospective Memory</strong>: The system remembers pending tasks and surfaces them at the right moment - e.g., "you planned to add error handling to this function" when the file is read again.</li>
     <li><strong>Structured Intent Layer</strong>: Current task context flows through the entire pipeline, so all read modes, compression, and retrieval are task-aware without explicit configuration.</li>
   </ul>

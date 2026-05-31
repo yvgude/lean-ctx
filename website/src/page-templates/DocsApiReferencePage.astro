@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../layouts/DocsLayout.astro';
+import DocsCallout from '../components/DocsCallout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -35,6 +36,10 @@ const sidebar = [
 <DocsLayout title="API Reference — LeanCTX" description="REST API endpoints, authentication, rate limiting, and TypeScript SDK reference for the LeanCTX Team Server." sidebar={sidebar}>
 
   <p>The LeanCTX Team Server exposes a REST API for programmatic access to sessions, events, tools, and knowledge. All endpoints are available when the Team Server is running.</p>
+
+  <DocsCallout variant="note" title="Most users don't need this">
+    <p>The REST API is for <strong>teams running the Team Server</strong> — CI bots, dashboards, and custom integrations. For everyday coding, use the MCP tools in your editor or the <a href={lp('/docs/cli-reference')}>CLI</a> instead.</p>
+  </DocsCallout>
 
   <h2 id="auth">Authentication</h2>
   <p>All API requests require a bearer token in the <code>Authorization</code> header. Create tokens with the CLI:</p>

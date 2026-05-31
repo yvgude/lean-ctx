@@ -20,9 +20,10 @@ interface Props {
   description?: string;
   keywords?: string;
   sidebar?: SidebarSection[];
+  hideHero?: boolean;
 }
 
-const { title, description, keywords, sidebar } = Astro.props;
+const { title, description, keywords, sidebar, hideHero } = Astro.props;
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
@@ -42,24 +43,32 @@ const breadcrumbs = [
   breadcrumbs={breadcrumbs}
   hideAscii={true}
 >
-  <PageHero
-    label={t('docs.documentation')}
-    title={title}
-    description={description}
-    kickerTone="accent"
-    container="wide"
-    sectionClass="section-y-xs"
-    titleMaxWidth="56rem"
-    descMaxWidth="56rem"
-    breakHighlight={false}
-  />
+  {!hideHero && (
+    <PageHero
+      label={t('docs.documentation')}
+      title={title}
+      description={description}
+      kickerTone="accent"
+      container="wide"
+      sectionClass="section-y-xs"
+      titleMaxWidth="56rem"
+      descMaxWidth="56rem"
+      breakHighlight={false}
+    />
+  )}
 
-  <div class="content-grid-wide" style="padding-bottom: clamp(3rem, 2rem + 2vw, 5rem);">
-    <div class="lg:grid lg:grid-cols-[240px_1fr] lg:gap-12">
+  <div class="content-grid-wide" style={`padding-bottom: clamp(3rem, 2rem + 2vw, 5rem);${hideHero ? ' padding-top: clamp(2rem, 1.5rem + 1.5vw, 3.5rem);' : ''}`}>
+    <div class="docs-shell">
       <DocsSidebar sections={sidebar} />
       <article class="min-w-0 docs-prose">
         <slot />
       </article>
+      <aside class="docs-toc" aria-label="On this page">
+        <div class="docs-toc__inner">
+          <p class="docs-toc__label">On this page</p>
+          <nav class="docs-toc__nav" id="docs-toc-nav"></nav>
+        </div>
+      </aside>
     </div>
   </div>
 </BaseLayout>
@@ -83,6 +92,61 @@ const breadcrumbs = [
   }
   .heading-anchor:hover {
     opacity: 1 !important;
+  }
+
+  /* Docs shell: sidebar | content | on-this-page */
+  .docs-shell { display: block; }
+  @media (min-width: 1024px) {
+    .docs-shell {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 3rem;
+    }
+  }
+  @media (min-width: 1280px) {
+    .docs-shell { grid-template-columns: 240px minmax(0, 1fr) 220px; }
+  }
+
+  .docs-toc { display: none; }
+  @media (min-width: 1280px) {
+    .docs-toc { display: block; }
+  }
+  .docs-toc__inner {
+    position: sticky;
+    top: 6rem;
+    max-height: calc(100vh - 8rem);
+    overflow-y: auto;
+    padding-inline-start: 1rem;
+    border-inline-start: 1px solid var(--color-border);
+  }
+  .docs-toc__label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+    margin: 0 0 0.75rem;
+  }
+  .docs-toc__nav { display: flex; flex-direction: column; }
+  .docs-toc__nav a {
+    display: block;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--color-muted);
+    text-decoration: none;
+    padding: 0.3rem 0 0.3rem 1rem;
+    margin-inline-start: -1rem;
+    border-inline-start: 2px solid transparent;
+    transition: color 0.18s ease, border-color 0.18s ease;
+  }
+  .docs-toc__nav a:hover { color: var(--color-text-bright); }
+  .docs-toc__nav a.lvl-3 { padding-inline-start: 1.875rem; font-size: 0.78125rem; }
+  .docs-toc__nav a.is-active {
+    color: var(--color-accent);
+    border-inline-start-color: var(--color-accent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .docs-toc__nav a { transition: none; }
   }
 </style>
 
@@ -126,6 +190,45 @@ const breadcrumbs = [
       anchor.textContent = '#';
       heading.appendChild(anchor);
     });
+
+    // Build "On this page" TOC from h2/h3 + scroll-spy
+    const tocNav = document.getElementById('docs-toc-nav');
+    if (tocNav) {
+      const tocHeadings = Array.from(article.querySelectorAll('h2, h3')).filter(
+        (h) => h.getAttribute('id'),
+      );
+      const links: HTMLAnchorElement[] = [];
+      tocHeadings.forEach((h) => {
+        const id = h.getAttribute('id')!;
+        const a = document.createElement('a');
+        a.href = `#${id}`;
+        a.textContent = h.textContent?.replace(/#/g, '').trim() || '';
+        a.className = h.tagName === 'H3' ? 'lvl-3' : 'lvl-2';
+        a.dataset.target = id;
+        tocNav.appendChild(a);
+        links.push(a);
+      });
+
+      if (links.length < 2) {
+        const aside = tocNav.closest('.docs-toc');
+        if (aside) (aside as HTMLElement).style.display = 'none';
+      } else {
+        const byId = new Map<string, HTMLAnchorElement>();
+        links.forEach((a) => byId.set(a.dataset.target!, a));
+        const observer = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              const id = entry.target.getAttribute('id');
+              if (!id || !entry.isIntersecting) return;
+              links.forEach((l) => l.classList.remove('is-active'));
+              byId.get(id)?.classList.add('is-active');
+            });
+          },
+          { rootMargin: '-80px 0px -70% 0px', threshold: 0 },
+        );
+        tocHeadings.forEach((h) => observer.observe(h));
+      }
+    }
 
     if (window.location.hash) {
       const target = document.getElementById(window.location.hash.slice(1));

@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../layouts/DocsLayout.astro';
+import DocsCallout from '../components/DocsCallout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -94,10 +95,11 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
 ---
 
 <DocsLayout
-  title={`${toolName} - Tool Reference`}
+  title={`${toolName} — Tool Reference`}
   description={`${tool.description.slice(0, 160)}`}
   keywords={`${toolName}, lean-ctx tool, MCP tool, ${categoryLabel.toLowerCase()}, AI token compression`}
   sidebar={sidebar}
+  hideHero={true}
 >
   <!-- Breadcrumb -->
   <nav class="text-xs text-muted mb-4" aria-label="Breadcrumb">
@@ -109,17 +111,13 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
   </nav>
 
   <!-- Tool Header -->
-  <div class="flex items-start gap-4 mb-6">
-    <div class="flex-1">
-      <div class="flex items-center gap-3 mb-2">
-        <code class="text-2xl font-bold text-accent">{toolName}</code>
-        <span class="px-2 py-0.5 text-xs rounded-full bg-accent/10 text-accent border border-accent/20">
-          {categoryLabel}
-        </span>
-      </div>
-      <p class="text-muted leading-relaxed">{tool.description}</p>
+  <header class="mb-8 not-prose">
+    <div class="flex items-center gap-3 flex-wrap mb-3">
+      <h1 class="font-mono font-bold text-text-bright" style="font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem); letter-spacing: -0.02em; margin: 0;">{toolName}</h1>
+      <span class="kicker-pill">{categoryLabel}</span>
     </div>
-  </div>
+    <p class="text-muted leading-relaxed" style="max-width: 52rem;">{tool.description}</p>
+  </header>
 
   <!-- Quick Facts -->
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
@@ -140,29 +138,23 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
     {enrichment?.token_impact && (
       <div class="bg-surface/50 rounded-lg p-3 border border-border/30">
         <div class="text-xs text-muted mb-1">Token Impact</div>
-        <div class="text-sm font-semibold text-emerald-400">{enrichment.token_impact}</div>
+        <div class="text-sm font-semibold" style="color: var(--color-accent);">{enrichment.token_impact}</div>
       </div>
     )}
   </div>
 
   <!-- When to Use / When Not to Use -->
   {enrichment && (enrichment.when_to_use || enrichment.when_not_to_use) && (
-    <div class="grid sm:grid-cols-2 gap-4 mb-8">
+    <div class="grid sm:grid-cols-2 gap-4 mb-8 not-prose">
       {enrichment.when_to_use && (
-        <div class="bg-emerald-500/5 rounded-lg p-4 border border-emerald-500/20">
-          <h3 class="text-sm font-semibold text-emerald-400 mb-2 flex items-center gap-2">
-            <span>✓</span> When to Use
-          </h3>
-          <p class="text-sm text-muted leading-relaxed">{enrichment.when_to_use}</p>
-        </div>
+        <DocsCallout variant="note" title="When to use" style="margin: 0;">
+          <p>{enrichment.when_to_use}</p>
+        </DocsCallout>
       )}
       {enrichment.when_not_to_use && (
-        <div class="bg-amber-500/5 rounded-lg p-4 border border-amber-500/20">
-          <h3 class="text-sm font-semibold text-amber-400 mb-2 flex items-center gap-2">
-            <span>✗</span> When Not to Use
-          </h3>
-          <p class="text-sm text-muted leading-relaxed">{enrichment.when_not_to_use}</p>
-        </div>
+        <DocsCallout variant="warn" title="When not to use" style="margin: 0;">
+          <p>{enrichment.when_not_to_use}</p>
+        </DocsCallout>
       )}
     </div>
   )}

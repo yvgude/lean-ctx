@@ -214,14 +214,14 @@ block_at_percent = 100  # tools will be blocked at 100%</code></pre>
     margin: 1rem 0 1.5rem;
   }
   .event-card.warning {
-    background: rgba(234, 179, 8, 0.08);
-    border: 1px solid rgba(234, 179, 8, 0.25);
-    color: #eab308;
+    background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
+    color: var(--color-warning);
   }
   .event-card.violation {
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.25);
-    color: #ef4444;
+    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 28%, transparent);
+    color: var(--color-danger);
   }
   .event-icon {
     font-weight: 700;
