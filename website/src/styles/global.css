@@ -41,6 +41,50 @@
 
   --card-radius: 8px;
   --card-radius-lg: 12px;
+
+  /* ── Editorial design system — see design/STYLEGUIDE.md ──── */
+  /* Data-viz ONLY. UI must use --color-accent; never indigo/purple. */
+  --viz-primary: var(--color-accent);
+  --viz-muted: var(--color-muted);
+  --viz-indigo: var(--color-accent-2);
+  --viz-purple: var(--color-accent-3);
+  --viz-danger: var(--color-danger);
+
+  /* Fluid type scale */
+  --text-display: clamp(2.75rem, 1.9rem + 3.8vw, 5rem);
+  --text-h1: clamp(2.25rem, 1.7rem + 2.4vw, 3.5rem);
+  --text-h2: clamp(1.75rem, 1.4rem + 1.6vw, 2.5rem);
+  --text-h3: clamp(1.3rem, 1.15rem + 0.7vw, 1.6rem);
+  --text-h4: 1.125rem;
+  --text-body-lg: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem);
+  --text-caption: 0.75rem;
+
+  /* Spacing scale (8px base) — used via var(), not Tailwind spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+  --space-10: 8rem;
+
+  /* Layout containers */
+  --container: 1200px;
+  --container-prose: 760px;
+  --container-wide: 1320px;
+
+  /* Radius */
+  --radius-pill: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur: 220ms;
+  --dur-slow: 420ms;
 }
 
 

@@ -1,0 +1,63 @@
+---
+/**
+ * StatTriplet — a row of 2–4 proof numbers (see design/STYLEGUIDE.md §7).
+ * Numbers in bright tabular-nums; labels in mono caption. Real figures only.
+ */
+interface Stat {
+  value: string;
+  label: string;
+}
+
+interface Props {
+  stats: Stat[];
+  class?: string;
+}
+
+const { stats, class: className = '' } = Astro.props;
+---
+
+<dl class={`lc-stats ${className}`}>
+  {
+    stats.map((s, i) => (
+      <div class={`lc-stats__item animate-entrance stagger-${Math.min(i + 1, 4)}`}>
+        <dt class="lc-stats__value font-display">{s.value}</dt>
+        <dd class="lc-stats__label">{s.label}</dd>
+      </div>
+    ))
+  }
+</dl>
+
+<style>
+  .lc-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: clamp(1.5rem, 4vw, 3rem);
+    margin: 0;
+  }
+
+  .lc-stats__item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .lc-stats__value {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--color-text-bright);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lc-stats__label {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    line-height: 1.4;
+  }
+</style>
