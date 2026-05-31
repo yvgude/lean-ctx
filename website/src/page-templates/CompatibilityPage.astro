@@ -144,9 +144,11 @@ const shellOnlyTools = [
     <div class="grid lg:grid-cols-2 items-center" style="gap: clamp(2rem, 1.5rem + 2vw, 3rem);">
       <div class="terminal-chrome animate-entrance">
         <div class="terminal-header px-4 py-3 flex items-center gap-2">
-          <span class="font-mono text-[10px] text-[#ff5f57]">[x]</span>
-          <span class="font-mono text-[10px] text-[#febc2e]">[-]</span>
-          <span class="font-mono text-[10px] text-[#28c840]">[o]</span>
+          <span class="term-dots" aria-hidden="true">
+            <span class="term-dot"></span>
+            <span class="term-dot"></span>
+            <span class="term-dot term-dot--live"></span>
+          </span>
           <span class="text-xs text-muted font-mono ml-2">lean-ctx setup</span>
         </div>
         <div class="terminal-body px-4 py-4 font-mono text-[12px] leading-[1.8]">

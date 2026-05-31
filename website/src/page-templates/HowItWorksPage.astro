@@ -73,10 +73,12 @@ const faqSchema = JSON.stringify({
     <div class="animate-entrance">
       <div class="terminal-chrome">
         <div class="terminal-header flex items-center gap-2 px-4 py-2.5">
-          <span class="font-mono text-[10px] text-[#ff5f57]">[x]</span>
-          <span class="font-mono text-[10px] text-[#febc2e]">[-]</span>
-          <span class="font-mono text-[10px] text-[#28c840]">[o]</span>
-          <span class="text-muted text-[11px] ml-2 font-mono">data flow - before vs. after</span>
+          <span class="term-dots" aria-hidden="true">
+            <span class="term-dot"></span>
+            <span class="term-dot"></span>
+            <span class="term-dot term-dot--live"></span>
+          </span>
+          <span class="text-muted text-[11px] ml-2 font-mono">data flow — before vs. after</span>
         </div>
         <div class="px-4 sm:px-6 py-4 sm:py-5">
           <pre class="text-[11px] sm:text-[13px] font-mono leading-[1.8] text-text whitespace-pre"><span class="text-muted/60">Without lean-ctx:</span>

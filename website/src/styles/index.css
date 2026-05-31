@@ -343,52 +343,6 @@
   background: var(--color-border);
 }
 
-/* Terminal window controls — neutral dots, emerald "live" (emerald-only system) */
-.term-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-.term-dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--color-muted) 35%, transparent);
-  box-shadow: inset 0 0 0 1px var(--overlay-faint);
-}
-.term-dot--live {
-  background: var(--color-accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
-    0 0 10px color-mix(in srgb, var(--color-accent) 45%, transparent);
-}
-.term-status {
-  margin-inline-start: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-}
-.term-status::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 60%, transparent);
-  animation: term-pulse 2s ease-in-out infinite;
-}
-@keyframes term-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .term-status::before { animation: none; }
-}
-
 .metrics-row {
   display: flex;
   justify-content: space-between;

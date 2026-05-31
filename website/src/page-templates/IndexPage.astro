@@ -523,12 +523,21 @@ const faqJsonLd = JSON.stringify({
 
 <style>
   .hero-headline {
-    font-size: clamp(2.25rem, 1.5rem + 3.4vw, 4.5rem);
-    line-height: 1.05;
-    letter-spacing: -0.035em;
+    font-size: clamp(2.25rem, 1.7rem + 2vw, 3.25rem);
+    line-height: 1.08;
+    letter-spacing: -0.03em;
     font-weight: 600;
     text-wrap: balance;
-    max-width: 18ch;
+    max-width: 24ch;
+  }
+  /* Desktop two-column hero: let the headline use the full content column
+     so the two <br/>-separated lines read wide, not cramped. */
+  @media (min-width: 768px) {
+    .hero-headline { max-width: none; }
+  }
+  /* Wide desktop: pin to exactly two lines (no further wrapping) */
+  @media (min-width: 1280px) {
+    .hero-headline { white-space: nowrap; }
   }
   .hero-headline em {
     font-style: italic;
