@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JOURNEYS SSOT — the 14 code-grounded user journeys.
+// JOURNEYS SSOT — the 15 code-grounded user journeys.
 //
 // Mirrors docs/reference/README.md ("Every Function, Every Path"). These are the
 // content/SEO backbone of the site: every CLI command and MCP tool appears in at
@@ -176,6 +176,16 @@ export const journeys: Journey[] = [
     covers: ['memory_profile', 'bm25_max_cache_mb', 'graph_index_max_files', 'LEAN_CTX_MAX_*', 'slow-log'],
     trackId: 'operate-govern', pillars: ['compress', 'govern'],
     href: '/docs/performance-tuning', refDoc: '14-performance-tuning',
+  },
+  {
+    num: 15, slug: 'multi-repo-workspace', title: 'Multi-Repo Workspaces',
+    persona: 'working across multiple repos in one parent folder',
+    summary: 'Auto-detect, extra_roots and graph indexing across independent repos.',
+    intro:
+      'Work seamlessly across multiple independent repos under a single parent folder. LeanCTX auto-detects multi-repo workspaces, indexes all repos, and lets tools like search and graph span your entire workspace.',
+    covers: ['extra_roots', 'multi-repo', 'graph_index', 'project root', 'PathJail'],
+    trackId: 'scale-teams', pillars: ['perceive', 'route'],
+    href: '/docs/configuration', refDoc: '15-multi-repo-workspace',
   },
 ];
 
