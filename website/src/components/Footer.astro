@@ -78,43 +78,37 @@ const year = new Date().getFullYear();
     <div class="footer-bottom">
       <p class="footer-copy">&copy; {year} lean-ctx &middot; Apache-2.0 &middot; <a href={lp('/privacy')} style="color:inherit;text-decoration:none;">{t('footer.privacy')}</a> &middot; <a href={lp('/terms')} style="color:inherit;text-decoration:none;">Terms</a> &middot; <a href={lp('/imprint')} style="color:inherit;text-decoration:none;">Imprint</a> &middot; {t('footer.madeWith')}</p>
       <p class="footer-swiss"><svg class="swiss-flag" viewBox="0 0 32 32" width="13" height="13" aria-hidden="true"><rect width="32" height="32" rx="4" fill="#D52B1E"/><rect x="6" y="13" width="20" height="6" rx="1" fill="#fff"/><rect x="13" y="6" width="6" height="20" rx="1" fill="#fff"/></svg> {t('footer.madeInSwitzerland')}</p>
-      <div class="footer-bottom-links">
-        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="footer-ascii-link">[git]</a>
-        <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="footer-ascii-link">[dsc]</a>
-      </div>
     </div>
   </div>
 </footer>
 
 <style>
-  .footer-root { border-top: 1px solid var(--color-border); background: var(--color-bg); }
-  .footer-inner { padding-top: clamp(5rem, 3.5rem + 6vw, 10rem); padding-bottom: clamp(2rem, 1.5rem + 1.5vw, 3.5rem); }
-  .footer-top { display: grid; grid-template-columns: 1fr; gap: clamp(3rem, 2rem + 3vw, 5rem); margin-bottom: clamp(4rem, 3rem + 3vw, 7rem); }
-  @media (min-width: 768px) { .footer-top { grid-template-columns: 1.5fr 3fr; gap: clamp(4rem, 3rem + 4vw, 8rem); } }
-  .footer-brand { display: flex; flex-direction: column; gap: 0.75rem; }
+  .footer-root { position: relative; border-top: 1px solid var(--color-border); background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 55%, var(--color-bg)) 0%, var(--color-bg) 55%); }
+  .footer-root::before { content: ""; position: absolute; top: -1px; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent); }
+  .footer-inner { padding-top: clamp(2.75rem, 2rem + 2vw, 4rem); padding-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); }
+  .footer-top { display: grid; grid-template-columns: 1fr; gap: clamp(2.25rem, 1.75rem + 2vw, 3.25rem); margin-bottom: clamp(2.25rem, 1.75rem + 1.5vw, 3.25rem); }
+  @media (min-width: 768px) { .footer-top { grid-template-columns: 1.4fr 3fr; gap: clamp(2.5rem, 1.5rem + 3vw, 5rem); align-items: start; } }
+  .footer-brand { display: flex; flex-direction: column; gap: 0.85rem; }
   .footer-logo { display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; }
   .footer-logo-ascii { font-family: var(--font-mono); font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem); font-weight: 700; color: var(--color-text-bright); line-height: 1; font-variant-ligatures: none; -webkit-font-feature-settings: "liga" 0, "clig" 0; font-feature-settings: "liga" 0, "clig" 0; }
   .footer-logo-text { font-size: clamp(0.9rem, 0.85rem + 0.2vw, 1.1rem); font-weight: 700; }
-  .footer-tagline { font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem); color: var(--color-muted); line-height: 1.5; max-width: 18rem; }
-  .footer-social { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; }
-  .footer-social li { display: inline-flex; align-items: center; }
-  .footer-social li:not(:last-child)::after { content: "·"; margin-inline-start: 0.75rem; color: var(--color-border-light); }
-  .footer-social a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease; }
-  .footer-social a:hover { color: var(--color-accent); }
+  .footer-tagline { font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem); color: var(--color-muted); line-height: 1.55; max-width: 22rem; }
+  .footer-social { list-style: none; padding: 0; margin: 0.35rem 0 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .footer-social li { display: inline-flex; }
+  .footer-social a { font-size: 0.75rem; line-height: 1; color: var(--color-muted); text-decoration: none; padding: 0.34rem 0.62rem; border: 1px solid var(--color-border); border-radius: 999px; transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease; }
+  .footer-social a:hover { color: var(--color-accent); border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
   .footer-columns { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(1.5rem, 1rem + 1.5vw, 3rem); }
   @media (max-width: 640px) { .footer-columns { grid-template-columns: 1fr 1fr; } }
-  .footer-col-title { font-family: var(--font-display); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-bright); margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); }
+  .footer-col-title { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--font-display); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-bright); margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.1rem); }
+  .footer-col-title::before { content: ""; width: 0.6rem; height: 1px; background: var(--color-accent); opacity: 0.7; }
   .footer-links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: clamp(0.375rem, 0.25rem + 0.2vw, 0.5rem); }
-  .footer-links a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease; }
-  .footer-links a:hover { color: var(--color-accent); }
-  .footer-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--color-border), transparent); margin-bottom: clamp(1.5rem, 1rem + 1vw, 2.5rem); }
+  .footer-links a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease, transform 0.15s ease; }
+  .footer-links a:hover { color: var(--color-accent); transform: translateX(2px); }
+  .footer-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--color-border), transparent); margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem); }
   .footer-bottom { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
   @media (min-width: 640px) { .footer-bottom { flex-direction: row; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1.5rem; } }
-  .footer-copy { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.7; margin: 0; }
-  .footer-swiss { display: inline-flex; align-items: center; gap: 0.35rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.7; margin: 0; }
+  .footer-copy { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.75; margin: 0; }
+  .footer-copy a:hover { color: var(--color-accent); }
+  .footer-swiss { display: inline-flex; align-items: center; gap: 0.35rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.75; margin: 0; }
   .swiss-flag { flex-shrink: 0; }
-  .footer-bottom-links { display: flex; align-items: center; gap: 0.75rem; }
-  .footer-bottom-links a { color: var(--color-muted); transition: color 0.15s ease; opacity: 0.7; }
-  .footer-bottom-links a:hover { color: var(--color-text-bright); opacity: 1; }
-  .footer-ascii-link { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; text-decoration: none; }
 </style>
