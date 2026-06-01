@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * CI validation: ensures every tool in mcp-tools.json has a corresponding
- * documentation page generated in src/pages/docs/tools/.
+ * Docs coverage guard (redirect-era).
+ *
+ * The site no longer generates one standalone page per tool, and there is no
+ * [locale] route tree (locales collapsed to en-only). Per-tool *reachability* is
+ * enforced by validate-manifest.mjs (page or redirect). This guard checks the
+ * complementary half:
+ *   - every category hub page exists, and
+ *   - every /docs/tools/<slug> redirect points at a hub page that actually exists
+ *     (no dangling redirects).
  */
 
 import fs from 'node:fs';
@@ -11,77 +18,40 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-
-const manifestPath = path.join(ROOT, 'generated', 'mcp-tools.json');
-const rootPagesDir = path.join(ROOT, 'src', 'pages', 'docs', 'tools');
-const localePagesDir = path.join(ROOT, 'src', 'pages', '[locale]', 'docs', 'tools');
+const toolsPagesDir = path.join(ROOT, 'src', 'pages', 'docs', 'tools');
+const astroConfig = fs.readFileSync(path.join(ROOT, 'astro.config.mjs'), 'utf-8');
 
 let errors = 0;
+const fail = (m) => {
+  console.error(`  FAIL: ${m}`);
+  errors++;
+};
+const ok = (m) => console.log(`  OK: ${m}`);
 
-console.log('Validating docs coverage...\n');
+console.log('Validating docs coverage (category hubs + redirect targets)...\n');
 
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-const tools = manifest.tools.granular;
-
-const existingRootPages = fs.readdirSync(rootPagesDir)
-  .filter(f => f.endsWith('.astro'))
-  .map(f => f.replace('.astro', ''));
-
-const existingLocalePages = fs.readdirSync(localePagesDir)
-  .filter(f => f.endsWith('.astro'))
-  .map(f => f.replace('.astro', ''));
+const pageExists = (rel) =>
+  fs.existsSync(path.join(ROOT, 'src', 'pages', `${rel}.astro`)) ||
+  fs.existsSync(path.join(ROOT, 'src', 'pages', rel, 'index.astro'));
 
 const categoryPages = ['core', 'intelligence', 'session', 'memory', 'workflow', 'analysis'];
-
-for (const tool of tools) {
-  const slug = tool.name.replace(/_/g, '-');
-  const hasRootPage = existingRootPages.includes(slug);
-  const hasLocalePage = existingLocalePages.includes(slug);
-
-  if (hasRootPage && hasLocalePage) {
-    console.log(`  OK: ${tool.name} → /docs/tools/${slug} and /[locale]/docs/tools/${slug}`);
-  } else {
-    if (!hasRootPage) {
-      console.error(`  MISSING: ${tool.name} has no root page at /docs/tools/${slug}`);
-      errors++;
-    }
-    if (!hasLocalePage) {
-      console.error(`  MISSING: ${tool.name} has no localized template at /[locale]/docs/tools/${slug}`);
-      errors++;
-    }
-  }
-}
-
-console.log(`\nCategory pages:`);
 for (const cat of categoryPages) {
-  const hasRootPage = existingRootPages.includes(cat);
-  const hasLocalePage = existingLocalePages.includes(cat);
+  if (fs.existsSync(path.join(toolsPagesDir, `${cat}.astro`))) ok(`category hub /docs/tools/${cat}`);
+  else fail(`missing category hub /docs/tools/${cat}`);
+}
 
-  if (hasRootPage && hasLocalePage) {
-    console.log(`  OK: /docs/tools/${cat} and /[locale]/docs/tools/${cat}`);
-  } else {
-    if (!hasRootPage) {
-      console.error(`  MISSING: /docs/tools/${cat}`);
-      errors++;
-    }
-    if (!hasLocalePage) {
-      console.error(`  MISSING: /[locale]/docs/tools/${cat}`);
-      errors++;
-    }
+const redirects = [
+  ...astroConfig.matchAll(/['"](\/docs\/tools\/[a-z0-9-]+)\/?['"]\s*:\s*['"]([^'"]+)['"]/g),
+];
+let dangling = 0;
+for (const [, from, to] of redirects) {
+  const rel = to.replace(/^\//, '').replace(/\/+$/, '');
+  if (!pageExists(rel)) {
+    fail(`redirect ${from} → ${to} has no target page`);
+    dangling++;
   }
 }
+if (dangling === 0) ok(`all ${redirects.length} tool redirects resolve to a real page`);
 
-const extraLocaleOnly = existingLocalePages.filter(name => !existingRootPages.includes(name));
-const extraRootOnly = existingRootPages.filter(name => !existingLocalePages.includes(name));
-if (extraLocaleOnly.length > 0) {
-  console.error(`\nMISMATCH: locale-only pages without root equivalent: ${extraLocaleOnly.join(', ')}`);
-  errors++;
-}
-if (extraRootOnly.length > 0) {
-  console.error(`\nMISMATCH: root-only pages without locale equivalent: ${extraRootOnly.join(', ')}`);
-  errors++;
-}
-
-console.log(`\n${tools.length} tools checked, ${categoryPages.length} categories checked`);
-console.log(`${errors === 0 ? 'All tool docs are covered for root + locale routes' : `${errors} coverage check(s) failed`}`);
+console.log(`\n${errors === 0 ? 'All docs-coverage checks passed' : `${errors} check(s) failed`}`);
 process.exit(errors > 0 ? 1 : 0);

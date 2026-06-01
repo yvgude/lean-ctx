@@ -145,11 +145,11 @@ lean-ctx find "test_*" .</code></pre>
   <h3 id="ls"><code>lean-ctx ls [path] [--all|-a] [--depth N] [--no-gitignore]</code></h3>
   <p>{t('docs.cliReference.lsDesc')}</p>
   <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>--all</code> / <code>-a</code></td><td>Include hidden files (dotfiles)</td></tr>
-      <tr><td><code>--depth N</code></td><td>Limit directory tree depth (default: 3)</td></tr>
-      <tr><td><code>--no-gitignore</code></td><td>Show all files regardless of <code>.gitignore</code> rules. Useful for inspecting build artifacts, <code>node_modules/</code>, or <code>target/</code> directories.</td></tr>
+      <tr><td><code>--all</code> / <code>-a</code></td><td set:html={t('docs.cliReference.lsAllDesc')} /></tr>
+      <tr><td><code>--depth N</code></td><td set:html={t('docs.cliReference.lsDepthDesc')} /></tr>
+      <tr><td><code>--no-gitignore</code></td><td set:html={t('docs.cliReference.lsNoGitignoreDesc')} /></tr>
     </tbody>
   </table>
   <pre><code>lean-ctx ls
@@ -157,12 +157,7 @@ lean-ctx ls src/components/
 lean-ctx ls --all .
 lean-ctx ls --depth 5 src/
 lean-ctx ls --no-gitignore build/</code></pre>
-  <p class="text-sm text-muted">
-    <strong>Note:</strong> <code>lean-ctx ls</code> is a compressed tree view, not a drop-in <code>ls</code> replacement.
-    Flags like <code>-la</code>, <code>-l</code>, <code>-R</code> are rejected with a clear error. Use the shell
-    hook (<code>ls -la</code> directly) for standard <code>ls</code> behavior. By default, <code>.gitignore</code>
-    rules are respected — use <code>--no-gitignore</code> to override.
-  </p>
+  <p class="text-sm text-muted" set:html={t('docs.cliReference.lsNote')} />
 
   <h3 id="deps"><code>lean-ctx deps [path]</code></h3>
   <p>{t('docs.cliReference.depsDesc')}</p>
@@ -208,18 +203,8 @@ lean-ctx deps frontend/</code></pre>
     <li>{t('docs.cliReference.setupStep2')}</li>
     <li><Fragment set:html={t('docs.cliReference.setupStep3')} /></li>
   </ol>
-  <p>
-    Since v3.3.3, the setup wizard includes a <strong>Premium Features</strong> step where you can
-    configure <a href={lp('/docs/configuration') + '#terse-agent'}>Terse Agent Mode</a>,
-    <a href={lp('/docs/configuration') + '#archive'}>Tool Result Archive</a>, and
-    Output Density interactively.
-  </p>
-  <p>
-    Since v3.5.16, setup also configures <strong>Shell Activation</strong> — you can choose when
-    lean-ctx shell aliases auto-activate: <code>always</code> (default), <code>agents-only</code>
-    (only when AI agent env vars are detected), or <code>off</code> (manual via <code>lean-ctx-on</code>).
-    See <a href={lp('/docs/configuration') + '#shell-activation'}>Shell Activation</a> for details.
-  </p>
+  <p set:html={t('docs.cliReference.setupPremiumNote')} />
+  <p set:html={t('docs.cliReference.setupShellActivationNote')} />
 
   <h3 id="init"><code>lean-ctx init [--global | &lt;shell&gt;] [--style=auto|inline|dropin]</code></h3>
   <p>{t('docs.cliReference.initDesc')}</p>
@@ -243,7 +228,7 @@ lean-ctx init powershell | Invoke-Expression  # PowerShell: add to $PROFILE</cod
   <h4 id="init-style">{t('docs.cliReference.initStyleTitle')}</h4>
   <p><Fragment set:html={t('docs.cliReference.initStyleDesc')} /></p>
   <table>
-    <thead><tr><th>Style</th><th>Behavior</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thStyle')}</th><th>{t('docs.cliReference.thBehavior')}</th></tr></thead>
     <tbody>
       <tr><td><code>auto</code></td><td>{t('docs.cliReference.initStyleAuto')}</td></tr>
       <tr><td><code>inline</code></td><td>{t('docs.cliReference.initStyleInline')}</td></tr>
@@ -254,7 +239,7 @@ lean-ctx init powershell | Invoke-Expression  # PowerShell: add to $PROFILE</cod
   <h3 id="init-agent"><code>lean-ctx init --agent &lt;name&gt;</code></h3>
   <p>{t('docs.cliReference.initAgentDesc')}</p>
   <table>
-    <thead><tr><th>Agent</th><th>Notes</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thAgent')}</th><th>{t('docs.cliReference.thNotes')}</th></tr></thead>
     <tbody>
       <tr><td><code>cursor</code></td><td>Cursor IDE (default MCP setup)</td></tr>
       <tr><td><code>claude</code></td><td>Claude Code / Claude Desktop</td></tr>
@@ -311,20 +296,20 @@ lean-ctx config set ultra_compact true # enable ultra-compact mode
 lean-ctx config set tee_on_error true  # log errors to ~/.lean-ctx/tee/
 lean-ctx config set checkpoint_interval 20</code></pre>
 
-  <h4>Settable Configuration Keys</h4>
-  <p class="text-sm text-muted">Since v3.6.23, <code>config set</code> accepts <strong>any</strong> key defined in the config schema (run <code>lean-ctx config schema</code> for the full list). Values are validated by type, and enum keys list their allowed values on invalid input. Commonly used keys:</p>
+  <h4>{t('docs.cliReference.settableConfigKeysTitle')}</h4>
+  <p class="text-sm text-muted" set:html={t('docs.cliReference.settableConfigKeysIntro')} />
   <table>
-    <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thKey')}</th><th>{t('docs.cliReference.thType')}</th><th>{t('docs.cliReference.thDefault')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>ultra_compact</code></td><td>bool</td><td><code>false</code></td><td>Enable ultra-compact output mode for maximum token savings</td></tr>
-      <tr><td><code>tee_mode</code></td><td>string</td><td><code>"off"</code></td><td>Tee logging mode: <code>off</code>, <code>on_error</code>, <code>always</code></td></tr>
-      <tr><td><code>checkpoint_interval</code></td><td>int</td><td><code>15</code></td><td>Number of MCP calls between automatic checkpoints</td></tr>
-      <tr><td><code>theme</code></td><td>string</td><td><code>"default"</code></td><td>Dashboard and TUI theme (<code>default</code>, <code>dark</code>, <code>light</code>, <code>neon</code>)</td></tr>
-      <tr><td><code>compression_level</code></td><td>enum</td><td><code>"standard"</code></td><td>Output compression level: <code>off</code>, <code>lite</code>, <code>standard</code>, <code>max</code></td></tr>
-      <tr><td><code>profile</code></td><td>string</td><td><code>"coder"</code></td><td>Active profile (e.g. <code>coder</code>, <code>passthrough</code>)</td></tr>
-      <tr><td><code>slow_command_threshold_ms</code></td><td>int</td><td><code>5000</code></td><td>Threshold in milliseconds for slow-log entries</td></tr>
-      <tr><td><code>passthrough_urls</code></td><td>string[]</td><td><code>[]</code></td><td>URL patterns that bypass compression (comma-separated)</td></tr>
-      <tr><td><code>rules_scope</code></td><td>string</td><td><code>"project"</code></td><td>Scope for rules loading: <code>project</code>, <code>global</code>, or <code>both</code></td></tr>
+      <tr><td><code>ultra_compact</code></td><td>bool</td><td><code>false</code></td><td set:html={t('docs.cliReference.cfgUltraCompactDesc')} /></tr>
+      <tr><td><code>tee_mode</code></td><td>string</td><td><code>"off"</code></td><td set:html={t('docs.cliReference.cfgTeeModeDesc')} /></tr>
+      <tr><td><code>checkpoint_interval</code></td><td>int</td><td><code>15</code></td><td set:html={t('docs.cliReference.cfgCheckpointIntervalDesc')} /></tr>
+      <tr><td><code>theme</code></td><td>string</td><td><code>"default"</code></td><td set:html={t('docs.cliReference.cfgThemeDesc')} /></tr>
+      <tr><td><code>compression_level</code></td><td>enum</td><td><code>"standard"</code></td><td set:html={t('docs.cliReference.cfgCompressionLevelDesc')} /></tr>
+      <tr><td><code>profile</code></td><td>string</td><td><code>"coder"</code></td><td set:html={t('docs.cliReference.cfgProfileDesc')} /></tr>
+      <tr><td><code>slow_command_threshold_ms</code></td><td>int</td><td><code>5000</code></td><td set:html={t('docs.cliReference.cfgSlowCmdThresholdDesc')} /></tr>
+      <tr><td><code>passthrough_urls</code></td><td>string[]</td><td><code>[]</code></td><td set:html={t('docs.cliReference.cfgPassthroughUrlsDesc')} /></tr>
+      <tr><td><code>rules_scope</code></td><td>string</td><td><code>"project"</code></td><td set:html={t('docs.cliReference.cfgRulesScopeDesc')} /></tr>
     </tbody>
   </table>
 
@@ -334,27 +319,17 @@ lean-ctx config set passthrough_urls "localhost:3000,api.example.com"
 lean-ctx config set rules_scope both</code></pre>
 
   <h3 id="config-schema"><code>lean-ctx config schema</code> <span class="text-xs font-normal text-muted ml-2">v3.5.21</span></h3>
-  <p>
-    Outputs a complete JSON schema of all configuration keys, including types, defaults, descriptions,
-    and env var overrides. Useful for editor autocompletion and CI validation.
-  </p>
+  <p set:html={t('docs.cliReference.configSchemaDesc')} />
   <pre><code>lean-ctx config schema                     # print full JSON schema to stdout
 lean-ctx config schema > config-schema.json  # save for editor integration</code></pre>
 
   <h3 id="config-validate"><code>lean-ctx config validate</code> <span class="text-xs font-normal text-muted ml-2">v3.5.21</span></h3>
-  <p>
-    Validates <code>config.toml</code> against the schema. Warns about unknown keys with
-    Levenshtein-distance "did you mean?" suggestions. Returns exit code 1 on errors (CI-friendly).
-  </p>
+  <p set:html={t('docs.cliReference.configValidateDesc')} />
   <pre><code>lean-ctx config validate                   # validate ~/.lean-ctx/config.toml
 lean-ctx config validate && echo "OK"      # CI gate - fails on invalid config</code></pre>
 
   <h3 id="config-show"><code>lean-ctx config show</code> <span class="text-xs font-normal text-muted ml-2">v3.6.18</span></h3>
-  <p>
-    Shows all effective configuration values with their source (env, config, or default).
-    Displays simplified high-level settings and their derived downstream limits in a structured view.
-    Useful for understanding how <code>max_disk_mb</code> scales memory limits proportionally.
-  </p>
+  <p set:html={t('docs.cliReference.configShowDesc')} />
   <pre><code>lean-ctx config show                       # show effective values with sources
 lean-ctx config effective                  # alias for 'show'</code></pre>
 
@@ -372,8 +347,8 @@ lean-ctx config effective                  # alias for 'show'</code></pre>
     <li>{t('docs.cliReference.doctorCheck9')}</li>
     <li>{t('docs.cliReference.doctorCheck10')}</li>
     <li>{t('docs.cliReference.doctorCheck11')}</li>
-    <li>Linux: <code>systemctl --user is-active</code> daemon state and <code>loginctl enable-linger</code> warning</li>
-    <li>Crash-loop log: restart count and log file path</li>
+    <li set:html={t('docs.cliReference.doctorCheckLinux')} />
+    <li set:html={t('docs.cliReference.doctorCheckCrashLoop')} />
   </ul>
   <pre><code>lean-ctx doctor
 lean-ctx doctor integrations   # premium integration checks
@@ -385,56 +360,32 @@ lean-ctx doctor --fix --json   # repair + machine-readable report</code></pre>
 lean-ctx update --check # check if a newer version is available (no install)</code></pre>
 
   <h3 id="login"><code>lean-ctx login &lt;email&gt; [--password &lt;pw&gt;]</code> <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h3>
-  <p>
-    Authenticate with lean-ctx Cloud. Only attempts login - does <strong>not</strong> create a new account.
-    If password is omitted, prompts interactively.
-  </p>
+  <p set:html={t('docs.cliReference.loginDesc')} />
   <pre><code>lean-ctx login user@example.com
 lean-ctx login user@example.com --password mypassword</code></pre>
-  <p>
-    On success, saves the API key to <code>~/.lean-ctx/cloud/credentials.json</code> and syncs
-    your data. If your email is not yet verified, you'll receive a reminder to check your inbox.
-  </p>
+  <p set:html={t('docs.cliReference.loginSuccessNote')} />
 
   <h3 id="register"><code>lean-ctx register &lt;email&gt; [--password &lt;pw&gt;]</code> <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h3>
-  <p>
-    Create a new lean-ctx Cloud account. Separate from <code>login</code> - no auto-fallback.
-    A verification email is sent after registration.
-  </p>
+  <p set:html={t('docs.cliReference.registerDesc')} />
   <pre><code>lean-ctx register user@example.com
 lean-ctx register user@example.com --password mypassword</code></pre>
 
   <h3 id="forgot-password"><code>lean-ctx forgot-password &lt;email&gt;</code></h3>
-  <p>
-    Request a password reset email for an existing lean-ctx Cloud account.
-  </p>
+  <p set:html={t('docs.cliReference.forgotPasswordDesc')} />
   <pre><code>lean-ctx forgot-password user@example.com</code></pre>
 
   <h3 id="provider"><code>lean-ctx provider &lt;auth|list|logout&gt;</code> <span class="text-xs font-normal text-muted ml-2">v3.6.25</span></h3>
-  <p>
-    Manage OAuth credentials for context providers. Currently supports <strong>Jira Cloud OAuth 2.0 (3LO)</strong>
-    as an alternative to Basic auth (email + API token).
-  </p>
+  <p set:html={t('docs.cliReference.providerDesc')} />
   <pre><code>lean-ctx provider auth jira      # run the interactive OAuth flow for Jira
 lean-ctx provider list           # show configured providers and credential status
 lean-ctx provider logout jira    # remove stored Jira OAuth credentials</code></pre>
-  <p>
-    <code>provider auth jira</code> opens your browser for consent, captures the redirect on a local
-    loopback port, discovers your accessible site (<code>cloudId</code>), and stores tokens in
-    <code>~/.lean-ctx/credentials/jira-oauth.json</code> (<code>0600</code>). Access tokens are refreshed
-    automatically with refresh-token rotation. lean-ctx ships no embedded client secret — register your own
-    Atlassian OAuth app and provide its credentials via env (see
-    <a href={lp('/docs/configuration') + '#jira-oauth'}>Configuration → Jira OAuth</a>).
-  </p>
-  <p>
-    To select OAuth for a data source, set <code>JIRA_AUTH=oauth</code> (or simply have a stored credential);
-    Basic auth via <code>JIRA_EMAIL</code> + <code>JIRA_API_TOKEN</code> continues to work unchanged.
-  </p>
+  <p set:html={t('docs.cliReference.providerAuthNote')} />
+  <p set:html={t('docs.cliReference.providerAuthNote2')} />
 
   <h3 id="uninstall"><code>lean-ctx uninstall [--keep-config]</code></h3>
   <p><Fragment set:html={t('docs.cliReference.uninstallDesc')} /></p>
-  <p>Removes shell hooks, MCP configurations from all detected editors, <code>.bak</code> files, <code>~/.config/lean-ctx</code>, project-local <code>.lean-ctx/</code> and <code>.lean-ctx-id</code>, Claude CLI MCP entries, and daemon/proxy services.</p>
-  <p>Use <code>--keep-config</code> to preserve MCP configs and rules for reinstall.</p>
+  <p set:html={t('docs.cliReference.uninstallRemoves')} />
+  <p set:html={t('docs.cliReference.uninstallKeepConfig')} />
   <pre><code>lean-ctx uninstall
 lean-ctx uninstall --keep-config</code></pre>
 
@@ -458,13 +409,13 @@ lean-ctx export-rules --project=/path/to/repo  # specify project root</code></pr
   <p>{t('docs.cliReference.exportRulesNote')}</p>
 
   <h3 id="ledger"><code>lean-ctx ledger [status|reset|evict &lt;paths...&gt;|prune]</code></h3>
-  <p>Manage the context pressure ledger. View current pressure, clear entries, evict specific files, or prune stale entries.</p>
+  <p set:html={t('docs.cliReference.ledgerDesc')} />
   <pre><code>lean-ctx ledger                    # show current pressure status
 lean-ctx ledger status             # same as above
 lean-ctx ledger reset              # clear all entries, reset pressure to zero
 lean-ctx ledger evict src/old.rs src/unused.ts  # evict specific paths
 lean-ctx ledger prune              # remove entries for files that no longer exist</code></pre>
-  <p>The <code>evict</code> action also adds exclusion overlays, preventing evicted paths from re-accumulating pressure. Use <code>reset</code> when switching task focus entirely.</p>
+  <p set:html={t('docs.cliReference.ledgerEvictNote')} />
 
   <hr />
 
@@ -523,17 +474,13 @@ lean-ctx gain --json &gt; stats.json      # machine-readable export</code></pre>
 
   <h3 id="cep"><code>lean-ctx cep [--json]</code></h3>
   <p>{t('docs.cliReference.cepDesc')}</p>
-  <p>
-    Internally uses <code>ctx_gain --score</code> to compute the Context Efficiency Protocol score.
-    The CEP score ranges from 0–100 and measures how efficiently context is being utilized across
-    read modes, shell compression, and deduplication.
-  </p>
+  <p set:html={t('docs.cliReference.cepInternalNote')} />
 
   <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>(none)</code></td><td>Pretty-print CEP score with breakdown</td></tr>
-      <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
+      <tr><td><code>(none)</code></td><td set:html={t('docs.cliReference.cepNoneDesc')} /></tr>
+      <tr><td><code>--json</code></td><td set:html={t('docs.cliReference.cepJsonDesc')} /></tr>
     </tbody>
   </table>
 
@@ -544,10 +491,10 @@ lean-ctx cep --json        # JSON output for CI/CD integration</code></pre>
   <p><Fragment set:html={t('docs.cliReference.dashboardDesc')} /></p>
 
   <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>--port=&lt;N&gt;</code></td><td>Custom port (default: 3333)</td></tr>
-      <tr><td><code>--project=&lt;path&gt;</code></td><td>Scope dashboard to a specific project directory instead of the global view</td></tr>
+      <tr><td><code>--port=&lt;N&gt;</code></td><td set:html={t('docs.cliReference.dashboardPortDesc')} /></tr>
+      <tr><td><code>--project=&lt;path&gt;</code></td><td set:html={t('docs.cliReference.dashboardProjectDesc')} /></tr>
     </tbody>
   </table>
 
@@ -682,10 +629,7 @@ lean-ctx filter validate</code></pre>
   <pre><code>lean-ctx discover</code></pre>
 
   <h3 id="ghost"><code>lean-ctx ghost [--json]</code></h3>
-  <p>
-    Reveals hidden token waste in your workflow - shows unoptimized shell commands, redundant reads,
-    and oversized contexts with a monthly USD savings estimate. Use <code>--json</code> for CI integration.
-  </p>
+  <p set:html={t('docs.cliReference.ghostDesc')} />
   <pre><code>lean-ctx ghost
 lean-ctx ghost --json</code></pre>
 
@@ -725,23 +669,23 @@ lean-ctx slow-log clear</code></pre>
   <pre><code>lean-ctx graph build</code></pre>
 
   <h3 id="graph-status"><code>lean-ctx graph status</code></h3>
-  <p>Show graph index statistics: file count, symbol count, edge count, language breakdown, and storage path.</p>
+  <p set:html={t('docs.cliReference.graphStatusDesc')} />
   <pre><code>lean-ctx graph status</code></pre>
 
   <h3 id="graph-related"><code>lean-ctx graph related &lt;file&gt;</code></h3>
-  <p>List files related to a given file based on import/dependency edges in the project graph.</p>
+  <p set:html={t('docs.cliReference.graphRelatedDesc')} />
   <pre><code>lean-ctx graph related src/server/mod.rs</code></pre>
 
   <h3 id="graph-impact"><code>lean-ctx graph impact &lt;file&gt;</code></h3>
-  <p>Show the blast radius — all files that depend on the given file and would be affected by changes to it.</p>
+  <p set:html={t('docs.cliReference.graphImpactDesc')} />
   <pre><code>lean-ctx graph impact src/core/cache.rs</code></pre>
 
   <h3 id="graph-symbol"><code>lean-ctx graph symbol &lt;spec&gt;</code></h3>
-  <p>Inspect a specific symbol definition. The spec format is <code>file.rs::function_name</code>.</p>
+  <p set:html={t('docs.cliReference.graphSymbolDesc')} />
   <pre><code>lean-ctx graph symbol src/core/cache.rs::SessionCache</code></pre>
 
   <h3 id="graph-context"><code>lean-ctx graph context &lt;query&gt;</code></h3>
-  <p>Query the property graph for a concept or keyword. Searches nodes by name and returns matching definitions.</p>
+  <p set:html={t('docs.cliReference.graphContextDesc')} />
   <pre><code>lean-ctx graph context "authentication"</code></pre>
 
   <hr />
@@ -778,23 +722,19 @@ lean-ctx slow-log clear</code></pre>
 
   <hr />
 
-  <h2 id="audit">Audit</h2>
+  <h2 id="audit">{t('docs.cliReference.auditTitle')}</h2>
 
-  <p>
-    Generate a compliance report covering all lean-ctx activity in the current or specified project.
-    The audit report includes file reads, compression ratios, security events, per-agent budget usage,
-    and an OWASP alignment summary.
-  </p>
+  <p>{t('docs.cliReference.auditDesc')}</p>
 
   <h3 id="audit-cmd"><code>lean-ctx audit [flags]</code></h3>
 
   <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>(none)</code></td><td>Print full audit report to stdout</td></tr>
-      <tr><td><code>--period=&lt;p&gt;</code></td><td>Time period: <code>today</code>, <code>week</code>, <code>month</code>, <code>all</code></td></tr>
-      <tr><td><code>--project=&lt;path&gt;</code></td><td>Scope audit to a specific project directory</td></tr>
-      <tr><td><code>--json</code></td><td>Machine-readable JSON output for CI/CD integration</td></tr>
+      <tr><td><code>(none)</code></td><td>{t('docs.cliReference.auditNoneDesc')}</td></tr>
+      <tr><td><code>--period=&lt;p&gt;</code></td><td set:html={t('docs.cliReference.auditPeriodDesc')} /></tr>
+      <tr><td><code>--project=&lt;path&gt;</code></td><td>{t('docs.cliReference.auditProjectDesc')}</td></tr>
+      <tr><td><code>--json</code></td><td>{t('docs.cliReference.auditJsonDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -802,25 +742,20 @@ lean-ctx slow-log clear</code></pre>
 lean-ctx audit --period=week                  # weekly audit
 lean-ctx audit --project=~/my-app --json      # JSON export for CI</code></pre>
 
-  <h3>Report Sections</h3>
+  <h3>{t('docs.cliReference.reportSectionsTitle')}</h3>
   <ul>
-    <li><strong>File Reads</strong> — total reads, unique files, cache hit rate, read modes used</li>
-    <li><strong>Compression Ratios</strong> — per-mode and aggregate token savings</li>
-    <li><strong>Security Events</strong> — cross-project boundary violations, blocked reads, secret detection hits</li>
-    <li><strong>Budget Usage</strong> — per-agent token consumption vs. configured limits</li>
-    <li><strong>OWASP Alignment</strong> — summary of how lean-ctx security controls map to OWASP LLM Top 10 categories</li>
+    <li set:html={t('docs.cliReference.auditReportFileReads')} />
+    <li set:html={t('docs.cliReference.auditReportCompression')} />
+    <li set:html={t('docs.cliReference.auditReportSecurity')} />
+    <li set:html={t('docs.cliReference.auditReportBudget')} />
+    <li set:html={t('docs.cliReference.auditReportOwasp')} />
   </ul>
 
   <hr />
 
-  <h2 id="shell-allowlist">Shell Allowlist</h2>
+  <h2 id="shell-allowlist">{t('docs.cliReference.shellAllowlistTitle')}</h2>
 
-  <p>
-    The <code>shell_allowlist</code> configuration restricts which commands <code>ctx_shell</code>
-    can execute. When enabled, only commands matching the allowlist patterns are permitted —
-    all others are rejected with an error. This provides an additional security layer on top of
-    the existing safety levels.
-  </p>
+  <p set:html={t('docs.cliReference.shellAllowlistDesc')} />
 
   <pre><code># config.toml
 [shell_allowlist]
@@ -835,11 +770,7 @@ commands = [
   "grep *",
 ]</code></pre>
 
-  <p>
-    When a command is blocked by the allowlist, <code>ctx_shell</code> returns an error
-    indicating the command is not permitted, along with the list of allowed patterns.
-    Use <code>lean-ctx config set shell_allowlist.enabled false</code> to disable.
-  </p>
+  <p set:html={t('docs.cliReference.shellAllowlistBlockedNote')} />
 
   <hr />
 
@@ -866,29 +797,22 @@ lean-ctx-on        # re-enable for AI sessions</code></pre>
 
   <hr />
 
-  <h2 id="server-services">Server &amp; Services</h2>
+  <h2 id="server-services">{t('docs.cliReference.serverServicesTitle')}</h2>
 
-  <p>
-    lean-ctx can run as a long-lived HTTP server, a TUI watcher, or a network proxy.
-    These modes are useful for CI/CD pipelines, multi-agent orchestration, and headless environments.
-  </p>
+  <p>{t('docs.cliReference.serverServicesDesc')}</p>
 
   <h3 id="serve"><code>lean-ctx serve [flags]</code> <span class="text-xs font-normal text-muted ml-2">feature: http-server</span></h3>
-  <p>
-    Start an HTTP/REST server that exposes all MCP tools as REST endpoints.
-    Requires the <code>http-server</code> feature gate.
-    Supports both stateful (session-persisted) and stateless modes.
-  </p>
+  <p set:html={t('docs.cliReference.serveDesc')} />
 
   <table>
-    <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDefault')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>--port=&lt;N&gt;</code></td><td><code>9119</code></td><td>Port to listen on</td></tr>
-      <tr><td><code>--host=&lt;addr&gt;</code></td><td><code>127.0.0.1</code></td><td>Bind address (<code>0.0.0.0</code> for all interfaces)</td></tr>
-      <tr><td><code>--stateless</code></td><td>off</td><td>Disable session persistence - each request is independent</td></tr>
-      <tr><td><code>--rate-limit=&lt;N&gt;</code></td><td><code>100</code></td><td>Max requests per minute per client</td></tr>
-      <tr><td><code>--timeout=&lt;ms&gt;</code></td><td><code>30000</code></td><td>Request timeout in milliseconds</td></tr>
-      <tr><td><code>--cors</code></td><td>off</td><td>Enable CORS headers for browser access</td></tr>
+      <tr><td><code>--port=&lt;N&gt;</code></td><td><code>9119</code></td><td>{t('docs.cliReference.servePortDesc')}</td></tr>
+      <tr><td><code>--host=&lt;addr&gt;</code></td><td><code>127.0.0.1</code></td><td set:html={t('docs.cliReference.serveHostDesc')} /></tr>
+      <tr><td><code>--stateless</code></td><td>off</td><td>{t('docs.cliReference.serveStatelessDesc')}</td></tr>
+      <tr><td><code>--rate-limit=&lt;N&gt;</code></td><td><code>100</code></td><td>{t('docs.cliReference.serveRateLimitDesc')}</td></tr>
+      <tr><td><code>--timeout=&lt;ms&gt;</code></td><td><code>30000</code></td><td>{t('docs.cliReference.serveTimeoutDesc')}</td></tr>
+      <tr><td><code>--cors</code></td><td>off</td><td>{t('docs.cliReference.serveCorsDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -904,23 +828,16 @@ lean-ctx serve --stateless --timeout=60000
 # With CORS for web dashboard
 lean-ctx serve --cors --port=9119</code></pre>
 
-  <p>
-    Once running, all MCP tools are available at <code>POST /v1/tools/&lt;tool_name&gt;</code>.
-    A health endpoint is at <code>GET /health</code>.
-  </p>
+  <p set:html={t('docs.cliReference.serveEndpointsNote')} />
 
   <h3 id="watch"><code>lean-ctx watch</code></h3>
-  <p>
-    Start lean-ctx in TUI (Terminal UI) mode with a live event bus.
-    Monitors all MCP activity in real time and writes events to
-    <code>~/.lean-ctx/events.jsonl</code> for post-hoc analysis.
-  </p>
+  <p set:html={t('docs.cliReference.watchDesc')} />
 
   <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>--filter=&lt;pattern&gt;</code></td><td>Only show events matching the pattern (e.g. <code>ctx_read</code>, <code>error</code>)</td></tr>
-      <tr><td><code>--no-tui</code></td><td>Headless mode - stream events to stdout as JSONL</td></tr>
+      <tr><td><code>--filter=&lt;pattern&gt;</code></td><td set:html={t('docs.cliReference.watchFilterDesc')} /></tr>
+      <tr><td><code>--no-tui</code></td><td>{t('docs.cliReference.watchNoTuiDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -929,17 +846,14 @@ lean-ctx watch --filter=ctx_shell       # only shell events
 lean-ctx watch --no-tui                 # headless JSONL to stdout</code></pre>
 
   <h3 id="proxy"><code>lean-ctx proxy &lt;start|stop|status&gt;</code> <span class="text-xs font-normal text-muted ml-2">feature-gated</span></h3>
-  <p>
-    Manage the lean-ctx network proxy. When active, the proxy intercepts MCP traffic
-    and applies compression transparently. Requires the <code>proxy</code> feature gate.
-  </p>
+  <p set:html={t('docs.cliReference.proxyDesc')} />
 
   <table>
-    <thead><tr><th>Subcommand</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thSubcommand')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>start</code></td><td>Start the proxy daemon</td></tr>
-      <tr><td><code>stop</code></td><td>Stop the running proxy</td></tr>
-      <tr><td><code>status</code></td><td>Show proxy status (running/stopped, port, uptime)</td></tr>
+      <tr><td><code>start</code></td><td>{t('docs.cliReference.proxyStartDesc')}</td></tr>
+      <tr><td><code>stop</code></td><td>{t('docs.cliReference.proxyStopDesc')}</td></tr>
+      <tr><td><code>status</code></td><td>{t('docs.cliReference.proxyStatusDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -949,27 +863,20 @@ lean-ctx proxy stop        # stop the proxy</code></pre>
 
   <hr />
 
-  <h2 id="terse-agent">Terse Agent</h2>
+  <h2 id="terse-agent">{t('docs.cliReference.terseAgentTitle')}</h2>
 
-  <p>
-    The Terse Agent controls output density for AI agent communication.
-    It persists across sessions and can be toggled at any time.
-    See also the <a href={lp('/docs/configuration') + '#terse-agent'}>Configuration guide</a>.
-  </p>
+  <p set:html={t('docs.cliReference.terseAgentDesc')} />
 
   <h3 id="terse"><code>lean-ctx terse [lite|full|ultra|off]</code></h3>
-  <p>
-    Query or set the Terse Agent mode. Without arguments, shows the current mode.
-    With an argument, sets the mode persistently.
-  </p>
+  <p>{t('docs.cliReference.terseCmdDesc')}</p>
 
   <table>
-    <thead><tr><th>Mode</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thMode')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>off</code></td><td>Terse Agent disabled - standard MCP output</td></tr>
-      <tr><td><code>lite</code></td><td>Light compression: removes boilerplate, keeps structure</td></tr>
-      <tr><td><code>full</code></td><td>Full terse mode: abbreviated keys, minimal whitespace, Fn refs</td></tr>
-      <tr><td><code>ultra</code></td><td>Maximum density: single-line responses, aggressive abbreviation, diff-only</td></tr>
+      <tr><td><code>off</code></td><td>{t('docs.cliReference.terseOffDesc')}</td></tr>
+      <tr><td><code>lite</code></td><td>{t('docs.cliReference.terseLiteDesc')}</td></tr>
+      <tr><td><code>full</code></td><td>{t('docs.cliReference.terseFullDesc')}</td></tr>
+      <tr><td><code>ultra</code></td><td>{t('docs.cliReference.terseUltraDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -981,27 +888,22 @@ lean-ctx terse off          # disable terse agent</code></pre>
 
   <hr />
 
-  <h2 id="token-reports">Token Reports</h2>
+  <h2 id="token-reports">{t('docs.cliReference.tokenReportsTitle')}</h2>
 
-  <p>
-    Generate detailed token usage reports for analysis and cost tracking.
-  </p>
+  <p>{t('docs.cliReference.tokenReportsDesc')}</p>
 
   <h3 id="token-report"><code>lean-ctx token-report [flags]</code></h3>
-  <p>
-    Display a comprehensive token usage report for the current or specified project.
-    Also available as <code>lean-ctx report-tokens</code> (alias).
-  </p>
+  <p set:html={t('docs.cliReference.tokenReportCmdDesc')} />
 
   <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>(none)</code></td><td>Summary report for the current session</td></tr>
-      <tr><td><code>--project=&lt;path&gt;</code></td><td>Report for a specific project directory</td></tr>
-      <tr><td><code>--period=&lt;p&gt;</code></td><td>Time period: <code>today</code>, <code>week</code>, <code>month</code>, <code>all</code></td></tr>
-      <tr><td><code>--by-tool</code></td><td>Break down usage by MCP tool</td></tr>
-      <tr><td><code>--by-mode</code></td><td>Break down usage by read mode</td></tr>
-      <tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
+      <tr><td><code>(none)</code></td><td>{t('docs.cliReference.tokenReportNoneDesc')}</td></tr>
+      <tr><td><code>--project=&lt;path&gt;</code></td><td>{t('docs.cliReference.tokenReportProjectDesc')}</td></tr>
+      <tr><td><code>--period=&lt;p&gt;</code></td><td set:html={t('docs.cliReference.tokenReportPeriodDesc')} /></tr>
+      <tr><td><code>--by-tool</code></td><td>{t('docs.cliReference.tokenReportByToolDesc')}</td></tr>
+      <tr><td><code>--by-mode</code></td><td>{t('docs.cliReference.tokenReportByModeDesc')}</td></tr>
+      <tr><td><code>--json</code></td><td>{t('docs.cliReference.tokenReportJsonDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -1012,22 +914,19 @@ lean-ctx report-tokens --json &gt; report.json    # alias, JSON export</code></p
 
   <hr />
 
-  <h2 id="cache-management">Cache Management</h2>
+  <h2 id="cache-management">{t('docs.cliReference.cacheMgmtTitle')}</h2>
 
-  <p>
-    Manage the lean-ctx content cache that accelerates repeated reads and
-    avoids redundant compression.
-  </p>
+  <p>{t('docs.cliReference.cacheMgmtDesc')}</p>
 
   <h3 id="cache"><code>lean-ctx cache &lt;subcommand&gt; [flags]</code></h3>
 
   <table>
-    <thead><tr><th>Subcommand</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thSubcommand')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>status</code></td><td>Show cache size, hit rate, and entry count</td></tr>
-      <tr><td><code>clear</code></td><td>Clear all cached entries</td></tr>
-      <tr><td><code>invalidate &lt;pattern&gt;</code></td><td>Invalidate cache entries matching a glob pattern</td></tr>
-      <tr><td><code>reset --project=&lt;path&gt;</code></td><td>Reset cache for a specific project only</td></tr>
+      <tr><td><code>status</code></td><td>{t('docs.cliReference.cacheStatusDesc')}</td></tr>
+      <tr><td><code>clear</code></td><td>{t('docs.cliReference.cacheClearDesc')}</td></tr>
+      <tr><td><code>invalidate &lt;pattern&gt;</code></td><td>{t('docs.cliReference.cacheInvalidateDesc')}</td></tr>
+      <tr><td><code>reset --project=&lt;path&gt;</code></td><td>{t('docs.cliReference.cacheResetDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -1038,22 +937,19 @@ lean-ctx cache reset --project=~/my-app        # reset for one project</code></p
 
   <hr />
 
-  <h2 id="gotchas">Gotchas</h2>
+  <h2 id="gotchas">{t('docs.cliReference.gotchasTitle')}</h2>
 
-  <p>
-    Manage known gotchas - common pitfalls, edge cases, and warnings that lean-ctx
-    tracks across your projects. Also available as <code>lean-ctx bugs</code> (alias).
-  </p>
+  <p set:html={t('docs.cliReference.gotchasDesc')} />
 
   <h3 id="gotchas-cmd"><code>lean-ctx gotchas [list|add|remove|clear]</code></h3>
 
   <table>
-    <thead><tr><th>Subcommand</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thSubcommand')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>list</code></td><td>Show all tracked gotchas for the current project</td></tr>
-      <tr><td><code>add "&lt;description&gt;"</code></td><td>Add a new gotcha entry</td></tr>
-      <tr><td><code>remove &lt;id&gt;</code></td><td>Remove a gotcha by its ID</td></tr>
-      <tr><td><code>clear</code></td><td>Remove all gotchas for the current project</td></tr>
+      <tr><td><code>list</code></td><td>{t('docs.cliReference.gotchasListDesc')}</td></tr>
+      <tr><td><code>add "&lt;description&gt;"</code></td><td>{t('docs.cliReference.gotchasAddDesc')}</td></tr>
+      <tr><td><code>remove &lt;id&gt;</code></td><td>{t('docs.cliReference.gotchasRemoveDesc')}</td></tr>
+      <tr><td><code>clear</code></td><td>{t('docs.cliReference.gotchasClearDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -1065,22 +961,19 @@ lean-ctx bugs clear</code></pre>
 
   <hr />
 
-  <h2 id="buddy">Buddy</h2>
+  <h2 id="buddy">{t('docs.cliReference.buddyTitle')}</h2>
 
-  <p>
-    The Buddy (also called Pet) is an interactive companion feature that provides
-    contextual tips, encouragement, and session insights. Purely cosmetic and opt-in.
-  </p>
+  <p>{t('docs.cliReference.buddyDesc')}</p>
 
   <h3 id="buddy-cmd"><code>lean-ctx buddy [status|on|off|name &lt;name&gt;]</code></h3>
 
   <table>
-    <thead><tr><th>Subcommand</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thSubcommand')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>status</code></td><td>Show buddy status and current name</td></tr>
-      <tr><td><code>on</code></td><td>Enable the buddy</td></tr>
-      <tr><td><code>off</code></td><td>Disable the buddy</td></tr>
-      <tr><td><code>name &lt;name&gt;</code></td><td>Give your buddy a custom name</td></tr>
+      <tr><td><code>status</code></td><td>{t('docs.cliReference.buddyStatusDesc')}</td></tr>
+      <tr><td><code>on</code></td><td>{t('docs.cliReference.buddyOnDesc')}</td></tr>
+      <tr><td><code>off</code></td><td>{t('docs.cliReference.buddyOffDesc')}</td></tr>
+      <tr><td><code>name &lt;name&gt;</code></td><td>{t('docs.cliReference.buddyNameDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -1095,73 +988,62 @@ lean-ctx pet off               # alias - disable buddy</code></pre>
 
   <div class="card" style="padding: 1rem 1.25rem; margin-bottom: 1.5rem; border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface)); display: flex; align-items: center; gap: 0.75rem;">
     <svg class="shrink-0 text-accent" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-    <span class="fluid-sm">
-      The <code>.ctxpkg</code> format is an open file format. See the specification at <a href="https://ctxpkg.org" target="_blank" rel="noopener" style="color: var(--color-accent); font-weight: 600;">ctxpkg.org</a>
-    </span>
+    <span class="fluid-sm" set:html={t('docs.cliReference.packFormatNote')} />
   </div>
 
   <p><Fragment set:html={t('docs.cliReference.packDesc')} /></p>
 
   <h3 id="pack-create"><code>lean-ctx pack create --name &lt;name&gt; [--layers &lt;layers&gt;]</code></h3>
-  <p>
-    Create a context package from the current project. Layers default to all available
-    (<code>knowledge,graph,session,patterns,gotchas</code>).
-  </p>
+  <p set:html={t('docs.cliReference.packCreateDesc')} />
   <pre><code>lean-ctx pack create --name my-pkg
 lean-ctx pack create --name api-knowledge --layers knowledge,gotchas
 lean-ctx pack create --name full-snapshot --version 2.0.0</code></pre>
 
   <h3 id="pack-list"><code>lean-ctx pack list</code></h3>
-  <p>List all installed packages with version and auto-load status.</p>
+  <p set:html={t('docs.cliReference.packListDesc')} />
   <pre><code>lean-ctx pack list</code></pre>
 
   <h3 id="pack-info"><code>lean-ctx pack info &lt;name&gt;</code></h3>
-  <p>Show detailed metadata, layers, stats, and integrity hash for a package.</p>
+  <p set:html={t('docs.cliReference.packInfoDesc')} />
   <pre><code>lean-ctx pack info my-pkg</code></pre>
 
   <h3 id="pack-export"><code>lean-ctx pack export &lt;name&gt; [-o &lt;file&gt;]</code></h3>
-  <p>Export a package to a portable <code>.ctxpkg</code> file. Default output is <code>&lt;name&gt;.ctxpkg</code>.</p>
+  <p set:html={t('docs.cliReference.packExportDesc')} />
   <pre><code>lean-ctx pack export my-pkg
 lean-ctx pack export my-pkg -o shared/my-pkg.ctxpkg</code></pre>
 
   <h3 id="pack-import"><code>lean-ctx pack import &lt;file&gt;</code></h3>
-  <p>Import a package from a <code>.ctxpkg</code> file. Verifies SHA-256 integrity before installing.</p>
+  <p set:html={t('docs.cliReference.packImportDesc')} />
   <pre><code>lean-ctx pack import my-pkg.ctxpkg</code></pre>
 
   <h3 id="pack-install"><code>lean-ctx pack install &lt;name&gt;</code></h3>
-  <p>Merge a package's context into the current project — knowledge facts, graph nodes, and gotchas.</p>
+  <p set:html={t('docs.cliReference.packInstallDesc')} />
   <pre><code>lean-ctx pack install my-pkg</code></pre>
 
   <h3 id="pack-remove"><code>lean-ctx pack remove &lt;name&gt;</code></h3>
-  <p>Remove a package from the local registry.</p>
+  <p set:html={t('docs.cliReference.packRemoveDesc')} />
   <pre><code>lean-ctx pack remove my-pkg</code></pre>
 
   <h3 id="pack-auto-load"><code>lean-ctx pack auto-load &lt;name&gt; &lt;on|off&gt;</code></h3>
-  <p>
-    Enable or disable auto-loading. When enabled, the package is merged into the project
-    context automatically when <code>ctx_overview</code> runs at session start.
-  </p>
+  <p set:html={t('docs.cliReference.packAutoLoadDesc')} />
   <pre><code>lean-ctx pack auto-load my-pkg on
 lean-ctx pack auto-load my-pkg off</code></pre>
 
   <hr />
 
-  <h2 id="instructions">Instructions</h2>
+  <h2 id="instructions">{t('docs.cliReference.instructionsTitle')}</h2>
 
-  <p>
-    Manually retrieve MCP server instructions. Useful in headless or non-interactive
-    environments where the MCP handshake does not automatically deliver instructions.
-  </p>
+  <p>{t('docs.cliReference.instructionsDesc')}</p>
 
   <h3 id="instructions-cmd"><code>lean-ctx instructions [flags]</code> <span class="text-xs font-normal text-muted ml-2">v3.3.x</span></h3>
 
   <table>
-    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>(none)</code></td><td>Print current MCP instructions to stdout</td></tr>
-      <tr><td><code>--raw</code></td><td>Output raw instruction text without formatting</td></tr>
-      <tr><td><code>--json</code></td><td>Output as JSON object with metadata</td></tr>
-      <tr><td><code>--inject</code></td><td>Inject instructions into the active agent session</td></tr>
+      <tr><td><code>(none)</code></td><td>{t('docs.cliReference.instructionsNoneDesc')}</td></tr>
+      <tr><td><code>--raw</code></td><td>{t('docs.cliReference.instructionsRawDesc')}</td></tr>
+      <tr><td><code>--json</code></td><td>{t('docs.cliReference.instructionsJsonDesc')}</td></tr>
+      <tr><td><code>--inject</code></td><td>{t('docs.cliReference.instructionsInjectDesc')}</td></tr>
     </tbody>
   </table>
 
@@ -1170,9 +1052,6 @@ lean-ctx instructions --raw             # raw text for piping
 lean-ctx instructions --json            # JSON with metadata
 lean-ctx instructions --inject          # inject into running session</code></pre>
 
-  <p>
-    This is particularly useful when integrating lean-ctx into CI/CD pipelines or
-    custom agent frameworks that don't support the MCP instructions handshake natively.
-  </p>
+  <p>{t('docs.cliReference.instructionsCiNote')}</p>
 
 </DocsLayout>

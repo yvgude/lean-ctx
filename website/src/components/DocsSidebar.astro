@@ -22,51 +22,55 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
+// Sidebar mirrors the one IA: Get Started + the four persona tracks + Reference.
 const defaultSections: SidebarSection[] = [
   {
-    title: t('docs.sidebarStartHere'),
+    title: 'Get Started',
     items: [
       { label: t('docs.sidebarOverview'), href: lp('/docs/getting-started') },
       { label: t('docs.sidebarQuickRef'), href: lp('/docs/quick-reference') },
-      { label: t('docs.sidebarConfiguration'), href: lp('/docs/configuration') },
+      { label: t('nav.getStarted.compatibility'), href: lp('/compatibility') },
     ],
   },
   {
-    title: t('docs.sidebarUnderstand'),
+    title: 'Daily Workflow',
     items: [
-      { label: t('nav.architectureLabel'), href: lp('/context-os') },
       { label: t('docs.sidebarReadModes'), href: lp('/docs/concepts/read-modes') },
       { label: t('docs.sidebarShellCompression'), href: lp('/docs/concepts/shell-patterns') },
-      { label: t('docs.sidebarTokenSavings'), href: lp('/docs/concepts/token-savings') },
       { label: t('docs.sidebarCaching'), href: lp('/docs/concepts/caching') },
-      { label: t('docs.sidebarMultiAgent'), href: lp('/docs/concepts/multi-agent') },
-      { label: t('docs.sidebarDataSources'), href: lp('/docs/data-sources'), badge: 'NEW' },
-      { label: t('nav.docs.cortex'), href: lp('/docs/cortex'), badge: 'NEW' },
-      { label: t('nav.docs.contextControl'), href: lp('/docs/context-control'), badge: 'NEW' },
-      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos'), badge: 'NEW' },
-      { label: t('nav.docs.observatory'), href: lp('/docs/observatory'), badge: 'NEW' },
+      { label: t('docs.sidebarTokenSavings'), href: lp('/docs/concepts/token-savings') },
+      { label: t('nav.docs.cortex'), href: lp('/docs/cortex') },
+      { label: t('nav.docs.contextControl'), href: lp('/docs/context-control') },
+      { label: t('nav.docs.observatory'), href: lp('/docs/observatory') },
     ],
   },
   {
-    title: t('docs.sidebarReference'),
+    title: 'Scale & Teams',
     items: [
-      { label: t('docs.sidebarAllTools'), href: lp('/docs/tools') },
-      { label: t('docs.sidebarToolApi'), href: lp('/docs/tools/core') },
-      { label: t('nav.pillars.intelligence'), href: lp('/docs/tools/intelligence') },
-      { label: t('nav.pillars.memory'), href: lp('/docs/tools/memory') },
-      { label: t('nav.tools.sessionTools'), href: lp('/docs/tools/session') },
-      { label: t('docs.sidebarWorkflow'), href: lp('/docs/tools/workflow') },
-      { label: t('docs.sidebarCliRef'), href: lp('/docs/cli-reference') },
+      { label: t('docs.sidebarMultiAgent'), href: lp('/docs/concepts/multi-agent') },
+      { label: t('docs.sidebarDataSources'), href: lp('/docs/data-sources') },
+      { label: 'Context Packages', href: lp('/docs/context-packages') },
       { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference') },
     ],
   },
   {
-    title: t('docs.sidebarDeepDives'),
-    collapsed: true,
+    title: 'Operate & Govern',
     items: [
       { label: t('nav.docs.security'), href: lp('/docs/security') },
-      { label: t('docs.sidebarChangelog'), href: lp('/docs/changelog') },
+      { label: t('docs.sidebarConfiguration'), href: lp('/docs/configuration') },
+      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos') },
+      { label: 'Performance Tuning', href: lp('/docs/performance-tuning') },
+      { label: 'Troubleshooting', href: lp('/docs/troubleshooting') },
       { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols') },
+    ],
+  },
+  {
+    title: t('docs.sidebarReference'),
+    collapsed: true,
+    items: [
+      { label: t('docs.sidebarAllTools'), href: lp('/docs/tools') },
+      { label: t('docs.sidebarCliRef'), href: lp('/docs/cli-reference') },
+      { label: t('docs.sidebarChangelog'), href: lp('/docs/changelog') },
     ],
   },
 ];

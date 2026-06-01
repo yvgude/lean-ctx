@@ -131,8 +131,15 @@ const sidebar = [
     .pg-btn.active { background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface)); border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border)); color: var(--color-accent); }
   </style>
 
+  <div id="pg-i18n" hidden
+    data-hermes-note={t('docs.gettingStarted.hermesNote')}
+    data-hermes-manual-intro={t('docs.gettingStarted.hermesManualIntro')}
+    data-hermes-restart={t('docs.gettingStarted.hermesRestart')}></div>
+
   <script is:inline>
   (function() {
+    var pgI18nEl = document.getElementById('pg-i18n');
+    var pgI18n = pgI18nEl ? pgI18nEl.dataset : {};
     var STORE_KEY = 'lean-ctx:quickstart';
     var os = 'macos', ed = 'cursor', mode = 'auto';
     try {
@@ -308,9 +315,9 @@ const sidebar = [
       },
       hermes: {
         name: 'Hermes Agent',
-        note: 'Hermes supports MCP via ~/.hermes/config.yaml. Auto mode selects Hybrid (MCP reads + shell hooks).',
+        note: pgI18n.hermesNote,
         manual: [
-          'If auto-setup fails, add to ~/.hermes/config.yaml:',
+          pgI18n.hermesManualIntro,
           'mcp_servers:',
           '  lean-ctx:',
           '    command: "lean-ctx"',
@@ -318,7 +325,7 @@ const sidebar = [
           '      LEAN_CTX_DATA_DIR: "~/.lean-ctx"'
         ],
         agentKey: 'hermes',
-        restart: 'Restart Hermes.'
+        restart: pgI18n.hermesRestart
       },
       zed: {
         name: 'Zed',

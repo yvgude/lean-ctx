@@ -3,11 +3,20 @@ import MegaDropdown from './MegaDropdown.astro';
 import SearchModal from './SearchModal.astro';
 import LanguageSwitcher from './LanguageSwitcher.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { CONCEPT, PILLARS, getPillar } from '../lib/positioning';
+import { tracks } from '../lib/tracks';
+import { getJourneysForTrack } from '../lib/journeys';
+import { getFacts } from '../lib/facts';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const currentPath = Astro.url.pathname;
+const facts = getFacts();
+
+/** Wraps single SVG path data (from the SSOT modules) into a nav-sized icon. */
+const svgPath = (d: string) =>
+  `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
 
 const ico = {
   doc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>',
@@ -35,83 +44,61 @@ const ico = {
   wrench: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
 };
 
-// Product mega-dropdown = the journey story: Start → Understand → What you can do
+// ── ONE navigation taxonomy, driven by the SSOT modules ──────────────────────
+// Product (Why + the five pillars) · Journeys (4 persona tracks) · Reference.
+// Replaces the previous three conflicting taxonomies and the dead nav.pillars.*.
+
+// 1) PRODUCT = the "why" pages + the five-pillar model.
 const productColumns = [
-  {
-    title: t('nav.getStartedLabel'),
-    items: [
-      { label: t('nav.learn.gettingStarted'), href: lp('/docs/getting-started/'), description: t('nav.learn.gettingStartedDesc'), icon: ico.doc, badge: t('nav.learn.startHereBadge') },
-      { label: t('nav.getStarted.compatibility'), href: lp('/compatibility/'), description: t('nav.getStarted.compatibilityDesc'), icon: ico.gear },
-      { label: t('nav.learn.quickReference'), href: lp('/docs/quick-reference/'), description: t('nav.learn.quickReferenceDesc'), icon: ico.list },
-    ],
-  },
   {
     title: t('nav.learn.understand'),
     items: [
       { label: t('nav.learn.howItWorks'), href: lp('/how-it-works/'), description: t('nav.learn.howItWorksDesc'), icon: ico.flow },
       { label: t('nav.learn.whatIsCe'), href: lp('/what-is-context-engineering/'), description: t('nav.learn.whatIsCeDesc'), icon: ico.bulb },
-      { label: t('nav.arch.overview'), href: lp('/context-os/'), description: t('nav.arch.overviewDesc'), icon: ico.grid },
+      { label: CONCEPT, href: lp('/context-os/'), description: 'One local binary between your AI and your code', icon: ico.grid },
       { label: t('nav.getStarted.compare'), href: lp('/compare/'), description: t('nav.getStarted.compareDesc'), icon: ico.bar },
     ],
   },
   {
-    title: t('nav.do.label'),
-    items: [
-      { label: t('nav.do.codebase'), href: lp('/docs/concepts/read-modes/'), description: t('nav.do.codebaseDesc'), icon: ico.graph },
-      { label: t('nav.do.bill'), href: lp('/docs/concepts/token-savings/'), description: t('nav.do.billDesc'), icon: ico.dollar },
-      { label: t('nav.do.memory'), href: lp('/docs/cortex/'), description: t('nav.do.memoryDesc'), icon: ico.server },
-      { label: t('nav.do.agents'), href: lp('/docs/concepts/multi-agent/'), description: t('nav.do.agentsDesc'), icon: ico.users },
-      { label: t('nav.learn.benchmark'), href: lp('/context-os/benchmark/'), description: t('nav.learn.benchmarkDesc'), icon: ico.bar },
-    ],
+    title: 'The five pillars',
+    items: PILLARS.map((p) => ({
+      label: p.verb,
+      href: lp(`/how-it-works/#${p.id}`),
+      description: p.tagline,
+      icon: svgPath(p.iconPath),
+    })),
   },
 ];
 
-const docsColumns = [
+// 2) JOURNEYS = the four persona tracks, each listing its journeys.
+const journeyColumns = tracks.map((tr) => ({
+  title: tr.title,
+  items: getJourneysForTrack(tr.id).map((j) => ({
+    label: j.title,
+    href: lp(j.href),
+    description: j.summary,
+    icon: svgPath(getPillar(j.pillars[0]).iconPath),
+  })),
+}));
+
+// 3) REFERENCE = generated tool/CLI/config reference + operations.
+const referenceColumns = [
   {
     title: t('nav.docs.reference'),
     items: [
+      { label: t('nav.tools.allTools'), href: lp('/docs/tools/'), description: `All ${facts.mcpToolCount} MCP tools`, icon: ico.wrench, badge: t('nav.tools.toolsBadge') },
       { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference/'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
       { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference/'), description: t('nav.docs.apiReferenceDesc'), icon: ico.code },
       { label: t('nav.docs.configuration'), href: lp('/docs/configuration/'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
+    ],
+  },
+  {
+    title: 'Operate',
+    items: [
       { label: t('nav.docs.security'), href: lp('/docs/security/'), description: t('nav.docs.securityDesc'), icon: ico.shield },
-      { label: t('nav.docs.changelog'), href: lp('/docs/changelog/'), description: t('nav.docs.changelogDesc'), icon: ico.clock },
-    ],
-  },
-  {
-    title: 'Features',
-    items: [
-      { label: t('nav.docs.dataSources'), href: lp('/docs/data-sources/'), description: t('nav.docs.dataSourcesDesc'), icon: ico.flow },
-      { label: t('nav.docs.cortex'), href: lp('/docs/cortex/'), description: t('nav.docs.cortexDesc'), icon: ico.bulb },
-      { label: 'Context Packages', href: lp('/docs/context-packages/'), description: 'Layers, CLI, auto-load, integrity', icon: ico.doc },
-      { label: t('nav.docs.contextControl'), href: lp('/docs/context-control/'), description: t('nav.docs.contextControlDesc'), icon: ico.sliders },
-      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos/'), description: t('nav.docs.budgetsDesc'), icon: ico.dollar },
-    ],
-  },
-  {
-    title: 'Configuration',
-    items: [
-      { label: 'Plan Mode', href: lp('/docs/plan-mode/'), description: 'IDE plan mode compatibility and setup', icon: ico.doc },
       { label: t('nav.docs.observatory'), href: lp('/docs/observatory/'), description: t('nav.docs.observatoryDesc'), icon: ico.monitor },
-    ],
-  },
-];
-
-const toolsColumns = [
-  {
-    title: t('nav.tools.browse'),
-    items: [
-      { label: t('nav.tools.allTools'), href: lp('/docs/tools/'), description: t('nav.tools.allToolsDesc'), icon: ico.wrench, badge: t('nav.tools.toolsBadge') },
-    ],
-  },
-  {
-    title: t('nav.tools.categories'),
-    items: [
-      { label: t('nav.tools.coreTools'), href: lp('/docs/tools/core/'), description: t('nav.tools.coreToolsDesc'), icon: ico.doc },
-      { label: t('nav.tools.intelligence'), href: lp('/docs/tools/intelligence/'), description: t('nav.tools.intelligenceDesc'), icon: ico.bulb },
-      { label: t('nav.tools.memorySession'), href: lp('/docs/tools/memory/'), description: t('nav.tools.memorySessionDesc'), icon: ico.grid },
-      { label: t('nav.tools.sessionTools'), href: lp('/docs/tools/session/'), description: t('nav.tools.sessionToolsDesc'), icon: ico.server },
-      { label: t('nav.tools.workflowAnalysis'), href: lp('/docs/tools/workflow/'), description: t('nav.tools.workflowAnalysisDesc'), icon: ico.graph },
-      { label: t('nav.tools.analysisTools'), href: lp('/docs/tools/analysis/'), description: t('nav.tools.analysisToolsDesc'), icon: ico.bar },
+      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos/'), description: t('nav.docs.budgetsDesc'), icon: ico.dollar },
+      { label: t('nav.docs.changelog'), href: lp('/docs/changelog/'), description: t('nav.docs.changelogDesc'), icon: ico.clock },
     ],
   },
 ];
@@ -133,8 +120,8 @@ const toolsColumns = [
 
       <div class="header-center">
         <MegaDropdown id="product" label={t('nav.productLabel')} columns={productColumns} />
-        <MegaDropdown id="docs" label={t('nav.docs')} columns={docsColumns} />
-        <MegaDropdown id="tools" label={t('nav.tools')} columns={toolsColumns} />
+        <MegaDropdown id="journeys" label="Journeys" columns={journeyColumns} />
+        <MegaDropdown id="reference" label={t('nav.docs.reference')} columns={referenceColumns} />
       </div>
 
       <div class="header-right">
@@ -198,48 +185,30 @@ const toolsColumns = [
   <div id="mobile-menu" class="mobile-menu-closed">
     <div class="mobile-menu-inner">
       <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.getStartedLabel')}</span>
-        <a href={lp('/docs/getting-started')} class="mobile-nav-link">{t('nav.learn.gettingStarted')}</a>
-        <a href={lp('/compatibility')} class="mobile-nav-link">{t('nav.getStarted.compatibility')}</a>
-        <a href={lp('/docs/quick-reference')} class="mobile-nav-link">{t('nav.learn.quickReference')}</a>
-      </div>
-
-      <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.learn.understand')}</span>
+        <span class="mobile-section-title">{t('nav.productLabel')}</span>
         <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.learn.howItWorks')}</a>
         <a href={lp('/what-is-context-engineering')} class="mobile-nav-link">{t('nav.learn.whatIsCe')}</a>
-        <a href={lp('/context-os')} class="mobile-nav-link">{t('nav.arch.overview')}</a>
+        <a href={lp('/context-os')} class="mobile-nav-link">{CONCEPT}</a>
         <a href={lp('/compare')} class="mobile-nav-link">{t('nav.getStarted.compare')}</a>
       </div>
 
-      <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.do.label')}</span>
-        <a href={lp('/docs/concepts/read-modes')} class="mobile-nav-link">{t('nav.do.codebase')}</a>
-        <a href={lp('/docs/concepts/token-savings')} class="mobile-nav-link">{t('nav.do.bill')}</a>
-        <a href={lp('/docs/cortex')} class="mobile-nav-link">{t('nav.do.memory')}</a>
-        <a href={lp('/docs/concepts/multi-agent')} class="mobile-nav-link">{t('nav.do.agents')}</a>
-        <a href={lp('/context-os/benchmark')} class="mobile-nav-link">{t('nav.learn.benchmark')}</a>
-      </div>
+      {tracks.map((tr) => (
+        <div class="mobile-section">
+          <span class="mobile-section-title">{tr.title}</span>
+          {getJourneysForTrack(tr.id).map((j) => (
+            <a href={lp(j.href)} class="mobile-nav-link">{j.title}</a>
+          ))}
+        </div>
+      ))}
 
       <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.docs')}</span>
+        <span class="mobile-section-title">{t('nav.docs.reference')}</span>
+        <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.tools.allTools')}</a>
         <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
         <a href={lp('/docs/api-reference')} class="mobile-nav-link">{t('nav.docs.apiReference')}</a>
         <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>
-        <a href={lp('/docs/context-packages')} class="mobile-nav-link">Context Packages</a>
         <a href={lp('/docs/security')} class="mobile-nav-link">{t('nav.docs.security')}</a>
         <a href={lp('/docs/changelog')} class="mobile-nav-link">{t('nav.docs.changelog')}</a>
-      </div>
-
-      <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.tools')}</span>
-        <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.tools.allTools')}</a>
-        <a href={lp('/docs/tools/core')} class="mobile-nav-link">{t('nav.tools.coreTools')}</a>
-        <a href={lp('/docs/tools/intelligence')} class="mobile-nav-link">{t('nav.tools.intelligence')}</a>
-        <a href={lp('/docs/tools/memory')} class="mobile-nav-link">{t('nav.tools.memorySession')}</a>
-        <a href={lp('/docs/tools/session')} class="mobile-nav-link">{t('nav.tools.sessionTools')}</a>
-        <a href={lp('/docs/tools/workflow')} class="mobile-nav-link">{t('nav.tools.workflowAnalysis')}</a>
-        <a href={lp('/docs/tools/analysis')} class="mobile-nav-link">{t('nav.tools.analysisTools')}</a>
       </div>
 
       <div class="mobile-lang-area" style="display: flex; align-items: center; gap: 0.5rem;">

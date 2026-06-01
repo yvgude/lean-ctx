@@ -1,0 +1,134 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Troubleshooting',
+    items: [
+      { label: '30-second triage', href: lp('/docs/troubleshooting') + '#triage' },
+      { label: "AI isn't using lean-ctx", href: lp('/docs/troubleshooting') + '#not-using' },
+      { label: 'Savings look wrong', href: lp('/docs/troubleshooting') + '#savings' },
+      { label: 'No memory in new chat', href: lp('/docs/troubleshooting') + '#memory' },
+      { label: 'Read/Grep denied', href: lp('/docs/troubleshooting') + '#denied' },
+      { label: 'Shell broke after install', href: lp('/docs/troubleshooting') + '#shell' },
+      { label: 'Search stuck or huge', href: lp('/docs/troubleshooting') + '#index' },
+      { label: 'Broke after update', href: lp('/docs/troubleshooting') + '#update' },
+      { label: 'Capture a report', href: lp('/docs/troubleshooting') + '#report' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Security & Governance', href: lp('/docs/security') },
+      { label: 'Performance Tuning', href: lp('/docs/performance-tuning') },
+      { label: 'Observatory', href: lp('/docs/observatory') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Troubleshooting Playbook"
+  description="Something's not working with LeanCTX? Symptom → one-line diagnosis → fix. The central playbook covering status, doctor, doctor integrations, sessions doctor and report-issue."
+  sidebar={sidebar}
+>
+  <p>
+    <strong>You are:</strong> staring at something that isn't working — your AI doesn't
+    seem to use LeanCTX, savings are zero, a new chat forgot everything, or a command
+    behaves oddly. This is the central playbook: <em>symptom → one-line diagnosis → fix</em>.
+  </p>
+
+  <h2 id="triage">The 30-second triage</h2>
+  <p>Run these three, in order. Each one's footer tells you the next step.</p>
+  <pre><code>{`lean-ctx status                 # is the wiring there at all?  (5-line summary)
+lean-ctx doctor                 # ~27 checks across binary/daemon/proxy/caches
+lean-ctx doctor integrations    # per-IDE: MCP + hook freshness + rules, per agent`}</code></pre>
+  <p>
+    <code>status</code> is the fast yes/no, <code>doctor</code> is the deep scan, and
+    <code>doctor integrations</code> pinpoints <em>which editor</em> is mis-wired. Most
+    problems below are identified by one of these three and fixed by
+    <code>lean-ctx setup --fix</code>.
+  </p>
+
+  <h2 id="not-using">"My AI isn't using lean-ctx at all"</h2>
+  <p><strong>Diagnose:</strong> <code>lean-ctx doctor integrations</code> — find your agent and read its line.</p>
+  <table>
+    <thead><tr><th>What you see</th><th>Meaning</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>Agent not listed</td><td>LeanCTX didn't detect it</td><td><code>lean-ctx init --agent &lt;name&gt;</code></td></tr>
+      <tr><td><code>MCP config … missing</code> / <code>drift</code></td><td>server not wired</td><td><code>lean-ctx setup --fix</code></td></tr>
+      <tr><td><code>Hooks … drift</code></td><td>shell hook missing/incomplete</td><td><code>lean-ctx setup --fix</code></td></tr>
+      <tr><td><code>Hooks … stale binary</code></td><td>hook points at an old install path</td><td><code>lean-ctx setup --fix</code></td></tr>
+      <tr><td>All <code>✓</code> but still nothing</td><td>the editor wasn't restarted</td><td>fully quit &amp; reopen the editor</td></tr>
+    </tbody>
+  </table>
+  <p>The last row is the most common: editors load MCP servers and hooks at startup, so a config written after launch only takes effect on the next restart.</p>
+
+  <h2 id="savings">"gain shows zero / savings look wrong"</h2>
+  <p>
+    A brand-new install legitimately shows <em>"No savings recorded yet — and that's expected."</em>
+    Savings accrue only as the <code>ctx_*</code> tools and shell hook are used. If you've been
+    working but <code>gain</code> is still empty, your terminal commands aren't being intercepted:
+  </p>
+  <pre><code>{`lean-ctx ghost       # hidden waste from uncompressed commands
+lean-ctx discover    # missed-compression opportunities in your shell history`}</code></pre>
+  <p>Then re-check the hook with <code>doctor integrations</code>.</p>
+
+  <h2 id="memory">"A new chat doesn't remember where we were"</h2>
+  <p>Session auto-restore is failing. There's a dedicated repair tool:</p>
+  <pre><code>{`lean-ctx sessions doctor          # diagnose session-restore health
+lean-ctx sessions doctor --fix    # repair the latest-pointer / snapshots`}</code></pre>
+  <p>Common causes: the project root changed (sessions are project-scoped), or <code>sessions/latest.json</code> got out of sync. <code>sessions doctor --fix</code> rebuilds the pointer.</p>
+
+  <h2 id="denied">"Native Read/Grep are being denied"</h2>
+  <p>
+    This is <strong>harden mode</strong>, not a bug. If you (or a teammate) ran
+    <code>lean-ctx harden</code>, native file tools are intentionally denied so the agent uses
+    the compressed <code>ctx_*</code> tools. Turn it off with:
+  </p>
+  <pre><code>lean-ctx harden --undo            # native tools allowed again</code></pre>
+  <p>See <a href={lp('/docs/security')}>Security &amp; Governance</a> for what each level does.</p>
+
+  <h2 id="shell">"My shell is broken after install"</h2>
+  <p>The shell hook or proxy modified your RC file. LeanCTX always keeps a <code>*.lean-ctx.bak</code> backup:</p>
+  <pre><code>{`lean-ctx doctor --fix             # re-runs the safe, merge-based wiring
+lean-ctx proxy status             # is a *_BASE_URL export pointing at the proxy?`}</code></pre>
+  <p>If a base URL "defaults to the wrong provider," check the exported <code>*_BASE_URL</code> values in your RC and run <code>lean-ctx proxy disable</code> to remove them.</p>
+
+  <h2 id="index">"Search/indexing seems stuck or huge"</h2>
+  <pre><code>{`lean-ctx index status             # is each index ready + recent?
+lean-ctx cache prune              # drop oversized/quarantined/orphaned indexes`}</code></pre>
+  <p>If <code>index status</code> shows a very old build time, the watcher isn't running — <code>lean-ctx index watch</code> (or <code>setup --fix</code>) restarts it. To bound index size proactively, see <a href={lp('/docs/performance-tuning')}>Performance Tuning</a>.</p>
+
+  <h2 id="update">"After lean-ctx update, an editor stopped working"</h2>
+  <p><code>update</code> refreshes every installed shell-hook agent so hooks point at the <em>new</em> binary. If one agent slipped through:</p>
+  <pre><code>{`lean-ctx doctor integrations      # look for 'stale binary' on the affected agent
+lean-ctx setup --fix              # re-point all hooks at the current binary`}</code></pre>
+
+  <h2 id="report">When all else fails — capture a report</h2>
+  <pre><code>lean-ctx report-issue             # collects a redacted diagnostic bundle</code></pre>
+  <p>This gathers <code>doctor</code> output, versions, and config (secrets redacted) so a bug report is actionable. Pair it with the exact command and the editor you used.</p>
+
+  <h2 id="guide">Decision guide</h2>
+  <table>
+    <thead><tr><th>Symptom</th><th>Start here</th></tr></thead>
+    <tbody>
+      <tr><td>Agent ignores LeanCTX</td><td><a href="#not-using"><code>doctor integrations</code></a></td></tr>
+      <tr><td>Zero / odd savings</td><td><a href="#savings"><code>ghost</code> / <code>discover</code></a></td></tr>
+      <tr><td>New chat has no memory</td><td><a href="#memory"><code>sessions doctor --fix</code></a></td></tr>
+      <tr><td>Read/Grep denied</td><td><a href="#denied"><code>harden --undo</code></a></td></tr>
+      <tr><td>Shell / proxy broken</td><td><a href="#shell"><code>doctor --fix</code></a></td></tr>
+      <tr><td>Search stuck / huge</td><td><a href="#index"><code>index status</code> / <code>cache prune</code></a></td></tr>
+      <tr><td>Broke after update</td><td><a href="#update"><code>setup --fix</code></a></td></tr>
+      <tr><td>Need to file a bug</td><td><a href="#report"><code>report-issue</code></a></td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+  <p><strong>Next step:</strong> harden a real deployment in <a href={lp('/docs/security')}>Security &amp; Governance →</a></p>
+</DocsLayout>

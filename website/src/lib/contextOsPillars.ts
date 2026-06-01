@@ -216,7 +216,7 @@ export const pillars: Pillar[] = [
     },
     tools: [
       'ctx_session', 'ctx_knowledge', 'ctx_graph', 'ctx_impact',
-      'ctx_architecture', 'ctx_callgraph', 'ctx_callers', 'ctx_callees',
+      'ctx_architecture', 'ctx_callgraph',
       'ctx_agent', 'ctx_task', 'ctx_handoff', 'ctx_share',
       'ctx_compress', 'ctx_compress_memory',
     ],
@@ -268,7 +268,7 @@ export const pillars: Pillar[] = [
       { labelKey: 'nav.pillars.governanceOverlays', anchor: '#overlays' },
     ],
     tools: [
-      'ctx_workflow', 'ctx_cost', 'ctx_review', 'ctx_wrapped', 'ctx_execute', 'ctx_control',
+      'ctx_workflow', 'ctx_cost', 'ctx_review', 'ctx_gain', 'ctx_execute', 'ctx_control',
     ],
     docsLinks: [
       '/docs/agent-harness',
@@ -380,7 +380,7 @@ export const pillars: Pillar[] = [
     ],
     tools: [
       'ctx_call', 'ctx_provider', 'ctx_index', 'ctx_pack',
-      'ctx_discover', 'ctx_analyze', 'ctx_graph_diagram',
+      'ctx_discover', 'ctx_analyze',
     ],
     docsLinks: [
       '/docs/getting-started',

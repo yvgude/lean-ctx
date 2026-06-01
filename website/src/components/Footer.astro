@@ -1,10 +1,57 @@
 ---
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+import { BRAND, CONCEPT } from '../lib/positioning';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const year = new Date().getFullYear();
+
+// Footer mirrors the one IA: a compact "why" list + the four persona tracks.
+const whyLinks = [
+  { label: t('nav.learn.howItWorks'), href: '/how-it-works' },
+  { label: t('nav.learn.whatIsCe'), href: '/what-is-context-engineering' },
+  { label: CONCEPT, href: '/context-os' },
+  { label: t('nav.getStarted.compare'), href: '/compare' },
+];
+
+const trackColumns = [
+  {
+    title: 'Get Started',
+    links: [
+      { label: t('nav.learn.gettingStarted'), href: '/docs/getting-started' },
+      { label: t('nav.getStarted.compatibility'), href: '/compatibility' },
+      { label: t('nav.learn.quickReference'), href: '/docs/quick-reference' },
+      { label: t('nav.docs.cliComplete'), href: '/docs/cli-reference' },
+    ],
+  },
+  {
+    title: 'Daily Workflow',
+    links: [
+      { label: t('nav.do.codebase'), href: '/docs/concepts/read-modes' },
+      { label: t('nav.do.memory'), href: '/docs/cortex' },
+      { label: t('nav.docs.contextControl'), href: '/docs/context-control' },
+      { label: t('nav.do.bill'), href: '/docs/concepts/token-savings' },
+    ],
+  },
+  {
+    title: 'Scale & Teams',
+    links: [
+      { label: t('nav.do.agents'), href: '/docs/concepts/multi-agent' },
+      { label: t('nav.docs.dataSources'), href: '/docs/data-sources' },
+      { label: t('nav.docs.apiReference'), href: '/docs/api-reference' },
+    ],
+  },
+  {
+    title: 'Operate & Govern',
+    links: [
+      { label: t('nav.docs.security'), href: '/docs/security' },
+      { label: t('nav.docs.configuration'), href: '/docs/configuration' },
+      { label: t('nav.docs.budgets'), href: '/docs/budgets-and-slos' },
+      { label: t('nav.docs.changelog'), href: '/docs/changelog' },
+    ],
+  },
+];
 ---
 
 <footer class="footer-root">
@@ -18,6 +65,11 @@ const year = new Date().getFullYear();
           </span>
         </a>
         <p class="footer-tagline">{t('footer.tagline')}</p>
+        <nav class="footer-why" aria-label="Why LeanCTX">
+          {whyLinks.map((l) => (
+            <a href={lp(l.href)}>{l.label}</a>
+          ))}
+        </nav>
         <ul class="footer-social" aria-label={t('footer.community')}>
           <li><a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener">GitHub</a></li>
           <li><a href="https://crates.io/crates/lean-ctx" target="_blank" rel="noopener">crates.io</a></li>
@@ -28,55 +80,23 @@ const year = new Date().getFullYear();
       </div>
 
       <div class="footer-columns">
-        <div class="footer-col">
-          <h4 class="footer-col-title">{t('nav.getStartedLabel')}</h4>
-          <ul class="footer-links">
-            <li><a href={lp('/docs/getting-started')}>{t('nav.learn.gettingStarted')}</a></li>
-            <li><a href={lp('/compatibility')}>{t('nav.getStarted.compatibility')}</a></li>
-            <li><a href={lp('/docs/quick-reference')}>{t('nav.learn.quickReference')}</a></li>
-            <li><a href={lp('/docs/cli-reference')}>{t('nav.docs.cliComplete')}</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-col">
-          <h4 class="footer-col-title">{t('nav.learn.understand')}</h4>
-          <ul class="footer-links">
-            <li><a href={lp('/how-it-works')}>{t('nav.learn.howItWorks')}</a></li>
-            <li><a href={lp('/what-is-context-engineering')}>{t('nav.learn.whatIsCe')}</a></li>
-            <li><a href={lp('/context-os')}>{t('nav.arch.overview')}</a></li>
-            <li><a href={lp('/compare')}>{t('nav.getStarted.compare')}</a></li>
-            <li><a href={lp('/context-os/benchmark')}>{t('nav.learn.benchmark')}</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-col">
-          <h4 class="footer-col-title">{t('nav.do.label')}</h4>
-          <ul class="footer-links">
-            <li><a href={lp('/docs/concepts/read-modes')}>{t('nav.do.codebase')}</a></li>
-            <li><a href={lp('/docs/concepts/token-savings')}>{t('nav.do.bill')}</a></li>
-            <li><a href={lp('/docs/cortex')}>{t('nav.do.memory')}</a></li>
-            <li><a href={lp('/docs/concepts/multi-agent')}>{t('nav.do.agents')}</a></li>
-            <li><a href={lp('/docs/tools')}>{t('nav.tools.allTools')}</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-col">
-          <h4 class="footer-col-title">{t('nav.docs.reference')}</h4>
-          <ul class="footer-links">
-            <li><a href={lp('/docs/api-reference')}>{t('nav.docs.apiReference')}</a></li>
-            <li><a href={lp('/docs/configuration')}>{t('nav.docs.configuration')}</a></li>
-            <li><a href={lp('/docs/security')}>{t('nav.docs.security')}</a></li>
-            <li><a href={lp('/docs/data-sources')}>{t('nav.docs.dataSources')}</a></li>
-            <li><a href={lp('/docs/changelog')}>{t('nav.docs.changelog')}</a></li>
-          </ul>
-        </div>
+        {trackColumns.map((col) => (
+          <div class="footer-col">
+            <h4 class="footer-col-title">{col.title}</h4>
+            <ul class="footer-links">
+              {col.links.map((l) => (
+                <li><a href={lp(l.href)}>{l.label}</a></li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
     </div>
 
     <div class="footer-divider"></div>
 
     <div class="footer-bottom">
-      <p class="footer-copy">&copy; {year} lean-ctx &middot; Apache-2.0 &middot; <a href={lp('/privacy')} style="color:inherit;text-decoration:none;">{t('footer.privacy')}</a> &middot; <a href={lp('/terms')} style="color:inherit;text-decoration:none;">Terms</a> &middot; <a href={lp('/imprint')} style="color:inherit;text-decoration:none;">Imprint</a> &middot; {t('footer.madeWith')}</p>
+      <p class="footer-copy">&copy; {year} {BRAND} &middot; Apache-2.0 &middot; <a href={lp('/privacy')} style="color:inherit;text-decoration:none;">{t('footer.privacy')}</a> &middot; <a href={lp('/terms')} style="color:inherit;text-decoration:none;">Terms</a> &middot; <a href={lp('/imprint')} style="color:inherit;text-decoration:none;">Imprint</a> &middot; {t('footer.madeWith')}</p>
       <p class="footer-swiss"><svg class="swiss-flag" viewBox="0 0 32 32" width="13" height="13" aria-hidden="true"><rect width="32" height="32" rx="4" fill="#D52B1E"/><rect x="6" y="13" width="20" height="6" rx="1" fill="#fff"/><rect x="13" y="6" width="6" height="20" rx="1" fill="#fff"/></svg> {t('footer.madeInSwitzerland')}</p>
     </div>
   </div>
@@ -93,6 +113,9 @@ const year = new Date().getFullYear();
   .footer-logo-ascii { font-family: var(--font-mono); font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem); font-weight: 700; color: var(--color-text-bright); line-height: 1; font-variant-ligatures: none; -webkit-font-feature-settings: "liga" 0, "clig" 0; font-feature-settings: "liga" 0, "clig" 0; }
   .footer-logo-text { font-size: clamp(0.9rem, 0.85rem + 0.2vw, 1.1rem); font-weight: 700; }
   .footer-tagline { font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem); color: var(--color-muted); line-height: 1.55; max-width: 22rem; }
+  .footer-why { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; margin-top: 0.15rem; }
+  .footer-why a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease; }
+  .footer-why a:hover { color: var(--color-accent); }
   .footer-social { list-style: none; padding: 0; margin: 0.35rem 0 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .footer-social li { display: inline-flex; }
   .footer-social a { font-size: 0.75rem; line-height: 1; color: var(--color-muted); text-decoration: none; padding: 0.34rem 0.62rem; border: 1px solid var(--color-border); border-radius: 999px; transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease; }

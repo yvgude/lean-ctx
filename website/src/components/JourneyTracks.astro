@@ -1,0 +1,177 @@
+---
+import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+import { getTracksWithJourneys } from '../lib/tracks';
+import { getPillar } from '../lib/positioning';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const trackData = getTracksWithJourneys();
+---
+
+<div class="jt-grid">
+  {
+    trackData.map((track, i) => (
+      <a class="jt-card animate-entrance" href={lp(track.href)} style={`--i:${i}`}>
+        <div class="jt-head">
+          <div class="jt-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d={track.iconPath} />
+            </svg>
+          </div>
+          <div class="jt-pillars">
+            {track.pillars.map((pid) => (
+              <span class="jt-pillar">{getPillar(pid).verb}</span>
+            ))}
+          </div>
+        </div>
+        <span class="jt-persona">{track.persona}</span>
+        <h3 class="jt-title font-display">{track.title}</h3>
+        <p class="jt-tagline">{track.tagline}</p>
+        <ul class="jt-journeys">
+          {track.journeys.map((j) => (
+            <li>{j.title}</li>
+          ))}
+        </ul>
+        <span class="jt-cta">
+          Start this track
+          <svg class="jt-cta-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </span>
+      </a>
+    ))
+  }
+</div>
+
+<style>
+  .jt-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: clamp(1rem, 0.6rem + 1.5vw, 1.75rem);
+  }
+  .jt-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: clamp(1.5rem, 1.1rem + 1.2vw, 2.25rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--overlay-faint);
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+  }
+  .jt-card:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-elevated);
+  }
+  .jt-card:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+  }
+  .jt-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .jt-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(2.5rem, 2rem + 1vw, 3rem);
+    height: clamp(2.5rem, 2rem + 1vw, 3rem);
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-medium);
+    color: var(--color-accent);
+    flex-shrink: 0;
+  }
+  .jt-icon svg { width: 55%; height: 55%; }
+  .jt-pillars {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    justify-content: flex-end;
+  }
+  .jt-pillar {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border-radius: 4px;
+    padding: 0.15rem 0.4rem;
+  }
+  .jt-persona {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    font-style: italic;
+  }
+  .jt-title {
+    font-size: clamp(1.125rem, 0.95rem + 0.6vw, 1.375rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-text-bright);
+    margin: 0;
+  }
+  .jt-tagline {
+    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
+    line-height: 1.55;
+    color: var(--color-muted);
+    margin: 0;
+  }
+  .jt-journeys {
+    list-style: none;
+    padding: 0;
+    margin: 0.25rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .jt-journeys li {
+    position: relative;
+    padding-left: 1rem;
+    font-size: 0.8125rem;
+    color: var(--color-text);
+  }
+  .jt-journeys li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.55em;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    opacity: 0.6;
+  }
+  .jt-cta {
+    margin-top: auto;
+    padding-top: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-accent);
+  }
+  .jt-cta-arrow {
+    width: 1rem;
+    height: 1rem;
+    transition: transform 0.25s var(--ease-out, ease);
+  }
+  .jt-card:hover .jt-cta-arrow,
+  .jt-card:focus-visible .jt-cta-arrow {
+    transform: translateX(4px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .jt-cta-arrow { transition: none; }
+  }
+</style>

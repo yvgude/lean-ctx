@@ -1,0 +1,121 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const sidebar = [
+  {
+    title: 'Performance Tuning',
+    items: [
+      { label: 'See effective limits', href: lp('/docs/performance-tuning') + '#limits' },
+      { label: 'Memory profile', href: lp('/docs/performance-tuning') + '#profile' },
+      { label: 'Bounding the search index', href: lp('/docs/performance-tuning') + '#bm25' },
+      { label: 'Bounding the code graph', href: lp('/docs/performance-tuning') + '#graph' },
+      { label: 'Disk / RAM / staleness', href: lp('/docs/performance-tuning') + '#budgets' },
+      { label: 'Finding what is slow', href: lp('/docs/performance-tuning') + '#slow-log' },
+      { label: 'Keeping caches lean', href: lp('/docs/performance-tuning') + '#cache' },
+    ],
+  },
+  {
+    title: 'Related',
+    items: [
+      { label: 'Budgets & SLOs', href: lp('/docs/budgets-and-slos') },
+      { label: 'Configuration', href: lp('/docs/configuration') },
+      { label: 'Observatory', href: lp('/docs/observatory') },
+      { label: 'Troubleshooting', href: lp('/docs/troubleshooting') },
+    ],
+  },
+];
+---
+
+<DocsLayout
+  title="Performance Tuning"
+  description="Bound LeanCTX disk/RAM on huge monorepos and constrained CI runners: memory_profile, bm25_max_cache_mb, graph_index_max_files, LEAN_CTX_MAX_* and the slow-command log — with exact knobs and defaults."
+  sidebar={sidebar}
+>
+  <p>
+    <strong>You are:</strong> running LeanCTX on a huge monorepo, a constrained CI runner, or a
+    low-RAM laptop, and you want to bound how much disk/RAM it uses — or find what's slow.
+    LeanCTX is fast by default; these are the exact knobs and their defaults when you need them.
+  </p>
+
+  <h2 id="limits">See your effective limits first</h2>
+  <p>
+    Before tuning, look at what's actually in effect. <code>lean-ctx config show</code> resolves
+    config + env + defaults into one view and tags the <strong>source</strong> of each value
+    (<code>← config</code> = yours, <code>← default</code> = built-in). <code>0</code> means
+    "unbounded / use the derived default".
+  </p>
+  <pre><code>{`╭─── Derived effective limits ────────────────────────────────╮
+│ archive_max_disk_mb    =    500 MB                          │
+│ bm25_max_cache_mb      =    512 MB                          │
+│ archive_max_age_hours  =     48 h                           │
+│ graph_index_max_files  =      0                             │
+╰────────────────────────────────────────────────────────────╯`}</code></pre>
+
+  <h2 id="profile">The memory profile — one dial for the footprint</h2>
+  <p>
+    <code>memory_profile</code> sets the overall disk/RAM posture; the derived limits (archive
+    size, BM25 cache, staleness) follow from it unless you override them individually.
+  </p>
+  <pre><code>{`memory_profile = "balanced"     # balanced | performance | conservative`}</code></pre>
+  <pre><code>{`# or per-process, no config edit:
+LEAN_CTX_MEMORY_PROFILE=conservative lean-ctx serve --daemon`}</code></pre>
+  <p>Reach for <code>conservative</code> on small CI runners or low-RAM machines; <code>performance</code> trades disk for speed on a workstation.</p>
+
+  <h2 id="bm25">Bounding the search index (BM25)</h2>
+  <p>The BM25 full-text index is the biggest disk consumer on large repos.</p>
+  <pre><code>{`bm25_max_cache_mb = 512          # cap the BM25 cache (derived from profile if unset)
+extra_ignore_patterns = ["vendor/**", "*.min.js"]   # never index these`}</code></pre>
+  <pre><code>LEAN_CTX_BM25_MAX_CACHE_MB=256 lean-ctx index build</code></pre>
+  <p>When the cap is hit, LeanCTX tells you exactly how to react (raise the cap or add ignore patterns). If an index is oversized or corrupt, reclaim it with <code>lean-ctx cache prune</code> — the next read rebuilds a clean one.</p>
+
+  <h2 id="graph">Bounding the code graph</h2>
+  <pre><code>{`graph_index_max_files = 0        # 0 = unlimited; set a cap on giant monorepos`}</code></pre>
+  <p>On a very large tree, capping <code>graph_index_max_files</code> keeps graph builds fast and bounded; when the limit is reached, LeanCTX prints a clear truncation notice so it's never silent. To skip indexing entirely (e.g. an ephemeral CI job that only needs reads):</p>
+  <pre><code>{`LEAN_CTX_NO_INDEX=1 lean-ctx <cmd>          # or LEAN_CTX_DISABLE_SEARCH_INDEX=1`}</code></pre>
+
+  <h2 id="budgets">Disk / RAM / staleness budgets</h2>
+  <p>These cross-cutting budgets apply across caches and indexes; <code>0</code> means "use the profile-derived default":</p>
+  <table>
+    <thead><tr><th>Knob</th><th>Env override</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>max_disk_mb</code></td><td><code>LEAN_CTX_MAX_DISK_MB</code></td><td>total on-disk budget across caches/indexes</td></tr>
+      <tr><td><code>max_ram_percent</code></td><td><code>LEAN_CTX_MAX_RAM_PERCENT</code></td><td>RAM ceiling as % of system memory (default 5)</td></tr>
+      <tr><td><code>max_staleness_days</code></td><td><code>LEAN_CTX_MAX_STALENESS_DAYS</code></td><td>auto-prune entries older than N days</td></tr>
+    </tbody>
+  </table>
+  <p><code>config show</code> warns if <code>max_disk_mb</code> is set lower than <code>archive.max_disk_mb + bm25_max_cache_mb</code>, so your sub-budgets can't quietly exceed the global cap.</p>
+
+  <h2 id="slow-log">Finding what's slow — slow-log</h2>
+  <p>LeanCTX records commands that exceed <code>slow_command_threshold_ms</code> (default <code>5000</code>) so you can see where wall-clock time goes:</p>
+  <pre><code>{`slow_command_threshold_ms = 5000`}</code></pre>
+  <pre><code>{`lean-ctx slow-log list      # show recorded slow commands
+lean-ctx slow-log clear     # reset the log`}</code></pre>
+  <p>Pair this with <code>lean-ctx gain --deep</code> (cost + heatmap) and <code>lean-ctx ghost</code> (uncompressed-command waste) to turn "it feels slow" into a concrete list.</p>
+
+  <h2 id="cache">Keeping caches lean</h2>
+  <pre><code>{`lean-ctx cache stats              # size + hit rate
+lean-ctx cache prune              # drop oversized/quarantined/orphaned indexes
+lean-ctx cache reset --project    # wipe just this project's cache`}</code></pre>
+  <p>A healthy cache has a high hit rate (each hit is a ~13-token re-read). <code>cache prune</code> is the safe periodic maintenance command; it never touches valid, in-budget entries.</p>
+
+  <h2 id="checklist">Tuning checklist</h2>
+  <table>
+    <thead><tr><th>Constraint</th><th>Knob</th></tr></thead>
+    <tbody>
+      <tr><td>Low-RAM / small CI runner</td><td><code>memory_profile = "conservative"</code></td></tr>
+      <tr><td>Index eats too much disk</td><td><code>bm25_max_cache_mb</code> + <code>extra_ignore_patterns</code></td></tr>
+      <tr><td>Giant monorepo, slow graph</td><td><code>graph_index_max_files = &lt;N&gt;</code></td></tr>
+      <tr><td>No index needed at all</td><td><code>LEAN_CTX_NO_INDEX=1</code></td></tr>
+      <tr><td>Hard disk/RAM ceiling</td><td><code>LEAN_CTX_MAX_DISK_MB</code> / <code>LEAN_CTX_MAX_RAM_PERCENT</code></td></tr>
+      <tr><td>"What's slow?"</td><td><code>slow-log list</code> + <code>gain --deep</code></td></tr>
+      <tr><td>Reclaim space now</td><td><code>cache prune</code></td></tr>
+    </tbody>
+  </table>
+
+  <hr />
+  <p><strong>Next step:</strong> set enforceable ceilings in <a href={lp('/docs/budgets-and-slos')}>Budgets &amp; SLOs →</a></p>
+</DocsLayout>

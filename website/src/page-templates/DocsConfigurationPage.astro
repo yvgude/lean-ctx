@@ -21,26 +21,26 @@ const sidebar = [
       { label: t('docsConfiguration.sidebarEnvVars'), href: lp('/docs/configuration') + '#environment-variables' },
       { label: t('docsConfiguration.sidebarHookRedirect'), href: lp('/docs/configuration') + '#hook-redirect' },
       { label: t('docsConfiguration.sidebarCursorRule'), href: lp('/docs/configuration') + '#cursor-rule' },
-      { label: 'Security Layer', href: lp('/docs/configuration') + '#security-layer' },
-      { label: 'Secret Detection', href: lp('/docs/configuration') + '#secret-detection' },
-      { label: 'Boundary Policy', href: lp('/docs/configuration') + '#boundary-policy' },
-      { label: 'Data Directory', href: lp('/docs/configuration') + '#data-directory' },
-      { label: 'CLI File Cache', href: lp('/docs/configuration') + '#cli-cache' },
-      { label: 'Loop Detection', href: lp('/docs/configuration') + '#loop-detection' },
-      { label: 'Pipe Guard', href: lp('/docs/configuration') + '#pipe-guard' },
-      { label: 'Tool Result Archive', href: lp('/docs/configuration') + '#archive' },
-      { label: 'Cloud', href: lp('/docs/configuration') + '#cloud' },
-      { label: 'Providers', href: lp('/docs/configuration') + '#providers' },
-      { label: 'Proxy', href: lp('/docs/configuration') + '#proxy' },
-      { label: 'Memory', href: lp('/docs/configuration') + '#memory' },
-      { label: 'Terse Agent Mode', href: lp('/docs/configuration') + '#terse-agent' },
-      { label: 'Output Density', href: lp('/docs/configuration') + '#output-density' },
-      { label: 'Rules Scope', href: lp('/docs/configuration') + '#rules-scope' },
-      { label: 'Buddy Mode', href: lp('/docs/configuration') + '#buddy-mode' },
-      { label: 'Custom Aliases', href: lp('/docs/configuration') + '#custom-aliases' },
-      { label: 'Headless MCP Mode', href: lp('/docs/configuration') + '#headless-mode' },
-      { label: 'Project Identity (.lean-ctx-id)', href: lp('/docs/configuration') + '#lean-ctx-id' },
-      { label: 'Shell Activation', href: lp('/docs/configuration') + '#shell-activation' },
+      { label: t('docs.configuration.sidebarSecurityLayer'), href: lp('/docs/configuration') + '#security-layer' },
+      { label: t('docs.configuration.sidebarSecretDetection'), href: lp('/docs/configuration') + '#secret-detection' },
+      { label: t('docs.configuration.sidebarBoundaryPolicy'), href: lp('/docs/configuration') + '#boundary-policy' },
+      { label: t('docs.configuration.sidebarDataDirectory'), href: lp('/docs/configuration') + '#data-directory' },
+      { label: t('docs.configuration.sidebarCliFileCache'), href: lp('/docs/configuration') + '#cli-cache' },
+      { label: t('docs.configuration.sidebarLoopDetection'), href: lp('/docs/configuration') + '#loop-detection' },
+      { label: t('docs.configuration.sidebarPipeGuard'), href: lp('/docs/configuration') + '#pipe-guard' },
+      { label: t('docs.configuration.sidebarToolResultArchive'), href: lp('/docs/configuration') + '#archive' },
+      { label: t('docs.configuration.sidebarCloud'), href: lp('/docs/configuration') + '#cloud' },
+      { label: t('docs.configuration.sidebarProviders'), href: lp('/docs/configuration') + '#providers' },
+      { label: t('docs.configuration.sidebarProxy'), href: lp('/docs/configuration') + '#proxy' },
+      { label: t('docs.configuration.sidebarMemory'), href: lp('/docs/configuration') + '#memory' },
+      { label: t('docs.configuration.sidebarTerseAgentMode'), href: lp('/docs/configuration') + '#terse-agent' },
+      { label: t('docs.configuration.sidebarOutputDensity'), href: lp('/docs/configuration') + '#output-density' },
+      { label: t('docs.configuration.sidebarRulesScope'), href: lp('/docs/configuration') + '#rules-scope' },
+      { label: t('docs.configuration.sidebarBuddyMode'), href: lp('/docs/configuration') + '#buddy-mode' },
+      { label: t('docs.configuration.sidebarCustomAliases'), href: lp('/docs/configuration') + '#custom-aliases' },
+      { label: t('docs.configuration.sidebarHeadlessMcpMode'), href: lp('/docs/configuration') + '#headless-mode' },
+      { label: t('docs.configuration.sidebarProjectIdentity'), href: lp('/docs/configuration') + '#lean-ctx-id' },
+      { label: t('docs.configuration.sidebarShellActivation'), href: lp('/docs/configuration') + '#shell-activation' },
       { label: t('docsConfiguration.sidebarExitCodes'), href: lp('/docs/configuration') + '#exit-codes' },
       { label: t('docsConfiguration.sidebarTokenCounting'), href: lp('/docs/configuration') + '#token-counting' },
     ],
@@ -61,8 +61,8 @@ const sidebar = [
 
   <p set:html={t('docsConfiguration.intro')} />
 
-  <DocsCallout variant="note" title="Most people don't change anything">
-    <p><code>lean-ctx setup</code> configures everything automatically. If you tune one thing, it's usually <code>compression_level</code> (how aggressively output is compressed) or <code>profile</code>. Treat the rest of this page as a reference — reach for it only when you need a specific knob.</p>
+  <DocsCallout variant="note" title={t('docs.configuration.calloutNoChangeTitle')}>
+    <p set:html={t('docs.configuration.calloutNoChangeBody')} />
   </DocsCallout>
 
   <hr />
@@ -96,7 +96,7 @@ lean-ctx config schema</code></pre>
   <p set:html={t('docsConfiguration.configPriorityDesc')} />
   <table>
     <thead>
-      <tr><th>Priority</th><th>Source</th><th>Example</th></tr>
+      <tr><th>{t('docs.configuration.thPriority')}</th><th>{t('docs.configuration.thSource')}</th><th>{t('docs.configuration.thExample')}</th></tr>
     </thead>
     <tbody>
       <tr><td><strong>1 (highest)</strong></td><td set:html={t('docsConfiguration.configPriorityP1')} /><td><code>LEAN_CTX_COMPRESSION=max</code></td></tr>
@@ -112,7 +112,7 @@ lean-ctx config schema</code></pre>
   <p set:html={t('docsConfiguration.commonConfusionDesc')} />
   <table>
     <thead>
-      <tr><th>Parameter</th><th>What it controls</th><th>Default</th><th>Section</th></tr>
+      <tr><th>{t('docs.configuration.thParameter')}</th><th>{t('docs.configuration.thWhatItControls')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thSection')}</th></tr>
     </thead>
     <tbody>
       <tr>
@@ -177,19 +177,19 @@ lean-ctx config schema</code></pre>
         <td><code>compression_level</code></td>
         <td>string</td>
         <td><code>"lite"</code></td>
-        <td>Unified compression level controlling the 4-layer terse engine. <code>"off"</code> = no compression, <code>"lite"</code> = abbreviations only, <code>"standard"</code> = balanced compression, <code>"max"</code> = maximum token savings. Replaces the legacy <code>output_density</code> and <code>terse_agent</code> settings. See <a href="#compression-level">Compression Level</a>.</td>
+        <td set:html={t('docs.configuration.optCompressionLevelDesc')} />
       </tr>
       <tr>
         <td><code>minimal_overhead</code></td>
         <td>bool</td>
         <td><code>false</code></td>
-        <td>Reduce per-call token overhead to the absolute minimum. Disables auto-checkpoints, meta-strings (savings notes, stale notes, shell hints), and session/knowledge blocks in MCP instructions. Recommended for Codex, CI pipelines, and cost-sensitive environments. Also available via <code>LEAN_CTX_MINIMAL=1</code>. See <a href="#minimal-overhead">Minimal Overhead</a>.</td>
+        <td set:html={t('docs.configuration.optMinimalOverheadDesc')} />
       </tr>
       <tr>
         <td><code>output_density</code></td>
         <td>string</td>
         <td><code>"normal"</code></td>
-        <td><strong>Legacy</strong> — superseded by <a href="#compression-level"><code>compression_level</code></a>. Values: <code>"normal"</code> / <code>"terse"</code> / <code>"ultra"</code>. Also available via <code>LEAN_CTX_OUTPUT_DENSITY</code>. See <a href="#output-density">Output Density</a>.</td>
+        <td set:html={t('docs.configuration.optOutputDensityDesc')} />
       </tr>
       <tr>
         <td><code>tee_mode</code></td>
@@ -219,267 +219,260 @@ lean-ctx config schema</code></pre>
         <td><code>custom_aliases</code></td>
         <td>list</td>
         <td><code>[]</code></td>
-        <td>Define custom shell command aliases for <code>ctx_shell</code>. Each entry maps a short name to a full command. See <a href="#custom-aliases">Custom Aliases</a> for examples.</td>
+        <td set:html={t('docs.configuration.optCustomAliasesTableDesc')} />
       </tr>
       <tr>
         <td><code>path_jail</code></td>
         <td>bool</td>
         <td><code>true</code></td>
-        <td>Enable/disable PathJail sandbox. Set to <code>false</code> to allow file operations outside the project root. Useful in Docker containers or monorepos with external mounts. Also available via <code>LEAN_CTX_NO_JAIL=1</code>. See <a href={lp('/docs/security') + '#pathjail'}>Security: PathJail</a>. <span class="text-xs text-muted">v3.6.7</span></td>
+        <td set:html={t('docs.configuration.optPathJailTableDesc')} />
       </tr>
       <tr>
         <td><code>redirect_exclude</code></td>
         <td>list</td>
         <td><code>[]</code></td>
-        <td>Glob patterns for files that should bypass the hook redirect and go straight to the native Read tool. Useful for config files or files you don't want compressed. Example: <code>[".wolf/**", ".claude/**", "*.json", "CLAUDE.md"]</code>. Also configurable via <code>LEAN_CTX_HOOK_EXCLUDE</code>.</td>
+        <td set:html={t('docs.configuration.optRedirectExcludeDesc')} />
       </tr>
       <tr>
         <td><code>content_defined_chunking</code></td>
         <td>bool</td>
         <td><code>false</code></td>
-        <td>Enable Rabin-Karp content-defined chunking for <code>ctx_read</code>. Creates stable chunk boundaries based on content hashes, improving LLM prompt cache hit rates across edits. Opt-in: enable when working with large files that change frequently.</td>
+        <td set:html={t('docs.configuration.optContentDefinedChunkingDesc')} />
       </tr>
       <tr>
         <td><code>disabled_tools</code></td>
         <td>list</td>
         <td><code>[]</code></td>
-        <td>Exclude tools from the MCP tool list to reduce token overhead. Example: <code>["ctx_benchmark", "ctx_metrics", "ctx_wrapped"]</code>. Also available via <code>LEAN_CTX_DISABLED_TOOLS</code> env var (comma-separated).</td>
+        <td set:html={t('docs.configuration.optDisabledToolsDesc')} />
       </tr>
       <tr>
         <td><code>terse_agent</code></td>
         <td>string</td>
         <td><code>"off"</code></td>
-        <td><strong>Legacy</strong> — superseded by <a href="#compression-level"><code>compression_level</code></a>. Still accepted for backward compatibility (<code>"off"</code>/<code>"lite"</code>/<code>"full"</code>/<code>"ultra"</code> and <code>true</code>/<code>false</code>). If both are set, <code>compression_level</code> takes precedence.</td>
+        <td set:html={t('docs.configuration.optTerseAgentDesc')} />
       </tr>
       <tr>
         <td><code>rules_scope</code></td>
         <td>string</td>
         <td><code>"both"</code></td>
-        <td>Controls where lean-ctx injects its cursor rules. <code>"global"</code> = only <code>~/.cursor/rules/</code>, <code>"project"</code> = only <code>.cursor/rules/</code> in the project, <code>"both"</code> = both locations. See <a href="#rules-scope">Rules Scope</a>.</td>
+        <td set:html={t('docs.configuration.optRulesScopeDesc')} />
       </tr>
       <tr>
         <td><code>slow_command_threshold_ms</code></td>
         <td>u64</td>
         <td><code>5000</code></td>
-        <td>Commands running longer than this threshold (in milliseconds) are flagged in <code>ctx_shell</code> output with a timing warning. Set to <code>0</code> to disable slow command detection entirely.</td>
+        <td set:html={t('docs.configuration.optSlowCommandThresholdDesc')} />
       </tr>
       <tr>
         <td><code>buddy_enabled</code></td>
         <td>bool</td>
         <td><code>true</code></td>
-        <td>Enable buddy mode for collaborative multi-agent workflows. See <a href="#buddy-mode">Buddy Mode</a>.</td>
+        <td set:html={t('docs.configuration.optBuddyEnabledDesc')} />
       </tr>
       <tr>
         <td><code>extra_ignore_patterns</code></td>
         <td>list</td>
         <td><code>[]</code></td>
-        <td>Additional glob patterns to exclude from <code>ctx_tree</code>, <code>ctx_search</code>, and file discovery. These are merged with the built-in ignore list (node_modules, .git, etc.). Example: <code>["*.generated.ts", "vendor/**", "dist/**"]</code></td>
+        <td set:html={t('docs.configuration.optExtraIgnorePatternsDesc')} />
       </tr>
       <tr>
         <td><code>profile</code></td>
         <td>string</td>
         <td><code>"coder"</code></td>
-        <td>Active profile name. Overridden by <code>LEAN_CTX_PROFILE</code> env var. Resolution order: env var → config.toml → "coder". Built-in profiles: <code>"coder"</code> (balanced compression), <code>"passthrough"</code> (full content, zero compression). Set via <code>lean-ctx config set profile &lt;name&gt;</code>.</td>
+        <td set:html={t('docs.configuration.optProfileDesc')} />
       </tr>
       <tr>
         <td><code>theme</code></td>
         <td>string</td>
         <td><code>"default"</code></td>
-        <td>Visual theme for CLI and dashboard output.</td>
+        <td set:html={t('docs.configuration.optThemeDesc')} />
       </tr>
       <tr>
         <td><code>memory_profile</code></td>
         <td>string</td>
         <td><code>"balanced"</code></td>
-        <td>Controls memory subsystem behavior. <code>"low"</code> reduces memory usage at the cost of recall. <code>"balanced"</code> (default) optimizes for typical workflows. <code>"performance"</code> retains more context for maximum recall. Also available via <code>LEAN_CTX_MEMORY_PROFILE</code>.</td>
+        <td set:html={t('docs.configuration.optMemoryProfileDesc')} />
       </tr>
       <tr>
         <td><code>bm25_max_cache_mb</code></td>
         <td>u64</td>
         <td><code>128</code></td>
-        <td>Maximum size in MB for the BM25 search index cache. Higher values improve search performance for large codebases.</td>
+        <td set:html={t('docs.configuration.optBm25MaxCacheMbDesc')} />
       </tr>
       <tr>
         <td><code>allow_paths</code></td>
         <td>list</td>
         <td><code>[]</code></td>
-        <td>Additional paths outside the project root that are allowed through the PathJail sandbox. Use for monorepo shared directories or external dependency sources.</td>
+        <td set:html={t('docs.configuration.optAllowPathsDesc')} />
       </tr>
       <tr>
         <td><code>shell_hook_disabled</code></td>
         <td>bool</td>
         <td><code>false</code></td>
-        <td>Disable the shell hook entirely. When <code>true</code>, lean-ctx will not intercept shell commands for compression.</td>
+        <td set:html={t('docs.configuration.optShellHookDisabledDesc')} />
       </tr>
       <tr>
         <td><code>update_check_disabled</code></td>
         <td>bool</td>
         <td><code>false</code></td>
-        <td>Disable automatic version update checks. When <code>true</code>, lean-ctx will not check for new releases on startup.</td>
+        <td set:html={t('docs.configuration.optUpdateCheckDisabledDesc')} />
       </tr>
       <tr>
         <td><code>graph_index_max_files</code></td>
         <td>u64</td>
         <td><code>5000</code></td>
-        <td>Maximum files scanned by the JSON graph index fallback. Increase for large monorepos. When the cap is reached, <code>lean-ctx gain</code> shows "(capped)" and a warning is emitted.</td>
+        <td set:html={t('docs.configuration.optGraphIndexMaxFilesDesc')} />
       </tr>
       <tr>
         <td><code>sandbox_level</code></td>
         <td>u8</td>
         <td><code>0</code></td>
-        <td>Sandbox level for code execution. <code>0</code> = subprocess isolation only, <code>1</code> = OS-level sandboxing (Seatbelt on macOS, Landlock on Linux). Also available via <code>LEAN_CTX_SANDBOX_LEVEL</code>.</td>
+        <td set:html={t('docs.configuration.optSandboxLevelDesc')} />
       </tr>
       <tr>
         <td><code>shell_allowlist</code></td>
         <td>list</td>
         <td><code>[]</code></td>
-        <td>When non-empty, only listed commands are permitted by <code>ctx_shell</code>. All other commands are rejected. Also available via <code>LEAN_CTX_SHELL_ALLOWLIST</code> (comma-separated).</td>
+        <td set:html={t('docs.configuration.optShellAllowlistDesc')} />
       </tr>
       <tr>
         <td><code>no_degrade</code></td>
         <td>bool</td>
         <td><code>false</code></td>
-        <td>When <code>true</code>, disables all automatic read mode degradation. Explicit <code>mode=full</code> is never downgraded by pressure or context gate. Also available via <code>LCTX_NO_DEGRADE=1</code>. <span class="text-xs text-muted">v3.6.15</span></td>
+        <td set:html={t('docs.configuration.optNoDegradeDesc')} />
       </tr>
       <tr>
         <td><code>allow_auto_reroot</code></td>
         <td>bool</td>
         <td><code>false</code></td>
-        <td>Allow automatic project root re-rooting. When <code>false</code>, absolute paths outside the PathJail are rejected. Also available via <code>LEAN_CTX_ALLOW_REROOT</code>.</td>
+        <td set:html={t('docs.configuration.optAllowAutoRerootDesc')} />
       </tr>
       <tr>
         <td><code>agent_token_budget</code></td>
         <td>usize</td>
         <td><code>0</code></td>
-        <td>Default per-agent token budget. <code>0</code> = unlimited. Override per-agent via <code>ctx_session</code>.</td>
+        <td set:html={t('docs.configuration.optAgentTokenBudgetDesc')} />
       </tr>
       <tr>
         <td><code>reference_results</code></td>
         <td>bool</td>
         <td><code>false</code></td>
-        <td>When <code>true</code>, large tool outputs (&gt;4000 chars) are stored as references and a URI is returned instead of the full content. Also available via <code>LEAN_CTX_REFERENCE_RESULTS</code>.</td>
+        <td set:html={t('docs.configuration.optReferenceResultsDesc')} />
       </tr>
       <tr>
         <td><code>[archive]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Configure zero-loss compression. Full tool results are saved to disk; the agent retrieves them on demand via <code>ctx_expand</code>. See <a href="#archive">Tool Result Archive</a>.</td>
+        <td set:html={t('docs.configuration.optArchiveTableDesc')} />
       </tr>
       <tr>
         <td><code>[cloud]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Cloud integration settings. See <a href="#cloud">Cloud</a>.</td>
+        <td set:html={t('docs.configuration.optCloudTableDesc')} />
       </tr>
       <tr>
         <td><code>[proxy]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Upstream API proxy overrides. See <a href="#proxy">Proxy</a>.</td>
+        <td set:html={t('docs.configuration.optProxyTableDesc')} />
       </tr>
       <tr>
         <td><code>[memory]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Memory subsystem configuration with sub-tables for knowledge, episodic, procedural, lifecycle, gotcha, and embeddings. See <a href="#memory">Memory</a>.</td>
+        <td set:html={t('docs.configuration.optMemoryTableDesc')} />
       </tr>
       <tr>
         <td><code>[secret_detection]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Regex-based secret detection in tool outputs. See <a href="#secret-detection">Secret Detection</a>.</td>
+        <td set:html={t('docs.configuration.optSecretDetectionTableDesc')} />
       </tr>
       <tr>
         <td><code>[boundary_policy]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Cross-project access control and audit policy. See <a href="#boundary-policy">Boundary Policy</a>.</td>
+        <td set:html={t('docs.configuration.optBoundaryPolicyTableDesc')} />
       </tr>
       <tr>
         <td><code>bypass_hints</code></td>
         <td>string</td>
         <td><code>"gentle"</code></td>
-        <td>Controls bypass detection hints when agents use native Read/Grep instead of lean-ctx tools. Values: <code>"gentle"</code> (reminder after cooldown), <code>"firm"</code> (immediate reminder), <code>"off"</code> (disabled). Also available via <code>LEAN_CTX_BYPASS_HINTS</code>.</td>
+        <td set:html={t('docs.configuration.optBypassHintsDesc')} />
       </tr>
       <tr>
         <td><code>[loop_detection]</code></td>
         <td>table</td>
         <td>-</td>
-        <td>Configure loop detection thresholds. See <a href="#loop-detection">Loop Detection</a> section below.</td>
+        <td set:html={t('docs.configuration.optLoopDetectionTableDesc')} />
       </tr>
       <tr>
         <td><code>memory_cleanup</code></td>
         <td>string</td>
         <td><code>"aggressive"</code></td>
-        <td>Controls how aggressively lean-ctx frees memory when idle. <code>"aggressive"</code> (default) clears caches after 5 minutes of idle time — ideal for single-IDE use. <code>"shared"</code> retains caches for 30 minutes — ideal when multiple IDEs or models share the same lean-ctx instance. Also available via <code>LEAN_CTX_MEMORY_CLEANUP</code> env var.</td>
+        <td set:html={t('docs.configuration.optMemoryCleanupDesc')} />
       </tr>
       <tr>
         <td><code>shell_activation</code></td>
         <td>string</td>
         <td><code>"always"</code></td>
-        <td>Controls when lean-ctx shell aliases auto-activate. <code>"always"</code> (default): active in every interactive shell. <code>"agents-only"</code>: only active when AI agent env vars are detected (<code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>). <code>"off"</code>: never auto-activate, user must call <code>lean-ctx-on</code> manually. Also available via <code>LEAN_CTX_SHELL_ACTIVATION</code> env var. See <a href="#shell-activation">Shell Activation</a>.</td>
+        <td set:html={t('docs.configuration.optShellActivationDesc')} />
       </tr>
       <tr>
         <td><code>max_ram_percent</code></td>
         <td>u8</td>
         <td><code>5</code></td>
-        <td>Maximum percentage of system RAM that lean-ctx may use before the RAM Guardian triggers adaptive cache eviction. Range: 1–50. Also available via <code>LEAN_CTX_MAX_RAM_PERCENT</code> env var.</td>
+        <td set:html={t('docs.configuration.optMaxRamPercentDesc')} />
       </tr>
       <tr>
         <td><code>savings_footer</code></td>
         <td>string</td>
         <td><code>"auto"</code></td>
-        <td>Controls visibility of token savings footers (e.g. <code>[42 tok saved (30%)]</code>). <code>"auto"</code> (default): shown in CLI, suppressed in MCP/agent context. <code>"always"</code>: always shown. <code>"never"</code>: never shown. Also available via <code>LEAN_CTX_SAVINGS_FOOTER</code> env var.</td>
+        <td set:html={t('docs.configuration.optSavingsFooterDesc')} />
       </tr>
     </tbody>
   </table>
 
   <hr />
 
-  <h2 id="simplified-configuration">Simplified Configuration <span class="text-xs font-normal text-muted ml-2">v3.6.18</span></h2>
-  <p>
-    Instead of tuning dozens of individual limits, you can set a few high-level parameters that
-    automatically derive downstream values. When simplified settings are used and individual limits
-    are still at their defaults, the derived values take effect.
-  </p>
+  <h2 id="simplified-configuration">{t('docs.configuration.simplifiedConfigTitle')} <span class="text-xs font-normal text-muted ml-2">v3.6.18</span></h2>
+  <p set:html={t('docs.configuration.simplifiedConfigDesc')} />
 
   <table>
     <thead>
-      <tr><th>Setting</th><th>Effect</th><th>Scale</th></tr>
+      <tr><th>{t('docs.configuration.thSetting')}</th><th>{t('docs.configuration.thEffect')}</th><th>{t('docs.configuration.thScale')}</th></tr>
     </thead>
     <tbody>
       <tr>
         <td><code>max_disk_mb</code></td>
-        <td>Distributes to <code>archive.max_disk_mb</code> (25%), <code>bm25_max_cache_mb</code> (10%), and proportionally scales memory limits (facts, patterns, episodes, procedures)</td>
-        <td>Factor = <code>max_disk_mb / 500</code>, clamped to 0.5x–10x</td>
+        <td set:html={t('docs.configuration.simplifiedMaxDiskEffect')} />
+        <td set:html={t('docs.configuration.simplifiedMaxDiskScale')} />
       </tr>
       <tr>
         <td><code>max_staleness_days</code></td>
-        <td>Flows into <code>archive.max_age_hours</code> (days × 24)</td>
-        <td>Direct conversion</td>
+        <td set:html={t('docs.configuration.simplifiedMaxStalenessEffect')} />
+        <td set:html={t('docs.configuration.simplifiedMaxStalenessScale')} />
       </tr>
       <tr>
         <td><code>compression_level</code></td>
-        <td>Sets terse agent, output density, and CRP mode in one knob</td>
+        <td set:html={t('docs.configuration.simplifiedCompressionEffect')} />
         <td><code>Off</code> / <code>Lite</code> / <code>Standard</code> / <code>Max</code></td>
       </tr>
       <tr>
         <td><code>max_ram_percent</code></td>
-        <td>RAM Guardian eviction threshold</td>
-        <td>1–50% of system RAM</td>
+        <td set:html={t('docs.configuration.simplifiedMaxRamEffect')} />
+        <td set:html={t('docs.configuration.simplifiedMaxRamScale')} />
       </tr>
       <tr>
         <td><code>memory_profile</code></td>
-        <td>Preset for BM25 cache and runtime memory usage</td>
+        <td set:html={t('docs.configuration.simplifiedMemoryProfileEffect')} />
         <td><code>low</code> (64MB) / <code>balanced</code> (128MB) / <code>performance</code> (512MB)</td>
       </tr>
     </tbody>
   </table>
 
-  <p>
-    Use <code>lean-ctx config show</code> to see all effective values with their source
-    (env / config / default / derived).
-  </p>
+  <p set:html={t('docs.configuration.simplifiedConfigShowNote')} />
 
   <pre><code># Example: 2GB disk budget → facts=800, patterns=200, episodes=2000, procedures=400
 max_disk_mb = 2000
@@ -508,12 +501,12 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_MINIMAL</code></td>
         <td>1 / unset</td>
-        <td>Enable <a href="#minimal-overhead">minimal overhead mode</a>. Disables auto-checkpoints, meta-strings, and session blocks in instructions. Equivalent to <code>minimal_overhead = true</code> in config.</td>
+        <td set:html={t('docs.configuration.envMinimalDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_NO_CHECKPOINT</code></td>
         <td>1 / unset</td>
-        <td>Disable auto-checkpoint injection without affecting other meta-strings. More targeted than <code>LEAN_CTX_MINIMAL</code> which disables everything.</td>
+        <td set:html={t('docs.configuration.envNoCheckpointDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
@@ -528,52 +521,52 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_MEMORY_CLEANUP</code></td>
         <td><code>aggressive</code> (default) / <code>shared</code></td>
-        <td>Controls idle memory cleanup aggressiveness. <code>aggressive</code>: clear caches after 5 min idle (single-IDE). <code>shared</code>: retain caches 30 min (multi-IDE/multi-model). Overrides <code>memory_cleanup</code> in config.toml. If <code>LEAN_CTX_CACHE_TTL</code> is also set, it takes precedence for the cache TTL value.</td>
+        <td set:html={t('docs.configuration.envMemoryCleanupDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_SHELL_ACTIVATION</code></td>
         <td><code>always</code> (default) / <code>agents-only</code> / <code>off</code></td>
-        <td>Override <code>shell_activation</code> config setting. Controls when lean-ctx shell aliases auto-activate. <code>always</code>: active in every interactive shell. <code>agents-only</code>: only when AI agent env vars detected. <code>off</code>: manual activation via <code>lean-ctx-on</code>. See <a href="#shell-activation">Shell Activation</a>.</td>
+        <td set:html={t('docs.configuration.envShellActivationDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_MAX_RAM_PERCENT</code></td>
         <td>number (default: 5)</td>
-        <td>Maximum percentage of system RAM lean-ctx may use before the RAM Guardian triggers adaptive cache eviction. Range: 1–50. Overrides <code>max_ram_percent</code> in config.toml.</td>
+        <td set:html={t('docs.configuration.envMaxRamPercentDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_SAVINGS_FOOTER</code></td>
         <td><code>auto</code> (default) / <code>always</code> / <code>never</code></td>
-        <td>Controls visibility of token savings footers. <code>auto</code>: shown in CLI, suppressed in MCP/agent context. <code>always</code>: always shown. <code>never</code>: never shown. Overrides <code>savings_footer</code> in config.toml.</td>
+        <td set:html={t('docs.configuration.envSavingsFooterDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_SANDBOX_LEVEL</code></td>
         <td><code>0</code> (default) / <code>1</code></td>
-        <td>Override <code>sandbox_level</code> config. <code>0</code> = subprocess only, <code>1</code> = OS-level sandboxing (Seatbelt on macOS, Landlock on Linux).</td>
+        <td set:html={t('docs.configuration.envSandboxLevelDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_SHELL_ALLOWLIST</code></td>
         <td>comma-separated commands</td>
-        <td>Override <code>shell_allowlist</code> config. When set, only listed commands are permitted by <code>ctx_shell</code>. Merges with config defaults. Example: <code>git,cargo,npm,ls</code></td>
+        <td set:html={t('docs.configuration.envShellAllowlistDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE</code></td>
         <td>comma-separated commands</td>
-        <td>Completely replaces the shell allowlist (no merging with config). Use for deterministic testing environments. Empty value (<code>""</code>) creates an empty allowlist (blocklist-only mode).</td>
+        <td set:html={t('docs.configuration.envShellAllowlistOverrideDesc')} />
       </tr>
       <tr>
         <td><code>LCTX_NO_DEGRADE</code></td>
         <td><code>1</code></td>
-        <td>Disable all automatic read mode degradation. Explicit <code>mode=full</code> is never downgraded by pressure.</td>
+        <td set:html={t('docs.configuration.envNoDegradeDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_ALLOW_REROOT</code></td>
         <td><code>true</code> / <code>false</code></td>
-        <td>Override <code>allow_auto_reroot</code> config. When <code>false</code> (default), absolute paths outside the PathJail are rejected.</td>
+        <td set:html={t('docs.configuration.envAllowRerootDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_REFERENCE_RESULTS</code></td>
         <td><code>true</code> / <code>false</code></td>
-        <td>Override <code>reference_results</code> config. When <code>true</code>, large tool outputs (&gt;4000 chars) are stored as references with a URI returned instead.</td>
+        <td set:html={t('docs.configuration.envReferenceResultsDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_ACTIVE</code></td>
@@ -583,12 +576,12 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_PROFILE</code></td>
         <td>profile name</td>
-        <td>Override active profile. Takes precedence over <code>profile</code> in config.toml. Built-in profiles: <code>coder</code> (default, balanced compression), <code>passthrough</code> (full content, zero compression). <span class="text-xs text-muted">v3.6.19</span></td>
+        <td set:html={t('docs.configuration.envProfileDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_FULL_TOOLS</code></td>
         <td><code>1</code> / <code>true</code> / <code>0</code> / <code>false</code></td>
-        <td>Register all MCP tools (including advanced/intelligence tools). Set to <code>0</code> or <code>false</code> to disable. <span class="text-xs text-muted">Fixed in v3.6.19: <code>=0</code> was previously treated as enabled</span></td>
+        <td set:html={t('docs.configuration.envFullToolsDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_DISABLED</code></td>
@@ -613,47 +606,47 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_DISABLED_TOOLS</code></td>
         <td>comma-separated tool names</td>
-        <td>Exclude specific tools from the MCP tool list. Overrides <code>disabled_tools</code> in config.toml when set. Example: <code>ctx_benchmark,ctx_metrics,ctx_wrapped</code></td>
+        <td set:html={t('docs.configuration.envDisabledToolsDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_BYPASS_HINTS</code></td>
         <td><code>gentle</code> (default) / <code>firm</code> / <code>off</code></td>
-        <td>Controls bypass detection hints. When agents use native Read/Grep instead of lean-ctx tools, a reminder is appended to the next response. <code>gentle</code>: reminder with cooldown (every 5 calls). <code>firm</code>: immediate reminder on every detection. <code>off</code>: disabled. Overrides <code>bypass_hints</code> in config.toml.</td>
+        <td set:html={t('docs.configuration.envBypassHintsDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_HARDEN</code></td>
         <td><code>1</code> / unset</td>
-        <td>Activate strict enforcement mode. When set, hook redirects strongly encourage lean-ctx tools by returning ALLOW JSON with embedded guidance (since v3.6.22, hooks never return DENY to avoid agent retry loops). Set automatically by <code>lean-ctx harden</code>.</td>
+        <td set:html={t('docs.configuration.envHardenDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_SHELL</code></td>
         <td>path to shell binary</td>
-        <td>Override which shell lean-ctx uses for <code>ctx_shell</code> / <code>lean-ctx -c</code>. Useful on Windows when PowerShell detection fails. Example: <code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></td>
+        <td set:html={t('docs.configuration.envShellDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_COMPRESSION</code></td>
         <td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td>
-        <td>Override <code>compression_level</code> config setting. Controls the 4-layer terse engine for unified input/output compression. See <a href="#compression-level">Compression Level</a>.</td>
+        <td set:html={t('docs.configuration.envCompressionDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_TERSE_AGENT</code></td>
         <td><code>true</code> / <code>false</code></td>
-        <td><strong>Legacy.</strong> Override <code>terse_agent</code> config. Mapped to <code>compression_level</code> internally. See <a href="#compression-level">Compression Level</a>.</td>
+        <td set:html={t('docs.configuration.envTerseAgentDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_ARCHIVE</code></td>
         <td><code>true</code> / <code>false</code></td>
-        <td>Override <code>archive.enabled</code> config. Enable zero-loss compression via the <a href="#archive">Tool Result Archive</a>.</td>
+        <td set:html={t('docs.configuration.envArchiveDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td>
         <td>number (default: 4096)</td>
-        <td>Minimum character count before a tool result is archived. Override for <code>archive.threshold_chars</code>.</td>
+        <td set:html={t('docs.configuration.envArchiveThresholdDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_HEADLESS</code></td>
         <td>set / unset</td>
-        <td>Start MCP server in headless mode - skip all auto-setup (rules injection, hook installation, CLAUDE.md modification, agent registry). See <a href="#headless-mode">Headless MCP Mode</a>.</td>
+        <td set:html={t('docs.configuration.envHeadlessDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_MODELS_DIR</code></td>
@@ -663,22 +656,22 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_DATA_DIR</code></td>
         <td>path (default: <code>~/.lean-ctx</code>)</td>
-        <td>Override the base directory for all lean-ctx persistent data (stats, knowledge, agents, cache, sessions). All modules resolve paths through this single env var. Useful for custom data locations or containerized environments.</td>
+        <td set:html={t('docs.configuration.envDataDirDesc')} />
       </tr>
       <tr>
         <td><code>LEAN_CTX_NO_JAIL</code></td>
         <td><code>1</code> / <code>true</code></td>
-        <td>Disable PathJail sandbox for the current session. Useful in Docker/Podman containers or monorepos with external mounts. See <a href={lp('/docs/security') + '#pathjail'}>PathJail Sandbox</a>. <span class="text-xs text-muted">v3.6.7</span></td>
+        <td set:html={t('docs.configuration.envNoJailDesc')} />
       </tr>
       <tr>
         <td><code>LCTX_MAX_READ_BYTES</code></td>
         <td>number (default: 5242880)</td>
-        <td>Maximum file size in bytes that <code>ctx_read</code> / <code>ctx_edit</code> will process. Files exceeding this limit are rejected with a clear error. Prevents accidental ingestion of very large files. Default: 5 MB.</td>
+        <td set:html={t('docs.configuration.envMaxReadBytesDesc')} />
       </tr>
       <tr>
         <td><code>LCTX_MAX_SHELL_BYTES</code></td>
         <td>number (default: 1048576)</td>
-        <td>Maximum shell output capture size in bytes for <code>ctx_shell</code>. Output exceeding this limit is truncated with a <code>[truncated]</code> marker. Default: 1 MB.</td>
+        <td set:html={t('docs.configuration.envMaxShellBytesDesc')} />
       </tr>
     </tbody>
   </table>
@@ -694,12 +687,8 @@ redirect_exclude = [".wolf/**", ".claude/**", "*.json", "CLAUDE.md"]</code></pre
   <pre><code># Or via environment variable (takes precedence)
 export LEAN_CTX_HOOK_EXCLUDE=".wolf/**,.claude/**,*.json"</code></pre>
 
-  <h3 id="agent-modes">Agent Integration Modes</h3>
-  <p>
-    <code>lean-ctx init --agent &lt;tool&gt;</code> supports two integration modes:
-    <code>hybrid</code> (MCP reads + shell hooks, recommended) and <code>mcp</code> (explicit <code>ctx_*</code> tools only).
-    <code>auto</code> selects the best default per tool (Hybrid for agents with shell access, MCP for others).
-  </p>
+  <h3 id="agent-modes">{t('docs.configuration.agentModesTitle')}</h3>
+  <p set:html={t('docs.configuration.agentModesDesc')} />
   <pre><code>{`# Auto (recommended — selects Hybrid for most agents)
 lean-ctx init --agent cursor
 
@@ -709,12 +698,8 @@ lean-ctx init --agent cursor --mode mcp
 # Force Hybrid (MCP reads + shell compression)
 lean-ctx init --agent cursor --mode hybrid`}</code></pre>
 
-  <h3>Binary File Passthrough (v2.21.0)</h3>
-  <p>
-    The hook redirect automatically detects binary files (images, PDFs, archives, fonts, videos,
-    compiled files) by extension and passes them through to the native Read tool. This ensures
-    AI agents can still view screenshots, images, and other non-text files without interference.
-  </p>
+  <h3>{t('docs.configuration.binaryPassthroughTitle')}</h3>
+  <p set:html={t('docs.configuration.binaryPassthroughDesc')} />
 
   <hr />
 
@@ -740,21 +725,21 @@ consolidate_every_calls = 25      # Run consolidation every N tool calls
 consolidate_cooldown_secs = 120   # Minimum seconds between consolidations</code></pre>
   <p set:html={t('docsConfiguration.autonomyConfigOverride')} />
 
-  <h3>All Autonomy Fields</h3>
+  <h3>{t('docs.configuration.autonomyFieldsTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>autonomy.enabled</code></td><td>bool</td><td><code>true</code></td><td>Master switch. When <code>false</code>, all autonomy features are disabled regardless of individual settings.</td></tr>
-      <tr><td><code>autonomy.auto_preload</code></td><td>bool</td><td><code>true</code></td><td>After <code>ctx_read</code>, automatically pre-cache files referenced via imports/includes.</td></tr>
-      <tr><td><code>autonomy.auto_dedup</code></td><td>bool</td><td><code>true</code></td><td>Automatically deduplicate the file cache when it exceeds <code>dedup_threshold</code>.</td></tr>
-      <tr><td><code>autonomy.auto_related</code></td><td>bool</td><td><code>true</code></td><td>Suggest related files based on the import graph when reading a file.</td></tr>
-      <tr><td><code>autonomy.auto_consolidate</code></td><td>bool</td><td><code>true</code></td><td>Periodically consolidate knowledge base entries to merge duplicates and prune stale entries.</td></tr>
-      <tr><td><code>autonomy.silent_preload</code></td><td>bool</td><td><code>true</code></td><td>Pre-cache files silently without adding output to tool responses. Disable to see which files were preloaded.</td></tr>
-      <tr><td><code>autonomy.dedup_threshold</code></td><td>u32</td><td><code>8</code></td><td>Number of cached files that triggers automatic deduplication.</td></tr>
-      <tr><td><code>autonomy.consolidate_every_calls</code></td><td>u32</td><td><code>25</code></td><td>Run knowledge consolidation every N tool calls. Higher values reduce overhead but delay cleanup.</td></tr>
-      <tr><td><code>autonomy.consolidate_cooldown_secs</code></td><td>u32</td><td><code>120</code></td><td>Minimum seconds between two consecutive consolidation runs, preventing rapid repeated consolidation.</td></tr>
+      <tr><td><code>autonomy.enabled</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.autonomyEnabledDesc')} /></tr>
+      <tr><td><code>autonomy.auto_preload</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.autonomyAutoPreloadDesc')} /></tr>
+      <tr><td><code>autonomy.auto_dedup</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.autonomyAutoDedupDesc')} /></tr>
+      <tr><td><code>autonomy.auto_related</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.autonomyAutoRelatedDesc')} /></tr>
+      <tr><td><code>autonomy.auto_consolidate</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.autonomyAutoConsolidateDesc')} /></tr>
+      <tr><td><code>autonomy.silent_preload</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.autonomySilentPreloadDesc')} /></tr>
+      <tr><td><code>autonomy.dedup_threshold</code></td><td>u32</td><td><code>8</code></td><td set:html={t('docs.configuration.autonomyDedupThresholdDesc')} /></tr>
+      <tr><td><code>autonomy.consolidate_every_calls</code></td><td>u32</td><td><code>25</code></td><td set:html={t('docs.configuration.autonomyConsolidateEveryCallsDesc')} /></tr>
+      <tr><td><code>autonomy.consolidate_cooldown_secs</code></td><td>u32</td><td><code>120</code></td><td set:html={t('docs.configuration.autonomyConsolidateCooldownDesc')} /></tr>
     </tbody>
   </table>
 
@@ -778,7 +763,7 @@ replacement = ""</code></pre>
 
   <hr />
 
-  <h2 id="security-layer">Security Layer <span class="text-xs font-normal text-muted ml-2">v3.1.3</span></h2>
+  <h2 id="security-layer">{t('docs.configuration.securityLayerTitle')} <span class="text-xs font-normal text-muted ml-2">v3.1.3</span></h2>
 
   <h3 set:html={t('docs.configuration.securityTitle')} />
   <p set:html={t('docs.configuration.securityDesc')} />
@@ -791,51 +776,32 @@ replacement = ""</code></pre>
     </tbody>
   </table>
 
-  <h3>PathJail (Project-Root Sandbox)</h3>
-  <p>
-    Every file operation is validated through a single <code>resolve_path</code> choke point.
-    Paths must resolve inside the project root - symlink attacks, <code>../</code> traversal,
-    and absolute paths outside the project are rejected. The sandbox is enforced for
-    <code>ctx_read</code>, <code>ctx_edit</code>, <code>ctx_search</code>, <code>ctx_tree</code>,
-    and all other file-touching tools.
-  </p>
+  <h3>{t('docs.configuration.pathJailSandboxTitle')}</h3>
+  <p set:html={t('docs.configuration.pathJailSandboxDesc')} />
 
-  <h3>Size Caps</h3>
+  <h3>{t('docs.configuration.sizeCapsTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Env Variable</th><th>Default</th><th>Protects</th></tr>
+      <tr><th>{t('docs.configuration.thEnvVariable')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thProtects')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>LCTX_MAX_READ_BYTES</code></td><td>5 MB</td><td>File reads (<code>ctx_read</code>, <code>ctx_edit</code>)</td></tr>
-      <tr><td><code>LCTX_MAX_SHELL_BYTES</code></td><td>1 MB</td><td>Shell output capture (<code>ctx_shell</code>)</td></tr>
+      <tr><td><code>LCTX_MAX_READ_BYTES</code></td><td>5 MB</td><td set:html={t('docs.configuration.sizeCapsReadProtects')} /></tr>
+      <tr><td><code>LCTX_MAX_SHELL_BYTES</code></td><td>1 MB</td><td set:html={t('docs.configuration.sizeCapsShellProtects')} /></tr>
     </tbody>
   </table>
 
-  <h3>Prompt Injection Hardening</h3>
-  <p>
-    All metadata in tool responses is sanitized via <code>neutralize_metadata</code> - stripping
-    control characters, encoded sequences, and injection patterns. Sensitive output blocks
-    (knowledge, memory, gotchas) are wrapped in CSPRNG-fenced boundaries to prevent
-    prompt injection through LLM-generated content stored in memory.
-  </p>
+  <h3>{t('docs.configuration.promptInjectionTitle')}</h3>
+  <p set:html={t('docs.configuration.promptInjectionDesc')} />
 
-  <h3>TOCTOU Mitigation</h3>
-  <p>
-    <code>ctx_edit</code> uses the same file handle for read-verify-write, preventing
-    time-of-check-to-time-of-use race conditions where a file could be swapped between
-    the validation and write phases.
-  </p>
+  <h3>{t('docs.configuration.toctouTitle')}</h3>
+  <p set:html={t('docs.configuration.toctouDesc')} />
 
   <hr />
 
-  <h2 id="secret-detection">Secret Detection <span class="text-xs font-normal text-muted ml-2">v3.6.0</span></h2>
-  <p>
-    The <code>[secret_detection]</code> section configures regex-based secret detection in tool
-    outputs. When enabled, lean-ctx scans all tool responses for patterns matching API keys,
-    tokens, passwords, and other sensitive values.
-  </p>
+  <h2 id="secret-detection">{t('docs.configuration.secretDetectionTitle')} <span class="text-xs font-normal text-muted ml-2">v3.6.0</span></h2>
+  <p set:html={t('docs.configuration.secretDetectionDesc')} />
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [secret_detection]
 enabled = true                # Enable regex-based secret detection (default: true)
@@ -844,25 +810,21 @@ custom_patterns = []          # Additional regex patterns for detection (default
 
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>secret_detection.enabled</code></td><td>bool</td><td><code>true</code></td><td>Enable regex-based secret detection. When enabled, tool outputs are scanned for patterns matching known secret formats (API keys, tokens, passwords, private keys).</td></tr>
-      <tr><td><code>secret_detection.redact</code></td><td>bool</td><td><code>false</code></td><td>Automatically redact detected secrets in tool output. When <code>true</code>, matched secrets are replaced with <code>[REDACTED]</code>. When <code>false</code>, secrets are flagged with a warning but passed through.</td></tr>
-      <tr><td><code>secret_detection.custom_patterns</code></td><td>list</td><td><code>[]</code></td><td>Additional regex patterns for secret detection, merged with the built-in patterns. Each entry is a regex string. Example: <code>["MYAPP_[A-Z0-9]{32}", "custom-secret-[a-f0-9]+"]</code></td></tr>
+      <tr><td><code>secret_detection.enabled</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.secretEnabledDesc')} /></tr>
+      <tr><td><code>secret_detection.redact</code></td><td>bool</td><td><code>false</code></td><td set:html={t('docs.configuration.secretRedactDesc')} /></tr>
+      <tr><td><code>secret_detection.custom_patterns</code></td><td>list</td><td><code>[]</code></td><td set:html={t('docs.configuration.secretCustomPatternsDesc')} /></tr>
     </tbody>
   </table>
 
   <hr />
 
-  <h2 id="boundary-policy">Boundary Policy <span class="text-xs font-normal text-muted ml-2">v3.6.0</span></h2>
-  <p>
-    The <code>[boundary_policy]</code> section controls cross-project access behavior. In monorepo
-    or multi-project setups, this determines whether agents can search or import files across
-    project boundaries, and whether such access is logged for audit.
-  </p>
+  <h2 id="boundary-policy">{t('docs.configuration.boundaryPolicyTitle')} <span class="text-xs font-normal text-muted ml-2">v3.6.0</span></h2>
+  <p set:html={t('docs.configuration.boundaryPolicyDesc')} />
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [boundary_policy]
 allow_cross_project = false   # Allow cross-project search/import (default: false)
@@ -870,24 +832,21 @@ audit_cross_project = false   # Log cross-project access events (default: false)
 
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>boundary_policy.allow_cross_project</code></td><td>bool</td><td><code>false</code></td><td>Allow cross-project search and import. When <code>false</code>, file operations are restricted to the current project root. Enable for monorepo setups where agents need access across project boundaries.</td></tr>
-      <tr><td><code>boundary_policy.audit_cross_project</code></td><td>bool</td><td><code>false</code></td><td>Log cross-project access events. When <code>true</code>, every cross-project file access is recorded in the audit trail for compliance and security review.</td></tr>
+      <tr><td><code>boundary_policy.allow_cross_project</code></td><td>bool</td><td><code>false</code></td><td set:html={t('docs.configuration.boundaryAllowDesc')} /></tr>
+      <tr><td><code>boundary_policy.audit_cross_project</code></td><td>bool</td><td><code>false</code></td><td set:html={t('docs.configuration.boundaryAuditDesc')} /></tr>
     </tbody>
   </table>
 
   <hr />
 
-  <h2 id="data-directory">Data Directory <span class="text-xs font-normal text-muted ml-2">v3.1.3</span></h2>
-  <p>
-    All persistent data (stats, knowledge, agent state, sessions, cache) is stored under a
-    single base directory, resolved in this order:
-  </p>
+  <h2 id="data-directory">{t('docs.configuration.dataDirectoryTitle')} <span class="text-xs font-normal text-muted ml-2">v3.1.3</span></h2>
+  <p set:html={t('docs.configuration.dataDirectoryDesc')} />
   <ol>
-    <li><code>LEAN_CTX_DATA_DIR</code> environment variable (if set)</li>
-    <li><code>~/.lean-ctx</code> (default)</li>
+    <li set:html={t('docs.configuration.dataDirectoryStep1')} />
+    <li set:html={t('docs.configuration.dataDirectoryStep2')} />
   </ol>
   <pre><code># Override for custom locations or containers
 export LEAN_CTX_DATA_DIR=/data/lean-ctx
@@ -897,26 +856,20 @@ ls "$(lean-ctx config | grep data_dir)"</code></pre>
 
   <hr />
 
-  <h2 id="cli-cache">CLI File Cache <span class="text-xs font-normal text-muted ml-2">v2.21.1</span></h2>
-  <p>
-    Since v2.21.1, <code>lean-ctx read &lt;file&gt;</code> in CLI mode caches file content to
-    <code>$LEAN_CTX_DATA_DIR/cli-cache/cache.json</code> (default: <code>~/.lean-ctx/cli-cache/cache.json</code>).
-    Subsequent reads of unchanged files return a compact ~13-token cache-hit response instead
-    of the full file content. This enables caching for CLI-mode integrations (e.g. pi-lean-ctx)
-    that don't use the MCP server.
-  </p>
+  <h2 id="cli-cache">{t('docs.configuration.cliFileCacheTitle')} <span class="text-xs font-normal text-muted ml-2">v2.21.1</span></h2>
+  <p set:html={t('docs.configuration.cliFileCacheDesc')} />
   <table>
     <thead>
-      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><th>{t('docs.configuration.thParameter')}</th><th>{t('docs.configuration.thValue')}</th></tr>
     </thead>
     <tbody>
-      <tr><td>TTL</td><td>5 minutes (300s)</td></tr>
-      <tr><td>Max entries</td><td>200</td></tr>
-      <tr><td>Change detection</td><td>BLAKE3 hash</td></tr>
-      <tr><td>Cache location</td><td><code>~/.lean-ctx/cli-cache/cache.json</code></td></tr>
+      <tr><td>{t('docs.configuration.cliCacheTtlLabel')}</td><td>{t('docs.configuration.cliCacheTtlValue')}</td></tr>
+      <tr><td>{t('docs.configuration.cliCacheMaxEntriesLabel')}</td><td>200</td></tr>
+      <tr><td>{t('docs.configuration.cliCacheChangeDetectionLabel')}</td><td>{t('docs.configuration.cliCacheChangeDetectionValue')}</td></tr>
+      <tr><td>{t('docs.configuration.cliCacheLocationLabel')}</td><td><code>~/.lean-ctx/cli-cache/cache.json</code></td></tr>
     </tbody>
   </table>
-  <h3>Management Commands</h3>
+  <h3>{t('docs.configuration.cliCacheManagementTitle')}</h3>
   <pre><code>lean-ctx cache              # Overview with hit rate
 lean-ctx cache stats        # Detailed statistics
 lean-ctx cache clear        # Remove all entries
@@ -929,48 +882,30 @@ lean-ctx read file.rs --fresh     # Bypass cache for one read</code></pre>
 
   <hr />
 
-  <h2 id="loop-detection">Progressive Throttling / Loop Detection</h2>
-  <p>
-    lean-ctx automatically detects when an AI agent loops - calling the same or similar tools
-    repeatedly without progress. This prevents token waste in large and monorepo projects.
-  </p>
+  <h2 id="loop-detection">{t('docs.configuration.loopDetectionTitle')}</h2>
+  <p set:html={t('docs.configuration.loopDetectionDesc')} />
 
-  <h3>Per-Fingerprint Throttling</h3>
-  <p>
-    Tool calls are tracked using a fingerprint-based sliding window (default 5 minutes). When
-    repeated identical calls are detected, throttling escalates:
-  </p>
+  <h3>{t('docs.configuration.loopPerFingerprintTitle')}</h3>
+  <p set:html={t('docs.configuration.loopPerFingerprintDesc')} />
   <table>
     <thead>
-      <tr><th>Level</th><th>Trigger</th><th>Behavior</th></tr>
+      <tr><th>{t('docs.configuration.thLevel')}</th><th>{t('docs.configuration.thTrigger')}</th><th>{t('docs.configuration.thBehavior')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><strong>Normal</strong></td><td>&le; 2 identical calls</td><td>No intervention</td></tr>
-      <tr><td><strong>Reduced</strong></td><td>3+ identical calls (configurable via <code>reduced_threshold</code>)</td><td>Warning appended to tool response</td></tr>
-      <tr><td><strong>Blocked</strong></td><td>Disabled by default (<code>blocked_threshold = 0</code>). Set to a positive value to enable.</td><td>Tool call blocked with actionable guidance</td></tr>
+      <tr><td><strong>{t('docs.configuration.loopLevelNormal')}</strong></td><td set:html={t('docs.configuration.loopTriggerNormal')} /><td>{t('docs.configuration.loopBehaviorNormal')}</td></tr>
+      <tr><td><strong>{t('docs.configuration.loopLevelReduced')}</strong></td><td set:html={t('docs.configuration.loopTriggerReduced')} /><td>{t('docs.configuration.loopBehaviorReduced')}</td></tr>
+      <tr><td><strong>{t('docs.configuration.loopLevelBlocked')}</strong></td><td set:html={t('docs.configuration.loopTriggerBlocked')} /><td>{t('docs.configuration.loopBehaviorBlocked')}</td></tr>
     </tbody>
   </table>
 
-  <h3>Cross-Tool Search Tracking <span class="text-xs font-normal text-muted ml-2">v3.1.2</span></h3>
-  <p>
-    Agents often alternate between <code>ctx_search</code>, <code>ctx_shell</code> (grep/rg/find),
-    and <code>ctx_semantic_search</code> to search for the same thing. lean-ctx now tracks ALL
-    search-related calls as a group. If more than 10 total search calls happen within the window
-    (regardless of which tool), the agent is blocked with guidance to use <code>ctx_tree</code>
-    and narrow searches with the <code>path</code> parameter.
-  </p>
+  <h3>{t('docs.configuration.loopCrossToolTitle')} <span class="text-xs font-normal text-muted ml-2">v3.1.2</span></h3>
+  <p set:html={t('docs.configuration.loopCrossToolDesc')} />
 
-  <h3>Pattern Similarity Detection <span class="text-xs font-normal text-muted ml-2">v3.1.2</span></h3>
-  <p>
-    Searching for "compress", then "compression", then "compress_output" is now detected as the
-    same semantic loop. lean-ctx extracts the alpha-root of each search pattern and groups similar
-    queries together.
-  </p>
+  <h3>{t('docs.configuration.loopPatternTitle')} <span class="text-xs font-normal text-muted ml-2">v3.1.2</span></h3>
+  <p set:html={t('docs.configuration.loopPatternDesc')} />
 
-  <h3>Configuration</h3>
-  <p>
-    All thresholds are configurable via <code>~/.lean-ctx/config.toml</code>:
-  </p>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
+  <p set:html={t('docs.configuration.loopConfigDesc')} />
   <pre><code>[loop_detection]
 normal_threshold = 2      # warn after this many identical calls
 reduced_threshold = 4     # reduce output after this many
@@ -980,16 +915,11 @@ search_group_limit = 10   # total search calls before block</code></pre>
 
   <hr />
 
-  <h2 id="pipe-guard">Pipe Guard <span class="text-xs font-normal text-muted ml-2">v2.21.6</span></h2>
-  <p>
-    Since v2.21.6, the shell hook automatically detects when stdout is piped (not a terminal)
-    and bypasses all compression. This prevents corruption when piping command output - for
-    example, <code>curl -fsSL https://example.com/install.sh | sh</code> now works correctly
-    even with the lean-ctx shell hook active.
-  </p>
+  <h2 id="pipe-guard">{t('docs.configuration.pipeGuardTitle')} <span class="text-xs font-normal text-muted ml-2">v2.21.6</span></h2>
+  <p set:html={t('docs.configuration.pipeGuardDesc')} />
   <table>
     <thead>
-      <tr><th>Shell</th><th>Detection Method</th></tr>
+      <tr><th>{t('docs.configuration.thShell')}</th><th>{t('docs.configuration.thDetectionMethod')}</th></tr>
     </thead>
     <tbody>
       <tr><td>Bash / Zsh</td><td><code>[ ! -t 1 ]</code></td></tr>
@@ -1000,26 +930,19 @@ search_group_limit = 10   # total search calls before block</code></pre>
 
   <hr />
 
-  <h2 id="archive">Tool Result Archive <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
-  <p>
-    When compression removes details you might need later, the <strong>Tool Result Archive</strong> saves
-    the full uncompressed output to disk and returns a reference ID. The agent can retrieve the full
-    content at any time using <a href={lp('/docs/tools/core') + '#ctx_expand'}><code>ctx_expand</code></a>.
-  </p>
-  <p>
-    This is the core of <strong>zero-loss compression</strong>: the context window stays small,
-    but no information is permanently lost.
-  </p>
+  <h2 id="archive">{t('docs.configuration.toolResultArchiveTitle')} <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <p set:html={t('docs.configuration.archiveDesc1')} />
+  <p set:html={t('docs.configuration.archiveDesc2')} />
 
-  <h3>How It Works</h3>
+  <h3>{t('docs.configuration.archiveHowItWorksTitle')}</h3>
   <ol>
-    <li>A tool response exceeds the configured token threshold</li>
-    <li>lean-ctx stores the full output to <code>~/.lean-ctx/archive/</code> (content-addressed by SHA-256)</li>
-    <li>The compressed response includes an <code>[ARCHIVE: &lt;id&gt;]</code> reference</li>
-    <li>The agent calls <code>ctx_expand &lt;id&gt;</code> to retrieve the full content on demand</li>
+    <li>{t('docs.configuration.archiveStep1')}</li>
+    <li set:html={t('docs.configuration.archiveStep2')} />
+    <li set:html={t('docs.configuration.archiveStep3')} />
+    <li set:html={t('docs.configuration.archiveStep4')} />
   </ol>
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [archive]
 enabled = true                # Enable tool result archiving (default: true)
@@ -1029,59 +952,51 @@ max_disk_mb = 500             # Maximum total disk usage for archive (default: 5
 
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>archive.enabled</code></td><td>bool</td><td><code>true</code></td><td>Enable the archive system. When disabled, compression is permanent (no retrieval).</td></tr>
-      <tr><td><code>archive.threshold_chars</code></td><td>u32</td><td><code>4096</code></td><td>Minimum character count in a tool response before archiving is considered.</td></tr>
-      <tr><td><code>archive.max_age_hours</code></td><td>u32</td><td><code>48</code></td><td>Global maximum age for archived entries. Entries older than this are purged regardless of access patterns.</td></tr>
-      <tr><td><code>archive.max_disk_mb</code></td><td>u32</td><td><code>500</code></td><td>Maximum total disk space (in MB) the archive directory may consume. Oldest entries are evicted when the limit is reached.</td></tr>
+      <tr><td><code>archive.enabled</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.archiveEnabledDesc')} /></tr>
+      <tr><td><code>archive.threshold_chars</code></td><td>u32</td><td><code>4096</code></td><td set:html={t('docs.configuration.archiveThresholdCharsDesc')} /></tr>
+      <tr><td><code>archive.max_age_hours</code></td><td>u32</td><td><code>48</code></td><td set:html={t('docs.configuration.archiveMaxAgeHoursDesc')} /></tr>
+      <tr><td><code>archive.max_disk_mb</code></td><td>u32</td><td><code>500</code></td><td set:html={t('docs.configuration.archiveMaxDiskMbDesc')} /></tr>
     </tbody>
   </table>
 
-  <h3>Environment Variables</h3>
+  <h3>{t('docs.configuration.envVarsTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thVariable')}</th><th>{t('docs.configuration.thValues')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>LEAN_CTX_ARCHIVE</code></td><td><code>true</code> / <code>false</code></td><td>Override <code>archive.enabled</code> at runtime.</td></tr>
-      <tr><td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td><td>number</td><td>Override <code>archive.threshold_chars</code>.</td></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE</code></td><td><code>true</code> / <code>false</code></td><td set:html={t('docs.configuration.archiveEnvArchiveDesc')} /></tr>
+      <tr><td><code>LEAN_CTX_ARCHIVE_THRESHOLD</code></td><td>number</td><td set:html={t('docs.configuration.archiveEnvThresholdDesc')} /></tr>
     </tbody>
   </table>
 
-  <h3>Storage</h3>
-  <p>
-    Archived results are content-addressed (SHA-256 hash of the full output). Duplicate content
-    is automatically deduplicated. Race conditions from parallel tool calls are handled via
-    PID-unique temporary files with atomic rename.
-  </p>
+  <h3>{t('docs.configuration.archiveStorageTitle')}</h3>
+  <p set:html={t('docs.configuration.archiveStorageDesc')} />
 
   <hr />
 
   <hr />
 
-  <h2 id="compression-level">Compression Level <span class="text-xs font-normal text-muted ml-2">v4.0.0</span></h2>
-  <p>
-    <code>compression_level</code> is the unified control for the 4-layer terse engine, replacing the legacy
-    <code>output_density</code> and <code>terse_agent</code> settings. It governs both <em>input</em> compression
-    (tool responses) and <em>output</em> optimization (agent responses) through a single knob.
-  </p>
+  <h2 id="compression-level">{t('docs.configuration.compressionLevelTitle')} <span class="text-xs font-normal text-muted ml-2">v4.0.0</span></h2>
+  <p set:html={t('docs.configuration.compressionLevelDesc')} />
 
-  <h3>Levels</h3>
+  <h3>{t('docs.configuration.compressionLevelsTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Level</th><th>Value</th><th>Behavior</th></tr>
+      <tr><th>{t('docs.configuration.thLevel')}</th><th>{t('docs.configuration.thValue')}</th><th>{t('docs.configuration.thBehavior')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td>No compression. Full tool output, no output optimization.</td></tr>
-      <tr><td><strong>Lite</strong></td><td><code>"lite"</code></td><td>Abbreviations and function references. Moderate input compression (~20-40% savings).</td></tr>
-      <tr><td><strong>Standard</strong></td><td><code>"standard"</code></td><td>Balanced compression with CEP v1 protocol, delta-only output, and structured notation. Recommended when you want denser agent output.</td></tr>
-      <tr><td><strong>Max</strong></td><td><code>"max"</code></td><td>Maximum compression. Single-line output, aggressive truncation, symbols only. Best for CI/automated pipelines.</td></tr>
+      <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td set:html={t('docs.configuration.compressionOffDesc')} /></tr>
+      <tr><td><strong>Lite</strong></td><td><code>"lite"</code></td><td set:html={t('docs.configuration.compressionLiteDesc')} /></tr>
+      <tr><td><strong>Standard</strong></td><td><code>"standard"</code></td><td set:html={t('docs.configuration.compressionStandardDesc')} /></tr>
+      <tr><td><strong>Max</strong></td><td><code>"max"</code></td><td set:html={t('docs.configuration.compressionMaxDesc')} /></tr>
     </tbody>
   </table>
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 compression_level = "lite"    # lite (default) | off | standard | max
 
@@ -1089,58 +1004,39 @@ compression_level = "lite"    # lite (default) | off | standard | max
 # terse_agent = "full"            # maps to compression_level = "standard"
 # output_density = "terse"        # maps to compression_level = "lite"</code></pre>
 
-  <h3>Environment Variables</h3>
+  <h3>{t('docs.configuration.envVarsTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Variable</th><th>Values</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thVariable')}</th><th>{t('docs.configuration.thValues')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>LEAN_CTX_COMPRESSION</code></td><td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td><td>Override <code>compression_level</code> at runtime.</td></tr>
-      <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>off</code> / <code>lite</code> / <code>full</code> / <code>ultra</code> / <code>true</code> / <code>false</code></td><td><strong>Legacy.</strong> Still accepted. Mapped to <code>compression_level</code> internally.</td></tr>
+      <tr><td><code>LEAN_CTX_COMPRESSION</code></td><td><code>off</code> / <code>lite</code> / <code>standard</code> / <code>max</code></td><td set:html={t('docs.configuration.compressionEnvRuntimeDesc')} /></tr>
+      <tr><td><code>LEAN_CTX_TERSE_AGENT</code></td><td><code>off</code> / <code>lite</code> / <code>full</code> / <code>ultra</code> / <code>true</code> / <code>false</code></td><td set:html={t('docs.configuration.compressionEnvLegacyDesc')} /></tr>
     </tbody>
   </table>
 
-  <h3>Interaction with CRP Mode</h3>
-  <p>
-    <code>compression_level</code> and <code>LEAN_CTX_CRP_MODE</code> are complementary but independent.
-    CRP mode controls the <em>format</em> of lean-ctx's own output (tdd/compact/off), while
-    <code>compression_level</code> controls both input compression and the <em>instructions given to the agent</em> about how it
-    should respond. Both can be active simultaneously for maximum token savings.
-  </p>
+  <h3>{t('docs.configuration.compressionCrpTitle')}</h3>
+  <p set:html={t('docs.configuration.compressionCrpDesc')} />
 
-  <h3>What Changes (Standard / Max)</h3>
-  <p>
-    When compression is active at <code>"standard"</code> or above, the 4-layer terse engine applies:
-  </p>
+  <h3>{t('docs.configuration.compressionWhatChangesTitle')}</h3>
+  <p set:html={t('docs.configuration.compressionWhatChangesDesc')} />
   <ul>
-    <li><strong>Layer 1: Dictionary</strong> — Common token substitutions and abbreviations</li>
-    <li><strong>Layer 2: Residual</strong> — Whitespace normalization, boilerplate removal</li>
-    <li><strong>Layer 3: Scoring</strong> — Information-theoretic ranking of content blocks</li>
-    <li><strong>Layer 4: Pipeline</strong> — CEP v1 protocol with delta-only output, structured notation (<code>+/-/~</code>), and token budgets</li>
+    <li set:html={t('docs.configuration.compressionLayer1')} />
+    <li set:html={t('docs.configuration.compressionLayer2')} />
+    <li set:html={t('docs.configuration.compressionLayer3')} />
+    <li set:html={t('docs.configuration.compressionLayer4')} />
   </ul>
-  <p>
-    This can reduce total token usage by <strong>30-50%</strong> per conversation turn.
-    Formally verified by 82 Lean4 theorems including TerseQuality and TerseEngine proofs.
-  </p>
+  <p set:html={t('docs.configuration.compressionWhatChangesFooter')} />
 
-  <h3 id="terse-agent">Legacy: Terse Agent Mode</h3>
-  <p>
-    The <code>terse_agent</code> setting is still accepted for backward compatibility.
-    Values are mapped automatically: <code>"off"</code> → Off, <code>"lite"</code> → Lite,
-    <code>"full"</code> → Standard, <code>"ultra"</code> → Max. Boolean <code>true</code> maps to Standard.
-  </p>
+  <h3 id="terse-agent">{t('docs.configuration.terseAgentLegacyTitle')}</h3>
+  <p set:html={t('docs.configuration.terseAgentLegacyDesc')} />
 
   <hr />
 
-  <h2 id="output-density">Legacy: Output Density <span class="text-xs font-normal text-muted ml-2">v3.1.0 — superseded by <a href="#compression-level">compression_level</a></span></h2>
-  <p>
-    <code>output_density</code> is superseded by <a href="#compression-level"><code>compression_level</code></a>,
-    which unifies both input and output compression into a single setting.
-    The legacy <code>output_density</code> values are still accepted and mapped automatically:
-    <code>"normal"</code> → Off, <code>"terse"</code> → Lite, <code>"ultra"</code> → Max.
-  </p>
+  <h2 id="output-density">{t('docs.configuration.outputDensityTitle')} <span class="text-xs font-normal text-muted ml-2">v3.1.0 — superseded by <a href="#compression-level">compression_level</a></span></h2>
+  <p set:html={t('docs.configuration.outputDensityDesc')} />
 
-  <h3>Legacy Configuration</h3>
+  <h3>{t('docs.configuration.outputDensityLegacyConfigTitle')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 # Legacy (still works):
 output_density = "terse"
@@ -1150,29 +1046,25 @@ compression_level = "lite"</code></pre>
 
   <hr />
 
-  <h2 id="minimal-overhead">Minimal Overhead <span class="text-xs font-normal text-muted ml-2">v3.4.1</span></h2>
-  <p>
-    <code>minimal_overhead</code> reduces lean-ctx's per-call token footprint to the absolute minimum.
-    It's designed for environments where every token counts - Codex, CI pipelines, or any
-    cost-sensitive workflow.
-  </p>
+  <h2 id="minimal-overhead">{t('docs.configuration.minimalOverheadTitle')} <span class="text-xs font-normal text-muted ml-2">v3.4.1</span></h2>
+  <p set:html={t('docs.configuration.minimalOverheadDesc')} />
 
-  <h3>What it disables</h3>
+  <h3>{t('docs.configuration.minimalWhatDisablesTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Feature</th><th>Normal Mode</th><th>Minimal Mode</th></tr>
+      <tr><th>{t('docs.configuration.thFeature')}</th><th>{t('docs.configuration.thNormalMode')}</th><th>{t('docs.configuration.thMinimalMode')}</th></tr>
     </thead>
     <tbody>
-      <tr><td>Auto-checkpoint injection</td><td>Injected every N calls with session cache</td><td>Skipped entirely</td></tr>
-      <tr><td>Savings notes</td><td><code>[saved 142 tokens vs native Grep]</code></td><td>Suppressed</td></tr>
-      <tr><td>Stale notes</td><td><code>[cache stale, full→signatures]</code></td><td>Suppressed</td></tr>
-      <tr><td>Shell efficiency hints</td><td><code>[hint: ctx_search is more token-efficient]</code></td><td>Suppressed</td></tr>
-      <tr><td>Archive hints</td><td><code>[result archived as A1, use ctx_expand]</code></td><td>Suppressed</td></tr>
-      <tr><td>Session block in instructions</td><td>Active session stats block</td><td>Removed</td></tr>
+      <tr><td>{t('docs.configuration.minFeatAutoCheckpoint')}</td><td>{t('docs.configuration.minNormAutoCheckpoint')}</td><td>{t('docs.configuration.minMinAutoCheckpoint')}</td></tr>
+      <tr><td>{t('docs.configuration.minFeatSavings')}</td><td><code>[saved 142 tokens vs native Grep]</code></td><td>{t('docs.configuration.minSuppressed')}</td></tr>
+      <tr><td>{t('docs.configuration.minFeatStale')}</td><td><code>[cache stale, full→signatures]</code></td><td>{t('docs.configuration.minSuppressed')}</td></tr>
+      <tr><td>{t('docs.configuration.minFeatShellHints')}</td><td><code>[hint: ctx_search is more token-efficient]</code></td><td>{t('docs.configuration.minSuppressed')}</td></tr>
+      <tr><td>{t('docs.configuration.minFeatArchiveHints')}</td><td><code>[result archived as A1, use ctx_expand]</code></td><td>{t('docs.configuration.minSuppressed')}</td></tr>
+      <tr><td>{t('docs.configuration.minFeatSessionBlock')}</td><td>{t('docs.configuration.minNormSessionBlock')}</td><td>{t('docs.configuration.minMinRemoved')}</td></tr>
     </tbody>
   </table>
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 minimal_overhead = true
 
@@ -1182,42 +1074,35 @@ minimal_overhead = true
 # To only disable checkpoints (keep other meta-strings):
 # export LEAN_CTX_NO_CHECKPOINT=1</code></pre>
 
-  <h3>When to use</h3>
+  <h3>{t('docs.configuration.minimalWhenToUseTitle')}</h3>
   <ul>
-    <li><strong>Codex / Claude Code CLI</strong> - these environments benefit most from reduced overhead since every token in the conversation counts against the context window</li>
-    <li><strong>CI/CD pipelines</strong> - automated tasks where meta-strings add noise without value</li>
-    <li><strong>High-frequency tool calls</strong> - sessions with many short tool calls where per-call overhead accumulates</li>
-    <li><strong>Cost optimization</strong> - when you want to minimize API costs without changing compression settings</li>
+    <li set:html={t('docs.configuration.minWhenCodex')} />
+    <li set:html={t('docs.configuration.minWhenCi')} />
+    <li set:html={t('docs.configuration.minWhenHighFreq')} />
+    <li set:html={t('docs.configuration.minWhenCost')} />
   </ul>
 
-  <h3>Measured impact</h3>
-  <p>
-    Combined with lazy tools (default), minimal overhead reduces per-session token overhead
-    from ~6,600 tokens (full tools + verbose) to ~2,400 tokens (lazy + minimal) - a <strong>64% reduction</strong>.
-  </p>
+  <h3>{t('docs.configuration.minimalImpactTitle')}</h3>
+  <p set:html={t('docs.configuration.minimalImpactDesc')} />
 
   <hr />
 
-  <h2 id="rules-scope">Rules Scope <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
-  <p>
-    Controls where lean-ctx injects its cursor rules file (<code>lean-ctx.mdc</code>). By default,
-    rules are injected in both the global and project locations to ensure coverage across all
-    Cursor workspaces.
-  </p>
+  <h2 id="rules-scope">{t('docs.configuration.rulesScopeTitle')} <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <p set:html={t('docs.configuration.rulesScopeDesc')} />
 
-  <h3>Values</h3>
+  <h3>{t('docs.configuration.rulesScopeValuesTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Value</th><th>Injection Location</th><th>Use Case</th></tr>
+      <tr><th>{t('docs.configuration.thValue')}</th><th>{t('docs.configuration.thInjectionLocation')}</th><th>{t('docs.configuration.thUseCase')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>"global"</code></td><td><code>~/.cursor/rules/lean-ctx.mdc</code></td><td>Share lean-ctx rules across all projects. Project directories stay clean.</td></tr>
-      <tr><td><code>"project"</code></td><td><code>.cursor/rules/lean-ctx.mdc</code></td><td>Per-project rules only. Useful when global rules conflict with other tools.</td></tr>
-      <tr><td><code>"both"</code></td><td>Both locations</td><td>Maximum coverage - ensures lean-ctx is active regardless of how Cursor resolves rules.</td></tr>
+      <tr><td><code>"global"</code></td><td><code>~/.cursor/rules/lean-ctx.mdc</code></td><td set:html={t('docs.configuration.rulesGlobalUseCase')} /></tr>
+      <tr><td><code>"project"</code></td><td><code>.cursor/rules/lean-ctx.mdc</code></td><td set:html={t('docs.configuration.rulesProjectUseCase')} /></tr>
+      <tr><td><code>"both"</code></td><td>{t('docs.configuration.rulesBothLocation')}</td><td set:html={t('docs.configuration.rulesBothUseCase')} /></tr>
     </tbody>
   </table>
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 rules_scope = "global"    # global | project | both
 
@@ -1226,34 +1111,28 @@ lean-ctx config set rules_scope project</code></pre>
 
   <hr />
 
-  <h2 id="buddy-mode">Buddy Mode</h2>
-  <p>
-    Buddy mode enables collaborative multi-agent workflows. When enabled, lean-ctx coordinates
-    context sharing between multiple agent sessions working on the same project.
-  </p>
+  <h2 id="buddy-mode">{t('docs.configuration.buddyModeTitle')}</h2>
+  <p set:html={t('docs.configuration.buddyModeDesc')} />
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 buddy_enabled = true</code></pre>
 
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>buddy_enabled</code></td><td>bool</td><td><code>true</code></td><td>Enable buddy mode for multi-agent collaboration. Agents can share cached files, knowledge entries, and session context via <code>ctx_agent</code>.</td></tr>
+      <tr><td><code>buddy_enabled</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.buddyEnabledDesc')} /></tr>
     </tbody>
   </table>
 
   <hr />
 
-  <h2 id="custom-aliases">Custom Aliases</h2>
-  <p>
-    Define custom shell command aliases that expand inside <code>ctx_shell</code>. Useful for
-    project-specific shortcuts that agents can use without knowing the full command.
-  </p>
+  <h2 id="custom-aliases">{t('docs.configuration.customAliasesTitle')}</h2>
+  <p set:html={t('docs.configuration.customAliasesDesc')} />
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [[custom_aliases]]
 alias = "test"
@@ -1269,25 +1148,20 @@ command = "kubectl apply -f k8s/staging/ --dry-run=client"</code></pre>
 
   <table>
     <thead>
-      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thField')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>alias</code></td><td>string</td><td>The alias name. Used as <code>ctx_shell("@test")</code> or similar shorthand.</td></tr>
-      <tr><td><code>command</code></td><td>string</td><td>The full command that the alias expands to.</td></tr>
+      <tr><td><code>alias</code></td><td>string</td><td set:html={t('docs.configuration.customAliasAliasDesc')} /></tr>
+      <tr><td><code>command</code></td><td>string</td><td set:html={t('docs.configuration.customAliasCommandDesc')} /></tr>
     </tbody>
   </table>
 
   <hr />
 
-  <h2 id="headless-mode">Headless MCP Mode <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
-  <p>
-    By default, when lean-ctx starts as an MCP server it automatically configures the environment:
-    injecting rules, installing hooks, updating CLAUDE.md, and registering itself. If you want full
-    control over your configuration - for example when using a custom launcher - you can disable
-    all auto-setup behavior.
-  </p>
+  <h2 id="headless-mode">{t('docs.configuration.headlessModeTitle')} <span class="text-xs font-normal text-muted ml-2">v3.3.3</span></h2>
+  <p set:html={t('docs.configuration.headlessModeDesc')} />
 
-  <h3>Usage</h3>
+  <h3>{t('docs.configuration.headlessUsageTitle')}</h3>
   <pre><code># Set before launching the MCP server
 export LEAN_CTX_HEADLESS=1
 
@@ -1298,60 +1172,46 @@ export LEAN_CTX_HEADLESS=1
 # - No agent registry updates
 # - No background version check</code></pre>
 
-  <h3>When to Use</h3>
+  <h3>{t('docs.configuration.hWhenToUse')}</h3>
   <ul>
-    <li><strong>Custom launchers</strong> - You inject lean-ctx instructions via <code>--append-system-prompt</code></li>
-    <li><strong>Toggle setups</strong> - You want to switch lean-ctx on/off per session</li>
-    <li><strong>CI/CD pipelines</strong> - No interactive environment, no need for hooks</li>
-    <li><strong>Sandboxed environments</strong> - You don't want lean-ctx modifying files outside the project</li>
+    <li set:html={t('docs.configuration.headlessWhenCustom')} />
+    <li set:html={t('docs.configuration.headlessWhenToggle')} />
+    <li set:html={t('docs.configuration.headlessWhenCi')} />
+    <li set:html={t('docs.configuration.headlessWhenSandbox')} />
   </ul>
 
   <hr />
 
-  <h2 id="lean-ctx-id">Project Identity File (<code>.lean-ctx-id</code>) <span class="text-xs font-normal text-muted ml-2">v3.5.16</span></h2>
-  <p>
-    lean-ctx identifies projects by hashing their root path. In Docker or CI environments where
-    multiple projects share the same mount path (e.g. <code>/workspace</code>), this can cause
-    data collisions — graph index, semantic cache, bandit state, and embedding index from one project
-    bleeding into another.
-  </p>
-  <p>
-    To prevent this, create a <code>.lean-ctx-id</code> file in your project root with a unique
-    project name. This file takes <strong>highest priority</strong> for project identification —
-    above git remote URL, <code>package.json</code> name, and directory name.
-  </p>
+  <h2 id="lean-ctx-id"><span set:html={t('docs.configuration.projectIdentityTitle')}></span> <span class="text-xs font-normal text-muted ml-2">v3.5.16</span></h2>
+  <p set:html={t('docs.configuration.projectIdentityDesc1')} />
+  <p set:html={t('docs.configuration.projectIdentityDesc2')} />
   <pre><code># Create the identity file
 echo "my-unique-project-name" > .lean-ctx-id</code></pre>
 
-  <h3>Priority Order</h3>
+  <h3>{t('docs.configuration.projectIdentityPriorityTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Priority</th><th>Source</th><th>Example</th></tr>
+      <tr><th>{t('docs.configuration.thPriority')}</th><th>{t('docs.configuration.thSource')}</th><th>{t('docs.configuration.thExample')}</th></tr>
     </thead>
     <tbody>
-      <tr><td>1 (highest)</td><td><code>.lean-ctx-id</code></td><td><code>my-api-service</code></td></tr>
-      <tr><td>2</td><td>Git remote URL</td><td><code>github.com/org/repo</code></td></tr>
+      <tr><td>{t('docs.configuration.projIdPriority1')}</td><td><code>.lean-ctx-id</code></td><td><code>my-api-service</code></td></tr>
+      <tr><td>2</td><td>{t('docs.configuration.projIdSourceGit')}</td><td><code>github.com/org/repo</code></td></tr>
       <tr><td>3</td><td><code>package.json</code> / <code>Cargo.toml</code> name</td><td><code>my-api</code></td></tr>
-      <tr><td>4 (lowest)</td><td>Directory path</td><td><code>/workspace</code></td></tr>
+      <tr><td>{t('docs.configuration.projIdPriority4')}</td><td>{t('docs.configuration.projIdSourceDir')}</td><td><code>/workspace</code></td></tr>
     </tbody>
   </table>
 
-  <h3>Identity-Aware Caches</h3>
-  <p>
-    The following data stores use a composite project hash (path + identity) to ensure isolation:
-  </p>
+  <h3>{t('docs.configuration.projectIdentityCachesTitle')}</h3>
+  <p set:html={t('docs.configuration.projectIdentityCachesDesc')} />
   <ul>
-    <li><strong>Graph index</strong> — project dependency graph (SQLite Property Graph)</li>
-    <li><strong>Semantic cache</strong> — embedding-based similarity lookups</li>
-    <li><strong>Bandit state</strong> — multi-armed bandit model for read mode selection</li>
-    <li><strong>Embedding index</strong> — vector store for semantic search</li>
+    <li set:html={t('docs.configuration.projIdCacheGraph')} />
+    <li set:html={t('docs.configuration.projIdCacheSemantic')} />
+    <li set:html={t('docs.configuration.projIdCacheBandit')} />
+    <li set:html={t('docs.configuration.projIdCacheEmbedding')} />
   </ul>
-  <p>
-    When a <code>.lean-ctx-id</code> file is added or changed, existing data is automatically
-    migrated from old hash directories. No manual action required.
-  </p>
+  <p set:html={t('docs.configuration.projectIdentityMigrateNote')} />
 
-  <h3>Docker Usage</h3>
+  <h3>{t('docs.configuration.projectIdentityDockerTitle')}</h3>
   <pre><code># Include in your Dockerfile or mount as volume
 COPY .lean-ctx-id /workspace/.lean-ctx-id
 
@@ -1360,67 +1220,58 @@ RUN echo "my-project" > /workspace/.lean-ctx-id</code></pre>
 
   <hr />
 
-  <h2 id="shell-activation">Shell Activation <span class="text-xs font-normal text-muted ml-2">v3.5.16</span></h2>
-  <p>
-    <code>shell_activation</code> controls when lean-ctx shell aliases (like <code>_lc</code>) auto-activate
-    in interactive shells. By default, lean-ctx activates in every shell. In team environments or CI,
-    you may want to limit activation to AI agent sessions only.
-  </p>
+  <h2 id="shell-activation">{t('docs.configuration.shellActivationTitle')} <span class="text-xs font-normal text-muted ml-2">v3.5.16</span></h2>
+  <p set:html={t('docs.configuration.shellActivationDesc')} />
 
-  <h3>Modes</h3>
+  <h3>{t('docs.configuration.shellActivationModesTitle')}</h3>
   <table>
     <thead>
-      <tr><th>Mode</th><th>Value</th><th>Behavior</th></tr>
+      <tr><th>{t('docs.configuration.thMode')}</th><th>{t('docs.configuration.thValue')}</th><th>{t('docs.configuration.thBehavior')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><strong>Always</strong></td><td><code>"always"</code></td><td>Active in every interactive shell. Default behavior, same as previous versions.</td></tr>
-      <tr><td><strong>Agents Only</strong></td><td><code>"agents-only"</code></td><td>Only activates when AI agent environment variables are detected: <code>LEAN_CTX_AGENT</code>, <code>CLAUDECODE</code>, <code>CODEX_CLI_SESSION</code>, <code>GEMINI_SESSION</code>. Since v3.5.19, these same variables also enable tracking in non-interactive shells (e.g. Docker <code>bash -c</code>, Codex CLI), bypassing the TTY guard that normally disables the hook when stdout is not a terminal.</td></tr>
-      <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td>Never auto-activate. User must call <code>lean-ctx-on</code> manually to enable shell aliases.</td></tr>
+      <tr><td><strong>{t('docs.configuration.shellModeAlwaysLabel')}</strong></td><td><code>"always"</code></td><td set:html={t('docs.configuration.shellAlwaysBehavior')} /></tr>
+      <tr><td><strong>{t('docs.configuration.shellModeAgentsLabel')}</strong></td><td><code>"agents-only"</code></td><td set:html={t('docs.configuration.shellAgentsBehavior')} /></tr>
+      <tr><td><strong>{t('docs.configuration.shellModeOffLabel')}</strong></td><td><code>"off"</code></td><td set:html={t('docs.configuration.shellOffBehavior')} /></tr>
     </tbody>
   </table>
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 shell_activation = "agents-only"    # always | agents-only | off
 
 # Or via environment variable
 # export LEAN_CTX_SHELL_ACTIVATION=agents-only</code></pre>
 
-  <h3>When to Use</h3>
+  <h3>{t('docs.configuration.hWhenToUse')}</h3>
   <ul>
-    <li><strong>always</strong> — Solo developer, want compression in every terminal</li>
-    <li><strong>agents-only</strong> — Team environments where non-AI shells should remain unmodified. Also enables non-interactive (non-TTY) tracking for Docker/Codex containers (v3.5.19+)</li>
-    <li><strong>off</strong> — Full manual control, only enable when explicitly needed</li>
+    <li set:html={t('docs.configuration.shellWhenAlways')} />
+    <li set:html={t('docs.configuration.shellWhenAgents')} />
+    <li set:html={t('docs.configuration.shellWhenOff')} />
   </ul>
 
   <hr />
 
-  <h2 id="cloud">Cloud</h2>
-  <p>
-    The <code>[cloud]</code> section controls cloud integration features for lean-ctx.
-  </p>
+  <h2 id="cloud">{t('docs.configuration.cloudTitle')}</h2>
+  <p set:html={t('docs.configuration.cloudDesc')} />
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [cloud]
 contribute_enabled = false    # Opt-in to anonymous usage telemetry (default: false)</code></pre>
 
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>cloud.contribute_enabled</code></td><td>bool</td><td><code>false</code></td><td>Opt-in to anonymous usage telemetry. When enabled, lean-ctx sends aggregated compression statistics to help improve the product. No code, file paths, or personal data is transmitted.</td></tr>
+      <tr><td><code>cloud.contribute_enabled</code></td><td>bool</td><td><code>false</code></td><td set:html={t('docs.configuration.cloudContributeDesc')} /></tr>
     </tbody>
   </table>
 
   <hr />
 
-  <h2 id="providers">Providers</h2>
-  <p>
-    The <code>[providers]</code> section controls external data sources. Provider data flows through the
-    full consolidation pipeline — BM25, graph edges, knowledge facts, and session cache.
-  </p>
+  <h2 id="providers">{t('docs.configuration.providersTitle')}</h2>
+  <p set:html={t('docs.configuration.providersDesc')} />
 
   <pre><code># ~/.lean-ctx/config.toml
 [providers]
@@ -1440,27 +1291,21 @@ auth_env = "GITHUB_TOKEN"</code></pre>
 
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>providers.enabled</code></td><td>bool</td><td><code>true</code></td><td>Master switch for all data source providers.</td></tr>
-      <tr><td><code>providers.auto_index</code></td><td>bool</td><td><code>true</code></td><td>Index provider data into BM25, Graph, and Knowledge. Set <code>false</code> for cache-only.</td></tr>
-      <tr><td><code>providers.cache_ttl_secs</code></td><td>u64</td><td><code>120</code></td><td>TTL for in-memory provider result cache.</td></tr>
-      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.url</code></td><td>string?</td><td>—</td><td>HTTP endpoint for MCP server.</td></tr>
-      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.command</code></td><td>string?</td><td>—</td><td>Executable for stdio-based MCP server.</td></tr>
-      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.args</code></td><td>string[]</td><td><code>[]</code></td><td>Arguments for the stdio command.</td></tr>
-      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.auth_env</code></td><td>string?</td><td>—</td><td>Environment variable for auth token injection.</td></tr>
+      <tr><td><code>providers.enabled</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.providersEnabledDesc')} /></tr>
+      <tr><td><code>providers.auto_index</code></td><td>bool</td><td><code>true</code></td><td set:html={t('docs.configuration.providersAutoIndexDesc')} /></tr>
+      <tr><td><code>providers.cache_ttl_secs</code></td><td>u64</td><td><code>120</code></td><td set:html={t('docs.configuration.providersCacheTtlDesc')} /></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.url</code></td><td>string?</td><td>—</td><td set:html={t('docs.configuration.providersMcpUrlDesc')} /></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.command</code></td><td>string?</td><td>—</td><td set:html={t('docs.configuration.providersMcpCommandDesc')} /></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.args</code></td><td>string[]</td><td><code>[]</code></td><td set:html={t('docs.configuration.providersMcpArgsDesc')} /></tr>
+      <tr><td><code>providers.mcp_bridges.&lt;name&gt;.auth_env</code></td><td>string?</td><td>—</td><td set:html={t('docs.configuration.providersMcpAuthEnvDesc')} /></tr>
     </tbody>
   </table>
 
-  <h3 id="jira-oauth">Jira Cloud OAuth 2.0 (3LO) <span class="text-xs font-normal text-muted ml-2">v3.6.25</span></h3>
-  <p>
-    The built-in Jira provider supports OAuth 2.0 (3-legged) as an alternative to Basic auth
-    (<code>JIRA_EMAIL</code> + <code>JIRA_API_TOKEN</code>). lean-ctx ships no embedded client secret, so you
-    register your own free Atlassian OAuth app at
-    <a href="https://developer.atlassian.com/console/myapps/" target="_blank" rel="noopener">developer.atlassian.com/console/myapps</a>
-    (callback URL <code>http://localhost</code>), then export its credentials:
-  </p>
+  <h3 id="jira-oauth">{t('docs.configuration.jiraOauthTitle')} <span class="text-xs font-normal text-muted ml-2">v3.6.25</span></h3>
+  <p set:html={t('docs.configuration.jiraOauthDesc')} />
   <pre><code>export JIRA_OAUTH_CLIENT_ID=...        # from your Atlassian 3LO app
 export JIRA_OAUTH_CLIENT_SECRET=...    # from your Atlassian 3LO app
 export JIRA_AUTH=oauth                 # optional: force OAuth over Basic auth
@@ -1468,30 +1313,23 @@ export JIRA_AUTH=oauth                 # optional: force OAuth over Basic auth
 lean-ctx provider auth jira            # one-time interactive consent</code></pre>
   <table>
     <thead>
-      <tr><th>Env Var</th><th>Required</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thEnvVar')}</th><th>{t('docs.configuration.thRequired')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>JIRA_OAUTH_CLIENT_ID</code></td><td>yes</td><td>Client id of your Atlassian OAuth 2.0 (3LO) app.</td></tr>
-      <tr><td><code>JIRA_OAUTH_CLIENT_SECRET</code></td><td>yes</td><td>Client secret of the same app.</td></tr>
-      <tr><td><code>JIRA_OAUTH_SCOPES</code></td><td>no</td><td>Space-separated scopes. Default: <code>read:jira-work read:jira-user offline_access</code> (<code>offline_access</code> enables refresh tokens).</td></tr>
-      <tr><td><code>JIRA_AUTH</code></td><td>no</td><td>Set to <code>oauth</code> to force OAuth. Otherwise OAuth is used automatically when a stored credential exists; Basic auth is the fallback.</td></tr>
+      <tr><td><code>JIRA_OAUTH_CLIENT_ID</code></td><td>yes</td><td set:html={t('docs.configuration.jiraClientIdDesc')} /></tr>
+      <tr><td><code>JIRA_OAUTH_CLIENT_SECRET</code></td><td>yes</td><td set:html={t('docs.configuration.jiraClientSecretDesc')} /></tr>
+      <tr><td><code>JIRA_OAUTH_SCOPES</code></td><td>no</td><td set:html={t('docs.configuration.jiraScopesDesc')} /></tr>
+      <tr><td><code>JIRA_AUTH</code></td><td>no</td><td set:html={t('docs.configuration.jiraAuthDesc')} /></tr>
     </tbody>
   </table>
-  <p>
-    Tokens are stored in <code>~/.lean-ctx/credentials/jira-oauth.json</code> (<code>0600</code>) and refreshed
-    automatically with refresh-token rotation. Manage credentials via the
-    <a href={lp('/docs/cli-reference') + '#provider'}><code>lean-ctx provider</code></a> command.
-  </p>
+  <p set:html={t('docs.configuration.jiraTokensNote')} />
 
   <hr />
 
-  <h2 id="proxy">Proxy</h2>
-  <p>
-    The <code>[proxy]</code> section lets you override upstream API endpoints for LLM providers.
-    Useful for corporate proxies, self-hosted inference, or regional routing.
-  </p>
+  <h2 id="proxy">{t('docs.configuration.proxyTitle')}</h2>
+  <p set:html={t('docs.configuration.proxyDesc')} />
 
-  <h3>Configuration</h3>
+  <h3>{t('docs.configuration.hConfiguration')}</h3>
   <pre><code># ~/.lean-ctx/config.toml
 [proxy]
 anthropic_upstream = null     # Custom Anthropic API endpoint (default: null)
@@ -1500,23 +1338,19 @@ gemini_upstream = null        # Custom Gemini API endpoint (default: null)</code
 
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>proxy.anthropic_upstream</code></td><td>string?</td><td><code>null</code></td><td>Custom upstream URL for Anthropic API requests. Set to your corporate proxy or self-hosted endpoint.</td></tr>
-      <tr><td><code>proxy.openai_upstream</code></td><td>string?</td><td><code>null</code></td><td>Custom upstream URL for OpenAI API requests.</td></tr>
-      <tr><td><code>proxy.gemini_upstream</code></td><td>string?</td><td><code>null</code></td><td>Custom upstream URL for Gemini API requests.</td></tr>
+      <tr><td><code>proxy.anthropic_upstream</code></td><td>string?</td><td><code>null</code></td><td set:html={t('docs.configuration.proxyAnthropicDesc')} /></tr>
+      <tr><td><code>proxy.openai_upstream</code></td><td>string?</td><td><code>null</code></td><td set:html={t('docs.configuration.proxyOpenaiDesc')} /></tr>
+      <tr><td><code>proxy.gemini_upstream</code></td><td>string?</td><td><code>null</code></td><td set:html={t('docs.configuration.proxyGeminiDesc')} /></tr>
     </tbody>
   </table>
 
   <hr />
 
-  <h2 id="memory">Memory</h2>
-  <p>
-    The <code>[memory]</code> section configures lean-ctx's persistent memory subsystem. Memory is
-    organized into specialized stores — each with its own retention policy, capacity limits, and
-    retrieval rules. Use <code>memory_profile</code> for a preset, or fine-tune individual sub-tables.
-  </p>
+  <h2 id="memory">{t('docs.configuration.memoryTitle')}</h2>
+  <p set:html={t('docs.configuration.memoryDesc')} />
 
   <h3 set:html={t('docsConfiguration.memoryLifecycleTitle')} />
   <p set:html={t('docsConfiguration.memoryLifecycleDesc')} />
@@ -1533,7 +1367,7 @@ gemini_upstream = null        # Custom Gemini API endpoint (default: null)</code
   </DocsCallout>
 
   <h3 id="memory-knowledge"><code>[memory.knowledge]</code></h3>
-  <p>Fact store for project-level knowledge extracted from conversations and code analysis.</p>
+  <p set:html={t('docs.configuration.memKnowledgeDesc')} />
   <pre><code>[memory.knowledge]
 max_facts = 200               # Maximum stored facts per project (default: 200)
 max_patterns = 50             # Maximum code patterns (default: 50)
@@ -1545,39 +1379,39 @@ timeline_limit = 25           # Maximum timeline entries (default: 25)
 relations_limit = 40          # Maximum relations returned (default: 40)</code></pre>
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>memory.knowledge.max_facts</code></td><td>usize</td><td><code>200</code></td><td>Maximum number of facts stored in the knowledge base per project. Oldest entries are evicted when the limit is reached.</td></tr>
-      <tr><td><code>memory.knowledge.max_patterns</code></td><td>usize</td><td><code>50</code></td><td>Maximum number of code patterns retained.</td></tr>
-      <tr><td><code>memory.knowledge.max_history</code></td><td>usize</td><td><code>100</code></td><td>Maximum history entries retained in the knowledge timeline.</td></tr>
-      <tr><td><code>memory.knowledge.contradiction_threshold</code></td><td>f32</td><td><code>0.5</code></td><td>Confidence threshold for automatic contradiction detection between facts.</td></tr>
-      <tr><td><code>memory.knowledge.recall_facts_limit</code></td><td>usize</td><td><code>10</code></td><td>Number of facts retrieved per knowledge recall query.</td></tr>
-      <tr><td><code>memory.knowledge.rooms_limit</code></td><td>usize</td><td><code>25</code></td><td>Maximum number of rooms returned per query.</td></tr>
-      <tr><td><code>memory.knowledge.timeline_limit</code></td><td>usize</td><td><code>25</code></td><td>Maximum number of timeline entries returned per query.</td></tr>
-      <tr><td><code>memory.knowledge.relations_limit</code></td><td>usize</td><td><code>40</code></td><td>Maximum number of entity relations returned per query.</td></tr>
+      <tr><td><code>memory.knowledge.max_facts</code></td><td>usize</td><td><code>200</code></td><td set:html={t('docs.configuration.memKnowMaxFactsDesc')} /></tr>
+      <tr><td><code>memory.knowledge.max_patterns</code></td><td>usize</td><td><code>50</code></td><td set:html={t('docs.configuration.memKnowMaxPatternsDesc')} /></tr>
+      <tr><td><code>memory.knowledge.max_history</code></td><td>usize</td><td><code>100</code></td><td set:html={t('docs.configuration.memKnowMaxHistoryDesc')} /></tr>
+      <tr><td><code>memory.knowledge.contradiction_threshold</code></td><td>f32</td><td><code>0.5</code></td><td set:html={t('docs.configuration.memKnowContradictionDesc')} /></tr>
+      <tr><td><code>memory.knowledge.recall_facts_limit</code></td><td>usize</td><td><code>10</code></td><td set:html={t('docs.configuration.memKnowRecallDesc')} /></tr>
+      <tr><td><code>memory.knowledge.rooms_limit</code></td><td>usize</td><td><code>25</code></td><td set:html={t('docs.configuration.memKnowRoomsDesc')} /></tr>
+      <tr><td><code>memory.knowledge.timeline_limit</code></td><td>usize</td><td><code>25</code></td><td set:html={t('docs.configuration.memKnowTimelineDesc')} /></tr>
+      <tr><td><code>memory.knowledge.relations_limit</code></td><td>usize</td><td><code>40</code></td><td set:html={t('docs.configuration.memKnowRelationsDesc')} /></tr>
     </tbody>
   </table>
 
   <h3 id="memory-episodic"><code>[memory.episodic]</code></h3>
-  <p>Session-level memory capturing what happened during agent interactions.</p>
+  <p set:html={t('docs.configuration.memEpisodicDesc')} />
   <pre><code>[memory.episodic]
 max_episodes = 500            # Maximum stored episodes (default: 500)
 max_actions_per_episode = 50  # Actions per episode (default: 50)
 summary_max_chars = 200       # Episode summary length (default: 200)</code></pre>
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>memory.episodic.max_episodes</code></td><td>usize</td><td><code>500</code></td><td>Maximum number of episodes retained across sessions.</td></tr>
-      <tr><td><code>memory.episodic.max_actions_per_episode</code></td><td>usize</td><td><code>50</code></td><td>Maximum actions recorded per individual episode.</td></tr>
-      <tr><td><code>memory.episodic.summary_max_chars</code></td><td>usize</td><td><code>200</code></td><td>Maximum character length for automatically generated episode summaries.</td></tr>
+      <tr><td><code>memory.episodic.max_episodes</code></td><td>usize</td><td><code>500</code></td><td set:html={t('docs.configuration.memEpiMaxEpisodesDesc')} /></tr>
+      <tr><td><code>memory.episodic.max_actions_per_episode</code></td><td>usize</td><td><code>50</code></td><td set:html={t('docs.configuration.memEpiMaxActionsDesc')} /></tr>
+      <tr><td><code>memory.episodic.summary_max_chars</code></td><td>usize</td><td><code>200</code></td><td set:html={t('docs.configuration.memEpiSummaryDesc')} /></tr>
     </tbody>
   </table>
 
   <h3 id="memory-procedural"><code>[memory.procedural]</code></h3>
-  <p>Learned procedures extracted from repeated agent workflows.</p>
+  <p set:html={t('docs.configuration.memProceduralDesc')} />
   <pre><code>[memory.procedural]
 max_procedures = 100          # Maximum stored procedures (default: 100)
 min_repetitions = 3           # Repetitions before a pattern becomes a procedure (default: 3)
@@ -1585,18 +1419,18 @@ min_sequence_len = 2          # Minimum sequence length for detection (default: 
 max_window_size = 10          # Maximum window size for pattern analysis (default: 10)</code></pre>
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>memory.procedural.max_procedures</code></td><td>usize</td><td><code>100</code></td><td>Maximum number of learned procedures stored.</td></tr>
-      <tr><td><code>memory.procedural.min_repetitions</code></td><td>usize</td><td><code>3</code></td><td>Minimum times a workflow pattern must repeat before it is promoted to a procedure.</td></tr>
-      <tr><td><code>memory.procedural.min_sequence_len</code></td><td>usize</td><td><code>2</code></td><td>Minimum length of a tool-call sequence to be considered for procedure extraction.</td></tr>
-      <tr><td><code>memory.procedural.max_window_size</code></td><td>usize</td><td><code>10</code></td><td>Maximum sliding window size when scanning for repeated patterns.</td></tr>
+      <tr><td><code>memory.procedural.max_procedures</code></td><td>usize</td><td><code>100</code></td><td set:html={t('docs.configuration.memProcMaxDesc')} /></tr>
+      <tr><td><code>memory.procedural.min_repetitions</code></td><td>usize</td><td><code>3</code></td><td set:html={t('docs.configuration.memProcMinRepDesc')} /></tr>
+      <tr><td><code>memory.procedural.min_sequence_len</code></td><td>usize</td><td><code>2</code></td><td set:html={t('docs.configuration.memProcMinSeqDesc')} /></tr>
+      <tr><td><code>memory.procedural.max_window_size</code></td><td>usize</td><td><code>10</code></td><td set:html={t('docs.configuration.memProcMaxWindowDesc')} /></tr>
     </tbody>
   </table>
 
   <h3 id="memory-lifecycle"><code>[memory.lifecycle]</code></h3>
-  <p>Controls how memory entries age, decay, and are pruned over time.</p>
+  <p set:html={t('docs.configuration.memLifecycleDesc')} />
   <pre><code>[memory.lifecycle]
 decay_rate = 0.01             # Daily decay factor for memory scores (default: 0.01)
 low_confidence_threshold = 0.3 # Below this, facts are low-confidence (default: 0.3)
@@ -1604,43 +1438,43 @@ stale_days = 30               # Days before an entry is considered stale (defaul
 similarity_threshold = 0.85   # Cosine similarity for deduplication (default: 0.85)</code></pre>
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>memory.lifecycle.decay_rate</code></td><td>f32</td><td><code>0.01</code></td><td>Daily decay factor applied to memory entry scores. Higher values age entries faster.</td></tr>
-      <tr><td><code>memory.lifecycle.low_confidence_threshold</code></td><td>f32</td><td><code>0.3</code></td><td>Facts with confidence below this threshold are flagged as low-confidence and may be pruned earlier.</td></tr>
-      <tr><td><code>memory.lifecycle.stale_days</code></td><td>i64</td><td><code>30</code></td><td>Number of days after which an unaccessed entry is considered stale and eligible for pruning.</td></tr>
-      <tr><td><code>memory.lifecycle.similarity_threshold</code></td><td>f32</td><td><code>0.85</code></td><td>Cosine similarity threshold for deduplication. Entries above this threshold are merged.</td></tr>
+      <tr><td><code>memory.lifecycle.decay_rate</code></td><td>f32</td><td><code>0.01</code></td><td set:html={t('docs.configuration.memLifeDecayDesc')} /></tr>
+      <tr><td><code>memory.lifecycle.low_confidence_threshold</code></td><td>f32</td><td><code>0.3</code></td><td set:html={t('docs.configuration.memLifeLowConfDesc')} /></tr>
+      <tr><td><code>memory.lifecycle.stale_days</code></td><td>i64</td><td><code>30</code></td><td set:html={t('docs.configuration.memLifeStaleDesc')} /></tr>
+      <tr><td><code>memory.lifecycle.similarity_threshold</code></td><td>f32</td><td><code>0.85</code></td><td set:html={t('docs.configuration.memLifeSimilarityDesc')} /></tr>
     </tbody>
   </table>
 
   <h3 id="memory-gotcha"><code>[memory.gotcha]</code></h3>
-  <p>Stores project-specific gotchas — pitfalls, caveats, and non-obvious behaviors discovered during sessions.</p>
+  <p set:html={t('docs.configuration.memGotchaDesc')} />
   <pre><code>[memory.gotcha]
 max_gotchas_per_project = 100       # Maximum gotchas per project (default: 100)
 retrieval_budget_per_room = 10      # Gotchas surfaced per session (default: 10)
 default_decay_rate = 0.03           # Default decay rate for gotcha importance (default: 0.03)</code></pre>
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>memory.gotcha.max_gotchas_per_project</code></td><td>usize</td><td><code>100</code></td><td>Maximum number of gotchas stored per project.</td></tr>
-      <tr><td><code>memory.gotcha.retrieval_budget_per_room</code></td><td>usize</td><td><code>10</code></td><td>Maximum number of gotchas surfaced in a single session context.</td></tr>
-      <tr><td><code>memory.gotcha.default_decay_rate</code></td><td>f32</td><td><code>0.03</code></td><td>Default daily decay rate applied to gotcha importance scores. Category-specific overrides can be set via <code>category_decay_overrides</code>.</td></tr>
+      <tr><td><code>memory.gotcha.max_gotchas_per_project</code></td><td>usize</td><td><code>100</code></td><td set:html={t('docs.configuration.memGotchaMaxDesc')} /></tr>
+      <tr><td><code>memory.gotcha.retrieval_budget_per_room</code></td><td>usize</td><td><code>10</code></td><td set:html={t('docs.configuration.memGotchaRetrievalDesc')} /></tr>
+      <tr><td><code>memory.gotcha.default_decay_rate</code></td><td>f32</td><td><code>0.03</code></td><td set:html={t('docs.configuration.memGotchaDecayDesc')} /></tr>
     </tbody>
   </table>
 
   <h3 id="memory-embeddings"><code>[memory.embeddings]</code></h3>
-  <p>Configuration for the vector embedding index used by semantic memory operations.</p>
+  <p set:html={t('docs.configuration.memEmbeddingsDesc')} />
   <pre><code>[memory.embeddings]
 max_facts = 2000              # Maximum facts in the embedding index (default: 2000)</code></pre>
   <table>
     <thead>
-      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><th>{t('docs.configuration.thKey')}</th><th>{t('docs.configuration.thType')}</th><th>{t('docs.configuration.thDefault')}</th><th>{t('docs.configuration.thDescription')}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>memory.embeddings.max_facts</code></td><td>usize</td><td><code>2000</code></td><td>Maximum number of facts indexed in the vector embedding store.</td></tr>
+      <tr><td><code>memory.embeddings.max_facts</code></td><td>usize</td><td><code>2000</code></td><td set:html={t('docs.configuration.memEmbMaxFactsDesc')} /></tr>
     </tbody>
   </table>
 

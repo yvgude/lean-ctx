@@ -1,7 +1,7 @@
 {
-  "name": "lean-ctx",
-  "short_name": "lean-ctx",
-  "description": "Context Runtime for AI Agents — 62 MCP tools, 10 read modes, 60+ shell patterns",
+  "name": "LeanCTX",
+  "short_name": "LeanCTX",
+  "description": "The Cognitive Context Layer for AI coding agents — 63 MCP tools, 10 read modes, 95+ shell patterns",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#06060b",

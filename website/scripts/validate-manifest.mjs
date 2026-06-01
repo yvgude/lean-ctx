@@ -49,20 +49,35 @@ check(tools.length === manifest.counts?.granular, `tool array length matches cou
 for (const tool of tools) {
   check(tool.name?.startsWith('ctx_'), `tool "${tool.name}" has ctx_ prefix`);
   check(tool.description?.length > 10, `tool "${tool.name}" has description`);
-  check(tool.schema_md5?.length === 32, `tool "${tool.name}" has valid MD5 hash`);
+  check(tool.schema_md5?.length === 64, `tool "${tool.name}" has a 64-char schema hash`);
   check(tool.input_schema?.type === 'object', `tool "${tool.name}" has object schema`);
 }
 
-// Cross-check: tool page count matches manifest granular count
+// Reachability instead of file count: the site routes most tools to their category
+// page via redirects rather than generating 63 standalone files. Every granular tool
+// must resolve to either a dedicated page (src/pages/docs/tools/<slug>.astro) or a
+// redirect declared in astro.config.mjs — otherwise its /docs/tools/<slug> URL 404s.
 const pagesDir = path.join(ROOT, 'src', 'pages', 'docs', 'tools');
-if (fs.existsSync(pagesDir)) {
-  const toolPages = fs.readdirSync(pagesDir).filter(f => f.startsWith('ctx-') && f.endsWith('.astro'));
+const pageSlugs = fs.existsSync(pagesDir)
+  ? new Set(
+      fs
+        .readdirSync(pagesDir)
+        .filter((f) => f.startsWith('ctx-') && f.endsWith('.astro'))
+        .map((f) => f.replace(/\.astro$/, ''))
+    )
+  : new Set();
+
+const astroConfig = fs.readFileSync(path.join(ROOT, 'astro.config.mjs'), 'utf-8');
+const redirectSlugs = new Set(
+  [...astroConfig.matchAll(/['"]\/docs\/tools\/(ctx-[a-z0-9-]+)\/?['"]\s*:/g)].map((m) => m[1])
+);
+
+for (const tool of tools) {
+  const slug = tool.name.replace(/_/g, '-');
   check(
-    toolPages.length === manifest.counts?.granular,
-    `tool page count matches granular count (${toolPages.length} pages vs ${manifest.counts?.granular} tools)`
+    pageSlugs.has(slug) || redirectSlugs.has(slug),
+    `tool "${tool.name}" reachable via page or redirect (/docs/tools/${slug})`
   );
-} else {
-  check(false, 'tool pages directory exists at src/pages/docs/tools/');
 }
 
 // Cross-check: read modes count is exactly 10

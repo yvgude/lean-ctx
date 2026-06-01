@@ -5,8 +5,7 @@ import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import AsciiHeroBg from '../components/AsciiHeroBg.astro';
 import { locales, isRtl, type Locale } from '../i18n/config';
-import { getLocaleFromUrl, getLocalizedPath, removeLocalePrefix } from '../i18n/utils';
-import { getMcpManifest } from '../lib/mcpManifest';
+import { getLocaleFromUrl, getLocalizedPath, removeLocalePrefix, useTranslations } from '../i18n/utils';
 import siteVersionRaw from '../../public/version.txt?raw';
 
 interface Props {
@@ -20,24 +19,25 @@ interface Props {
   hideAscii?: boolean;
 }
 
+const locale = getLocaleFromUrl(Astro.url) as Locale;
+const t = useTranslations(locale);
+
 const {
   title,
-  description = `Reduce Claude Code, Cursor & Copilot token costs by 60–90% per read. Open-source MCP server + shell hook with ${getMcpManifest().counts.granular} tools and 60+ compression patterns. Single Rust binary, privacy-first.`,
+  description = t('seo.defaultDescription'),
   ogImage = '/og-image-v4.png',
   noindex = false,
-  keywords = 'lean-ctx, leanctx, context engineering, context runtime, MCP server, MCP tools, reduce AI token costs, Claude Code costs, Cursor token optimization, Copilot API costs, context compression, AI coding agent, agentic coding, Rust, Gemini CLI, Windsurf, shell hook, token savings, code intelligence, AI context window, context management',
+  keywords = t('seo.defaultKeywords'),
   breadcrumbs,
   extraJsonLd,
   hideAscii = false,
 } = Astro.props;
 
-const locale = getLocaleFromUrl(Astro.url) as Locale;
 const dir = isRtl(locale) ? 'rtl' : 'ltr';
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const currentPathWithoutLocale = removeLocalePrefix(Astro.url.pathname);
 const isHome = Astro.url.pathname === '/';
 
-const manifest = getMcpManifest();
 const todayIso = new Date().toISOString().slice(0, 10);
 const siteVersion = siteVersionRaw.trim();
 
@@ -65,8 +65,8 @@ const softwareJsonLd = JSON.stringify({
   downloadUrl: 'https://crates.io/crates/lean-ctx',
   softwareVersion: siteVersion,
   license: 'https://www.apache.org/licenses/LICENSE-2.0',
-  description: `Lean Context — the context layer for AI coding tools. Reduce Claude Code, Cursor & Copilot token costs by 60–90% per read. ${manifest.counts.granular} MCP tools, 60+ shell compression patterns, 10 read modes. Privacy-first, open source.`,
-  featureList: 'Intelligent file compression, Session memory, Graph-powered intelligence, Output verification, Multi-agent governance, 24+ IDE integrations',
+  description: t('jsonLd.softwareDescription'),
+  featureList: t('jsonLd.softwareFeatureList'),
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
   author: { '@type': 'Person', name: 'Yves Gugger', url: 'https://github.com/yvgude' },
   publisher: orgJsonLd,
@@ -167,7 +167,7 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
       } catch (_) {}
     })();
   </script>
-  <meta name="application-name" content="lean-ctx" />
+  <meta name="application-name" content="LeanCTX" />
   {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
   {noindex && <meta name="robots" content="noindex, nofollow" />}
 
@@ -175,7 +175,7 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <meta property="og:description" content={description} />
   <meta property="og:type" content="website" />
   <meta property="og:url" content={canonicalURL} />
-  <meta property="og:site_name" content="lean-ctx" />
+  <meta property="og:site_name" content="LeanCTX" />
   <meta property="og:locale" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[locale] || 'en_US'} />
   {locales.filter(l => l !== locale).map(l => (
     <meta property="og:locale:alternate" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[l] || 'en_US'} />

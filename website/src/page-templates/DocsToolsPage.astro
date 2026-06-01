@@ -86,7 +86,7 @@ const sidebar = [
       <tr><td><a href={lp('/docs/tools/ctx-semantic-search')}><code>ctx_semantic_search</code></a></td><td>{t('docs.tools.intelligenceSemanticSearchDesc')}</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-overview')}><code>ctx_overview</code></a></td><td>Project overview with structure, entry points, and key files</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-prefetch')}><code>ctx_prefetch</code></a></td><td>Pre-load files based on task context and changed files</td></tr>
-      <tr><td><a href={lp('/docs/tools/ctx-graph-diagram')}><code>ctx_graph_diagram</code></a></td><td>{t('docs.tools.intelligenceGraphDiagramDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-index')}><code>ctx_index</code></a></td><td>Build and refresh the code-intelligence index (symbols, graph, tree-sitter)</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-compress-memory')}><code>ctx_compress_memory</code></a></td><td>{t('docs.tools.intelligenceCompressMemoryDesc')}</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-impact')}><code>ctx_impact</code></a></td><td>Impact analysis: trace dependency chains and build graphs</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-architecture')}><code>ctx_architecture</code></a></td><td>Graph-based architecture analysis: clusters, layers, cycles</td></tr>
@@ -108,7 +108,7 @@ const sidebar = [
       <tr><td><a href={lp('/docs/tools/ctx-compress')}><code>ctx_compress</code></a></td><td>{t('docs.tools.sessionCompressDesc')}</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-benchmark')}><code>ctx_benchmark</code></a></td><td>{t('docs.tools.sessionBenchmarkDesc')}</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-metrics')}><code>ctx_metrics</code></a></td><td>{t('docs.tools.sessionMetricsDesc')}</td></tr>
-      <tr><td><a href={lp('/docs/tools/ctx-wrapped')}><code>ctx_wrapped</code></a></td><td>{t('docs.tools.sessionWrappedDesc')}</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-radar')}><code>ctx_radar</code></a></td><td>Drift radar — surface context drift and stale files over time</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-cache')}><code>ctx_cache</code></a></td><td>{t('docs.tools.sessionCacheDesc')}</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-gain')}><code>ctx_gain</code></a></td><td set:html={t('docs.tools.ctxGainDesc')} /></tr>
       <tr><td><a href={lp('/docs/tools/ctx-heatmap')}><code>ctx_heatmap</code></a></td><td>File access heatmap - find hot files and cold directories</td></tr>
@@ -161,8 +161,7 @@ const sidebar = [
     </thead>
     <tbody>
       <tr><td><a href={lp('/docs/tools/ctx-symbol')}><code>ctx_symbol</code></a></td><td>Find symbol definitions across 18 languages</td></tr>
-      <tr><td><a href={lp('/docs/tools/ctx-callers')}><code>ctx_callers</code></a></td><td>Find all call sites of a function</td></tr>
-      <tr><td><a href={lp('/docs/tools/ctx-callees')}><code>ctx_callees</code></a></td><td>Find all functions called by a symbol</td></tr>
+      <tr><td><a href={lp('/docs/tools/ctx-callgraph')}><code>ctx_callgraph</code></a></td><td>Caller and callee graph for a function across the codebase</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-outline')}><code>ctx_outline</code></a></td><td>Structural outline of a file</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-routes')}><code>ctx_routes</code></a></td><td>Extract HTTP routes from web frameworks</td></tr>
       <tr><td><a href={lp('/docs/tools/ctx-smells')}><code>ctx_smells</code></a></td><td>Code smell detection with graph-enriched scoring (long functions, deep nesting, complexity)</td></tr>

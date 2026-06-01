@@ -147,6 +147,7 @@ export default defineConfig({
     '/docs/tools/ctx-routes/': '/docs/tools/analysis/',
     '/docs/tools/ctx-benchmark/': '/docs/tools/analysis/',
     '/docs/tools/ctx-metrics/': '/docs/tools/analysis/',
+    '/docs/tools/ctx-radar/': '/docs/tools/session/',
     '/docs/tools/ctx-cost/': '/docs/tools/analysis/',
     '/docs/tools/ctx-heatmap/': '/docs/tools/analysis/',
     '/docs/tools/ctx-gain/': '/docs/tools/analysis/',
@@ -164,6 +165,12 @@ export default defineConfig({
     '/docs/tools/ctx-provider/': '/docs/tools/core/',
     '/docs/tools/ctx-artifacts/': '/docs/tools/workflow/',
     '/docs/tools/ctx-cache/': '/docs/tools/core/',
+    '/docs/tools/ctx-compile/': '/docs/tools/core/',
+    '/docs/tools/ctx-control/': '/docs/tools/core/',
+    '/docs/tools/ctx-load-tools/': '/docs/tools/intelligence/',
+    '/docs/tools/ctx-plan/': '/docs/tools/workflow/',
+    '/docs/tools/ctx-refactor/': '/docs/tools/analysis/',
+    '/docs/tools/ctx-retrieve/': '/docs/tools/memory/',
 
     // Locale redirects → homepage
     '/de/': '/',

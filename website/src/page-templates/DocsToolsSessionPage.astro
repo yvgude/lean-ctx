@@ -17,7 +17,7 @@ const sidebar = [
       { label: 'ctx_analyze', href: lp('/docs/tools/session/') + '#ctx_analyze' },
       { label: 'ctx_benchmark', href: lp('/docs/tools/session/') + '#ctx_benchmark' },
       { label: 'ctx_metrics', href: lp('/docs/tools/session/') + '#ctx_metrics' },
-      { label: 'ctx_wrapped', href: lp('/docs/tools/session/') + '#ctx_wrapped' },
+      { label: 'ctx_gain (wrapped)', href: lp('/docs/tools/session/') + '#ctx_gain_wrapped' },
       { label: 'ctx_cache', href: lp('/docs/tools/session/') + '#ctx_cache' },
       { label: 'ctx_heatmap', href: lp('/docs/tools/session/') + '#ctx_heatmap' },
     ],
@@ -372,10 +372,10 @@ File Refs:
   F2=db.ts [89L 412t reads:3]
 
 Projected session savings (incl. thinking): $0.085</code></pre>
-  <h2 id="ctx_wrapped">ctx_wrapped</h2>
+  <h2 id="ctx_gain_wrapped">ctx_gain — wrapped report</h2>
   <p>
-    Generates a savings report card showing tokens saved, cost avoided,
-    top commands, and cache efficiency over a time period.
+    <code>ctx_gain action=wrapped</code> generates a savings report card showing tokens saved,
+    cost avoided, top commands, and cache efficiency over a time period.
   </p>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -384,7 +384,7 @@ Projected session savings (incl. thinking): $0.085</code></pre>
   </ul>
 
   <h3>Example</h3>
-  <pre><code>ctx_wrapped period=week
+  <pre><code>ctx_gain action=wrapped period=week
 
 ╔══════════════════════════════════════════╗
 ║         lean-ctx WRAPPED 2026           ║

@@ -1,19 +1,21 @@
-# lean-ctx — The Context Runtime for AI Agents
+# LeanCTX — the Cognitive Context Layer for AI coding agents
 
-> lean-ctx is an open-source context runtime that sits between AI coding agents and codebases. It compresses file reads by up to 99%, persists memory across sessions, verifies outputs, and works with 24+ AI tools. Single Rust binary, CLI-first, privacy-first. Zero telemetry.
+> LeanCTX is the cognitive context layer between AI coding agents and your code. It perceives, compresses, remembers, routes, and governs every token — compressing file reads by up to 99%, persisting memory across sessions, and verifying outputs. Works with 24+ AI tools. Single Rust binary, CLI-first, privacy-first. Zero telemetry.
 
-## What is lean-ctx?
+## What is LeanCTX?
 
-lean-ctx is a context engineering layer for AI agents. It intercepts every file read, shell command, and search query between your AI tool and codebase, then compresses, caches, and verifies the output before it reaches the model.
+LeanCTX is the cognitive context layer for AI coding agents. It intercepts every file read, shell command, and search query between your AI tool and codebase, then perceives, compresses, remembers, routes, and governs the output before it reaches the model.
 
 Three integration modes:
 - **CLI-Redirect** (recommended): Zero MCP overhead. AI agents call `lean-ctx` via shell commands. Used by Cursor, Claude Code, Codex, Gemini CLI.
 - **Hybrid**: MCP for cached reads (13 tokens per re-read) + CLI for shell/search. Used by Windsurf, Amp, Antigravity.
-- **Full MCP**: 62 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
+- **Full MCP**: 63 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
 
-## Six Pillars of the Context Runtime
+## Capabilities
 
-1. **Smart I/O**: 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto). AST-aware compression via tree-sitter for 18 languages. Graph-aware reads with dependency hints. 60+ shell compression patterns.
+LeanCTX applies five pillars to every token — Perceive, Compress, Remember, Route, Govern. In practice they group into these capability areas:
+
+1. **Smart I/O**: 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto). AST-aware compression via tree-sitter for 18 languages. Graph-aware reads with dependency hints. 95+ shell compression patterns.
 2. **Intelligence**: Intent classification (What/How/Do), adaptive pipeline, graph-powered hybrid search (BM25 + semantic embeddings + graph proximity via RRF), knowledge-enriched overview, progressive search throttling, terse mode.
 3. **Memory**: Persistent sessions, project knowledge with temporal facts, multi-edge dependency graphs (imports, calls, exports, type_ref, tested_by), agent handoffs, session survival engine with structured recovery queries.
 4. **Governance**: 5 built-in roles (Admin, Coder, Debugger, Reviewer, Ops), workflow gates, token/cost/shell budgets, SLOs with automatic throttling.
@@ -22,7 +24,7 @@ Three integration modes:
 
 ## Real Token Savings
 
-| Operation | Without lean-ctx | With lean-ctx | Saved |
+| Operation | Without LeanCTX | With LeanCTX | Saved |
 |:---|---:|---:|:---:|
 | File reads (cached) | 30,000 tokens | 195 tokens | 99% |
 | git status/log/diff | 8,000 tokens | 2,400 tokens | 70% |
@@ -34,7 +36,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 ## Key Facts
 
-- Version: 3.6.22
+- Version: 3.6.26
 - License: Apache-2.0
 - Language: Rust (single binary, ~15MB)
 - Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `brew install yvgude/lean-ctx/lean-ctx` or `pi install npm:pi-lean-ctx`
@@ -49,7 +51,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CLI, Gemini CLI, Cline, Roo Code, Google Antigravity, OpenCode, Aider, Amp, AWS Kiro, JetBrains IDEs, Amazon Q Developer, Trae, Continue, Crush, Hermes, Sublime Text, Emacs, Neovim.
 
-## Security Features (v3.6.22)
+## Security Features (v3.6.26)
 
 - **PathJail**: Prevents file access outside the project directory (sandbox)
 - **Shell Allowlist**: Opt-in command allowlisting with AST-based multi-segment validation
@@ -58,7 +60,7 @@ Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CL
 - **Role-Based Access**: 5 built-in roles with configurable permissions
 - **OS-Level Sandbox**: Optional Seatbelt (macOS) / Landlock (Linux) process isolation
 
-## MCP Tools (62)
+## MCP Tools (63)
 
 Full tool manifest with schemas: https://leanctx.com/generated/mcp-tools.json
 
@@ -68,21 +70,21 @@ Core tools: ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_overview, ctx_session
 
 - [Home](https://leanctx.com/)
 - [How It Works](https://leanctx.com/how-it-works/): Data flow and compression pipeline
-- [Context OS](https://leanctx.com/context-os/): Architecture overview
+- [Architecture](https://leanctx.com/context-os/): The Cognitive Context Layer — architecture overview
 - [Compatibility](https://leanctx.com/compatibility/): All supported AI tools
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation guide
 - [Configuration](https://leanctx.com/docs/configuration/): Config, env vars, hooks, security
 - [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands
-- [Tool Reference](https://leanctx.com/docs/tools/): All 62 MCP tools documented
+- [Tool Reference](https://leanctx.com/docs/tools/): All 63 MCP tools documented
 - [Security](https://leanctx.com/docs/security/): PathJail, allowlist, sandbox, roles
 - [Changelog](https://leanctx.com/docs/changelog/): Version history
 
 ## FAQ
 
-**How much does lean-ctx cost?**
+**How much does LeanCTX cost?**
 Free and open source. Apache-2.0 licensed.
 
-**How much money does lean-ctx save?**
+**How much money does LeanCTX save?**
 Active developers save $30-100+ per month on API costs. Use `lean-ctx gain --score` to measure your savings.
 
 **Does it work with Claude Code / Cursor / Copilot?**
@@ -95,7 +97,7 @@ No. <1ms overhead per operation. Most users report faster AI responses because l
 Zero telemetry. Everything runs locally. PathJail sandbox, shell allowlist, secret redaction, TOCTOU mitigation, prompt injection hardening — all active by default.
 
 **What is context engineering?**
-Context engineering is the discipline of managing what information an AI agent sees, remembers, and acts on. lean-ctx automates this with compression, caching, verification, and governance.
+Context engineering is the discipline of managing what information an AI agent sees, remembers, and acts on. LeanCTX automates this with compression, caching, verification, and governance.
 
-**What is the difference between lean-ctx and other MCP tools?**
-lean-ctx is not just an MCP server — it's a full context runtime with CLI integration, shell hooks, persistent memory, code intelligence, and a governance layer. It works with or without MCP.
+**What is the difference between LeanCTX and other MCP tools?**
+LeanCTX is not just an MCP server — it's a full context runtime with CLI integration, shell hooks, persistent memory, code intelligence, and a governance layer. It works with or without MCP.

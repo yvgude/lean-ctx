@@ -82,7 +82,8 @@
         "ctx_pack",
         "ctx_proof",
         "ctx_compile",
-        "ctx_plan"
+        "ctx_plan",
+        "ctx_call"
       ]
     },
     "analysis": {

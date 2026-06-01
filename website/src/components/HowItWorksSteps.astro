@@ -1,38 +1,24 @@
 ---
-interface Step {
-  num: string;
-  title: string;
-  desc: string;
-  proof: string;
-  iconPath: string;
-}
+import { PILLARS } from '../lib/positioning';
 
-const steps: Step[] = [
-  {
-    num: "01",
-    title: "See",
-    desc: "Real-time visibility into every file, token count, and rule cost — before a single token is wasted on noise.",
-    proof: "ctx_read → 12 files · 4,200 tok visible",
-    iconPath:
-      "M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
-  },
-  {
-    num: "02",
-    title: "Compress",
-    desc: "10 read modes and AST parsing for 18 languages cut what your AI reads by 60–90% — keeping the signal, dropping the noise.",
-    proof: "4,200 → 920 tokens (78% saved)",
-    iconPath:
-      "M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25",
-  },
-  {
-    num: "03",
-    title: "Remember",
-    desc: "Findings, decisions, and touched files persist and auto-restore into every new session — so you never re-explain context.",
-    proof: "session restored · 0 tokens re-read",
-    iconPath:
-      "M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z",
-  },
-];
+// The five pillars come from the positioning SSOT so the "how it works" section
+// can never diverge from the hero definition. Proof lines are grounded in real
+// ctx_* tools and the canonical token-savings numbers.
+const proofByPillar: Record<string, string> = {
+  perceive: 'ctx_overview → repo mapped, key files surfaced',
+  compress: 'ctx_read → 4,200 → 920 tokens (78% saved)',
+  remember: 'ctx_session → restored · 0 tokens re-read',
+  route: 'ctx_intent → mode + budget chosen for the task',
+  govern: 'ctx_verify → paths ok · 0 secrets · budget in bounds',
+};
+
+const steps = PILLARS.map((p) => ({
+  num: String(p.order).padStart(2, '0'),
+  title: p.verb,
+  desc: p.description,
+  proof: proofByPillar[p.id],
+  iconPath: p.iconPath,
+}));
 ---
 
 <div class="hiw-steps">
@@ -56,7 +42,7 @@ const steps: Step[] = [
 <style>
   .hiw-steps {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
     gap: clamp(1rem, 0.6rem + 1.5vw, 2rem);
   }
 

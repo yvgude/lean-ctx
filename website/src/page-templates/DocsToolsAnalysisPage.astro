@@ -86,10 +86,12 @@ const sidebar = [
   src/http/server.rs:142  fn handleRequest(req: Request) -> Response
   src/http/middleware.rs:28  fn handleRequest(req: Request, next: Next) -> Response`}</code></pre>
 
-  <h2 id="ctx_callers">ctx_callers</h2>
+  <h2 id="ctx_callgraph">ctx_callgraph</h2>
   <p>
-    <code>ctx_callers</code> finds all symbols that call a given function or method.
-    Useful for understanding impact before refactoring.
+    <code>ctx_callgraph</code> answers caller/callee questions with a multi-hop BFS over the
+    code graph. One tool, four actions: <code>callers</code>, <code>callees</code>,
+    <code>trace</code> (shortest path between two symbols) and <code>risk</code> (classify a
+    symbol by how many callers it has). Useful for understanding impact before refactoring.
   </p>
   <h3>Parameters</h3>
   <table>
@@ -97,12 +99,14 @@ const sidebar = [
       <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>symbol</code></td><td>string</td><td>Yes</td><td>Symbol name to find callers of</td></tr>
+      <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>callers</code> (default), <code>callees</code>, <code>trace</code>, or <code>risk</code></td></tr>
+      <tr><td><code>symbol</code></td><td>string</td><td>Yes</td><td>Symbol name (for <code>callers</code>/<code>callees</code>/<code>risk</code>)</td></tr>
+      <tr><td><code>depth</code></td><td>integer</td><td>No</td><td>BFS depth 1–5 (default 1)</td></tr>
       <tr><td><code>file</code></td><td>string</td><td>No</td><td>Scope to a specific file</td></tr>
     </tbody>
   </table>
   <h3>Example</h3>
-  <pre><code>{`ctx_callers symbol="validateToken"
+  <pre><code>{`ctx_callgraph action="callers" symbol="validateToken"
 → 4 callers:
   src/http/middleware.rs:45  fn authMiddleware
   src/http/handler.rs:23    fn handleLogin
@@ -159,22 +163,6 @@ const sidebar = [
     <li><strong>diff-review</strong>: Extracts changed files from a git diff and reviews each one</li>
     <li><strong>checklist</strong>: Generates structured review questions with checkboxes based on impact and test coverage</li>
   </ul>
-
-  <h2 id="ctx_callees">ctx_callees</h2>
-  <p>
-    <code>ctx_callees</code> finds all functions/methods called by a given symbol.
-    The inverse of <code>ctx_callers</code> - useful for understanding dependencies.
-  </p>
-  <h3>Parameters</h3>
-  <table>
-    <thead>
-      <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>symbol</code></td><td>string</td><td>Yes</td><td>Symbol name to find callees of</td></tr>
-      <tr><td><code>file</code></td><td>string</td><td>No</td><td>Scope to a specific file</td></tr>
-    </tbody>
-  </table>
 
   <h2 id="ctx_outline">ctx_outline</h2>
   <p>

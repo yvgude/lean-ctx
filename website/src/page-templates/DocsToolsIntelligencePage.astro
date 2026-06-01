@@ -25,10 +25,8 @@ const sidebar = [
       { label: 'ctx_semantic_search', href: lp('/docs/tools/intelligence/') + '#ctx_semantic_search' },
       { label: 'ctx_symbol', href: lp('/docs/tools/intelligence/') + '#ctx_symbol' },
       { label: 'ctx_outline', href: lp('/docs/tools/intelligence/') + '#ctx_outline' },
-      { label: 'ctx_callers', href: lp('/docs/tools/intelligence/') + '#ctx_callers' },
-      { label: 'ctx_callees', href: lp('/docs/tools/intelligence/') + '#ctx_callees' },
+      { label: 'ctx_callgraph', href: lp('/docs/tools/intelligence/') + '#ctx_callgraph' },
       { label: 'ctx_routes', href: lp('/docs/tools/intelligence/') + '#ctx_routes' },
-      { label: 'ctx_graph_diagram', href: lp('/docs/tools/intelligence/') + '#ctx_graph_diagram' },
       { label: 'ctx_compress_memory', href: lp('/docs/tools/intelligence/') + '#ctx_compress_memory' },
       { label: 'ctx_impact', href: lp('/docs/tools/intelligence/') + '#ctx_impact' },
       { label: 'ctx_architecture', href: lp('/docs/tools/intelligence/') + '#ctx_architecture' },
@@ -175,7 +173,7 @@ const sidebar = [
   <pre><code>ctx_graph action=build
 → GRAPH BUILD - /Users/you/project
   Scanned: 142 files (38 new, 104 cached)
-  Symbols: 847 exports across 12 languages
+  Symbols: 847 exports across 18 languages
   Edges:   1,203 import relationships
   Index:   ~/.lean-ctx/graphs/a3f8c1/index.json
   Build:   340ms (incremental)</code></pre>
@@ -335,19 +333,17 @@ const sidebar = [
     <li><code>path</code> (required) - file path</li>
     <li><code>kind</code> (optional) - filter by kind</li>
   </ul>
-  <h2 id="ctx_callers">ctx_callers</h2>
-  <p set:html={t('docsToolsIntelligence.ctxCallersDesc')} />
+  <h2 id="ctx_callgraph">ctx_callgraph</h2>
+  <p>
+    Caller/callee analysis with a multi-hop BFS over the code graph. One tool, four actions:
+    <code>callers</code>, <code>callees</code>, <code>trace</code> (shortest path between two
+    symbols) and <code>risk</code> (classify a symbol by caller count).
+  </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
   <ul>
-    <li><code>symbol</code> (required) - symbol name to find callers of</li>
-    <li><code>file</code> (optional) - filter by caller file</li>
-  </ul>
-  <h2 id="ctx_callees">ctx_callees</h2>
-  <p set:html={t('docsToolsIntelligence.ctxCalleesDesc')} />
-  <h3>{t('docsToolsCore.parameters')}</h3>
-  <ul>
-    <li><code>symbol</code> (required) - symbol name to list callees for</li>
-    <li><code>file</code> (optional) - filter by caller file</li>
+    <li><code>action</code> (optional) - <code>callers</code> (default), <code>callees</code>, <code>trace</code>, or <code>risk</code></li>
+    <li><code>symbol</code> (required) - symbol name</li>
+    <li><code>depth</code> (optional) - BFS depth 1–5 (default 1)</li>
   </ul>
   <h2 id="ctx_routes">ctx_routes</h2>
   <p set:html={t('docsToolsIntelligence.ctxRoutesDesc')} />
@@ -355,14 +351,6 @@ const sidebar = [
   <ul>
     <li><code>method</code> (optional) - HTTP method (GET, POST, ...)</li>
     <li><code>path</code> (optional) - path prefix (e.g. <code>/api</code>)</li>
-  </ul>
-  <h2 id="ctx_graph_diagram">ctx_graph_diagram</h2>
-  <p set:html={t('docsToolsIntelligence.ctxGraphDiagramDesc')} />
-  <h3>{t('docsToolsCore.parameters')}</h3>
-  <ul>
-    <li><code>kind</code> (optional) - <code>deps</code> (default) or <code>calls</code></li>
-    <li><code>file</code> (optional) - focus filter</li>
-    <li><code>depth</code> (optional) - max depth (default 2)</li>
   </ul>
   <h2 id="ctx_compress_memory">ctx_compress_memory</h2>
   <p set:html={t('docsToolsIntelligence.ctxCompressMemoryDesc')} />
