@@ -39,14 +39,14 @@ const mapped = points.map((p, i) => ({
       <line
         x1={svgLeft} y1={toSvgY(t)}
         x2={svgRight} y2={toSvgY(t)}
-        stroke="rgba(255,255,255,0.06)" stroke-dasharray="4 4"
+        stroke="var(--color-border)" stroke-opacity="0.55" stroke-dasharray="4 4"
       />
     ))}
     {xTicks.map(t => (
       <line
         x1={toSvgX(t)} y1={svgTop}
         x2={toSvgX(t)} y2={svgBottom}
-        stroke="rgba(255,255,255,0.06)" stroke-dasharray="4 4"
+        stroke="var(--color-border)" stroke-opacity="0.55" stroke-dasharray="4 4"
       />
     ))}
 

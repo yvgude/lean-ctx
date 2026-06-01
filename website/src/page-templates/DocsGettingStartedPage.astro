@@ -1,5 +1,6 @@
 ---
 import DocsLayout from '../layouts/DocsLayout.astro';
+import DocsCallout from '../components/DocsCallout.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -132,7 +133,27 @@ const sidebar = [
 
   <script is:inline>
   (function() {
+    var STORE_KEY = 'lean-ctx:quickstart';
     var os = 'macos', ed = 'cursor', mode = 'auto';
+    try {
+      var _saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+      if (_saved.os) os = _saved.os;
+      if (_saved.ed) ed = _saved.ed;
+      if (_saved.mode) mode = _saved.mode;
+    } catch (e) {}
+
+    function persist() {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify({ os: os, ed: ed, mode: mode })); } catch (e) {}
+    }
+    function setActive(containerId, value) {
+      var btns = document.querySelectorAll('#' + containerId + ' .pg-btn');
+      for (var i = 0; i < btns.length; i++) {
+        var on = btns[i].getAttribute('data-v') === value;
+        btns[i].classList.toggle('active', on);
+        if (on) btns[i].setAttribute('aria-pressed', 'true');
+        else btns[i].removeAttribute('aria-pressed');
+      }
+    }
 
     var installs = {
       macos: 'brew tap yvgude/lean-ctx && brew install lean-ctx',
@@ -539,6 +560,7 @@ const sidebar = [
             if (key === 'os') os = btn.getAttribute('data-v');
             else if (key === 'ed') ed = btn.getAttribute('data-v');
             else if (key === 'mode') mode = btn.getAttribute('data-v');
+            persist();
             gen();
           });
         })(btns[i]);
@@ -548,6 +570,11 @@ const sidebar = [
     bind('pg-os', 'os');
     bind('pg-ed', 'ed');
     bind('pg-mode', 'mode');
+
+    // Restore the persisted choice (overrides the default active buttons in markup).
+    setActive('pg-os', os);
+    setActive('pg-ed', ed);
+    setActive('pg-mode', mode);
 
     var copyBtn = document.getElementById('pg-copy');
     if (copyBtn) {
@@ -743,10 +770,9 @@ cargo build --release</code></pre>
     <li set:html={t('docs.gettingStarted.step2Feature5')} />
   </ul>
 
-  <div class="border border-accent/20 rounded-lg p-4 mb-6 bg-accent/5">
-    <p class="mt-0 mb-2"><strong>{t('docs.gettingStarted.restartIdeTitle')}</strong></p>
-    <p class="mb-0 text-sm text-muted" set:html={t('docs.gettingStarted.restartIdeDesc')} />
-  </div>
+  <DocsCallout variant="note" title={t('docs.gettingStarted.restartIdeTitle')}>
+    <p set:html={t('docs.gettingStarted.restartIdeDesc')} />
+  </DocsCallout>
 
   <p>{t('docs.gettingStarted.afterSetupRestart')}</p>
   <table>
@@ -811,7 +837,7 @@ lean-ctx gain        # shows token savings so far</code></pre>
   <p set:html={t('docs.gettingStarted.manualEditorOnlyIf')} />
   <p>{t('docs.gettingStarted.manualEditorConnect')}</p>
 
-  <div class="border border-white/10 rounded-lg p-4 mb-6 bg-white/[0.02]">
+  <DocsCallout variant="note">
     <p class="mt-0" set:html={t('docs.gettingStarted.beforeYouStart')} />
     <pre><code># macOS / Linux:
 which lean-ctx
@@ -821,7 +847,7 @@ which lean-ctx
 where.exe lean-ctx
 # Example output: C:\Users\you\.cargo\bin\lean-ctx.exe</code></pre>
     <p class="mb-0" set:html={t('docs.gettingStarted.keepPathHandy')} />
-  </div>
+  </DocsCallout>
 
   <h3 id="editor-cursor">{t('docs.gettingStarted.editorCursorTitle')}</h3>
   <ol>

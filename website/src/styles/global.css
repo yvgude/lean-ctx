@@ -598,6 +598,7 @@ pre code {
   50% { opacity: 0.4; }
 }
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   .term-status::before { animation: none; }
 }
 

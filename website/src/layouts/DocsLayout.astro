@@ -3,7 +3,7 @@ import BaseLayout from './BaseLayout.astro';
 import DocsSidebar from '../components/DocsSidebar.astro';
 import PageHero from '../components/PageHero.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
-import { getDocsPager } from '../lib/docsNav';
+import { getDocsPager, getDocsJourney } from '../lib/docsNav';
 
 interface SidebarItem {
   label: string;
@@ -37,6 +37,7 @@ const breadcrumbs = [
 ];
 
 const { prev, next } = getDocsPager(Astro.url.pathname);
+const journeyLabel = getDocsJourney(Astro.url.pathname) ?? t('docs.documentation');
 ---
 
 <BaseLayout
@@ -48,7 +49,7 @@ const { prev, next } = getDocsPager(Astro.url.pathname);
 >
   {!hideHero && (
     <PageHero
-      label={t('docs.documentation')}
+      label={journeyLabel}
       title={title}
       description={description}
       kickerTone="accent"

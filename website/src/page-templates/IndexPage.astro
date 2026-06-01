@@ -432,7 +432,7 @@ const faqJsonLd = JSON.stringify({
     </h2>
     <div class="faq-grid" style="display: grid; gap: clamp(1.5rem, 1rem + 1vw, 2.5rem); max-width: 48rem;">
       {[1,2,3,4,5].map(i => (
-        <details class="faq-item" style="border-bottom: 1px solid var(--border); padding-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+        <details class="faq-item" style="border-bottom: 1px solid var(--color-border); padding-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
           <summary class="fluid-body font-semibold text-text-bright" style="cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center;">
             {t(`index.faq${i}Q`)}
             <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -523,21 +523,17 @@ const faqJsonLd = JSON.stringify({
 
 <style>
   .hero-headline {
-    font-size: clamp(2.25rem, 1.7rem + 2vw, 3.25rem);
-    line-height: 1.08;
+    font-size: clamp(2rem, 1.4rem + 2vw, 3rem);
+    line-height: 1.1;
     letter-spacing: -0.03em;
     font-weight: 600;
     text-wrap: balance;
-    max-width: 24ch;
   }
-  /* Desktop two-column hero: let the headline use the full content column
-     so the two <br/>-separated lines read wide, not cramped. */
-  @media (min-width: 768px) {
-    .hero-headline { max-width: none; }
-  }
-  /* Wide desktop: pin to exactly two lines (no further wrapping) */
-  @media (min-width: 1280px) {
-    .hero-headline { white-space: nowrap; }
+  /* Keep the hero single-column (full-width headline + readable terminal) until
+     the content column is wide enough for the two-line headline. This avoids the
+     cramped mid-width range where each <br/>-separated line wrapped again. */
+  @media (max-width: 979px) {
+    .hero-split .split.split--visual-wide { grid-template-columns: 1fr; }
   }
   .hero-headline em {
     font-style: italic;

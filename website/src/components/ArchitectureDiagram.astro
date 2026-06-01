@@ -25,7 +25,7 @@ const capabilities = [
   {
     label: "Remember",
     iconPath: "M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125",
-    color: "indigo",
+    color: "green",
     features: [
       "Session cache (zstd, in-memory)",
       "13-token re-reads",
@@ -36,7 +36,7 @@ const capabilities = [
   {
     label: "Verify",
     iconPath: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z",
-    color: "indigo",
+    color: "green",
     features: [
       "PathJail sandbox",
       "OS-level isolation",
@@ -47,7 +47,7 @@ const capabilities = [
   {
     label: "Connect",
     iconPath: "M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.364-3.06a4.5 4.5 0 00-6.364 0l-4.5 4.5a4.5 4.5 0 006.364 6.364l1.757-1.757",
-    color: "purple",
+    color: "green",
     features: [
       "GitHub · GitLab · Jira · Linear",
       "Postgres · REST · MCP Bridge",
@@ -148,8 +148,6 @@ const capabilities = [
     --dia-border: var(--color-border);
     --dia-border-light: var(--color-border-light);
     --dia-green: 52, 211, 153;
-    --dia-indigo: 129, 140, 248;
-    --dia-purple: 212, 160, 255;
 
     width: 100%;
     display: flex;
@@ -297,10 +295,6 @@ const capabilities = [
 
   .dia-card--green { border-color: rgba(var(--dia-green), 0.22); }
   .dia-card--green:hover { border-color: rgba(var(--dia-green), 0.5); }
-  .dia-card--indigo { border-color: rgba(var(--dia-indigo), 0.22); }
-  .dia-card--indigo:hover { border-color: rgba(var(--dia-indigo), 0.5); }
-  .dia-card--purple { border-color: rgba(var(--dia-purple), 0.22); }
-  .dia-card--purple:hover { border-color: rgba(var(--dia-purple), 0.5); }
 
   /* Card head */
   .dia-card-head {
@@ -312,8 +306,6 @@ const capabilities = [
   }
 
   .dia-card--green .dia-card-head { background: rgba(var(--dia-green), 0.05); }
-  .dia-card--indigo .dia-card-head { background: rgba(var(--dia-indigo), 0.05); }
-  .dia-card--purple .dia-card-head { background: rgba(var(--dia-purple), 0.05); }
 
   .dia-card-icon {
     width: clamp(1.125rem, 1rem + 0.3vw, 1.375rem);
@@ -322,8 +314,6 @@ const capabilities = [
   }
 
   .dia-card--green .dia-card-icon { color: rgb(var(--dia-green)); }
-  .dia-card--indigo .dia-card-icon { color: rgb(var(--dia-indigo)); }
-  .dia-card--purple .dia-card-icon { color: rgb(var(--dia-purple)); }
 
   .dia-card-title {
     font-family: var(--font-display);
@@ -361,8 +351,6 @@ const capabilities = [
   }
 
   .dia-card--green .dia-card-features li::before { color: rgb(var(--dia-green)); }
-  .dia-card--indigo .dia-card-features li::before { color: rgb(var(--dia-indigo)); }
-  .dia-card--purple .dia-card-features li::before { color: rgb(var(--dia-purple)); }
 
   /* Flow arrows between cards */
   .dia-card-arrow {
