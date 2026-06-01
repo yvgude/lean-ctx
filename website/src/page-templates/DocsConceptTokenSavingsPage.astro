@@ -247,7 +247,7 @@ const sidebar = [
 
   <h3>CRP Mode Interaction</h3>
   <p>
-    When <code>CRP_MODE=tdd</code> is set, Terse Agent automatically activates at
+    When <code>LEAN_CTX_CRP_MODE=tdd</code> is set, Terse Agent automatically activates at
     <strong>ultra</strong> level with additional constraints:
   </p>
   <ul>
@@ -262,11 +262,10 @@ const sidebar = [
     Set the Terse Agent level per project in <code>config.toml</code> or via environment variable:
   </p>
   <pre><code>{`# config.toml
-[terse]
-level = "full"    # "lite", "full", or "ultra"
+terse_agent = "full"    # "off", "lite", "full", or "ultra"
 
 # Or via environment variable
-export LCTX_TERSE_LEVEL=full`}</code></pre>
+export LEAN_CTX_TERSE_AGENT=full`}</code></pre>
   <p>
     The level can also be changed mid-session via <code>ctx_session</code> without restarting
     the lean-ctx server.
@@ -287,7 +286,7 @@ export LCTX_TERSE_LEVEL=full`}</code></pre>
       <code>full</code> for files you'll actually edit.
     </li>
     <li>
-      <strong>Enable TDD mode for large projects:</strong> Set <code>CRP_MODE=tdd</code> for maximum
+      <strong>Enable TDD mode for large projects:</strong> Set <code>LEAN_CTX_CRP_MODE=tdd</code> for maximum
       compression when working with many files.
     </li>
     <li>

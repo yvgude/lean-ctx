@@ -64,7 +64,7 @@ const sidebar = [
       <tr>
         <td><code>TDD/CRP</code></td>
         <td>Terse Data Density / Context Reduction Protocol</td>
-        <td>When <code>CRP_MODE=tdd</code> is set</td>
+        <td>When <code>LEAN_CTX_CRP_MODE=tdd</code> is set</td>
         <td>Maximum compression: abbreviated keywords, symbol maps, diff-only output</td>
       </tr>
       <tr>
@@ -184,9 +184,9 @@ ctx_compress
       <tr><th>Trigger</th><th>How</th></tr>
     </thead>
     <tbody>
-      <tr><td>Environment variable</td><td><code>CRP_MODE=tdd</code> in shell or <code>.env</code></td></tr>
-      <tr><td>Config file</td><td><code>crp_mode = "tdd"</code> in <code>lean-ctx.toml</code></td></tr>
-      <tr><td>Per-session</td><td><code>ctx_session set crp_mode=tdd</code></td></tr>
+      <tr><td>Environment variable</td><td><code>LEAN_CTX_CRP_MODE=tdd</code> in your shell or <code>.env</code></td></tr>
+      <tr><td>Context Profile</td><td>Activate a profile whose compression uses TDD mode (profiles carry the CRP mode)</td></tr>
+      <tr><td>Per-session</td><td><code>ctx_session action=profile value=&lt;name&gt;</code> to switch profiles at runtime</td></tr>
     </tbody>
   </table>
 
@@ -226,7 +226,7 @@ F1=auth/service.rs 95L
   </p>
 
   <p>
-    <a href={lp('/docs/tdd')}>Full TDD documentation →</a>
+    <a href={lp('/docs/concepts/token-savings')}>More on TDD compression and Terse Agent →</a>
   </p>
 
   <!-- ========== CLP ========== -->
@@ -241,7 +241,7 @@ F1=auth/service.rs 95L
   <h3>When CLP Activates</h3>
   <p>
     CLP activates when you call <code>ctx_preload</code> with a task description at session start.
-    It can also trigger automatically if <code>auto_preload = true</code> is set in <code>lean-ctx.toml</code>
+    It can also trigger automatically if <code>auto_preload = true</code> is set under <code>[autonomy]</code> in your config
     and the agent's first message contains a clear task.
   </p>
 
@@ -322,7 +322,7 @@ F1=auth/service.rs 95L
   ├──┤──────────┤────────────┤────────────┤────────────────────────────┤
   0  start     call #15     call #30     call #45                   end
   │                                                                     │
-  │ TDD (optional, if CRP_MODE=tdd) ───────────────────────────────────│
+  │ TDD (optional, if active) ─────────────────────────────────────────│
   │ A2A (optional, if multi-agent) ────────────────────────────────────│
   └─────────────────────────────────────────────────────────────────────┘`}</code></pre>
 
@@ -350,7 +350,7 @@ F1=auth/service.rs 95L
       <tr>
         <td>Tight token budget or CI pipeline</td>
         <td>CEP + CCP + TDD</td>
-        <td>Set <code>CRP_MODE=tdd</code> for maximum compression</td>
+        <td>Set <code>LEAN_CTX_CRP_MODE=tdd</code> for maximum compression</td>
       </tr>
       <tr>
         <td>Task-oriented session start</td>

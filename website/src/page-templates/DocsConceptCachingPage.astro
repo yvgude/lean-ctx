@@ -248,18 +248,18 @@ F3=db.ts 64L         → Use "F3" instead of "src/database/db.ts"`}</code></pre>
   </p>
   <h3>Flow</h3>
   <ol>
-    <li>Tool result exceeds threshold (default: 500 tokens)</li>
-    <li>Full result stored in <code>~/.lean-ctx/archive/</code></li>
+    <li>Tool result exceeds threshold (default: 800 characters)</li>
+    <li>Full result stored in <code>~/.lean-ctx/archives/</code></li>
     <li>Compressed response + archive ID sent to the agent</li>
     <li>Agent calls <code>ctx_expand id="..."</code> when full detail is needed</li>
-    <li>Archived entries auto-expire after TTL (default: 120 minutes)</li>
+    <li>Archived entries auto-expire after <code>max_age_hours</code> (default: 48 hours)</li>
   </ol>
   <h3>Configuration</h3>
   <pre><code>{`# config.toml
 [archive]
 enabled = true
-threshold_tokens = 500
-ttl_minutes = 120`}</code></pre>
+threshold_chars = 800
+max_age_hours = 48`}</code></pre>
 
   <h2 id="zero-loss-archive">Zero-Loss Archive (ctx_expand)</h2>
   <p>
@@ -284,10 +284,10 @@ ttl_minutes = 120`}</code></pre>
   <pre><code>{`# config.toml
 [archive]
 enabled = true
-threshold_tokens = 500   # Archive results larger than this
-ttl_minutes = 120        # Auto-expire after 2 hours
-max_disk_mb = 256        # Disk space limit for archives
-mask_secrets = true      # Redact detected secrets before archiving`}</code></pre>
+threshold_chars = 800    # Archive results larger than this (chars)
+max_age_hours = 48       # Auto-expire after 48 hours
+max_disk_mb = 500        # Disk space limit for archives
+ephemeral = true         # Replace large results with summary + ctx_expand ref`}</code></pre>
 
   <table>
     <thead>
@@ -295,19 +295,19 @@ mask_secrets = true      # Redact detected secrets before archiving`}</code></pr
     </thead>
     <tbody>
       <tr><td><code>enabled</code></td><td><code>true</code></td><td>Enable/disable the archive system</td></tr>
-      <tr><td><code>threshold_tokens</code></td><td><code>500</code></td><td>Minimum token count to trigger archiving</td></tr>
-      <tr><td><code>ttl_minutes</code></td><td><code>120</code></td><td>Time-to-live before auto-expiration</td></tr>
-      <tr><td><code>max_disk_mb</code></td><td><code>256</code></td><td>Maximum total disk usage for archives</td></tr>
-      <tr><td><code>mask_secrets</code></td><td><code>true</code></td><td>Redact API keys, tokens, and passwords before writing to disk</td></tr>
+      <tr><td><code>threshold_chars</code></td><td><code>800</code></td><td>Minimum output size (chars) to trigger archiving</td></tr>
+      <tr><td><code>max_age_hours</code></td><td><code>48</code></td><td>Maximum age of archived entries before cleanup</td></tr>
+      <tr><td><code>max_disk_mb</code></td><td><code>500</code></td><td>Maximum total disk usage for the archive</td></tr>
+      <tr><td><code>ephemeral</code></td><td><code>true</code></td><td>Replace large results with a summary + ctx_expand reference</td></tr>
     </tbody>
   </table>
 
   <h3>Secret Masking</h3>
   <p>
-    When <code>mask_secrets</code> is enabled, lean-ctx scans archived content for common secret patterns
-    (API keys, JWT tokens, connection strings, private keys) and replaces them with
-    <code>[REDACTED:type]</code> placeholders before writing to disk. This ensures sensitive data
-    never persists in the archive directory.
+    lean-ctx scans tool output for common secret patterns (API keys, JWT tokens, connection strings,
+    private keys) and replaces them with <code>[REDACTED:type]</code> placeholders. Redaction is enabled
+    by default for all non-admin roles, so sensitive data never persists in archives or the context window.
+    Detection patterns are configurable under the <code>[secret_detection]</code> section.
   </p>
 
   <h2 id="cache-safe">Cache-Safe Guarantee</h2>

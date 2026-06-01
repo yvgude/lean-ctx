@@ -198,12 +198,8 @@ GET /v1/agents/events
   </p>
 
   <h3>Configuration</h3>
-  <pre><code>{`# config.toml
-[agent_token_budget]
-default = 500_000          # default budget per agent (tokens)
-cursor = 1_000_000         # override for cursor agents
-claude = 750_000           # override for claude agents
-warn_threshold = 0.80      # emit warning at 80% usage`}</code></pre>
+  <pre><code>{`# config.toml — per-agent token budget (0 = unlimited, the default)
+agent_token_budget = 500000`}</code></pre>
 
   <h3>Behavior</h3>
   <table>
@@ -222,7 +218,7 @@ warn_threshold = 0.80      # emit warning at 80% usage`}</code></pre>
 
 # Budget exceeded
 ✗ Token budget exceeded: 500,000 / 500,000 (100%)
-  Use ctx_session action="compact" or ctx_agent action="reset_budget" to continue`}</code></pre>
+  Use ctx_compress to reclaim context or ctx_session action=budget to raise the limit`}</code></pre>
 
   <h2 id="a2a-transport">A2A Transport</h2>
   <p>
@@ -312,13 +308,13 @@ ctx_agent action="recall_diary"
     <code>ctx_handoff</code> transfers the full working context between agents or sessions.
     This includes cached files, knowledge base entries, workflow state, and session context.
   </p>
-  <pre><code>{`# Agent A saves context before ending
-ctx_handoff action="save" apply_knowledge=true apply_session=true apply_workflow=true
-→ Context saved: 12 files, 3 knowledge entries, 1 active workflow
+  <pre><code>{`# Agent A creates a handoff bundle before ending
+ctx_handoff action="create"
+→ Handoff created: 12 files, 3 knowledge entries, 1 active workflow
 
-# Agent B (or new session) restores
-ctx_handoff action="load"
-→ Restored: 12 cached files (F1-F12), 3 knowledge entries, workflow "bugfix" at step "test"
+# Agent B (or a new session) imports it
+ctx_handoff action="import" apply_knowledge=true apply_session=true apply_workflow=true
+→ Imported: 12 cached files (F1-F12), 3 knowledge entries, workflow "bugfix" at step "test"
   Ready to continue where Agent A left off.`}</code></pre>
 
   <h2 id="signed-handoff-bundles">Signed Handoff Bundles</h2>

@@ -517,7 +517,7 @@ max_staleness_days = 30</code></pre>
       </tr>
       <tr>
         <td><code>LEAN_CTX_CHECKPOINT_INTERVAL</code></td>
-        <td>number (default: 10)</td>
+        <td>number (default: 15)</td>
         <td set:html={t('docsConfiguration.checkpointIntervalEnvDesc')} />
       </tr>
       <tr>
@@ -1076,7 +1076,7 @@ max_disk_mb = 500             # Maximum total disk usage for archive (default: 5
     <tbody>
       <tr><td><strong>Off</strong></td><td><code>"off"</code></td><td>No compression. Full tool output, no output optimization.</td></tr>
       <tr><td><strong>Lite</strong></td><td><code>"lite"</code></td><td>Abbreviations and function references. Moderate input compression (~20-40% savings).</td></tr>
-      <tr><td><strong>Standard</strong></td><td><code>"standard"</code></td><td>Balanced compression with CEP v1 protocol, delta-only output, and structured notation. The recommended default.</td></tr>
+      <tr><td><strong>Standard</strong></td><td><code>"standard"</code></td><td>Balanced compression with CEP v1 protocol, delta-only output, and structured notation. Recommended when you want denser agent output.</td></tr>
       <tr><td><strong>Max</strong></td><td><code>"max"</code></td><td>Maximum compression. Single-line output, aggressive truncation, symbols only. Best for CI/automated pipelines.</td></tr>
     </tbody>
   </table>
