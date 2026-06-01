@@ -80,10 +80,10 @@ const summary = {
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--color-accent);
-    background: rgba(52, 211, 153, 0.08);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
     padding: 0.125rem 0.5rem;
     border-radius: 9999px;
-    border: 1px solid rgba(52, 211, 153, 0.15);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
   }
 
   .bar-track {
@@ -110,12 +110,12 @@ const summary = {
   }
 
   .bar-without {
-    background: linear-gradient(90deg, rgba(94, 94, 120, 0.3), rgba(94, 94, 120, 0.15));
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-muted) 35%, transparent), color-mix(in srgb, var(--color-muted) 18%, transparent));
   }
 
   .bar-with {
-    background: linear-gradient(90deg, rgba(52, 211, 153, 0.25), rgba(52, 211, 153, 0.1));
-    border: 1px solid rgba(52, 211, 153, 0.2);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 32%, transparent), color-mix(in srgb, var(--color-accent) 14%, transparent));
+    border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
   }
 
   .is-visible .bar-without {
@@ -162,10 +162,10 @@ const summary = {
     font-size: 0.75rem;
     font-weight: 700;
     color: var(--color-accent);
-    background: rgba(52, 211, 153, 0.1);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
     padding: 0.25rem 0.75rem;
     border-radius: 9999px;
-    border: 1px solid rgba(52, 211, 153, 0.2);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
   }
 
   @media (max-width: 640px) {

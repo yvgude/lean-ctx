@@ -474,11 +474,11 @@ pre code {
   font-weight: 600;
   border-radius: 4px;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+  box-shadow: 0 0 0 0 transparent;
 }
 .btn-primary:hover {
   opacity: 0.92;
-  box-shadow: 0 0 24px rgba(52, 211, 153, 0.2);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--color-accent) 30%, transparent);
   transform: translateY(-1px);
 }
 .btn-primary:focus-visible {
