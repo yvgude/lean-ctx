@@ -36,7 +36,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 ## Key Facts
 
-- Version: 3.6.26
+- Version: 3.7.0
 - License: Apache-2.0
 - Language: Rust (single binary, ~15MB)
 - Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `brew install yvgude/lean-ctx/lean-ctx` or `pi install npm:pi-lean-ctx`
@@ -51,7 +51,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CLI, Gemini CLI, Cline, Roo Code, Google Antigravity, OpenCode, Aider, Amp, AWS Kiro, JetBrains IDEs, Amazon Q Developer, Trae, Continue, Crush, Hermes, Sublime Text, Emacs, Neovim.
 
-## Security Features (v3.6.26)
+## Security Features (v3.7.0)
 
 - **PathJail**: Prevents file access outside the project directory (sandbox)
 - **Shell Allowlist**: Opt-in command allowlisting with AST-based multi-segment validation
@@ -75,7 +75,7 @@ Core tools: ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_overview, ctx_session
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation guide
 - [Configuration](https://leanctx.com/docs/configuration/): Config, env vars, hooks, security
 - [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands
-- [Tool Reference](https://leanctx.com/docs/tools/): All 63 MCP tools documented
+- [Tool Reference](https://leanctx.com/docs/tools/): All 67 MCP tools documented
 - [Security](https://leanctx.com/docs/security/): PathJail, allowlist, sandbox, roles
 - [Changelog](https://leanctx.com/docs/changelog/): Version history
 

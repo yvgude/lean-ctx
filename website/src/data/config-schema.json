@@ -360,8 +360,8 @@
         },
         "graph_index_max_files": {
           "type": "u64",
-          "default": 5000,
-          "description": "Maximum files scanned by the JSON graph index. Increase for large monorepos"
+          "default": 0,
+          "description": "Maximum files scanned by the JSON graph index. 0 = unlimited (default). Set >0 to cap for constrained systems"
         },
         "memory_cleanup": {
           "type": "enum",
@@ -420,6 +420,12 @@
             "global",
             "project"
           ]
+        },
+        "shadow_mode": {
+          "type": "bool",
+          "default": false,
+          "description": "Transparently intercept native Read/Grep/Shell calls via hooks and route them through lean-ctx. Logs all intercepts to ~/.lean-ctx/shadow.log",
+          "env_override": "LEAN_CTX_SHADOW_MODE"
         },
         "shell_activation": {
           "type": "enum",

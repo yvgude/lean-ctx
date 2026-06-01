@@ -24,6 +24,55 @@ const toolCount = getMcpManifest().counts.granular;
     <p>Update LeanCTX the same way you installed it — Homebrew, npm, cargo, or the install script. New to LeanCTX? Start with <a href={lp('/docs/getting-started')}>Getting Started</a>.</p>
   </DocsCallout>
 
+  <!-- 3.7.0 -->
+  <h2 id="v3.7.0">3.7.0 <span class="text-xs text-muted">(2026-06-01)</span></h2>
+  <p class="text-sm text-muted">Shadow Mode + Meaningful Instructions — Rules injected into agents are now actionable (concrete tool names, examples, workflow), and a new <code>shadow_mode</code> transparently intercepts native Read/Grep/Shell calls.</p>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong>Shadow Mode</strong> (<code>lean-ctx config set shadow_mode true</code>) — Transparently intercepts native Read/Grep/Shell via hooks, strengthens MCP instructions to MUST-level, activates immediate bypass hints on first native tool use, logs all intercepts to <code>~/.lean-ctx/shadow.log</code>. Visible in <code>lean-ctx doctor</code> and <code>lean-ctx status</code>.</li>
+    <li><strong>6-step workflow in all injected rules</strong> — Orient → Locate → Read → Edit → Verify → Record. Agents can follow blindly without memorizing tool names.</li>
+    <li><strong>Tool Mapping table in rules</strong> — Every injected rule file now includes a MANDATORY table with exact tool names, parameters, and runnable examples.</li>
+    <li><strong>Proactive section in RULES_DEDICATED</strong> — <code>ctx_overview</code> at session start, <code>ctx_compress</code> at phase boundaries, <code>ctx_knowledge(action="wakeup")</code> for prior findings.</li>
+    <li><strong>Compression Bypass ladder</strong> — <code>lines:N-M</code> → <code>full</code> → <code>raw=true</code> documented escape hatch when compression hides detail.</li>
+    <li><strong>Risk Gate guidance</strong> — Before editing exported symbols, auth, DB schemas, or 3+ files: run <code>ctx_impact</code> + <code>ctx_callgraph</code>.</li>
+    <li><strong>Registry-driven hook refresh + doctor staleness check</strong> — <code>lean-ctx doctor</code> detects stale hooks and IDE path misconfiguration.</li>
+    <li><strong>Reference appendices generated from code</strong> — <code>docs-gen</code> renders MCP tool reference, CLI reference, and journey golden outputs directly from source with CI drift-gate.</li>
+    <li><strong>Complete user-journey reference</strong> (14 journeys) — Install-to-first-save through performance tuning, with IDE quickstarts.</li>
+    <li><strong>Semantic-index observability</strong> (#249) — <code>lean-ctx index status</code> and <code>lean-ctx doctor</code> surface BM25 state, build duration, and failure notes.</li>
+  </ul>
+
+  <h3>{t('changelog.changed')}</h3>
+  <ul>
+    <li><strong>Rules version v10 → v11</strong> — All templates rewritten with actionable structure. Existing installations auto-upgrade on next <code>lean-ctx setup</code> or <code>lean-ctx update</code>.</li>
+    <li><strong>MCP instructions include workflow hint</strong> — "Orient(ctx_overview) → Locate(ctx_search) → Read(ctx_read) → Edit → Verify → Record".</li>
+    <li><strong><code>bypass_hint.rs</code> respects shadow_mode</strong> — When active, hints trigger on first native use (not after 5 calls) with stronger "intercepted" wording.</li>
+    <li><strong>Hook redirect messaging</strong> — In shadow_mode, redirected outputs include a header explaining the interception.</li>
+  </ul>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>Config.toml overwritten on update</strong> (#330) — All config writes now use <code>toml_edit</code>-based format-preserving merge with atomic backup. User comments and unknown keys survive.</li>
+    <li><strong>WSL cache hit rate near 0%</strong> (#329) — <code>mtime=None</code> on DrvFS no longer causes spurious invalidation; path normalization uses <code>canonicalize</code> for consistent cache keys.</li>
+    <li><strong>Semantic index stuck "warming up"</strong> (#249) — Disk persist ceiling decoupled from RAM profile; observable state reporting; honest <code>ctx_compose</code> deferred messages.</li>
+    <li><strong>Test-runner output compressed/truncated</strong> — Test-runner commands are now kept verbatim; test-outcome markers survive truncation.</li>
+    <li><strong>Knowledge store split on Windows</strong> (#325) — Forward-slash/casing-normalized project hash converges CLI and MCP on a single store.</li>
+    <li><strong>Parallel knowledge writes clobbered each other</strong> (#326) — Read-modify-write serialized with in-process + cross-process file locks; atomic saves.</li>
+    <li><strong>Windows <code>\\?\</code> prefix from canonicalize</strong> — <code>normalize_tool_path</code> now strips extended-length prefix.</li>
+    <li><strong>IDE hook integrations check</strong> — Doctor correctly parses hook binary path from minified JSON.</li>
+    <li><strong>Docs-drift gate line-ending agnostic</strong> — Windows CI no longer fails due to CRLF vs LF.</li>
+    <li><strong>Benchmark system info detection on Windows</strong> — RAM + CPU detection now works on all platforms.</li>
+  </ul>
+
+  <h3>Security</h3>
+  <ul>
+    <li><strong>Shell-command injection in Node SDK</strong> (CodeQL <code>js/shell-command-constructed-from-input</code>) — Switched to <code>execFileSync</code>, no shell interpretation.</li>
+    <li><strong>XSS in VS Code sidebar webview</strong> (CodeQL <code>js/xss</code>, 3× high) — All dynamic values escaped.</li>
+    <li><strong>Missing origin check on webview message handler</strong> (CodeQL <code>js/missing-origin-check</code>) — Rejects untrusted origins.</li>
+  </ul>
+
+  <hr />
+
   <!-- 3.6.26 -->
   <h2 id="v3.6.26">3.6.26 <span class="text-xs text-muted">(2026-05-30)</span></h2>
   <p class="text-sm text-muted">EPIC 6 — Perfect-First: cross-project session correctness, bounded disk footprint, and a useful cold-start overview.</p>

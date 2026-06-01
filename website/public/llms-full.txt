@@ -1,12 +1,12 @@
 # LeanCTX — Full Documentation Index
 
-> Open-source cognitive context layer for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry. Version 3.6.26.
+> Open-source cognitive context layer for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry. Version 3.7.0.
 
 ## Documentation
 
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation, setup, and first steps
 - [Configuration](https://leanctx.com/docs/configuration/): config.toml, security, environment variables, hooks
-- [Tool API Reference](https://leanctx.com/docs/tools/): All 63 MCP tools with schemas and examples
+- [Tool API Reference](https://leanctx.com/docs/tools/): All 67 MCP tools with schemas and examples
 - [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands and flags
 - [Quick Reference](https://leanctx.com/docs/quick-reference/): Daily workflow cheat sheet
 - [Security](https://leanctx.com/docs/security/): PathJail, shell allowlist, sandbox, roles, secret detection

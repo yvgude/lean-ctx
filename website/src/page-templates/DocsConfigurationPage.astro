@@ -70,7 +70,7 @@ lean-ctx config schema</code></pre>
       <tr>
         <td><code>graph_index_max_files</code></td>
         <td set:html={t('docsConfiguration.confusionGraphIndexDesc')} />
-        <td><code>5000</code></td>
+        <td><code>0</code> (unlimited)</td>
         <td>root</td>
       </tr>
       <tr>
@@ -258,6 +258,12 @@ lean-ctx config schema</code></pre>
         <td set:html={t('docs.configuration.optAllowPathsDesc')} />
       </tr>
       <tr>
+        <td><code>shadow_mode</code></td>
+        <td>bool</td>
+        <td><code>false</code></td>
+        <td>Transparently intercept native Read/Grep/Shell calls via hooks and route through lean-ctx. Logs to <code>~/.lean-ctx/shadow.log</code></td>
+      </tr>
+      <tr>
         <td><code>shell_hook_disabled</code></td>
         <td>bool</td>
         <td><code>false</code></td>
@@ -272,7 +278,7 @@ lean-ctx config schema</code></pre>
       <tr>
         <td><code>graph_index_max_files</code></td>
         <td>u64</td>
-        <td><code>5000</code></td>
+        <td><code>0</code> (unlimited)</td>
         <td set:html={t('docs.configuration.optGraphIndexMaxFilesDesc')} />
       </tr>
       <tr>
@@ -655,6 +661,42 @@ lean-ctx init --agent cursor --mode hybrid`}</code></pre>
 
   <hr />
 
+  <h2 id="shadow-mode">Shadow Mode <span class="text-xs font-normal text-muted ml-2">v3.7.0</span></h2>
+
+  <p>Shadow Mode transparently intercepts native <code>Read</code>, <code>Grep</code>, and <code>Shell</code> tool calls via IDE hooks and routes them through lean-ctx's compression and caching layer. This provides full token savings without requiring the agent to explicitly call <code>ctx_read</code>/<code>ctx_search</code>/<code>ctx_shell</code>.</p>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>When enabled, lean-ctx strengthens MCP instructions to <strong>MUST</strong>-level routing directives</li>
+    <li>Bypass hints trigger on the <strong>first</strong> native tool use (not after 5 calls) with stronger "intercepted" wording</li>
+    <li>All intercepted calls are logged to <code>~/.lean-ctx/shadow.log</code> for audit transparency</li>
+    <li>Redirected output includes a header explaining the interception</li>
+  </ol>
+
+  <h3>Configuration</h3>
+  <pre><code># Enable shadow mode
+lean-ctx config set shadow_mode true
+
+# Or via environment variable
+export LEAN_CTX_SHADOW_MODE=true</code></pre>
+
+  <h3>Visibility</h3>
+  <p>Shadow mode status is visible in:</p>
+  <ul>
+    <li><code>lean-ctx status</code> — shows "shadow_mode: active" when enabled</li>
+    <li><code>lean-ctx doctor</code> — validates hook wiring for interception</li>
+    <li><code>~/.lean-ctx/shadow.log</code> — full audit trail of intercepted calls</li>
+  </ul>
+
+  <h3>When to use</h3>
+  <ul>
+    <li>Agents that ignore MCP tool instructions and keep using native Read/Grep</li>
+    <li>Automated pipelines where you cannot control the agent's tool choice</li>
+    <li>Teams wanting guaranteed token savings without agent cooperation</li>
+  </ul>
+
+  <hr />
+
   <h2 id="cursor-rule" set:html={t('docsConfiguration.cursorRuleTitle')} />
 
   <p set:html={t('docsConfiguration.cursorRuleDesc1')} />
@@ -694,6 +736,50 @@ consolidate_cooldown_secs = 120   # Minimum seconds between consolidations</code
       <tr><td><code>autonomy.consolidate_cooldown_secs</code></td><td>u32</td><td><code>120</code></td><td set:html={t('docs.configuration.autonomyConsolidateCooldownDesc')} /></tr>
     </tbody>
   </table>
+
+  <hr />
+
+  <h2 id="multi-root-workspaces">Multi-Root Workspaces <span class="text-xs font-normal text-muted ml-2">v3.7.0</span></h2>
+
+  <p>LeanCTX supports working across multiple repositories from a single parent directory. There are two approaches:</p>
+
+  <h3>Auto-detection (no config needed)</h3>
+  <p>If your working directory has <strong>2 or more</strong> child directories with project markers (<code>.git</code>, <code>Cargo.toml</code>, <code>package.json</code>, etc.), LeanCTX auto-detects it as a multi-repo workspace and indexes everything under the parent.</p>
+  <pre><code># Just cd into the parent — LeanCTX handles the rest
+cd ~/code
+lean-ctx status
+# → project_root: /Users/you/code (multi-repo workspace)</code></pre>
+
+  <h3><code>extra_roots</code> (explicit configuration)</h3>
+  <p>For repos in different locations, or fine-grained control over which repos are indexed:</p>
+  <pre><code># ~/.lean-ctx/config.toml
+extra_roots = [
+    "/Users/you/work/api",
+    "/Users/you/work/frontend",
+    "/Users/you/oss/cool-lib",
+]
+
+# Or per-project in .lean-ctx.toml:
+extra_roots = ["../shared-infra", "../common-types"]</code></pre>
+
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>extra_roots</code></td><td>string[]</td><td><code>[]</code></td><td>Additional directories to index and include in search. Each gets its own graph + BM25 index (up to 8). Automatically added to PathJail allow-list.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How indexing works</h3>
+  <ul>
+    <li><strong>Primary root:</strong> Indexed first (synchronous for first tool call)</li>
+    <li><strong>Extra roots:</strong> Indexed in background threads after primary completes</li>
+    <li><strong>Deduplication:</strong> Extra roots inside the primary root are skipped (already covered)</li>
+    <li><strong>Storage:</strong> Each root gets its own <code>~/.lean-ctx/graphs/&lt;hash&gt;/</code> directory</li>
+  </ul>
+
+  <p>For a detailed walkthrough with troubleshooting, see the <a href="/docs/journeys/multi-repo-workspace">Multi-Repo Workspace journey</a>.</p>
 
   <hr />
 

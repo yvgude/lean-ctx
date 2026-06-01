@@ -1,7 +1,7 @@
 {
   "name": "LeanCTX",
   "short_name": "LeanCTX",
-  "description": "The Cognitive Context Layer for AI coding agents — 63 MCP tools, 10 read modes, 95+ shell patterns",
+  "description": "The Cognitive Context Layer for AI coding agents — 67 MCP tools, 10 read modes, 95+ shell patterns",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#06060b",
