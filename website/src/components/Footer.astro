@@ -7,131 +7,272 @@ const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 const year = new Date().getFullYear();
 
-// Footer mirrors the one IA: a compact "why" list + the four persona tracks.
-const whyLinks = [
-  { label: t('nav.learn.howItWorks'), href: '/how-it-works' },
-  { label: t('nav.learn.whatIsCe'), href: '/what-is-context-engineering' },
-  { label: CONCEPT, href: '/context-os' },
-  { label: t('nav.getStarted.compare'), href: '/compare' },
+const columns = [
+  {
+    title: t('nav.productLabel'),
+    links: [
+      { label: t('nav.learn.howItWorks'), href: '/how-it-works/' },
+      { label: t('nav.learn.whatIsCe'), href: '/what-is-context-engineering/' },
+      { label: CONCEPT, href: '/context-os/' },
+      { label: t('nav.getStarted.compare'), href: '/compare/' },
+      { label: t('nav.getStarted.compatibility'), href: '/compatibility/' },
+    ],
+  },
+  {
+    title: t('nav.docs.documentation'),
+    links: [
+      { label: t('nav.getStarted'), href: '/docs/getting-started/' },
+      { label: t('nav.docs.cliComplete'), href: '/docs/cli-reference/' },
+      { label: t('nav.tools.allTools'), href: '/docs/tools/' },
+      { label: t('nav.docs.configuration'), href: '/docs/configuration/' },
+      { label: t('nav.docs.security'), href: '/docs/security/' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'All Journeys', href: '/docs/journeys/' },
+      { label: t('nav.docs.apiReference'), href: '/docs/api-reference/' },
+      { label: t('nav.docs.changelog'), href: '/docs/changelog/' },
+      { label: t('nav.learn.quickReference'), href: '/docs/quick-reference/' },
+    ],
+  },
 ];
 
-const trackColumns = [
-  {
-    title: 'Get Started',
-    links: [
-      { label: t('nav.learn.gettingStarted'), href: '/docs/getting-started' },
-      { label: t('nav.getStarted.compatibility'), href: '/compatibility' },
-      { label: t('nav.learn.quickReference'), href: '/docs/quick-reference' },
-      { label: t('nav.docs.cliComplete'), href: '/docs/cli-reference' },
-    ],
-  },
-  {
-    title: 'Daily Workflow',
-    links: [
-      { label: t('nav.do.codebase'), href: '/docs/concepts/read-modes' },
-      { label: t('nav.do.memory'), href: '/docs/cortex' },
-      { label: t('nav.docs.contextControl'), href: '/docs/context-control' },
-      { label: t('nav.do.bill'), href: '/docs/concepts/token-savings' },
-    ],
-  },
-  {
-    title: 'Scale & Teams',
-    links: [
-      { label: t('nav.do.agents'), href: '/docs/concepts/multi-agent' },
-      { label: t('nav.docs.dataSources'), href: '/docs/data-sources' },
-      { label: t('nav.docs.apiReference'), href: '/docs/api-reference' },
-    ],
-  },
-  {
-    title: 'Operate & Govern',
-    links: [
-      { label: t('nav.docs.security'), href: '/docs/security' },
-      { label: t('nav.docs.configuration'), href: '/docs/configuration' },
-      { label: t('nav.docs.budgets'), href: '/docs/budgets-and-slos' },
-      { label: t('nav.docs.changelog'), href: '/docs/changelog' },
-    ],
-  },
+const socialLinks = [
+  { label: 'GitHub', href: 'https://github.com/yvgude/lean-ctx' },
+  { label: 'Discord', href: 'https://discord.gg/pTHkG9Hew9' },
+  { label: 'crates.io', href: 'https://crates.io/crates/lean-ctx' },
+  { label: t('footer.buyMeACoffee'), href: 'https://buymeacoffee.com/yvgude' },
 ];
 ---
 
 <footer class="footer-root">
   <div class="content-grid-wide footer-inner">
-    <div class="footer-top">
+
+    <div class="footer-grid">
+      <!-- Brand -->
       <div class="footer-brand">
-        <a href={lp('/')} class="footer-logo">
+        <a href={lp('/')} class="footer-logo" aria-label={BRAND}>
           <span class="footer-logo-ascii"><Fragment set:html={'&lt;<span style="color:var(--color-accent)">|</span>&gt;'} /></span>
           <span class="font-display footer-logo-text">
             <span class="text-text-bright">Lean</span><span class="text-accent">CTX</span>
           </span>
         </a>
         <p class="footer-tagline">{t('footer.tagline')}</p>
-        <nav class="footer-why" aria-label="Why LeanCTX">
-          {whyLinks.map((l) => (
-            <a href={lp(l.href)}>{l.label}</a>
+        <div class="footer-social">
+          {socialLinks.map((s) => (
+            <a href={s.href} target="_blank" rel="noopener" class="footer-social-link">{s.label}</a>
           ))}
-        </nav>
-        <ul class="footer-social" aria-label={t('footer.community')}>
-          <li><a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="https://crates.io/crates/lean-ctx" target="_blank" rel="noopener">crates.io</a></li>
-          <li><a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener">Discord</a></li>
-          <li><a href="https://ctxpkg.org" target="_blank" rel="noopener">.ctxpkg</a></li>
-          <li><a href="https://buymeacoffee.com/yvgude" target="_blank" rel="noopener">{t('footer.buyMeACoffee')}</a></li>
-        </ul>
+        </div>
       </div>
 
-      <div class="footer-columns">
-        {trackColumns.map((col) => (
-          <div class="footer-col">
-            <h4 class="footer-col-title">{col.title}</h4>
-            <ul class="footer-links">
-              {col.links.map((l) => (
-                <li><a href={lp(l.href)}>{l.label}</a></li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
+      <!-- Link columns -->
+      {columns.map((col) => (
+        <nav class="footer-col" aria-label={col.title}>
+          <h4 class="footer-col-title">{col.title}</h4>
+          <ul class="footer-links">
+            {col.links.map((l) => (
+              <li><a href={lp(l.href)}>{l.label}</a></li>
+            ))}
+          </ul>
+        </nav>
+      ))}
     </div>
 
     <div class="footer-divider"></div>
 
     <div class="footer-bottom">
-      <p class="footer-copy">&copy; {year} {BRAND} &middot; Apache-2.0 &middot; <a href={lp('/privacy')} style="color:inherit;text-decoration:none;">{t('footer.privacy')}</a> &middot; <a href={lp('/terms')} style="color:inherit;text-decoration:none;">Terms</a> &middot; <a href={lp('/imprint')} style="color:inherit;text-decoration:none;">Imprint</a> &middot; {t('footer.madeWith')}</p>
-      <p class="footer-swiss"><svg class="swiss-flag" viewBox="0 0 32 32" width="13" height="13" aria-hidden="true"><rect width="32" height="32" rx="4" fill="#D52B1E"/><rect x="6" y="13" width="20" height="6" rx="1" fill="#fff"/><rect x="13" y="6" width="6" height="20" rx="1" fill="#fff"/></svg> {t('footer.madeInSwitzerland')}</p>
+      <p class="footer-copy">
+        &copy; {year} {BRAND} &middot; Apache-2.0
+        &middot; <a href={lp('/privacy/')}>{t('footer.privacy')}</a>
+        &middot; <a href={lp('/terms/')}>Terms</a>
+        &middot; <a href={lp('/imprint/')}>Imprint</a>
+      </p>
+      <p class="footer-swiss">
+        <svg class="swiss-flag" viewBox="0 0 32 32" width="13" height="13" aria-hidden="true">
+          <rect width="32" height="32" rx="4" fill="#D52B1E"/>
+          <rect x="6" y="13" width="20" height="6" rx="1" fill="#fff"/>
+          <rect x="13" y="6" width="6" height="20" rx="1" fill="#fff"/>
+        </svg>
+        {t('footer.madeInSwitzerland')}
+      </p>
     </div>
   </div>
 </footer>
 
 <style>
-  .footer-root { position: relative; border-top: 1px solid var(--color-border); background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 55%, var(--color-bg)) 0%, var(--color-bg) 55%); }
-  .footer-root::before { content: ""; position: absolute; top: -1px; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent); }
-  .footer-inner { padding-top: clamp(2.75rem, 2rem + 2vw, 4rem); padding-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem); }
-  .footer-top { display: grid; grid-template-columns: 1fr; gap: clamp(2.25rem, 1.75rem + 2vw, 3.25rem); margin-bottom: clamp(2.25rem, 1.75rem + 1.5vw, 3.25rem); }
-  @media (min-width: 768px) { .footer-top { grid-template-columns: 1.4fr 3fr; gap: clamp(2.5rem, 1.5rem + 3vw, 5rem); align-items: start; } }
-  .footer-brand { display: flex; flex-direction: column; gap: 0.85rem; }
-  .footer-logo { display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; }
-  .footer-logo-ascii { font-family: var(--font-mono); font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem); font-weight: 700; color: var(--color-text-bright); line-height: 1; font-variant-ligatures: none; -webkit-font-feature-settings: "liga" 0, "clig" 0; font-feature-settings: "liga" 0, "clig" 0; }
-  .footer-logo-text { font-size: clamp(0.9rem, 0.85rem + 0.2vw, 1.1rem); font-weight: 700; }
-  .footer-tagline { font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem); color: var(--color-muted); line-height: 1.55; max-width: 22rem; }
-  .footer-why { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; margin-top: 0.15rem; }
-  .footer-why a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease; }
-  .footer-why a:hover { color: var(--color-accent); }
-  .footer-social { list-style: none; padding: 0; margin: 0.35rem 0 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
-  .footer-social li { display: inline-flex; }
-  .footer-social a { font-size: 0.75rem; line-height: 1; color: var(--color-muted); text-decoration: none; padding: 0.34rem 0.62rem; border: 1px solid var(--color-border); border-radius: 999px; transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease; }
-  .footer-social a:hover { color: var(--color-accent); border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
-  .footer-columns { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(1.5rem, 1rem + 1.5vw, 3rem); }
-  @media (max-width: 640px) { .footer-columns { grid-template-columns: 1fr 1fr; } }
-  .footer-col-title { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--font-display); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-bright); margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.1rem); }
-  .footer-col-title::before { content: ""; width: 0.6rem; height: 1px; background: var(--color-accent); opacity: 0.7; }
-  .footer-links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: clamp(0.375rem, 0.25rem + 0.2vw, 0.5rem); }
-  .footer-links a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease, transform 0.15s ease; }
-  .footer-links a:hover { color: var(--color-accent); transform: translateX(2px); }
-  .footer-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--color-border), transparent); margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem); }
-  .footer-bottom { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
-  @media (min-width: 640px) { .footer-bottom { flex-direction: row; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1.5rem; } }
-  .footer-copy { font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.75; margin: 0; }
+  .footer-root {
+    position: relative;
+    border-top: 1px solid var(--color-border);
+    background: linear-gradient(180deg,
+      color-mix(in srgb, var(--color-surface) 55%, var(--color-bg)) 0%,
+      var(--color-bg) 55%
+    );
+  }
+  .footer-root::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent);
+  }
+  .footer-inner {
+    padding-top: clamp(3rem, 2rem + 2.5vw, 4.5rem);
+    padding-bottom: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+  }
+
+  /* ── Grid: brand + 3 link columns ────────────────────── */
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: clamp(2rem, 1.5rem + 2vw, 3.5rem);
+    margin-bottom: clamp(2.5rem, 2rem + 1.5vw, 3.5rem);
+  }
+  @media (min-width: 768px) {
+    .footer-grid {
+      grid-template-columns: 1.5fr repeat(3, 1fr);
+      gap: clamp(2rem, 1rem + 3vw, 5rem);
+      align-items: start;
+    }
+  }
+
+  /* ── Brand area ──────────────────────────────────────── */
+  .footer-brand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .footer-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+  }
+  .footer-logo-ascii {
+    font-family: var(--font-mono);
+    font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem);
+    font-weight: 700;
+    color: var(--color-text-bright);
+    line-height: 1;
+    font-variant-ligatures: none;
+    -webkit-font-feature-settings: "liga" 0, "clig" 0;
+    font-feature-settings: "liga" 0, "clig" 0;
+  }
+  .footer-logo-text {
+    font-size: clamp(0.9rem, 0.85rem + 0.2vw, 1.1rem);
+    font-weight: 700;
+  }
+  .footer-tagline {
+    font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.9375rem);
+    color: var(--color-muted);
+    line-height: 1.55;
+    max-width: 26rem;
+    margin: 0;
+  }
+  .footer-social {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.35rem;
+  }
+  .footer-social-link {
+    font-size: 0.75rem;
+    line-height: 1;
+    color: var(--color-muted);
+    text-decoration: none;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .footer-social-link:hover {
+    color: var(--color-accent);
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
+
+  /* ── Link columns ────────────────────────────────────── */
+  .footer-col-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-bright);
+    margin: 0 0 clamp(0.75rem, 0.5rem + 0.5vw, 1.1rem);
+  }
+  .footer-col-title::before {
+    content: "";
+    width: 0.6rem;
+    height: 1px;
+    background: var(--color-accent);
+    opacity: 0.7;
+  }
+  .footer-links {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(0.4rem, 0.3rem + 0.2vw, 0.6rem);
+  }
+  .footer-links a {
+    font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem);
+    color: var(--color-muted);
+    text-decoration: none;
+    transition: color 0.15s ease, transform 0.15s ease;
+    display: inline-block;
+  }
+  .footer-links a:hover {
+    color: var(--color-accent);
+    transform: translateX(2px);
+  }
+
+  /* ── Bottom bar ──────────────────────────────────────── */
+  .footer-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-border), transparent);
+    margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 2rem);
+  }
+  .footer-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  @media (min-width: 640px) {
+    .footer-bottom {
+      flex-direction: row;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.5rem;
+    }
+  }
+  .footer-copy {
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    color: var(--color-muted);
+    opacity: 0.75;
+    margin: 0;
+  }
+  .footer-copy a {
+    color: inherit;
+    text-decoration: none;
+  }
   .footer-copy a:hover { color: var(--color-accent); }
-  .footer-swiss { display: inline-flex; align-items: center; gap: 0.35rem; font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem); color: var(--color-muted); opacity: 0.75; margin: 0; }
+  .footer-swiss {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
+    color: var(--color-muted);
+    opacity: 0.75;
+    margin: 0;
+  }
   .swiss-flag { flex-shrink: 0; }
 </style>

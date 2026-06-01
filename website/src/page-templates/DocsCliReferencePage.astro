@@ -6,51 +6,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docs.cliReference.sidebarTitle'),
-    items: [
-      { label: t('docs.common.overview'), href: lp('/docs/cli-reference') },
-      { label: t('docs.cliReference.sidebarShellCompression'), href: lp('/docs/cli-reference#shell-compression') },
-      { label: t('docs.cliReference.sidebarRawMode'), href: lp('/docs/cli-reference#raw-mode') },
-      { label: t('docs.cliReference.sidebarFileOps'), href: lp('/docs/cli-reference#file-operations') },
-      { label: t('docs.cliReference.sidebarReadModes'), href: lp('/docs/cli-reference#read-modes') },
-      { label: t('docs.cliReference.sidebarSetupConfig'), href: lp('/docs/cli-reference#setup-config') },
-      { label: t('docs.cliReference.sidebarAnalytics'), href: lp('/docs/cli-reference#analytics') },
-      { label: t('docs.cliReference.sidebarSessions'), href: lp('/docs/cli-reference#sessions') },
-      { label: t('docs.cliReference.sidebarBenchmarking'), href: lp('/docs/cli-reference#benchmarking') },
-      { label: t('docs.cliReference.sidebarTeeFilters'), href: lp('/docs/cli-reference#tee-filters') },
-      { label: t('docs.cliReference.sidebarUtilities'), href: lp('/docs/cli-reference#utilities') },
-      { label: t('docs.cliReference.sidebarProjectGraph'), href: lp('/docs/cli-reference#project-graph') },
-      { label: t('docs.cliReference.sidebarHeatmap'), href: lp('/docs/cli-reference#heatmap') },
-      { label: t('docs.cliReference.sidebarSafetyLevels'), href: lp('/docs/cli-reference#safety-levels') },
-      { label: 'Audit', href: lp('/docs/cli-reference#audit') },
-      { label: 'Shell Allowlist', href: lp('/docs/cli-reference#shell-allowlist') },
-      { label: t('docs.cliReference.sidebarBypass'), href: lp('/docs/cli-reference#bypass') },
-      { label: 'Cloud Auth', href: lp('/docs/cli-reference#login') },
-      { label: t('docs.cliReference.sidebarShellAliases'), href: lp('/docs/cli-reference#shell-aliases') },
-      { label: 'Server & Services', href: lp('/docs/cli-reference#server-services') },
-      { label: 'Terse Agent', href: lp('/docs/cli-reference#terse-agent') },
-      { label: 'Token Reports', href: lp('/docs/cli-reference#token-reports') },
-      { label: 'Cache Management', href: lp('/docs/cli-reference#cache-management') },
-      { label: 'Gotchas', href: lp('/docs/cli-reference#gotchas') },
-      { label: 'Buddy', href: lp('/docs/cli-reference#buddy') },
-      { label: 'Instructions', href: lp('/docs/cli-reference#instructions') },
-      { label: t('docs.cliReference.sidebarPack'), href: lp('/docs/cli-reference#context-packages') },
-    ],
-  },
-  {
-    title: t('docs.common.related'),
-    items: [
-      { label: t('docs.cliReference.sidebarQuickRef'), href: lp('/docs/quick-reference') },
-      { label: t('docs.cliReference.sidebarConfiguration'), href: lp('/docs/configuration') },
-      { label: t('docs.cliReference.sidebarGettingStarted'), href: lp('/docs/getting-started') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docs.cliReference.title')} description={t('docs.cliReference.description')} sidebar={sidebar}>
+<DocsLayout title={t('docs.cliReference.title')} description={t('docs.cliReference.description')}>
 
   <p><Fragment set:html={t('docs.cliReference.intro', { quickRefPath: lp('/docs/quick-reference'), analyticsPath: lp('/docs/tools/analysis') })} /></p>
 

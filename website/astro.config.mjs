@@ -6,6 +6,12 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   site: 'https://leanctx.com',
   trailingSlash: 'always',
+  // Markdown code fences (journey pages) render as plain <pre><code> so they are
+  // styled identically to every hand-built docs page via the shared `.docs-prose pre`
+  // rule — instead of Shiki's hardcoded dark `github-dark` theme.
+  markdown: {
+    syntaxHighlight: false,
+  },
   fonts: [
     {
       provider: fontProviders.google(),

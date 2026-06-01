@@ -7,57 +7,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docsConfiguration.sidebarConfiguration'),
-    items: [
-      { label: t('docsConfiguration.sidebarOverview'), href: lp('/docs/configuration') },
-      { label: t('docsConfiguration.sidebarConfigFile'), href: lp('/docs/configuration') + '#config-file' },
-      { label: t('docsConfiguration.sidebarConfigPriority'), href: lp('/docs/configuration') + '#config-priority' },
-      { label: t('docsConfiguration.sidebarCommonConfusion'), href: lp('/docs/configuration') + '#common-confusion' },
-      { label: t('docsConfiguration.sidebarConfigOptions'), href: lp('/docs/configuration') + '#config-options' },
-      { label: t('docsConfiguration.sidebarAutonomyConfig'), href: lp('/docs/configuration') + '#autonomy-configuration' },
-      { label: t('docsConfiguration.sidebarUserTomlFilters'), href: lp('/docs/configuration') + '#user-toml-filters' },
-      { label: t('docsConfiguration.sidebarEnvVars'), href: lp('/docs/configuration') + '#environment-variables' },
-      { label: t('docsConfiguration.sidebarHookRedirect'), href: lp('/docs/configuration') + '#hook-redirect' },
-      { label: t('docsConfiguration.sidebarCursorRule'), href: lp('/docs/configuration') + '#cursor-rule' },
-      { label: t('docs.configuration.sidebarSecurityLayer'), href: lp('/docs/configuration') + '#security-layer' },
-      { label: t('docs.configuration.sidebarSecretDetection'), href: lp('/docs/configuration') + '#secret-detection' },
-      { label: t('docs.configuration.sidebarBoundaryPolicy'), href: lp('/docs/configuration') + '#boundary-policy' },
-      { label: t('docs.configuration.sidebarDataDirectory'), href: lp('/docs/configuration') + '#data-directory' },
-      { label: t('docs.configuration.sidebarCliFileCache'), href: lp('/docs/configuration') + '#cli-cache' },
-      { label: t('docs.configuration.sidebarLoopDetection'), href: lp('/docs/configuration') + '#loop-detection' },
-      { label: t('docs.configuration.sidebarPipeGuard'), href: lp('/docs/configuration') + '#pipe-guard' },
-      { label: t('docs.configuration.sidebarToolResultArchive'), href: lp('/docs/configuration') + '#archive' },
-      { label: t('docs.configuration.sidebarCloud'), href: lp('/docs/configuration') + '#cloud' },
-      { label: t('docs.configuration.sidebarProviders'), href: lp('/docs/configuration') + '#providers' },
-      { label: t('docs.configuration.sidebarProxy'), href: lp('/docs/configuration') + '#proxy' },
-      { label: t('docs.configuration.sidebarMemory'), href: lp('/docs/configuration') + '#memory' },
-      { label: t('docs.configuration.sidebarTerseAgentMode'), href: lp('/docs/configuration') + '#terse-agent' },
-      { label: t('docs.configuration.sidebarOutputDensity'), href: lp('/docs/configuration') + '#output-density' },
-      { label: t('docs.configuration.sidebarRulesScope'), href: lp('/docs/configuration') + '#rules-scope' },
-      { label: t('docs.configuration.sidebarBuddyMode'), href: lp('/docs/configuration') + '#buddy-mode' },
-      { label: t('docs.configuration.sidebarCustomAliases'), href: lp('/docs/configuration') + '#custom-aliases' },
-      { label: t('docs.configuration.sidebarHeadlessMcpMode'), href: lp('/docs/configuration') + '#headless-mode' },
-      { label: t('docs.configuration.sidebarProjectIdentity'), href: lp('/docs/configuration') + '#lean-ctx-id' },
-      { label: t('docs.configuration.sidebarShellActivation'), href: lp('/docs/configuration') + '#shell-activation' },
-      { label: t('docsConfiguration.sidebarExitCodes'), href: lp('/docs/configuration') + '#exit-codes' },
-      { label: t('docsConfiguration.sidebarTokenCounting'), href: lp('/docs/configuration') + '#token-counting' },
-    ],
-  },
-  {
-    title: t('docsConfiguration.sidebarRelated'),
-    items: [
-      { label: t('docsConfiguration.sidebarCliReference'), href: lp('/docs/cli-reference') },
-      { label: t('docsConfiguration.sidebarGettingStarted'), href: lp('/docs/getting-started') },
-      { label: t('docsConfiguration.sidebarQuickReference'), href: lp('/docs/quick-reference') },
-      { label: t('docs.tools.title'), href: lp('/docs/tools') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docsConfiguration.title')} description={t('docsConfiguration.description')} sidebar={sidebar}>
+<DocsLayout title={t('docsConfiguration.title')} description={t('docsConfiguration.description')}>
 
   <p set:html={t('docsConfiguration.intro')} />
 

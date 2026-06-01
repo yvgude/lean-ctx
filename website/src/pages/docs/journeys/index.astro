@@ -1,0 +1,133 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+import { getTracksWithJourneys } from '../../../lib/tracks';
+import { getPillar } from '../../../lib/positioning';
+import { getLocaleFromUrl, getLocalizedPath } from '../../../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+const trackData = getTracksWithJourneys();
+---
+
+<DocsLayout
+  title="Journeys"
+  description="Fourteen code-grounded journeys, grouped into four persona tracks. Every CLI command and MCP tool appears in at least one — start at the track that sounds like you and follow it end to end."
+  wide
+>
+  <div class="jh not-prose">
+    {trackData.map((track) => (
+      <section class="jh-track" id={track.id}>
+        <header class="jh-track-head">
+          <div class="jh-track-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d={track.iconPath} />
+            </svg>
+          </div>
+          <div>
+            <h2 class="jh-track-title font-display">{track.title}</h2>
+            <p class="jh-track-tagline">{track.tagline}</p>
+          </div>
+        </header>
+        <div class="jh-grid">
+          {track.journeys.map((j) => (
+            <a class="jh-card" href={lp(`/docs/journeys/${j.slug}/`)}>
+              <span class="jh-card-num">Journey {String(j.num).padStart(2, '0')}</span>
+              <h3 class="jh-card-title font-display">{j.title}</h3>
+              <p class="jh-card-summary">{j.summary}</p>
+              <div class="jh-card-pillars">
+                {j.pillars.map((pid) => (
+                  <span class="jh-pillar">{getPillar(pid).verb}</span>
+                ))}
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+    ))}
+  </div>
+</DocsLayout>
+
+<style>
+  .jh-track { margin-bottom: clamp(2.25rem, 1.5rem + 2vw, 3.5rem); }
+  .jh-track-head {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-bottom: 1.1rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .jh-track-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 11px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-light);
+    color: var(--color-accent);
+    flex: 0 0 auto;
+  }
+  .jh-track-icon svg { width: 1.2rem; height: 1.2rem; }
+  .jh-track-title {
+    font-size: var(--text-h3);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-snug);
+    color: var(--color-text-bright);
+    margin: 0;
+  }
+  .jh-track-tagline { font-size: 0.875rem; color: var(--color-muted); margin: 0.15rem 0 0; }
+
+  .jh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+    gap: 0.9rem;
+  }
+  .jh-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg, 12px);
+    background: var(--color-surface);
+    text-decoration: none;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .jh-card:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+  .jh-card-num {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-accent);
+  }
+  .jh-card-title {
+    font-size: 1.0625rem;
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    margin: 0;
+    line-height: 1.25;
+  }
+  .jh-card-summary { font-size: 0.8125rem; color: var(--color-muted); line-height: 1.5; margin: 0; flex: 1 1 auto; }
+  .jh-card-pillars { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+  .jh-pillar {
+    font-family: var(--font-mono);
+    font-size: 0.5625rem;
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border-radius: 4px;
+    padding: 0.12rem 0.4rem;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .jh-card:hover { transform: none; }
+  }
+</style>

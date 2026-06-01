@@ -5,37 +5,11 @@ import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Troubleshooting',
-    items: [
-      { label: '30-second triage', href: lp('/docs/troubleshooting') + '#triage' },
-      { label: "AI isn't using lean-ctx", href: lp('/docs/troubleshooting') + '#not-using' },
-      { label: 'Savings look wrong', href: lp('/docs/troubleshooting') + '#savings' },
-      { label: 'No memory in new chat', href: lp('/docs/troubleshooting') + '#memory' },
-      { label: 'Read/Grep denied', href: lp('/docs/troubleshooting') + '#denied' },
-      { label: 'Shell broke after install', href: lp('/docs/troubleshooting') + '#shell' },
-      { label: 'Search stuck or huge', href: lp('/docs/troubleshooting') + '#index' },
-      { label: 'Broke after update', href: lp('/docs/troubleshooting') + '#update' },
-      { label: 'Capture a report', href: lp('/docs/troubleshooting') + '#report' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Security & Governance', href: lp('/docs/security') },
-      { label: 'Performance Tuning', href: lp('/docs/performance-tuning') },
-      { label: 'Observatory', href: lp('/docs/observatory') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title="Troubleshooting Playbook"
   description="Something's not working with LeanCTX? Symptom → one-line diagnosis → fix. The central playbook covering status, doctor, doctor integrations, sessions doctor and report-issue."
-  sidebar={sidebar}
 >
   <p>
     <strong>You are:</strong> staring at something that isn't working — your AI doesn't
@@ -55,7 +29,7 @@ lean-ctx doctor integrations    # per-IDE: MCP + hook freshness + rules, per age
     <code>lean-ctx setup --fix</code>.
   </p>
 
-  <h2 id="not-using">"My AI isn't using lean-ctx at all"</h2>
+  <h2 id="not-using">"My AI isn't using LeanCTX at all"</h2>
   <p><strong>Diagnose:</strong> <code>lean-ctx doctor integrations</code> — find your agent and read its line.</p>
   <table>
     <thead><tr><th>What you see</th><th>Meaning</th><th>Fix</th></tr></thead>

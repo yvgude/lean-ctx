@@ -1,0 +1,197 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+import { getCollection, render } from 'astro:content';
+import { journeys } from '../../../lib/journeys';
+import { getPillar } from '../../../lib/positioning';
+import { getTrack } from '../../../lib/tracks';
+import { getLocaleFromUrl, getLocalizedPath } from '../../../i18n/utils';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('journeys');
+  return journeys.map((journey) => ({
+    params: { slug: journey.slug },
+    props: { journey, entry: entries.find((e) => e.id === journey.slug) ?? null },
+  }));
+}
+
+const { journey, entry } = Astro.props;
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const track = getTrack(journey.trackId);
+const refUrl = `https://github.com/yvgude/lean-ctx/blob/main/docs/reference/${journey.refDoc}.md`;
+const padded = String(journey.num).padStart(2, '0');
+const Content = entry ? (await render(entry)).Content : null;
+---
+
+<DocsLayout title={journey.title} description={journey.intro}>
+  <div class="jp-head not-prose">
+    <div class="jp-meta">
+      <span class="jp-chip jp-chip--num">Journey {padded}</span>
+      <a class="jp-chip jp-chip--track" href={lp(`/docs/journeys/#${track.id}`)}>{track.title}</a>
+      {journey.pillars.map((pid) => (
+        <span class="jp-chip jp-chip--pillar">{getPillar(pid).verb}</span>
+      ))}
+    </div>
+
+    <p class="jp-persona">
+      <span class="jp-persona-label">You are</span>
+      {journey.persona}
+    </p>
+
+    <div class="jp-covers-wrap">
+      <span class="jp-covers-label">Covers</span>
+      <ul class="jp-covers">
+        {journey.covers.map((c) => (
+          <li><code>{c}</code></li>
+        ))}
+      </ul>
+    </div>
+  </div>
+
+  {Content && <Content />}
+
+  <div class="jp-foot not-prose">
+    <h2 class="jp-h2 font-display">Go deeper</h2>
+    <div class="jp-links">
+      <a class="jp-linkcard" href={lp(`${journey.href}/`)}>
+        <span class="jp-linkcard-k">On this site</span>
+        <span class="jp-linkcard-t">Related deep-dive docs<span class="jp-arrow">→</span></span>
+        <span class="jp-linkcard-d">The topic reference for this journey, with configuration and examples.</span>
+      </a>
+      <a class="jp-linkcard" href={refUrl} target="_blank" rel="noopener">
+        <span class="jp-linkcard-k">Reference · GitHub</span>
+        <span class="jp-linkcard-t">Every function, every path<span class="jp-arrow">→</span></span>
+        <span class="jp-linkcard-d">The code-grounded reference: each command, its exact call, and the code path it runs.</span>
+      </a>
+    </div>
+  </div>
+</DocsLayout>
+
+<style>
+  .jp-head { max-width: 48rem; margin-bottom: 2rem; }
+  .jp-foot { max-width: 48rem; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--color-border); }
+  .jp-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1.25rem;
+  }
+  .jp-chip {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    text-decoration: none;
+  }
+  .jp-chip--num { background: var(--overlay-light); color: var(--color-muted); border: 1px solid var(--color-border); }
+  .jp-chip--track { background: var(--overlay-light); color: var(--color-text-bright); border: 1px solid var(--color-border); }
+  .jp-chip--track:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); color: var(--color-accent); }
+  .jp-chip--pillar { background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent); }
+
+  .jp-persona {
+    font-size: var(--text-body-lg);
+    color: var(--color-text-bright);
+    margin: 0 0 2rem;
+    padding-inline-start: 1rem;
+    border-inline-start: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+    font-style: italic;
+  }
+  .jp-persona-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-style: normal;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--color-muted);
+    margin-bottom: 0.2rem;
+  }
+
+  .jp-h2 {
+    font-size: var(--text-h3);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-snug);
+    color: var(--color-text-bright);
+    margin: 0 0 0.75rem;
+  }
+
+  .jp-covers-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+  }
+  .jp-covers-label {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--color-muted);
+    flex: 0 0 auto;
+  }
+  .jp-covers {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0;
+    margin: 0;
+  }
+  .jp-covers code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 7px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+  }
+
+  .jp-links {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    gap: 0.9rem;
+  }
+  .jp-linkcard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg, 12px);
+    background: var(--color-surface);
+    text-decoration: none;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .jp-linkcard:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+  .jp-linkcard-k {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-accent);
+  }
+  .jp-linkcard-t {
+    font-family: var(--font-display);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .jp-arrow { transition: transform 0.2s ease; }
+  .jp-linkcard:hover .jp-arrow { transform: translateX(3px); }
+  .jp-linkcard-d { font-size: 0.8125rem; color: var(--color-muted); line-height: 1.5; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .jp-linkcard:hover { transform: none; }
+  }
+</style>

@@ -6,30 +6,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docs.quickReference.sidebarTitle'),
-    items: [
-      { label: t('docs.quickReference.sidebarOverview'), href: lp('/docs/quick-reference') },
-      { label: t('docs.quickReference.sidebarReadModes'), href: lp('/docs/quick-reference#read-modes') },
-      { label: t('docs.quickReference.sidebarContextTools'), href: lp('/docs/quick-reference#context-tools') },
-      { label: t('docs.quickReference.sidebarCliCommands'), href: lp('/docs/quick-reference#cli-commands') },
-      { label: t('docs.quickReference.sidebarDetailPages'), href: lp('/docs/quick-reference#links') },
-    ],
-  },
-  {
-    title: t('docs.common.related'),
-    items: [
-      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
-      { label: t('nav.docs.configuration'), href: lp('/docs/configuration') },
-      { label: t('nav.docs.installSetup'), href: lp('/docs/getting-started') },
-      { label: t('docs.tools.title'), href: lp('/docs/tools') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docs.quickReference.title')} description={t('docs.quickReference.description')} sidebar={sidebar}>
+<DocsLayout title={t('docs.quickReference.title')} description={t('docs.quickReference.description')}>
 
   <p><Fragment set:html={t('docs.quickReference.intro')} /></p>
 

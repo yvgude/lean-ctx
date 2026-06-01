@@ -6,48 +6,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docsToolsIntelligence.sidebarTitle'),
-    compact: true,
-    items: [
-      { label: 'ctx_smart_read', href: lp('/docs/tools/intelligence/') + '#ctx_smart_read' },
-      { label: 'ctx_delta', href: lp('/docs/tools/intelligence/') + '#ctx_delta' },
-      { label: 'ctx_fill', href: lp('/docs/tools/intelligence/') + '#ctx_fill' },
-      { label: 'ctx_intent', href: lp('/docs/tools/intelligence/') + '#ctx_intent' },
-      { label: 'ctx_context', href: lp('/docs/tools/intelligence/') + '#ctx_context' },
-      { label: 'ctx_graph', href: lp('/docs/tools/intelligence/') + '#ctx_graph' },
-      { label: 'ctx_dedup', href: lp('/docs/tools/intelligence/') + '#ctx_dedup' },
-      { label: 'ctx_response', href: lp('/docs/tools/intelligence/') + '#ctx_response' },
-      { label: 'ctx_discover', href: lp('/docs/tools/intelligence/') + '#ctx_discover' },
-      { label: 'ctx_edit', href: lp('/docs/tools/intelligence/') + '#ctx_edit' },
-      { label: 'ctx_preload', href: lp('/docs/tools/intelligence/') + '#ctx_preload' },
-      { label: 'ctx_semantic_search', href: lp('/docs/tools/intelligence/') + '#ctx_semantic_search' },
-      { label: 'ctx_symbol', href: lp('/docs/tools/intelligence/') + '#ctx_symbol' },
-      { label: 'ctx_outline', href: lp('/docs/tools/intelligence/') + '#ctx_outline' },
-      { label: 'ctx_callgraph', href: lp('/docs/tools/intelligence/') + '#ctx_callgraph' },
-      { label: 'ctx_routes', href: lp('/docs/tools/intelligence/') + '#ctx_routes' },
-      { label: 'ctx_compress_memory', href: lp('/docs/tools/intelligence/') + '#ctx_compress_memory' },
-      { label: 'ctx_impact', href: lp('/docs/tools/intelligence/') + '#ctx_impact' },
-      { label: 'ctx_architecture', href: lp('/docs/tools/intelligence/') + '#ctx_architecture' },
-      { label: 'ctx_compose', href: lp('/docs/tools/intelligence/') + '#ctx_compose' },
-    ],
-  },
-  {
-    title: t('docsToolsCore.sidebarOther'),
-    items: [
-      { label: t('docsToolsCore.sidebarAllTools'), href: lp('/docs/tools') },
-      { label: t('docsToolsCore.sidebarTitle'), href: lp('/docs/tools/core') },
-      { label: t('docsToolsCore.sidebarSession'), href: lp('/docs/tools/session') },
-      { label: t('docsToolsCore.sidebarMemory'), href: lp('/docs/tools/memory') },
-      { label: 'Workflow & Orchestration', href: lp('/docs/tools/workflow') },
-      { label: 'Analysis & Navigation', href: lp('/docs/tools/analysis') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docsToolsIntelligence.title')} description={t('docsToolsIntelligence.description')} sidebar={sidebar}>
+<DocsLayout title={t('docsToolsIntelligence.title')} description={t('docsToolsIntelligence.description')}>
   <p>{t('docsToolsIntelligence.intro')}</p>
 
   <h2 id="ctx_smart_read">ctx_smart_read</h2>
@@ -255,7 +216,7 @@ const sidebar = [
   </ul>
   <h2 id="ctx_discover">ctx_discover</h2>
   <p>
-    Analyzes shell history to find commands that could benefit from lean-ctx compression.
+    Analyzes shell history to find commands that could benefit from LeanCTX compression.
     Shows missed savings opportunities with estimated token/cost savings.
   </p>
   <h3>{t('docsToolsCore.parameters')}</h3>
@@ -434,7 +395,7 @@ const sidebar = [
 
   <h2>Adaptive Compression (Wave 5)</h2>
   <p>
-    Starting with v2.21, lean-ctx includes adaptive compression that learns from usage patterns
+    Starting with v2.21, LeanCTX includes adaptive compression that learns from usage patterns
     and automatically optimizes compression strategies per project and language.
   </p>
 

@@ -7,36 +7,11 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Context Control',
-    items: [
-      { label: 'Overview', href: lp('/docs/context-control') },
-      { label: 'What is overlays.json?', href: lp('/docs/context-control') + '#what' },
-      { label: 'Storage Location', href: lp('/docs/context-control') + '#location' },
-      { label: 'Gitignore', href: lp('/docs/context-control') + '#gitignore' },
-      { label: 'Actions', href: lp('/docs/context-control') + '#actions' },
-      { label: 'Scopes', href: lp('/docs/context-control') + '#scopes' },
-      { label: 'Staleness', href: lp('/docs/context-control') + '#staleness' },
-      { label: 'Examples', href: lp('/docs/context-control') + '#examples' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Budgets & SLOs', href: lp('/docs/budgets-and-slos') },
-      { label: 'Observatory', href: lp('/docs/observatory') },
-      { label: 'Session Tools', href: lp('/docs/tools/session') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title={t('docs.contextControl.title')}
   description={t('docs.contextControl.metaDesc')}
-  sidebar={sidebar}
 >
   <p set:html={t('docs.contextControl.intro')} />
 

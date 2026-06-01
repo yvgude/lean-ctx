@@ -15,33 +15,11 @@ const tools = category.tools.map(name => ({
   tool: getGranularToolByName(name),
 })).filter(t => t.tool);
 
-const sidebar = [
-  {
-    title: 'Analysis Tools',
-    compact: true,
-    items: tools.map(t => ({
-      label: t.name,
-      href: lp('/docs/tools/analysis/') + `#${t.name}`,
-    })),
-  },
-  {
-    title: 'Other Categories',
-    items: [
-      { label: 'All Tools', href: lp('/docs/tools') },
-      { label: 'Core Tools', href: lp('/docs/tools/core') },
-      { label: 'Intelligence Tools', href: lp('/docs/tools/intelligence') },
-      { label: 'Session & Monitoring', href: lp('/docs/tools/session') },
-      { label: 'Memory & Multi-Agent', href: lp('/docs/tools/memory') },
-      { label: 'Workflow & Orchestration', href: lp('/docs/tools/workflow') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title="Analysis & Navigation Tools"
   description={category.description}
-  sidebar={sidebar}
 >
   <p>{category.description}</p>
   <p>

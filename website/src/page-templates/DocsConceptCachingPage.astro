@@ -6,43 +6,14 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Caching & Compression',
-    items: [
-      { label: 'Overview', href: lp('/docs/concepts/caching') },
-      { label: 'Session Cache', href: lp('/docs/concepts/caching') + '#session-cache' },
-      { label: 'Predictive Coding', href: lp('/docs/concepts/caching') + '#predictive-coding' },
-      { label: 'Hebbian Cache', href: lp('/docs/concepts/caching') + '#hebbian-cache' },
-      { label: 'Predictive Prefetch', href: lp('/docs/concepts/caching') + '#predictive-prefetch' },
-      { label: 'Memory Guard', href: lp('/docs/concepts/caching') + '#memory-guard' },
-      { label: 'File References', href: lp('/docs/concepts/caching') + '#file-references' },
-      { label: 'Shell Compression', href: lp('/docs/concepts/caching') + '#shell-compression' },
-      { label: 'Archive System', href: lp('/docs/concepts/caching') + '#archive' },
-      { label: 'Zero-Loss Archive', href: lp('/docs/concepts/caching') + '#zero-loss-archive' },
-      { label: 'Cache-Safe Guarantee', href: lp('/docs/concepts/caching') + '#cache-safe' },
-      { label: 'Compaction', href: lp('/docs/concepts/caching') + '#compaction' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Read Modes', href: lp('/docs/concepts/read-modes') },
-      { label: 'ctx_cache', href: lp('/docs/tools/ctx-cache') },
-      { label: 'ctx_compress', href: lp('/docs/tools/ctx-compress') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title="Caching & Compression"
-  description="How lean-ctx caches files, compresses shell output, and manages the context window to achieve 74-99% token savings."
-  sidebar={sidebar}
+  description="How LeanCTX caches files, compresses shell output, and manages the context window to achieve 74-99% token savings."
 >
   <p>
-    lean-ctx uses a multi-layered caching and compression system to minimize token usage.
+    LeanCTX uses a multi-layered caching and compression system to minimize token usage.
     Understanding these layers helps you get the most out of the system.
   </p>
 
@@ -90,7 +61,7 @@ ctx_read src/auth.ts fresh=true
 
   <h2 id="predictive-coding">Predictive Coding <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
   <p>
-    Inspired by <strong>Rao & Ballard's Predictive Coding theory</strong> from neuroscience, lean-ctx transmits
+    Inspired by <strong>Rao & Ballard's Predictive Coding theory</strong> from neuroscience, LeanCTX transmits
     only <em>prediction errors</em> (structural deltas) when a file is re-read in the same session. Instead of
     resending the full content, only changes since the last read are sent — dramatically reducing token usage
     for iterative development workflows.
@@ -120,7 +91,7 @@ ctx_read src/auth.ts mode="signatures"
 
   <h2 id="hebbian-cache">Hebbian Co-Access Cache <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
   <p>
-    Based on <strong>Hebb's rule</strong> ("neurons that fire together, wire together"), lean-ctx tracks which
+    Based on <strong>Hebb's rule</strong> ("neurons that fire together, wire together"), LeanCTX tracks which
     files are accessed together and strengthens their association over time. This enables intelligent cache
     eviction that preserves working-set coherence.
   </p>
@@ -148,7 +119,7 @@ ctx_read src/auth.ts mode="signatures"
 
   <h2 id="predictive-prefetch">Predictive Prefetch <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
   <p>
-    Using the <strong>Free Energy Principle</strong> from neuroscience, lean-ctx learns file access
+    Using the <strong>Free Energy Principle</strong> from neuroscience, LeanCTX learns file access
     transition patterns and proactively pre-loads files predicted to be needed next. This eliminates
     cold-read latency for common workflows.
   </p>
@@ -169,7 +140,7 @@ ctx_read src/auth.ts mode="signatures"
 
   <h2 id="memory-guard">Homeostatic Memory Guard <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
   <p>
-    Inspired by <strong>biological homeostasis</strong>, lean-ctx maintains system equilibrium through a
+    Inspired by <strong>biological homeostasis</strong>, LeanCTX maintains system equilibrium through a
     multi-level graduated response system. Rather than hard limits that cause abrupt failures, the memory
     guard applies proportional responses to resource pressure:
   </p>
@@ -304,7 +275,7 @@ ephemeral = true         # Replace large results with summary + ctx_expand ref`}
 
   <h3>Secret Masking</h3>
   <p>
-    lean-ctx scans tool output for common secret patterns (API keys, JWT tokens, connection strings,
+    LeanCTX scans tool output for common secret patterns (API keys, JWT tokens, connection strings,
     private keys) and replaces them with <code>[REDACTED:type]</code> placeholders. Redaction is enabled
     by default for all non-admin roles, so sensitive data never persists in archives or the context window.
     Detection patterns are configurable under the <code>[secret_detection]</code> section.
@@ -312,8 +283,8 @@ ephemeral = true         # Replace large results with summary + ctx_expand ref`}
 
   <h2 id="cache-safe">Cache-Safe Guarantee</h2>
   <p>
-    lean-ctx provides a <strong>cache-safe guarantee</strong>: content already present in the model's
-    context window is never mutated or corrupted by lean-ctx operations. This is a critical invariant
+    LeanCTX provides a <strong>cache-safe guarantee</strong>: content already present in the model's
+    context window is never mutated or corrupted by LeanCTX operations. This is a critical invariant
     that prevents subtle bugs from stale or inconsistent data.
   </p>
 
@@ -349,7 +320,7 @@ ephemeral = true         # Replace large results with summary + ctx_expand ref`}
   </p>
   <p>
     <strong>When to use:</strong> After 15-20 tool calls, or when approaching context window limits.
-    lean-ctx auto-triggers checkpoints at configurable intervals.
+    LeanCTX auto-triggers checkpoints at configurable intervals.
   </p>
   <pre><code>{`ctx_compress
 → Session checkpoint created:

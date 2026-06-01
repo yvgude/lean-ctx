@@ -107,7 +107,7 @@ export const PILLARS: Pillar[] = [
     order: 2,
     tagline: 'Every token carries signal.',
     description:
-      'Ten read modes, 60+ shell-output patterns and content-addressed caching shrink reads 60–90% and re-reads to ~13 tokens — the noise never reaches the model.',
+      'Ten read modes, 95+ shell-output patterns and content-addressed caching shrink reads 60–90% and re-reads to ~13 tokens — the noise never reaches the model.',
     proofTool: 'ctx_read',
     tools: [
       'ctx_read', 'ctx_shell', 'ctx_search', 'ctx_dedup', 'ctx_compress',

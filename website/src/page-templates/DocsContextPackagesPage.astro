@@ -7,27 +7,6 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Context Packages',
-    items: [
-      { label: 'Overview', href: lp('/docs/context-packages') },
-      { label: 'Layers', href: lp('/docs/context-packages#layers') },
-      { label: 'CLI Commands', href: lp('/docs/context-packages#cli') },
-      { label: 'Auto-Load', href: lp('/docs/context-packages#auto-load') },
-      { label: 'Integrity', href: lp('/docs/context-packages#integrity') },
-      { label: 'Integration', href: lp('/docs/context-packages#integration') },
-    ],
-  },
-  {
-    title: t('docs.common.related'),
-    items: [
-      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference#context-packages') },
-      { label: 'Multi-Agent', href: lp('/docs/concepts/multi-agent#a2a-transport') },
-      { label: '.ctxpkg Specification', href: 'https://ctxpkg.org' },
-    ],
-  },
-];
 
 const layers = [
   { key: 'knowledge' },
@@ -50,9 +29,8 @@ const cliCommands = [
 ---
 
 <DocsLayout
-  title={t('contextPkg.metaTitle')}
+  title="Context Packages"
   description={t('contextPkg.metaDesc')}
-  sidebar={sidebar}
 >
 
   <div class="card" style="padding: 1rem 1.25rem; margin-bottom: 2rem; border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface)); display: flex; align-items: center; gap: 0.75rem;">

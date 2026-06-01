@@ -7,28 +7,6 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Context Engine',
-    items: [
-      { label: 'Overview', href: lp('/docs/cortex') },
-      { label: 'Pipeline', href: lp('/docs/cortex') + '#pipeline' },
-      { label: 'Cross-Source Intelligence', href: lp('/docs/cortex') + '#cross-source' },
-      { label: 'Provider Bandit', href: lp('/docs/cortex') + '#bandit' },
-      { label: 'Active Inference', href: lp('/docs/cortex') + '#active-inference' },
-      { label: 'Consolidation', href: lp('/docs/cortex') + '#consolidation' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Data Source Providers', href: lp('/docs/data-sources') },
-      { label: 'Caching & Compression', href: lp('/docs/concepts/caching') },
-      { label: 'ctx_provider Tool', href: lp('/docs/tools/ctx-provider') },
-      { label: 'ctx_preload Tool', href: lp('/docs/tools/ctx-preload') },
-    ],
-  },
-];
 
 const pipelineSteps = [
   { n: '01', tone: 'accent',   title: t('docs.cortex.pipelineStep1Title'), desc: t('docs.cortex.pipelineStep1Desc') },
@@ -41,7 +19,6 @@ const pipelineSteps = [
 <DocsLayout
   title={t('docs.cortex.title')}
   description={t('docs.cortex.metaDesc')}
-  sidebar={sidebar}
 >
   <p>{t('docs.cortex.introP1')}</p>
   <p>{t('docs.cortex.introP2')}</p>

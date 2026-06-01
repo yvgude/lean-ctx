@@ -1,174 +1,70 @@
 ---
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
-
-interface SidebarItem {
-  label: string;
-  href: string;
-  badge?: string;
-}
-
-interface SidebarSection {
-  title: string;
-  compact?: boolean;
-  collapsed?: boolean;
-  items: SidebarItem[];
-}
-
-interface Props {
-  sections?: SidebarSection[];
-}
+import { docsTree } from '../lib/docsTree';
 
 const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-// Sidebar mirrors the one IA: Get Started + the four persona tracks + Reference.
-const defaultSections: SidebarSection[] = [
-  {
-    title: 'Get Started',
-    items: [
-      { label: t('docs.sidebarOverview'), href: lp('/docs/getting-started') },
-      { label: t('docs.sidebarQuickRef'), href: lp('/docs/quick-reference') },
-      { label: t('nav.getStarted.compatibility'), href: lp('/compatibility') },
-    ],
-  },
-  {
-    title: 'Daily Workflow',
-    items: [
-      { label: t('docs.sidebarReadModes'), href: lp('/docs/concepts/read-modes') },
-      { label: t('docs.sidebarShellCompression'), href: lp('/docs/concepts/shell-patterns') },
-      { label: t('docs.sidebarCaching'), href: lp('/docs/concepts/caching') },
-      { label: t('docs.sidebarTokenSavings'), href: lp('/docs/concepts/token-savings') },
-      { label: t('nav.docs.cortex'), href: lp('/docs/cortex') },
-      { label: t('nav.docs.contextControl'), href: lp('/docs/context-control') },
-      { label: t('nav.docs.observatory'), href: lp('/docs/observatory') },
-    ],
-  },
-  {
-    title: 'Scale & Teams',
-    items: [
-      { label: t('docs.sidebarMultiAgent'), href: lp('/docs/concepts/multi-agent') },
-      { label: t('docs.sidebarDataSources'), href: lp('/docs/data-sources') },
-      { label: 'Context Packages', href: lp('/docs/context-packages') },
-      { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference') },
-    ],
-  },
-  {
-    title: 'Operate & Govern',
-    items: [
-      { label: t('nav.docs.security'), href: lp('/docs/security') },
-      { label: t('docs.sidebarConfiguration'), href: lp('/docs/configuration') },
-      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos') },
-      { label: 'Performance Tuning', href: lp('/docs/performance-tuning') },
-      { label: 'Troubleshooting', href: lp('/docs/troubleshooting') },
-      { label: t('nav.docs.concepts.protocols'), href: lp('/docs/concepts/protocols') },
-    ],
-  },
-  {
-    title: t('docs.sidebarReference'),
-    collapsed: true,
-    items: [
-      { label: t('docs.sidebarAllTools'), href: lp('/docs/tools') },
-      { label: t('docs.sidebarCliRef'), href: lp('/docs/cli-reference') },
-      { label: t('docs.sidebarChangelog'), href: lp('/docs/changelog') },
-    ],
-  },
-];
-
-const sections = Astro.props.sections ?? defaultSections;
 const currentPath = Astro.url.pathname.replace(/\/$/, '');
 
-function isSectionActive(section: SidebarSection): boolean {
-  return section.items.some(item => {
-    const itemPage = item.href.split('#')[0].replace(/\/$/, '');
-    return currentPath === itemPage || currentPath.startsWith(itemPage + '/');
-  });
+function isActive(href: string): boolean {
+  const page = lp(href).replace(/\/$/, '');
+  return currentPath === page;
 }
 ---
 
-<!-- Mobile: inline collapsible nav -->
+<!-- Mobile: one inline collapsible "Documentation" browser -->
 <nav class="lg:hidden mb-8">
   <details class="docs-mobile-nav group">
-    <summary class="flex items-center justify-between px-4 py-3 cursor-pointer select-none" style="font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem);">
-      <span class="font-medium text-muted">{t('docs.onThisPage')}</span>
-      <svg class="w-4 h-4 text-muted/60 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <summary>
+      <span class="font-medium text-muted">{t('docs.documentation')}</span>
+      <svg class="w-4 h-4 text-muted/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
       </svg>
     </summary>
     <div class="px-2 pb-3 pt-1">
-      {sections.map(section => (
-        <div class="mb-3 last:mb-0">
-          <h4 class="fluid-label text-muted/50 mb-1 px-2">{section.title}</h4>
-          <div>
-            {section.items.map(item => {
-              const itemPage = item.href.split('#')[0].replace(/\/$/, '');
-              const hasAnchor = item.href.includes('#');
-              const isExactPage = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
-              const isPageActive = isExactPage && !hasAnchor;
-              return (
-                <a
-                  href={item.href}
-                  class:list={[
-                    'docs-nav-link block py-1.5 px-2 rounded-md transition-colors duration-150',
-                    isPageActive
-                      ? 'text-accent font-medium'
-                      : 'text-muted hover:text-text-bright'
-                  ]}
-                  style="font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem);"
-                  data-anchor={hasAnchor ? item.href.split('#')[1] : undefined}
-                >
-                  {item.label}
-                  {item.badge && <span class="sidebar-badge">{item.badge}</span>}
-                </a>
-              );
-            })}
-          </div>
+      {docsTree.map((group) => (
+        <div class="mb-4 last:mb-0">
+          <h4 class="docs-sb-group-title px-2">{group.title}</h4>
+          {group.items.map((item) => (
+            <a
+              href={lp(item.href)}
+              class:list={['docs-sb-link', isActive(item.href) && 'is-active']}
+            >
+              {item.label}
+              {item.badge && <span class="docs-sb-badge">{item.badge}</span>}
+            </a>
+          ))}
         </div>
       ))}
     </div>
   </details>
 </nav>
 
-<!-- Desktop: sticky sidebar -->
+<!-- Desktop: persistent, grouped left rail (the wrapping .docs-rail handles sticky + scroll) -->
 <aside class="hidden lg:block">
-  <nav class="sticky top-24 space-y-1 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2 sidebar-scroll">
-    {sections.map(section => {
-      const active = isSectionActive(section);
-      const shouldCollapse = section.collapsed && !active;
+  <nav class="docs-sb">
+    {docsTree.map((group) => {
       return (
-        <details class="sidebar-section" open={!shouldCollapse}>
-          <summary class="sidebar-section-title cursor-pointer select-none flex items-center justify-between">
-            <h4 class="fluid-label text-muted font-display m-0">{section.title}</h4>
-            <svg class="sidebar-chevron w-3 h-3 text-muted/40 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-            </svg>
+        <details class="docs-sb-section" open>
+          <summary class="docs-sb-summary">
+            <span class="docs-sb-icon" set:html={`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${group.iconPath}"/></svg>`} />
+            <h4 class="docs-sb-group-title m-0">{group.title}</h4>
+            <svg class="docs-sb-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
           </summary>
-          <ul class:list={['relative mt-1 mb-3', section.compact ? 'space-y-0' : 'space-y-0.5']}>
-            {section.items.map(item => {
-              const itemPage = item.href.split('#')[0].replace(/\/$/, '');
-              const hasAnchor = item.href.includes('#');
-              const isExactPage = currentPath === itemPage || currentPath.startsWith(itemPage + '/');
-              const isPageActive = isExactPage && !hasAnchor;
-              return (
-                <li>
-                  <a
-                    href={item.href}
-                    data-anchor={hasAnchor ? item.href.split('#')[1] : undefined}
-                    class:list={[
-                      'docs-nav-link block rounded-lg transition-all duration-200 relative',
-                      section.compact ? 'py-1 px-3' : 'py-1.5 px-3',
-                      isPageActive
-                        ? 'text-accent bg-accent/8 font-medium sidebar-active'
-                        : 'text-muted hover:text-text-bright hover:bg-surface-2'
-                    ]}
-                    style={`font-size: ${section.compact ? 'clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem)' : 'clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem)'};`}
-                  >
-                    {item.label}
-                    {item.badge && <span class="sidebar-badge">{item.badge}</span>}
-                  </a>
-                </li>
-              );
-            })}
+          <ul class="docs-sb-list">
+            {group.items.map((item) => (
+              <li>
+                <a
+                  href={lp(item.href)}
+                  class:list={['docs-sb-link', isActive(item.href) && 'is-active']}
+                >
+                  {item.label}
+                  {item.badge && <span class="docs-sb-badge">{item.badge}</span>}
+                </a>
+              </li>
+            ))}
           </ul>
         </details>
       );
@@ -177,30 +73,101 @@ function isSectionActive(section: SidebarSection): boolean {
 </aside>
 
 <style>
-  .sidebar-active::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 4px;
-    bottom: 4px;
-    width: 2px;
-    background: linear-gradient(180deg, var(--color-accent), var(--color-accent-bright));
-    border-radius: 1px;
+  .docs-sb {
+    scrollbar-width: thin;
+    scrollbar-color: var(--overlay-heavy) transparent;
+  }
+  .docs-sb::-webkit-scrollbar { width: 4px; }
+  .docs-sb::-webkit-scrollbar-thumb { background: var(--overlay-heavy); border-radius: 2px; }
+
+  /* Group title (eyebrow style, shared mobile + desktop) */
+  .docs-sb-group-title {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--color-muted);
+    opacity: 0.7;
+    margin-bottom: 0.35rem;
   }
 
-  .docs-nav-link.is-scrolled-to {
-    color: var(--color-accent) !important;
-    background: var(--overlay-accent-green);
+  /* Desktop section disclosure */
+  .docs-sb-section { margin-bottom: 1rem; }
+  .docs-sb-section:last-child { margin-bottom: 0; }
+  .docs-sb-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    list-style: none;
+    border-radius: 9px;
+    transition: background 0.15s ease;
   }
-  .sidebar-active.sidebar-active-dimmed {
-    color: var(--color-muted) !important;
-    background: transparent !important;
-    font-weight: 400 !important;
+  .docs-sb-summary::-webkit-details-marker { display: none; }
+  .docs-sb-summary:hover { background: var(--overlay-hover); }
+  .docs-sb-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    color: var(--color-muted);
+    opacity: 0.75;
+    flex: 0 0 auto;
   }
-  .sidebar-active.sidebar-active-dimmed::before {
-    display: none;
+  .docs-sb-icon :global(svg) { width: 16px; height: 16px; }
+  .docs-sb-summary .docs-sb-group-title { flex: 1 1 auto; margin-bottom: 0; }
+  .docs-sb-chevron {
+    color: var(--color-muted);
+    opacity: 0.4;
+    transition: transform 0.2s ease;
+    flex: 0 0 auto;
+  }
+  .docs-sb-section[open] .docs-sb-chevron { transform: rotate(180deg); }
+
+  .docs-sb-list {
+    list-style: none;
+    margin: 0.35rem 0 0;
+    padding: 0 0 0 0.5rem;
+    border-inline-start: 1px solid var(--color-border);
+    margin-inline-start: 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
   }
 
+  .docs-sb-link {
+    display: block;
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: var(--color-muted);
+    text-decoration: none;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .docs-sb-link:hover { color: var(--color-text-bright); background: var(--overlay-hover); }
+  .docs-sb-link.is-active {
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 11%, transparent);
+    font-weight: var(--weight-medium);
+  }
+
+  .docs-sb-badge {
+    display: inline-block;
+    font-size: 0.5625rem;
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.0625rem 0.375rem;
+    margin-inline-start: 0.4rem;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+    color: var(--color-accent);
+    vertical-align: middle;
+  }
+
+  /* Mobile disclosure shell */
   .docs-mobile-nav {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -211,120 +178,14 @@ function isSectionActive(section: SidebarSection): boolean {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
     list-style: none;
+    font-size: 0.875rem;
   }
-  .docs-mobile-nav summary::-webkit-details-marker {
-    display: none;
-  }
-  .docs-mobile-nav summary svg {
-    width: 16px;
-    height: 16px;
-    flex: 0 0 auto;
-  }
-  .docs-mobile-nav[open] summary svg {
-    transform: rotate(180deg);
-  }
-  .docs-mobile-nav[open] {
-    border-color: var(--overlay-accent-green);
-  }
-
-  .sidebar-section summary {
-    list-style: none;
-    padding: 0.5rem 0.25rem;
-  }
-  .sidebar-section summary::-webkit-details-marker {
-    display: none;
-  }
-  .sidebar-section[open] .sidebar-chevron {
-    transform: rotate(180deg);
-  }
-  .sidebar-section:not([open]) .sidebar-chevron {
-    transform: rotate(-90deg);
-  }
-
-  .sidebar-badge {
-    display: inline-block;
-    font-size: 0.5625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.0625rem 0.375rem;
-    margin-left: 0.375rem;
-    border-radius: 4px;
-    background: var(--overlay-accent-green);
-    color: var(--color-accent);
-    vertical-align: middle;
-    line-height: 1.4;
-  }
-
-  .sidebar-scroll::-webkit-scrollbar {
-    width: 4px;
-  }
-  .sidebar-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: var(--overlay-heavy);
-    border-radius: 2px;
-  }
-  .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-    background: var(--overlay-medium);
-  }
+  .docs-mobile-nav summary::-webkit-details-marker { display: none; }
+  .docs-mobile-nav summary svg { transition: transform 0.2s ease; }
+  .docs-mobile-nav[open] summary svg { transform: rotate(180deg); }
+  .docs-mobile-nav[open] { border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border)); }
+  .docs-mobile-nav .docs-sb-link { font-size: 0.8125rem; }
 </style>
-
-<script>
-  const anchorLinks = document.querySelectorAll<HTMLAnchorElement>('.docs-nav-link[data-anchor]');
-  const pageLinks = document.querySelectorAll<HTMLAnchorElement>('.docs-nav-link.sidebar-active');
-
-  if (anchorLinks.length > 0) {
-    const anchors: { id: string; el: Element }[] = [];
-    anchorLinks.forEach(link => {
-      const id = link.dataset.anchor;
-      if (id) {
-        const target = document.getElementById(id);
-        if (target) anchors.push({ id, el: target });
-      }
-    });
-
-    if (anchors.length > 0) {
-      let activeId = '';
-
-      function applyActive(newId: string) {
-        if (newId === activeId) return;
-        activeId = newId;
-
-        const hasAnchorActive = newId !== '';
-        pageLinks.forEach(pl => {
-          pl.classList.toggle('sidebar-active-dimmed', hasAnchorActive);
-        });
-
-        anchorLinks.forEach(link => {
-          link.classList.toggle('is-scrolled-to', link.dataset.anchor === newId);
-        });
-      }
-
-      const observer = new IntersectionObserver(
-        () => {
-          let best = '';
-          const scrollY = window.scrollY + 140;
-          for (const a of anchors) {
-            const rect = a.el.getBoundingClientRect();
-            const absTop = rect.top + window.scrollY;
-            if (absTop <= scrollY) best = a.id;
-          }
-          applyActive(best);
-        },
-        {
-          rootMargin: '-60px 0px -50% 0px',
-          threshold: 0,
-        }
-      );
-
-      anchors.forEach(a => observer.observe(a.el));
-
-      if (window.location.hash) {
-        applyActive(window.location.hash.slice(1));
-      }
-    }
-  }
-</script>

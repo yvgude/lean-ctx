@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
 import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
+import CtaSection from '../components/CtaSection.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 import { getMcpManifest } from '../lib/mcpManifest';
 
@@ -122,7 +123,7 @@ const faqSchema = JSON.stringify({
         <div class="layer-icon" style="color: var(--color-accent);">
           <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
         </div>
-        <h3 class="font-display fluid-h3 font-semibold text-accent" style="margin: 0.75rem 0 0.25rem;">lean-ctx</h3>
+        <h3 class="font-display fluid-h3 font-semibold text-accent" style="margin: 0.75rem 0 0.25rem;">LeanCTX</h3>
         <p class="fluid-sm text-muted leading-relaxed">{t('howItWorks.flowLeanCtxDesc')}</p>
       </div>
       <div class="layer-card">
@@ -257,22 +258,13 @@ const faqSchema = JSON.stringify({
 
 
 <!-- ═══════ ARCHITECTURE CTA ═══════ -->
-<section class="relative section-y">
-  <div class="content-grid">
-    <div class="card animate-entrance" style="padding: clamp(2rem, 1.5rem + 1vw, 3rem); border-color: color-mix(in srgb, var(--color-accent) 22%, transparent); background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));">
-      <h3 class="fluid-h2 font-display text-text-bright" style="margin: 0 0 0.75rem 0;">
-        {t('howItWorks.archCtaTitle')}
-      </h3>
-      <p class="fluid-sm text-muted" style="margin: 0 0 1.5rem 0; max-width: 44rem;">
-        {t('howItWorks.archCtaDesc')}
-      </p>
-      <a href={lp('/context-os')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.6rem, 0.5rem + 0.25vw, 0.8rem) clamp(1.25rem, 0.9rem + 0.6vw, 1.75rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('howItWorks.archCtaLink')}
-        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-      </a>
-    </div>
-  </div>
-</section>
+<CtaSection
+  title={t('howItWorks.archCtaTitle')}
+  description={t('howItWorks.archCtaDesc')}
+  actions={[
+    { label: t('howItWorks.archCtaLink'), href: lp('/context-os/'), variant: 'primary', icon: 'arrow' },
+  ]}
+/>
 
 
 <div class="section-divider content-grid"></div>
@@ -312,7 +304,7 @@ const faqSchema = JSON.stringify({
       </div>
     </div>
 
-    <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem); padding: clamp(0.5rem, 0.4rem + 0.2vw, 0.7rem) clamp(1rem, 0.75rem + 0.5vw, 1.5rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
+    <a href={lp('/docs/security')} class="cta-btn btn-outline animate-entrance stagger-4" style="margin-top: clamp(1.5rem, 1rem + 1vw, 2rem);">
       {t('howItWorks.securityCta')}
     </a>
   </div>
@@ -323,29 +315,16 @@ const faqSchema = JSON.stringify({
 
 
 <!-- ═══════ CTA ═══════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <SectionHeading
-      label={t('howItWorks.ctaLabel')}
-      title={t('howItWorks.ctaTitle')}
-      highlight={t('howItWorks.ctaTitleHighlight')}
-      description={t('howItWorks.ctaDesc')}
-      variant="full"
-      breakHighlight={false}
-      descMaxWidth="44rem"
-      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
-    />
-    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('howItWorks.ctaGetStarted')}
-        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-      </a>
-      <a href={lp('/compatibility')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('howItWorks.ctaCompatibility')}
-      </a>
-    </div>
-  </div>
-</section>
+<CtaSection
+  eyebrow={t('howItWorks.ctaLabel')}
+  title={t('howItWorks.ctaTitle')}
+  titleHighlight={t('howItWorks.ctaTitleHighlight')}
+  description={t('howItWorks.ctaDesc')}
+  actions={[
+    { label: t('howItWorks.ctaGetStarted'), href: lp('/docs/getting-started/'), variant: 'primary', icon: 'arrow' },
+    { label: t('howItWorks.ctaCompatibility'), href: lp('/compatibility/'), variant: 'outline' },
+  ]}
+/>
 
 
 <style>

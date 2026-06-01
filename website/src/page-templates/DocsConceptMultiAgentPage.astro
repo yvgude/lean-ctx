@@ -6,48 +6,14 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Multi-Agent',
-    items: [
-      { label: 'Overview', href: lp('/docs/concepts/multi-agent') },
-      { label: 'Agent Registry', href: lp('/docs/concepts/multi-agent') + '#registry' },
-      { label: 'Message Bus', href: lp('/docs/concepts/multi-agent') + '#message-bus' },
-      { label: 'Selective Routing', href: lp('/docs/concepts/multi-agent') + '#selective-routing' },
-      { label: 'Task Delegation', href: lp('/docs/concepts/multi-agent') + '#tasks' },
-      { label: 'A2A Transport', href: lp('/docs/concepts/multi-agent') + '#a2a-transport' },
-      { label: 'Google A2A Compat', href: lp('/docs/concepts/multi-agent') + '#google-a2a' },
-      { label: 'Shared Cache', href: lp('/docs/concepts/multi-agent') + '#shared-cache' },
-      { label: 'Diaries', href: lp('/docs/concepts/multi-agent') + '#diaries' },
-      { label: 'Remote Agent Bus', href: lp('/docs/concepts/multi-agent') + '#remote-agent-bus' },
-      { label: 'Per-Agent Ledger', href: lp('/docs/concepts/multi-agent') + '#per-agent-ledger' },
-      { label: 'Agent Token Budget', href: lp('/docs/concepts/multi-agent') + '#agent-token-budget' },
-      { label: 'Context Handoff', href: lp('/docs/concepts/multi-agent') + '#handoff' },
-      { label: 'Signed Handoff Bundles', href: lp('/docs/concepts/multi-agent') + '#signed-handoff-bundles' },
-      { label: 'Compaction Survival', href: lp('/docs/concepts/multi-agent') + '#compaction-survival' },
-    ],
-  },
-  {
-    title: 'Related Tools',
-    compact: true,
-    items: [
-      { label: 'ctx_agent', href: lp('/docs/tools/ctx-agent') },
-      { label: 'ctx_share', href: lp('/docs/tools/ctx-share') },
-      { label: 'ctx_task', href: lp('/docs/tools/ctx-task') },
-      { label: 'ctx_handoff', href: lp('/docs/tools/ctx-handoff') },
-      { label: 'ctx_cost', href: lp('/docs/tools/ctx-cost') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title="Multi-Agent Coordination"
-  description="How multiple AI agents coordinate via lean-ctx: registry, message bus, task delegation, shared cache, persistent diaries, and context handoff."
-  sidebar={sidebar}
+  description="How multiple AI agents coordinate via LeanCTX: registry, message bus, task delegation, shared cache, persistent diaries, and context handoff."
 >
   <p>
-    lean-ctx enables multiple AI agents (Cursor, Claude Code, Codex, Gemini CLI, Pi, etc.) to work on
+    LeanCTX enables multiple AI agents (Cursor, Claude Code, Codex, Gemini CLI, Pi, etc.) to work on
     the same project simultaneously with coordination, not conflict. The multi-agent system is built
     on 5 primitives: registry, message bus, task delegation, shared cache, and persistent diaries.
   </p>
@@ -237,7 +203,7 @@ lean-ctx pack receive envelope.json --secret=mykey --apply`}</code></pre>
 
   <h2 id="google-a2a">Google A2A Compatibility</h2>
   <p>
-    lean-ctx exposes a JSON-RPC 2.0 endpoint at <code>/a2a</code> compatible with the
+    LeanCTX exposes a JSON-RPC 2.0 endpoint at <code>/a2a</code> compatible with the
     <a href="https://google.github.io/A2A/" target="_blank">Google A2A Protocol</a>.
     Supported operations: <code>tasks/send</code>, <code>tasks/get</code>, <code>tasks/cancel</code>.
   </p>
@@ -357,13 +323,13 @@ ctx_handoff action="load"
   <h2 id="compaction-survival">Compaction Survival</h2>
   <p>
     When AI providers truncate or compact the context window (e.g., Claude's context window management,
-    Cursor's automatic compaction), lean-ctx sessions can lose critical state. The <strong>Compaction
+    Cursor's automatic compaction), LeanCTX sessions can lose critical state. The <strong>Compaction
     Survival</strong> system detects and recovers from these events automatically.
   </p>
 
   <h3>PreCompact Hook</h3>
   <p>
-    The <code>PreCompact</code> hook fires when lean-ctx detects an imminent compaction event,
+    The <code>PreCompact</code> hook fires when LeanCTX detects an imminent compaction event,
     giving the system a chance to save critical state before the context is truncated:
   </p>
   <ul>
@@ -374,14 +340,14 @@ ctx_handoff action="load"
 
   <h3>Heuristic Detection</h3>
   <p>
-    lean-ctx detects compaction even without an explicit hook by monitoring for a
+    LeanCTX detects compaction even without an explicit hook by monitoring for a
     <strong>tool-call counter mismatch</strong>:
   </p>
   <ol>
-    <li>lean-ctx tracks how many tool calls have been made in the session (server-side counter)</li>
+    <li>LeanCTX tracks how many tool calls have been made in the session (server-side counter)</li>
     <li>The model's context includes an expected counter value from the session banner</li>
     <li>After compaction, the model may "forget" recent calls - the next tool call has a counter gap</li>
-    <li>When a gap is detected, lean-ctx automatically injects the resume block into the response</li>
+    <li>When a gap is detected, LeanCTX automatically injects the resume block into the response</li>
   </ol>
   <pre><code>{`# Normal flow: counters match
 Tool call #15 → server expects #15 ✓

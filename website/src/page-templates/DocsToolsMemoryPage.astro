@@ -6,34 +6,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docsToolsMemory.sidebarTitle'),
-    compact: true,
-    items: [
-      { label: 'ctx_knowledge', href: lp('/docs/tools/memory/') + '#ctx_knowledge' },
-      { label: 'ctx_agent', href: lp('/docs/tools/memory/') + '#ctx_agent' },
-      { label: 'ctx_share', href: lp('/docs/tools/memory/') + '#ctx_share' },
-      { label: 'ctx_overview', href: lp('/docs/tools/memory/') + '#ctx_overview' },
-      { label: 'ctx_task', href: lp('/docs/tools/memory/') + '#ctx_task' },
-      { label: 'ctx_cost', href: lp('/docs/tools/memory/') + '#ctx_cost' },
-    ],
-  },
-  {
-    title: t('docsToolsCore.sidebarOther'),
-    items: [
-      { label: t('docsToolsCore.sidebarAllTools'), href: lp('/docs/tools') },
-      { label: t('docsToolsCore.sidebarTitle'), href: lp('/docs/tools/core') },
-      { label: t('docsToolsCore.sidebarIntelligence'), href: lp('/docs/tools/intelligence') },
-      { label: t('docsToolsCore.sidebarSession'), href: lp('/docs/tools/session') },
-      { label: 'Workflow & Orchestration', href: lp('/docs/tools/workflow') },
-      { label: 'Analysis & Navigation', href: lp('/docs/tools/analysis') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docsToolsMemory.title')} description={t('docsToolsMemory.description')} sidebar={sidebar}>
+<DocsLayout title={t('docsToolsMemory.title')} description={t('docsToolsMemory.description')}>
   <p>{t('docsToolsMemory.intro')}</p>
 
   <h2 id="memory-runtime">Memory Runtime (Autopilot)</h2>
@@ -107,7 +82,7 @@ const sidebar = [
 
   <h3>Cross-Key Conflict Surfacing</h3>
   <p>
-    When <code>remember</code> stores a fact, lean-ctx compares its value against facts under <em>different</em> keys
+    When <code>remember</code> stores a fact, LeanCTX compares its value against facts under <em>different</em> keys
     using Jaccard similarity. Similar facts (>35% overlap) are surfaced in a <code>SIMILAR FACTS</code> section.
     The <code>judge</code> action lets agents resolve these pairs — judged pairs are suppressed in future runs.
   </p>

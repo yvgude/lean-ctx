@@ -8,17 +8,17 @@ const objections: Objection[] = [
   {
     question: "Why not just grep?",
     answer:
-      "grep finds text. lean-ctx finds the right symbols, ranks them by relevance, and returns budgeted, structural context — not 500 raw matches you still have to read and filter.",
+      "grep finds text. LeanCTX finds the right symbols, ranks them by relevance, and returns budgeted, structural context — not 500 raw matches you still have to read and filter.",
   },
   {
     question: "Why not just read the files?",
     answer:
-      "A raw read dumps 4,200 tokens when ~920 carry the signal. lean-ctx keeps the signal and drops the noise — and a cached re-read costs about 13 tokens instead of the whole file again.",
+      "A raw read dumps 4,200 tokens when ~920 carry the signal. LeanCTX keeps the signal and drops the noise — and a cached re-read costs about 13 tokens instead of the whole file again.",
   },
   {
     question: "Why not just compact more often?",
     answer:
-      "Compaction throws away history you might still need. lean-ctx compresses losslessly: the full output is archived on disk and your agent retrieves it on demand — nothing is silently lost.",
+      "Compaction throws away history you might still need. LeanCTX compresses losslessly: the full output is archived on disk and your agent retrieves it on demand — nothing is silently lost.",
   },
   {
     question: "Why not another MCP server?",

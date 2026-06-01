@@ -6,38 +6,14 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Shell Patterns',
-    items: [
-      { label: 'Overview', href: lp('/docs/concepts/shell-patterns') },
-      { label: 'How It Works', href: lp('/docs/concepts/shell-patterns') + '#how-it-works' },
-      { label: '60+ Pattern Modules', href: lp('/docs/concepts/shell-patterns') + '#pattern-modules' },
-      { label: 'Structural Protection', href: lp('/docs/concepts/shell-patterns') + '#structural-protection' },
-      { label: 'Passthrough Commands', href: lp('/docs/concepts/shell-patterns') + '#passthrough' },
-      { label: 'FilterEngine', href: lp('/docs/concepts/shell-patterns') + '#filter-engine' },
-      { label: 'Bypassing Compression', href: lp('/docs/concepts/shell-patterns') + '#bypassing' },
-      { label: 'Heredoc Detection', href: lp('/docs/concepts/shell-patterns') + '#heredoc' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Caching & Compression', href: lp('/docs/concepts/caching') },
-      { label: 'ctx_shell', href: lp('/docs/tools/ctx-shell') },
-      { label: 'Token Savings', href: lp('/docs/concepts/token-savings') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
-  title="Shell Patterns - Intelligent Output Compression"
-  description="How lean-ctx compresses shell output using 60+ pattern modules, FilterEngine, passthrough detection, and smart heredoc handling."
-  sidebar={sidebar}
+  title="Shell Patterns"
+  description="How LeanCTX compresses shell output using 60+ pattern modules, FilterEngine, passthrough detection, and smart heredoc handling."
 >
   <p>
-    Every shell command run through <code>ctx_shell</code> passes through lean-ctx's
+    Every shell command run through <code>ctx_shell</code> passes through LeanCTX's
     shell compression pipeline. With <strong>60+ pattern modules</strong> covering 60+ developer
     tools, the system strips boilerplate while preserving actionable output - typically saving
     <strong>50-95% of tokens</strong> per command.
@@ -265,7 +241,7 @@ ctx_shell command="npm install"
   <!-- ───── PASSTHROUGH ───── -->
   <h2 id="passthrough">Passthrough Commands</h2>
   <p>
-    Some commands are <strong>never compressed</strong> and always return raw output. lean-ctx
+    Some commands are <strong>never compressed</strong> and always return raw output. LeanCTX
     maintains a list of <strong>85+ passthrough entries</strong> (added in v3.3.1) covering
     three categories:
   </p>
@@ -301,7 +277,7 @@ gh pr checks         # Pattern-compressed`}</code></pre>
 
   <h3>3. Smart Script-Runner Detection</h3>
   <p>
-    lean-ctx uses a heuristic to detect script-runner commands that launch dev servers.
+    LeanCTX uses a heuristic to detect script-runner commands that launch dev servers.
     When a package.json script name contains <code>dev</code>, <code>start</code>, or
     <code>serve</code>, the command is automatically treated as passthrough:
   </p>
@@ -315,7 +291,7 @@ npm run build        → compressed (no trigger word)`}</code></pre>
   <h2 id="filter-engine">FilterEngine: Custom Filters</h2>
   <p>
     Beyond built-in patterns, you can define custom compression filters using TOML files.
-    Place filter files in <code>~/.lean-ctx/filters/</code> and lean-ctx applies them
+    Place filter files in <code>~/.lean-ctx/filters/</code> and LeanCTX applies them
     before pattern matching in the pipeline.
   </p>
 
@@ -391,7 +367,7 @@ action = "drop"
   <!-- ───── BYPASSING ───── -->
   <h2 id="bypassing">Bypassing Compression</h2>
   <p>
-    Sometimes you need the full, uncompressed output. lean-ctx provides three escape hatches:
+    Sometimes you need the full, uncompressed output. LeanCTX provides three escape hatches:
   </p>
 
   <h3>1. <code>raw=true</code> Parameter</h3>
@@ -438,7 +414,7 @@ unset LEAN_CTX_DISABLED
       <tr>
         <td><code>LEAN_CTX_DISABLED=1</code></td>
         <td>Entire shell session</td>
-        <td>Debugging lean-ctx itself, or long interactive sessions</td>
+        <td>Debugging LeanCTX itself, or long interactive sessions</td>
       </tr>
     </tbody>
   </table>
@@ -446,7 +422,7 @@ unset LEAN_CTX_DISABLED
   <!-- ───── HEREDOC ───── -->
   <h2 id="heredoc">Smart Heredoc Detection</h2>
   <p>
-    Starting with v3.3.x, lean-ctx includes intelligent heredoc handling in
+    Starting with v3.3.x, LeanCTX includes intelligent heredoc handling in
     <code>ctx_shell</code> and the PreToolUse hook.
   </p>
 
@@ -469,7 +445,7 @@ EOF`}</code></pre>
 
   <h3>The Solution</h3>
   <p>
-    lean-ctx now distinguishes between these two cases:
+    LeanCTX now distinguishes between these two cases:
   </p>
   <ul>
     <li>

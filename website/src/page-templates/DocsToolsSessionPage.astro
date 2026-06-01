@@ -6,37 +6,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docsToolsSession.sidebarTitle'),
-    compact: true,
-    items: [
-      { label: 'ctx_session', href: lp('/docs/tools/session/') + '#ctx_session' },
-      { label: 'ctx_ledger', href: lp('/docs/tools/session/') + '#ctx_ledger' },
-      { label: 'ctx_compress', href: lp('/docs/tools/session/') + '#ctx_compress' },
-      { label: 'ctx_analyze', href: lp('/docs/tools/session/') + '#ctx_analyze' },
-      { label: 'ctx_benchmark', href: lp('/docs/tools/session/') + '#ctx_benchmark' },
-      { label: 'ctx_metrics', href: lp('/docs/tools/session/') + '#ctx_metrics' },
-      { label: 'ctx_gain (wrapped)', href: lp('/docs/tools/session/') + '#ctx_gain_wrapped' },
-      { label: 'ctx_cache', href: lp('/docs/tools/session/') + '#ctx_cache' },
-      { label: 'ctx_heatmap', href: lp('/docs/tools/session/') + '#ctx_heatmap' },
-    ],
-  },
-  {
-    title: t('docsToolsCore.sidebarOther'),
-    items: [
-      { label: t('docsToolsCore.sidebarAllTools'), href: lp('/docs/tools') },
-      { label: t('docsToolsCore.sidebarTitle'), href: lp('/docs/tools/core') },
-      { label: t('docsToolsCore.sidebarIntelligence'), href: lp('/docs/tools/intelligence') },
-      { label: t('docsToolsCore.sidebarMemory'), href: lp('/docs/tools/memory') },
-      { label: 'Workflow & Orchestration', href: lp('/docs/tools/workflow') },
-      { label: 'Analysis & Navigation', href: lp('/docs/tools/analysis') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docsToolsSession.title')} description={t('docsToolsSession.description')} sidebar={sidebar}>
+<DocsLayout title={t('docsToolsSession.title')} description={t('docsToolsSession.description')}>
   <p>{t('docsToolsSession.intro')}</p>
 
   <h2 id="ctx_session">ctx_session</h2>
@@ -134,7 +106,7 @@ ctx_session action=restore
 
   <h2 id="ctx_ledger">ctx_ledger</h2>
   <p>
-    Inspects and manages the <strong>context ledger</strong> — lean-ctx's running account of
+    Inspects and manages the <strong>context ledger</strong> — LeanCTX's running account of
     what currently occupies your context window. Use it to monitor context pressure during
     long sessions and reclaim space by evicting stale entries.
   </p>
@@ -207,7 +179,7 @@ COMPRESSION: 28450 → 890 tok
 
   <h3>Auto-Checkpoint</h3>
   <p>
-    lean-ctx can automatically generate checkpoints after every N tool calls.
+    LeanCTX can automatically generate checkpoints after every N tool calls.
     Configure with the <code>LEAN_CTX_CHECKPOINT_INTERVAL</code> environment variable:
   </p>
   <pre><code>{`# Auto-checkpoint every 15 tool calls (default: 15)
@@ -401,7 +373,7 @@ Projected session savings (incl. thinking): $0.085</code></pre>
 ╚══════════════════════════════════════════╝</code></pre>
   <h2 id="ctx_cache">ctx_cache</h2>
   <p>
-    <code>ctx_cache</code> gives you explicit control over lean-ctx's in-memory session cache.
+    <code>ctx_cache</code> gives you explicit control over LeanCTX's in-memory session cache.
     Use it when the LLM's context no longer matches what the server has cached - for example
     after context compaction, session resets, or when running as a subagent.
   </p>

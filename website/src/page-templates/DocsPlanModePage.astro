@@ -7,39 +7,14 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Plan Mode',
-    items: [
-      { label: 'Overview', href: lp('/docs/plan-mode') },
-      { label: 'IDE Compatibility', href: lp('/docs/plan-mode') + '#compatibility' },
-      { label: 'VS Code / Copilot', href: lp('/docs/plan-mode') + '#vscode' },
-      { label: 'Claude Code', href: lp('/docs/plan-mode') + '#claude-code' },
-      { label: 'Cursor', href: lp('/docs/plan-mode') + '#cursor' },
-      { label: 'Other IDEs', href: lp('/docs/plan-mode') + '#other-ides' },
-      { label: 'Read-Only Tools', href: lp('/docs/plan-mode') + '#tools' },
-      { label: 'Troubleshooting', href: lp('/docs/plan-mode') + '#troubleshooting' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Getting Started', href: lp('/docs/getting-started') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-      { label: 'CLI Reference', href: lp('/docs/cli-reference') },
-      { label: 'Tools Overview', href: lp('/docs/tools') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title="Plan Mode — IDE Compatibility"
-  description="How lean-ctx integrates with Plan Mode across different IDEs. Automatic configuration for VS Code Copilot, Claude Code, Cursor, Kiro, and more."
-  sidebar={sidebar}
+  description="How LeanCTX integrates with Plan Mode across different IDEs. Automatic configuration for VS Code Copilot, Claude Code, Cursor, Kiro, and more."
 >
   <p>
-    Many AI-powered IDEs offer a <strong>Plan Mode</strong> (or Plan Agent) that researches your codebase and creates implementation plans <em>before</em> writing any code. lean-ctx provides read-only tools that are ideal for this research phase — cached file reads, code search, directory maps, and project overviews.
+    Many AI-powered IDEs offer a <strong>Plan Mode</strong> (or Plan Agent) that researches your codebase and creates implementation plans <em>before</em> writing any code. LeanCTX provides read-only tools that are ideal for this research phase — cached file reads, code search, directory maps, and project overviews.
   </p>
   <p>
     Starting with v3.6.13, <code>lean-ctx setup</code> automatically configures plan mode support for IDEs that require it.
@@ -114,7 +89,7 @@ const sidebar = [
 
   <p>
     VS Code's Plan Agent (<code>/plan</code>) only has access to MCP tools that are explicitly listed in the
-    <code>github.copilot.chat.planAgent.additionalTools</code> setting. Without this, Copilot cannot use lean-ctx during the planning phase.
+    <code>github.copilot.chat.planAgent.additionalTools</code> setting. Without this, Copilot cannot use LeanCTX during the planning phase.
   </p>
 
   <h3>Automatic Setup</h3>
@@ -185,7 +160,7 @@ const sidebar = [
 
   <p>
     Cursor's Plan Mode (activated via <kbd>Shift+Tab</kbd>) automatically has access to all MCP tools in read-only mode.
-    No additional configuration is needed — lean-ctx works out of the box.
+    No additional configuration is needed — LeanCTX works out of the box.
   </p>
 
   <h2 id="other-ides">Other IDEs</h2>
@@ -247,7 +222,7 @@ const sidebar = [
 
   <h3>Client detected as "unknown (tier 4)"</h3>
   <p>
-    If VS Code sends <code>"Visual Studio Code"</code> as the client name and lean-ctx shows <code>unknown (tier 4)</code>,
+    If VS Code sends <code>"Visual Studio Code"</code> as the client name and LeanCTX shows <code>unknown (tier 4)</code>,
     add <code>LEAN_CTX_CLIENT_HINT</code> to your MCP config as a workaround:
   </p>
   <TerminalChrome title=".vscode/mcp.json" bodyStyle="font-size: 0.75rem; line-height: 1.75;">

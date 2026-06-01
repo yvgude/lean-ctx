@@ -7,38 +7,11 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Budgets & SLOs',
-    items: [
-      { label: 'Overview', href: lp('/docs/budgets-and-slos') },
-      { label: 'BudgetWarning', href: lp('/docs/budgets-and-slos') + '#budget-warning' },
-      { label: 'SessionContextTokens', href: lp('/docs/budgets-and-slos') + '#session-context-tokens' },
-      { label: 'Key Difference', href: lp('/docs/budgets-and-slos') + '#difference' },
-      { label: 'Configuring Roles', href: lp('/docs/budgets-and-slos') + '#roles' },
-      { label: 'Configuring SLOs', href: lp('/docs/budgets-and-slos') + '#slos' },
-      { label: 'Default Values', href: lp('/docs/budgets-and-slos') + '#defaults' },
-      { label: 'Built-in Roles', href: lp('/docs/budgets-and-slos') + '#built-in-roles' },
-      { label: 'Resetting & Switching', href: lp('/docs/budgets-and-slos') + '#reset' },
-      { label: 'Blocking Mode', href: lp('/docs/budgets-and-slos') + '#blocking' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Observatory', href: lp('/docs/observatory') },
-      { label: 'Context Control', href: lp('/docs/context-control') },
-      { label: 'Session Tools', href: lp('/docs/tools/session') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title={t('docs.budgets.title')}
   description={t('docs.budgets.metaDesc')}
-  sidebar={sidebar}
 >
   <p set:html={t('docs.budgets.intro')} />
 

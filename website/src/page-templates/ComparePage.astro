@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
+import CtaSection from '../components/CtaSection.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -23,9 +24,9 @@ const faqJsonLd = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
   mainEntity: [
-    { '@type': 'Question', name: 'How does lean-ctx compare to manual prompt engineering?', acceptedAnswer: { '@type': 'Answer', text: 'Manual prompt engineering requires hand-crafting every context window. lean-ctx automates this with 10 read modes, AST-aware compression, and session memory — saving 88%+ tokens with zero manual effort.' } },
-    { '@type': 'Question', name: 'Is lean-ctx better than other MCP context tools?', acceptedAnswer: { '@type': 'Answer', text: 'lean-ctx is not just an MCP server — it is a full cognitive context layer with CLI integration, shell hooks, 63 MCP tools, persistent memory, code intelligence graphs, and a governance layer with roles and budgets.' } },
-    { '@type': 'Question', name: 'Does lean-ctx work with my AI coding tool?', acceptedAnswer: { '@type': 'Answer', text: 'Yes — lean-ctx supports 30+ AI tools including Cursor, Claude Code, GitHub Copilot, Windsurf, Gemini CLI, Codex, and JetBrains IDEs. Run lean-ctx setup for automatic configuration.' } },
+    { '@type': 'Question', name: 'How does LeanCTX compare to manual prompt engineering?', acceptedAnswer: { '@type': 'Answer', text: 'Manual prompt engineering requires hand-crafting every context window. LeanCTX automates this with 10 read modes, AST-aware compression, and session memory — saving 88%+ tokens with zero manual effort.' } },
+    { '@type': 'Question', name: 'Is LeanCTX better than other MCP context tools?', acceptedAnswer: { '@type': 'Answer', text: 'LeanCTX is not just an MCP server — it is a full cognitive context layer with CLI integration, shell hooks, 63 MCP tools, persistent memory, code intelligence graphs, and a governance layer with roles and budgets.' } },
+    { '@type': 'Question', name: 'Does LeanCTX work with my AI coding tool?', acceptedAnswer: { '@type': 'Answer', text: 'Yes — LeanCTX supports 30+ AI tools including Cursor, Claude Code, GitHub Copilot, Windsurf, Gemini CLI, Codex, and JetBrains IDEs. Run lean-ctx setup for automatic configuration.' } },
   ],
 });
 
@@ -253,29 +254,16 @@ const altRows = [
 
 
 <!-- ═══════ CTA ═══════ -->
-<section class="section-y">
-  <div class="content-grid">
-    <SectionHeading
-      label={t('compare.ctaLabel')}
-      title={t('compare.ctaTitle')}
-      highlight={t('compare.ctaTitleHighlight')}
-      description={t('compare.ctaDesc')}
-      variant="full"
-      breakHighlight={false}
-      descMaxWidth="44rem"
-      descMb="clamp(2.5rem, 2rem + 2vw, 5rem)"
-    />
-    <div class="flex flex-wrap items-center animate-entrance stagger-3" style="gap: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem);">
-      <a href={lp('/docs/getting-started')} class="btn-primary inline-flex items-center font-bold rounded-lg text-bg" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('compare.ctaGetStarted')}
-        <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-      </a>
-      <a href={lp('/docs/security')} class="btn-outline inline-flex items-center font-medium rounded-lg text-text" style="padding: clamp(0.7rem, 0.55rem + 0.3vw, 0.9rem) clamp(1.5rem, 1rem + 0.75vw, 2.25rem); font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);">
-        {t('compare.ctaSafety')}
-      </a>
-    </div>
-  </div>
-</section>
+<CtaSection
+  eyebrow={t('compare.ctaLabel')}
+  title={t('compare.ctaTitle')}
+  titleHighlight={t('compare.ctaTitleHighlight')}
+  description={t('compare.ctaDesc')}
+  actions={[
+    { label: t('compare.ctaGetStarted'), href: lp('/docs/getting-started/'), variant: 'primary', icon: 'arrow' },
+    { label: t('compare.ctaSafety'), href: lp('/docs/security/'), variant: 'outline' },
+  ]}
+/>
 
 
 <style>

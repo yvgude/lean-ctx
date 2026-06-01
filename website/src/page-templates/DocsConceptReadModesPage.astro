@@ -6,36 +6,11 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Read Modes',
-    items: [
-      { label: 'Overview', href: lp('/docs/concepts/read-modes') },
-      { label: 'Decision Tree', href: lp('/docs/concepts/read-modes') + '#decision-tree' },
-      { label: 'Mode Comparison', href: lp('/docs/concepts/read-modes') + '#comparison' },
-      { label: 'Auto Mode', href: lp('/docs/concepts/read-modes') + '#auto' },
-      { label: 'Aggressive Mode', href: lp('/docs/concepts/read-modes') + '#aggressive' },
-      { label: 'Entropy Mode', href: lp('/docs/concepts/read-modes') + '#entropy' },
-      { label: 'Task Mode', href: lp('/docs/concepts/read-modes') + '#task' },
-      { label: 'File Protection', href: lp('/docs/concepts/read-modes') + '#instruction-file-protection' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'ctx_read Reference', href: lp('/docs/tools/ctx-read') },
-      { label: 'Token Savings', href: lp('/docs/concepts/token-savings') },
-      { label: 'Quick Reference', href: lp('/docs/quick-reference') },
-      { label: 'Caching & Compression', href: lp('/docs/concepts/caching') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
-  title="Read Modes - How lean-ctx Reads Files"
+  title="Read Modes"
   description="10 read modes for every situation: auto, full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M. Decision tree to pick the right one."
-  sidebar={sidebar}
 >
   <p>
     <code>ctx_read</code> supports <strong>10 distinct modes</strong>, each optimized for a different situation.
@@ -76,7 +51,7 @@ const sidebar = [
             <strong>Large + boilerplate →</strong> Use <code class="text-accent">entropy</code> (60-85% savings)<br/>
             <strong>Large + comments →</strong> Use <code class="text-accent">aggressive</code> (20-40% savings)<br/>
             <strong>Only specific lines →</strong> Use <code class="text-accent">lines:N-M</code><br/>
-            <strong>Not sure →</strong> Use <code class="text-accent">auto</code> (lean-ctx picks for you)
+            <strong>Not sure →</strong> Use <code class="text-accent">auto</code> (LeanCTX picks for you)
           </p>
         </div>
       </div>
@@ -114,7 +89,7 @@ const sidebar = [
 
   <h2 id="auto">Auto Mode</h2>
   <p>
-    When you use <code>mode=auto</code> (or omit the mode parameter), lean-ctx selects the optimal mode
+    When you use <code>mode=auto</code> (or omit the mode parameter), LeanCTX selects the optimal mode
     based on file size, language, whether the file is cached, and the current task context. This is the
     recommended starting point if you're unsure.
   </p>

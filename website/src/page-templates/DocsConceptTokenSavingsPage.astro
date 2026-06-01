@@ -6,40 +6,14 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Token Savings',
-    items: [
-      { label: 'Overview', href: lp('/docs/concepts/token-savings') },
-      { label: 'Where Savings Come From', href: lp('/docs/concepts/token-savings') + '#sources' },
-      { label: 'Measuring Savings', href: lp('/docs/concepts/token-savings') + '#measuring' },
-      { label: 'Cost Calculation', href: lp('/docs/concepts/token-savings') + '#cost' },
-      { label: 'Real-World Example', href: lp('/docs/concepts/token-savings') + '#example' },
-      { label: 'Bidirectional Optimization', href: lp('/docs/concepts/token-savings') + '#bidirectional' },
-      { label: 'Terse Agent', href: lp('/docs/concepts/token-savings') + '#terse-agent' },
-      { label: 'Optimization Tips', href: lp('/docs/concepts/token-savings') + '#tips' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'ctx_gain', href: lp('/docs/tools/ctx-gain') },
-      { label: 'ctx_benchmark', href: lp('/docs/tools/ctx-benchmark') },
-      { label: 'ctx_metrics', href: lp('/docs/tools/ctx-metrics') },
-      { label: 'ctx_cost', href: lp('/docs/tools/ctx-cost') },
-      { label: 'General Optimization', href: lp('/docs/concepts/token-savings') + '#beyond-leanctx' },
-    ],
-  },
-];
 ---
 
 <DocsLayout
-  title="Token Savings - How lean-ctx Reduces Costs"
-  description="Deep dive into how lean-ctx achieves 74-99% token savings: file caching, read mode compression, shell patterns, TDD mode, and the archive system."
-  sidebar={sidebar}
+  title="Token Savings"
+  description="Deep dive into how LeanCTX achieves 74-99% token savings: file caching, read mode compression, shell patterns, TDD mode, and the archive system."
 >
   <p>
-    lean-ctx typically saves <strong>74-99%</strong> of tokens across a development session.
+    LeanCTX typically saves <strong>74-99%</strong> of tokens across a development session.
     This page explains where those savings come from, how to measure them, and how to maximize them.
   </p>
 
@@ -87,7 +61,7 @@ const sidebar = [
   </p>
 
   <h2 id="measuring">Measuring Your Savings</h2>
-  <p>lean-ctx provides several tools to monitor token savings in real-time:</p>
+  <p>LeanCTX provides several tools to monitor token savings in real-time:</p>
 
   <h3>ctx_gain - Session Savings Report</h3>
   <pre><code>{`ctx_gain
@@ -140,7 +114,7 @@ const sidebar = [
 
   <table>
     <thead>
-      <tr><th>Action</th><th>Without lean-ctx</th><th>With lean-ctx</th><th>Savings</th></tr>
+      <tr><th>Action</th><th>Without LeanCTX</th><th>With LeanCTX</th><th>Savings</th></tr>
     </thead>
     <tbody>
       <tr><td>Read auth.ts (full, first time)</td><td>4,210 tok</td><td>4,210 tok</td><td>0%</td></tr>
@@ -207,7 +181,7 @@ const sidebar = [
 
   <h3>Combined Effect</h3>
   <p>
-    By reducing both input <em>and</em> output tokens, lean-ctx achieves cost savings that
+    By reducing both input <em>and</em> output tokens, LeanCTX achieves cost savings that
     are multiplicative, not additive. A session that saves 85% on input and 50% on output
     reduces total token cost by approximately <strong>67%</strong> overall - far more than
     either optimization alone.
@@ -268,7 +242,7 @@ terse_agent = "full"    # "off", "lite", "full", or "ultra"
 export LEAN_CTX_TERSE_AGENT=full`}</code></pre>
   <p>
     The level can also be changed mid-session via <code>ctx_session</code> without restarting
-    the lean-ctx server.
+    the LeanCTX server.
   </p>
   <p>
     For details on how shell command output is compressed (the input-side counterpart to Terse Agent),
@@ -307,9 +281,9 @@ export LEAN_CTX_TERSE_AGENT=full`}</code></pre>
     </li>
   </ol>
 
-  <h2 id="beyond-leanctx">Beyond lean-ctx: General Token Optimization</h2>
+  <h2 id="beyond-leanctx">Beyond LeanCTX: General Token Optimization</h2>
   <p>
-    lean-ctx optimizes tool outputs (file reads, shell commands, search results). But most tokens
+    LeanCTX optimizes tool outputs (file reads, shell commands, search results). But most tokens
     are consumed elsewhere. Here's a breakdown of a typical AI coding session:
   </p>
   <table>
@@ -322,7 +296,7 @@ export LEAN_CTX_TERSE_AGENT=full`}</code></pre>
       <tr><td>System prompt / rules</td><td>3-5%</td><td>Keep rules concise</td></tr>
       <tr><td>Open files (IDE)</td><td>2-5%</td><td>Close irrelevant tabs</td></tr>
       <tr><td>Subagent overhead</td><td>5-15%</td><td>Use fewer, targeted subagents</td></tr>
-      <tr><td>Tool outputs (lean-ctx)</td><td>3-5%</td><td>Fully optimized by lean-ctx</td></tr>
+      <tr><td>Tool outputs (LeanCTX)</td><td>3-5%</td><td>Fully optimized by lean-ctx</td></tr>
     </tbody>
   </table>
 

@@ -7,42 +7,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docs.gettingStarted.sidebarInstallation'),
-    items: [
-      { label: t('docs.gettingStarted.sidebarOverview'), href: lp('/docs/getting-started') },
-      { label: t('docs.gettingStarted.sidebarInstallBinary'), href: lp('/docs/getting-started#install') },
-      { label: t('docs.gettingStarted.sidebarSetup'), href: lp('/docs/getting-started#shell-hook') },
-      { label: t('docs.gettingStarted.sidebarVerify'), href: lp('/docs/getting-started#editor-setup') },
-      { label: t('docs.gettingStarted.sidebarDocker'), href: lp('/docs/getting-started#docker') },
-    ],
-  },
-  {
-    title: t('docs.gettingStarted.sidebarAdvanced'),
-    items: [
-      { label: t('docs.gettingStarted.sidebarMonitor'), href: lp('/docs/getting-started#monitor') },
-      { label: t('docs.gettingStarted.sidebarAgentHooks'), href: lp('/docs/getting-started#agent-hooks') },
-      { label: t('docs.gettingStarted.sidebarUpdating'), href: lp('/docs/getting-started#update') },
-      { label: t('docs.gettingStarted.sidebarUninstalling'), href: lp('/docs/getting-started#uninstall') },
-      { label: t('docs.gettingStarted.sidebarAgentRules'), href: lp('/docs/getting-started#agent-rules') },
-      { label: t('docs.gettingStarted.sidebarTroubleshooting'), href: lp('/docs/getting-started#troubleshooting') },
-    ],
-  },
-  {
-    title: t('docs.common.related'),
-    items: [
-      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
-      { label: t('nav.docs.configuration'), href: lp('/docs/configuration') },
-      { label: t('nav.docs.quickReference'), href: lp('/docs/quick-reference') },
-      { label: t('docs.tools.title'), href: lp('/docs/tools') },
-      { label: 'Plan Mode', href: lp('/docs/plan-mode') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docs.gettingStarted.title')} description={t('docs.gettingStarted.description')} sidebar={sidebar}>
+<DocsLayout title={t('docs.gettingStarted.title')} description={t('docs.gettingStarted.description')}>
   <p set:html={t('docs.gettingStarted.intro')} />
 
   <h2 id="prompt-generator">{t('docs.gettingStarted.promptGenTitle')}</h2>
@@ -163,15 +130,15 @@ const sidebar = [
     }
 
     var installs = {
-      macos: 'brew tap yvgude/lean-ctx && brew install lean-ctx',
+        macos: 'brew tap yvgude/lean-ctx && brew install lean-ctx',
       linux: 'curl -fsSL https://leanctx.com/install.sh | sh',
-      windows: 'cargo install lean-ctx'
+        windows: 'cargo install lean-ctx'
     };
 
     var shells = {
-      macos: ['lean-ctx setup', 'source ~/.zshrc'],
-      linux: ['lean-ctx setup', 'source ~/.bashrc'],
-      windows: ['lean-ctx setup', '# Restart PowerShell after this']
+      macos: ['lean-ctx onboard', 'source ~/.zshrc'],
+      linux: ['lean-ctx onboard', 'source ~/.bashrc'],
+      windows: ['lean-ctx onboard', '# Restart PowerShell after this']
     };
 
     var editors = {
@@ -465,7 +432,7 @@ const sidebar = [
       },
       pi: {
         name: 'Pi Coding Agent',
-        note: 'Pi has a first-class lean-ctx package (pi-lean-ctx) that routes built-in tools through lean-ctx CLI and exposes all MCP tools natively.',
+        note: 'Pi has a first-class LeanCTX package (pi-lean-ctx) that routes built-in tools through LeanCTX CLI and exposes all MCP tools natively.',
         manual: [
           'Install the Pi package:',
           '  pi install npm:pi-lean-ctx',
@@ -482,7 +449,7 @@ const sidebar = [
       },
       qoder: {
         name: 'Qoder',
-        note: 'Qoder supports PreToolUse hooks. lean-ctx installs shell rewrite hooks in ~/.qoder/settings.json and MCP config in ~/.qoder/mcp.json.',
+        note: 'Qoder supports PreToolUse hooks. LeanCTX installs shell rewrite hooks in ~/.qoder/settings.json and MCP config in ~/.qoder/mcp.json.',
         manual: [
           'Run: lean-ctx init --agent qoder',
           'Hooks: ~/.qoder/settings.json',
@@ -493,7 +460,7 @@ const sidebar = [
       },
       qoderwork: {
         name: 'QoderWork',
-        note: 'QoderWork is MCP-only. lean-ctx writes ~/.qoderwork/mcp.json.',
+        note: 'QoderWork is MCP-only. LeanCTX writes ~/.qoderwork/mcp.json.',
         manual: [
           'If auto-setup fails, create ~/.qoderwork/mcp.json:',
           '{',
@@ -526,7 +493,7 @@ const sidebar = [
       lines.push('   (Expected: lean-ctx 3.x or newer)');
       lines.push('');
       step++;
-      lines.push(step + '. ONE-COMMAND SETUP (shell hooks + editor config):');
+      lines.push(step + '. CONNECT ALL AI TOOLS (shell hooks + editor config):');
       for (var i = 0; i < s.length; i++) lines.push('   ' + s[i]);
       if (agentCmd) {
         lines.push('   ' + agentCmd + (mode === 'auto' ? '   # optional: re-run to force a mode' : ''));
@@ -619,8 +586,9 @@ npm install -g lean-ctx-bin                              <span class="text-muted
 cargo install lean-ctx                                   <span class="text-muted"># Rust</span>
 pi install npm:pi-lean-ctx                               <span class="text-muted"># Pi Coding Agent</span>
 
-<span class="text-muted"># 2. Setup (auto-configures shell + ALL detected editors)</span>
-lean-ctx setup
+<span class="text-muted"># 2. Connect all your AI tools (zero questions)</span>
+lean-ctx onboard                                         <span class="text-muted"># recommended</span>
+<span class="text-muted"># or: lean-ctx setup                                    # guided wizard with full control</span>
 
 <span class="text-muted"># 3. Restart your shell</span>
 source ~/.zshrc  <span class="text-muted"># or ~/.bashrc</span></pre>
@@ -767,7 +735,8 @@ cargo build --release</code></pre>
 
   <h2 id="shell-hook">{t('docs.gettingStarted.step2Title')}</h2>
   <p set:html={t('docs.gettingStarted.step2Desc')} />
-  <pre><code>lean-ctx setup</code></pre>
+  <pre><code>lean-ctx onboard        # recommended: zero questions, connects everything
+lean-ctx setup          # alternative: guided 12-step wizard with full control</code></pre>
   <p>{t('docs.gettingStarted.step2SingleCommand')}</p>
   <ul>
     <li>{t('docs.gettingStarted.step2Feature1')}</li>
@@ -1271,7 +1240,7 @@ RUN curl -fsSL \
   <h3>Project Identity in Docker</h3>
   <p>
     When multiple projects share the same <code>/workspace</code> mount path inside Docker containers,
-    lean-ctx may confuse their data (graph index, semantic cache, etc.) because it uses the path to
+    LeanCTX may confuse their data (graph index, semantic cache, etc.) because it uses the path to
     identify projects. To solve this, create a <code>.lean-ctx-id</code> file in your project root:
   </p>
   <pre><code># In your project root (before building the Docker image)
@@ -1425,15 +1394,15 @@ source ~/.zshrc          # restart shell</code></pre>
       <tr><th>{t('docs.gettingStarted.tableAiTool')}</th><th>{t('docs.gettingStarted.tableRulesFile')}</th></tr>
     </thead>
     <tbody>
-      <tr><td>Claude Code</td><td><code>~/.claude/CLAUDE.md</code></td></tr>
+      <tr><td>Claude Code</td><td><code>~/.claude/rules/lean-ctx.md</code></td></tr>
       <tr><td>Codex CLI</td><td><code>~/.codex/instructions.md</code></td></tr>
       <tr><td>Cursor</td><td><code>~/.cursor/rules/lean-ctx.mdc</code></td></tr>
       <tr><td>Windsurf</td><td><code>~/.codeium/windsurf/rules/lean-ctx.md</code></td></tr>
-      <tr><td>Gemini CLI</td><td><code>~/.gemini/GEMINI.md</code></td></tr>
+      <tr><td>Gemini CLI</td><td><code>~/.gemini/settings.json</code> (MCP instructions)</td></tr>
       <tr><td>VS Code / Copilot</td><td><code>.github/copilot-instructions.md</code></td></tr>
-      <tr><td>Zed</td><td><code>~/.config/zed/rules/lean-ctx.md</code></td></tr>
-      <tr><td>OpenCode</td><td><code>~/.config/opencode/rules/lean-ctx.md</code></td></tr>
+      <tr><td>OpenCode</td><td><code>~/.config/opencode/AGENTS.md</code></td></tr>
       <tr><td>Pi</td><td><code>pi-lean-ctx</code> package (built-in via <a href="https://pi.dev/packages/pi-lean-ctx">pi.dev</a>)</td></tr>
+      <tr><td>Kiro</td><td><code>~/.kiro/steering/lean-ctx.md</code></td></tr>
       <tr><td>Qoder</td><td><code>~/.qoder/settings.json</code> (PreToolUse hooks)</td></tr>
     </tbody>
   </table>
@@ -1458,6 +1427,78 @@ MCP-only mode:
 Keep using native tools for: Write, StrReplace, Delete, Glob (no lean-ctx replacement).
 Do NOT fall back to native tools for reading/shell/search/tree when a lean-ctx path is available.`}</code></pre>
   <p set:html={t('docs.gettingStarted.manualFallbackCursorNote')} />
+
+  <details class="mb-8">
+    <summary class="cursor-pointer font-semibold text-accent hover:text-accent/80 transition-colors py-2">
+      Setup Commands Reference (onboard, setup, install, bootstrap, init, doctor, status)
+    </summary>
+
+  <h3 id="cmd-onboard"><code>lean-ctx onboard</code> — the recommended first command</h3>
+  <p>Connects every AI tool found on your machine using sensible defaults, with zero questions, then prints one clear "you're connected" message.</p>
+  <pre><code>lean-ctx onboard</code></pre>
+  <p>Under the hood, <code>onboard</code> runs the same engine as the full <code>setup</code> wizard, but in non-interactive mode — it makes every decision for you. Files changed: MCP config for each detected editor, the shell RC hook, and <code>~/.lean-ctx/</code> is created.</p>
+
+  <h3 id="cmd-setup"><code>lean-ctx setup</code> — the guided wizard (full control)</h3>
+  <p>An interactive, 12-step wizard. Use it when you want to decide about the proxy, telemetry, auto-updates, compression level, and tool profile.</p>
+  <pre><code>lean-ctx setup</code></pre>
+
+  <h4>The 12 steps</h4>
+  <table>
+    <thead><tr><th>Step</th><th>Name</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Shell Hook</td><td>Installs aliases + the universal hook in <code>~/.zshenv</code>, RC files</td></tr>
+      <tr><td>2</td><td>Daemon</td><td>Starts/restarts the IPC daemon for fast CLI routing</td></tr>
+      <tr><td>3</td><td>AI Tool Detection</td><td>Detects installed editors, writes each one's MCP config</td></tr>
+      <tr><td>4</td><td>Agent Rules</td><td>Injects lean-ctx rules (only if opted in)</td></tr>
+      <tr><td>5</td><td>API Proxy</td><td>Optional — installs proxy autostart + env vars</td></tr>
+      <tr><td>6</td><td>Skill Files</td><td>Installs SKILL.md (only if opted in)</td></tr>
+      <tr><td>7</td><td>Environment Check</td><td>Ensures data dir, migrates, runs compact doctor</td></tr>
+      <tr><td>8</td><td>Help Improve</td><td>Asks for anonymous stats sharing</td></tr>
+      <tr><td>9</td><td>Auto-Updates</td><td>Installs the 6-hourly update scheduler</td></tr>
+      <tr><td>10</td><td>Tool Profile</td><td>Choose minimal/standard/power MCP tool set</td></tr>
+      <tr><td>11</td><td>Advanced Tuning</td><td>Optional — compression level + tool-result archive</td></tr>
+      <tr><td>12</td><td>Code Intelligence</td><td>Builds the property graph in the background</td></tr>
+    </tbody>
+  </table>
+
+  <h4>First-run menu</h4>
+  <table>
+    <thead><tr><th>Choice</th><th>Rules</th><th>Skills</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><strong>[1] Minimal</strong> (default)</td><td>No</td><td>No</td><td>Just MCP tools, no config-file edits</td></tr>
+      <tr><td><strong>[2] Standard</strong></td><td>Yes</td><td>No</td><td>MCP tools + agent rules for optimal mode selection</td></tr>
+      <tr><td><strong>[3] Full</strong></td><td>Yes</td><td>Yes</td><td>Tools + rules + skills + shell hooks</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="cmd-install"><code>lean-ctx install</code></h3>
+  <p><code>lean-ctx install</code> runs the guided setup. <code>install --repair</code> (or <code>--fix</code>) runs the non-interactive, merge-based refresh.</p>
+  <pre><code>lean-ctx install            # = lean-ctx setup
+lean-ctx install --repair   # non-interactive repair (no deletes)</code></pre>
+
+  <h3 id="cmd-bootstrap"><code>lean-ctx bootstrap</code> — zero-config CI/scripts</h3>
+  <p>Non-interactive setup + fix with sensible defaults. Identical to <code>install --repair</code> but named for automation.</p>
+  <pre><code>lean-ctx bootstrap [--json]</code></pre>
+
+  <h3 id="cmd-init"><code>lean-ctx init</code></h3>
+  <ul>
+    <li><code>lean-ctx init --global</code> — installs only the shell aliases/hook into your shell RC</li>
+    <li><code>lean-ctx init --agent &lt;name&gt;</code> — configures MCP + rules + skill for one specific agent (e.g. <code>cursor</code>, <code>claude</code>, <code>codex</code>, <code>gemini</code>)</li>
+  </ul>
+
+  <h3 id="cmd-doctor"><code>lean-ctx doctor</code></h3>
+  <p>Runs ~27 diagnostic checks across binary, data dir, MCP configs, shell hook, daemon, proxy, caches, and memory.</p>
+  <pre><code>lean-ctx doctor                 # full diagnostics
+lean-ctx doctor --fix           # auto-repair what's fixable
+lean-ctx doctor --json          # machine-readable
+lean-ctx doctor integrations    # per-IDE wiring health</code></pre>
+
+  <h3 id="cmd-status"><code>lean-ctx status</code></h3>
+  <p>A lighter-weight "am I connected?" report. Use <code>status</code> for a fast yes/no; use <code>doctor</code> for deep diagnostics.</p>
+  <pre><code>lean-ctx status
+lean-ctx status --json</code></pre>
+
+  </details>
 
   <h2 id="troubleshooting">{t('docs.gettingStarted.troubleshootingTitle')}</h2>
 

@@ -7,44 +7,9 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docs.tools.sidebarCategories'),
-    items: [
-      { label: t('docs.tools.sidebarAllTools'), href: lp('/docs/tools') },
-      { label: t('docs.tools.sidebarCore'), href: lp('/docs/tools/') + '#core-tools' },
-      { label: t('docs.tools.sidebarIntelligence'), href: lp('/docs/tools/') + '#intelligence-engine' },
-      { label: t('docs.tools.sidebarSession'), href: lp('/docs/tools/') + '#session-monitoring' },
-      { label: t('docs.tools.sidebarMemory'), href: lp('/docs/tools/') + '#persistent-memory-multi-agent' },
-      { label: 'Workflow & Orchestration', href: lp('/docs/tools/') + '#workflow-orchestration' },
-      { label: 'Analysis & Navigation', href: lp('/docs/tools/') + '#analysis-navigation' },
-    ],
-  },
-  {
-    title: t('docs.tools.sidebarDeepDives'),
-    compact: true,
-    items: [
-      { label: t('docs.tools.sidebarCoreTools'), href: lp('/docs/tools/core') },
-      { label: t('docs.tools.sidebarIntelligenceTools'), href: lp('/docs/tools/intelligence') },
-      { label: t('docs.tools.sidebarSessionTools'), href: lp('/docs/tools/session') },
-      { label: t('docs.tools.sidebarMemoryTools'), href: lp('/docs/tools/memory') },
-      { label: 'Workflow Tools', href: lp('/docs/tools/workflow') },
-      { label: 'Analysis Tools', href: lp('/docs/tools/analysis') },
-    ],
-  },
-  {
-    title: t('docs.common.related'),
-    items: [
-      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference') },
-      { label: t('nav.docs.quickReference'), href: lp('/docs/quick-reference') },
-      { label: t('nav.docs.concepts.tokenSavings'), href: lp('/docs/concepts/token-savings') },
-      { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docs.tools.title')} description={t('docs.tools.description')} sidebar={sidebar}>
+<DocsLayout title={t('docs.tools.title')} description={t('docs.tools.description')}>
   <p>{t('docs.tools.intro')}</p>
 
   <h2 id="core-tools">{t('docs.tools.coreTitle')}</h2>

@@ -69,21 +69,6 @@ const siblingLinks = siblingTools.map(name => ({
   active: name === toolName,
 }));
 
-const sidebar = [
-  {
-    title: categoryLabel,
-    compact: true,
-    items: siblingLinks.map(l => ({ label: l.label, href: l.href })),
-  },
-  {
-    title: 'Navigation',
-    items: [
-      { label: 'All Tools', href: lp('/docs/tools') },
-      { label: `${categoryLabel} Overview`, href: lp(categoryMapToPage[categoryKey] ?? '/docs/tools') },
-      { label: 'Quick Reference', href: lp('/docs/quick-reference') },
-    ],
-  },
-];
 
 const hasActions = properties['action']?.enum && properties['action'].enum.length > 0;
 const actions = hasActions ? properties['action'].enum! : [];
@@ -97,8 +82,7 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
 <DocsLayout
   title={`${toolName} — Tool Reference`}
   description={`${tool.description.slice(0, 160)}`}
-  keywords={`${toolName}, lean-ctx tool, MCP tool, ${categoryLabel.toLowerCase()}, AI token compression`}
-  sidebar={sidebar}
+  keywords={`${toolName}, LeanCTX tool, MCP tool, ${categoryLabel.toLowerCase()}, AI token compression`}
   hideHero={true}
 >
   <!-- Breadcrumb -->
@@ -171,7 +155,7 @@ function formatType(prop: { type?: string; enum?: string[] }): string {
   {codePaths.length > 0 && (
     <>
       <h2>Implementation</h2>
-      <p class="text-muted">Source paths in the lean-ctx repository:</p>
+      <p class="text-muted">Source paths in the LeanCTX repository:</p>
       <ul class="list-disc pl-5 text-muted">
         {codePaths.map((p) => (
           <li>

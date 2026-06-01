@@ -3,7 +3,7 @@ import MegaDropdown from './MegaDropdown.astro';
 import SearchModal from './SearchModal.astro';
 import LanguageSwitcher from './LanguageSwitcher.astro';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
-import { CONCEPT, PILLARS, getPillar } from '../lib/positioning';
+import { CONCEPT } from '../lib/positioning';
 import { tracks } from '../lib/tracks';
 import { getJourneysForTrack } from '../lib/journeys';
 import { getFacts } from '../lib/facts';
@@ -44,64 +44,31 @@ const ico = {
   wrench: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
 };
 
-// ── ONE navigation taxonomy, driven by the SSOT modules ──────────────────────
-// Product (Why + the five pillars) · Journeys (4 persona tracks) · Reference.
-// Replaces the previous three conflicting taxonomies and the dead nav.pillars.*.
+// ── Navigation: Product (dropdown) · Use Cases (dropdown) · Docs (link) ──────
 
-// 1) PRODUCT = the "why" pages + the five-pillar model.
 const productColumns = [
   {
-    title: t('nav.learn.understand'),
+    title: t('nav.productLabel'),
     items: [
       { label: t('nav.learn.howItWorks'), href: lp('/how-it-works/'), description: t('nav.learn.howItWorksDesc'), icon: ico.flow },
       { label: t('nav.learn.whatIsCe'), href: lp('/what-is-context-engineering/'), description: t('nav.learn.whatIsCeDesc'), icon: ico.bulb },
-      { label: CONCEPT, href: lp('/context-os/'), description: 'One local binary between your AI and your code', icon: ico.grid },
+      { label: CONCEPT, href: lp('/context-os/'), description: t('nav.learn.architectureDesc'), icon: ico.grid },
       { label: t('nav.getStarted.compare'), href: lp('/compare/'), description: t('nav.getStarted.compareDesc'), icon: ico.bar },
+      { label: t('nav.getStarted.compatibility'), href: lp('/compatibility/'), description: t('nav.getStarted.compatibilityDesc'), icon: ico.monitor },
     ],
-  },
-  {
-    title: 'The five pillars',
-    items: PILLARS.map((p) => ({
-      label: p.verb,
-      href: lp(`/how-it-works/#${p.id}`),
-      description: p.tagline,
-      icon: svgPath(p.iconPath),
-    })),
   },
 ];
 
-// 2) JOURNEYS = the four persona tracks, each listing its journeys.
-const journeyColumns = tracks.map((tr) => ({
+// Use Cases dropdown — the 4 tracks, each showing its journeys.
+const useCasesColumns = tracks.map((tr) => ({
   title: tr.title,
   items: getJourneysForTrack(tr.id).map((j) => ({
     label: j.title,
-    href: lp(j.href),
+    href: lp(`/docs/journeys/${j.slug}/`),
     description: j.summary,
-    icon: svgPath(getPillar(j.pillars[0]).iconPath),
+    icon: svgPath(tr.iconPath),
   })),
 }));
-
-// 3) REFERENCE = generated tool/CLI/config reference + operations.
-const referenceColumns = [
-  {
-    title: t('nav.docs.reference'),
-    items: [
-      { label: t('nav.tools.allTools'), href: lp('/docs/tools/'), description: `All ${facts.mcpToolCount} MCP tools`, icon: ico.wrench, badge: t('nav.tools.toolsBadge') },
-      { label: t('nav.docs.cliComplete'), href: lp('/docs/cli-reference/'), description: t('nav.docs.cliCompleteDesc'), icon: ico.cli },
-      { label: t('nav.docs.apiReference'), href: lp('/docs/api-reference/'), description: t('nav.docs.apiReferenceDesc'), icon: ico.code },
-      { label: t('nav.docs.configuration'), href: lp('/docs/configuration/'), description: t('nav.docs.configurationDesc'), icon: ico.cog },
-    ],
-  },
-  {
-    title: 'Operate',
-    items: [
-      { label: t('nav.docs.security'), href: lp('/docs/security/'), description: t('nav.docs.securityDesc'), icon: ico.shield },
-      { label: t('nav.docs.observatory'), href: lp('/docs/observatory/'), description: t('nav.docs.observatoryDesc'), icon: ico.monitor },
-      { label: t('nav.docs.budgets'), href: lp('/docs/budgets-and-slos/'), description: t('nav.docs.budgetsDesc'), icon: ico.dollar },
-      { label: t('nav.docs.changelog'), href: lp('/docs/changelog/'), description: t('nav.docs.changelogDesc'), icon: ico.clock },
-    ],
-  },
-];
 ---
 
 <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-accent focus:text-bg focus:text-sm">
@@ -111,17 +78,20 @@ const referenceColumns = [
 <header id="site-header" class="header-root" data-scrolled="false">
   <nav class="content-grid-wide">
     <div class="header-inner">
-      <a href={lp('/')} class="header-logo">
-        <span class="header-logo-ascii"><Fragment set:html={'&lt;<span style="color:var(--color-accent)">|</span>&gt;'} /></span>
-        <span class="header-logo-text font-display">
-          <span class="text-text-bright">Lean</span><span class="text-accent">CTX</span>
-        </span>
-      </a>
+      <div class="header-left">
+        <a href={lp('/')} class="header-logo">
+          <span class="header-logo-ascii"><Fragment set:html={'&lt;<span style="color:var(--color-accent)">|</span>&gt;'} /></span>
+          <span class="header-logo-text font-display">
+            <span class="text-text-bright">Lean</span><span class="text-accent">CTX</span>
+          </span>
+        </a>
 
-      <div class="header-center">
-        <MegaDropdown id="product" label={t('nav.productLabel')} columns={productColumns} />
-        <MegaDropdown id="journeys" label="Journeys" columns={journeyColumns} />
-        <MegaDropdown id="reference" label={t('nav.docs.reference')} columns={referenceColumns} />
+        <div class="header-nav">
+          <a href={lp('/docs/getting-started/')} class:list={['header-nav-item', currentPath.includes('/getting-started') && 'is-active']}>{t('nav.getStarted')}</a>
+          <MegaDropdown id="product" label={t('nav.productLabel')} columns={productColumns} />
+          <MegaDropdown id="usecases" label="Use Cases" columns={useCasesColumns} />
+          <a href={lp('/docs/')} class:list={['header-nav-item', currentPath.startsWith('/docs') && !currentPath.includes('/getting-started') && 'is-active']}>Docs</a>
+        </div>
       </div>
 
       <div class="header-right">
@@ -131,18 +101,13 @@ const referenceColumns = [
           <kbd class="header-search-kbd">⌘K</kbd>
         </button>
 
-        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="header-github-cta">
+        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="header-github-cta" aria-label={t('nav.star')}>
           <svg class="header-gh-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
-          <span class="header-gh-label">{t('nav.star')}</span>
-          <span class="header-gh-divider"></span>
           <span id="gh-stars" class="header-gh-count">-</span>
         </a>
 
-        <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="header-discord" aria-label="Discord">
-          <svg class="header-discord-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-          <span class="header-discord-label">{t('nav.discord')}</span>
-          <span class="header-discord-divider"></span>
-          <span class="header-discord-join">{t('nav.discordJoin')}</span>
+        <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="header-icon-link" aria-label="Discord" title="Discord">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.211.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.249.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
         </a>
 
         <a href={lp('/docs/getting-started')} class="header-cta">
@@ -185,30 +150,39 @@ const referenceColumns = [
   <div id="mobile-menu" class="mobile-menu-closed">
     <div class="mobile-menu-inner">
       <div class="mobile-section">
+        <a href={lp('/docs/getting-started')} class="mobile-get-started" style="margin-bottom: 0.25rem;">
+          {t('nav.getStarted')}
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+
+      <div class="mobile-section">
         <span class="mobile-section-title">{t('nav.productLabel')}</span>
         <a href={lp('/how-it-works')} class="mobile-nav-link">{t('nav.learn.howItWorks')}</a>
         <a href={lp('/what-is-context-engineering')} class="mobile-nav-link">{t('nav.learn.whatIsCe')}</a>
         <a href={lp('/context-os')} class="mobile-nav-link">{CONCEPT}</a>
         <a href={lp('/compare')} class="mobile-nav-link">{t('nav.getStarted.compare')}</a>
+        <a href={lp('/compatibility')} class="mobile-nav-link">{t('nav.getStarted.compatibility')}</a>
       </div>
 
-      {tracks.map((tr) => (
-        <div class="mobile-section">
-          <span class="mobile-section-title">{tr.title}</span>
-          {getJourneysForTrack(tr.id).map((j) => (
-            <a href={lp(j.href)} class="mobile-nav-link">{j.title}</a>
-          ))}
-        </div>
-      ))}
+      <div class="mobile-section">
+        <span class="mobile-section-title">Use Cases</span>
+        {tracks.map((tr) => (
+          <a href={lp(`/docs/journeys/#${tr.id}`)} class="mobile-nav-link">{tr.title}</a>
+        ))}
+      </div>
 
       <div class="mobile-section">
-        <span class="mobile-section-title">{t('nav.docs.reference')}</span>
-        <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.tools.allTools')}</a>
+        <span class="mobile-section-title">Docs</span>
+        <a href={lp('/docs/')} class="mobile-nav-link">Documentation</a>
         <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
-        <a href={lp('/docs/api-reference')} class="mobile-nav-link">{t('nav.docs.apiReference')}</a>
-        <a href={lp('/docs/configuration')} class="mobile-nav-link">{t('nav.docs.configuration')}</a>
-        <a href={lp('/docs/security')} class="mobile-nav-link">{t('nav.docs.security')}</a>
-        <a href={lp('/docs/changelog')} class="mobile-nav-link">{t('nav.docs.changelog')}</a>
+        <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.tools.allTools')}</a>
+      </div>
+
+      <div class="mobile-section">
+        <span class="mobile-section-title">{t('nav.community')}</span>
+        <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="mobile-nav-link">GitHub</a>
+        <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="mobile-nav-link">Discord</a>
       </div>
 
       <div class="mobile-lang-area" style="display: flex; align-items: center; gap: 0.5rem;">
@@ -270,6 +244,12 @@ const referenceColumns = [
     justify-content: space-between;
     height: clamp(3.5rem, 3rem + 2vw, 4.5rem);
   }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: clamp(1.25rem, 0.5rem + 3vw, 3rem);
+    min-width: 0;
+  }
   .header-logo {
     display: flex;
     align-items: center;
@@ -292,22 +272,22 @@ const referenceColumns = [
     font-weight: 700;
     letter-spacing: -0.02em;
   }
-  .header-center {
+  .header-nav {
     display: none;
     align-items: center;
-    gap: 0;
+    gap: clamp(0.125rem, 0rem + 0.5vw, 0.5rem);
   }
   @media (min-width: 768px) {
-    .header-center { display: flex; }
+    .header-nav { display: flex; }
   }
   .header-nav-item,
   :global(.mega-dd-trigger) {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 6px clamp(10px, 0.6rem + 0.4vw, 14px);
-    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.875rem);
-    font-weight: 450;
+    padding: 6px clamp(8px, 0.5rem + 0.3vw, 12px);
+    font-size: clamp(0.875rem, 0.84rem + 0.12vw, 0.9375rem);
+    font-weight: 500;
     color: var(--color-muted);
     transition: color 0.2s ease;
     text-decoration: none;
@@ -367,50 +347,6 @@ const referenceColumns = [
   @media (min-width: 640px) {
     .header-search-btn { display: inline-flex; }
   }
-  .header-discord {
-    display: none;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.875rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    border-radius: 6px;
-    border: 1px solid var(--color-border);
-    color: var(--color-text-bright);
-    text-decoration: none;
-    transition: all 0.25s ease;
-    white-space: nowrap;
-    line-height: 1;
-  }
-  .header-discord:hover {
-    border-color: var(--color-border-light);
-    background: var(--overlay-hover);
-  }
-  .header-discord-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--color-muted);
-    transition: color 0.25s ease;
-  }
-  .header-discord:hover .header-discord-icon {
-    color: var(--color-accent);
-  }
-  .header-discord-label {
-    font-weight: 500;
-  }
-  .header-discord-divider {
-    width: 1px;
-    height: 14px;
-    background: var(--color-border-light);
-  }
-  .header-discord-join {
-    font-variant-numeric: tabular-nums;
-    color: var(--color-muted);
-    font-size: 0.75rem;
-  }
-  @media (min-width: 640px) {
-    .header-discord { display: inline-flex; }
-  }
   .header-github-cta {
     display: none;
     align-items: center;
@@ -431,11 +367,29 @@ const referenceColumns = [
     background: var(--overlay-hover);
   }
   .header-gh-icon { width: 16px; height: 16px; }
-  .header-gh-label { font-weight: 600; }
-  .header-gh-divider { width: 1px; height: 14px; background: var(--color-border-light); }
   .header-gh-count { font-variant-numeric: tabular-nums; color: var(--color-muted); font-size: 0.75rem; }
   @media (min-width: 640px) {
     .header-github-cta { display: inline-flex; }
+  }
+  .header-icon-link {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    color: var(--color-muted);
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  }
+  .header-icon-link svg { width: 17px; height: 17px; }
+  .header-icon-link:hover {
+    color: var(--color-text-bright);
+    border-color: var(--color-border-light);
+    background: var(--overlay-hover);
+  }
+  @media (min-width: 768px) {
+    .header-icon-link { display: inline-flex; }
   }
   .header-cta {
     display: none;
@@ -462,23 +416,6 @@ const referenceColumns = [
   }
   @media (min-width: 640px) {
     .header-cta { display: inline-flex; }
-  }
-  .header-login {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 0.375rem;
-    border-radius: 6px;
-    border: 1px solid var(--color-border);
-    color: var(--color-muted);
-    transition: all 0.25s ease;
-  }
-  .header-login:hover {
-    color: var(--color-accent);
-    border-color: var(--color-accent);
-  }
-  @media (min-width: 640px) {
-    .header-login { display: flex; }
   }
   .header-mobile-btn {
     display: flex;

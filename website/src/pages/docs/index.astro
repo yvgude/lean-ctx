@@ -1,0 +1,209 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { docsTree } from '../../lib/docsTree';
+import { getTracksWithJourneys } from '../../lib/tracks';
+import { getFacts } from '../../lib/facts';
+import { getLocaleFromUrl, getLocalizedPath } from '../../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+const facts = getFacts();
+
+const getGroup = (title: string) => docsTree.find((g) => g.title === title)!;
+// "Start here" = Get Started group minus its own Introduction self-link.
+const startHere = getGroup('Get Started').items.filter((i) => i.href !== '/docs/');
+// "By topic" = everything except Get Started + Journeys (those get bespoke bands).
+const topicGroups = docsTree.filter((g) => g.title !== 'Get Started' && g.title !== 'Journeys');
+const tracks = getTracksWithJourneys();
+---
+
+<DocsLayout
+  title="LeanCTX documentation"
+  description="LeanCTX is the Cognitive Context Layer between your AI and your code. Start with an install, learn by journey, or jump straight to a topic or tool."
+  wide
+>
+  <div class="hub not-prose">
+    <!-- Start here -->
+    <section class="hub-section">
+      <h2 class="hub-h2 font-display">Start here</h2>
+      <div class="hub-grid hub-grid--3">
+        {startHere.map((item) => (
+          <a class="hub-card" href={lp(item.href)}>
+            <span class="hub-card-title">{item.label}<span class="hub-arrow">→</span></span>
+            <span class="hub-card-desc">{item.description}</span>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <!-- Learn by journey -->
+    <section class="hub-section">
+      <div class="hub-section-head">
+        <h2 class="hub-h2 font-display">Learn by journey</h2>
+        <a class="hub-seeall" href={lp('/docs/journeys/')}>All {tracks.reduce((n, t) => n + t.journeys.length, 0)} journeys →</a>
+      </div>
+      <p class="hub-section-lead">
+        The fourteen code-grounded journeys are how LeanCTX is actually used — grouped into four persona tracks.
+        Pick the one that sounds like you.
+      </p>
+      <div class="hub-grid hub-grid--2">
+        {tracks.map((track) => (
+          <a class="hub-card hub-card--track" href={lp(`/docs/journeys/#${track.id}`)}>
+            <div class="hub-track-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d={track.iconPath} />
+              </svg>
+            </div>
+            <span class="hub-card-title">{track.title}<span class="hub-arrow">→</span></span>
+            <span class="hub-card-desc">{track.tagline}</span>
+            <span class="hub-track-journeys">{track.journeys.map((j) => j.title).join(' · ')}</span>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <!-- By topic -->
+    <section class="hub-section">
+      <h2 class="hub-h2 font-display">Browse by topic</h2>
+      <div class="hub-grid hub-grid--3">
+        {topicGroups.map((group) => (
+          <a class="hub-card hub-card--topic" href={lp(group.items[0].href)}>
+            <div class="hub-topic-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d={group.iconPath} />
+              </svg>
+            </div>
+            <span class="hub-card-title">{group.title}<span class="hub-arrow">→</span></span>
+            <span class="hub-card-desc">{group.blurb}</span>
+            <span class="hub-topic-count">{group.items.length} page{group.items.length === 1 ? '' : 's'}</span>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <!-- Quick facts strip -->
+    <section class="hub-facts">
+      <div><strong>{facts.mcpToolCount}</strong><span>MCP tools</span></div>
+      <div><strong>{facts.readModeCount}</strong><span>read modes</span></div>
+      <div><strong>{facts.languageCount}</strong><span>languages</span></div>
+      <div><strong>{facts.shellPatterns}</strong><span>shell patterns</span></div>
+      <div><strong>{facts.integrationModeCount}</strong><span>integration modes</span></div>
+    </section>
+  </div>
+</DocsLayout>
+
+<style>
+  .hub-section { margin-bottom: clamp(2.5rem, 1.8rem + 2vw, 3.75rem); }
+  .hub-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .hub-h2 {
+    font-size: var(--text-h3);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-snug);
+    color: var(--color-text-bright);
+    margin: 0 0 1rem;
+  }
+  .hub-section-head .hub-h2 { margin-bottom: 0; }
+  .hub-seeall {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: var(--weight-semibold);
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .hub-seeall:hover { text-decoration: underline; }
+  .hub-section-lead { color: var(--color-muted); margin: 0 0 1.25rem; line-height: 1.6; max-width: 46rem; }
+
+  .hub-grid { display: grid; gap: 0.9rem; }
+  .hub-grid--2 { grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
+  .hub-grid--3 { grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
+
+  .hub-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 1.15rem 1.3rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg, 12px);
+    background: var(--color-surface);
+    text-decoration: none;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .hub-card:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+  .hub-card-title {
+    font-family: var(--font-display);
+    font-weight: var(--weight-semibold);
+    font-size: 1.0625rem;
+    color: var(--color-text-bright);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .hub-arrow { color: var(--color-accent); transition: transform 0.2s ease; }
+  .hub-card:hover .hub-arrow { transform: translateX(3px); }
+  .hub-card-desc { font-size: 0.8125rem; color: var(--color-muted); line-height: 1.5; flex: 1 1 auto; }
+
+  .hub-track-icon, .hub-topic-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-light);
+    color: var(--color-accent);
+    margin-bottom: 0.3rem;
+  }
+  .hub-track-icon svg, .hub-topic-icon svg { width: 1.05rem; height: 1.05rem; }
+  .hub-track-journeys {
+    font-size: 0.6875rem;
+    color: var(--color-muted);
+    opacity: 0.8;
+    line-height: 1.5;
+    margin-top: 0.2rem;
+  }
+  .hub-topic-count {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+    opacity: 0.7;
+  }
+
+  .hub-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: clamp(1.25rem, 0.5rem + 3vw, 3rem);
+    padding: 1.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg, 12px);
+    background: var(--overlay-faint);
+  }
+  .hub-facts div { display: flex; flex-direction: column; }
+  .hub-facts strong {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: var(--weight-bold);
+    color: var(--color-text-bright);
+    line-height: 1;
+  }
+  .hub-facts span {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    margin-top: 0.25rem;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hub-card:hover { transform: none; }
+  }
+</style>

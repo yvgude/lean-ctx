@@ -9,94 +9,218 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 const trackData = getTracksWithJourneys();
 ---
 
-<div class="jt-grid">
-  {
-    trackData.map((track, i) => (
-      <a class="jt-card animate-entrance" href={lp(track.href)} style={`--i:${i}`}>
-        <div class="jt-head">
-          <div class="jt-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+<!-- Self-select master/detail: choose a track on the left, see its journeys on the
+     right at full width. Replaces the 4 cramped side-by-side cards. -->
+<div class="jt-select animate-entrance">
+  <div class="jt-tabs" role="tablist" aria-label="Choose a track">
+    {
+      trackData.map((track, i) => (
+        <button
+          type="button"
+          role="tab"
+          id={`jt-tab-${track.id}`}
+          class="jt-tab"
+          aria-selected={i === 0 ? 'true' : 'false'}
+          aria-controls={`jt-panel-${track.id}`}
+          tabindex={i === 0 ? '0' : '-1'}
+          data-jt-tab={track.id}
+        >
+          <span class="jt-tab-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d={track.iconPath} />
             </svg>
+          </span>
+          <span class="jt-tab-text">
+            <span class="jt-tab-title font-display">{track.title}</span>
+            <span class="jt-tab-persona">{track.persona}</span>
+          </span>
+          <span class="jt-tab-count" aria-hidden="true">{track.journeys.length}</span>
+        </button>
+      ))
+    }
+  </div>
+
+  <div class="jt-stage">
+    {
+      trackData.map((track, i) => (
+        <section
+          role="tabpanel"
+          id={`jt-panel-${track.id}`}
+          class="jt-panel"
+          aria-labelledby={`jt-tab-${track.id}`}
+          data-jt-panel={track.id}
+          hidden={i !== 0}
+        >
+          <div class="jt-panel-head">
+            <div class="jt-panel-heading">
+              <h3 class="jt-panel-title font-display">{track.title}</h3>
+              <p class="jt-panel-tagline">{track.tagline}</p>
+            </div>
+            <div class="jt-panel-pillars">
+              {track.pillars.map((pid) => (
+                <span class="jt-pillar">{getPillar(pid).verb}</span>
+              ))}
+            </div>
           </div>
-          <div class="jt-pillars">
-            {track.pillars.map((pid) => (
-              <span class="jt-pillar">{getPillar(pid).verb}</span>
+
+          <ul class="jt-journeys">
+            {track.journeys.map((j) => (
+              <li>
+                <a class="jt-journey" href={lp(`/docs/journeys/${j.slug}/`)}>
+                  <span class="jt-journey-num font-mono">J{j.num}</span>
+                  <span class="jt-journey-text">
+                    <span class="jt-journey-title">{j.title}</span>
+                    <span class="jt-journey-summary">{j.summary}</span>
+                  </span>
+                  <svg class="jt-journey-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </a>
+              </li>
             ))}
-          </div>
-        </div>
-        <span class="jt-persona">{track.persona}</span>
-        <h3 class="jt-title font-display">{track.title}</h3>
-        <p class="jt-tagline">{track.tagline}</p>
-        <ul class="jt-journeys">
-          {track.journeys.map((j) => (
-            <li>{j.title}</li>
-          ))}
-        </ul>
-        <span class="jt-cta">
-          Start this track
-          <svg class="jt-cta-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
-        </span>
-      </a>
-    ))
-  }
+          </ul>
+
+          <a class="jt-cta" href={lp(`/docs/journeys/${track.journeys[0].slug}/`)}>
+            Start this track
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+        </section>
+      ))
+    }
+  </div>
 </div>
 
 <style>
-  .jt-grid {
+  .jt-select {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: 1fr;
     gap: clamp(1rem, 0.6rem + 1.5vw, 1.75rem);
+    align-items: start;
   }
-  .jt-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
+  @media (min-width: 880px) {
+    .jt-select { grid-template-columns: minmax(15rem, 1fr) 1.85fr; }
+  }
+
+  /* ── Track selector (left) ───────────────────────────── */
+  .jt-tabs {
+    display: grid;
     gap: 0.6rem;
-    padding: clamp(1.5rem, 1.1rem + 1.2vw, 2.25rem);
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius-lg);
-    background: var(--overlay-faint);
-    text-decoration: none;
-    color: inherit;
-    transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
   }
-  .jt-card:hover {
-    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
-    transform: translateY(-3px);
-    box-shadow: var(--shadow-elevated);
+  @media (max-width: 879px) {
+    .jt-tabs { grid-template-columns: 1fr 1fr; }
   }
-  .jt-card:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 3px;
+  @media (max-width: 480px) {
+    .jt-tabs { grid-template-columns: 1fr; }
   }
-  .jt-head {
+
+  .jt-tab {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.75rem;
+    width: 100%;
+    text-align: start;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--overlay-faint);
+    cursor: pointer;
+    font-family: inherit;
+    color: inherit;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
   }
-  .jt-icon {
+  .jt-tab:hover { border-color: var(--color-border-light); transform: translateY(-1px); }
+  .jt-tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .jt-tab[aria-selected='true'] {
+    border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
+    background: color-mix(in srgb, var(--color-accent) 8%, var(--overlay-faint));
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+
+  .jt-tab-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: clamp(2.5rem, 2rem + 1vw, 3rem);
-    height: clamp(2.5rem, 2rem + 1vw, 3rem);
-    border-radius: 12px;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 9px;
     border: 1px solid var(--color-border);
     background: var(--overlay-medium);
     color: var(--color-accent);
     flex-shrink: 0;
   }
-  .jt-icon svg { width: 55%; height: 55%; }
-  .jt-pillars {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    justify-content: flex-end;
+  .jt-tab-icon svg { width: 1.1rem; height: 1.1rem; }
+  .jt-tab-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1; }
+  .jt-tab-title {
+    font-size: 0.95rem;
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    letter-spacing: -0.01em;
+    line-height: 1.2;
   }
+  .jt-tab-persona {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .jt-tab-count {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border-radius: 999px;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.35rem;
+  }
+  @media (max-width: 879px) and (min-width: 481px) {
+    .jt-tab-persona { display: none; }
+  }
+
+  /* ── Selected track detail (right) ───────────────────── */
+  .jt-stage { min-width: 0; }
+  .jt-panel {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(1.1rem, 0.9rem + 0.6vw, 1.6rem);
+    padding: clamp(1.5rem, 1.1rem + 1.2vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--overlay-faint);
+  }
+  .jt-panel[hidden] { display: none; }
+
+  .jt-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .jt-panel-heading { min-width: 0; }
+  .jt-panel-title {
+    font-size: clamp(1.375rem, 1.1rem + 1vw, 1.875rem);
+    font-weight: var(--weight-semibold);
+    letter-spacing: -0.02em;
+    color: var(--color-text-bright);
+    margin: 0 0 0.35rem;
+  }
+  .jt-panel-tagline {
+    font-size: clamp(0.9rem, 0.86rem + 0.15vw, 1.0625rem);
+    line-height: 1.55;
+    color: var(--color-muted);
+    margin: 0;
+    max-width: 48ch;
+  }
+  .jt-panel-pillars { display: flex; flex-wrap: wrap; gap: 0.35rem; }
   .jt-pillar {
     font-family: var(--font-mono);
     font-size: 0.625rem;
@@ -106,72 +230,118 @@ const trackData = getTracksWithJourneys();
     color: var(--color-accent);
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
     border-radius: 4px;
-    padding: 0.15rem 0.4rem;
+    padding: 0.2rem 0.45rem;
   }
-  .jt-persona {
-    font-size: 0.8125rem;
-    color: var(--color-muted);
-    font-style: italic;
-  }
-  .jt-title {
-    font-size: clamp(1.125rem, 0.95rem + 0.6vw, 1.375rem);
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: var(--color-text-bright);
-    margin: 0;
-  }
-  .jt-tagline {
-    font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
-    line-height: 1.55;
-    color: var(--color-muted);
-    margin: 0;
-  }
+
   .jt-journeys {
     list-style: none;
     padding: 0;
-    margin: 0.25rem 0 0;
+    margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.25rem;
+    border-top: 1px solid var(--color-border);
   }
-  .jt-journeys li {
-    position: relative;
-    padding-left: 1rem;
-    font-size: 0.8125rem;
-    color: var(--color-text);
-  }
-  .jt-journeys li::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0.55em;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--color-accent);
-    opacity: 0.6;
-  }
-  .jt-cta {
-    margin-top: auto;
-    padding-top: 0.5rem;
-    display: inline-flex;
+  .jt-journey {
+    display: flex;
     align-items: center;
-    gap: 0.4rem;
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    gap: 0.85rem;
+    padding: 0.85rem 0.75rem;
+    margin: 0 -0.5rem;
+    border-radius: 10px;
+    text-decoration: none;
+    color: inherit;
+    border-bottom: 1px solid transparent;
+    transition: background 0.15s ease;
+  }
+  .jt-journey:hover { background: var(--overlay-hover); }
+  .jt-journey:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+  .jt-journey-num {
+    flex-shrink: 0;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--color-accent);
+    width: 2rem;
   }
-  .jt-cta-arrow {
+  .jt-journey-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
+  .jt-journey-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--color-text-bright);
+    line-height: 1.3;
+  }
+  .jt-journey-summary {
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    line-height: 1.4;
+  }
+  .jt-journey-arrow {
+    flex-shrink: 0;
     width: 1rem;
     height: 1rem;
-    transition: transform 0.25s var(--ease-out, ease);
+    color: var(--color-muted);
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
   }
-  .jt-card:hover .jt-cta-arrow,
-  .jt-card:focus-visible .jt-cta-arrow {
-    transform: translateX(4px);
+  .jt-journey:hover .jt-journey-arrow { opacity: 1; transform: translateX(0); color: var(--color-accent); }
+
+  .jt-cta {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.25rem;
+    padding: 0.6rem 1.1rem;
+    border-radius: 9px;
+    background: var(--color-accent);
+    color: var(--color-bg);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform 0.2s ease, box-shadow 0.25s ease;
+  }
+  .jt-cta svg { width: 1rem; height: 1rem; }
+  .jt-cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-accent) 24%, transparent);
   }
   @media (prefers-reduced-motion: reduce) {
-    .jt-cta-arrow { transition: none; }
+    .jt-tab, .jt-cta, .jt-journey-arrow { transition: none; }
   }
 </style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('.jt-select').forEach((root) => {
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-jt-tab]'));
+    const panels = Array.from(root.querySelectorAll<HTMLElement>('[data-jt-panel]'));
+
+    function select(id: string, focus = false) {
+      tabs.forEach((tab) => {
+        const on = tab.dataset.jtTab === id;
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        tab.tabIndex = on ? 0 : -1;
+        if (on && focus) tab.focus();
+      });
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset.jtPanel !== id;
+      });
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => select(tab.dataset.jtTab as string));
+      tab.addEventListener('keydown', (event) => {
+        const key = (event as KeyboardEvent).key;
+        let next = -1;
+        if (key === 'ArrowDown' || key === 'ArrowRight') next = (i + 1) % tabs.length;
+        else if (key === 'ArrowUp' || key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+        else if (key === 'Home') next = 0;
+        else if (key === 'End') next = tabs.length - 1;
+        if (next >= 0) {
+          event.preventDefault();
+          select(tabs[next].dataset.jtTab as string, true);
+        }
+      });
+    });
+  });
+</script>

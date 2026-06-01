@@ -5,35 +5,11 @@ import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
 const locale = getLocaleFromUrl(Astro.url);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Performance Tuning',
-    items: [
-      { label: 'See effective limits', href: lp('/docs/performance-tuning') + '#limits' },
-      { label: 'Memory profile', href: lp('/docs/performance-tuning') + '#profile' },
-      { label: 'Bounding the search index', href: lp('/docs/performance-tuning') + '#bm25' },
-      { label: 'Bounding the code graph', href: lp('/docs/performance-tuning') + '#graph' },
-      { label: 'Disk / RAM / staleness', href: lp('/docs/performance-tuning') + '#budgets' },
-      { label: 'Finding what is slow', href: lp('/docs/performance-tuning') + '#slow-log' },
-      { label: 'Keeping caches lean', href: lp('/docs/performance-tuning') + '#cache' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Budgets & SLOs', href: lp('/docs/budgets-and-slos') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-      { label: 'Observatory', href: lp('/docs/observatory') },
-      { label: 'Troubleshooting', href: lp('/docs/troubleshooting') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title="Performance Tuning"
   description="Bound LeanCTX disk/RAM on huge monorepos and constrained CI runners: memory_profile, bm25_max_cache_mb, graph_index_max_files, LEAN_CTX_MAX_* and the slow-command log — with exact knobs and defaults."
-  sidebar={sidebar}
 >
   <p>
     <strong>You are:</strong> running LeanCTX on a huge monorepo, a constrained CI runner, or a

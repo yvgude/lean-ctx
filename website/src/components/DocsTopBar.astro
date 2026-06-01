@@ -1,0 +1,275 @@
+---
+import SearchModal from './SearchModal.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-accent focus:text-bg focus:text-sm">
+  {t('nav.skipToContent')}
+</a>
+
+<header id="docs-topbar" class="dtb-root" data-scrolled="false">
+  <div class="dtb-inner">
+    <a href={lp('/')} class="dtb-logo" aria-label="LeanCTX">
+      <span class="dtb-logo-ascii"><Fragment set:html={'&lt;<span style="color:var(--color-accent)">|</span>&gt;'} /></span>
+      <span class="dtb-logo-text font-display">
+        <span class="text-text-bright">Lean</span><span class="text-accent">CTX</span>
+      </span>
+      <span class="dtb-logo-tag">Docs</span>
+    </a>
+
+    <button data-search-trigger class="dtb-search" aria-label={t('nav.searchLabel')}>
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <span class="dtb-search-label">{t('search.placeholder')}</span>
+      <kbd class="dtb-search-kbd">⌘K</kbd>
+    </button>
+
+    <div class="dtb-right">
+      <button data-search-trigger class="dtb-icon dtb-search-icon" aria-label={t('nav.searchLabel')}>
+        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      </button>
+
+      <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="dtb-github" aria-label={t('nav.star')}>
+        <svg class="dtb-gh-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        <span id="dtb-gh-stars" class="dtb-gh-count">-</span>
+      </a>
+
+      <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="dtb-icon" aria-label="Discord" title="Discord">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.211.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.249.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+      </a>
+
+      <button
+        type="button"
+        class="dtb-theme"
+        data-theme-toggle
+        data-label-dark={t('nav.switchToDarkMode')}
+        data-label-light={t('nav.switchToLightMode')}
+        aria-label={t('nav.switchToDarkMode')}
+        aria-pressed="false"
+        title={t('nav.switchToDarkMode')}
+      >
+        <span class="dtb-theme-track" aria-hidden="true">
+          <svg class="dtb-theme-icon dtb-theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="dtb-theme-icon dtb-theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+          </svg>
+        </span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<SearchModal />
+
+<style>
+  .dtb-root {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.3s ease;
+  }
+  .dtb-root[data-scrolled='true'] { border-bottom-color: var(--color-border); }
+  .dtb-inner {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.75rem, 0.5rem + 1vw, 1.5rem);
+    height: 3.5rem;
+    padding-inline: clamp(1rem, 0.5rem + 1.5vw, 2.5rem);
+    max-width: 96rem;
+    margin-inline: auto;
+  }
+  .dtb-logo { display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; flex-shrink: 0; }
+  .dtb-logo-ascii {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-text-bright);
+    line-height: 1;
+    font-variant-ligatures: none;
+    font-feature-settings: 'liga' 0, 'clig' 0;
+  }
+  .dtb-logo-text { font-size: 1.0625rem; font-weight: 700; letter-spacing: -0.02em; }
+  .dtb-logo-tag {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-muted);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    padding: 0.125rem 0.4rem;
+    margin-inline-start: 0.15rem;
+  }
+
+  /* Prominent search field (desktop) */
+  .dtb-search {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    max-width: 22rem;
+    margin-inline-start: auto;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.8125rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+    font-family: inherit;
+    line-height: 1;
+  }
+  .dtb-search:hover { border-color: var(--color-border-light); background: var(--overlay-hover); }
+  .dtb-search-label { flex: 1 1 auto; text-align: start; }
+  .dtb-search-kbd {
+    font-size: 0.625rem;
+    font-family: inherit;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    background: var(--overlay-faint);
+    color: var(--color-muted);
+    line-height: 1;
+  }
+  @media (min-width: 768px) { .dtb-search { display: inline-flex; } }
+
+  .dtb-right { display: flex; align-items: center; gap: clamp(0.4rem, 0.25rem + 0.4vw, 0.6rem); margin-inline-start: auto; }
+  @media (min-width: 768px) { .dtb-right { margin-inline-start: 0; } }
+
+  .dtb-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+    border: 1px solid var(--color-border);
+    color: var(--color-muted);
+    background: transparent;
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  }
+  .dtb-icon svg { width: 17px; height: 17px; }
+  .dtb-icon:hover { color: var(--color-text-bright); border-color: var(--color-border-light); background: var(--overlay-hover); }
+  .dtb-search-icon { display: inline-flex; }
+  @media (min-width: 768px) { .dtb-search-icon { display: none; } }
+
+  .dtb-github {
+    display: none;
+    align-items: center;
+    gap: 0.45rem;
+    height: 34px;
+    padding-inline: 0.7rem;
+    border-radius: 7px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+    text-decoration: none;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .dtb-github:hover { border-color: var(--color-border-light); background: var(--overlay-hover); }
+  .dtb-gh-icon { width: 16px; height: 16px; }
+  .dtb-gh-count { font-variant-numeric: tabular-nums; color: var(--color-muted); font-size: 0.75rem; }
+  @media (min-width: 640px) { .dtb-github { display: inline-flex; } }
+
+  .dtb-theme {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    cursor: pointer;
+    color: var(--color-muted);
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+  .dtb-theme:hover { color: var(--color-accent); border-color: var(--color-accent); }
+  .dtb-theme:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .dtb-theme-track { width: 18px; height: 18px; position: relative; }
+  .dtb-theme-icon { width: 18px; height: 18px; position: absolute; top: 0; left: 0; transition: opacity 0.25s ease, transform 0.25s ease; }
+  .dtb-theme-sun { opacity: 0; transform: rotate(-30deg) scale(0.8); }
+  .dtb-theme-moon { opacity: 1; transform: rotate(0) scale(1); }
+  .dtb-theme[data-theme='light'] .dtb-theme-sun { opacity: 1; transform: rotate(0) scale(1); }
+  .dtb-theme[data-theme='light'] .dtb-theme-moon { opacity: 0; transform: rotate(30deg) scale(0.8); }
+</style>
+
+<script>
+  const bar = document.getElementById('docs-topbar');
+  if (bar) {
+    const update = () => { bar.dataset.scrolled = window.scrollY > 8 ? 'true' : 'false'; };
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+  }
+
+  fetch('/api/stats')
+    .then((r) => r.json())
+    .then((data) => {
+      const el = document.getElementById('dtb-gh-stars');
+      if (el && data.stars > 0) {
+        const count = data.stars;
+        el.textContent = count >= 1000 ? (count / 1000).toFixed(1) + 'k' : String(count);
+      }
+    })
+    .catch(() => {});
+
+  function getTheme(): string {
+    if (typeof (window as any).__leanctxGetTheme === 'function') return (window as any).__leanctxGetTheme();
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+  function setThemeButtonState(btn: Element, theme: string) {
+    const isDark = theme === 'dark';
+    const el = btn as HTMLElement;
+    el.dataset.theme = isDark ? 'dark' : 'light';
+    btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+    const next = isDark ? el.dataset.labelLight || 'Switch to light mode' : el.dataset.labelDark || 'Switch to dark mode';
+    btn.setAttribute('aria-label', next);
+    btn.setAttribute('title', next);
+  }
+  function applyTheme(theme: string) {
+    document.documentElement.classList.add('theme-transition');
+    if (typeof (window as any).__leanctxSetTheme === 'function') (window as any).__leanctxSetTheme(theme);
+    else {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.style.colorScheme = theme;
+      try { localStorage.setItem('leanctx-theme', theme); } catch (_) {}
+    }
+    window.dispatchEvent(new CustomEvent('leanctx-theme-change', { detail: { theme } }));
+    setTimeout(() => document.documentElement.classList.remove('theme-transition'), 350);
+  }
+  function bindThemeToggles() {
+    document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
+      if ((btn as HTMLElement).dataset.boundThemeToggle === 'true') return;
+      (btn as HTMLElement).dataset.boundThemeToggle = 'true';
+      setThemeButtonState(btn, getTheme());
+      btn.addEventListener('click', () => {
+        const next = getTheme() === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        document.querySelectorAll('[data-theme-toggle]').forEach((b) => setThemeButtonState(b, next));
+      });
+    });
+  }
+  bindThemeToggles();
+  document.addEventListener('astro:page-load', bindThemeToggles);
+  if (!(window as any).__leanctxThemeToggleListenerBound) {
+    (window as any).__leanctxThemeToggleListenerBound = true;
+    window.addEventListener('leanctx-theme-change', ((event: CustomEvent) => {
+      const theme = event?.detail?.theme === 'dark' ? 'dark' : 'light';
+      document.querySelectorAll('[data-theme-toggle]').forEach((btn) => setThemeButtonState(btn, theme));
+    }) as EventListener);
+  }
+</script>

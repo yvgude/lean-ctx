@@ -50,14 +50,35 @@
   --viz-purple: var(--color-accent-3);
   --viz-danger: var(--color-danger);
 
-  /* Fluid type scale */
-  --text-display: clamp(2.75rem, 1.9rem + 3.8vw, 5rem);
-  --text-h1: clamp(2.25rem, 1.7rem + 2.4vw, 3.5rem);
-  --text-h2: clamp(1.75rem, 1.4rem + 1.6vw, 2.5rem);
-  --text-h3: clamp(1.3rem, 1.15rem + 0.7vw, 1.6rem);
-  --text-h4: 1.125rem;
+  /* ── Canonical type scale — SINGLE source of truth ───────
+     One modular scale drives every heading utility below.
+     Never hard-code heading sizes in components. */
+  --text-display: clamp(2.5rem, 1.6rem + 4vw, 4.5rem);
+  --text-h1: clamp(2rem, 1.4rem + 2.6vw, 3.25rem);
+  --text-h2: clamp(1.5rem, 1.2rem + 1.4vw, 2.25rem);
+  --text-h3: clamp(1.1875rem, 1.05rem + 0.6vw, 1.5rem);
+  --text-h4: 1.0625rem;
   --text-body-lg: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem);
+  --text-body: clamp(0.9375rem, 0.9rem + 0.2vw, 1.0625rem);
+  --text-small: clamp(0.8125rem, 0.78rem + 0.12vw, 0.875rem);
   --text-caption: 0.75rem;
+
+  /* Weight hierarchy — 3 deliberate steps (+ bold for stat numbers).
+     body 400 · medium 500 · headings/strong 600 · big numbers 700. */
+  --weight-body: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Line-height + tracking tokens paired to the scale */
+  --leading-tight: 1.08;
+  --leading-snug: 1.25;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.7;
+  --tracking-display: -0.04em;
+  --tracking-tight: -0.035em;
+  --tracking-snug: -0.02em;
+  --tracking-label: 0.14em;
 
   /* Spacing scale (8px base) — used via var(), not Tailwind spacing */
   --space-1: 0.25rem;
@@ -242,7 +263,7 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   font-size: clamp(0.9375rem, 0.88rem + 0.25vw, 1.0625rem);
-  font-weight: 350;
+  font-weight: var(--weight-body);
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -315,41 +336,43 @@ body::after {
 /* ── Fluid Typography Scale ───────────────────────────── */
 
 .fluid-display {
-  font-size: clamp(2.25rem, 1.5rem + 4vw, 7rem);
-  line-height: 1.1;
-  letter-spacing: -0.045em;
-  font-weight: 400;
+  font-size: var(--text-display);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
+  font-weight: var(--weight-semibold);
 }
 .fluid-h1 {
-  font-size: clamp(1.625rem, 1.2rem + 2.5vw, 4rem);
-  line-height: 1.15;
-  letter-spacing: -0.035em;
-  font-weight: 400;
+  font-size: var(--text-h1);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  font-weight: var(--weight-semibold);
 }
 .fluid-h2 {
-  font-size: clamp(1.25rem, 0.95rem + 1.6vw, 2.75rem);
-  line-height: 1.12;
+  font-size: var(--text-h2);
+  line-height: 1.15;
   letter-spacing: -0.03em;
+  font-weight: var(--weight-semibold);
 }
 .fluid-h3 {
-  font-size: clamp(1.125rem, 0.95rem + 0.8vw, 1.75rem);
-  line-height: 1.15;
-  letter-spacing: -0.025em;
+  font-size: var(--text-h3);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-snug);
+  font-weight: var(--weight-semibold);
 }
 .fluid-body {
-  font-size: clamp(0.9375rem, 0.88rem + 0.3vw, 1.1875rem);
-  line-height: 1.7;
+  font-size: var(--text-body-lg);
+  line-height: var(--leading-relaxed);
 }
 .fluid-sm {
-  font-size: clamp(0.75rem, 0.72rem + 0.12vw, 0.875rem);
-  line-height: 1.6;
+  font-size: var(--text-small);
+  line-height: var(--leading-normal);
 }
 .fluid-label {
   font-family: var(--font-mono);
   font-size: clamp(0.6875rem, 0.65rem + 0.1vw, 0.8125rem);
   line-height: 1;
   letter-spacing: 0.02em;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 
@@ -471,8 +494,8 @@ pre code {
 .btn-primary {
   background: var(--color-accent);
   color: var(--color-bg);
-  font-weight: 600;
-  border-radius: 4px;
+  font-weight: var(--weight-semibold);
+  border-radius: var(--card-radius);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 0 0 0 transparent;
 }
@@ -490,8 +513,8 @@ pre code {
   border: 1px solid var(--color-border-light);
   background: transparent;
   color: var(--color-text-bright);
-  font-weight: 500;
-  border-radius: 4px;
+  font-weight: var(--weight-medium);
+  border-radius: var(--card-radius);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .btn-outline:hover {
@@ -502,6 +525,23 @@ pre code {
 .btn-outline:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 3px;
+}
+
+.cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: clamp(0.75rem, 0.6rem + 0.35vw, 1rem) clamp(1.5rem, 1.1rem + 0.8vw, 2.25rem);
+  font-size: clamp(0.875rem, 0.84rem + 0.12vw, 1rem);
+  font-weight: var(--weight-semibold);
+  border-radius: var(--card-radius);
+  text-decoration: none;
+  line-height: 1;
+}
+.cta-btn-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
 }
 
 /* Global keyboard focus ring (a11y — styleguide §11). :where() keeps specificity 0
@@ -614,7 +654,7 @@ pre code {
 .card:hover {
   border-color: var(--color-border-light);
   box-shadow: var(--shadow-elevated);
-  transform: scale(1.02);
+  transform: translateY(-2px);
 }
 
 /* ── Compare Panels (Landing baseline, shared) ──────────── */
@@ -645,7 +685,7 @@ pre code {
 .compare-card:hover {
   border-color: var(--color-border-light);
   box-shadow: var(--shadow-elevated);
-  transform: scale(1.01);
+  transform: translateY(-2px);
 }
 
 .compare-header {
@@ -1001,6 +1041,32 @@ pre code {
   margin-top: 1.5rem;
   margin-bottom: 1.5rem;
 }
+.docs-prose details {
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  background: var(--color-surface);
+  padding: 0 1rem;
+}
+.docs-prose details > summary {
+  cursor: pointer;
+  padding: 0.75rem 0;
+  font-weight: 600;
+  color: var(--color-text-bright);
+  font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem);
+  list-style: none;
+}
+.docs-prose details > summary::-webkit-details-marker { display: none; }
+.docs-prose details > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-inline-end: 0.5rem;
+  color: var(--color-muted);
+  transition: transform 0.2s ease;
+}
+.docs-prose details[open] > summary { border-bottom: 1px solid var(--color-border); margin-bottom: 0.75rem; }
+.docs-prose details[open] > summary::before { transform: rotate(90deg); }
+.docs-prose details pre:last-child { margin-bottom: 0.75rem; }
 
 @media (min-width: 640px) {
   .docs-prose pre { padding: 1.25rem; margin-bottom: 1.5rem; }
@@ -1280,7 +1346,8 @@ details[open] > .stack-layer-summary .stack-layer-chevron {
 }
 .artifact-card:hover {
   border-color: var(--color-border-light);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-elevated);
 }
 
 .artifact-icon {
@@ -1295,7 +1362,7 @@ details[open] > .stack-layer-summary .stack-layer-chevron {
 
 .artifact-title {
   font-size: 14px;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   margin-bottom: 4px;
 }
 .artifact-desc {

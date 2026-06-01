@@ -6,40 +6,14 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: t('docsToolsCore.sidebarTitle'),
-    compact: true,
-    items: [
-      { label: 'ctx_read', href: lp('/docs/tools/core/') + '#ctx_read' },
-      { label: 'ctx_multi_read', href: lp('/docs/tools/core/') + '#ctx_multi_read' },
-      { label: 'ctx_tree', href: lp('/docs/tools/core/') + '#ctx_tree' },
-      { label: 'ctx_shell', href: lp('/docs/tools/core/') + '#ctx_shell' },
-      { label: 'ctx_search', href: lp('/docs/tools/core/') + '#ctx_search' },
-      { label: 'ctx_execute', href: lp('/docs/tools/core/') + '#ctx_execute' },
-      { label: 'ctx_expand', href: lp('/docs/tools/core/') + '#ctx_expand' },
-    ],
-  },
-  {
-    title: t('docsToolsCore.sidebarOther'),
-    items: [
-      { label: t('docsToolsCore.sidebarAllTools'), href: lp('/docs/tools') },
-      { label: t('docsToolsCore.sidebarIntelligence'), href: lp('/docs/tools/intelligence') },
-      { label: t('docsToolsSession.sidebarTitle'), href: lp('/docs/tools/session') },
-      { label: t('docsToolsMemory.sidebarTitle'), href: lp('/docs/tools/memory') },
-      { label: 'Workflow & Orchestration', href: lp('/docs/tools/workflow') },
-      { label: 'Analysis & Navigation', href: lp('/docs/tools/analysis') },
-    ],
-  },
-];
 ---
 
-<DocsLayout title={t('docsToolsCore.title')} description={t('docsToolsCore.description')} sidebar={sidebar}>
+<DocsLayout title={t('docsToolsCore.title')} description={t('docsToolsCore.description')}>
   <p>{t('docsToolsCore.intro')}</p>
 
   <h2 id="ctx_read">ctx_read</h2>
   <p>
-    <code>ctx_read</code> is the most impactful tool in lean-ctx. It replaces your editor's built-in
+    <code>ctx_read</code> is the most impactful tool in LeanCTX. It replaces your editor's built-in
     file read with an intelligent, session-aware reader that caches content, extracts dependency maps,
     and computes diffs. Every response includes structured headers with file references, dependencies,
     and exports.
@@ -300,7 +274,7 @@ ctx_read src/auth/service.rs --mode task
   <h3>Why It Saves Tokens</h3>
   <p>
     Traditional directory listings use Unicode box-drawing characters (<code>├──</code>, <code>└──</code>)
-    which consume 3-4 tokens each. lean-ctx uses simple indentation (1 token per level), and shows
+    which consume 3-4 tokens each. LeanCTX uses simple indentation (1 token per level), and shows
     file counts per directory instead of listing every file. For large projects, this saves 30-50% tokens.
   </p>
 
@@ -461,7 +435,7 @@ ctx_read src/auth/service.rs --mode task
 
   <h3>Shell Hook Mode</h3>
   <p>
-    Use lean-ctx as a transparent shell wrapper for automatic compression:
+    Use LeanCTX as a transparent shell wrapper for automatic compression:
   </p>
   <pre><code># Auto-install 23 aliases
 lean-ctx init --global
@@ -478,7 +452,7 @@ lean-ctx shell</code></pre>
 
   <h3>Error Recovery (Tee)</h3>
   <p>
-    When a command fails (non-zero exit code), lean-ctx automatically saves the full uncompressed
+    When a command fails (non-zero exit code), LeanCTX automatically saves the full uncompressed
     output to <code>~/.lean-ctx/tee/</code> for debugging. This ensures compressed output
     doesn't hide error details you might need.
   </p>
@@ -646,7 +620,7 @@ ctx_expand id="a1b2c3d4"
 
   <h3>How It Works</h3>
   <ol>
-    <li>When a tool result exceeds the configured token threshold (default: 500), lean-ctx stores the full content to <code>~/.lean-ctx/archive/</code></li>
+    <li>When a tool result exceeds the configured token threshold (default: 500), LeanCTX stores the full content to <code>~/.lean-ctx/archive/</code></li>
     <li>The compressed response includes the archive reference ID</li>
     <li>The agent calls <code>ctx_expand</code> with that ID to retrieve the original content</li>
     <li>Archived entries are automatically cleaned up after the configured TTL (default: 120 minutes)</li>

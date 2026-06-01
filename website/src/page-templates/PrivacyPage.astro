@@ -48,19 +48,19 @@ const lastUpdated = 'April 2026';
 
       <h2>1. Who We Are</h2>
       <p>
-        lean-ctx is an open-source project maintained by Yves Gugger. The CLI tool, MCP server, Chrome extension, and this website are all part of the lean-ctx project. Source code is publicly available at
+        LeanCTX is an open-source project maintained by Yves Gugger. The CLI tool, MCP server, Chrome extension, and this website are all part of the LeanCTX project. Source code is publicly available at
         <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener">github.com/yvgude/lean-ctx</a>.
       </p>
       <p>Contact: <a href="mailto:privacy@leanctx.com">privacy@leanctx.com</a></p>
 
-      <h2>2. lean-ctx CLI &amp; MCP Server</h2>
+      <h2>2. LeanCTX CLI &amp; MCP Server</h2>
       <p>
-        The lean-ctx binary and MCP server run entirely on your local machine. All compression, caching, and AI tool orchestration happens locally. There are two optional network features:
+        The LeanCTX binary and MCP server run entirely on your local machine. All compression, caching, and AI tool orchestration happens locally. There are two optional network features:
       </p>
 
       <h3>2a. Version Check (on by default, disableable)</h3>
       <p>
-        Once per day, lean-ctx fetches <code>leanctx.com/version.txt</code> in a background thread to check if a newer version is available. This request sends only the current version as a <code>User-Agent</code> header - no identifying information, no telemetry, no project data. The result is cached locally in <code>~/.lean-ctx/latest-version.json</code> for 24 hours.
+        Once per day, LeanCTX fetches <code>leanctx.com/version.txt</code> in a background thread to check if a newer version is available. This request sends only the current version as a <code>User-Agent</code> header - no identifying information, no telemetry, no project data. The result is cached locally in <code>~/.lean-ctx/latest-version.json</code> for 24 hours.
       </p>
       <p>
         <strong>To disable:</strong> Set <code>update_check_disabled = true</code> in <code>~/.lean-ctx/config.toml</code> or set the environment variable <code>LEAN_CTX_NO_UPDATE_CHECK=1</code>.
@@ -70,7 +70,7 @@ const lastUpdated = 'April 2026';
       <p>
         During <code>lean-ctx setup</code>, you are asked whether you want to share anonymous compression statistics. The default is <strong>No</strong> - you must explicitly type <code>y</code> to enable this.
       </p>
-      <p>If enabled, lean-ctx periodically sends anonymized compression stats to <code>api.leanctx.com</code>:</p>
+      <p>If enabled, LeanCTX periodically sends anonymized compression stats to <code>api.leanctx.com</code>:</p>
       <ul>
         <li>File type (e.g. <code>.rs</code>, <code>.tsx</code>) and size bucket (e.g. <code>2k–10k</code>)</li>
         <li>Compression mode used and compression ratio achieved</li>
@@ -91,12 +91,12 @@ const lastUpdated = 'April 2026';
         <li><strong>Index files</strong> - code search indices (BM25, graph). Stored in <code>index/</code>. Never transmitted.</li>
       </ul>
       <p>
-        No crash reporting, no usage analytics, no tracking. The two network features described above are the only outbound requests lean-ctx ever makes.
+        No crash reporting, no usage analytics, no tracking. The two network features described above are the only outbound requests LeanCTX ever makes.
       </p>
 
       <h2>3. Chrome Extension</h2>
       <p>
-        The lean-ctx Chrome extension compresses text locally before it is pasted or sent in AI chat interfaces (ChatGPT, Claude, Gemini, etc.).
+        The LeanCTX Chrome extension compresses text locally before it is pasted or sent in AI chat interfaces (ChatGPT, Claude, Gemini, etc.).
       </p>
       <p><strong>Data accessed:</strong></p>
       <ul>
@@ -108,7 +108,7 @@ const lastUpdated = 'April 2026';
         <li><strong>Settings</strong> - enable/disable toggles. Stored in <code>chrome.storage.local</code>. Never synced or transmitted.</li>
         <li><strong>Usage statistics</strong> - total tokens saved and compression count. Stored in <code>chrome.storage.local</code>. Never transmitted.</li>
       </ul>
-      <p><strong>Native messaging:</strong> When the lean-ctx binary is installed, the extension communicates with it via the Chrome Native Messaging API over a local pipe. Text is sent from the browser to your local binary for compression and returned. No external network requests are made during this process.</p>
+      <p><strong>Native messaging:</strong> When the LeanCTX binary is installed, the extension communicates with it via the Chrome Native Messaging API over a local pipe. Text is sent from the browser to your local binary for compression and returned. No external network requests are made during this process.</p>
       <p>
         The extension does <strong>not</strong> collect, store, or transmit: your code, prompts, chat history, browsing history, personally identifiable information, or any other user content.
       </p>
@@ -121,7 +121,7 @@ const lastUpdated = 'April 2026';
         The website does not use: Google Analytics, tracking pixels, advertising cookies, or any third-party analytics. It uses Pagefind for local full-text search - all search processing happens in your browser.
       </p>
 
-      <h2>5. lean-ctx Cloud (Optional)</h2>
+      <h2>5. LeanCTX Cloud (Optional)</h2>
       <p>
         Cloud features are entirely opt-in. They are activated by running <code>lean-ctx login &lt;email&gt;</code>. If you never run this command, no data is ever sent to our servers.
       </p>
@@ -143,11 +143,11 @@ const lastUpdated = 'April 2026';
 
       <h2>7. Third-Party Services</h2>
       <p>
-        lean-ctx does not embed or call any third-party analytics, advertising, or tracking services. GitHub is used for source code hosting and release distribution. When you install lean-ctx via Homebrew, Cargo, or npm, standard package manager network requests are made to the respective registries.
+        LeanCTX does not embed or call any third-party analytics, advertising, or tracking services. GitHub is used for source code hosting and release distribution. When you install LeanCTX via Homebrew, Cargo, or npm, standard package manager network requests are made to the respective registries.
       </p>
 
       <h2>8. Children's Privacy</h2>
-      <p>lean-ctx is a developer tool not directed at children under 13. We do not knowingly collect data from children.</p>
+      <p>LeanCTX is a developer tool not directed at children under 13. We do not knowingly collect data from children.</p>
 
       <h2>9. Changes to This Policy</h2>
       <p>

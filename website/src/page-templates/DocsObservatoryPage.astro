@@ -7,34 +7,11 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Observatory',
-    items: [
-      { label: 'Overview', href: lp('/docs/observatory') },
-      { label: 'How to Access', href: lp('/docs/observatory') + '#access' },
-      { label: 'Event Types', href: lp('/docs/observatory') + '#events' },
-      { label: 'Budget & SLO Events', href: lp('/docs/observatory') + '#budget-events' },
-      { label: 'Dashboard Panels', href: lp('/docs/observatory') + '#panels' },
-      { label: 'REST API', href: lp('/docs/observatory') + '#api' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Budgets & SLOs', href: lp('/docs/budgets-and-slos') },
-      { label: 'Context Control', href: lp('/docs/context-control') },
-      { label: 'CLI Reference', href: lp('/docs/cli-reference') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title={t('docs.observatory.title')}
   description={t('docs.observatory.metaDesc')}
-  sidebar={sidebar}
 >
   <p set:html={t('docs.observatory.intro')} />
 

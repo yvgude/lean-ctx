@@ -7,38 +7,11 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Data Sources',
-    items: [
-      { label: 'Overview', href: lp('/docs/data-sources') },
-      { label: 'Quick Start', href: lp('/docs/data-sources') + '#quick-start' },
-      { label: 'Configuration', href: lp('/docs/data-sources') + '#configuration' },
-      { label: 'Authentication', href: lp('/docs/data-sources') + '#authentication' },
-      { label: 'Resources', href: lp('/docs/data-sources') + '#resources' },
-      { label: 'Response Extraction', href: lp('/docs/data-sources') + '#extraction' },
-      { label: 'Auto-Discovery', href: lp('/docs/data-sources') + '#discovery' },
-      { label: 'Built-in Providers', href: lp('/docs/data-sources') + '#built-in' },
-      { label: 'MCP Bridges', href: lp('/docs/data-sources') + '#mcp-bridges' },
-      { label: 'Examples', href: lp('/docs/data-sources') + '#examples' },
-    ],
-  },
-  {
-    title: 'Related',
-    items: [
-      { label: 'Context Engine', href: lp('/docs/cortex') },
-      { label: 'Configuration', href: lp('/docs/configuration') },
-      { label: 'ctx_provider Tool', href: lp('/docs/tools/ctx-provider') },
-      { label: 'Getting Started', href: lp('/docs/getting-started') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title={t('docs.dataSources.title')}
   description={t('docs.dataSources.metaDesc')}
-  sidebar={sidebar}
 >
   <p set:html={t('docs.dataSources.introP1')} />
   <p set:html={t('docs.dataSources.introP2')} />

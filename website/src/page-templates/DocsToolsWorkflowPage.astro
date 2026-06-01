@@ -15,33 +15,11 @@ const tools = category.tools.map(name => ({
   tool: getGranularToolByName(name),
 })).filter(t => t.tool);
 
-const sidebar = [
-  {
-    title: 'Workflow Tools',
-    compact: true,
-    items: tools.map(t => ({
-      label: t.name,
-      href: lp('/docs/tools/workflow/') + `#${t.name}`,
-    })),
-  },
-  {
-    title: 'Other Categories',
-    items: [
-      { label: 'All Tools', href: lp('/docs/tools') },
-      { label: 'Core Tools', href: lp('/docs/tools/core') },
-      { label: 'Intelligence Tools', href: lp('/docs/tools/intelligence') },
-      { label: 'Session & Monitoring', href: lp('/docs/tools/session') },
-      { label: 'Memory & Multi-Agent', href: lp('/docs/tools/memory') },
-      { label: 'Analysis & Navigation', href: lp('/docs/tools/analysis') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
   title="Workflow & Orchestration Tools"
   description={category.description}
-  sidebar={sidebar}
 >
   <p>{category.description}</p>
   <p>
@@ -128,7 +106,7 @@ ctx_handoff action="load"
   <h2 id="ctx_feedback">ctx_feedback</h2>
   <p>
     <code>ctx_feedback</code> records quality signals about tool usage - latency, token counts, model info,
-    and free-form notes. This data feeds into lean-ctx's adaptive optimization over time.
+    and free-form notes. This data feeds into LeanCTX's adaptive optimization over time.
   </p>
   <h3>Parameters</h3>
   <table>

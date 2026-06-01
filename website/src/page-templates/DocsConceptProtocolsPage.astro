@@ -6,39 +6,14 @@ const locale = getLocaleFromUrl(Astro.url);
 const t = useTranslations(locale);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
-const sidebar = [
-  {
-    title: 'Protocols',
-    items: [
-      { label: 'Overview', href: lp('/docs/concepts/protocols') },
-      { label: 'CEP (Context Engineering)', href: lp('/docs/concepts/protocols') + '#cep' },
-      { label: 'CCP (Context Checkpoint)', href: lp('/docs/concepts/protocols') + '#ccp' },
-      { label: 'TDD / CRP Mode', href: lp('/docs/concepts/protocols') + '#tdd' },
-      { label: 'CLP (Context Layered Preload)', href: lp('/docs/concepts/protocols') + '#clp' },
-      { label: 'A2A (Agent-to-Agent)', href: lp('/docs/concepts/protocols') + '#a2a' },
-      { label: 'Which Protocol When?', href: lp('/docs/concepts/protocols') + '#which-protocol-when' },
-    ],
-  },
-  {
-    title: 'Related Tools',
-    compact: true,
-    items: [
-      { label: 'ctx_compress', href: lp('/docs/tools/ctx-compress') },
-      { label: 'ctx_preload', href: lp('/docs/tools/ctx-preload') },
-      { label: 'ctx_session', href: lp('/docs/tools/ctx-session') },
-      { label: 'ctx_agent', href: lp('/docs/tools/ctx-agent') },
-    ],
-  },
-];
 ---
 
 <DocsLayout
-  title="Protocols - How lean-ctx Communicates"
-  description="5 protocols govern how lean-ctx manages context: CEP, CCP, TDD/CRP, CLP, and A2A. Learn when each activates and how they work together."
-  sidebar={sidebar}
+  title="Protocols"
+  description="5 protocols govern how LeanCTX manages context: CEP, CCP, TDD/CRP, CLP, and A2A. Learn when each activates and how they work together."
 >
   <p>
-    lean-ctx runs <strong>5 protocols</strong> that manage, compress, and share context between agents.
+    LeanCTX runs <strong>5 protocols</strong> that manage, compress, and share context between agents.
     The good news: they all activate automatically — you don't need to memorize them. The map below
     shows what each one does and when it kicks in, so you always know what's happening under the hood.
   </p>
@@ -104,7 +79,7 @@ const sidebar = [
   <p>
     CEP is <strong>always active</strong>. It is injected via the <code>LITM</code> (Lost-In-The-Middle)
     system prompt block at session start and reinforced at the end of instructions. You cannot disable
-    CEP — it is the baseline communication contract between lean-ctx and the model.
+    CEP — it is the baseline communication contract between LeanCTX and the model.
   </p>
 
   <h3>Example: With vs. Without CEP</h3>
@@ -173,7 +148,7 @@ ctx_compress
 
   <h2 id="tdd">TDD / CRP — Terse Data Density Mode</h2>
   <p>
-    TDD is the maximum compression protocol. When activated, all lean-ctx output is compressed using
+    TDD is the maximum compression protocol. When activated, all LeanCTX output is compressed using
     abbreviated keywords, symbol maps, and diff-only notation. It targets ≤150 tokens per response
     with zero narration — ideal for agents running on tight token budgets or high-throughput pipelines.
   </p>
