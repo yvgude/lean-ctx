@@ -18,52 +18,56 @@ const year = new Date().getFullYear();
           </span>
         </a>
         <p class="footer-tagline">{t('footer.tagline')}</p>
+        <ul class="footer-social" aria-label={t('footer.community')}>
+          <li><a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://crates.io/crates/lean-ctx" target="_blank" rel="noopener">crates.io</a></li>
+          <li><a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener">Discord</a></li>
+          <li><a href="https://ctxpkg.org" target="_blank" rel="noopener">.ctxpkg</a></li>
+          <li><a href="https://buymeacoffee.com/yvgude" target="_blank" rel="noopener">{t('footer.buyMeACoffee')}</a></li>
+        </ul>
       </div>
 
       <div class="footer-columns">
         <div class="footer-col">
-          <h4 class="footer-col-title">{t('footer.product')}</h4>
+          <h4 class="footer-col-title">{t('nav.getStartedLabel')}</h4>
           <ul class="footer-links">
-            <li><a href={lp('/how-it-works')}>{t('nav.learn.howItWorks')}</a></li>
-            <li><a href={lp('/compare')}>{t('nav.getStarted.compare')}</a></li>
+            <li><a href={lp('/docs/getting-started')}>{t('nav.learn.gettingStarted')}</a></li>
             <li><a href={lp('/compatibility')}>{t('nav.getStarted.compatibility')}</a></li>
-            <li><a href={lp('/context-os/benchmark')}>{t('nav.learn.benchmark')}</a></li>
-            <li><a href={lp('/context-os')}>{t('nav.arch.overview')}</a></li>
+            <li><a href={lp('/docs/quick-reference')}>{t('nav.learn.quickReference')}</a></li>
+            <li><a href={lp('/docs/cli-reference')}>{t('nav.docs.cliComplete')}</a></li>
           </ul>
         </div>
 
         <div class="footer-col">
-          <h4 class="footer-col-title">{t('footer.documentation')}</h4>
+          <h4 class="footer-col-title">{t('nav.learn.understand')}</h4>
           <ul class="footer-links">
-            <li><a href={lp('/docs/getting-started')}>{t('nav.learn.gettingStarted')}</a></li>
-            <li><a href={lp('/docs/quick-reference')}>{t('nav.learn.quickReference')}</a></li>
-            <li><a href={lp('/docs/cli-reference')}>{t('nav.docs.cliComplete')}</a></li>
+            <li><a href={lp('/how-it-works')}>{t('nav.learn.howItWorks')}</a></li>
+            <li><a href={lp('/what-is-context-engineering')}>{t('nav.learn.whatIsCe')}</a></li>
+            <li><a href={lp('/context-os')}>{t('nav.arch.overview')}</a></li>
+            <li><a href={lp('/compare')}>{t('nav.getStarted.compare')}</a></li>
+            <li><a href={lp('/context-os/benchmark')}>{t('nav.learn.benchmark')}</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-col-title">{t('nav.do.label')}</h4>
+          <ul class="footer-links">
+            <li><a href={lp('/docs/concepts/read-modes')}>{t('nav.do.codebase')}</a></li>
+            <li><a href={lp('/docs/concepts/token-savings')}>{t('nav.do.bill')}</a></li>
+            <li><a href={lp('/docs/cortex')}>{t('nav.do.memory')}</a></li>
+            <li><a href={lp('/docs/concepts/multi-agent')}>{t('nav.do.agents')}</a></li>
+            <li><a href={lp('/docs/tools')}>{t('nav.tools.allTools')}</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-col-title">{t('nav.docs.reference')}</h4>
+          <ul class="footer-links">
             <li><a href={lp('/docs/api-reference')}>{t('nav.docs.apiReference')}</a></li>
             <li><a href={lp('/docs/configuration')}>{t('nav.docs.configuration')}</a></li>
             <li><a href={lp('/docs/security')}>{t('nav.docs.security')}</a></li>
+            <li><a href={lp('/docs/data-sources')}>{t('nav.docs.dataSources')}</a></li>
             <li><a href={lp('/docs/changelog')}>{t('nav.docs.changelog')}</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-col">
-          <h4 class="footer-col-title">{t('footer.community')}</h4>
-          <ul class="footer-links">
-            <li><a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener">GitHub</a></li>
-            <li><a href="https://crates.io/crates/lean-ctx" target="_blank" rel="noopener">crates.io</a></li>
-            <li><a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener">Discord</a></li>
-            <li><a href="https://ctxpkg.org" target="_blank" rel="noopener">.ctxpkg Standard</a></li>
-            <li><a href="https://buymeacoffee.com/yvgude" target="_blank" rel="noopener">{t('footer.buyMeACoffee')}</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-col">
-          <h4 class="footer-col-title">{t('footer.resources')}</h4>
-          <ul class="footer-links">
-            <li><a href={lp('/docs/tools')}>{t('nav.tools.allTools')}</a></li>
-            <li><a href={lp('/what-is-context-engineering')}>{t('nav.learn.contextEngineering')}</a></li>
-            <li><a href={lp('/privacy')}>{t('footer.privacy')}</a></li>
-            <li><a href={lp('/terms')}>Terms of Service</a></li>
-            <li><a href={lp('/imprint')}>Imprint</a></li>
           </ul>
         </div>
       </div>
@@ -92,6 +96,11 @@ const year = new Date().getFullYear();
   .footer-logo-ascii { font-family: var(--font-mono); font-size: clamp(1rem, 0.9rem + 0.3vw, 1.25rem); font-weight: 700; color: var(--color-text-bright); line-height: 1; font-variant-ligatures: none; -webkit-font-feature-settings: "liga" 0, "clig" 0; font-feature-settings: "liga" 0, "clig" 0; }
   .footer-logo-text { font-size: clamp(0.9rem, 0.85rem + 0.2vw, 1.1rem); font-weight: 700; }
   .footer-tagline { font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem); color: var(--color-muted); line-height: 1.5; max-width: 18rem; }
+  .footer-social { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; }
+  .footer-social li { display: inline-flex; align-items: center; }
+  .footer-social li:not(:last-child)::after { content: "·"; margin-inline-start: 0.75rem; color: var(--color-border-light); }
+  .footer-social a { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); color: var(--color-muted); text-decoration: none; transition: color 0.15s ease; }
+  .footer-social a:hover { color: var(--color-accent); }
   .footer-columns { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(1.5rem, 1rem + 1.5vw, 3rem); }
   @media (max-width: 640px) { .footer-columns { grid-template-columns: 1fr 1fr; } }
   .footer-col-title { font-family: var(--font-display); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-bright); margin-bottom: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem); }
