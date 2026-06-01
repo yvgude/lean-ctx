@@ -225,7 +225,7 @@ lean-ctx config schema</code></pre>
         <td><code>path_jail</code></td>
         <td>bool</td>
         <td><code>true</code></td>
-        <td>Enable/disable PathJail sandbox. Set to <code>false</code> to allow file operations outside the project root. Useful in Docker containers or monorepos with external mounts. Also available via <code>LEAN_CTX_NO_JAIL=1</code>. See <a href="/docs/security#pathjail">Security: PathJail</a>. <span class="text-xs text-muted">v3.6.7</span></td>
+        <td>Enable/disable PathJail sandbox. Set to <code>false</code> to allow file operations outside the project root. Useful in Docker containers or monorepos with external mounts. Also available via <code>LEAN_CTX_NO_JAIL=1</code>. See <a href={lp('/docs/security') + '#pathjail'}>Security: PathJail</a>. <span class="text-xs text-muted">v3.6.7</span></td>
       </tr>
       <tr>
         <td><code>redirect_exclude</code></td>
@@ -668,7 +668,7 @@ max_staleness_days = 30</code></pre>
       <tr>
         <td><code>LEAN_CTX_NO_JAIL</code></td>
         <td><code>1</code> / <code>true</code></td>
-        <td>Disable PathJail sandbox for the current session. Useful in Docker/Podman containers or monorepos with external mounts. See <a href="/docs/security#pathjail">PathJail Sandbox</a>. <span class="text-xs text-muted">v3.6.7</span></td>
+        <td>Disable PathJail sandbox for the current session. Useful in Docker/Podman containers or monorepos with external mounts. See <a href={lp('/docs/security') + '#pathjail'}>PathJail Sandbox</a>. <span class="text-xs text-muted">v3.6.7</span></td>
       </tr>
       <tr>
         <td><code>LCTX_MAX_READ_BYTES</code></td>
@@ -1014,7 +1014,7 @@ search_group_limit = 10   # total search calls before block</code></pre>
   <h3>How It Works</h3>
   <ol>
     <li>A tool response exceeds the configured token threshold</li>
-    <li>LeanCTX stores the full output to <code>~/.lean-ctx/archive/</code> (content-addressed by SHA-256)</li>
+    <li>lean-ctx stores the full output to <code>~/.lean-ctx/archive/</code> (content-addressed by SHA-256)</li>
     <li>The compressed response includes an <code>[ARCHIVE: &lt;id&gt;]</code> reference</li>
     <li>The agent calls <code>ctx_expand &lt;id&gt;</code> to retrieve the full content on demand</li>
   </ol>

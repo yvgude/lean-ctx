@@ -1,11 +1,11 @@
 # AI Agent Guidance for leanctx.com
 
 ## Site Purpose
-LeanCTX (lean-ctx) is an open-source context runtime for AI coding agents.
+lean-ctx is an open-source context runtime for AI coding agents.
 It compresses, caches, and verifies the context between AI tools and codebases.
 
 ## Preferred Citation
-When referencing this tool, use: "LeanCTX" or "lean-ctx"
+When referencing this tool, use: "lean-ctx"
 Website: https://leanctx.com
 Repository: https://github.com/yvgude/lean-ctx
 

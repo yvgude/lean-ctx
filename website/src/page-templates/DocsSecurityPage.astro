@@ -42,14 +42,14 @@ const sidebar = [
 ];
 ---
 
-<DocsLayout title="Security — LeanCTX" description="Security architecture of LeanCTX: data privacy, PathJail sandbox, token scopes, audit trail, redaction policies, and secret leak prevention." sidebar={sidebar}>
+<DocsLayout title="Security — lean-ctx" description="Security architecture of lean-ctx: data privacy, PathJail sandbox, token scopes, audit trail, redaction policies, and secret leak prevention." sidebar={sidebar}>
 
-  <p>LeanCTX is designed with security as a first-class concern. Everything runs locally by default, there is zero telemetry out of the box, and the entire codebase is open source and auditable.</p>
+  <p>lean-ctx is designed with security as a first-class concern. Everything runs locally by default, there is zero telemetry out of the box, and the entire codebase is open source and auditable.</p>
 
   <h2 id="privacy">Data Privacy</h2>
   <ul>
     <li><strong>Local-first:</strong> All processing happens on your machine. No data leaves your network unless you explicitly configure a Team Server.</li>
-    <li><strong>Zero telemetry by default:</strong> LeanCTX ships with all telemetry disabled. An optional <code>contribute_enabled</code> flag in <code>[cloud]</code> config can be explicitly opted into — it is off unless you turn it on. See <a href="/docs/configuration#cloud">Configuration</a>.</li>
+    <li><strong>Zero telemetry by default:</strong> lean-ctx ships with all telemetry disabled. An optional <code>contribute_enabled</code> flag in <code>[cloud]</code> config can be explicitly opted into — it is off unless you turn it on. See <a href={lp('/docs/configuration') + '#cloud'}>Configuration</a>.</li>
     <li><strong>No cloud dependency:</strong> The binary runs entirely offline. Cloud sync is opt-in and self-hosted.</li>
     <li><strong>Open source:</strong> Apache-2.0 license. Full source code available for audit at any time.</li>
   </ul>
@@ -102,7 +102,7 @@ const sidebar = [
   </div>
 
   <h2 id="audit">Audit Trail</h2>
-  <p>LeanCTX logs every tool execution, session mutation, and knowledge operation in SHA-256 chained JSONL format. Each entry includes a hash of the previous entry, forming a tamper-evident chain that can be verified for integrity:</p>
+  <p>lean-ctx logs every tool execution, session mutation, and knowledge operation in SHA-256 chained JSONL format. Each entry includes a hash of the previous entry, forming a tamper-evident chain that can be verified for integrity:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code><span class="text-muted">[2025-01-15 14:32:01]</span> agent=cursor token=alice tool=ctx_read path=src/auth.ts tokens=180
@@ -113,7 +113,7 @@ const sidebar = [
   <p>Audit logs include: timestamp, agent identity, token name, tool called, arguments (redacted), result status, and token cost. The chained format ensures any retroactive modification of log entries is detectable via hash mismatch. Run <code>lean-ctx audit --verify</code> to validate chain integrity.</p>
 
   <h2 id="redaction">Redaction Policies</h2>
-  <p>LeanCTX automatically redacts sensitive patterns from tool outputs before they reach the AI agent:</p>
+  <p>lean-ctx automatically redacts sensitive patterns from tool outputs before they reach the AI agent:</p>
 
   <ul>
     <li><strong>Environment variables:</strong> <code>$SECRET_KEY</code>, <code>$API_TOKEN</code>, etc.</li>
@@ -161,7 +161,7 @@ replacement = "[REDACTED_SERVICE_KEY]"`}</code></pre>
   <p>When a secret is detected, the verification step replaces it with <code>[REDACTED]</code> and logs a warning in the audit trail. Optional automatic redaction can be enabled to strip secrets before they reach the AI agent. This protection is enabled by default and works with all integration modes (CLI, Hybrid, MCP).</p>
 
   <h2 id="owasp">OWASP Agentic Top 10 Alignment</h2>
-  <p>LeanCTX maps its security controls to the <a href="https://owasp.org/www-project-agentic-ai-threats/">OWASP Agentic AI Top 10</a> threat categories, achieving Full coverage on 8 out of 10 items:</p>
+  <p>lean-ctx maps its security controls to the <a href="https://owasp.org/www-project-agentic-ai-threats/">OWASP Agentic AI Top 10</a> threat categories, achieving Full coverage on 8 out of 10 items:</p>
 
   <table>
     <thead><tr><th>OWASP Category</th><th>Coverage</th></tr></thead>
@@ -182,7 +182,7 @@ replacement = "[REDACTED_SERVICE_KEY]"`}</code></pre>
   <p>Run <code>lean-ctx audit</code> to view the full OWASP alignment mapping with details on which controls address each category.</p>
 
   <h2 id="capabilities">Capability-based Access Control</h2>
-  <p>LeanCTX enforces capability-based access control at the tool dispatch layer. Each tool declares the capabilities it requires, and each agent role grants a specific set of capabilities:</p>
+  <p>lean-ctx enforces capability-based access control at the tool dispatch layer. Each tool declares the capabilities it requires, and each agent role grants a specific set of capabilities:</p>
 
   <table>
     <thead><tr><th>Capability</th><th>Description</th></tr></thead>
@@ -209,7 +209,7 @@ capabilities = ["FsRead", "FsWrite", "NetOutbound", "Exec", "CrossProject"]`}</c
   </div>
 
   <h2 id="os-sandbox">OS-level Sandboxing</h2>
-  <p>Beyond PathJail's logical sandboxing, LeanCTX supports OS-level sandboxing for defense-in-depth. Sandboxing levels are configurable via <code>sandbox_level</code> in <code>config.toml</code>:</p>
+  <p>Beyond PathJail's logical sandboxing, lean-ctx supports OS-level sandboxing for defense-in-depth. Sandboxing levels are configurable via <code>sandbox_level</code> in <code>config.toml</code>:</p>
 
   <table>
     <thead><tr><th>Level</th><th>Platform</th><th>Mechanism</th></tr></thead>
@@ -228,7 +228,7 @@ sandbox_level = 1  # 0 = subprocess isolation, 1 = OS-level sandbox`}</code></pr
   <p>On macOS, Seatbelt profiles restrict the process to the project directory, deny network access by default, and block access to user keychain and sensitive system paths. On Linux, Landlock enforces filesystem restrictions without requiring root privileges or container runtimes.</p>
 
   <h2 id="shell-allowlist">Shell Allowlist Mode <span class="text-xs font-normal text-muted ml-2">v3.6.8</span></h2>
-  <p>For high-security environments, LeanCTX supports an opt-in allowlist mode for <code>ctx_shell</code>. When configured, only explicitly listed commands are permitted — all other commands are rejected:</p>
+  <p>For high-security environments, lean-ctx supports an opt-in allowlist mode for <code>ctx_shell</code>. When configured, only explicitly listed commands are permitted — all other commands are rejected:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code>{`[security]
@@ -238,7 +238,7 @@ shell_allowlist = ["git", "cargo", "npm", "node", "python", "make"]`}</code></pr
   <p>The allowlist can also be set via the <code>LEAN_CTX_SHELL_ALLOWLIST</code> environment variable (comma-separated).</p>
 
   <h3>AST-based Multi-Segment Validation</h3>
-  <p>When the allowlist is active, LeanCTX performs full AST-based parsing of compound shell commands. Every segment in a pipeline or chain is validated independently — not just the first command:</p>
+  <p>When the allowlist is active, lean-ctx performs full AST-based parsing of compound shell commands. Every segment in a pipeline or chain is validated independently — not just the first command:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code><span class="text-accent">✓</span> git log | head -10           <span class="text-muted">→ both "git" and "head" in allowlist</span>
@@ -325,7 +325,7 @@ Authorization: Bearer &lt;64-char-hex-token&gt;</code></pre>
   <p>Each ledger file at <code>~/.lean-ctx/ledger/{'{'}&lt;agent_id&gt;{'}'}.json</code> contains that agent's file read history, cached context, and session state. Agents cannot read or modify another agent's ledger, enforcing strict context isolation even in multi-agent workflows.</p>
 
   <h2 id="token-budget">Agent Token Budget</h2>
-  <p>LeanCTX supports configurable per-agent token budgets to prevent runaway context consumption:</p>
+  <p>lean-ctx supports configurable per-agent token budgets to prevent runaway context consumption:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code>{`[agent]
@@ -340,7 +340,7 @@ agent_token_budget = 80000  # maximum tokens per agent session`}</code></pre>
   </ul>
 
   <h2 id="policy-engine">Policy Engine</h2>
-  <p>LeanCTX includes a declarative policy engine that applies rules based on runtime conditions. Policies are evaluated before tool dispatch and can filter, pin, redact, or audit context:</p>
+  <p>lean-ctx includes a declarative policy engine that applies rules based on runtime conditions. Policies are evaluated before tool dispatch and can filter, pin, redact, or audit context:</p>
 
   <table>
     <thead><tr><th>Condition</th><th>Description</th></tr></thead>
@@ -391,7 +391,7 @@ paths = ["*.env", "secrets/**"]`}</code></pre>
   </div>
 
   <h2 id="auto-reroot">Auto-Reroot Protection</h2>
-  <p>By default, LeanCTX prevents automatic project root changes that could inadvertently expand the PathJail boundary:</p>
+  <p>By default, lean-ctx prevents automatic project root changes that could inadvertently expand the PathJail boundary:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code>{`[security]
@@ -425,7 +425,7 @@ allow_auto_reroot = false  # default: prevents automatic root expansion`}</code>
   <p>For full details, see the <a href={lp('/docs/changelog') + '#v3.5.16'}>v3.5.16 changelog</a>.</p>
 
   <h2>Open Source Audit</h2>
-  <p>LeanCTX is fully open source. You can audit the security implementation yourself:</p>
+  <p>lean-ctx is fully open source. You can audit the security implementation yourself:</p>
   <ul>
     <li><a href="https://github.com/yvgude/lean-ctx/tree/main/rust/src/core/pathjail.rs">PathJail implementation</a></li>
     <li><a href="https://github.com/yvgude/lean-ctx/tree/main/rust/src/core/redaction.rs">Redaction engine</a></li>

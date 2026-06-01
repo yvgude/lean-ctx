@@ -1,4 +1,4 @@
-# LeanCTX — Full Documentation Index
+# lean-ctx — Full Documentation Index
 
 > Open-source context runtime for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry. Version 3.6.22.
 

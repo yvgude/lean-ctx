@@ -74,13 +74,13 @@ const sidebar = [
   </table>
 
   <h3>Example: Recording Context</h3>
-  <pre><code>ctx_session task "Implement OAuth2 login flow"
-ctx_session finding "auth.ts:45 - missing token refresh logic"
-ctx_session decision "Use refresh tokens with 7-day expiry"
-ctx_session save</code></pre>
+  <pre><code>ctx_session action=task value="Implement OAuth2 login flow"
+ctx_session action=finding value="auth.ts:45 - missing token refresh logic"
+ctx_session action=decision value="Use refresh tokens with 7-day expiry"
+ctx_session action=save</code></pre>
 
   <h3>Example: Restoring Context</h3>
-  <pre><code>ctx_session load
+  <pre><code>ctx_session action=load
 → Restored session (2026-03-25 14:30)
   Task: Implement OAuth2 login flow
   Findings: 3 recorded
@@ -131,6 +131,42 @@ ctx_session action=restore
     task description, findings, decisions, files touched with their cache state,
     and a timestamp for ordering.
   </p>
+
+  <h2 id="ctx_ledger">ctx_ledger</h2>
+  <p>
+    Inspects and manages the <strong>context ledger</strong> — lean-ctx's running account of
+    what currently occupies your context window. Use it to monitor context pressure during
+    long sessions and reclaim space by evicting stale entries.
+  </p>
+
+  <h3>Actions</h3>
+  <table>
+    <thead>
+      <tr><th>Action</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>status</code></td><td>Show the current ledger and context-pressure level (default)</td></tr>
+      <tr><td><code>reset</code></td><td>Clear the entire ledger and release all tracked context</td></tr>
+      <tr><td><code>evict</code></td><td>Drop specific entries listed in <code>targets</code> to free space</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>action</code> (required) — <code>status</code> (default), <code>reset</code>, or <code>evict</code></li>
+    <li><code>targets</code> — entries to evict (used with <code>action=evict</code>)</li>
+  </ul>
+
+  <h3>Example</h3>
+  <pre><code>ctx_ledger action=status
+→ CONTEXT LEDGER (pressure: moderate)
+  F1  auth.ts        123L  active
+  F2  db.ts           89L  active
+  F3  legacy/old.ts  540L  stale
+
+ctx_ledger action=evict targets=F3
+→ Evicted F3, released ~540 lines of context</code></pre>
+
   <h2 id="ctx_compress">ctx_compress</h2>
   <p>
     <code>ctx_compress</code> creates a compact snapshot of all files currently in the session cache.
@@ -171,7 +207,7 @@ COMPRESSION: 28450 → 890 tok
 
   <h3>Auto-Checkpoint</h3>
   <p>
-    LeanCTX can automatically generate checkpoints after every N tool calls.
+    lean-ctx can automatically generate checkpoints after every N tool calls.
     Configure with the <code>LEAN_CTX_CHECKPOINT_INTERVAL</code> environment variable:
   </p>
   <pre><code>{`# Auto-checkpoint every 15 tool calls (default: 15)
@@ -311,7 +347,7 @@ Best: "cache hit" saves 902 tokens (99%)</code></pre>
   <h3>Example Output</h3>
   <pre><code>ctx_metrics
 
-LeanCTX session metrics
+lean-ctx session metrics
 ══════════════════════════════════════════════════
 Files tracked: 12 | Reads: 34 | Cache hits: 22 (65%)
 Input tokens:  28.5K original → 4.1K sent | 24.3K saved (85.5%)
@@ -365,7 +401,7 @@ Projected session savings (incl. thinking): $0.085</code></pre>
 ╚══════════════════════════════════════════╝</code></pre>
   <h2 id="ctx_cache">ctx_cache</h2>
   <p>
-    <code>ctx_cache</code> gives you explicit control over LeanCTX's in-memory session cache.
+    <code>ctx_cache</code> gives you explicit control over lean-ctx's in-memory session cache.
     Use it when the LLM's context no longer matches what the server has cached - for example
     after context compaction, session resets, or when running as a subagent.
   </p>

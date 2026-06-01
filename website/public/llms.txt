@@ -1,10 +1,10 @@
-# LeanCTX — The Context Runtime for AI Agents
+# lean-ctx — The Context Runtime for AI Agents
 
-> LeanCTX is an open-source context runtime that sits between AI coding agents and codebases. It compresses file reads by up to 99%, persists memory across sessions, verifies outputs, and works with 24+ AI tools. Single Rust binary, CLI-first, privacy-first. Zero telemetry.
+> lean-ctx is an open-source context runtime that sits between AI coding agents and codebases. It compresses file reads by up to 99%, persists memory across sessions, verifies outputs, and works with 24+ AI tools. Single Rust binary, CLI-first, privacy-first. Zero telemetry.
 
-## What is LeanCTX?
+## What is lean-ctx?
 
-LeanCTX (lean-ctx) is a context engineering layer for AI agents. It intercepts every file read, shell command, and search query between your AI tool and codebase, then compresses, caches, and verifies the output before it reaches the model.
+lean-ctx is a context engineering layer for AI agents. It intercepts every file read, shell command, and search query between your AI tool and codebase, then compresses, caches, and verifies the output before it reaches the model.
 
 Three integration modes:
 - **CLI-Redirect** (recommended): Zero MCP overhead. AI agents call `lean-ctx` via shell commands. Used by Cursor, Claude Code, Codex, Gemini CLI.
@@ -95,7 +95,7 @@ No. <1ms overhead per operation. Most users report faster AI responses because l
 Zero telemetry. Everything runs locally. PathJail sandbox, shell allowlist, secret redaction, TOCTOU mitigation, prompt injection hardening — all active by default.
 
 **What is context engineering?**
-Context engineering is the discipline of managing what information an AI agent sees, remembers, and acts on. LeanCTX automates this with compression, caching, verification, and governance.
+Context engineering is the discipline of managing what information an AI agent sees, remembers, and acts on. lean-ctx automates this with compression, caching, verification, and governance.
 
 **What is the difference between lean-ctx and other MCP tools?**
 lean-ctx is not just an MCP server — it's a full context runtime with CLI integration, shell hooks, persistent memory, code intelligence, and a governance layer. It works with or without MCP.

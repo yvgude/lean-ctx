@@ -43,7 +43,7 @@ const siteVersion = siteVersionRaw.trim();
 
 const orgJsonLd = {
   '@type': 'Organization',
-  name: 'LeanCTX',
+  name: 'lean-ctx',
   url: 'https://leanctx.com',
   logo: 'https://leanctx.com/apple-touch-icon.png',
   sameAs: [
@@ -56,7 +56,7 @@ const orgJsonLd = {
 const softwareJsonLd = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'LeanCTX',
+  name: 'lean-ctx',
   alternateName: ['lean-ctx', 'Context Layer'],
   applicationCategory: 'DeveloperApplication',
   applicationSubCategory: 'AI Development Tool',
@@ -78,7 +78,7 @@ const softwareJsonLd = JSON.stringify({
 const webSiteJsonLd = isHome ? JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'WebSite',
-  name: 'LeanCTX',
+  name: 'lean-ctx',
   alternateName: 'lean-ctx',
   url: 'https://leanctx.com',
   description: 'Lean Context — the context layer for AI coding tools',
@@ -91,7 +91,7 @@ const webPageJsonLd = !isHome ? JSON.stringify({
   name: title,
   description: description,
   url: canonicalURL.toString(),
-  isPartOf: { '@type': 'WebSite', name: 'LeanCTX', url: 'https://leanctx.com' },
+  isPartOf: { '@type': 'WebSite', name: 'lean-ctx', url: 'https://leanctx.com' },
   author: { '@type': 'Person', name: 'Yves Gugger' },
   publisher: orgJsonLd,
   dateModified: todayIso,
@@ -167,7 +167,7 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
       } catch (_) {}
     })();
   </script>
-  <meta name="application-name" content="LeanCTX" />
+  <meta name="application-name" content="lean-ctx" />
   {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
   {noindex && <meta name="robots" content="noindex, nofollow" />}
 
@@ -175,7 +175,7 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
   <meta property="og:description" content={description} />
   <meta property="og:type" content="website" />
   <meta property="og:url" content={canonicalURL} />
-  <meta property="og:site_name" content="LeanCTX" />
+  <meta property="og:site_name" content="lean-ctx" />
   <meta property="og:locale" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[locale] || 'en_US'} />
   {locales.filter(l => l !== locale).map(l => (
     <meta property="og:locale:alternate" content={{en:'en_US',de:'de_DE',es:'es_ES',fr:'fr_FR',pt:'pt_BR',ru:'ru_RU',zh:'zh_CN',ja:'ja_JP',ar:'ar_SA',hi:'hi_IN',bn:'bn_BD'}[l] || 'en_US'} />
