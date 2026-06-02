@@ -90,8 +90,23 @@ const lastUpdated = 'April 2026';
         <li><strong>Cache</strong> - file content cache for faster reads. Stored in <code>cache/</code>. Auto-expires. Never transmitted.</li>
         <li><strong>Index files</strong> - code search indices (BM25, graph). Stored in <code>index/</code>. Never transmitted.</li>
       </ul>
+      <h3>2d. Wrapped Permalink &amp; Leaderboard (opt-in, explicit)</h3>
       <p>
-        No crash reporting, no usage analytics, no tracking. The two network features described above are the only outbound requests LeanCTX ever makes.
+        <code>lean-ctx gain --publish</code> uploads a <strong>whitelisted, aggregate</strong> slice of your Wrapped recap to <code>leanctx.com</code> and returns a shareable <code>leanctx.com/w/&lt;id&gt;</code> link. It is anonymous and never happens automatically — only when you run the command.
+      </p>
+      <p>Only these fields are published:</p>
+      <ul>
+        <li>Tokens saved, USD estimate, time period, and compression rate</li>
+        <li>Command / session / file counts and the tool names used</li>
+        <li>Optional model name and an optional display name you choose</li>
+      </ul>
+      <p><strong>Never sent:</strong> file names, file contents, code, prompts, paths, project names, hostnames, usernames, or any IP-derived identity (a salted hash is used solely for abuse rate-limiting, never stored as a raw IP).</p>
+      <p>
+        Adding <code>--leaderboard</code> additionally lists the card on the public <a href="https://leanctx.com/leaderboard">leaderboard</a> (off by default). A one-time edit token is stored locally so you can remove a card at any time with <code>lean-ctx gain --unpublish</code>.
+      </p>
+
+      <p>
+        No crash reporting, no usage analytics, no tracking. The version check (2a) and opt-in compression stats (2b) are the only <em>automatic</em> outbound requests LeanCTX makes; publishing a Wrapped card (2d) happens only when you explicitly run <code>lean-ctx gain --publish</code>.
       </p>
 
       <h2>3. Chrome Extension</h2>

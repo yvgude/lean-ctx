@@ -428,6 +428,29 @@ lean-ctx gain --daily                  # daily breakdown
 lean-ctx gain --pipeline               # per-stage compression breakdown
 lean-ctx gain --json &gt; stats.json      # machine-readable export</code></pre>
 
+  <h4 id="gain-sharing">Sharing your recap</h4>
+  <p>Turn any recap into something you can post. Sharing is <strong>opt-in</strong> and privacy-safe: only a whitelisted, aggregate slice (tokens saved, USD estimate, period, compression rate, command/session/file counts, tool names, optional model, and an optional display name) ever leaves your machine — never code, paths, or prompts.</p>
+  <table>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thOutput')}</th></tr></thead>
+    <tbody>
+      <tr><td><code>--svg [=&lt;path&gt;]</code></td><td>Write the Wrapped card as an SVG (social / OG image) — defaults to <code>lean-ctx-wrapped.svg</code></td></tr>
+      <tr><td><code>--share [=&lt;path&gt;]</code></td><td>Write a self-hostable Wrapped page (HTML) with social-preview meta — defaults to <code>lean-ctx-wrapped.html</code></td></tr>
+      <tr><td><code>--copy</code></td><td>Copy a ready-to-post share line to the clipboard (<code>pbcopy</code>/<code>clip</code>/<code>wl-copy</code>/<code>xclip</code>/<code>xsel</code>)</td></tr>
+      <tr><td><code>--open</code></td><td>With <code>--svg</code>/<code>--share</code>: also open the written card/page in your browser</td></tr>
+      <tr><td><code>--publish [--name=&lt;n&gt;]</code></td><td>Anonymously publish the recap and get a permalink at <code>leanctx.com/w/&lt;id&gt;</code> (URL copied to the clipboard). A one-time edit token is stored locally for later removal.</td></tr>
+      <tr><td><code>--leaderboard</code></td><td>With <code>--publish</code>: also list the card on the opt-in public <a href="https://leanctx.com/leaderboard">leaderboard</a> (off by default)</td></tr>
+      <tr><td><code>--unpublish[=&lt;id&gt;]</code></td><td>Remove a published permalink (most recent publish if no id is given)</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>lean-ctx gain --svg                         # SVG card -&gt; lean-ctx-wrapped.svg
+lean-ctx gain --share --open                # self-hostable HTML page, opened in browser
+lean-ctx gain --copy                        # copy a share line to the clipboard
+lean-ctx gain --publish                     # opt-in permalink -&gt; leanctx.com/w/&lt;id&gt;
+lean-ctx gain --publish --name="Ada"        # publish with a display name
+lean-ctx gain --publish --leaderboard       # publish and join the public leaderboard
+lean-ctx gain --unpublish                   # remove your most recent published card</code></pre>
+
   <p><Fragment set:html={t('docs.cliReference.ctxGainToolDesc', { toolsPath: lp('/docs/tools') })} /></p>
 
   <h3 id="cep"><code>lean-ctx cep [--json]</code></h3>
@@ -462,6 +485,7 @@ lean-ctx dashboard --project=~/my-app     # scoped to a single project</code></p
 
   <h3 id="wrapped"><code>lean-ctx wrapped [--week|--month|--all]</code></h3>
   <p>{t('docs.cliReference.wrappedDesc')}</p>
+  <p><em>Deprecated alias for <code>lean-ctx gain --wrapped</code>. The sharing flags (<code>--svg</code>, <code>--share</code>, <code>--copy</code>, <code>--open</code>, <code>--publish</code>, <code>--leaderboard</code>) all live under <a href="#gain-sharing"><code>gain</code></a>.</em></p>
 
   <table>
     <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thPeriod')}</th></tr></thead>
@@ -582,9 +606,18 @@ lean-ctx filter validate</code></pre>
 
   <h2 id="utilities">{t('docs.cliReference.utilitiesTitle')}</h2>
 
-  <h3 id="discover"><code>lean-ctx discover</code></h3>
+  <h3 id="discover"><code>lean-ctx discover [--card]</code></h3>
   <p>{t('docs.cliReference.discoverDesc')}</p>
-  <pre><code>lean-ctx discover</code></pre>
+  <p>On its very first run, <code>discover</code> surfaces a concrete, projected token saving for the current project (a one-time "aha", recorded with a marker in <code>~/.lean-ctx</code>). Add <code>--card</code> to export a shareable "before lean-ctx" SVG of that projection.</p>
+  <table>
+    <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thOutput')}</th></tr></thead>
+    <tbody>
+      <tr><td><code>(none)</code></td><td>List uncompressed commands found in your shell history</td></tr>
+      <tr><td><code>--card [=&lt;path&gt;]</code></td><td>Write a shareable "before lean-ctx" SVG — defaults to <code>lean-ctx-before.svg</code></td></tr>
+    </tbody>
+  </table>
+  <pre><code>lean-ctx discover
+lean-ctx discover --card                    # SVG -&gt; lean-ctx-before.svg</code></pre>
 
   <h3 id="ghost"><code>lean-ctx ghost [--json]</code></h3>
   <p set:html={t('docs.cliReference.ghostDesc')} />

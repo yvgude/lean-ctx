@@ -45,11 +45,28 @@ Refinements: `--model <name>` (price against a specific model), `--period <p>`
 ## 2. `wrapped` — the shareable recap
 
 ```bash
-lean-ctx wrapped                   # (also: lean-ctx gain --wrapped)
+lean-ctx gain --wrapped            # (lean-ctx wrapped is a deprecated alias)
 ```
 
 A celebratory, screenshot-friendly summary of tokens/cost saved over a period —
-good for sharing with your team or justifying the tool to a lead.
+good for sharing with your team or justifying the tool to a lead. Turn it into
+something you can post:
+
+| Flag | Shares as |
+|------|-----------|
+| `--svg [=<path>]` | an SVG card (social / OG image), default `lean-ctx-wrapped.svg` |
+| `--share [=<path>]` | a self-hostable HTML page with social-preview meta |
+| `--copy` | a ready-to-post share line copied to your clipboard |
+| `--open` | with `--svg`/`--share`: opens the card/page in your browser |
+| `--publish [--name=<n>]` | an opt-in permalink at `leanctx.com/w/<id>` (URL copied) |
+| `--publish --leaderboard` | also lists the card on the opt-in public [leaderboard](https://leanctx.com/leaderboard) |
+| `--unpublish[=<id>]` | removes a published permalink (most recent if no id) |
+
+Sharing is **opt-in and privacy-safe**: only a whitelisted, aggregate slice
+(tokens saved, USD estimate, period, compression rate, command/session/file
+counts, tool names, optional model, optional display name) is published — never
+code, paths, or prompts. A one-time edit token is stored locally so you can
+`--unpublish` later.
 
 ## 3. `token-report` — tokens + memory
 
@@ -86,7 +103,9 @@ lean-ctx ghost --json
 ```
 
 - `discover` scans shell history for commands you ran *without* LeanCTX — your
-  "you could have saved more here" list.
+  "you could have saved more here" list. On its **first run** it projects a
+  concrete saving for the current project (a one-time "aha"); add `--card` to
+  export a shareable "before lean-ctx" SVG.
 - `ghost` quantifies waste that's currently slipping through, so you know
   whether tightening compression (Journey 10) is worth it.
 

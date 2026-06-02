@@ -3,7 +3,7 @@
 /**
  * Journey / route-coverage guard.
  *
- * The 14 journeys (journeys.ts) and the 4 persona tracks (tracks.ts) are the
+ * The 15 journeys (journeys.ts) and the 4 persona tracks (tracks.ts) are the
  * backbone of the information architecture. Every journey and track must:
  *   - point at a page that actually resolves (no 404s), and
  *   - belong to one of the four declared tracks (journeys only).
@@ -52,11 +52,12 @@ const resolves = (href) => {
   return new RegExp(`['"]${clean}/?['"]\\s*:`).test(astroConfig);
 };
 
-// 1) Exactly 14 journeys, all mapped to a declared track.
+// 1) Exactly 15 journeys, all mapped to a declared track.
+const EXPECTED_JOURNEYS = 15;
 const journeyHrefs = extractHrefs(journeysSrc);
 const journeyNums = [...journeysSrc.matchAll(/num:\s*(\d+)/g)].map((m) => Number(m[1]));
-if (journeyNums.length === 14) ok('14 journeys defined');
-else fail(`expected 14 journeys, found ${journeyNums.length}`);
+if (journeyNums.length === EXPECTED_JOURNEYS) ok(`${EXPECTED_JOURNEYS} journeys defined`);
+else fail(`expected ${EXPECTED_JOURNEYS} journeys, found ${journeyNums.length}`);
 
 for (const id of extractTrackIds(journeysSrc)) {
   if (!declaredTrackIds.has(id)) fail(`journey references unknown trackId "${id}"`);
