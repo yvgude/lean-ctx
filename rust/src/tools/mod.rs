@@ -61,6 +61,7 @@ pub mod ctx_task;
 pub mod ctx_tree;
 pub mod ctx_verify;
 pub mod ctx_workflow;
+pub(crate) mod edit_recovery;
 pub(crate) mod knowledge_shared;
 pub mod registered;
 

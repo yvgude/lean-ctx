@@ -387,7 +387,15 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
     let path = Path::new(file_path);
     let pre = match read_preimage(path, cap, params.allow_lossy_utf8) {
         Ok(p) => p,
-        Err(e) => return (e, CacheEffect::None),
+        Err(e) => {
+            // File missing? Tell the agent whether it moved or the path is
+            // wrong, instead of a bare "cannot open" (#331 point 3).
+            if !path.exists() {
+                let hint = crate::tools::edit_recovery::moved_or_deleted_hint(path);
+                return (format!("{e}{hint}"), CacheEffect::None);
+            }
+            return (e, CacheEffect::None);
+        }
     };
     if let Err(e) = verify_expected_preimage(&pre, params) {
         return (e, CacheEffect::None);
@@ -506,8 +514,10 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
         ""
     };
 
-    // Find closest matching line to help agent identify the mismatch
+    // Same-file hint: closest matching line (usually a whitespace/indent diff).
     let closest_hint = find_closest_line_hint(content, old_str);
+    // Cross-file hint: did the agent target the wrong file? (#331 point 2)
+    let cross_file = crate::tools::edit_recovery::cross_file_hint(path, old_str);
 
     let (escalation, effect) = auto_escalate_reread(last_mode, file_path);
 
@@ -515,7 +525,7 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
         format!(
             "ERROR: old_string not found in {file_path}{hint}. \
              Make sure it matches exactly (including whitespace/indentation).\n\
-             Searched for: {preview}{closest_hint}{escalation}"
+             Searched for: {preview}{closest_hint}{cross_file}{escalation}"
         ),
         effect,
     )
@@ -1263,5 +1273,49 @@ mod tests {
             "",
         );
         assert!(text.contains("Closest match at line"));
+    }
+
+    #[test]
+    fn missing_file_suggests_relocated_path() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/new")).unwrap();
+        std::fs::write(dir.path().join("src/new/gizmo.rs"), "fn gizmo() {}\n").unwrap();
+
+        let (text, effect) = run_io(
+            &mk_params(
+                &dir.path().join("src/old/gizmo.rs"),
+                "fn gizmo() {}",
+                "fn gizmo2() {}",
+                false,
+                false,
+            ),
+            "",
+        );
+        assert!(text.contains("same-named file was found"), "got: {text}");
+        assert!(text.contains("gizmo.rs"), "got: {text}");
+        assert!(matches!(effect, CacheEffect::None));
+    }
+
+    #[test]
+    fn old_string_in_other_file_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let target = dir.path().join("a.rs");
+        std::fs::write(&target, "fn unrelated_a() {}\n").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "fn the_target_symbol() {}\n").unwrap();
+
+        let (text, _) = run_io(
+            &mk_params(
+                &target,
+                "fn the_target_symbol() {}",
+                "fn renamed() {}",
+                false,
+                false,
+            ),
+            "",
+        );
+        assert!(text.contains("matching line exists in"), "got: {text}");
+        assert!(text.contains("b.rs"), "got: {text}");
     }
 }
