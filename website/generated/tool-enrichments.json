@@ -13,7 +13,8 @@
         "ctx_edit",
         "ctx_delta",
         "ctx_provider",
-        "ctx_discover_tools"
+        "ctx_discover_tools",
+        "ctx_multi_repo"
       ]
     },
     "intelligence": {
@@ -38,7 +39,8 @@
         "ctx_preload",
         "ctx_response",
         "ctx_retrieve",
-        "ctx_semantic_search"
+        "ctx_semantic_search",
+        "ctx_repomap"
       ]
     },
     "memory": {
@@ -68,7 +70,8 @@
         "ctx_verify",
         "ctx_control",
         "ctx_load_tools",
-        "ctx_radar"
+        "ctx_radar",
+        "ctx_plugins"
       ]
     },
     "workflow": {
@@ -83,7 +86,8 @@
         "ctx_proof",
         "ctx_compile",
         "ctx_plan",
-        "ctx_call"
+        "ctx_call",
+        "ctx_rules"
       ]
     },
     "analysis": {
@@ -364,6 +368,51 @@
         "Results include associative neighbours from co-access patterns",
         "Uses submodular maximization for optimal symbol selection within token budget"
       ]
+    },
+    "ctx_multi_repo": {
+      "when_to_use": "Working across several repositories at once - register multiple project roots and run a single cross-repo search ranked by Reciprocal Rank Fusion (RRF).",
+      "when_not_to_use": "Single-repo work (use ctx_search) or when you only need the file tree of one project (use ctx_tree).",
+      "related": [
+        "ctx_search",
+        "ctx_semantic_search",
+        "ctx_tree"
+      ],
+      "token_impact": "One ranked result set across N repos replaces N separate searches and manual merging.",
+      "cli_equivalent": "lean-ctx multi-repo [add|remove|list|search] <args>"
+    },
+    "ctx_repomap": {
+      "when_to_use": "Orienting in an unfamiliar codebase - returns the most structurally important symbols across the repo, ranked by PageRank and weighted by current session relevance.",
+      "when_not_to_use": "When you need a specific symbol's definition (use ctx_symbol) or a full dependency graph (use ctx_graph).",
+      "related": [
+        "ctx_overview",
+        "ctx_graph",
+        "ctx_symbol",
+        "ctx_architecture"
+      ],
+      "token_impact": "One ranked symbol map replaces broad exploratory reads when learning a project.",
+      "cli_equivalent": "lean-ctx repomap [--top N]"
+    },
+    "ctx_plugins": {
+      "when_to_use": "Managing lean-ctx plugins - list installed plugins, enable or disable them, and inspect plugin details.",
+      "when_not_to_use": "For tool discovery (use ctx_discover_tools) or runtime configuration (use ctx_control).",
+      "related": [
+        "ctx_control",
+        "ctx_load_tools",
+        "ctx_discover_tools"
+      ],
+      "token_impact": "Compact plugin status output; avoids reading config files manually.",
+      "cli_equivalent": "lean-ctx plugins [list|enable|disable|info] <name>"
+    },
+    "ctx_rules": {
+      "when_to_use": "Governing rules across AI agents (ContextOps) - sync rule files to every configured agent, diff drift between them, and lint for consistency.",
+      "when_not_to_use": "Single-agent setups where only one editor reads the rules file.",
+      "related": [
+        "ctx_handoff",
+        "ctx_workflow",
+        "ctx_knowledge"
+      ],
+      "token_impact": "Keeps all agents on identical rules without manual copy-paste across editor configs.",
+      "cli_equivalent": "lean-ctx rules [sync|diff|lint|status]"
     }
   }
 }
