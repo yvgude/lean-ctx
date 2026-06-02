@@ -121,6 +121,9 @@ COMMANDS:
     gain --share [=<path>]         Self-hostable Wrapped page (HTML, opt-in permalink)
     gain --copy                    Copy a ready-to-post share line to the clipboard
     gain --svg|--share --open      Also open the written card/page in your browser
+    gain --publish [--name=<n>]    Publish an opt-in permalink (leanctx.com/w/<id>)
+    gain --publish --leaderboard   Also list the card on the public leaderboard (opt-in)
+    gain --unpublish[=<id>]        Remove a published permalink (most recent if no id)
     gain --json                    Raw JSON export of all stats
     savings [summary|verify|export] Verified per-event savings ledger (local, auditable)
          token-report [--json]          Token + memory report (project + session + CEP)
@@ -261,6 +264,7 @@ EXAMPLES:
     lean-ctx gain --share          Self-hostable Wrapped page -> lean-ctx-wrapped.html
     lean-ctx gain --share --base-url=https://you.dev/w  Page with social preview meta
     lean-ctx gain --copy           Copy your share line to the clipboard
+    lean-ctx gain --publish        Publish an opt-in permalink and copy its URL
     lean-ctx savings               Verified per-event savings ledger (auditable)
     lean-ctx savings verify        Re-check the savings ledger SHA-256 hash chain
     lean-ctx sessions list         List all CCP sessions

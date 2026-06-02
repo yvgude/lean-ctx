@@ -49,6 +49,26 @@ pub(super) fn cmd_gain(rest: &[String]) {
     let copy = rest.iter().any(|a| a == "--copy");
     let open = rest.iter().any(|a| a == "--open");
 
+    if let Some(req) = unpublish_request(rest) {
+        let id = match &req {
+            UnpublishReq::Id(s) => Some(s.as_str()),
+            UnpublishReq::Latest => None,
+        };
+        crate::cli::wrapped_publish::unpublish(id);
+        return;
+    }
+    if rest.iter().any(|a| a == "--publish") {
+        let no_model = rest.iter().any(|a| a == "--no-model");
+        let leaderboard = rest.iter().any(|a| a == "--leaderboard");
+        crate::cli::wrapped_publish::publish(
+            &period,
+            name_arg(rest).as_deref(),
+            no_model,
+            leaderboard,
+        );
+        return;
+    }
+
     if let Some(svg_path) = svg_target(rest) {
         let report = core::wrapped::WrappedReport::generate(&period);
         match std::fs::write(&svg_path, report.to_svg()) {
@@ -168,6 +188,38 @@ pub(super) fn cmd_gain(rest: &[String]) {
 /// Resolves the output path for the shareable SVG Wrapped card, or `None` when no
 /// card was requested. Accepts `--svg`, `--svg=<path>`, `--card`, `--card=<path>`;
 /// a bare flag falls back to `lean-ctx-wrapped.svg` in the current directory.
+/// A requested `--unpublish`: either an explicit card id, or the most recent published card.
+enum UnpublishReq {
+    Latest,
+    Id(String),
+}
+
+/// Parses `--unpublish[=<id>]`. `None` means it was not requested at all.
+fn unpublish_request(rest: &[String]) -> Option<UnpublishReq> {
+    for a in rest {
+        if let Some(v) = a.strip_prefix("--unpublish=") {
+            return Some(UnpublishReq::Id(v.to_string()));
+        }
+        if a == "--unpublish" {
+            return Some(UnpublishReq::Latest);
+        }
+    }
+    None
+}
+
+/// Parses `--name=<display>` / `--name <display>` for the optional publish display label.
+fn name_arg(rest: &[String]) -> Option<String> {
+    rest.iter().enumerate().find_map(|(i, a)| {
+        if let Some(v) = a.strip_prefix("--name=") {
+            return Some(v.to_string());
+        }
+        if a == "--name" {
+            return rest.get(i + 1).cloned();
+        }
+        None
+    })
+}
+
 fn svg_target(rest: &[String]) -> Option<String> {
     let mut requested = false;
     let mut path: Option<String> = None;

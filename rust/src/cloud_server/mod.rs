@@ -104,7 +104,12 @@ pub async fn run() -> anyhow::Result<()> {
             "/api/wrapped/{id}",
             get(wrapped::get_card).delete(wrapped::delete_card),
         )
+        .route("/api/wrapped/{id}/card.svg", get(wrapped::get_card_svg))
+        .route("/api/wrapped/{id}/card.png", get(wrapped::get_card_png))
         .route("/api/wrapped/{id}/claim", post(wrapped::claim_card))
+        .route("/w/{id}", get(wrapped::get_permalink_page))
+        .route("/api/leaderboard", get(wrapped::leaderboard))
+        .route("/leaderboard", get(wrapped::get_leaderboard_page))
         .route("/api/global-stats", get(global_stats::get_global_stats))
         .route("/api/cloud/models", get(models::get_models))
         .with_state(state)

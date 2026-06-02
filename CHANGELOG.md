@@ -3,6 +3,18 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+> **Wrapped Viral-Loop.** The honest Wrapped recap is now shareable end-to-end: a
+> first-run "aha", one-click sharing, an opt-in hosted permalink, and an opt-in
+> public leaderboard — privacy-safe and anonymous-first.
+
+### Added
+- **First-run "aha"** (`lean-ctx discover`): the first run surfaces a concrete, projected token saving for the current project (one-time marker in `~/.lean-ctx`), with `discover --card` exporting a shareable "Ghost Tokens" SVG. Non-UTF-8 shell histories (zsh metafied format) are now read lossily so the projection never silently sees empty history.
+- **One-click share** (`gain --copy` / `--open`): copy a ready-to-post share line to the clipboard or open the generated SVG/HTML card in the browser — cross-platform (`pbcopy`/`clip`/`wl-copy`/`xclip`/`xsel`, `open`/`start`/`xdg-open`).
+- **Hosted Wrapped permalink** (`gain --publish` / `--unpublish`): anonymously publish a whitelisted, privacy-safe slice of the recap and get a shareable `leanctx.com/w/<id>` URL (copied to clipboard). Whitelist-only (`deny_unknown_fields`), one-time `edit_token` stored locally for later removal, optional account claim. Server-rendered page carries per-card Open Graph / Twitter meta; `og:image` is a `resvg`-rasterized 1200×630 PNG. Contract: `docs/contracts/wrapped-permalink-v1.md`.
+- **Opt-in public leaderboard** (`gain --publish --leaderboard`): off by default; when set, the card is listed on `leanctx.com/leaderboard` (server-rendered, top 50 by realized tokens saved). Only the user-chosen display name is person-facing; everything else is an aggregate. JSON at `/api/leaderboard`.
+
 ## [3.7.0] — 2026-06-01
 
 > **Shadow Mode + Meaningful Instructions.** Rules injected into agents are now

@@ -28,6 +28,7 @@ mod tee_cmd;
 mod theme_cmd;
 mod verify_cmd;
 mod visualize_cmd;
+pub(crate) mod wrapped_publish;
 
 pub use cheatsheet_cmd::*;
 pub use common::load_shell_history_pub;

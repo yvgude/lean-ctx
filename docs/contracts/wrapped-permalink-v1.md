@@ -20,8 +20,9 @@ shareable URL (`https://leanctx.com/w/<id>`). No login is required to publish; a
 - Runtime: `rust/src/cloud_server/wrapped.rs`
 - Schema: `rust/src/cloud_server/db.rs` (`init_schema`, table `wrapped_cards`)
 - Routing + CORS: `rust/src/cloud_server/mod.rs`
-- Client (publish/unpublish): `rust/src/cli/` (`gain --publish` — milestone M3)
-- Frontend (`/w/[id]` + OG image): `leanctx-web` Astro site (milestone M4)
+- Client (publish/unpublish/leaderboard): `rust/src/cli/wrapped_publish.rs` (`gain --publish [--leaderboard]`)
+- Permalink + leaderboard pages: server-rendered by the cloud API; `leanctx.com` proxies `/w/` and
+  `/leaderboard` via `website/nginx.conf` (deploy branch)
 
 ---
 
@@ -33,9 +34,15 @@ shareable URL (`https://leanctx.com/w/<id>`). No login is required to publish; a
 | GET | `/api/wrapped/:id` | none | Fetch the public card; increments `view_count` |
 | DELETE | `/api/wrapped/:id` | `X-Edit-Token` | Delete the card (wrong/absent token → 403) |
 | POST | `/api/wrapped/:id/claim` | account bearer + `X-Edit-Token` | Bind the anonymous card to the account |
+| GET | `/api/wrapped/:id/card.svg` | none | Server-rendered share card (SVG) |
+| GET | `/api/wrapped/:id/card.png` | none | Rasterized Open Graph image (PNG, 1200×630, `resvg`) |
+| GET | `/w/:id` | none | Crawler-friendly permalink page (per-card OG/Twitter meta); counts as a view |
+| GET | `/leaderboard` | none | Server-rendered public leaderboard (opt-in cards, top by tokens saved) |
+| GET | `/api/leaderboard` | none | Leaderboard as JSON (`{ "entries": [ … ] }`) |
 
-`GET /api/wrapped/:id/card.svg` and `…/card.png` (server-rendered Open Graph image) are **deferred
-to milestone M4**, alongside the Astro `/w/[id]` route.
+The canonical share host is `leanctx.com`; the static-site nginx proxies `/w/` and `/leaderboard`
+to the cloud API (`website/nginx.conf`). `og:image` points at `api.leanctx.com/api/wrapped/:id/card.png`
+directly, so no asset route needs proxying on the canonical host.
 
 ---
 
@@ -70,6 +77,7 @@ Any unknown field → `400 invalid_payload`.
 | `top_commands[].pct` | number | `0..=100` | share of activity |
 | `model_key` | string? | optional, `<= 60` chars | public model id (opt-out via `--no-model`) |
 | `display_name` | string? | optional, `1..=60` chars, no `<`/`>`/control chars | user-chosen label |
+| `leaderboard_opt_in` | bool | optional, default `false` | list this card on the public leaderboard (`--leaderboard`) |
 
 **Server-rejected / never stored:** repo names, file paths, code, env vars, machine id, raw shell
 history, client IP (only a salted `ip_hash` is kept, abuse-only), and any field not listed above.
@@ -129,10 +137,20 @@ CREATE TABLE IF NOT EXISTS wrapped_cards (
   payload_json    TEXT NOT NULL,               -- validated whitelist, re-serialized
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ip_hash         TEXT NULL,                   -- salted, abuse-only (never an IP)
-  view_count      BIGINT NOT NULL DEFAULT 0
+  view_count      BIGINT NOT NULL DEFAULT 0,
+  leaderboard_opt_in BOOLEAN NOT NULL DEFAULT FALSE, -- public leaderboard opt-in
+  tokens_saved    BIGINT NOT NULL DEFAULT 0     -- denormalized for leaderboard ORDER BY
 );
 CREATE INDEX IF NOT EXISTS wrapped_cards_ip_created ON wrapped_cards (ip_hash, created_at);
+CREATE INDEX IF NOT EXISTS wrapped_cards_leaderboard ON wrapped_cards (leaderboard_opt_in, tokens_saved DESC);
 ```
+
+### Leaderboard
+
+`leaderboard_opt_in` defaults to **off**: a published card is private-by-link unless the user passes
+`--leaderboard`. The leaderboard query returns the top **50** opt-in cards by `tokens_saved`
+(`tokens_saved` is denormalized at publish so the listing never parses every payload). The only
+person-facing field surfaced is the user-chosen `display_name`; everything else is an aggregate.
 
 ---
 

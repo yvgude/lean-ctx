@@ -325,6 +325,44 @@ pub fn contribute(entries: &[serde_json::Value]) -> Result<String, String> {
         .to_string())
 }
 
+/// Result of a successful anonymous Wrapped publish (`POST /api/wrapped`).
+/// The `edit_token` is shown once and must be stored client-side to delete/claim later.
+#[derive(serde::Deserialize)]
+pub struct PublishedCard {
+    pub id: String,
+    pub edit_token: String,
+    pub url: String,
+}
+
+/// Anonymously publish a whitelisted Wrapped payload. No auth; the server rate-limits per IP.
+/// Contract: `docs/contracts/wrapped-permalink-v1.md`.
+pub fn publish_wrapped(payload: &serde_json::Value) -> Result<PublishedCard, String> {
+    let url = format!("{}/api/wrapped", api_url());
+
+    let resp = ureq::post(&url)
+        .header("Content-Type", "application/json")
+        .send(&serde_json::to_vec(payload).map_err(|e| format!("JSON error: {e}"))?)
+        .map_err(|e| format!("Publish failed: {e}"))?;
+
+    let resp_body = resp
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read response: {e}"))?;
+
+    serde_json::from_str(&resp_body).map_err(|e| format!("Invalid response: {e}"))
+}
+
+/// Delete a previously published card using its one-time `edit_token` (sent as `X-Edit-Token`).
+pub fn unpublish_wrapped(id: &str, edit_token: &str) -> Result<(), String> {
+    let url = format!("{}/api/wrapped/{id}", api_url());
+
+    ureq::delete(&url)
+        .header("X-Edit-Token", edit_token)
+        .call()
+        .map_err(|e| format!("Unpublish failed: {e}"))?;
+    Ok(())
+}
+
 pub fn push_knowledge(entries: &[serde_json::Value]) -> Result<String, String> {
     let bearer = auth_bearer_token()?;
     let url = format!("{}/api/sync/knowledge", api_url());

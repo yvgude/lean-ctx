@@ -33,7 +33,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `find <pattern> [path]` | Find files (compressed) |
 | `ls [path]` | Compressed directory map; `--depth`, `-a` |
 | `deps [path]` | Show project dependencies |
-| `gain` | Token-savings dashboard; `--live`, `--graph`, `--daily`, `--json`, `--wrapped`, `--svg`, `--share`, `--copy`, `--open`, `--cost`, `--tasks`, `--agents`, `--heatmap` |
+| `gain` | Token-savings dashboard; `--live`, `--graph`, `--daily`, `--json`, `--wrapped`, `--svg`, `--share`, `--copy`, `--open`, `--publish`, `--leaderboard`, `--unpublish`, `--cost`, `--tasks`, `--agents`, `--heatmap` |
 | `token-report` (`report-tokens`) | Token + memory report; `--json` |
 | `discover` | Find uncompressed commands in shell history; `--card` (shareable "before" SVG) |
 | `ghost` | Ghost-token report (hidden waste); `--json` |

@@ -74,6 +74,7 @@ cloud-server = [
   "dep:hex",
   "dep:rand",
   "dep:argon2",
+  "dep:resvg",
 ]
 tree-sitter = [
   "dep:tree-sitter",
@@ -177,6 +178,7 @@ zstd = "0.13"
 memmap2 = "0.9"
 lsp-types = "0.97"
 fs2 = "0.4.3"
+resvg = { version = "0.47.0", optional = true }
 
 [lints.rust]
 unreachable_pub = "warn"
