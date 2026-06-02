@@ -27,6 +27,37 @@ const tRead = pickTool('ctx_read', 0);
 const tSearch = pickTool('ctx_search', 1);
 const tShell = pickTool('ctx_shell', 2);
 
+// ── Community energy saved (hero proof stat) ──────────────────────────────
+// Build-time snapshot from the public, opt-in leaderboard so the hero shows a real
+// number on first paint; the inline script below refreshes it live on every load.
+// Energy = tokens saved × ~0.4 J/token (modern optimized LLM inference), the same
+// basis as the /metrics page. Wrapped so a slow/unreachable API never fails the build.
+const J_PER_TOKEN = 0.4;
+async function fetchLeaderboardEntries(): Promise<{ tokens_saved?: number }[]> {
+  try {
+    const res = await fetch('https://api.leanctx.com/api/leaderboard', {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { entries?: { tokens_saved?: number }[] };
+    return Array.isArray(data?.entries) ? data.entries : [];
+  } catch {
+    return [];
+  }
+}
+const communityTokens = (await fetchLeaderboardEntries()).reduce(
+  (sum, e) => sum + (e.tokens_saved || 0),
+  0,
+);
+const communityEnergyWh = (communityTokens * J_PER_TOKEN) / 3600;
+const fmtEnergy = (wh: number): string => {
+  if (!Number.isFinite(wh) || wh <= 0) return '—';
+  if (wh >= 1e6) return `${(wh / 1e6).toFixed(1)} MWh`;
+  if (wh >= 1e3) return `${(wh / 1e3).toFixed(1)} kWh`;
+  return `${Math.round(wh)} Wh`;
+};
+const communityEnergyDisplay = fmtEnergy(communityEnergyWh);
+
 const faqJsonLd = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
@@ -82,10 +113,13 @@ const faqJsonLd = JSON.stringify({
             <span class="hero-proof-label">{t('index.heroProofStars')}</span>
           </div>
           <div class="hero-proof-divider"></div>
-          <div class="hero-proof-item">
-            <span class="hero-proof-number font-display">{manifest.counts.granular}</span>
-            <span class="hero-proof-label">{t('index.heroProofTools')}</span>
-          </div>
+          <a href={lp('/metrics/')} class="hero-proof-item hero-proof-item--link" title={t('index.heroProofEnergyTitle')}>
+            <span class="hero-proof-number font-display" id="community-energy-hero">{communityEnergyDisplay}</span>
+            <span class="hero-proof-label">
+              {t('index.heroProofEnergy')}
+              <svg class="hero-proof-arrow" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M7 17L17 7M17 7H9M17 7V15"/></svg>
+            </span>
+          </a>
         </div>
       </div>
 
@@ -467,6 +501,27 @@ const faqJsonLd = JSON.stringify({
 
   var installEl = document.getElementById('install-count');
   var starsEl = document.getElementById('github-stars-hero');
+  var energyEl = document.getElementById('community-energy-hero');
+
+  var J_PER_TOKEN = 0.4;
+  function fmtEnergy(wh) {
+    if (!isFinite(wh) || wh <= 0) return '\u2014';
+    if (wh >= 1e6) return (wh / 1e6).toFixed(1) + ' MWh';
+    if (wh >= 1e3) return (wh / 1e3).toFixed(1) + ' kWh';
+    return Math.round(wh) + ' Wh';
+  }
+  function countUpEnergy(el, target, duration) {
+    if (reduceMotion) { el.textContent = fmtEnergy(target); return; }
+    var startTime = null;
+    function step(ts) {
+      if (!startTime) startTime = ts;
+      var progress = Math.min((ts - startTime) / duration, 1);
+      var ease = 1 - Math.pow(1 - progress, 3);
+      el.textContent = fmtEnergy(ease * target);
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
 
   function countUp(el, target, duration) {
     var start = 0;
@@ -490,6 +545,18 @@ const faqJsonLd = JSON.stringify({
     })
     .catch(function() {});
 
+  if (energyEl) {
+    fetch('https://api.leanctx.com/api/leaderboard', { headers: { accept: 'application/json' } })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || !Array.isArray(d.entries)) return;
+        var tok = d.entries.reduce(function(sum, e) { return sum + (e.tokens_saved || 0); }, 0);
+        var wh = (tok * J_PER_TOKEN) / 3600;
+        if (wh > 0) countUpEnergy(energyEl, wh, 1200);
+      })
+      .catch(function() {});
+  }
+
   var copyBtns = document.querySelectorAll('[data-copy]');
   copyBtns.forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -509,9 +576,10 @@ const faqJsonLd = JSON.stringify({
 
 <style>
   .hero-headline {
-    /* Match the section titles (.fluid-h1) so every headline on the site shares
-       one type scale instead of the hero running a half-step smaller. */
-    font-size: var(--text-h1);
+    /* Use the display type scale (same as the other hero sections, e.g. the metrics
+       PageHero) so the landing hero headline scales with the viewport like every other
+       hero title — larger cap and a steeper fluid ramp than the section .fluid-h1. */
+    font-size: var(--text-display);
     line-height: var(--leading-tight);
     letter-spacing: var(--tracking-tight);
     font-weight: var(--weight-semibold);

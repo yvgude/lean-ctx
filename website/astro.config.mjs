@@ -196,7 +196,8 @@ export default defineConfig({
   },
   integrations: [
     sitemap({
-      filter: (page) => !page.includes('/index-backup/'),
+      // Exclude backups and the per-card Wrapped share pages (noindex share targets, not SEO pages).
+      filter: (page) => !page.includes('/index-backup/') && !page.includes('/w/'),
     }),
   ],
   image: {

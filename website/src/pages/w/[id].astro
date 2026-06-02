@@ -1,0 +1,263 @@
+---
+/**
+ * Public Wrapped permalink — `leanctx.com/w/<id>`.
+ *
+ * Migrated from the cloud API's server-rendered page onto the static site so it shares the
+ * exact design language as the leaderboard (/metrics). Strategy for a static host:
+ *   • getStaticPaths pre-renders one page per opted-in leaderboard card, so the links people
+ *     actually share carry correct per-card OG/Twitter unfurls (og:image = the API card.png).
+ *   • A synthetic `view` shell is also emitted; nginx serves it for any other id (private cards,
+ *     or cards published since the last build) and the client script fills it in from the API.
+ *   • Every page refreshes live from `/api/wrapped/:id` so numbers stay current between builds.
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const API_BASE = 'https://api.leanctx.com';
+// Energy per saved token — same conservative basis as the metrics page (≈0.4 J/token).
+const J_PER_TOKEN = 0.4;
+const WH_PER_PHONE_CHARGE = 12;
+
+interface CardData {
+  id?: string;
+  period?: string;
+  tokens_saved?: number;
+  cost_avoided_usd?: number;
+  compression_rate_pct?: number;
+  pricing_estimated?: boolean;
+  display_name?: string | null;
+}
+
+export async function getStaticPaths() {
+  // Note: Astro evaluates getStaticPaths in isolation, so the module-level API_BASE const is not
+  // in scope here — the leaderboard URL is inlined intentionally.
+  let entries: CardData[] = [];
+  try {
+    const res = await fetch('https://api.leanctx.com/api/leaderboard', { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.entries)) entries = data.entries as CardData[];
+    }
+  } catch {
+    // API unreachable at build time → only the shell is emitted; client fetch still works.
+  }
+  const cards = entries
+    .filter((e) => e && typeof e.id === 'string')
+    .map((e) => ({ params: { id: e.id as string }, props: { card: e } }));
+  // `view` = generic shell served by nginx for any non-pre-rendered id.
+  return [...cards, { params: { id: 'view' }, props: { card: null } }];
+}
+
+const { id } = Astro.params;
+const { card } = Astro.props as { card: CardData | null };
+
+const fmtInt = (n: number) => (Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '0');
+const fmtTokens = (n: number): string => {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return `${Math.round(n)}`;
+};
+const fmtEnergy = (wh: number): string => {
+  if (!Number.isFinite(wh) || wh <= 0) return '0 Wh';
+  if (wh >= 1e6) return `${(wh / 1e6).toFixed(1)} MWh`;
+  if (wh >= 1e3) return `${(wh / 1e3).toFixed(1)} kWh`;
+  return `${Math.round(wh)} Wh`;
+};
+const fmtUsd = (n: number) => `$${fmtInt(n)}`;
+const fmtPct = (v: number) => (Number.isFinite(v) && v > 0 ? `${Math.round(v)}%` : '—');
+const periodLabel = (p?: string) => (!p || p === 'all' ? 'all-time' : p);
+const energyWhFor = (t: number) => (Math.max(0, t || 0) * J_PER_TOKEN) / 3600;
+
+const name = card?.display_name || null;
+const tokens = card?.tokens_saved ?? 0;
+const energyWh = energyWhFor(tokens);
+const estSuffix = card?.pricing_estimated ? ' est.' : '';
+
+const ogTitle = name ? `${name}'s LeanCTX Wrapped` : 'LeanCTX Wrapped';
+const ogDescription = card
+  ? `Saved ${fmtTokens(tokens)} tokens (~${fmtUsd(card.cost_avoided_usd ?? 0)}${estSuffix}) and ${fmtEnergy(energyWh)} of energy with LeanCTX — my AI saw only what matters.`
+  : 'A LeanCTX Wrapped recap — tokens, money and energy saved, verified by a local tamper-evident ledger.';
+const ogImage = card ? `${API_BASE}/api/wrapped/${id}/card.png` : '/og-image-v4.png';
+---
+
+<BaseLayout title={`${ogTitle} | LeanCTX`} description={ogDescription} ogImage={ogImage} noindex={true} hideAscii={false}>
+  <section class="relative section-y wr-section">
+    <div class="content-grid">
+      <div id="wr-content">
+        <div class="wr-head animate-entrance">
+          <span class="kicker-pill">LeanCTX Wrapped</span>
+          <h1 class="font-display fluid-display text-text-bright wr-title" id="wr-title">
+            {name ? `${name}'s recap` : 'Token savings recap'}
+          </h1>
+          <p class="fluid-body text-muted wr-sub">
+            <span id="wr-period">{periodLabel(card?.period)}</span> · verified by a local tamper-evident ledger
+          </p>
+        </div>
+
+        <div class="wr-grid animate-entrance stagger-2">
+          <div class="card wr-stat">
+            <span class="wr-num font-display" id="wr-tokens">{card ? fmtTokens(tokens) : '—'}</span>
+            <p class="wr-label">Tokens saved</p>
+            <p class="wr-hint">stripped from LLM context</p>
+          </div>
+          <div class="card wr-stat">
+            <span class="wr-num font-display" id="wr-usd">{card ? fmtUsd(card.cost_avoided_usd ?? 0) : '—'}</span>
+            <p class="wr-label">Money saved</p>
+            <p class="wr-hint" id="wr-usd-hint">{card?.pricing_estimated ? 'estimated, upper bound' : 'at model rates'}</p>
+          </div>
+          <div class="card wr-stat">
+            <span class="wr-num font-display" id="wr-energy">{card ? fmtEnergy(energyWh) : '—'}</span>
+            <p class="wr-label">Energy saved</p>
+            <p class="wr-hint" id="wr-energy-hint">≈ {fmtInt(energyWh / WH_PER_PHONE_CHARGE)} phone charges</p>
+          </div>
+          <div class="card wr-stat">
+            <span class="wr-num font-display" id="wr-comp">{card ? fmtPct(card.compression_rate_pct ?? 0) : '—'}</span>
+            <p class="wr-label">Compression</p>
+            <p class="wr-hint">context shrunk on read</p>
+          </div>
+        </div>
+
+        <div class="wr-foot animate-entrance stagger-3">
+          <p class="wr-views" id="wr-views" hidden></p>
+          <div class="wr-actions">
+            <a href="/metrics/#leaderboard" class="cta-btn btn-primary">
+              See the leaderboard
+              <svg class="cta-btn-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
+            <a href="/docs/getting-started/" class="cta-btn btn-outline">Make your own Wrapped</a>
+          </div>
+          <p class="wr-note">
+            Aggregate numbers only — tokens saved, compression, energy and dollars. Never your code,
+            file paths, repo names or prompts.
+          </p>
+        </div>
+      </div>
+
+      <div id="wr-missing" class="wr-missing" hidden>
+        <span class="kicker-pill">Wrapped</span>
+        <h1 class="font-display fluid-h1 text-text-bright">This recap isn't available</h1>
+        <p class="fluid-body text-muted">
+          The card may have been removed, or the link is incorrect.
+          <a href="/metrics/#leaderboard">Browse the leaderboard</a> instead.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <script is:inline define:vars={{ apiBase: API_BASE, jPerToken: J_PER_TOKEN, whPerCharge: WH_PER_PHONE_CHARGE, bakedId: id }}>
+    (function () {
+      function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+      function fmtTokens(n) {
+        if (!isFinite(n) || n <= 0) return '0';
+        if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+        return String(Math.round(n));
+      }
+      function fmtEnergy(wh) {
+        if (!isFinite(wh) || wh <= 0) return '0 Wh';
+        if (wh >= 1e6) return (wh / 1e6).toFixed(1) + ' MWh';
+        if (wh >= 1e3) return (wh / 1e3).toFixed(1) + ' kWh';
+        return Math.round(wh) + ' Wh';
+      }
+      function fmtPct(v) { return (isFinite(v) && v > 0) ? Math.round(v) + '%' : '\u2014'; }
+      function periodLabel(p) { return (!p || p === 'all') ? 'all-time' : p; }
+      function setText(elId, v) { var el = document.getElementById(elId); if (el) el.textContent = v; }
+
+      // Resolve the card id from the URL so the shared shell works for any id.
+      var raw = location.pathname.replace(/^\/w\//, '').replace(/\/$/, '');
+      var id = (raw && raw !== 'view') ? decodeURIComponent(raw) : ((bakedId && bakedId !== 'view') ? bakedId : '');
+
+      function showMissing() {
+        var c = document.getElementById('wr-content');
+        var m = document.getElementById('wr-missing');
+        if (c) c.hidden = true;
+        if (m) m.hidden = false;
+      }
+      if (!id) { showMissing(); return; }
+
+      fetch(apiBase + '/api/wrapped/' + encodeURIComponent(id), { headers: { accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (!d || !d.card) { showMissing(); return; }
+          var c = d.card;
+          var nm = c.display_name || null;
+          setText('wr-title', nm ? nm + "'s recap" : 'Token savings recap');
+          document.title = (nm ? nm + "'s LeanCTX Wrapped" : 'LeanCTX Wrapped') + ' | LeanCTX';
+          setText('wr-period', periodLabel(c.period));
+          var tok = c.tokens_saved || 0;
+          var wh = (Math.max(0, tok) * jPerToken) / 3600;
+          setText('wr-tokens', fmtTokens(tok));
+          setText('wr-usd', '$' + fmtInt(c.cost_avoided_usd || 0));
+          setText('wr-usd-hint', c.pricing_estimated ? 'estimated, upper bound' : 'at model rates');
+          setText('wr-energy', fmtEnergy(wh));
+          setText('wr-energy-hint', '\u2248 ' + fmtInt(wh / whPerCharge) + ' phone charges');
+          setText('wr-comp', fmtPct(c.compression_rate_pct));
+          var v = document.getElementById('wr-views');
+          if (v && typeof d.view_count === 'number') {
+            v.textContent = fmtInt(d.view_count) + (d.view_count === 1 ? ' view' : ' views');
+            v.hidden = false;
+          }
+        })
+        .catch(function () { /* keep the pre-rendered content on network failure */ });
+    })();
+  </script>
+
+  <style>
+    .wr-section { padding-top: clamp(2.5rem, 1.5rem + 4vw, 5rem); }
+    .wr-head { max-width: 56rem; }
+    .wr-title { margin: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem) 0 0; letter-spacing: var(--tracking-tight); }
+    .wr-sub { margin: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem) 0 0; }
+    .wr-sub #wr-period { color: var(--color-text-bright); font-weight: var(--weight-semibold); }
+
+    .wr-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: clamp(0.75rem, 0.5rem + 0.75vw, 1.25rem);
+      margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+    }
+    @media (min-width: 560px) { .wr-grid { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 940px) { .wr-grid { grid-template-columns: repeat(4, 1fr); } }
+
+    .wr-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      padding: clamp(1.5rem, 1.1rem + 1vw, 2.25rem);
+      background:
+        radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 60%),
+        var(--color-surface);
+    }
+    .wr-num {
+      font-size: clamp(2.25rem, 1.7rem + 2.4vw, 3.25rem);
+      font-weight: var(--weight-bold);
+      line-height: 1;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+      background: linear-gradient(135deg, var(--color-accent-bright), var(--color-accent));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .wr-label { font-weight: var(--weight-semibold); color: var(--color-text-bright); font-size: 1rem; margin: 0.4rem 0 0; }
+    .wr-hint { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.03em; color: var(--color-muted); margin: 0; }
+
+    .wr-foot { margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem); }
+    .wr-views {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin: 0 0 1rem;
+    }
+    .wr-actions { display: flex; flex-wrap: wrap; gap: clamp(0.5rem, 0.375rem + 0.5vw, 1rem); }
+    .wr-note { margin: clamp(1.25rem, 1rem + 0.5vw, 1.75rem) 0 0; font-size: 0.78rem; line-height: 1.55; color: var(--color-muted); max-width: 60ch; }
+
+    .wr-missing { max-width: 48rem; padding-top: clamp(1rem, 0.5rem + 1vw, 2rem); }
+    .wr-missing h1 { margin: clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem) 0 1rem; }
+    .wr-missing a { color: var(--color-accent); text-decoration: none; }
+    .wr-missing a:hover { text-decoration: underline; }
+  </style>
+</BaseLayout>

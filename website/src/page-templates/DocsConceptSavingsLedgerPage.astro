@@ -1,0 +1,181 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<DocsLayout
+  title="Savings Ledger"
+  description="How LeanCTX records every token it saves in a local, append-only SHA-256 hash chain — and how `savings sign` turns that into a portable, Ed25519-signed receipt anyone can verify offline. Prove your ROI without exposing a single line of code."
+>
+  <p>
+    Every time LeanCTX compresses a read, a search or a shell result, it records the saving in a
+    local <strong>savings ledger</strong>. The ledger is the source of truth behind
+    <a href={lp('/docs/concepts/token-savings')}>token savings</a>, the
+    <code>gain</code> dashboard and the community <a href={lp('/metrics#leaderboard')}>metrics</a> —
+    and, with one command, it becomes a <strong>tamper-evident, cryptographically signed receipt</strong>
+    you can hand to a manager, a client or a finance team to prove exactly how much you saved.
+  </p>
+
+  <p>
+    Nothing leaves your machine unless you choose to share it, and even then only
+    <strong>aggregate numbers</strong> travel — never your code, file paths or prompts.
+  </p>
+
+  <h2 id="how-it-works">An append-only hash chain</h2>
+  <p>
+    The ledger lives at <code>~/.lean-ctx/savings/</code> and is an <strong>append-only SHA-256
+    hash chain</strong>: every event commits the hash of the previous one, so editing, reordering,
+    inserting or deleting any past entry breaks the chain. This is the same tamper-evident pattern
+    LeanCTX uses for its <a href={lp('/docs/security')}>audit trail</a> — applied to your savings.
+  </p>
+  <p>
+    Because the chain is self-checking, <code>verify</code> can tell you in milliseconds whether the
+    local history is intact, and the chain <em>head</em> (the latest hash) acts as a fingerprint for
+    your entire savings history.
+  </p>
+
+  <h2 id="commands">The <code>savings</code> commands</h2>
+  <table>
+    <thead>
+      <tr><th>Command</th><th>What it does</th><th>Leaves your machine?</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>lean-ctx savings summary</code></td>
+        <td>Verified totals: net tokens, $ saved, by-model and by-tool breakdown (default)</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><code>lean-ctx savings verify</code></td>
+        <td>Checks the local SHA-256 chain is intact (no tampering)</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><code>lean-ctx savings export</code></td>
+        <td>Dumps every raw event as JSON (for your own analysis)</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><code>lean-ctx savings sign</code></td>
+        <td>Builds + Ed25519-signs a portable <em>aggregate</em> artifact</td>
+        <td>Only the file you choose to share</td>
+      </tr>
+      <tr>
+        <td><code>lean-ctx savings verify-batch &lt;file&gt;</code></td>
+        <td>Verifies a signed artifact offline — integrity + origin, no ledger needed</td>
+        <td>No (runs on any machine)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="signing">Signing: a portable, tamper-evident receipt</h2>
+  <p>
+    <code>lean-ctx savings sign</code> reads your local ledger, snapshots the aggregate totals plus
+    the chain head, and signs the whole thing with your machine's persistent
+    <strong>Ed25519 key</strong> (the same per-machine identity used for
+    <a href={lp('/docs/concepts/multi-agent')}>agent handoffs</a>). The result is a small JSON file
+    that is <strong>self-verifying</strong> — it carries its own public key and signature.
+  </p>
+  <pre><code>{`$ lean-ctx savings sign
+Signed savings batch written to ~/.lean-ctx/savings/signed-batch-v1_20260602T184500Z.json
+  Net saved:  12.8M tokens (~$32.41) over 1,240 event(s)
+  Chain head: 9f2c4b…e1a7   (SHA-256 tip of your whole history)
+  Chain:      intact (SHA-256)
+  Signer key: 7b1e90…c4d2   (your Ed25519 public key)
+
+Verify anywhere (no ledger needed):  lean-ctx savings verify-batch ~/.lean-ctx/savings/signed-batch-v1_20260602T184500Z.json`}</code></pre>
+  <p>
+    Write it somewhere specific with <code>--out</code>:
+  </p>
+  <pre><code>{`$ lean-ctx savings sign --out ./q2-savings-attestation.json`}</code></pre>
+
+  <h2 id="verifying">Verifying anywhere — offline</h2>
+  <p>
+    Anyone who receives the artifact can check it with <code>verify-batch</code>. No LeanCTX install
+    history, no network, no access to your ledger or code is required — the signature alone proves
+    both that the file is <strong>unaltered</strong> and that it was produced by the holder of that
+    public key.
+  </p>
+  <pre><code>{`$ lean-ctx savings verify-batch ./q2-savings-attestation.json
+Signed savings batch: VALID
+  Signed by:  7b1e90…c4d2
+  Agent:      local
+  Created:    2026-06-02T18:45:00Z
+  lean-ctx:   3.7.0
+  Net saved:  12.8M tokens (~$32.41) over 1,240 event(s)
+  Chain head: 9f2c4b…e1a7`}</code></pre>
+  <p>
+    Change a single byte — bump the token count, swap the public key, rewrite the chain head — and
+    verification fails loudly:
+  </p>
+  <pre><code>{`$ lean-ctx savings verify-batch ./tampered.json
+Signed savings batch: INVALID — signature does not match payload (tampered or wrong key)`}</code></pre>
+
+  <h2 id="contents">What's inside the artifact — and what never is</h2>
+  <p>
+    The signed batch (schema <code>lean-ctx.savings-batch</code>, v1) contains <strong>only
+    aggregates</strong> an auditor needs, plus the cryptographic commitments:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Meaning</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>totals</code></td><td>Net tokens saved, $ saved, event count, and the top by-model / by-tool rows</td></tr>
+      <tr><td><code>last_entry_hash</code></td><td>The SHA-256 chain head — binds the totals to the exact history that produced them</td></tr>
+      <tr><td><code>chain_valid</code></td><td>Whether the local chain verified intact at signing time</td></tr>
+      <tr><td><code>created_at</code> / <code>lean_ctx_version</code></td><td>When it was signed and with which version</td></tr>
+      <tr><td><code>signer_public_key</code> / <code>signature</code></td><td>Ed25519 public key and signature (hex) — make the file self-verifying</td></tr>
+    </tbody>
+  </table>
+  <p>
+    <strong>Never included:</strong> raw events, file names or paths, source code, prompts, command
+    contents, or per-event timestamps. Signing is an aggregate-only operation by construction — the
+    payload is a dedicated struct, so a private field cannot accidentally be serialized.
+  </p>
+
+  <h2 id="trust">The trust model</h2>
+  <p>A verified artifact answers two independent questions at once:</p>
+  <ul>
+    <li><strong>Integrity</strong> — the numbers have not been altered by a single byte since signing. The Ed25519 signature covers the entire canonical payload.</li>
+    <li><strong>Origin</strong> — the artifact was produced by the holder of a specific keypair. Pair the public key with your name once (in an email, a README, a signed commit) and every future artifact from that key is attributable to you.</li>
+  </ul>
+  <p>
+    The embedded <code>last_entry_hash</code> ties the aggregate totals to a concrete append-only
+    chain: you cannot sign totals that don't correspond to a real, intact history. Together that
+    makes the artifact a verifiable <em>receipt</em> rather than a screenshot anyone could fake.
+  </p>
+
+  <h2 id="journey">A user journey: prove your savings in three commands</h2>
+  <p>
+    You've been using LeanCTX for a sprint and want to show your lead the real payoff — without
+    sending them your repository or a screenshot they'd have to trust.
+  </p>
+  <ol>
+    <li><strong>Check the receipt is intact.</strong> <code>lean-ctx savings verify</code> confirms the local chain has not been tampered with.</li>
+    <li><strong>Sign it.</strong> <code>lean-ctx savings sign --out ./sprint-savings.json</code> produces a portable, aggregate-only attestation.</li>
+    <li><strong>Share &amp; let them verify.</strong> Send the JSON. They run <code>lean-ctx savings verify-batch ./sprint-savings.json</code> on their own machine and see <code>VALID</code> with your net tokens and dollars — provably yours, provably unaltered, and not a line of code in sight.</li>
+  </ol>
+  <p>
+    Want the full command-by-command walkthrough?
+    See the <a href={lp('/docs/journeys/signed-savings-ledger')}>Proof &amp; Audit journey</a>.
+  </p>
+
+  <h2 id="when">When to reach for it</h2>
+  <ul>
+    <li><strong>Justify the tool to a lead or finance.</strong> A signed dollar figure beats an unverifiable claim when you're defending a line item or a renewal.</li>
+    <li><strong>Bill or report savings to a client.</strong> Attach an attestation to an invoice or status report; they can verify it themselves, offline.</li>
+    <li><strong>Procurement &amp; compliance.</strong> A tamper-evident artifact with a version stamp and chain commitment fits an evidence trail far better than a spreadsheet.</li>
+    <li><strong>Personal record.</strong> Snapshot your savings at the end of each quarter and keep a verifiable history.</li>
+  </ul>
+
+  <p class="not-prose" style="margin-top:2rem;color:var(--color-muted);font-size:0.875rem;">
+    Related: <a href={lp('/docs/concepts/token-savings')}>Token Savings</a> ·
+    <a href={lp('/docs/observatory')}>Observatory</a> ·
+    <a href={lp('/docs/security')}>Security &amp; Integrity</a>
+  </p>
+</DocsLayout>

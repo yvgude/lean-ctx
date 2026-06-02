@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JOURNEYS SSOT — the 15 code-grounded user journeys.
+// JOURNEYS SSOT — the 16 code-grounded user journeys.
 //
 // Mirrors docs/reference/README.md ("Every Function, Every Path"). These are the
 // content/SEO backbone of the site: every CLI command and MCP tool appears in at
@@ -186,6 +186,16 @@ export const journeys: Journey[] = [
     covers: ['extra_roots', 'multi-repo', 'graph_index', 'project root', 'PathJail'],
     trackId: 'scale-teams', pillars: ['perceive', 'route'],
     href: '/docs/configuration', refDoc: '15-multi-repo-workspace',
+  },
+  {
+    num: 16, slug: 'signed-savings-ledger', title: 'Proof & Audit',
+    persona: 'proving your savings to a lead, client or finance team',
+    summary: 'Sign your savings ledger into a tamper-evident receipt anyone can verify offline.',
+    intro:
+      'Turn your local savings ledger into proof. LeanCTX records every saved token in an append-only SHA-256 chain; one command signs the aggregate totals with your Ed25519 key into a portable receipt that anyone can verify offline — without ever seeing your code.',
+    covers: ['savings summary', 'savings verify', 'savings export', 'savings sign', 'savings verify-batch'],
+    trackId: 'operate-govern', pillars: ['govern'],
+    href: '/docs/concepts/savings-ledger', refDoc: '16-signed-savings-ledger',
   },
 ];
 

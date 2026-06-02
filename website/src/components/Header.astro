@@ -91,6 +91,7 @@ const useCasesColumns = tracks.map((tr) => ({
           <MegaDropdown id="product" label={t('nav.productLabel')} columns={productColumns} />
           <MegaDropdown id="usecases" label="Use Cases" columns={useCasesColumns} />
           <a href={lp('/docs/')} class:list={['header-nav-item', currentPath.startsWith('/docs') && !currentPath.includes('/getting-started') && 'is-active']}>Docs</a>
+          <a href={lp('/metrics/')} class:list={['header-nav-item', currentPath.startsWith('/metrics') && 'is-active']}>Metrics</a>
         </div>
       </div>
 
@@ -181,6 +182,7 @@ const useCasesColumns = tracks.map((tr) => ({
 
       <div class="mobile-section">
         <span class="mobile-section-title">{t('nav.community')}</span>
+        <a href={lp('/metrics/')} class="mobile-nav-link">Metrics</a>
         <a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener" class="mobile-nav-link">GitHub</a>
         <a href="https://discord.gg/pTHkG9Hew9" target="_blank" rel="noopener" class="mobile-nav-link">Discord</a>
       </div>

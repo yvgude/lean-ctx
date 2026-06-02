@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// TRACKS SSOT — the four persona tracks that group the 14 journeys.
+// TRACKS SSOT — the four persona tracks that group the 16 journeys.
 //
 // Navigation and the self-select landing use these four tracks instead of 14
 // flat journeys (paradox of choice). Each track owns a slice of the journey

@@ -59,7 +59,7 @@ something you can post:
 | `--copy` | a ready-to-post share line copied to your clipboard |
 | `--open` | with `--svg`/`--share`: opens the card/page in your browser |
 | `--publish [--name=<n>]` | an opt-in permalink at `leanctx.com/w/<id>` (URL copied) |
-| `--publish --leaderboard` | also lists the card on the opt-in public [leaderboard](https://leanctx.com/leaderboard) |
+| `--publish --leaderboard` | also lists the card on the opt-in public [leaderboard](https://leanctx.com/metrics#leaderboard) |
 | `--unpublish[=<id>]` | removes a published permalink (most recent if no id) |
 
 Sharing is **opt-in and privacy-safe**: only a whitelisted, aggregate slice
