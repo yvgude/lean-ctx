@@ -26,6 +26,12 @@ const toolCount = getMcpManifest().counts.granular;
 
   <!-- Unreleased -->
   <h2 id="unreleased">Unreleased <span class="text-xs text-muted">(in progress)</span></h2>
+  <p class="text-sm text-muted">Nothing yet — see below for the latest stable release.</p>
+
+  <hr />
+
+  <!-- 3.7.1 -->
+  <h2 id="v3.7.1">3.7.1 <span class="badge badge-current">Current</span> <span class="text-xs text-muted">(2026-06-03)</span></h2>
   <p class="text-sm text-muted">Wrapped Viral-Loop — the honest Wrapped recap is now shareable end-to-end: a first-run "aha", one-click sharing, an opt-in hosted permalink, and an opt-in public leaderboard — privacy-safe and anonymous-first.</p>
 
   <h3>{t('changelog.added')}</h3>
@@ -34,10 +40,14 @@ const toolCount = getMcpManifest().counts.granular;
     <li><strong>One-click share</strong> (<code>gain --copy</code> / <code>--open</code> / <code>--svg</code> / <code>--share</code>) — copy a ready-to-post share line, or open the generated SVG/HTML card — cross-platform (<code>pbcopy</code>/<code>clip</code>/<code>wl-copy</code>/<code>xclip</code>/<code>xsel</code>, <code>open</code>/<code>start</code>/<code>xdg-open</code>).</li>
     <li><strong>Hosted Wrapped permalink</strong> (<code>gain --publish</code> / <code>--unpublish</code>) — anonymously publish a whitelisted, privacy-safe slice of the recap and get a shareable <code>leanctx.com/w/&lt;id&gt;</code> URL (copied to clipboard). Whitelist-only, one-time edit token stored locally for later removal, optional account claim. Server-rendered page carries per-card Open Graph / Twitter meta; <code>og:image</code> is a <code>resvg</code>-rasterized 1200×630 PNG.</li>
     <li><strong>Opt-in public leaderboard</strong> (<code>gain --publish --leaderboard</code>) — off by default; when set, the card is listed on <a href="https://leanctx.com/metrics#leaderboard">leanctx.com/metrics</a> (top 50 by realized tokens saved). Only the user-chosen display name is person-facing; everything else is an aggregate.</li>
+    <li><strong>Per-day version in <code>lean-ctx gain</code></strong> (#307) — each row in "Recent Days" now shows the lean-ctx version active that day, so compression changes can be attributed to a specific release. "Past 30 days" USD savings line added.</li>
   </ul>
 
   <h3>{t('changelog.fixed')}</h3>
   <ul>
+    <li><strong><code>2>&amp;1</code> misread as a command</strong> (#334) — the shell-allowlist parser split <code>&amp;</code> as a background separator even inside a redirect (<code>2>&amp;1</code>, <code>>&amp;</code>, <code>&amp;></code>). A <code>&amp;</code> adjacent to <code>></code> is now correctly treated as part of the redirect operator, not a command separator.</li>
+    <li><strong>Auto-update ignored <code>config.toml</code></strong> (#335) — scheduled runs now obey config: <code>auto_update = false</code> skips the update and removes the orphaned scheduler (self-heal), and <code>notify_only = true</code> downgrades to a check without installing.</li>
+    <li><strong><code>ctx_search</code> and index build could hang on special files</strong> (#336) — a regular-file guard now skips non-regular paths (FIFOs, sockets, devices) before any blocking read. <code>ctx_search</code> additionally enforces a wall-clock deadline (<code>LEAN_CTX_SEARCH_DEADLINE_MS</code>, default 10s) and returns partial results instead of hanging.</li>
     <li><strong>macOS bash login shells missed the hook and PATH</strong> — bash login shells (Terminal.app, IDE terminals, <code>bash -l</code>) read <code>~/.bash_profile</code>/<code>~/.profile</code>, never <code>~/.bashrc</code> — yet the hook and the installer's PATH export land in <code>~/.bashrc</code>. <code>lean-ctx setup</code> now ensures the login profile sources <code>~/.bashrc</code> (idempotent), so both take effect in login shells. zsh is unaffected.</li>
     <li><strong>Event feed flooded with false "denied" policy violations</strong> — auto-preload candidates from the project graph are repo-relative; the path jail resolved them against the daemon's CWD instead of the project root, so every candidate failed with "no existing ancestor" and was logged as a policy violation. Relative candidates now resolve against the jail root, and a genuinely missing file is no longer mislabeled as a denial.</li>
   </ul>
