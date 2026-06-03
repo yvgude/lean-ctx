@@ -185,10 +185,8 @@ fn node_to_signature(node: &Node, name: &str, ext: &str, source: &[u8]) -> Optio
         _ => None,
     }?;
 
-    if matches!(ext, "kt" | "kts") {
-        sig.start_line = Some(node.start_position().row + 1);
-        sig.end_line = Some(node.end_position().row + 1);
-    }
+    sig.start_line = Some(node.start_position().row + 1);
+    sig.end_line = Some(node.end_position().row + 1);
 
     Some(sig)
 }

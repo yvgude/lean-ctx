@@ -753,7 +753,7 @@ mod tests {
         assert!(p.validate().is_err());
 
         let mut p = valid();
-        p.top_commands = (0..MAX_TOP_COMMANDS + 1)
+        p.top_commands = (0..=MAX_TOP_COMMANDS)
             .map(|_| TopCommand {
                 name: "git".into(),
                 pct: 1.0,

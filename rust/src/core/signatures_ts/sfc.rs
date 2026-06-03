@@ -2,13 +2,22 @@ use super::extract::extract_signatures_ts;
 use crate::core::signatures::Signature;
 
 pub(crate) fn extract_sfc_signatures(content: &str) -> Option<Vec<Signature>> {
-    let script_content = extract_script_block(content)?;
+    let (script_content, line_offset) = extract_script_block_with_offset(content)?;
     let is_ts = content.contains("lang=\"ts\"") || content.contains("lang=\"typescript\"");
     let ext = if is_ts { "ts" } else { "js" };
-    extract_signatures_ts(&script_content, ext)
+    let mut sigs = extract_signatures_ts(&script_content, ext)?;
+    for sig in &mut sigs {
+        sig.start_line = sig.start_line.map(|line| line + line_offset);
+        sig.end_line = sig.end_line.map(|line| line + line_offset);
+    }
+    Some(sigs)
 }
 
 pub(crate) fn extract_script_block(content: &str) -> Option<String> {
+    extract_script_block_with_offset(content).map(|(script, _)| script)
+}
+
+fn extract_script_block_with_offset(content: &str) -> Option<(String, usize)> {
     let lower = content.to_lowercase();
     let start_tag_pos = lower.find("<script")?;
     let tag_end = content[start_tag_pos..].find('>')? + start_tag_pos + 1;
@@ -18,5 +27,6 @@ pub(crate) fn extract_script_block(content: &str) -> Option<String> {
     if script.trim().is_empty() {
         return None;
     }
-    Some(script.to_string())
+    let line_offset = content[..tag_end].bytes().filter(|b| *b == b'\n').count();
+    Some((script.to_string(), line_offset))
 }

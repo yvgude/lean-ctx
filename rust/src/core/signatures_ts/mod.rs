@@ -274,6 +274,8 @@ pub fn complex_function<T: Display + Debug>(
         assert!(!sigs.is_empty(), "should parse multiline function");
         assert_eq!(sigs[0].name, "complex_function");
         assert!(sigs[0].is_exported);
+        assert_eq!(sigs[0].start_line, Some(2));
+        assert_eq!(sigs[0].end_line, Some(8));
     }
 
     #[test]
@@ -292,9 +294,13 @@ const internal = (x: number) => x * 2;
         assert!(fetch.is_async);
         assert!(fetch.is_exported);
         assert_eq!(fetch.kind, "fn");
+        assert_eq!(fetch.start_line, Some(2));
+        assert_eq!(fetch.end_line, Some(4));
 
         let internal = sigs.iter().find(|s| s.name == "internal").unwrap();
         assert!(!internal.is_exported);
+        assert_eq!(internal.start_line, Some(6));
+        assert_eq!(internal.end_line, Some(6));
     }
 
     #[test]
@@ -544,6 +550,10 @@ export class Counter {
         let names: Vec<&str> = sigs.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"greet"), "got {names:?}");
         assert!(names.contains(&"Counter"), "got {names:?}");
+
+        let greet = sigs.iter().find(|s| s.name == "greet").unwrap();
+        assert_eq!(greet.start_line, Some(3));
+        assert_eq!(greet.end_line, Some(5));
     }
 
     #[test]

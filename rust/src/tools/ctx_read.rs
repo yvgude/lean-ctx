@@ -29,10 +29,15 @@ fn is_cacheable_mode(mode: &str) -> bool {
 }
 
 fn compressed_cache_key(mode: &str, crp_mode: CrpMode, task: Option<&str>) -> String {
+    let versioned_mode = match mode {
+        "map" => "map:v2",
+        "signatures" => "signatures:v2",
+        _ => mode,
+    };
     let base = if crp_mode.is_tdd() {
-        format!("{mode}:tdd")
+        format!("{versioned_mode}:tdd")
     } else {
-        mode.to_string()
+        versioned_mode.to_string()
     };
     // map/signatures output now embeds a task-relevant body, so task-aware and
     // task-free variants must cache under distinct keys.
@@ -1460,6 +1465,34 @@ mod tests {
     }
 
     #[test]
+    fn map_mode_includes_signature_line_ranges() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lib.rs");
+        let p = path.to_string_lossy().to_string();
+        std::fs::write(
+            &path,
+            "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n",
+        )
+        .unwrap();
+
+        let mut cache = SessionCache::new();
+        let result = handle(&mut cache, &p, "map", CrpMode::Off);
+
+        assert!(
+            result.contains("API:"),
+            "map output should include API: {result}"
+        );
+        assert!(
+            result.contains("cl ⊛ Config @L1"),
+            "struct signature should include line suffix: {result}"
+        );
+        assert!(
+            result.contains("fn ⊛ build() → Config @L3"),
+            "function signature should include line suffix: {result}"
+        );
+    }
+
+    #[test]
     fn cached_lines_mode_invalidates_on_mtime_change() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("file.txt");
@@ -1637,9 +1670,11 @@ mod tests {
     #[test]
     fn compressed_cache_key_distinguishes_task() {
         let no_task = compressed_cache_key("map", CrpMode::Off, None);
+        let tdd_no_task = compressed_cache_key("map", CrpMode::Tdd, None);
         let with_task = compressed_cache_key("map", CrpMode::Off, Some("fix login"));
         let other_task = compressed_cache_key("map", CrpMode::Off, Some("refactor db"));
-        assert_eq!(no_task, "map");
+        assert_eq!(no_task, "map:v2");
+        assert_eq!(tdd_no_task, "map:v2:tdd");
         assert_ne!(with_task, no_task);
         assert_ne!(with_task, other_task);
     }
