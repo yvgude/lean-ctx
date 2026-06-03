@@ -2189,7 +2189,7 @@
   "docs.sidebarSharedSessions": "Shared Sessions",
   "docs.sidebarContextBus": "Context Bus",
   "docs.sidebarSdk": "SDK & API",
-  "index.heroHeadline": "The cognitive context layer<br /><em>between your AI and your code.</em>",
+  "index.heroHeadline": "Your AI deserves<br /><em>better context.</em>",
   "index.heroSubline": "LeanCTX is one small Rust binary that perceives, compresses, remembers, routes, and governs every token between your AI and your codebase — automatically. Install it once: 60–90% fewer tokens per read, memory that survives across sessions, and guardrails on every tool call.",
   "index.heroCta": "Install in 30 seconds",
   "index.faqKicker": "FAQ",
