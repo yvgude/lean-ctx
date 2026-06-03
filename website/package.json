@@ -13,10 +13,11 @@
     "validate:manifest": "node scripts/validate-manifest.mjs",
     "validate:i18n": "node scripts/validate-i18n.mjs",
     "validate:i18n-dupes": "node scripts/validate-i18n-duplicates.mjs",
+    "validate:i18n-usage": "node scripts/validate-i18n-usage.mjs",
     "validate:positioning": "node scripts/validate-positioning.mjs",
     "validate:facts": "node scripts/validate-facts.mjs",
     "validate:journeys": "node scripts/validate-journeys.mjs",
-    "validate": "npm run validate:manifest && npm run validate:positioning && npm run validate:facts && npm run validate:journeys && npm run validate:i18n && npm run validate:i18n-dupes && npm run validate:docs-coverage",
+    "validate": "npm run validate:manifest && npm run validate:positioning && npm run validate:facts && npm run validate:journeys && npm run validate:i18n && npm run validate:i18n-dupes && npm run validate:i18n-usage && npm run validate:docs-coverage",
     "build": "astro build && npx pagefind --site dist",
     "preview": "astro preview",
     "astro": "astro"
