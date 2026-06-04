@@ -169,10 +169,12 @@ export function runLeanCtxCapture(
 
 export async function getSessionStats(): Promise<SessionStats> {
   try {
-    const raw = await runLeanCtx(["metrics", "--json"]);
-    const data = JSON.parse(raw);
+    const raw = await runLeanCtx(["gain", "--json"]);
+    const rawData = JSON.parse(raw);
+
+    const data = rawData.summary ?? rawData;
     return {
-      totalReads: data.total_reads ?? 0,
+      totalReads: data.total_commands ?? data.total_reads ?? 0,
       totalSearches: data.total_searches ?? 0,
       totalShells: data.total_shells ?? 0,
       tokensSaved: data.tokens_saved ?? 0,
