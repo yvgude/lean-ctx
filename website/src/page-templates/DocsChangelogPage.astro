@@ -30,8 +30,45 @@ const toolCount = getMcpManifest().counts.granular;
 
   <hr />
 
+  <!-- 3.7.3 -->
+  <h2 id="v3.7.3">3.7.3 <span class="badge badge-current">Current</span> <span class="text-xs text-muted">(2026-06-04)</span></h2>
+  <p class="text-sm text-muted">Compression where the agent actually is — and fidelity where it matters. A <code>shell</code> MCP tool so the Codex Desktop/Cloud app compresses even without lifecycle hooks, an additive self-diagnosing shell allowlist, navigation output with line ranges, already-compact (TOON) passthrough, OpenAI Responses API support, and a proxy that protects file reads mid-refactor.</p>
+
+  <DocsCallout variant="note" title="Why 3.7.3 and not 3.7.2?">
+    <p>An automated release misfire published an incomplete 3.7.2 to crates.io and npm before this work had landed, and those registries permanently reject re-publishing a version — so 3.7.3 is the first clean release of this work across every channel (crates.io, npm, GitHub, Homebrew).</p>
+  </DocsCallout>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong>OpenAI Responses API support in the proxy</strong> (#346, thanks @Lctrs) — clients on OpenAI's new Responses API (<code>POST /v1/responses</code>) were forwarded untouched because the proxy only understood Chat Completions. The proxy now compresses each <code>function_call_output.output</code> through the same pattern pipeline, while leaving the <code>input</code> array structurally intact so a <code>function_call</code> is never split from its matching output. <code>/status</code> now reports an accurate token breakdown for Responses requests.</li>
+    <li><strong>A <code>shell</code> MCP tool for the Codex Desktop/Cloud app</strong> (#337) — the app loads the MCP server but its agent reaches for a native <code>shell</code>/<code>Bash</code> tool, so hook-driven compression never triggered. lean-ctx now exposes a <code>shell</code> tool (familiar name, model-optimized description) that transparently delegates to the same 95+-pattern pipeline as <code>ctx_shell</code>. Registered for all MCP clients.</li>
+    <li><strong><code>lean-ctx allow &lt;cmd&gt;</code></strong> (#341) — permit a binary on the shell allowlist <em>additively</em> via the new <code>shell_allowlist_extra</code> field, so allowing e.g. <code>acli</code> keeps <code>git</code>/<code>cargo</code>/<code>npm</code> intact instead of replacing the whole list. <code>--list</code> shows the effective allowlist plus the exact config path; <code>--remove</code> reverts. Picked up on the next command — no restart.</li>
+    <li><strong>Line ranges in <code>map</code> / <code>signatures</code> output</strong> (#340, thanks @iohansson) — every entity in the navigation views now carries a compact <code>@Lstart[-end]</code> suffix (e.g. <code>fn build() → Config @L42-58</code>), so an agent jumps straight to a symbol instead of issuing a follow-up search. Mode-aware: compression-first paths stay byte-identical.</li>
+    <li><strong>Format-aware passthrough for already-compact output</strong> (#342, thanks @pomazanbohdan) — <code>ctx_shell</code> / <code>lean-ctx -c</code> no longer recompress output that is already in a compact format. TOON is detected by its structural markers and returned verbatim. Controlled by the new <code>preserve_compact_formats</code> config (default <code>["toon"]</code>).</li>
+    <li><strong>Pi-native configuration</strong> (#344, thanks @michaelmior) — an optional <code>~/.pi/agent/extensions/pi-lean-ctx/config.json</code> lets Pi-only users keep mode, MCP toggle, binary path, and engine env overrides in their Pi config instead of juggling <code>LEAN_CTX_PI_*</code> env vars. Explicit env vars still win; a malformed file falls back cleanly.</li>
+    <li><strong>VS Code / Cursor extension, now publishable</strong> — the editor extension is consolidated into a single, marketplace-ready package and shipped to the VS Code Marketplace and Open VSX (Cursor, VSCodium, Windsurf), with binary auto-detection, one-click workspace MCP wiring, and setup / doctor / gain commands.</li>
+  </ul>
+
+  <h3>{t('changelog.changed')}</h3>
+  <ul>
+    <li><strong>Identifier α-substitution (<code>§MAP</code>) is now opt-in</strong> (#351) — <code>aggressive</code> reads used to replace long identifiers with short α-codes above 50 source files. External testing found this obscured package/symbol names exactly when editing. It is now off by default; set <code>symbol_map_auto = true</code> (or <code>LEAN_CTX_SYMBOL_MAP=1</code>) to opt back in.</li>
+    <li><strong>Editing intents always read the full file</strong> (#351) — when the task classifies as <code>refactor</code>, <code>fix-bug</code>, or <code>generate</code>, <code>auto</code>-mode reads resolve to <code>full</code> regardless of model tier. You cannot safely edit a file you can only partially see. Exploration/review intents still compress.</li>
+    <li><strong>Per-model cost breakdown in the proxy</strong> (#351) — <code>/status</code> reports a <code>per_model</code> array (requests, estimated tokens saved, USD saved priced from the shared model table) instead of one flat number, and discloses that savings are request-side estimates.</li>
+  </ul>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>Proxy no longer mangles file/source reads</strong> (#351) — the request-compressing proxy treated every tool result as shell output, so a large source-file read was run through command-output truncation on the next turn, gutting the file the model was mid-refactor on and forcing an uncounted re-read. The proxy now resolves each result's originating tool and never lossy-compresses a file read or source-like content, across all four providers (Anthropic, OpenAI Chat, OpenAI Responses, Gemini). History pruning emits an honest "re-read the file" stub instead of a misleading excerpt.</li>
+    <li><strong>Proxy stopped failing large-refactor and long-generation calls</strong> (#351) — the 10 MiB request-body ceiling is now 64 MiB (<code>LEAN_CTX_PROXY_MAX_BODY_MB</code>), and the single 2-minute total timeout is replaced by connect + read-idle timeouts (defaults 15s / 300s), so a slow-but-alive stream is never cut while a genuinely dead upstream still fails.</li>
+    <li><strong>Codex instructions no longer claim Desktop "can't" run hooks</strong> (#350, thanks @iohansson) — the injected <code>AGENTS.md</code> / <code>LEAN-CTX.md</code> block asserted as fact that Codex Desktop/Cloud lifecycle hooks do not run, which is false (they do, trust-gated via <code>/hooks</code>). The docs now make no surface-specific hook claim and frame the MCP/CLI tools as the path that compresses reliably on every surface; <code>lean-ctx doctor</code>'s Codex note is corrected to match.</li>
+    <li><strong>MCP stdio stays protocol-clean</strong> (#348, thanks @gai095481) — confirmed and regression-guarded that all <code>tracing</code> diagnostics route to stderr, never the stdout JSON-RPC transport, so a log line can never be interleaved into an MCP client's message stream and break parsing.</li>
+    <li><strong><code>shell_allowlist</code> edits silently ignored in MCP/editor mode</strong> (#341) — allowlist changes looked like no-ops because a malformed config fell back to defaults with the warning only on stderr (invisible over stdio), setting <code>shell_allowlist</code> replaced the whole default list (now solved by additive <code>shell_allowlist_extra</code>), and the block message didn't name the config path the runtime actually reads. <code>lean-ctx doctor</code> gains a "Shell allowlist" check.</li>
+  </ul>
+
+  <hr />
+
   <!-- 3.7.1 -->
-  <h2 id="v3.7.1">3.7.1 <span class="badge badge-current">Current</span> <span class="text-xs text-muted">(2026-06-03)</span></h2>
+  <h2 id="v3.7.1">3.7.1 <span class="text-xs text-muted">(2026-06-03)</span></h2>
   <p class="text-sm text-muted">Wrapped Viral-Loop — the honest Wrapped recap is now shareable end-to-end: a first-run "aha", one-click sharing, an opt-in hosted permalink, and an opt-in public leaderboard — privacy-safe and anonymous-first.</p>
 
   <h3>{t('changelog.added')}</h3>
