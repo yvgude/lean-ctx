@@ -164,6 +164,64 @@ fn consistency_and_trend(stats: &StatsStore) -> (u32, Trend) {
     (consistency, trend)
 }
 
+/// Level system — maps gain score to a title and level number.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GainLevel {
+    pub level: u8,
+    pub title: &'static str,
+    pub min_score: u32,
+}
+
+impl GainScore {
+    pub fn level(&self) -> GainLevel {
+        match self.total {
+            81..=100 => GainLevel {
+                level: 5,
+                title: "Grandmaster",
+                min_score: 81,
+            },
+            61..=80 => GainLevel {
+                level: 4,
+                title: "Guardian",
+                min_score: 61,
+            },
+            41..=60 => GainLevel {
+                level: 3,
+                title: "Architect",
+                min_score: 41,
+            },
+            21..=40 => GainLevel {
+                level: 2,
+                title: "Optimizer",
+                min_score: 21,
+            },
+            _ => GainLevel {
+                level: 1,
+                title: "Apprentice",
+                min_score: 0,
+            },
+        }
+    }
+
+    /// Progress within the current level (0.0 to 1.0).
+    pub fn level_progress(&self) -> f64 {
+        let lvl = self.level();
+        let range_start = lvl.min_score;
+        let range_end = match lvl.level {
+            5 => 100,
+            4 => 80,
+            3 => 60,
+            2 => 40,
+            _ => 20,
+        };
+        let range = (range_end - range_start) as f64;
+        if range == 0.0 {
+            return 1.0;
+        }
+        ((self.total - range_start) as f64 / range).clamp(0.0, 1.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +231,34 @@ mod tests {
         assert_eq!(roi_to_score(0.0, 10.0), 0);
         assert_eq!(roi_to_score(10.0, 0.0), 100);
         assert_eq!(roi_to_score(100.0, 10.0), 100);
+    }
+
+    #[test]
+    fn level_mapping() {
+        let score = GainScore {
+            total: 75,
+            compression: 80,
+            cost_efficiency: 70,
+            quality: 60,
+            consistency: 90,
+            trend: Trend::Rising,
+        };
+        let lvl = score.level();
+        assert_eq!(lvl.level, 4);
+        assert_eq!(lvl.title, "Guardian");
+    }
+
+    #[test]
+    fn level_progress_calc() {
+        let score = GainScore {
+            total: 50,
+            compression: 50,
+            cost_efficiency: 50,
+            quality: 50,
+            consistency: 50,
+            trend: Trend::Stable,
+        };
+        let p = score.level_progress();
+        assert!(p > 0.0 && p < 1.0);
     }
 }

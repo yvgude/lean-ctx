@@ -191,3 +191,326 @@ fn format_usd(amount: f64) -> String {
         format!("${amount:.3}")
     }
 }
+
+/// Premium themed deep sections for the CLI `gain --deep` dashboard.
+pub fn format_deep_themed(model: Option<&str>, limit: usize) -> String {
+    use crate::core::theme;
+    let engine = GainEngine::load();
+    let cfg = crate::core::config::Config::load();
+    let t = theme::load_theme(&cfg.theme);
+    let lim = limit.clamp(1, 50);
+
+    let mut out = Vec::new();
+    format_tasks_themed(&engine, &t, &mut out);
+    format_cost_themed(&engine, &t, lim, model, &mut out);
+    format_agents_themed(&engine, &t, lim, &mut out);
+    format_heatmap_themed(&engine, &t, lim, &mut out);
+    out.join("\n")
+}
+
+#[allow(clippy::many_single_char_names)] // ANSI formatting locals: t,a,s,m,w
+fn format_tasks_themed(engine: &GainEngine, t: &crate::core::theme::Theme, out: &mut Vec<String>) {
+    use crate::core::theme::{self, pad_right};
+    let rows = engine.task_breakdown();
+    if rows.is_empty() {
+        return;
+    }
+    let rst = theme::rst();
+    let bold = theme::bold();
+    let dim = theme::dim();
+    let a = t.accent.fg();
+    let s = t.success.fg();
+    let m = t.muted.fg();
+
+    let w = 70;
+    let ss = t.box_side_square();
+    let sec_line = |content: &str| -> String {
+        let padded = pad_right(content, w);
+        format!("  {ss}{padded}{ss}")
+    };
+
+    out.push(String::new());
+    out.push(format!("  {}", t.box_top_labeled(w, "TASK BREAKDOWN")));
+    out.push(sec_line(""));
+
+    let max_saved = rows
+        .iter()
+        .map(|r| r.tokens_saved)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    for r in rows.iter().take(13) {
+        let ratio = r.tokens_saved as f64 / max_saved as f64;
+        let bar = pad_right(&t.gradient_bar(ratio, 12), 12);
+        let cat = pad_right(&format!("{a}{}{rst}", r.category.label()), 14);
+        let saved = pad_right(
+            &format!("{s}{bold}{}{rst}", format_tokens(r.tokens_saved)),
+            9,
+        );
+        let cmds = format!("{dim}{:>5} cmds{rst}", r.commands);
+        let tools = format!("{dim}{:>3} tools{rst}", r.tool_calls);
+        let spend = format!("{m}{}{rst}", format_usd(r.tool_spend_usd));
+        out.push(sec_line(&format!(
+            " {cat} {bar} {saved} {cmds}  {tools}  {spend}"
+        )));
+    }
+
+    out.push(sec_line(""));
+    out.push(format!("  {}", t.box_bottom_square(w)));
+}
+
+#[allow(clippy::many_single_char_names)] // ANSI formatting locals
+fn format_cost_themed(
+    engine: &GainEngine,
+    t: &crate::core::theme::Theme,
+    limit: usize,
+    model: Option<&str>,
+    out: &mut Vec<String>,
+) {
+    use crate::core::theme::{self, pad_right};
+    let rst = theme::rst();
+    let bold = theme::bold();
+    let dim = theme::dim();
+    let a = t.accent.fg();
+    let s = t.success.fg();
+    let w_col = t.warning.fg();
+
+    let w = 70;
+    let ss = t.box_side_square();
+    let sec_line = |content: &str| -> String {
+        let padded = pad_right(content, w);
+        format!("  {ss}{padded}{ss}")
+    };
+
+    let store = &engine.costs;
+    let (total_in, total_out, total_cached) = store.total_tokens();
+    let total_cost = store.total_cost();
+
+    let env_model = std::env::var("LEAN_CTX_MODEL")
+        .or_else(|_| std::env::var("LCTX_MODEL"))
+        .ok();
+    let resolved_model = model.or(env_model.as_deref());
+
+    out.push(String::new());
+    let header = format!(
+        "COST ATTRIBUTION ── {} agents, {} tools",
+        store.agents.len(),
+        store.tools.len()
+    );
+    out.push(format!("  {}", t.box_top_labeled(w, &header)));
+    out.push(sec_line(""));
+
+    out.push(sec_line(&format!(
+        " {bold}Total:{rst} {s}{}{rst} in + {s}{}{rst} out + {dim}{}{rst} cached = {a}{bold}${total_cost:.4}{rst}",
+        format_tokens(total_in),
+        format_tokens(total_out),
+        format_tokens(total_cached),
+    )));
+
+    if let Some(mk) = resolved_model {
+        let pricing = crate::core::gain::model_pricing::ModelPricing::load();
+        let q = pricing.quote(Some(mk));
+        out.push(sec_line(&format!(
+            " {dim}model={} in=${:.2}/M out=${:.2}/M{rst}",
+            q.model_key, q.cost.input_per_m, q.cost.output_per_m
+        )));
+    }
+
+    let top_agents = store.top_agents(limit);
+    if !top_agents.is_empty() {
+        out.push(sec_line(""));
+        out.push(sec_line(&format!(" {bold}Top Agents{rst}")));
+        let max_cost = top_agents
+            .first()
+            .map_or(1.0_f64, |a2| a2.cost_usd.max(0.001));
+        for (i, agent) in top_agents.iter().enumerate() {
+            let ratio = agent.cost_usd / max_cost;
+            let bar = pad_right(&t.gradient_bar(ratio, 8), 8);
+            let name = pad_right(
+                &format!("{a}{}{rst}", truncate_str(&agent.agent_id, 18)),
+                20,
+            );
+            let cost_s = format!("{s}${:.4}{rst}", agent.cost_usd);
+            let model_tag = agent
+                .model_key
+                .as_deref()
+                .map(|mk| format!(" {dim}[{mk}]{rst}"))
+                .unwrap_or_default();
+            out.push(sec_line(&format!(
+                " {dim}{}. {rst}{name} {bar} {cost_s} {dim}{}c{rst}{model_tag}",
+                i + 1,
+                agent.total_calls
+            )));
+        }
+    }
+
+    let top_tools = store.top_tools(limit);
+    if !top_tools.is_empty() {
+        out.push(sec_line(""));
+        out.push(sec_line(&format!(" {bold}Top Tools{rst}")));
+        let max_cost = top_tools
+            .first()
+            .map_or(1.0_f64, |t2| t2.cost_usd.max(0.001));
+        for (i, tool) in top_tools.iter().enumerate() {
+            let ratio = tool.cost_usd / max_cost;
+            let bar = pad_right(&t.gradient_bar(ratio, 8), 8);
+            let name = pad_right(
+                &format!("{w_col}{}{rst}", pad_right(&tool.tool_name, 12)),
+                14,
+            );
+            let cost_s = format!("{s}${:.4}{rst}", tool.cost_usd);
+            out.push(sec_line(&format!(
+                " {dim}{}. {rst}{name} {bar} {cost_s} {dim}{}c avg {:.0}in+{:.0}out{rst}",
+                i + 1,
+                tool.total_calls,
+                tool.avg_input_tokens,
+                tool.avg_output_tokens
+            )));
+        }
+    }
+
+    out.push(sec_line(""));
+    out.push(format!("  {}", t.box_bottom_square(w)));
+}
+
+fn format_agents_themed(
+    engine: &GainEngine,
+    t: &crate::core::theme::Theme,
+    limit: usize,
+    out: &mut Vec<String>,
+) {
+    use crate::core::theme::{self, pad_right};
+    let top = engine.costs.top_agents(limit);
+    if top.is_empty() {
+        return;
+    }
+    let rst = theme::rst();
+    let bold = theme::bold();
+    let dim = theme::dim();
+    let a = t.accent.fg();
+    let s = t.success.fg();
+
+    let w = 70;
+    let ss = t.box_side_square();
+    let sec_line = |content: &str| -> String {
+        let padded = pad_right(content, w);
+        format!("  {ss}{padded}{ss}")
+    };
+
+    out.push(String::new());
+    out.push(format!("  {}", t.box_top_labeled(w, "AGENTS")));
+    out.push(sec_line(""));
+
+    let max_calls = top
+        .iter()
+        .map(|a2| a2.total_calls)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    for (i, agent) in top.iter().enumerate() {
+        let ratio = agent.total_calls as f64 / max_calls as f64;
+        let bar = pad_right(&t.gradient_bar(ratio, 10), 10);
+        let name = pad_right(
+            &format!("{a}{}{rst}", truncate_str(&agent.agent_id, 22)),
+            24,
+        );
+        let calls = format!("{s}{bold}{:>3}{rst}c", agent.total_calls);
+        let toks = format!(
+            "{dim}{}in {}out{rst}",
+            format_tokens(agent.total_input_tokens),
+            format_tokens(agent.total_output_tokens)
+        );
+        out.push(sec_line(&format!(
+            " {dim}{}.{rst} {name} {bar} {calls} {toks}",
+            i + 1
+        )));
+    }
+
+    out.push(sec_line(""));
+    out.push(format!("  {}", t.box_bottom_square(w)));
+}
+
+fn format_heatmap_themed(
+    engine: &GainEngine,
+    t: &crate::core::theme::Theme,
+    limit: usize,
+    out: &mut Vec<String>,
+) {
+    use crate::core::theme::{self, pad_right};
+    let rows = engine.heatmap_gains(limit);
+    if rows.is_empty() {
+        return;
+    }
+    let rst = theme::rst();
+    let bold = theme::bold();
+    let dim = theme::dim();
+    let s = t.success.fg();
+
+    let w = 70;
+    let ss = t.box_side_square();
+    let sec_line = |content: &str| -> String {
+        let padded = pad_right(content, w);
+        format!("  {ss}{padded}{ss}")
+    };
+
+    out.push(String::new());
+    out.push(format!(
+        "  {}",
+        t.box_top_labeled(w, &format!("HEATMAP ── top {limit}"))
+    ));
+    out.push(sec_line(""));
+
+    let max_saved = rows
+        .iter()
+        .map(|r| r.tokens_saved)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    for (i, r) in rows.iter().enumerate() {
+        let ratio = r.tokens_saved as f64 / max_saved as f64;
+        let bar = pad_right(&t.gradient_bar(ratio, 10), 10);
+        let short_path = shorten_path(&r.path, 28);
+        let path_col = pad_right(&format!("{dim}{short_path}{rst}"), 30);
+        let saved = pad_right(
+            &format!("{s}{bold}{}{rst}", format_tokens(r.tokens_saved)),
+            8,
+        );
+        let pct = t.pct_color(f64::from(r.compression_pct));
+        out.push(sec_line(&format!(
+            " {dim}{:>2}.{rst} {path_col} {bar} {saved} {pct}{:>2.0}%{rst} {dim}{}x{rst}",
+            i + 1,
+            r.compression_pct,
+            r.access_count
+        )));
+    }
+
+    out.push(sec_line(""));
+    out.push(format!("  {}", t.box_bottom_square(w)));
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max - 1])
+    }
+}
+
+fn shorten_path(path: &str, max: usize) -> String {
+    if path.len() <= max {
+        return path.to_string();
+    }
+    if let Some(pos) = path.rfind('/') {
+        let file = &path[pos + 1..];
+        if file.len() >= max - 3 {
+            return format!("…{}", &file[file.len() - (max - 1)..]);
+        }
+        let remaining = max - file.len() - 4;
+        let start = &path[..remaining.min(path.len())];
+        return format!("{start}…/{file}");
+    }
+    format!("{}…", &path[..max - 1])
+}

@@ -126,7 +126,9 @@ pub fn verify(path: &Path) -> VerifyResult {
         if ev.prev_hash != prev {
             return VerifyResult::invalid_at(total);
         }
-        if ev.entry_hash != compute_hash(&prev, &ev.canonical_content()) {
+        // Accept the v2 (integer micro-USD) hash or the legacy v1 (`{:.6}`) hash, so clean
+        // pre-v2 ledgers keep verifying while new appends use the round-trip-stable scheme.
+        if !ev.hash_matches(&prev) {
             return VerifyResult::invalid_at(total);
         }
         prev = ev.entry_hash;
@@ -137,6 +139,51 @@ pub fn verify(path: &Path) -> VerifyResult {
         valid: true,
         first_invalid_at: None,
     }
+}
+
+/// Re-hashes the whole ledger under the current (v2) canonical scheme, rewriting the file in
+/// place. Repairs a chain that broke purely from the legacy `{:.6}` float round-trip bug (not
+/// tampering): the stored event *content* is preserved verbatim, only `prev_hash`/`entry_hash`
+/// are recomputed. Returns the number of re-chained events.
+///
+/// The rewrite happens under the same exclusive lock as [`append`] and truncates in place
+/// (the inode is kept), so a concurrent appender that is blocked on the lock resumes correctly
+/// against the migrated tail instead of writing to an orphaned file.
+pub fn rechain(path: &Path) -> std::io::Result<usize> {
+    let mut file = OpenOptions::new().read(true).write(true).open(path)?;
+    file.lock_exclusive()?;
+    let result = rechain_locked(&mut file);
+    let _ = FileExt::unlock(&file);
+    result
+}
+
+fn rechain_locked(file: &mut fs::File) -> std::io::Result<usize> {
+    file.seek(SeekFrom::Start(0))?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    let mut prev = GENESIS.to_string();
+    let mut out = String::with_capacity(content.len() + 64);
+    let mut count = 0usize;
+    for line in content.lines() {
+        let Ok(mut ev) = serde_json::from_str::<SavingsEvent>(line) else {
+            continue;
+        };
+        ev.prev_hash = prev.clone();
+        ev.entry_hash = compute_hash(&prev, &ev.canonical_content());
+        prev.clone_from(&ev.entry_hash);
+        if let Ok(serialized) = serde_json::to_string(&ev) {
+            out.push_str(&serialized);
+            out.push('\n');
+            count += 1;
+        }
+    }
+
+    file.set_len(0)?;
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(out.as_bytes())?;
+    file.flush()?;
+    Ok(count)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -318,6 +365,35 @@ mod tests {
         let v = verify(&p);
         assert!(!v.valid, "edited entry must fail verification");
         assert_eq!(v.first_invalid_at, Some(0));
+
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn rechain_repairs_broken_chain_and_preserves_content() {
+        let p = temp_path("rechain");
+        // Simulate a ledger whose chain hashes are invalid (e.g. broken by the legacy float
+        // round-trip bug): the event *content* is intact, only the links are wrong.
+        let mut lines = String::new();
+        for saved in [500u64, 300, 700] {
+            let mut e = sample(saved);
+            e.prev_hash = "deadbeef".into();
+            e.entry_hash = "deadbeef".into();
+            lines.push_str(&serde_json::to_string(&e).unwrap());
+            lines.push('\n');
+        }
+        fs::write(&p, &lines).unwrap();
+        assert!(!verify(&p).valid, "broken chain must fail before rechain");
+
+        let n = rechain(&p).unwrap();
+        assert_eq!(n, 3, "all events re-chained");
+
+        let v = verify(&p);
+        assert!(v.valid, "rechain must produce a valid chain");
+        assert_eq!(v.total, 3);
+
+        // Only the chain hashes are recomputed; the saved-token content is preserved.
+        assert_eq!(summarize(&p).saved_tokens, 1500);
 
         let _ = fs::remove_file(&p);
     }

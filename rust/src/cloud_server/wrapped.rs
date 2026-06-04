@@ -134,6 +134,7 @@ impl PublishPayload {
             bounce_tokens: 0,
             model_key: self.model_key.clone().unwrap_or_default(),
             pricing_estimated: self.pricing_estimated,
+            percentile: None,
         }
     }
 }

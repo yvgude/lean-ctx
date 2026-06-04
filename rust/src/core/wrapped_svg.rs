@@ -195,6 +195,7 @@ mod tests {
             bounce_tokens: 0,
             model_key: "claude-3.5-sonnet".into(),
             pricing_estimated: false,
+            percentile: Some(99),
         }
     }
 

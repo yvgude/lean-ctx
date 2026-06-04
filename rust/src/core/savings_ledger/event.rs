@@ -43,10 +43,37 @@ pub struct SavingsEvent {
 }
 
 impl SavingsEvent {
-    /// Float-stable canonical representation of the *content* fields (everything except
-    /// the chain hashes). Used identically on append and on verify so the entry hash is
-    /// reproducible regardless of JSON float formatting.
+    /// Canonical (v2) representation of the *content* fields (everything except the chain
+    /// hashes), hashed on append and re-hashed on verify.
+    ///
+    /// Monetary values are committed as integer **micro-USD** rather than `{:.6}` of a raw
+    /// `f64`. A fixed-precision float string is *not* round-trip stable: a value sitting on a
+    /// 6th-decimal tie (e.g. `0.0235575`) can re-parse from JSON into a neighbouring `f64`
+    /// that `{:.6}` rounds the other way, which silently broke the chain for untampered data.
+    /// Integers serialise/parse exactly, so the hash is reproducible. The `v2|` prefix pins
+    /// the scheme so a downgrade is itself tamper-evident.
     pub fn canonical_content(&self) -> String {
+        format!(
+            "v2|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            self.ts,
+            self.tool,
+            self.model_id,
+            self.tokenizer,
+            self.baseline_tokens,
+            self.actual_tokens,
+            self.saved_tokens,
+            self.bounce_adjustment,
+            micro_usd(self.unit_price_per_m_usd),
+            micro_usd(self.saved_usd),
+            self.repo_hash,
+            self.agent_id,
+        )
+    }
+
+    /// Legacy (v1) canonical: `{:.6}` of the raw `f64` money fields. Retained only so
+    /// `verify` keeps validating pre-v2 ledgers that never hit a tie value; new appends and
+    /// re-chained ledgers always use [`Self::canonical_content`].
+    pub fn canonical_content_legacy(&self) -> String {
         format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{:.6}|{:.6}|{}|{}",
             self.ts,
@@ -63,6 +90,21 @@ impl SavingsEvent {
             self.agent_id,
         )
     }
+
+    /// True if `entry_hash` matches the v2 canonical hash, or the legacy v1 hash. Accepting
+    /// both lets `verify` validate ledgers written before the v2 fix without forcing a
+    /// migration (clean v1 ledgers stay valid; broken-by-bug ones are repaired by `rechain`).
+    pub fn hash_matches(&self, prev_hash: &str) -> bool {
+        self.entry_hash == compute_hash(prev_hash, &self.canonical_content())
+            || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_legacy())
+    }
+}
+
+/// Rounds a USD amount to integer micro-USD (millionths of a dollar) — the float-free money
+/// unit committed by the v2 hash chain. `round()` (ties away from zero) is deterministic for a
+/// given `f64`, and JSON round-trips an `f64` losslessly, so append and verify always agree.
+fn micro_usd(usd: f64) -> i64 {
+    (usd * 1_000_000.0).round() as i64
 }
 
 /// `SHA-256(prev_hash || content)` as lowercase hex — the chain link primitive.
@@ -120,5 +162,47 @@ mod tests {
         let a = compute_hash("genesis", &e.canonical_content());
         let b = compute_hash("other", &e.canonical_content());
         assert_ne!(a, b, "chain link must depend on prev_hash");
+    }
+
+    /// Regression: `saved_usd = 0.0235575` is a 6th-decimal tie that broke the legacy
+    /// `{:.6}` chain after a JSON round-trip. The v2 integer-micro-USD canonical must be
+    /// stable across serialize -> deserialize so `verify` accepts an untampered entry.
+    #[test]
+    fn v2_hash_is_roundtrip_stable_on_decimal_tie() {
+        let mut e = ev();
+        e.saved_tokens = 9423;
+        e.unit_price_per_m_usd = 2.5;
+        e.saved_usd = 9423.0 * 2.5 / 1_000_000.0; // = 0.0235575, a {:.6} tie
+        e.prev_hash = "genesis".into();
+        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content());
+
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: SavingsEvent = serde_json::from_str(&json).unwrap();
+
+        assert!(
+            parsed.hash_matches(&parsed.prev_hash),
+            "v2 chain must survive a JSON round-trip on a decimal-tie value"
+        );
+    }
+
+    #[test]
+    fn legacy_v1_hash_still_verifies() {
+        // An entry hashed under the old {:.6} scheme must keep validating via hash_matches,
+        // so upgrading does not invalidate clean pre-v2 ledgers.
+        let mut e = ev();
+        e.prev_hash = "genesis".into();
+        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content_legacy());
+        assert!(e.hash_matches(&e.prev_hash), "legacy v1 hash must verify");
+    }
+
+    #[test]
+    fn micro_usd_quantizes_to_millionths() {
+        assert_eq!(micro_usd(2.5), 2_500_000);
+        assert_eq!(micro_usd(0.0), 0);
+        assert_eq!(micro_usd(0.000_001), 1);
+        // Determinism for a given f64 is the property the chain relies on (the exact rounding
+        // of a tie is irrelevant as long as it is reproducible).
+        let tie = 9423.0 * 2.5 / 1_000_000.0;
+        assert_eq!(micro_usd(tie), micro_usd(tie));
     }
 }

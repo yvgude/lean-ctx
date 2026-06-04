@@ -117,6 +117,14 @@ pub(crate) fn has_published() -> bool {
     !store.cards.is_empty()
 }
 
+/// Whether any published card is opted into the public leaderboard
+/// (`leanctx.com/metrics`). Distinct from `has_published`: a user can hold a
+/// private permalink (`/w/<id>`) without ever appearing on the public board, so
+/// the recap hint can keep nudging them toward `--leaderboard` until they join.
+pub(crate) fn has_leaderboard_entry() -> bool {
+    PublishedStore::load().cards.iter().any(|c| c.leaderboard)
+}
+
 impl PublishedStore {
     fn load() -> Self {
         store_path()
@@ -264,6 +272,20 @@ pub(crate) fn publish(period: &str, name: Option<&str>, leaderboard: bool) {
                 if let Some(base) = card.url.split("/w/").next() {
                     println!("Listed on the community leaderboard: {base}/metrics#leaderboard");
                 }
+                // A nameless entry shows as "anonymous" on the board — nudge once toward a handle.
+                if effective_name.is_none() {
+                    println!(
+                        "Tip: claim a handle so you're not listed as \"anonymous\" — \
+                         lean-ctx gain --publish --leaderboard --name=\"your handle\""
+                    );
+                }
+            } else {
+                // Closes the loop for plain `--publish`: a private permalink never reaches the
+                // public board, so spell out the exact opt-in path the metrics page documents.
+                println!(
+                    "Tip: also appear on the public leaderboard at https://leanctx.com/metrics — \
+                     re-run with  lean-ctx gain --publish --leaderboard"
+                );
             }
             println!(
                 "Remove anytime with:  lean-ctx gain --unpublish={}",
@@ -400,6 +422,7 @@ mod tests {
             bounce_tokens: 100,
             model_key: "claude-opus".into(),
             pricing_estimated: true,
+            percentile: Some(99),
         }
     }
 
