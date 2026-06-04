@@ -121,7 +121,7 @@ pub struct Config {
     /// Set via `lean-ctx config set profile passthrough` or editing config.toml.
     #[serde(default)]
     pub profile: Option<String>,
-    /// Tool visibility profile: "minimal" (5), "standard" (20), or "power" (all).
+    /// Tool visibility profile: "minimal" (6), "standard" (21), or "power" (all).
     /// Override via LEAN_CTX_TOOL_PROFILE env var.
     /// Existing installs default to "power" (backward compat).
     #[serde(default)]

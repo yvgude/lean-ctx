@@ -61,7 +61,7 @@ Top-level configuration keys
 - `tee_mode` (enum: never | failures | always, default `failures`) — Controls when shell output is tee'd to disk for later retrieval
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
-- `tool_profile` (enum: minimal | standard | power, default `""`) — Tool visibility profile: minimal (5 tools), standard (20), power (all). Override via LEAN_CTX_TOOL_PROFILE
+- `tool_profile` (enum: minimal | standard | power, default `""`) — Tool visibility profile: minimal (6 tools), standard (21), power (all). Override via LEAN_CTX_TOOL_PROFILE
 - `tools_enabled` (string[], default `[]`) — Explicit list of enabled tool names (overrides tool_profile when non-empty)
 - `ultra_compact` (bool, default `false`) — Legacy flag for maximum compression (use compression_level instead)
 - `update_check_disabled` (bool, default `false` — env `LEAN_CTX_NO_UPDATE_CHECK`) — Disable the daily version check

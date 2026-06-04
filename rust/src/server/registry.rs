@@ -5,8 +5,8 @@ use rmcp::model::Tool;
 use super::tool_trait::McpTool;
 
 /// Central registry mapping tool names to their trait-based handlers.
-/// Replaces the match-cascade dispatch for migrated tools while
-/// coexisting with the legacy dispatch for tools not yet migrated.
+/// Every tool is trait-based and resolved here; the earlier
+/// match-cascade dispatch has been fully retired.
 pub struct ToolRegistry {
     tools: HashMap<&'static str, Box<dyn McpTool>>,
 }
@@ -100,7 +100,7 @@ pub fn tool_count() -> usize {
 }
 
 /// Register all trait-based tools. Called once during server startup.
-/// Tools are added here as they are migrated from the legacy dispatch.
+/// New tools are added here as their `McpTool` implementation lands.
 pub fn build_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 

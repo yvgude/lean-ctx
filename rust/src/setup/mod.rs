@@ -1042,7 +1042,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                         status: "set".to_string(),
                         path: None,
                         note: Some(format!(
-                            "default={default_profile} (20 tools; change with: lean-ctx profile power)"
+                            "default={default_profile} (21 tools; change with: lean-ctx profile power)"
                         )),
                     });
                 }
