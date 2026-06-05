@@ -27,6 +27,18 @@ const tools = category.tools.map(name => ({
     call graph traversal, route extraction, and structural code outlining.
   </p>
 
+  <div class="note">
+    <strong>Supported languages for the graph &amp; code-map.</strong> The dependency
+    graph, symbols, call graph, and roads views are built from a tree-sitter
+    code-map. Graph-indexed languages: <strong>Rust, TypeScript, JavaScript,
+    Python, Go, Java, C, C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala,
+    Elixir, Zig</strong> (plus dependency edges for <strong>Vue</strong> and
+    <strong>Svelte</strong>). Other languages — for example <strong>Lua/Luau</strong>
+    — are <em>not</em> graph-indexed yet: BM25 search, <code>ctx_read</code>
+    compression, and the session cache still work for them, but the graph,
+    symbols, and roads views will show an empty state instead of a graph.
+  </div>
+
   <h2>Tools Overview</h2>
   <table>
     <thead>
