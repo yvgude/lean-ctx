@@ -389,6 +389,18 @@ lean-ctx config schema</code></pre>
         <td><code>"auto"</code></td>
         <td set:html={t('docs.configuration.optSavingsFooterDesc')} />
       </tr>
+      <tr>
+        <td><code>rules_injection</code> <span class="text-xs text-muted">v3.7.4</span></td>
+        <td>string</td>
+        <td><code>"shared"</code></td>
+        <td>How lean-ctx delivers its tool-mapping rules to shared-instruction-file agents (Claude Code, Codex, OpenCode, Gemini CLI). <code>"shared"</code> writes a marker-delimited block into <code>CLAUDE.md</code> / <code>AGENTS.md</code> / <code>GEMINI.md</code>. <code>"dedicated"</code> <strong>never edits those files</strong> — it uses each agent's own config-driven, fully-removable auto-load path plus a lean-ctx-owned rules file. Switching back, and <code>lean-ctx uninstall</code>, reverse every registration cleanly.</td>
+      </tr>
+      <tr>
+        <td><code>permission_inheritance</code> <span class="text-xs text-muted">v3.7.4</span></td>
+        <td>string</td>
+        <td><code>"off"</code></td>
+        <td>When <code>"on"</code>, lean-ctx mirrors the host IDE's permission rules onto its own tools so <code>ctx_shell</code>/<code>ctx_execute</code> honor your <code>bash</code> rules, <code>ctx_read</code> honors <code>read</code>, etc. (v1: OpenCode <code>opencode.json</code>, global + project merged). <code>deny</code> blocks, <code>ask</code> holds the call back with an actionable message, <code>allow</code> proceeds. Read-only and runtime-only — lean-ctx never writes your <code>permission</code> block; default <code>"off"</code> adds zero hot-path cost.</td>
+      </tr>
     </tbody>
   </table>
 
@@ -630,6 +642,21 @@ max_staleness_days = 30</code></pre>
         <td><code>LCTX_MAX_SHELL_BYTES</code></td>
         <td>number (default: 1048576)</td>
         <td set:html={t('docs.configuration.envMaxShellBytesDesc')} />
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_RULES_INJECTION</code> <span class="text-xs text-muted">v3.7.4</span></td>
+        <td><code>shared</code> (default) / <code>dedicated</code></td>
+        <td>Overrides the <code>rules_injection</code> config. <code>dedicated</code> never edits your shared instruction files (<code>CLAUDE.md</code> / <code>AGENTS.md</code> / <code>GEMINI.md</code>).</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_PERMISSION_INHERITANCE</code> <span class="text-xs text-muted">v3.7.4</span></td>
+        <td><code>on</code> / <code>off</code> (default)</td>
+        <td>Overrides the <code>permission_inheritance</code> config. When <code>on</code>, lean-ctx tools honor the host IDE's permission rules (read-only mirroring).</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_GRID_CO2_G_PER_KWH</code> <span class="text-xs text-muted">v3.7.4</span></td>
+        <td>number (default: 475)</td>
+        <td>Grid carbon intensity (g CO₂e/kWh) used by <code>ctx_gain</code> to estimate carbon avoided. Defaults to the global-average grid; set your region's value for an honest figure on cleaner grids.</td>
       </tr>
     </tbody>
   </table>

@@ -30,8 +30,54 @@ const toolCount = getMcpManifest().counts.granular;
 
   <hr />
 
+  <!-- 3.7.4 -->
+  <h2 id="v3.7.4">3.7.4 <span class="badge badge-current">Current</span> <span class="text-xs text-muted">(2026-06-05)</span></h2>
+  <p class="text-sm text-muted">The Superintelligence Context release. Six cross-disciplinary North-Star bets shipped — active-context prefetch that learns which providers help, task-conditioned compression, self-managing memory, a context immune system (signed audit + prompt-injection detection), stigmergic swarm credit, and a physically-grounded energy <em>and carbon</em> ledger — plus a heavy performance pass (int8 embeddings, SIMD search, shared content cache, lazy startup, JSON compaction), IDE permission inheritance, opt-out instruction-file injection, and three new <code>--json</code> CLI commands. Everything new is free OSS.</p>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong>Active-context prefetch that learns</strong> — <code>ctx_preload</code>'s provider bandit (Thompson sampling) is now persisted per project, so lean-ctx learns which data sources actually pay off for a given kind of task and prefetches those, instead of starting from zero on every call.</li>
+    <li><strong>Task-conditioned compression</strong> — the <code>entropy</code> read-mode now keeps low-entropy lines that are relevant to the active task (an Information-Bottleneck proxy): it compresses away only what is both uninformative <em>and</em> off-task, and falls back to pure entropy when no task intent is active.</li>
+    <li><strong>Context immune system</strong> — audit-trail entries are now Ed25519-signed for cryptographic provenance, and a conservative prompt-injection detector scans tool output for role-override / token-smuggling patterns, emitting a security audit event on a hit.</li>
+    <li><strong>Stigmergic swarm credit</strong> — the access heatmap now records per-agent traces and computes Shapley-inspired "context credit": when several agents use the same file, each contributor is credited for the shared context that helped.</li>
+    <li><strong>Self-managing memory</strong> — the background cognition loop (consolidate / synthesize / decay / compact) now actually runs on its own, time-gated and single-flight, and a fact's thumbs-up/down feedback steers how fast it decays.</li>
+    <li><strong>Energy <em>and</em> carbon ledger</strong> — <code>ctx_gain</code> now reports estimated grid energy <em>and</em> CO₂e avoided (configurable grid intensity via <code>LEAN_CTX_GRID_CO2_G_PER_KWH</code>), so the savings ledger's environmental dividend is auditable, not just cosmetic.</li>
+    <li><strong>IDE permission inheritance</strong> — a new <code>permission_inheritance</code> option (off by default) makes lean-ctx mirror your IDE's permission rules onto its own tools, so a <code>deny</code>/<code>ask</code> on <code>bash</code> in OpenCode also guards <code>ctx_shell</code>. Read-only and runtime-only — lean-ctx never writes your permission config.</li>
+    <li><strong>Opt out of touching shared instruction files</strong> (#343) — the new <code>rules_injection = dedicated</code> mode never edits your <code>CLAUDE.md</code> / <code>AGENTS.md</code> / <code>GEMINI.md</code>; it uses each agent's own config-driven, fully-removable auto-load path instead. Default <code>shared</code> keeps today's behavior.</li>
+    <li><strong>Three new <code>--json</code> CLI commands</strong> — <code>lean-ctx semantic-search</code> (fixes the editor search path), <code>lean-ctx repomap</code>, and <code>lean-ctx knowledge recall</code> all gain structured output for editor and script use.</li>
+    <li><strong>Dashboard subpath mounting</strong> (#355) — <code>dashboard --base-path</code> serves the web dashboard under a subpath behind a reverse proxy.</li>
+  </ul>
+
+  <h3>{t('changelog.performance')}</h3>
+  <ul>
+    <li><strong>Shared file-content cache removes the search double-read</strong> (#148) — the index build, <code>ctx_search</code>, and BM25 now share a single in-memory copy per file (LRU, invalidated by mtime+size) instead of reading the corpus from disk two or three times.</li>
+    <li><strong>Lazy, demand-driven startup</strong> (#152) — a session that only reads/greps/lists pays zero startup indexing cost; the graph/BM25 index warms once, in the background, on the first tool that actually needs it.</li>
+    <li><strong>int8-quantized embeddings + SIMD dense search</strong> — embedding vectors are int8-quantized (~4× smaller resident index) with a SIMD cosine kernel and a threshold-gated HNSW cache, so small projects stay light and large ones get sublinear search.</li>
+    <li><strong>Lossless JSON/JSONL compaction</strong> — large structured tool output is compacted losslessly before counting, costing fewer tokens without changing a single value.</li>
+    <li><strong>Read-mostly session cache</strong> (#147, #149) — the common <code>ctx_read</code> flow serves session state from a read-mostly cache and moves telemetry off the hot path.</li>
+    <li><strong>Bounded cold BM25 build</strong> (#150) and a proxy that parses each request body once and protects multi-file reads from lossy compression.</li>
+  </ul>
+
+  <h3>{t('changelog.changed')}</h3>
+  <ul>
+    <li><strong>Tool registry is the single schema source</strong> (#141) — per-tool schemas are generated from one registry instead of maintained in parallel, retiring a recurring drift source (guarded by a regression test).</li>
+    <li><strong>Unified path resolution</strong> (#145) and tool descriptions that steer agents toward the <code>ctx_*</code> tools (#168).</li>
+    <li><strong>Guarded dispatch refactor</strong> (#144) — the ~1000-line post-processing path is split into unit-tested, composable stages with identical behavior.</li>
+  </ul>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>Full profile surface for dynamic-tools clients</strong> (#358) — clients using dynamic tool categories now see the complete <code>tools/list</code> and the always-on <code>ctx_call</code> gateway, so no tool is unreachable.</li>
+    <li><strong>Proxy accepts bare provider endpoints for the OpenCode Responses API</strong> (#353) — a base URL without the full path suffix is normalized and routed instead of failing.</li>
+    <li><strong>macOS install/update no longer touches <code>~/Documents</code></strong> (#356) — avoids spurious permission prompts and stray files.</li>
+    <li><strong>Dashboard tooltips never clip</strong> (#357) — info-tips are portaled to <code>&lt;body&gt;</code> so they render above surrounding cards.</li>
+    <li><strong>Runtime robustness</strong> — bounded write-ahead log, dead-owner lock reclaim, corrected knowledge-fact eviction, and tuned <code>lean-ctx doctor</code> thresholds.</li>
+  </ul>
+
+  <hr />
+
   <!-- 3.7.3 -->
-  <h2 id="v3.7.3">3.7.3 <span class="badge badge-current">Current</span> <span class="text-xs text-muted">(2026-06-04)</span></h2>
+  <h2 id="v3.7.3">3.7.3 <span class="text-xs text-muted">(2026-06-04)</span></h2>
   <p class="text-sm text-muted">Compression where the agent actually is — and fidelity where it matters. A <code>shell</code> MCP tool so the Codex Desktop/Cloud app compresses even without lifecycle hooks, an additive self-diagnosing shell allowlist, navigation output with line ranges, already-compact (TOON) passthrough, OpenAI Responses API support, and a proxy that protects file reads mid-refactor.</p>
 
   <DocsCallout variant="note" title="Why 3.7.3 and not 3.7.2?">

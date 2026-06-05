@@ -2248,6 +2248,7 @@
   "changelog.added": "Added",
   "changelog.changed": "Changed",
   "changelog.fixed": "Fixed",
+  "changelog.performance": "Performance",
   "changelog.security": "Security",
   "contextPkg.cliTitle": "CLI Commands",
   "contextPkg.cliDesc": "Manage context packages entirely from the command line. All operations support JSON output for CI/CD integration.",
