@@ -252,22 +252,53 @@ export async function semanticSearch(
   query: string
 ): Promise<SearchResult[]> {
   try {
-    const raw = await runLeanCtx([
-      "semantic-search",
-      "--json",
-      "--query",
-      query,
-    ]);
-    const data = JSON.parse(raw);
-    if (Array.isArray(data)) {
-      return data.map((item: Record<string, unknown>) => ({
-        file: (item.file as string) ?? "",
-        line: (item.line as number) ?? 0,
-        content: (item.content as string) ?? "",
-        score: item.score as number | undefined,
-      }));
+    const raw = await runLeanCtx(["knowledge", "search", query]);
+
+    // Header: "Cross-session search '...' (N results):" or "No results found..."
+    if (!raw || !raw.includes("\n")) {
+      return [];
     }
-    return [];
+
+    const lines = raw.split("\n").slice(1);
+    const results: SearchResult[] = [];
+
+    for (const line of lines) {
+      // Pattern: "  [cat/key] value text (project: path, conf: XX%)"
+      const match = line.match(
+        /^\s+\[([^\]]+)\]\s+(.+?)\s+\(project:\s*(.+?),\s*conf:\s*(\d+)%\)$/
+      );
+      if (match) {
+        const [, categoryKey, content, project, confStr] = match;
+
+        // Extract file + line from content patterns:
+        //   "Read example.js (394L)"  → file=example.js, line=394
+        //   "Found … in N files, example.js"         → file, line=0
+        let file = project;
+        let line = 0;
+
+        const readMatch = content.match(/^Read\s+(\S+)\s+\((\d+)L\)$/);
+        if (readMatch) {
+          file = readMatch[1];
+          line = parseInt(readMatch[2], 10);
+        } else {
+          const foundMatch = content.match(
+            /(?:in \d+ files?,\s*)(\S+)\s*$/
+          );
+          if (foundMatch) {
+            file = foundMatch[1].replace(/[,;]$/, "");
+          }
+        }
+
+        results.push({
+          file,
+          line,
+          content: `[${categoryKey}] ${content}`,
+          score: parseInt(confStr, 10) / 100,
+        });
+      }
+    }
+
+    return results;
   } catch {
     return [];
   }
