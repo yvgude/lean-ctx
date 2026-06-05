@@ -363,10 +363,25 @@ fn entropy_compress_with_task(
     }
     let output = collapsed.join("\n");
     let compressed_tokens = count_tokens(&output);
+
+    // Safeguard: BPE re-tokenization of a line subset can, for tiny adversarial
+    // inputs, exceed the original token count (e.g. a dropped trailing newline
+    // merges differently). Never inflate — fall back to the original verbatim.
+    let final_output = if compressed_tokens > original_tokens {
+        content.to_string()
+    } else {
+        output
+    };
+    let final_tokens = if compressed_tokens > original_tokens {
+        original_tokens
+    } else {
+        compressed_tokens
+    };
+
     EntropyResult {
-        output,
+        output: final_output,
         original_tokens,
-        compressed_tokens,
+        compressed_tokens: final_tokens,
         techniques,
     }
 }
