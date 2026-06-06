@@ -72,6 +72,9 @@ const toolCount = getMcpManifest().counts.granular;
     <li><strong>macOS install/update no longer touches <code>~/Documents</code></strong> (#356) — avoids spurious permission prompts and stray files.</li>
     <li><strong>Dashboard tooltips never clip</strong> (#357) — info-tips are portaled to <code>&lt;body&gt;</code> so they render above surrounding cards.</li>
     <li><strong>Runtime robustness</strong> — bounded write-ahead log, dead-owner lock reclaim, corrected knowledge-fact eviction, and tuned <code>lean-ctx doctor</code> thresholds.</li>
+    <li><strong>Pi: explicit <code>LEAN_CTX_PI_ENABLE_MCP=1</code> now always starts the embedded MCP bridge</strong> (#361) — a <code>lean-ctx</code> entry in <code>~/.pi/agent/mcp.json</code> no longer silently disables the embedded bridge. Pi has no native MCP support, so that entry alone never served the tools, and the session cache (with its ~13-token re-reads) never engaged. The explicit flag now wins.</li>
+    <li><strong>Dashboard graph/code-map shows a clear language message instead of an endless loading state</strong> (#360) — for projects in languages the code-map does not index (e.g. Lua/Luau), the Dependencies, Symbols and Roads views now explain that the graph supports specific languages and that BM25 search/compression still work, instead of suggesting an index rebuild that can never populate the graph.</li>
+    <li><strong>Deterministic HNSW index construction</strong> — the approximate-nearest-neighbor index seeds each node's level from its insertion index (splitmix64) instead of OS entropy, so the same corpus always builds the same graph and returns the same results. Semantic-search results are now reproducible.</li>
   </ul>
 
   <hr />

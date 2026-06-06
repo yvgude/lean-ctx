@@ -468,7 +468,7 @@ lean-ctx gain --unpublish                   # remove your most recent published 
   <pre><code>lean-ctx cep               # show CEP score with breakdown
 lean-ctx cep --json        # JSON output for CI/CD integration</code></pre>
 
-  <h3 id="dashboard"><code>lean-ctx dashboard [--port=N] [--project=&lt;path&gt;]</code></h3>
+  <h3 id="dashboard"><code>lean-ctx dashboard [--port=N] [--project=&lt;path&gt;] [--base-path=&lt;path&gt;]</code></h3>
   <p><Fragment set:html={t('docs.cliReference.dashboardDesc')} /></p>
 
   <table>
@@ -476,12 +476,14 @@ lean-ctx cep --json        # JSON output for CI/CD integration</code></pre>
     <tbody>
       <tr><td><code>--port=&lt;N&gt;</code></td><td set:html={t('docs.cliReference.dashboardPortDesc')} /></tr>
       <tr><td><code>--project=&lt;path&gt;</code></td><td set:html={t('docs.cliReference.dashboardProjectDesc')} /></tr>
+      <tr><td><code>--base-path=&lt;path&gt;</code> <span class="text-xs text-muted">v3.7.4</span></td><td>Serve the dashboard under a subpath behind a reverse proxy (e.g. <code>https://host/leanctx/</code>); all asset and API URLs are rewritten to honor it. (#355)</td></tr>
     </tbody>
   </table>
 
   <pre><code>lean-ctx dashboard                        # opens at localhost:3333
 lean-ctx dashboard --port=8080            # custom port
-lean-ctx dashboard --project=~/my-app     # scoped to a single project</code></pre>
+lean-ctx dashboard --project=~/my-app     # scoped to a single project
+lean-ctx dashboard --base-path=/leanctx   # mount under a reverse-proxy subpath</code></pre>
 
   <h3 id="wrapped"><code>lean-ctx wrapped [--week|--month|--all]</code></h3>
   <p>{t('docs.cliReference.wrappedDesc')}</p>
