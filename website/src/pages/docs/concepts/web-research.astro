@@ -1,0 +1,114 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+const title = 'Web & Research';
+const description =
+  'ctx_url_read pulls web pages, PDFs and YouTube videos into context as compressed, citation-backed text — research, docs and transcripts without leaving the agent loop.';
+---
+
+<DocsLayout title={title} description={description}>
+  <p>
+    LeanCTX is not only for code. <code>ctx_url_read</code> is the web-research layer: it fetches a
+    public URL — an HTML page, a PDF, or a YouTube video — and returns <strong>compressed,
+    citation-backed text</strong> the model can read, quote and reason over. It is the web
+    counterpart of <code>ctx_read</code>: one tool call, one token budget, boilerplate stripped, the
+    source preserved for citation.
+  </p>
+
+  <p>
+    This covers the agent use-cases that live beyond the codebase: reading a changelog or an RFC,
+    pulling an API spec, summarising a blog post, or extracting the claims from a documentation page —
+    all without pasting raw HTML into the context window.
+  </p>
+
+  <h2>What it reads</h2>
+  <ul>
+    <li><strong>Web pages</strong> — HTML is parsed, the main article is extracted, navigation and ads are dropped, and the result is returned as clean Markdown or plain text.</li>
+    <li><strong>PDFs</strong> — remote PDFs are downloaded and converted to text, so specs, papers and datasheets become readable context.</li>
+    <li><strong>YouTube</strong> — a video URL is resolved to its transcript and flattened into compact, quotable text.</li>
+  </ul>
+
+  <h2>Distillation modes</h2>
+  <p>
+    The <code>mode</code> argument controls how the fetched content is distilled. The default,
+    <code>auto</code>, picks Markdown for pages and a transcript for videos.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Mode</th><th>What you get</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>auto</code></td><td>Markdown for pages, transcript for videos (default).</td></tr>
+      <tr><td><code>markdown</code></td><td>Clean Markdown of the extracted article.</td></tr>
+      <tr><td><code>text</code></td><td>Plain text, no formatting.</td></tr>
+      <tr><td><code>links</code></td><td>The outbound links on the page, for crawling.</td></tr>
+      <tr><td><code>facts</code></td><td>Key claims, each with a confidence score and source URL.</td></tr>
+      <tr><td><code>quotes</code></td><td>Verbatim quotes relevant to your query, with their source.</td></tr>
+      <tr><td><code>transcript</code></td><td>The flattened video transcript.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Citations &amp; evidence</h2>
+  <p>
+    The <code>facts</code> and <code>quotes</code> modes do not just summarise — they return discrete
+    claims, each carrying a <strong>confidence score</strong> and the <strong>source URL</strong> it
+    came from. That makes web research auditable: the agent can attribute every statement to where it
+    read it, and you can verify it later. Pass a <code>query</code> to focus extraction on the part of
+    the page you actually care about.
+  </p>
+
+  <h2>Research compression</h2>
+  <p>
+    A single documentation page can blow a context window. <code>ctx_url_read</code> distils the
+    fetched content down to a token budget (<code>max_tokens</code>, default 6000) using extractive,
+    relevance-ranked compression — keeping the parts that answer your query and dropping the rest.
+    For <code>facts</code> and <code>quotes</code>, <code>max_items</code> caps how many claims come
+    back (default 12). You get the signal, not the whole page.
+  </p>
+
+  <h2>Safety</h2>
+  <p>
+    Fetching is SSRF-guarded. Only <code>http</code> and <code>https</code> URLs are allowed, and
+    requests to private, loopback and link-local addresses are blocked — so an agent cannot be steered
+    into probing your internal network. Requests honour a timeout (<code>timeout_secs</code>, default
+    20, max 60).
+  </p>
+
+  <h2>Examples</h2>
+  <p>Read an article in auto mode:</p>
+  <pre><code>ctx_url_read url="https://example.com/post"</code></pre>
+
+  <p>Extract claims relevant to a query, each with a source for citation:</p>
+  <pre><code>ctx_url_read url="https://example.com/spec" mode="facts" query="rate limits"</code></pre>
+
+  <p>Pull a YouTube transcript:</p>
+  <pre><code>ctx_url_read url="https://youtu.be/VIDEO" mode="transcript"</code></pre>
+
+  <p>Read a remote PDF as text within a 3000-token budget:</p>
+  <pre><code>ctx_url_read url="https://example.com/paper.pdf" mode="text" max_tokens=3000</code></pre>
+
+  <h2>Arguments</h2>
+  <table>
+    <thead>
+      <tr><th>Argument</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>url</code></td><td>string</td><td>—</td><td>Required. The http(s) URL of a page, PDF or YouTube video.</td></tr>
+      <tr><td><code>mode</code></td><td>string</td><td><code>auto</code></td><td>Distillation mode (see table above).</td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>—</td><td>Optional focus query; boosts relevance in <code>facts</code>/<code>quotes</code>.</td></tr>
+      <tr><td><code>max_tokens</code></td><td>integer</td><td>6000</td><td>Token budget for the returned content.</td></tr>
+      <tr><td><code>max_items</code></td><td>integer</td><td>12</td><td>Max claims for <code>facts</code>/<code>quotes</code>.</td></tr>
+      <tr><td><code>timeout_secs</code></td><td>integer</td><td>20</td><td>Request timeout in seconds (max 60).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Setup</h2>
+  <p>
+    <code>ctx_url_read</code> ships with the binary and is exposed automatically wherever LeanCTX runs
+    as an MCP server — no extra configuration. If your agent connects over the
+    <a href="/docs/getting-started/">standard MCP setup</a>, the tool is already available; just call
+    it. See the <a href="/docs/journeys/beyond-coding-web-research/">Beyond Coding journey</a> for an
+    end-to-end research workflow.
+  </p>
+</DocsLayout>

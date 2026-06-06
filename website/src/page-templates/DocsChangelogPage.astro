@@ -26,7 +26,19 @@ const toolCount = getMcpManifest().counts.granular;
 
   <!-- Unreleased -->
   <h2 id="unreleased">Unreleased <span class="text-xs text-muted">(in progress)</span></h2>
-  <p class="text-sm text-muted">Nothing yet — see below for the latest stable release.</p>
+  <p class="text-sm text-muted">The premium research layer — LeanCTX reaches beyond the codebase: agents can now pull the web, PDFs and YouTube into context as compressed, citation-backed text.</p>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong>Web &amp; Research layer — <code>ctx_url_read</code></strong> — fetch a public web page, PDF, or YouTube video and get back compressed, citation-backed context: HTML/PDF to clean text, YouTube to transcript. The <code>facts</code> and <code>quotes</code> modes return discrete claims, each with a confidence score and source URL, so web research is auditable. Relevance-ranked research-compression distils a whole page down to a token budget, and fetching is SSRF-guarded (http/https only, private and loopback blocked). Brings the granular tool surface to {toolCount}. See <a href={lp('/docs/concepts/web-research/')}>Web &amp; Research</a>.</li>
+  </ul>
+
+  <h3>{t('changelog.fixed')}</h3>
+  <ul>
+    <li><strong>Background scans never hydrate cloud placeholders</strong> (#363) — directory walks now skip OneDrive "Files On-Demand" / iCloud "dataless" placeholders by reading file attributes only, so starting an agent in or above a cloud-synced folder no longer triggers a redownload or OneDrive sync warnings. The search index also no longer auto-indexes your home directory.</li>
+    <li><strong>Proxy accepts OpenAI-compatible provider keys</strong> (#362) — the loopback auth gate now accepts any non-empty provider credential (not just <code>sk-</code>/<code>gsk_</code>), so OpenCode pointed at an OpenAI-compatible upstream is no longer rejected with a 401.</li>
+    <li><strong>Pi: the embedded MCP bridge is on by default</strong> (#361) — the persistent session cache now engages out of the box, and every <code>ctx_read</code> (including line-range reads) routes through it, so unchanged re-reads cost ~13 tokens instead of re-sending the file.</li>
+  </ul>
 
   <hr />
 

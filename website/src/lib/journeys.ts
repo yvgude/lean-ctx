@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JOURNEYS SSOT — the 16 code-grounded user journeys.
+// JOURNEYS SSOT — the 17 code-grounded user journeys.
 //
 // Mirrors docs/reference/README.md ("Every Function, Every Path"). These are the
 // content/SEO backbone of the site: every CLI command and MCP tool appears in at
@@ -196,6 +196,16 @@ export const journeys: Journey[] = [
     covers: ['savings summary', 'savings verify', 'savings export', 'savings sign', 'savings verify-batch'],
     trackId: 'operate-govern', pillars: ['govern'],
     href: '/docs/concepts/savings-ledger', refDoc: '16-signed-savings-ledger',
+  },
+  {
+    num: 17, slug: 'beyond-coding-web-research', title: 'Beyond Coding: Web & Research',
+    persona: 'using your agent for research, not just code',
+    summary: 'Pull the web, PDFs and YouTube into context as compressed, cited evidence.',
+    intro:
+      'LeanCTX is not only for codebases. Point your agent at a URL, a PDF or a video and ctx_url_read returns compressed, citation-backed text — so research, docs and transcripts enter the context window distilled and sourced, not pasted raw.',
+    covers: ['ctx_url_read', 'facts', 'quotes', 'transcript', 'pdf', 'citations'],
+    trackId: 'daily-workflow', pillars: ['perceive', 'compress'],
+    href: '/docs/concepts/web-research', refDoc: '17-web-and-research',
   },
 ];
 

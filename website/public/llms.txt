@@ -75,7 +75,7 @@ Core tools: ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_overview, ctx_session
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation guide
 - [Configuration](https://leanctx.com/docs/configuration/): Config, env vars, hooks, security
 - [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands
-- [Tool Reference](https://leanctx.com/docs/tools/): All 67 MCP tools documented
+- [Tool Reference](https://leanctx.com/docs/tools/): All 68 MCP tools documented
 - [Security](https://leanctx.com/docs/security/): PathJail, allowlist, sandbox, roles
 - [Changelog](https://leanctx.com/docs/changelog/): Version history
 

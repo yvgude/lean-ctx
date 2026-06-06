@@ -48,10 +48,10 @@ export const docsTree: DocsGroup[] = [
   },
   {
     title: 'Journeys',
-    blurb: 'The 16 code-grounded journeys — how LeanCTX is actually used, end to end.',
+    blurb: 'The 17 code-grounded journeys — how LeanCTX is actually used, end to end.',
     iconPath: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7',
     items: [
-      { label: 'All Journeys', href: '/docs/journeys/', description: 'The 16 journeys grouped into four persona tracks.' },
+      { label: 'All Journeys', href: '/docs/journeys/', description: 'The 17 journeys grouped into four persona tracks.' },
       ...journeyLinks,
     ],
   },
@@ -61,6 +61,7 @@ export const docsTree: DocsGroup[] = [
     iconPath: 'M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z M9 22h6',
     items: [
       { label: 'Read Modes', href: '/docs/concepts/read-modes/', description: 'Ten ways to read a file — and when to use each.' },
+      { label: 'Web & Research', href: '/docs/concepts/web-research/', description: 'Fetch web pages, PDFs and YouTube as compressed, cited context.' },
       { label: 'Caching & Compression', href: '/docs/concepts/caching/', description: 'Content-addressed cache and ~13-token re-reads.' },
       { label: 'Shell Patterns', href: '/docs/concepts/shell-patterns/', description: '95+ patterns that compress command output.' },
       { label: 'Token Savings', href: '/docs/concepts/token-savings/', description: 'Where the tokens go — and where they are saved.' },

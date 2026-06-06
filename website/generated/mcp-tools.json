@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 67,
+    "granular": 68,
     "unified": 5
   },
   "read_modes": {
@@ -2125,6 +2125,52 @@
         },
         "name": "ctx_tree",
         "schema_md5": "cfd00265b30de5427c9bd26af06c035aa6aeb550831a3a24e77cc1072d67b8a6"
+      },
+      {
+        "description": "Fetch a web page, PDF, or YouTube URL as compressed, cited context.\nHTML/PDF→clean text, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.\nfacts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).\nUse for research/crawl instead of raw fetch.",
+        "input_schema": {
+          "properties": {
+            "max_items": {
+              "description": "Max items for facts/quotes modes (default: 12)",
+              "type": "integer"
+            },
+            "max_tokens": {
+              "description": "Token budget for returned content (default: 6000)",
+              "type": "integer"
+            },
+            "mode": {
+              "description": "Distillation mode (default: auto — Markdown for pages, transcript for videos)",
+              "enum": [
+                "auto",
+                "markdown",
+                "text",
+                "links",
+                "facts",
+                "quotes",
+                "transcript"
+              ],
+              "type": "string"
+            },
+            "query": {
+              "description": "Optional focus query; boosts relevance in facts/quotes modes",
+              "type": "string"
+            },
+            "timeout_secs": {
+              "description": "Request timeout in seconds (default: 20, max: 60)",
+              "type": "integer"
+            },
+            "url": {
+              "description": "http(s) URL of a page or YouTube video",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_url_read",
+        "schema_md5": "28065bd5ad01b94080415de65cec673ca0bc2fa12ff336a4fe45992b7f8a587f"
       },
       {
         "description": "Verification observability. Actions: stats (tool call statistics), proof|v2 (ContextProofV2 claim-based verification with Lean4 proofs).",

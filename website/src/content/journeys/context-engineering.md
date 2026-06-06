@@ -157,7 +157,7 @@ ctx_workflow action=transition to=verify
 
 ## 6. Dynamic tool loading — keep the surface small
 
-You don't need all 67 tools loaded to use one. Lazy clients (and `minimal`/
+You don't need all 68 tools loaded to use one. Lazy clients (and `minimal`/
 `standard` profiles) reach deeper tools on demand:
 
 ```text

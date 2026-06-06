@@ -38,7 +38,7 @@
 /docs                  Docs home — quickstart-first
   /docs/quickstart       Install per IDE (the funnel target)
   /docs/journeys/*       The 14 user journeys (from docs/reference/)
-  /docs/tools/*          MCP tool reference (67 tools)
+  /docs/tools/*          MCP tool reference (68 tools)
 /blog                  Updates, deep dives
 ```
 

@@ -14,7 +14,8 @@
         "ctx_delta",
         "ctx_provider",
         "ctx_discover_tools",
-        "ctx_multi_repo"
+        "ctx_multi_repo",
+        "ctx_url_read"
       ]
     },
     "intelligence": {
@@ -105,6 +106,34 @@
     }
   },
   "tools": {
+    "ctx_url_read": {
+      "when_to_use": "Pulling an external web page, PDF, or YouTube video into context as compressed, citation-backed text — docs, specs, changelogs, blog posts, research, and video transcripts.",
+      "when_not_to_use": "For local files (use ctx_read) or code search (use ctx_search / ctx_semantic_search). Only public http(s) is allowed — it cannot reach authenticated, private, or loopback endpoints (SSRF-guarded).",
+      "related": [
+        "ctx_read",
+        "ctx_semantic_search",
+        "ctx_knowledge"
+      ],
+      "token_impact": "Distills a full page, PDF, or transcript down to a token budget (default 6000). facts/quotes modes return only the relevant claims, each with a confidence score and source URL.",
+      "cli_equivalent": null,
+      "examples": [
+        {
+          "title": "Read an article (auto)",
+          "call": "ctx_url_read url=\"https://example.com/post\"",
+          "description": "Fetches the page and returns clean Markdown with boilerplate stripped, within the token budget."
+        },
+        {
+          "title": "Extract claims with sources",
+          "call": "ctx_url_read url=\"https://example.com/spec\" mode=\"facts\" query=\"rate limits\"",
+          "description": "Returns the key claims relevant to the query, each with a confidence score and the source URL for citation."
+        },
+        {
+          "title": "YouTube transcript",
+          "call": "ctx_url_read url=\"https://youtu.be/VIDEO\" mode=\"transcript\"",
+          "description": "Flattens the video's transcript into compact, readable text you can quote and cite."
+        }
+      ]
+    },
     "ctx_read": {
       "when_to_use": "Reading source files with automatic compression mode selection. Default starting point for any file read.",
       "when_not_to_use": "When you need to read multiple files at once (use ctx_multi_read) or need raw grep results (use ctx_search).",

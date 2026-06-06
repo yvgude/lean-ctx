@@ -197,7 +197,7 @@ Section wrapper with a large monospace ordinal (`001`, `002`…) in `--color-mut
 Mono caption beneath any figure: `Fig. 00x — description`. Left-aligned, `--text-caption`, muted, with a 24px emerald tick.
 
 ### `StatTriplet`
-Three (or four) big numbers + labels in a row (e.g. `67 tools · 62% fewer tokens · 24+ IDEs`). Number in `--text-h2` bright + tabular-nums; label in mono caption. Animated count-up (reduced-motion safe).
+Three (or four) big numbers + labels in a row (e.g. `68 tools · 62% fewer tokens · 24+ IDEs`). Number in `--text-h2` bright + tabular-nums; label in mono caption. Animated count-up (reduced-motion safe).
 
 ---
 

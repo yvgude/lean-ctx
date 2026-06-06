@@ -659,4 +659,35 @@ ctx_expand id="a1b2c3d4"
     </tbody>
   </table>
 
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_url_read">ctx_url_read</h2>
+  <p>
+    <code>ctx_url_read</code> is the web counterpart of <code>ctx_read</code>: it fetches a public web
+    page, PDF, or YouTube video and returns <strong>compressed, citation-backed context</strong> —
+    HTML/PDF to clean text, YouTube to transcript. The <code>facts</code> and <code>quotes</code> modes
+    return claims with a confidence score and source URL, and fetching is SSRF-guarded (http/https only,
+    private and loopback addresses blocked).
+  </p>
+
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <table>
+    <thead>
+      <tr><th>{t('docsToolsCore.thParameter')}</th><th>{t('docsToolsCore.thType')}</th><th>{t('docsToolsCore.thRequired')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>url</code></td><td>string</td><td>Yes</td><td>http(s) URL of a page, PDF or YouTube video</td></tr>
+      <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>auto</code> (default), <code>markdown</code>, <code>text</code>, <code>links</code>, <code>facts</code>, <code>quotes</code>, <code>transcript</code></td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>No</td><td>Focus query; boosts relevance in <code>facts</code>/<code>quotes</code></td></tr>
+      <tr><td><code>max_tokens</code></td><td>integer</td><td>No</td><td>Token budget for returned content (default 6000)</td></tr>
+      <tr><td><code>max_items</code></td><td>integer</td><td>No</td><td>Max claims for <code>facts</code>/<code>quotes</code> (default 12)</td></tr>
+      <tr><td><code>timeout_secs</code></td><td>integer</td><td>No</td><td>Request timeout in seconds (default 20, max 60)</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>ctx_url_read url="https://example.com/spec" mode="facts" query="rate limits"</code></pre>
+  <p>
+    Full reference, modes and examples: <a href={lp('/docs/concepts/web-research/')}>Web &amp; Research</a>.
+  </p>
+
 </DocsLayout>
