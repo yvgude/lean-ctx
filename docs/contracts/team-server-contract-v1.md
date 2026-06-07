@@ -14,8 +14,10 @@ File is JSON.
 - `workspaces` (array, required; must include default workspace)
   - `{ id, label?, root }`
 - `tokens` (array, required for serve)
-  - `{ id, sha256Hex, scopes }`
+  - `{ id, sha256Hex, scopes?, role? }`
   - `sha256Hex` is lowercase hex SHA-256 of the plaintext token
+  - `scopes` and/or `role` (see [RBAC roles](#rbac-roles)); a token must yield at
+    least one effective scope
 - `auditLogPath` (path, required)
 - `disableHostCheck` (bool, default false)
 - `allowedHosts` (string[], default [])
@@ -62,6 +64,27 @@ Errors:
 - `401 unauthorized` (missing/invalid token)
 - `403 scope_denied` (token lacks required scopes)
 - `400 unknown_workspace`
+
+## RBAC roles
+
+A token's effective scopes are `scopes ∪ role.scopes()`. Roles (EPIC 13.2) are an
+ergonomic layer over scopes — assign a coarse role instead of hand-picking
+scopes. Enforcement is unchanged (the middleware evaluates effective scopes).
+
+| Role | Effective scopes |
+|------|------------------|
+| `viewer` | `search` |
+| `member` | `search`, `graph`, `index`, `knowledge`, `events` |
+| `admin` | all scopes |
+| `owner` | all scopes (org/billing authority is a hosted control-plane concern) |
+
+Roles are monotonic: `viewer ⊆ member ⊆ admin = owner` (server scopes). Create
+with `lean-ctx team token create --role <viewer|member|admin|owner>` (or
+`--scopes <csv>`, or both).
+
+> Additive / Team-Cloud plane only — never gates the local plane. SSO/SCIM,
+> org-shared knowledge graph, and audit-retention dashboards build on this role
+> model and are tracked on the commercial plane (EPIC 13.2).
 
 ## Audit log (JSONL)
 

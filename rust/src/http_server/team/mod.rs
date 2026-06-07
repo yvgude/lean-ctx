@@ -33,6 +33,10 @@ use tokio::sync::broadcast;
 use tokio::time::Duration;
 
 use crate::tools::LeanCtxServer;
+
+pub mod roles;
+pub use roles::TeamRole;
+
 #[cfg(test)]
 mod tests;
 
@@ -103,7 +107,27 @@ pub struct TeamTokenConfig {
     pub id: String,
     /// Stored as lowercase hex of SHA-256(token).
     pub sha256_hex: String,
+    /// Explicitly granted scopes. May be empty when a [`role`](Self::role) is set.
+    #[serde(default)]
     pub scopes: Vec<TeamScope>,
+    /// Optional RBAC role (EPIC 13.2). Expands to a scope set that is unioned
+    /// with `scopes`. Lets admins grant `viewer`/`member`/`admin`/`owner`
+    /// instead of hand-picking scopes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<roles::TeamRole>,
+}
+
+impl TeamTokenConfig {
+    /// The effective scopes for this token: explicit scopes ∪ role-derived
+    /// scopes. This is what authorization is evaluated against (EPIC 13.2).
+    #[must_use]
+    pub fn effective_scopes(&self) -> BTreeSet<TeamScope> {
+        let mut s: BTreeSet<TeamScope> = self.scopes.iter().copied().collect();
+        if let Some(role) = self.role {
+            s.extend(role.scopes());
+        }
+        s
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -117,6 +141,23 @@ pub enum TeamScope {
     SessionMutations,
     Knowledge,
     Audit,
+}
+
+impl TeamScope {
+    /// Every scope, used by role expansion (EPIC 13.2) to grant full access.
+    #[must_use]
+    pub fn all() -> &'static [TeamScope] {
+        &[
+            TeamScope::Search,
+            TeamScope::Graph,
+            TeamScope::Artifacts,
+            TeamScope::Index,
+            TeamScope::Events,
+            TeamScope::SessionMutations,
+            TeamScope::Knowledge,
+            TeamScope::Audit,
+        ]
+    }
 }
 
 impl TeamServerConfig {
@@ -170,8 +211,10 @@ impl TeamServerConfig {
             if !token_ids.insert(id.to_string()) {
                 return Err(anyhow!("duplicate token id: {id}"));
             }
-            if t.scopes.is_empty() {
-                return Err(anyhow!("token '{id}' must have at least 1 scope"));
+            // A token must grant access via explicit scopes and/or a role
+            // (EPIC 13.2). An empty effective scope set is a misconfiguration.
+            if t.effective_scopes().is_empty() {
+                return Err(anyhow!("token '{id}' must have at least 1 scope or a role"));
             }
             parse_sha256_hex(&t.sha256_hex)
                 .with_context(|| format!("token '{id}' invalid sha256Hex"))?;
@@ -643,7 +686,7 @@ async fn team_auth_middleware(
             "invalid bearer token",
         );
     };
-    let tok_scopes: BTreeSet<TeamScope> = tok.scopes.iter().copied().collect();
+    let tok_scopes: BTreeSet<TeamScope> = tok.effective_scopes();
 
     let workspace_id = req
         .headers()

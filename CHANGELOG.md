@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Team RBAC roles** (Commercial Plane, EPIC 13.2): a `TeamRole`
+  (`viewer`/`member`/`admin`/`owner`) layer over the existing fine-grained
+  `TeamScope`s. A token's effective scopes are `scopes ∪ role.scopes()`, enforced
+  by the unchanged team middleware (zero new enforcement paths). Roles are
+  monotonic (`viewer ⊆ member ⊆ admin = owner`). New CLI:
+  `lean-ctx team token create --role <role>` (still supports `--scopes`, or both).
+  Additive / Team-Cloud only — never gates local. SSO/SCIM, org-shared knowledge
+  graph, and audit-retention dashboards build on this and remain tracked on the
+  commercial plane. Contract updated: `docs/contracts/team-server-contract-v1.md`.
 - **Billing plane: real plans + usage metering** (Commercial Plane, EPIC 13.6):
   new `core::billing` turns the upgrade flow into real plans (`free`/`team`/
   `enterprise`) with explicit `Entitlements`, plus usage-based metering derived
