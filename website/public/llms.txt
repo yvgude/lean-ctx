@@ -79,6 +79,18 @@ Core tools: ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_overview, ctx_session
 - [Security](https://leanctx.com/docs/security/): PathJail, allowlist, sandbox, roles
 - [Changelog](https://leanctx.com/docs/changelog/): Version history
 
+## When NOT to use LeanCTX
+
+LeanCTX is deliberately scoped. It is honestly **not** the right tool when:
+
+- **Your codebase is tiny or the task is a one-off.** On a handful of files or a single quick question, the context savings are marginal and setup is not worth it. LeanCTX pays off on real multi-file codebases and longer agent sessions, where file reads, search, and shell output dominate the token budget.
+- **You need a hosted SaaS or a GUI dashboard.** LeanCTX is a local-first single binary with zero telemetry by design — everything runs on your machine. If you specifically want a managed cloud service, that is a different product category.
+- **Your workflow is pure prose, not code.** LeanCTX optimizes developer context: file reads, shell, search, and a code dependency graph. It is not a general document or knowledge-base retrieval system for arbitrary PDFs or wikis.
+- **Your AI tool can neither run shell commands nor speak MCP.** Integration happens via CLI-redirect, MCP, or a hybrid of both. A tool that supports neither cannot hook in.
+- **You expect it to replace your coding agent.** LeanCTX shapes what the model sees and remembers; it does not plan or write code for you. Use it *with* Cursor, Claude Code, Copilot, or Windsurf — not instead of them.
+
+If none of these apply, LeanCTX is built exactly for you: large codebases, long sessions, multiple AI tools, and a hard token budget.
+
 ## FAQ
 
 **How much does LeanCTX cost?**
