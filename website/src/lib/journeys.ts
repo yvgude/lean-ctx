@@ -1,10 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JOURNEYS SSOT — the 17 code-grounded user journeys.
+// JOURNEYS SSOT — the 21 code-grounded user journeys.
 //
-// Mirrors docs/reference/README.md ("Every Function, Every Path"). These are the
-// content/SEO backbone of the site: every CLI command and MCP tool appears in at
-// least one journey. The journeys are *grouped* into four persona tracks (see
-// tracks.ts) so navigation stays conversion-focused instead of 14 flat entries.
+// Mirrors docs/reference/README.md ("Every Function, Every Path") plus the wave
+// product journeys (J18–J21). These are the content/SEO backbone of the site:
+// every CLI command and MCP tool appears in at least one journey. The journeys are
+// *grouped* into four persona tracks (see tracks.ts) so navigation stays
+// conversion-focused instead of 21 flat entries.
 //
 // Each journey gets its own page at /docs/journeys/<slug>, rendered from this
 // data by a single template (src/page-templates/JourneyPage.astro). `href` is the
@@ -15,7 +16,7 @@ import type { PillarId } from './positioning';
 export type TrackId = 'get-started' | 'daily-workflow' | 'scale-teams' | 'operate-govern';
 
 export interface Journey {
-  /** 1-based number, matching docs/reference (J1 … J14). */
+  /** 1-based number (J1 … J21); J1–J17 mirror docs/reference, J18–J21 are wave journeys. */
   num: number;
   slug: string;
   title: string;
@@ -206,6 +207,46 @@ export const journeys: Journey[] = [
     covers: ['ctx_url_read', 'facts', 'quotes', 'transcript', 'pdf', 'citations'],
     trackId: 'daily-workflow', pillars: ['perceive', 'compress'],
     href: '/docs/concepts/web-research', refDoc: '17-web-and-research',
+  },
+  {
+    num: 18, slug: 'mcp-tool-catalog-gateway', title: 'MCP Tool-Catalog Gateway',
+    persona: 'wiring 5+ MCP servers into one agent',
+    summary: 'Unlimited downstream MCP tools at a flat, constant context cost.',
+    intro:
+      'Connect as many MCP servers as you like without flooding the prompt. LeanCTX collapses every downstream catalog behind one meta-tool, ranks the few tools a task actually needs with the same BM25 engine as search, and proxies the chosen call — so the model\u2019s per-request tool surface stays flat at one.',
+    covers: ['ctx_tools', '[gateway]', 'gateway.servers', 'find', 'call'],
+    trackId: 'scale-teams', pillars: ['route', 'perceive'],
+    href: '/docs/data-sources', refDoc: '05-advanced',
+  },
+  {
+    num: 19, slug: 'context-firewall', title: 'Context Firewall',
+    persona: 'letting your agent run shell and search freely',
+    summary: 'Runaway tool output becomes a compact digest plus a zero-loss retrieval ref.',
+    intro:
+      'Stop one noisy command from evicting your working set. When a shell, search or tree output crosses a token threshold, LeanCTX stores the full output out-of-band and returns a deterministic head/tail digest instead \u2014 and the exact bytes are one ctx_expand away. Explicit file reads are never firewalled.',
+    covers: ['[archive].ephemeral', 'ephemeral_min_tokens', 'ctx_expand', 'LEAN_CTX_EPHEMERAL'],
+    trackId: 'daily-workflow', pillars: ['compress', 'govern'],
+    href: '/docs/context-control', refDoc: '07-context-engineering',
+  },
+  {
+    num: 20, slug: 'sensitivity-floor', title: 'Per-item Sensitivity Floor',
+    persona: 'keeping secrets and PII out of the model',
+    summary: 'Redact or drop sensitive items before anything reaches the model.',
+    intro:
+      'Set one policy floor and enforce it at the pre-prompt choke point. Every item heading to the model is classified by sensitivity; with redact, leaked keys and card numbers are masked in place, and with drop the offending item is withheld entirely \u2014 applied uniformly to tool output, knowledge and gateway results.',
+    covers: ['[sensitivity]', 'policy_floor', 'redact', 'drop', 'enforce_text'],
+    trackId: 'operate-govern', pillars: ['govern'],
+    href: '/docs/security', refDoc: '13-security-and-governance',
+  },
+  {
+    num: 21, slug: 'reproducible-scorecard', title: 'Reproducible Scorecard',
+    persona: 'proving the savings are real',
+    summary: 'A self-verifying scorecard of compression, retrieval quality and latency.',
+    intro:
+      'Replace marketing numbers with a measurement anyone can re-run and get the same answer. The scorecard reports per-mode compression savings, retrieval recall@5 / recall@10 / MRR and latency over a fixed scenario matrix \u2014 with a determinism_digest that is identical run-to-run and machine-to-machine.',
+    covers: ['benchmark scorecard', '--json', 'recall@5', 'MRR', 'determinism_digest'],
+    trackId: 'operate-govern', pillars: ['govern'],
+    href: '/docs/observatory', refDoc: '11-analytics-and-insights',
   },
 ];
 
