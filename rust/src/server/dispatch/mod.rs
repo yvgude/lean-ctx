@@ -330,7 +330,15 @@ impl LeanCtxServer {
                 |v| v == "1" || v == "true",
             );
 
-            if reference_enabled && final_text.len() > REFERENCE_THRESHOLD {
+            // An explicit file read must always return its content — never a
+            // stored-reference stub — so the agent can edit against the lines. The
+            // firewall already exempts reads; the reference-results path honours the
+            // same rule via `is_protected_read` (otherwise enabling reference_results
+            // silently turns `ctx_read` into an un-editable "Output stored …" preview).
+            if reference_enabled
+                && !crate::core::firewall::is_protected_read(name)
+                && final_text.len() > REFERENCE_THRESHOLD
+            {
                 let ref_id = super::reference_store::store(final_text.clone());
                 let mut preview_end = final_text.len().min(200);
                 while preview_end > 0 && !final_text.is_char_boundary(preview_end) {

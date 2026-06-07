@@ -360,14 +360,8 @@ impl LeanCtxServer {
         // A firewalled result is already a compact digest — re-compressing it would mangle
         // the retrieval instructions for no benefit.
         if !firewalled {
-            result_text = post_process::compress_terse(
-                result_text,
-                name,
-                args,
-                &config,
-                tool_saved_tokens,
-                is_raw_shell,
-            );
+            result_text =
+                post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
         }
 
         let profile_hints = crate::core::profiles::active_profile().output_hints;
