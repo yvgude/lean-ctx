@@ -145,6 +145,34 @@ jobs:
         working-directory: cookbook
         run: npm run build
 
+  rust-sdk:
+    name: Rust SDK (lean-ctx-client)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: clients/rust/lean-ctx-client -> target
+      - name: Format
+        working-directory: clients/rust/lean-ctx-client
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: clients/rust/lean-ctx-client
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        working-directory: clients/rust/lean-ctx-client
+        run: cargo test
+      - name: Docs
+        working-directory: clients/rust/lean-ctx-client
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
