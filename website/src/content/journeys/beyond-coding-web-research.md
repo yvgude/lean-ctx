@@ -1,4 +1,4 @@
-Most agent workflows are not pure coding. You ask the agent to read a changelog, check an API spec, summarise an RFC, or pull the key points out of a long video. LeanCTX makes those "beyond coding" tasks first-class with one tool — `ctx_url_read` — that fetches a public web page, PDF, or YouTube video and returns it as **compressed, citation-backed context** instead of raw HTML pasted into the window.
+Most agent workflows are not pure coding. You ask the agent to read a changelog, check an API spec, summarise an RFC, or pull the key points out of a long video. LeanCTX makes those "beyond coding" tasks first-class: `ctx_url_read` fetches a public web page, PDF, RSS feed, or YouTube video and returns it as **compressed, citation-backed context** instead of raw HTML pasted into the window — and `ctx_git_read` reads whole remote repositories the same way.
 
 ## Read a page, get clean text
 
@@ -8,7 +8,7 @@ The default `auto` mode extracts the main article, drops navigation and ads, and
 ctx_url_read url="https://example.com/blog/whats-new"
 ```
 
-You get the content the page is actually about — not its chrome — already distilled to fit the context window.
+You get the content the page is actually about — not its chrome — already distilled to fit the context window. HTML **tables come back as GitHub-Flavored Markdown**, so comparison tables and pricing grids stay readable instead of collapsing into a blur.
 
 ## Extract claims you can cite
 
@@ -20,7 +20,7 @@ ctx_url_read url="https://example.com/api/docs" mode="facts" query="rate limits 
 
 Each returned claim carries its source, which is exactly what you need when the agent writes a summary, a comparison, or a decision memo that has to be defensible.
 
-## PDFs and YouTube
+## PDFs, feeds, and YouTube
 
 The same tool handles more than HTML:
 
@@ -28,11 +28,34 @@ The same tool handles more than HTML:
 # A remote PDF (spec, paper, datasheet) → text
 ctx_url_read url="https://example.com/paper.pdf" mode="text"
 
+# An RSS/Atom feed → a dated list of items, not raw XML
+ctx_url_read url="https://example.com/feed.xml"
+
+# A GitHub blob URL → the raw file, not the rendered page
+ctx_url_read url="https://github.com/owner/repo/blob/main/README.md"
+
 # A YouTube video → flattened transcript
 ctx_url_read url="https://youtu.be/VIDEO" mode="transcript"
 ```
 
-A talk, a tutorial, or a recorded standup becomes quotable text the agent can reason over.
+A release feed, a talk, a tutorial, or a recorded standup becomes quotable text the agent can reason over.
+
+## Read a whole repository
+
+A single file is rarely enough, and a GitHub `blob` page is mostly navigation. When the agent needs real source code, `ctx_git_read` reads a **remote repository** through a cached, shallow git clone — not by scraping web pages — so it can browse the tree, open a file, or grep across the repo:
+
+```bash
+# Tree + README for a repo
+ctx_git_read url="https://github.com/owner/repo"
+
+# One file at a specific ref
+ctx_git_read url="https://github.com/owner/repo" path="src/main.rs" ref="v2.0.0"
+
+# Grep across the repository
+ctx_git_read url="https://github.com/owner/repo" mode="grep" query="fn main"
+```
+
+The clone is cached and reused, so repeated reads stay cheap, and the same SSRF guard applies — public `https` repositories only.
 
 ## Keep it in budget
 
@@ -61,4 +84,4 @@ Fetching is SSRF-guarded: only `http`/`https` URLs are allowed, and requests to 
 
 ## Setup
 
-`ctx_url_read` ships with the binary and is exposed automatically wherever LeanCTX runs as an MCP server — no extra configuration. If your agent is connected via the [standard setup](/docs/getting-started/), the tool is already there; just call it. The full reference, every mode and more examples live on the [Web & Research](/docs/concepts/web-research/) page.
+`ctx_url_read` and `ctx_git_read` ship with the binary and are exposed automatically wherever LeanCTX runs as an MCP server — no extra configuration. If your agent is connected via the [standard setup](/docs/getting-started/), the tools are already there; just call them. The full reference, every mode and more examples live on the [Web & Research](/docs/concepts/web-research/) page.

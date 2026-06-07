@@ -23,9 +23,11 @@ const description =
 
   <h2>What it reads</h2>
   <ul>
-    <li><strong>Web pages</strong> — HTML is parsed, the main article is extracted, navigation and ads are dropped, and the result is returned as clean Markdown or plain text.</li>
+    <li><strong>Web pages</strong> — HTML is parsed, the main article is extracted, navigation and ads are dropped, and the result is returned as clean Markdown or plain text. <strong>Tables are preserved as GitHub-Flavored Markdown</strong>, so tabular data survives the trip into context instead of collapsing into a wall of text.</li>
     <li><strong>PDFs</strong> — remote PDFs are downloaded and converted to text, so specs, papers and datasheets become readable context.</li>
+    <li><strong>RSS / Atom feeds</strong> — a feed URL is parsed into a dated list of items (title, link, summary) instead of raw XML, so news, release and blog feeds drop straight into context.</li>
     <li><strong>YouTube</strong> — a video URL is resolved to its transcript and flattened into compact, quotable text.</li>
+    <li><strong>GitHub files</strong> — <code>github.com/&hellip;/blob/&hellip;</code> (and <code>raw</code>) URLs auto-resolve to the underlying raw file, so you get the source, not the rendered page chrome.</li>
   </ul>
 
   <h2>Distillation modes</h2>
@@ -103,12 +105,27 @@ const description =
     </tbody>
   </table>
 
+  <h2>Reading whole repositories — <code>ctx_git_read</code></h2>
+  <p>
+    For source code, one file is rarely enough and a <code>blob</code> page is mostly navigation chrome.
+    <code>ctx_git_read</code> reads a <strong>remote git repository</strong> the right way: it performs a
+    cached, shallow (<code>--depth 1</code>) clone and lets the agent browse the file tree, read a file,
+    or grep across the repo — returning the real source within a token budget instead of scraped HTML.
+    Point it at a public GitHub, GitLab or Bitbucket URL; an optional <code>blob</code>/<code>tree</code>
+    link carries the branch and path. Like <code>ctx_url_read</code>, it is SSRF-guarded to public
+    <code>https</code> repositories, and the clone is reused across calls so repeated reads stay cheap.
+  </p>
+  <pre><code>ctx_git_read url="https://github.com/owner/repo"                      # tree + README
+ctx_git_read url="https://github.com/owner/repo" path="src/main.rs"   # one file
+ctx_git_read url="https://github.com/owner/repo" mode="grep" query="fn main"</code></pre>
+
   <h2>Setup</h2>
   <p>
-    <code>ctx_url_read</code> ships with the binary and is exposed automatically wherever LeanCTX runs
-    as an MCP server — no extra configuration. If your agent connects over the
-    <a href="/docs/getting-started/">standard MCP setup</a>, the tool is already available; just call
-    it. See the <a href="/docs/journeys/beyond-coding-web-research/">Beyond Coding journey</a> for an
-    end-to-end research workflow.
+    <code>ctx_url_read</code> and <code>ctx_git_read</code> ship with the binary and are exposed
+    automatically wherever LeanCTX runs as an MCP server — no extra configuration. If your agent
+    connects over the <a href="/docs/getting-started/">standard MCP setup</a>, the tools are already
+    available; just call them. See the
+    <a href="/docs/journeys/beyond-coding-web-research/">Beyond Coding journey</a> for an end-to-end
+    research workflow.
   </p>
 </DocsLayout>

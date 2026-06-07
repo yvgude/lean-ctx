@@ -690,4 +690,37 @@ ctx_expand id="a1b2c3d4"
     Full reference, modes and examples: <a href={lp('/docs/concepts/web-research/')}>Web &amp; Research</a>.
   </p>
 
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_git_read">ctx_git_read</h2>
+  <p>
+    <code>ctx_git_read</code> reads a <strong>remote git repository</strong> via a cached, shallow
+    (<code>--depth 1</code>) clone instead of scraping web pages. Point it at a public GitHub, GitLab or
+    Bitbucket URL to get a repo <code>overview</code>, browse the <code>tree</code>, <code>read</code> a
+    file, or <code>grep</code> across the source — the real files, within a token budget, not rendered
+    <code>blob</code>-page chrome. The clone is reused across calls and fetching is SSRF-guarded
+    (public <code>https</code> only).
+  </p>
+
+  <h3>{t('docsToolsCore.parameters')}</h3>
+  <table>
+    <thead>
+      <tr><th>{t('docsToolsCore.thParameter')}</th><th>{t('docsToolsCore.thType')}</th><th>{t('docsToolsCore.thRequired')}</th><th>{t('docsToolsCore.thDescription')}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>url</code></td><td>string</td><td>Yes</td><td>https repo URL, optionally a <code>blob</code>/<code>tree</code> link carrying ref + path</td></tr>
+      <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>overview</code>, <code>tree</code>, <code>read</code>, <code>grep</code> (defaults to <code>read</code> when a <code>path</code> is present, else <code>overview</code>)</td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>No</td><td>File (read) or directory (tree/grep) within the repo</td></tr>
+      <tr><td><code>ref</code></td><td>string</td><td>No</td><td>Branch, tag or commit (overrides any ref in the URL)</td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>No</td><td>Search term for <code>grep</code> mode</td></tr>
+      <tr><td><code>max_tokens</code></td><td>integer</td><td>No</td><td>Token budget for returned content (default 6000)</td></tr>
+      <tr><td><code>timeout_secs</code></td><td>integer</td><td>No</td><td>Clone/fetch timeout in seconds (default 90, max 300)</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code>ctx_git_read url="https://github.com/owner/repo" mode="grep" query="fn main"</code></pre>
+  <p>
+    Full reference and examples: <a href={lp('/docs/concepts/web-research/')}>Web &amp; Research</a>.
+  </p>
+
 </DocsLayout>

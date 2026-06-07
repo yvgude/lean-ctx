@@ -104,6 +104,55 @@ ctx_session action=restore
     and a timestamp for ordering.
   </p>
 
+  <h2 id="ctx_checkpoint">ctx_checkpoint</h2>
+  <p>
+    Keeps a <strong>shadow git history of the agent's own changes</strong>, stored entirely separate
+    from your project's <code>.git</code>. Snapshot the working tree before and after a change to
+    capture exactly what the LLM modified, then review it with <code>log</code>/<code>diff</code> or
+    roll it back with <code>restore</code> — without ever touching your real commits, branches, or
+    staging area.
+  </p>
+
+  <h3>Actions</h3>
+  <table>
+    <thead>
+      <tr><th>Action</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>snapshot</code></td><td>Record the current working tree as a checkpoint (optional <code>message</code>)</td></tr>
+      <tr><td><code>log</code></td><td>List recent checkpoints with their sha, time, and message (default)</td></tr>
+      <tr><td><code>diff</code></td><td>Show what changed between a checkpoint and the working tree (or another checkpoint)</td></tr>
+      <tr><td><code>restore</code></td><td>Restore files from a checkpoint sha (optionally scoped to one path)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Parameters</h3>
+  <ul>
+    <li><code>action</code> — <code>log</code> (default), <code>snapshot</code>, <code>diff</code>, or <code>restore</code></li>
+    <li><code>message</code> — label for a <code>snapshot</code></li>
+    <li><code>from</code> / <code>to</code> — base and target checkpoint shas for <code>diff</code> (<code>to</code> defaults to the working tree)</li>
+    <li><code>ref</code> — checkpoint sha to <code>restore</code> from</li>
+    <li><code>path</code> — limit a <code>restore</code> to a single file or directory</li>
+    <li><code>limit</code> — max checkpoints to list in <code>log</code> (default 20)</li>
+  </ul>
+
+  <h3>Example</h3>
+  <pre><code>ctx_checkpoint action=snapshot message="before refactor"
+→ checkpoint a1b2c3d recorded
+
+ctx_checkpoint action=log
+→ a1b2c3d  2m ago   before refactor
+
+ctx_checkpoint action=diff from=a1b2c3d
+→ src/auth.ts  +12 −4</code></pre>
+
+  <h3>Storage</h3>
+  <p>
+    Checkpoints live in LeanCTX's data directory, never inside your repository — so the agent's
+    safety net never pollutes your own history. It complements <code>ctx_session</code>: the session
+    remembers <em>what was decided</em>, the checkpoint remembers <em>what was changed</em>.
+  </p>
+
   <h2 id="ctx_ledger">ctx_ledger</h2>
   <p>
     Inspects and manages the <strong>context ledger</strong> — LeanCTX's running account of

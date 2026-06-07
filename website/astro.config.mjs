@@ -182,6 +182,8 @@ export default defineConfig({
     '/docs/tools/ctx-refactor/': '/docs/tools/analysis/',
     '/docs/tools/ctx-retrieve/': '/docs/tools/memory/',
     '/docs/tools/ctx-url-read/': '/docs/concepts/web-research/',
+    '/docs/tools/ctx-git-read/': '/docs/concepts/web-research/',
+    '/docs/tools/ctx-checkpoint/': '/docs/tools/session/',
 
     // Locale redirects → homepage
     '/de/': '/',

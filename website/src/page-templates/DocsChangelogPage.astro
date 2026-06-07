@@ -24,13 +24,26 @@ const toolCount = getMcpManifest().counts.granular;
     <p>Update LeanCTX the same way you installed it — Homebrew, npm, cargo, or the install script. New to LeanCTX? Start with <a href={lp('/docs/getting-started')}>Getting Started</a>.</p>
   </DocsCallout>
 
+  <!-- Unreleased -->
+  <h2 id="unreleased">Unreleased</h2>
+  <p class="text-sm text-muted">Strong git support and a richer Web &amp; Research layer. LeanCTX can now read a remote repository through a real (cached) git clone instead of scraping its web pages, keep a private version history of the agent's own edits, and turn feeds and tables from the web into clean context.</p>
+
+  <h3>{t('changelog.added')}</h3>
+  <ul>
+    <li><strong><code>ctx_git_read</code> — read a remote repo via a cached shallow clone</strong> — point it at a public GitHub/GitLab/Bitbucket URL and browse the file tree, read a file, or grep across the repo. Unlike scraping a <code>blob</code> page (which returns navigation chrome), the <code>--depth 1</code> clone is cached and reused, so reads return the real source within a token budget. SSRF-guarded (public https only).</li>
+    <li><strong><code>ctx_checkpoint</code> — a shadow git history of the agent's changes</strong> — snapshot, log, diff, and restore the LLM's own edits through a history kept entirely separate from your project's <code>.git</code>. Capture the working tree before and after a change to see exactly what was modified, then roll back if needed — without ever touching your real commits or branches.</li>
+    <li><strong><code>ctx_url_read</code>: RSS/Atom feeds, tables, and GitHub raw</strong> — feeds are parsed into a dated list of items (title, link, summary) instead of raw XML; HTML tables now render as GitHub-Flavored Markdown so tabular data survives the trip into context; and GitHub <code>blob</code>/<code>raw</code> URLs auto-resolve to the underlying file. Brings the granular tool surface to {toolCount}. See <a href={lp('/docs/concepts/web-research/')}>Web &amp; Research</a>.</li>
+  </ul>
+
+  <hr />
+
   <!-- 3.7.5 -->
   <h2 id="v3.7.5">3.7.5 <span class="badge badge-current">Current</span> <span class="text-xs text-muted">(2026-06-06)</span></h2>
   <p class="text-sm text-muted">The Web &amp; Research release. LeanCTX reaches beyond the codebase: agents can now pull the web, PDFs and YouTube into context as compressed, citation-backed text — plus three field-reported fixes (cloud-placeholder scans, OpenAI-compatible proxy keys, the Pi session cache).</p>
 
   <h3>{t('changelog.added')}</h3>
   <ul>
-    <li><strong>Web &amp; Research layer — <code>ctx_url_read</code></strong> — fetch a public web page, PDF, or YouTube video and get back compressed, citation-backed context: HTML/PDF to clean text, YouTube to transcript. The <code>facts</code> and <code>quotes</code> modes return discrete claims, each with a confidence score and source URL, so web research is auditable. Relevance-ranked research-compression distils a whole page down to a token budget, and fetching is SSRF-guarded (http/https only, private and loopback blocked). Brings the granular tool surface to {toolCount}. See <a href={lp('/docs/concepts/web-research/')}>Web &amp; Research</a>.</li>
+    <li><strong>Web &amp; Research layer — <code>ctx_url_read</code></strong> — fetch a public web page, PDF, or YouTube video and get back compressed, citation-backed context: HTML/PDF to clean text, YouTube to transcript. The <code>facts</code> and <code>quotes</code> modes return discrete claims, each with a confidence score and source URL, so web research is auditable. Relevance-ranked research-compression distils a whole page down to a token budget, and fetching is SSRF-guarded (http/https only, private and loopback blocked). Brought the granular tool surface to 68. See <a href={lp('/docs/concepts/web-research/')}>Web &amp; Research</a>.</li>
   </ul>
 
   <h3>{t('changelog.fixed')}</h3>

@@ -15,7 +15,8 @@
         "ctx_provider",
         "ctx_discover_tools",
         "ctx_multi_repo",
-        "ctx_url_read"
+        "ctx_url_read",
+        "ctx_git_read"
       ]
     },
     "intelligence": {
@@ -61,6 +62,7 @@
       "description": "Session state, metrics, heatmaps, caching, and token savings reports",
       "tools": [
         "ctx_session",
+        "ctx_checkpoint",
         "ctx_ledger",
         "ctx_metrics",
         "ctx_gain",
@@ -107,8 +109,8 @@
   },
   "tools": {
     "ctx_url_read": {
-      "when_to_use": "Pulling an external web page, PDF, or YouTube video into context as compressed, citation-backed text — docs, specs, changelogs, blog posts, research, and video transcripts.",
-      "when_not_to_use": "For local files (use ctx_read) or code search (use ctx_search / ctx_semantic_search). Only public http(s) is allowed — it cannot reach authenticated, private, or loopback endpoints (SSRF-guarded).",
+      "when_to_use": "Pulling an external web page, PDF, RSS/Atom feed, or YouTube video into context as compressed, citation-backed text — docs, specs, changelogs, blog posts, research, news feeds, and video transcripts. HTML tables render as GitHub-Flavored Markdown, and GitHub blob/raw URLs auto-resolve to the raw file.",
+      "when_not_to_use": "For local files (use ctx_read), code search (use ctx_search / ctx_semantic_search), or browsing a whole remote repository (use ctx_git_read). Only public http(s) is allowed — it cannot reach authenticated, private, or loopback endpoints (SSRF-guarded).",
       "related": [
         "ctx_read",
         "ctx_semantic_search",
@@ -131,6 +133,66 @@
           "title": "YouTube transcript",
           "call": "ctx_url_read url=\"https://youtu.be/VIDEO\" mode=\"transcript\"",
           "description": "Flattens the video's transcript into compact, readable text you can quote and cite."
+        },
+        {
+          "title": "RSS / Atom feed",
+          "call": "ctx_url_read url=\"https://example.com/feed.xml\"",
+          "description": "Parses the feed into a dated list of items (title, link, summary) instead of raw XML."
+        }
+      ]
+    },
+    "ctx_git_read": {
+      "when_to_use": "Reading a remote git repository (GitHub, GitLab, Bitbucket) via a cached shallow clone instead of scraping its web pages — browse the file tree, read a file, or grep across the repo. Prefer it over ctx_url_read for source code: a blob page returns navigation chrome, while the clone returns the real files.",
+      "when_not_to_use": "For local files already in your project (use ctx_read) or for a rendered web article/PDF/feed (use ctx_url_read). Only public https repositories are reachable (SSRF-guarded).",
+      "related": [
+        "ctx_url_read",
+        "ctx_read",
+        "ctx_search"
+      ],
+      "token_impact": "A --depth 1 clone is cached and reused across calls; reads return only the requested file or a bounded tree/grep result within the token budget (default 6000), never a whole JS-rendered HTML page.",
+      "cli_equivalent": null,
+      "examples": [
+        {
+          "title": "Repository overview",
+          "call": "ctx_git_read url=\"https://github.com/owner/repo\"",
+          "description": "Shallow-clones (or reuses the cache) and returns the file tree plus the README."
+        },
+        {
+          "title": "Read a specific file",
+          "call": "ctx_git_read url=\"https://github.com/owner/repo\" path=\"src/main.rs\"",
+          "description": "Returns the file's real contents from the clone — no HTML chrome."
+        },
+        {
+          "title": "Grep the repository",
+          "call": "ctx_git_read url=\"https://github.com/owner/repo\" mode=\"grep\" query=\"fn main\"",
+          "description": "Searches the cloned working tree and returns matching lines within the token budget."
+        }
+      ]
+    },
+    "ctx_checkpoint": {
+      "when_to_use": "Recording, reviewing, and reverting the agent's own code changes through a shadow git history kept separate from your project's .git. Snapshot before and after a change to capture exactly what the LLM modified, then diff or restore.",
+      "when_not_to_use": "As a replacement for your real version control — it never touches your repository's .git, commits, or branches. For cross-session memory of decisions and findings, use ctx_session instead.",
+      "related": [
+        "ctx_session",
+        "ctx_edit"
+      ],
+      "token_impact": "Snapshots are stored out-of-tree; log and diff return only the requested checkpoints or changes within the token budget rather than re-reading the whole working tree.",
+      "cli_equivalent": null,
+      "examples": [
+        {
+          "title": "Snapshot the current state",
+          "call": "ctx_checkpoint action=\"snapshot\" message=\"before refactor\"",
+          "description": "Records the working tree in the shadow history so the change can be reviewed or rolled back later."
+        },
+        {
+          "title": "Review recent checkpoints",
+          "call": "ctx_checkpoint action=\"log\"",
+          "description": "Lists recent checkpoints with their sha, time, and message."
+        },
+        {
+          "title": "Diff against a checkpoint",
+          "call": "ctx_checkpoint action=\"diff\" from=\"<sha>\"",
+          "description": "Shows what changed between a checkpoint and the current working tree."
         }
       ]
     },

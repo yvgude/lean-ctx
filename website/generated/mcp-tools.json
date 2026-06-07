@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 68,
+    "granular": 70,
     "unified": 5
   },
   "read_modes": {
@@ -300,6 +300,50 @@
         "schema_md5": "0da44d43f58177bc80bab2cda905dc72bf20d5cec9b1194e6b09b36ea023151e"
       },
       {
+        "description": "Local shadow git history of the agent's changes (separate from the user's .git).\nactions: snapshot (record current state) | log (list checkpoints) | diff (vs a checkpoint) | restore (revert files).\nSnapshot before+after a change to capture exactly what the LLM modified; diff/restore to review or roll back.\nNever touches the user's repository.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Operation to perform (default: log)",
+              "enum": [
+                "snapshot",
+                "log",
+                "diff",
+                "restore"
+              ],
+              "type": "string"
+            },
+            "from": {
+              "description": "Base checkpoint sha (diff)",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Max checkpoints to list (log, default: 20)",
+              "type": "integer"
+            },
+            "message": {
+              "description": "Snapshot label (snapshot)",
+              "type": "string"
+            },
+            "path": {
+              "description": "Limit restore to this file/dir (restore)",
+              "type": "string"
+            },
+            "ref": {
+              "description": "Checkpoint sha to restore from (restore)",
+              "type": "string"
+            },
+            "to": {
+              "description": "Target checkpoint sha (diff; default: working tree)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_checkpoint",
+        "schema_md5": "7e8ae87362b23d52cc2d9cd897b3f0f05be88bd09f6bc15c9f1ee42af83cff0a"
+      },
+      {
         "description": "Context compilation (CFT). Builds minimal context package via greedy knapsack + Boltzmann view selection. Modes: handles|compressed|full.",
         "input_schema": {
           "properties": {
@@ -574,23 +618,39 @@
         "schema_md5": "baf2c027bbbb4d74902e17c7e9a285a47ce4a3e7e5a7a084e7c324bc6059dd7d"
       },
       {
-        "description": "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list.",
+        "description": "Retrieve firewalled/archived tool output (zero-loss). Large outputs are stored out-of-band and replaced inline by a digest+ref; use this to drill into the full content. Actions: retrieve (default), list, search_all.",
         "input_schema": {
           "properties": {
             "action": {
-              "description": "retrieve (default) or list",
+              "description": "retrieve (default), list, or search_all",
               "type": "string"
             },
             "end_line": {
               "description": "End line for range retrieval",
               "type": "integer"
             },
+            "head": {
+              "description": "Return the first N lines",
+              "type": "integer"
+            },
             "id": {
-              "description": "Archive ID from the [Archived: ...] hint",
+              "description": "Archive ID from the [Firewalled: ...]/[Archived: ...] hint (or a handle ref like @F1)",
+              "type": "string"
+            },
+            "json_keys": {
+              "description": "Describe the JSON structure (top-level keys, array lengths, type hints)",
+              "type": "boolean"
+            },
+            "json_path": {
+              "description": "Navigate into JSON first (dot/slash path, e.g. data.items.0) before describing",
+              "type": "string"
+            },
+            "query": {
+              "description": "Full-text query across all archives (action=search_all)",
               "type": "string"
             },
             "search": {
-              "description": "Search pattern to filter archived output",
+              "description": "Return only lines matching this substring",
               "type": "string"
             },
             "session_id": {
@@ -600,12 +660,16 @@
             "start_line": {
               "description": "Start line for range retrieval",
               "type": "integer"
+            },
+            "tail": {
+              "description": "Return the last N lines",
+              "type": "integer"
             }
           },
           "type": "object"
         },
         "name": "ctx_expand",
-        "schema_md5": "7ab7fbcdac2f13479bccededec1421e6d5db5c4a33f8a755a00c5e0d846eaf30"
+        "schema_md5": "f9edbde18368862ce0110ac8be2feda7bf803189b532ae5214f5b5e0954b9a5a"
       },
       {
         "description": "Harness feedback for LLM output tokens/latency (local-first). Actions: record|report|json|reset|status.",
@@ -726,6 +790,53 @@
         },
         "name": "ctx_gain",
         "schema_md5": "499b8286554a4f7a5e4891d0a2920234d361f45abc505868178c30f64cc2c5ca"
+      },
+      {
+        "description": "Read a remote git repository via a cached shallow clone (not HTML scraping).\nmodes: overview (tree + README) | tree (file list) | read (a file) | grep (search).\nAccepts repo URLs and GitHub/GitLab blob/tree links (ref + path auto-detected). https-only, SSRF-guarded, bounded.\nUse instead of ctx_url_read when you need a whole repo's files/structure.",
+        "input_schema": {
+          "properties": {
+            "max_tokens": {
+              "description": "Token budget for returned content (default: 6000)",
+              "type": "integer"
+            },
+            "mode": {
+              "description": "Default: read when a path is present, else overview",
+              "enum": [
+                "overview",
+                "tree",
+                "read",
+                "grep"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "description": "File (read) or directory (tree/grep) within the repo",
+              "type": "string"
+            },
+            "query": {
+              "description": "Search term for grep mode",
+              "type": "string"
+            },
+            "ref": {
+              "description": "Branch/tag/commit (overrides any ref in the URL)",
+              "type": "string"
+            },
+            "timeout_secs": {
+              "description": "Clone/fetch timeout (default: 90, max: 300)",
+              "type": "integer"
+            },
+            "url": {
+              "description": "https repo URL, optionally a blob/tree link carrying ref + path",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_git_read",
+        "schema_md5": "9eb286b15efefef5205393a10b13cff104e2d0b7646dfecdf7e2ba1419dae395"
       },
       {
         "description": "Unified code graph. Actions: build (index), related (connected files), symbol (def/usages), impact (blast radius), status (stats), enrich (add commits+tests+knowledge), context (task-based query), diagram (Mermaid deps/calls).",
@@ -1545,7 +1656,7 @@
         "schema_md5": "619692cfae1d231e6eca9914a5e29f28826b11dd2bbd89763aff4761daf4adb8"
       },
       {
-        "description": "Read file (cached, compressed). Cached re-reads can be ~13 tok when unchanged. Auto-selects optimal mode. Modes: full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true forces a disk re-read.",
+        "description": "Read a file. Prefer over native Read/cat/head/tail (cached, compressed).\nUnchanged re-reads cost ~13 tokens. Auto-selects mode (full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M). fresh=true forces a disk re-read.",
         "input_schema": {
           "properties": {
             "fresh": {
@@ -1754,7 +1865,7 @@
         "schema_md5": "3fc1d6735207e28cdece3dd61afaafd86bcb04bc684b44d1086012aa6390df3f"
       },
       {
-        "description": "Regex code search (.gitignore aware, compact results). Supports multi-root via `paths` array. Secret-like files skipped unless role allows.",
+        "description": "Search code by regex. Prefer over native Grep/rg/find (compact output).\nRespects .gitignore; supports multi-root via `paths` array. Secret-like files skipped unless role allows.",
         "input_schema": {
           "properties": {
             "ext": {
@@ -1938,7 +2049,7 @@
         "schema_md5": "0829164e3a1b7ae5ce9ff50ea5b811b3d0abb71bfc2ce804679f4da15c186103"
       },
       {
-        "description": "Run shell command (compressed output, 95+ patterns). Use raw=true to skip compression. cwd sets working directory (persists across calls via cd tracking). Output redaction is on by default for non-admin roles (admin can disable).",
+        "description": "Run a shell command. Prefer over native Shell/Bash (compressed output).\n95+ output patterns; raw=true skips compression. cwd persists across calls via cd tracking. Output redaction on by default for non-admin roles (admin can disable).",
         "input_schema": {
           "properties": {
             "command": {
@@ -2094,7 +2205,7 @@
         "schema_md5": "936db09b3f42a34458f96e583916c5288e2104b5d2ea2e811bd36b421961a9f8"
       },
       {
-        "description": "Directory listing with file counts. Supports multi-root via `paths` array.",
+        "description": "List a directory. Prefer over native ls/find (counts, compact tree).\nSupports multi-root via `paths` array. depth controls recursion (default 3).",
         "input_schema": {
           "properties": {
             "depth": {
@@ -2127,7 +2238,7 @@
         "schema_md5": "cfd00265b30de5427c9bd26af06c035aa6aeb550831a3a24e77cc1072d67b8a6"
       },
       {
-        "description": "Fetch a web page, PDF, or YouTube URL as compressed, cited context.\nHTML/PDF→clean text, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.\nfacts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).\nUse for research/crawl instead of raw fetch.",
+        "description": "Fetch a web page, PDF, RSS/Atom feed, or YouTube URL as compressed, cited context.\nHTML→clean Markdown (tables→GFM), PDF→text, feeds→dated item list, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.\nGitHub blob/raw page URLs auto-resolve to the raw file. facts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).\nUse for research/crawl instead of raw fetch.",
         "input_schema": {
           "properties": {
             "max_items": {
@@ -2170,7 +2281,7 @@
           "type": "object"
         },
         "name": "ctx_url_read",
-        "schema_md5": "28065bd5ad01b94080415de65cec673ca0bc2fa12ff336a4fe45992b7f8a587f"
+        "schema_md5": "6f010e356e83e112be5b0a7becd29afedc3fc647a715daf35aa940115fa73678"
       },
       {
         "description": "Verification observability. Actions: stats (tool call statistics), proof|v2 (ContextProofV2 claim-based verification with Lean4 proofs).",
