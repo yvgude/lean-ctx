@@ -327,6 +327,7 @@ pub mod ide_permissions;
 pub mod import_resolver;
 pub mod index_namespace;
 pub mod index_orchestrator;
+pub mod ingestion;
 pub mod instruction_compiler;
 pub mod integrity;
 pub mod intent_engine;

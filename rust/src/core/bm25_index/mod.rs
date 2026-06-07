@@ -840,7 +840,7 @@ fn list_code_files(root: &Path) -> Vec<String> {
         if !path.is_file() {
             continue;
         }
-        if !is_code_file(path) {
+        if !crate::core::ingestion::is_ingestible(path) {
             continue;
         }
         let rel = path
