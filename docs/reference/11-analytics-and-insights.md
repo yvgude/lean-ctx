@@ -252,10 +252,13 @@ lean-ctx benchmark scorecard --json --output sc.json
 
 The corpus is generated deterministically (content derived purely from the file
 index — no RNG) and retrieval is pure BM25, so the **quality metrics are
-reproducible** run-to-run and machine-to-machine. Latency is wall-clock and
-therefore reported but excluded from the determinism contract. CI runs the
+reproducible** run-to-run and machine-to-machine. Each report embeds a
+`determinism_digest` (a fingerprint of the latency-free metrics) in both the JSON
+and the human table, so two artifacts are **self-verifying** — compare the
+digests to confirm identical quality without diffing every number. Latency is
+wall-clock and therefore reported but excluded from the digest. CI runs the
 scorecard on every push and uploads `scorecard.json` as a build artifact, and a
-test (`scorecard_determinism`) asserts the quality digest is stable.
+test (`scorecard_determinism`) asserts the digest is stable.
 
 ---
 

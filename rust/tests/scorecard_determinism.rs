@@ -11,9 +11,12 @@ fn scorecard_quality_metrics_are_reproducible() {
     let a = run_scorecard().expect("scorecard run a");
     let b = run_scorecard().expect("scorecard run b");
     assert_eq!(
-        a.determinism_digest(),
-        b.determinism_digest(),
+        a.determinism_digest, b.determinism_digest,
         "scorecard quality metrics drifted between identical runs"
+    );
+    assert!(
+        !a.determinism_digest.is_empty(),
+        "digest must be populated and serialized into the artifact"
     );
 }
 

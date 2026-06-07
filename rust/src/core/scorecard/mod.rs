@@ -46,16 +46,20 @@ pub struct Aggregate {
 pub struct Scorecard {
     pub schema_version: u32,
     pub tokenizer: String,
+    /// Stable fingerprint of the reproducible (latency-free) metrics. Serialized
+    /// so the JSON artifact is self-verifying: two runs on the same code (any
+    /// machine) yield the same digest.
+    pub determinism_digest: String,
     pub scenarios: Vec<ScenarioScore>,
     pub aggregate: Aggregate,
 }
 
 impl Scorecard {
-    /// Stable fingerprint of the reproducible (latency-free) metrics. Two runs
-    /// on the same code must produce the same digest.
-    pub fn determinism_digest(&self) -> String {
+    /// Compute the stable fingerprint from scenario scores. Latency is excluded
+    /// by construction, so two runs on the same code must produce the same value.
+    fn compute_digest(scenarios: &[ScenarioScore]) -> String {
         let mut parts: Vec<String> = Vec::new();
-        for s in &self.scenarios {
+        for s in scenarios {
             let modes: Vec<String> = s
                 .savings_by_mode
                 .iter()
@@ -84,7 +88,8 @@ impl Scorecard {
     pub fn to_human(&self) -> String {
         let mut out = String::new();
         out.push_str("lean-ctx scorecard\n");
-        out.push_str(&format!("tokenizer: {}\n\n", self.tokenizer));
+        out.push_str(&format!("tokenizer: {}\n", self.tokenizer));
+        out.push_str(&format!("digest:    {}\n\n", self.determinism_digest));
         out.push_str(
             "scenario   files  raw_tokens  best_mode      savings%  R@5    R@10   MRR    p50(us)\n",
         );
@@ -127,9 +132,11 @@ pub fn run_scorecard() -> std::io::Result<Scorecard> {
         scenarios.push(run_one(sc)?);
     }
     let aggregate = aggregate(&scenarios);
+    let determinism_digest = Scorecard::compute_digest(&scenarios);
     Ok(Scorecard {
         schema_version: 1,
         tokenizer: crate::core::tokens::counting_family_label(),
+        determinism_digest,
         scenarios,
         aggregate,
     })
