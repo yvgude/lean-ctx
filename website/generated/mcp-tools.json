@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 70,
+    "granular": 72,
     "unified": 5
   },
   "read_modes": {
@@ -2205,6 +2205,38 @@
         "schema_md5": "936db09b3f42a34458f96e583916c5288e2104b5d2ea2e811bd36b421961a9f8"
       },
       {
+        "description": "Gateway to downstream MCP servers — unlimited external tools at ~constant context cost.\nactions: find (query → top-N relevant tools as ChoiceCards) | call (proxy a `server::tool`) | list (servers+counts) | refresh.\nUse find to discover, then call the chosen `server::tool`. Off by default ([gateway] config).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Operation to perform (default: find)",
+              "enum": [
+                "find",
+                "call",
+                "list",
+                "refresh"
+              ],
+              "type": "string"
+            },
+            "arguments": {
+              "description": "Arguments forwarded verbatim to the downstream tool (call)",
+              "type": "object"
+            },
+            "query": {
+              "description": "What you want to do; ranks the catalog (find)",
+              "type": "string"
+            },
+            "tool": {
+              "description": "A `server::tool` handle from find (call)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_tools",
+        "schema_md5": "5eab6a8ea1aa24aa17789591883d5332d4008cc7d03de470422b982e68984d8a"
+      },
+      {
         "description": "List a directory. Prefer over native ls/find (counts, compact tree).\nSupports multi-root via `paths` array. depth controls recursion (default 3).",
         "input_schema": {
           "properties": {
@@ -2342,6 +2374,27 @@
         },
         "name": "ctx_workflow",
         "schema_md5": "739ff739917f250ef3a44be4f7c966301ff96fcd12c23610ff5fcd8bf453e60e"
+      },
+      {
+        "description": "Execute a shell command. Returns token-optimized compressed output (95+ patterns for git, npm, cargo, docker, tsc, etc). Equivalent to running the command in a terminal but with automatic output compression for efficiency.",
+        "input_schema": {
+          "properties": {
+            "command": {
+              "description": "The shell command to execute",
+              "type": "string"
+            },
+            "cwd": {
+              "description": "Working directory (optional, defaults to project root)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        },
+        "name": "shell",
+        "schema_md5": "83db102f3ead4f004e2ebc57c334c8f55bbccbcae2fa9ff08b018f613b4fc969"
       }
     ],
     "unified": [

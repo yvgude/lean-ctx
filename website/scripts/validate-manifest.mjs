@@ -47,7 +47,8 @@ const tools = manifest.tools?.granular ?? [];
 check(tools.length === manifest.counts?.granular, `tool array length matches count (${tools.length} vs ${manifest.counts?.granular})`);
 
 for (const tool of tools) {
-  check(tool.name?.startsWith('ctx_'), `tool "${tool.name}" has ctx_ prefix`);
+  // Every tool is namespaced ctx_*, except the unprefixed `shell` alias of ctx_shell.
+  check(tool.name === 'shell' || tool.name?.startsWith('ctx_'), `tool "${tool.name}" has ctx_ prefix (or is the shell alias)`);
   check(tool.description?.length > 10, `tool "${tool.name}" has description`);
   check(tool.schema_md5?.length === 64, `tool "${tool.name}" has a 64-char schema hash`);
   check(tool.input_schema?.type === 'object', `tool "${tool.name}" has object schema`);
@@ -69,7 +70,7 @@ const pageSlugs = fs.existsSync(pagesDir)
 
 const astroConfig = fs.readFileSync(path.join(ROOT, 'astro.config.mjs'), 'utf-8');
 const redirectSlugs = new Set(
-  [...astroConfig.matchAll(/['"]\/docs\/tools\/(ctx-[a-z0-9-]+)\/?['"]\s*:/g)].map((m) => m[1])
+  [...astroConfig.matchAll(/['"]\/docs\/tools\/([a-z0-9][a-z0-9-]*)\/?['"]\s*:/g)].map((m) => m[1])
 );
 
 for (const tool of tools) {

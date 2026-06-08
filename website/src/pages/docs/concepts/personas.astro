@@ -1,0 +1,81 @@
+---
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+const title = 'Context Personas';
+const description =
+  'One runtime, many verticals. A persona reshapes the whole context surface — tool set, read mode, compressor, chunker, intent taxonomy and sensitivity floor — for a domain in a single switch, while the coding default stays exactly as it was.';
+---
+
+<DocsLayout title={title} description={description}>
+  <p>
+    LeanCTX ships tuned for software work: the full <strong>Power</strong> tool surface, a code-oriented
+    intent taxonomy, identity compression. A <strong>persona</strong> reshapes that <em>whole</em> context
+    surface for a different domain — prospecting, research, support, data — in one switch, and leaves the
+    <code>coding</code> default untouched.
+  </p>
+
+  <h2>Built-in personas</h2>
+  <p>
+    Each persona is a real, shipped bundle. The tool surface, read mode, compressor, chunker, intent
+    taxonomy and sensitivity floor all move together:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Persona</th><th>Tool surface</th><th>Compression &amp; read defaults</th><th>Sensitivity floor</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>coding</code> <span class="text-xs text-muted">(default)</span></td><td>Power profile — full surface</td><td>identity compressor · lines chunker · <code>auto</code> read mode</td><td><code>public</code></td></tr>
+      <tr><td><code>research</code></td><td>Standard profile</td><td>markdown compressor · paragraph chunker · <code>map</code> read mode</td><td><code>public</code></td></tr>
+      <tr><td><code>support</code></td><td>Standard profile</td><td>prose / identity compression</td><td><code>internal</code></td></tr>
+      <tr><td><code>data-analysis</code></td><td>Standard profile</td><td>prose / identity compression</td><td><code>internal</code></td></tr>
+      <tr><td><code>lead-gen</code> <span class="text-xs text-muted">(alias <code>sales</code>)</span></td><td>Custom 6-tool surface</td><td>prose compressor · paragraph chunker</td><td><code>confidential</code></td></tr>
+    </tbody>
+  </table>
+  <p>
+    The <code>lead-gen</code> surface is genuinely <em>narrowed</em> to six prospecting tools — the
+    refactor/code tools are gone:
+  </p>
+  <pre><code>ctx_read · ctx_search · ctx_url_read · ctx_knowledge · ctx_semantic_search · ctx_session</code></pre>
+
+  <h2>Selecting a persona</h2>
+  <p>Set it via environment variable (or <code>config.persona</code>):</p>
+  <pre><code>export LEAN_CTX_PERSONA=lead-gen     # or: research · support · data-analysis · coding</code></pre>
+  <p>
+    <code>Persona::resolve</code> reads <code>LEAN_CTX_PERSONA</code> › <code>config.persona</code> ›
+    default <code>coding</code>. An unknown name falls back to <code>coding</code> — never an error. An
+    explicit tool profile (set with <code>lean-ctx tools</code>) always wins, so existing coding installs
+    are never disturbed.
+  </p>
+
+  <h2>Ship your own vertical — no fork</h2>
+  <p>
+    Not one of the built-ins? Drop a declarative persona file in your personas directory (default
+    <code>&lt;OS-config-dir&gt;/lean-ctx/personas</code>, override with <code>LEAN_CTX_PERSONAS_DIR</code>)
+    and select it by name:
+  </p>
+  <pre><code>{`# <personas_dir>/compliance.toml
+name = "compliance"
+tool_profile = "custom"
+tools = ["ctx_read", "ctx_search", "ctx_semantic_search", "ctx_knowledge"]
+default_read_mode = "map"
+compressor = "prose"
+chunker = "paragraph"
+intent_taxonomy = ["scan", "flag", "cite", "report"]
+sensitivity_floor = "confidential"`}</code></pre>
+  <pre><code>export LEAN_CTX_PERSONA=compliance</code></pre>
+
+  <h2>Under the hood</h2>
+  <p>
+    Persona resolution lives in <code>rust/src/core/persona.rs</code>. The resolved profile drives
+    <code>list_tools</code>, so the surface genuinely shrinks or grows per persona — this is not a prompt
+    hint, it is the actual advertised tool set. The sensitivity floor feeds the same governance layer as
+    roles and budgets.
+  </p>
+
+  <h2>Where to go next</h2>
+  <ul>
+    <li><a href="/docs/configuration/">Configuration</a> — the <code>LEAN_CTX_PERSONA</code> and <code>LEAN_CTX_PERSONAS_DIR</code> reference.</li>
+    <li><a href="/docs/journeys/context-personas/">Context Personas journey</a> — the end-to-end story.</li>
+    <li><a href="/docs/security/">Security &amp; Governance</a> — roles, scopes and the sensitivity floor.</li>
+  </ul>
+</DocsLayout>

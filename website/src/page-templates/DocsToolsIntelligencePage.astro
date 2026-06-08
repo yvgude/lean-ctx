@@ -460,4 +460,26 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     </tbody>
   </table>
 
+  <hr class="border-border my-12" />
+
+  <h2 id="ctx_tools">ctx_tools <span class="text-xs font-normal text-muted ml-2">gateway</span></h2>
+  <p class="text-muted mb-4">
+    <code>ctx_tools</code> is the <a href={lp('/docs/journeys/mcp-tool-catalog-gateway/')}>MCP tool gateway</a>:
+    a single tool that proxies an unlimited catalog of downstream MCP servers at roughly constant context cost.
+    Instead of loading every external server's tools into the agent's window, the agent searches for the few it needs,
+    then calls them by <code>server::tool</code> name. Off by default — enable the <code>[gateway]</code> section in <code>config.toml</code>.
+  </p>
+  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+    <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>action</code></td><td>string</td><td><code>find</code> (discover relevant tools), <code>call</code> (proxy a <code>server::tool</code>), <code>list</code> (servers + counts), <code>refresh</code></td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>Natural-language query for <code>find</code> — returns the top-N relevant tools as ChoiceCards</td></tr>
+      <tr><td><code>tool</code></td><td>string</td><td>Target <code>server::tool</code> for <code>call</code></td></tr>
+      <tr><td><code>arguments</code></td><td>object</td><td>Arguments forwarded to the proxied tool</td></tr>
+    </tbody>
+  </table>
+  <pre><code>ctx_tools action="find" query="create a Linear issue"
+→ 3 candidates: linear::create_issue, linear::search, github::create_issue
+ctx_tools action="call" tool="linear::create_issue" arguments=&#123;...&#125;</code></pre>
+
 </DocsLayout>

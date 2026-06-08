@@ -6,7 +6,7 @@
 
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation, setup, and first steps
 - [Configuration](https://leanctx.com/docs/configuration/): config.toml, security, environment variables, hooks
-- [Tool API Reference](https://leanctx.com/docs/tools/): All 70 MCP tools with schemas and examples
+- [Tool API Reference](https://leanctx.com/docs/tools/): All 72 MCP tools with schemas and examples
 - [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands and flags
 - [Quick Reference](https://leanctx.com/docs/quick-reference/): Daily workflow cheat sheet
 - [Security](https://leanctx.com/docs/security/): PathJail, shell allowlist, sandbox, roles, secret detection

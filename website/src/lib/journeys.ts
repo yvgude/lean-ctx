@@ -267,7 +267,7 @@ export const journeys: Journey[] = [
       'LeanCTX is not only for code. A persona is a declarative bundle \u2014 tool surface, read-mode, compressor, chunker, intent taxonomy and sensitivity floor \u2014 that reshapes the entire context surface for sales, research, support or data work in one switch, with the coding default left exactly as it was.',
     covers: ['LEAN_CTX_PERSONA', 'persona', 'lead-gen', 'research', 'support', 'data-analysis'],
     trackId: 'scale-teams', pillars: ['route', 'govern'],
-    href: '/context-os', refDoc: '10-customization-and-governance',
+    href: '/docs/concepts/personas', refDoc: '10-customization-and-governance',
   },
   {
     num: 24, slug: 'universal-intake', title: 'Universal Intake: Docs, Data & Email',
@@ -277,7 +277,7 @@ export const journeys: Journey[] = [
       'Point the index at PDFs, web captures, CRM exports and mailboxes, not just source code. An ingestion front-door admits documents and data, and a format extractor per type turns each into clean, structure-aware chunks that the same BM25, semantic and knowledge engine can search.',
     covers: ['ctx_index', 'pdf', 'csv', 'eml', 'html', 'json'],
     trackId: 'scale-teams', pillars: ['perceive', 'compress'],
-    href: '/docs/data-sources', refDoc: '05-advanced',
+    href: '/docs/tools/intelligence', refDoc: '05-advanced',
   },
   {
     num: 25, slug: 'extensions-plugins-wasm', title: 'Extend Without Forking: Plugins & WASM',
@@ -287,7 +287,7 @@ export const journeys: Journey[] = [
       'Extend the context layer without patching its source. Declare a tool in a plugin manifest, react to lifecycle hooks, or compile a custom compressor or chunker to a sandboxed WASM module \u2014 each is discovered, advertised in /v1/capabilities and conformance-checked exactly like a built-in.',
     covers: ['plugin.toml', '[[tools]]', 'hooks', 'LEAN_CTX_WASM_DIR', 'conformance', '/v1/capabilities'],
     trackId: 'scale-teams', pillars: ['route', 'govern'],
-    href: '/docs/data-sources', refDoc: '05-advanced',
+    href: '/docs/concepts/extending', refDoc: '05-advanced',
   },
   {
     num: 26, slug: 'team-plane-local-free', title: 'Team Plane & the Local-Free Invariant',

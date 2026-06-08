@@ -57,7 +57,7 @@ export const docsTree: DocsGroup[] = [
   },
   {
     title: 'Core Concepts',
-    blurb: 'The mechanics behind the savings: read modes, caching, compression.',
+    blurb: 'The mechanics behind the savings — read modes, caching, compression — plus how to adapt and extend the engine.',
     iconPath: 'M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z M9 22h6',
     items: [
       { label: 'Read Modes', href: '/docs/concepts/read-modes/', description: 'Ten ways to read a file — and when to use each.' },
@@ -67,6 +67,8 @@ export const docsTree: DocsGroup[] = [
       { label: 'Token Savings', href: '/docs/concepts/token-savings/', description: 'Where the tokens go — and where they are saved.' },
       { label: 'Savings Ledger', href: '/docs/concepts/savings-ledger/', description: 'A signed, tamper-evident receipt of every token you saved.' },
       { label: 'Protocols', href: '/docs/concepts/protocols/', description: 'CCP, CLP and the context engineering protocols.' },
+      { label: 'Context Personas', href: '/docs/concepts/personas/', description: 'Reshape the whole context surface per domain — research, support, sales.' },
+      { label: 'Extending (Plugins & WASM)', href: '/docs/concepts/extending/', description: 'Add tools, compressors and providers as sandboxed plugins or WASM — no fork.' },
     ],
   },
   {

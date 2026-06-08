@@ -292,6 +292,11 @@ ctx_read src/auth/service.rs --mode task
     The same compression is also available via the <strong>shell hook</strong> (<code>lean-ctx -c command</code>),
     which compresses output transparently without requiring the LLM to use context server tools.
   </p>
+  <p>
+    <strong>Unprefixed alias:</strong> MCP clients can also call the bare <code>shell</code> tool — it is an
+    alias of <code>ctx_shell</code> with identical behavior and the same 95+ pattern compression. Both names
+    appear in the tool list so clients that expect a generic <code>shell</code> tool still get token-optimized output.
+  </p>
 
   <h3>{t('docsToolsCore.parameters')}</h3>
   <table>

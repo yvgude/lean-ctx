@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "server": {
     "name": "lean-ctx",
-    "description": "Cognitive context layer for AI coding agents. Reduces LLM token costs by up to 99% through intelligent compression, caching, and semantic extraction. 70 MCP tools, 10 read modes, 95+ shell patterns.",
+    "description": "Cognitive context layer for AI coding agents. Reduces LLM token costs by up to 99% through intelligent compression, caching, and semantic extraction. 72 MCP tools, 10 read modes, 95+ shell patterns.",
     "version": "3.7.5",
     "repository": "https://github.com/yvgude/lean-ctx",
     "documentation": "https://leanctx.com/docs/getting-started/",

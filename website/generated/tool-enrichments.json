@@ -9,6 +9,7 @@
         "ctx_smart_read",
         "ctx_search",
         "ctx_shell",
+        "shell",
         "ctx_tree",
         "ctx_edit",
         "ctx_delta",
@@ -42,7 +43,8 @@
         "ctx_response",
         "ctx_retrieve",
         "ctx_semantic_search",
-        "ctx_repomap"
+        "ctx_repomap",
+        "ctx_tools"
       ]
     },
     "memory": {
