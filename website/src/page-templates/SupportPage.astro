@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import { supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
 
@@ -178,14 +179,22 @@ const faq = [
     </div>
   </section>
 
+  <div class="section-divider content-grid"></div>
+
   {/* ── Where your support goes ────────────────────────────── */}
-  <section class="section-y-sm">
+  <section class="relative section-y">
     <div class="content-grid">
-      <header class="sup-h2-head animate-entrance">
-        <span class="sup-kicker">Your impact</span>
-        <h2 class="sup-h2 font-display">Where your support goes</h2>
-        <p class="sup-h2-sub">Every subscription flows straight into the work — not marketing, not middlemen.</p>
-      </header>
+      <SectionHeading
+        label="Your impact"
+        title="Where your support"
+        highlight="goes"
+        description="Every subscription flows straight into the work — not marketing, not middlemen."
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="48rem"
+        titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+        descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      />
       <div class="sup-funds-grid">
         {fundsItems.map((f, i) => (
           <article class={`sup-fund animate-entrance stagger-${i + 1}`}>
@@ -198,39 +207,49 @@ const faq = [
     </div>
   </section>
 
+  <div class="section-divider content-grid"></div>
+
   {/* ── What stays free (local-free promise) ───────────────── */}
-  <section class="section-y-sm">
+  <section class="relative section-y">
     <div class="content-grid-narrow">
-      <div class="sup-free animate-entrance">
-        <div class="sup-free-head">
-          <span class="sup-free-ic" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-4z"/></svg>
-          </span>
-          <div>
-            <h2 class="sup-free-title font-display">What stays free — forever</h2>
-            <p class="sup-free-sub">Supporting changes nothing about what runs on your machine. The paid plane lives entirely server-side.</p>
-          </div>
-        </div>
-        <ul class="sup-free-list">
-          {freeForever.map((item) => (
-            <li><span class="sup-check" set:html={checkIcon} />{item}</li>
-          ))}
-        </ul>
-        <a class="sup-free-link" href={lp('/context-os/')}>
-          See how the planes separate <span class="sup-free-arrow" set:html={arrowIcon} />
-        </a>
-      </div>
+      <SectionHeading
+        label="Local-Free promise"
+        title="What stays free,"
+        highlight="forever"
+        description="Supporting changes nothing about what runs on your machine. The paid plane lives entirely server-side."
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="48rem"
+        titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+        descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      />
+      <ul class="sup-free-list animate-entrance">
+        {freeForever.map((item) => (
+          <li><span class="sup-check" set:html={checkIcon} />{item}</li>
+        ))}
+      </ul>
+      <a class="sup-free-link animate-entrance" href={lp('/context-os/')}>
+        See how the planes separate <span class="sup-free-arrow" set:html={arrowIcon} />
+      </a>
     </div>
   </section>
 
+  <div class="section-divider content-grid"></div>
+
   {/* ── Other ways to support ──────────────────────────────── */}
-  <section class="section-y-sm">
+  <section class="relative section-y">
     <div class="content-grid">
-      <header class="sup-h2-head animate-entrance">
-        <span class="sup-kicker">No budget? No problem</span>
-        <h2 class="sup-h2 font-display">Other ways to support</h2>
-        <p class="sup-h2-sub">A subscription is the deepest help — but it is far from the only one.</p>
-      </header>
+      <SectionHeading
+        label="No budget? No problem"
+        title="Other ways to"
+        highlight="support"
+        description="A subscription is the deepest help — but it is far from the only one."
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="48rem"
+        titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+        descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      />
       <div class="sup-ways-grid">
         {otherWays.map((w, i) => (
           <a class={`sup-way animate-entrance stagger-${(i % 4) + 1}`} href={w.href} target="_blank" rel="noopener">
@@ -244,10 +263,22 @@ const faq = [
     </div>
   </section>
 
+  <div class="section-divider content-grid"></div>
+
   {/* ── FAQ ────────────────────────────────────────────────── */}
-  <section class="section-y-sm sup-faq-section">
+  <section class="relative section-y sup-faq-section">
     <div class="content-grid-narrow">
-      <h2 class="sup-h2 font-display sup-faq-title animate-entrance">Questions, answered</h2>
+      <SectionHeading
+        label="FAQ"
+        title="Questions,"
+        highlight="answered"
+        description="Everything you might want to know before backing the project."
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="48rem"
+        titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+        descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      />
       <div class="sup-faq animate-entrance">
         {faq.map((item) => (
           <details class="sup-faq-item">
@@ -475,35 +506,6 @@ const faq = [
   .sup-fineprint a { color: var(--color-accent); text-decoration: none; }
   .sup-fineprint a:hover { text-decoration: underline; }
 
-  /* ── Section headings (shared) ────────────────────────── */
-  .sup-h2-head {
-    text-align: center;
-    max-width: 46rem;
-    margin: 0 auto clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
-  }
-  .sup-kicker {
-    display: inline-block;
-    font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-    color: var(--color-accent);
-    margin-bottom: 0.6rem;
-  }
-  .sup-h2 {
-    font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2.1rem);
-    font-weight: var(--weight-bold);
-    letter-spacing: var(--tracking-snug);
-    color: var(--color-text-bright);
-    line-height: 1.15;
-  }
-  .sup-h2-sub {
-    margin-top: 0.6rem;
-    font-size: var(--text-body);
-    line-height: var(--leading-snug);
-    color: var(--color-muted);
-  }
-
   /* ── Where support goes ───────────────────────────────── */
   .sup-funds-grid {
     display: grid;
@@ -549,40 +551,7 @@ const faq = [
   }
 
   /* ── What stays free ──────────────────────────────────── */
-  .sup-free {
-    padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.25rem);
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius-lg);
-    background:
-      radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 55%),
-      var(--color-surface);
-  }
-  .sup-free-head { display: flex; align-items: flex-start; gap: 1rem; }
-  .sup-free-ic {
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    width: 2.6rem;
-    height: 2.6rem;
-    border-radius: var(--card-radius);
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  }
-  .sup-free-ic svg { width: 1.35rem; height: 1.35rem; }
-  .sup-free-title {
-    font-size: clamp(1.25rem, 1.05rem + 0.8vw, 1.6rem);
-    font-weight: var(--weight-bold);
-    color: var(--color-text-bright);
-    letter-spacing: var(--tracking-snug);
-  }
-  .sup-free-sub {
-    margin-top: 0.4rem;
-    font-size: var(--text-small);
-    line-height: var(--leading-snug);
-    color: var(--color-muted);
-  }
   .sup-free-list {
-    margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
     display: grid;
     grid-template-columns: 1fr;
     gap: 0.7rem;
@@ -678,7 +647,6 @@ const faq = [
   .sup-way:hover .sup-way-arrow { transform: translateX(3px); }
 
   /* ── FAQ ──────────────────────────────────────────────── */
-  .sup-faq-title { text-align: center; margin-bottom: clamp(1.25rem, 1rem + 1vw, 2rem); }
   .sup-faq {
     display: flex;
     flex-direction: column;

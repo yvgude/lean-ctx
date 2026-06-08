@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
+import SectionHeading from '../components/SectionHeading.astro';
 import CtaSection from '../components/CtaSection.astro';
 import { pricingTiers, pricingFaq, supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
@@ -51,7 +52,9 @@ const faqJsonLd = JSON.stringify({
     descMaxWidth="44rem"
   />
 
-  <section class="section-y pricing-section" data-cadence="monthly">
+  <div class="section-divider content-grid"></div>
+
+  <section class="relative section-y pricing-section" data-cadence="monthly">
     <div class="content-grid">
       <div class="cadence-toggle" role="group" aria-label="Billing cadence">
         <button type="button" class="cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
@@ -153,9 +156,21 @@ const faqJsonLd = JSON.stringify({
     </div>
   </section>
 
-  <section class="section-y faq-section">
+  <div class="section-divider content-grid"></div>
+
+  <section class="relative section-y faq-section">
     <div class="content-grid-narrow">
-      <h2 class="faq-title font-display">Common questions</h2>
+      <SectionHeading
+        label="FAQ"
+        title="Common"
+        highlight="questions"
+        description="Everything about plans, billing and the Local-Free guarantee."
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="48rem"
+        titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+        descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      />
       <div class="faq-list">
         {pricingFaq.map((item) => (
           <details class="faq-item">
@@ -169,6 +184,8 @@ const faqJsonLd = JSON.stringify({
       </div>
     </div>
   </section>
+
+  <div class="section-divider content-grid"></div>
 
   <CtaSection
     eyebrow="Ready?"
@@ -531,14 +548,6 @@ const faqJsonLd = JSON.stringify({
   }
 
   .faq-section { padding-top: 0; }
-  .faq-title {
-    font-size: var(--text-h2);
-    font-weight: var(--weight-semibold);
-    color: var(--color-text-bright);
-    letter-spacing: var(--tracking-tight);
-    margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
-    text-align: center;
-  }
   .faq-list { display: flex; flex-direction: column; gap: 0.75rem; }
   .faq-item {
     border: 1px solid var(--color-border);
