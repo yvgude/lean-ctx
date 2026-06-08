@@ -51,10 +51,11 @@ export default defineConfig({
   redirects: {
     '/benchmark/': '/context-os/benchmark/',
     '/protocols/': '/docs/concepts/protocols/',
-    // Commercial pages → their canonical home (/login/ & /account/ are real pages)
+    // Commercial pages → their canonical home (/login/ is a real page).
     '/checkout/': '/pricing/',
     '/pro/': '/pricing/',
     '/dashboard/': '/account/billing/',
+    '/account/': '/account/billing/',
     '/cloud/': '/pricing/',
 
     // Redundant product pages
