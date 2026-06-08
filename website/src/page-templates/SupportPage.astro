@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import GradientHero from '../components/GradientHero.astro';
+import PageHero from '../components/PageHero.astro';
 import { supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
 
@@ -18,8 +18,6 @@ const arrowIcon =
 
 const lockIcon =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
-
-const trustPills = ['Apache-2.0', 'No VC funding', 'No telemetry', 'Built in Switzerland'];
 
 const fundsItems = [
   {
@@ -105,14 +103,16 @@ const faq = [
     { name: 'Support', url: lp('/support/') },
   ]}
 >
-  {/* ── Hero (shared, left-aligned) ────────────────────────── */}
-  <GradientHero
-    title="Keep lean-ctx"
-    highlight="free, open & independent."
-    description="Every local feature is free forever — and always will be. If lean-ctx saves you time every day, you can fund its development with a small recurring subscription. It unlocks nothing. It simply keeps the project alive and independent."
-    pills={trustPills}
-    titleMaxWidth="15ch"
-    container="narrow"
+  {/* ── Hero ───────────────────────────────────────────────── */}
+  <PageHero
+    label="Support"
+    title="Keep lean-ctx free,"
+    highlight="open & independent."
+    descriptionHtml="Every local feature is <strong class='text-text-bright'>free forever</strong> — and always will be. If lean-ctx saves you time every day, you can fund its development with a small recurring subscription. It unlocks nothing — it simply keeps the project alive and independent."
+    kickerTone="accent"
+    titleVariant="display"
+    highlightStyle="italic"
+    descMaxWidth="44rem"
   />
 
   {/* ── Pledge card ────────────────────────────────────────── */}

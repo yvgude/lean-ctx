@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import GradientHero from '../components/GradientHero.astro';
+import PageHero from '../components/PageHero.astro';
 import CtaSection from '../components/CtaSection.astro';
 import { pricingTiers, pricingFaq, supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
@@ -40,14 +40,15 @@ const faqJsonLd = JSON.stringify({
   ]}
   extraJsonLd={faqJsonLd}
 >
-  <GradientHero
+  <PageHero
+    label="Pricing"
     title="Start free."
     highlight="Scale when your team does."
-    description="Every local capability is free, forever. Paid plans are purely additive — they give your team and its agents one shared, audited context plane. Nothing local is ever locked behind a paywall."
-    pills={['Apache-2.0', 'No VC funding', 'No telemetry', 'Built in Switzerland']}
-    breakHighlight={true}
-    titleMaxWidth="26ch"
-    container="standard"
+    descriptionHtml="Every local capability is <strong class='text-text-bright'>free, forever</strong>. Paid plans are purely additive — they give your team and its agents one shared, audited context plane. Nothing local is ever locked behind a paywall."
+    kickerTone="accent"
+    titleVariant="display"
+    highlightStyle="italic"
+    descMaxWidth="44rem"
   />
 
   <section class="section-y pricing-section" data-cadence="monthly">
