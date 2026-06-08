@@ -432,12 +432,16 @@ fn extract_extensions(include: Option<&str>) -> Vec<&'static str> {
         return vec![];
     };
 
-    // Find the last extension-like suffix: *.EXT or *.{EXT1,EXT2}
-    let Some(pos) = pattern.rfind('.') else {
+    let filename_pattern = match pattern.rfind('/') {
+        Some(pos) => &pattern[pos + 1..],
+        None => pattern,
+    };
+
+    let Some(pos) = filename_pattern.rfind('.') else {
         return vec![];
     };
 
-    let ext_part = &pattern[pos + 1..];
+    let ext_part = &filename_pattern[pos + 1..];
 
     // Handle brace expansion: {rs,ts,js} → ["rs", "ts", "js"]
     if ext_part.starts_with('{') && ext_part.ends_with('}') {
@@ -734,6 +738,41 @@ mod tests {
             search_deadline(),
             Some(Duration::from_secs(10)),
             "default budget is 10s"
+        );
+    }
+
+    #[test]
+    fn extract_extensions_ignores_dots_in_directory_paths() {
+        // Dots in directory names must not confuse extension extraction.
+        assert_eq!(
+            extract_extensions(Some("config.v2/src/**/*.rs")),
+            vec!["rs"]
+        );
+        assert_eq!(
+            extract_extensions(Some("lib/old.v1/src/**/*.{rs,ts}")),
+            vec!["rs", "ts"]
+        );
+        assert_eq!(
+            extract_extensions(Some("src/v2.0/components/*.module.ts")),
+            vec!["ts"]
+        );
+    }
+
+    #[test]
+    fn extract_extensions_simple_patterns() {
+        assert_eq!(extract_extensions(Some("*.rs")), vec!["rs"]);
+        assert_eq!(extract_extensions(Some("*.ts")), vec!["ts"]);
+        assert_eq!(extract_extensions(Some("*.{rs,ts}")), vec!["rs", "ts"]);
+        assert_eq!(extract_extensions(Some("src/**/*.tsx")), vec!["tsx"]);
+        assert_eq!(extract_extensions(None), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn extract_extensions_no_extension_returns_empty() {
+        assert_eq!(extract_extensions(Some("src/**/*")), Vec::<&str>::new());
+        assert_eq!(
+            extract_extensions(Some("config.v2/src/Makefile")),
+            Vec::<&str>::new()
         );
     }
 }
