@@ -121,6 +121,33 @@ impl CoAccessMatrix {
                 true
             }
         });
+
+        // Hard cap: a high-churn burst of strong, fresh associations can leave the map
+        // above MAX_ASSOCIATIONS after threshold-pruning. Drop the lowest-effective-weight
+        // pairs to enforce the cap (keeping both maps key-synced). Tradeoff: discards the
+        // weakest learned co-access pairs, which are re-learned if seen again.
+        if self.weights.len() > MAX_ASSOCIATIONS {
+            let mut scored: Vec<((u64, u64), f32)> = self
+                .weights
+                .iter()
+                .map(|(&key, &weight)| {
+                    let elapsed = self
+                        .timestamps
+                        .get(&key)
+                        .map_or(DECAY_HALF_LIFE_SECS * 2.0, |t| {
+                            now.duration_since(*t).as_secs_f64()
+                        });
+                    let decay = (-elapsed * (2.0f64.ln()) / DECAY_HALF_LIFE_SECS).exp();
+                    (key, weight * decay as f32)
+                })
+                .collect();
+            scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            let to_drop = self.weights.len() - MAX_ASSOCIATIONS;
+            for (key, _) in scored.into_iter().take(to_drop) {
+                self.weights.remove(&key);
+                self.timestamps.remove(&key);
+            }
+        }
     }
 
     /// Force flush any pending burst (call at end of tool-call processing).

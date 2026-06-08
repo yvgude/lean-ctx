@@ -422,6 +422,14 @@ impl LoopDetector {
         for entries in self.call_history.values_mut() {
             entries.retain(|t| now.duration_since(*t) < self.window);
         }
+        // Drop keys whose window emptied, plus their orphaned duplicate counts, so the
+        // per-fingerprint maps don't grow unbounded over a long session. Behavior-neutral:
+        // empty Vecs contribute 0 to record_call's count, and duplicate_counts is only
+        // read by stats() (already filtered to count > 1). tool_total_counts is left
+        // intact — it is a cumulative per-tool-name guard (bounded by the tool set).
+        self.call_history.retain(|_, v| !v.is_empty());
+        let live = &self.call_history;
+        self.duplicate_counts.retain(|k, _| live.contains_key(k));
         self.search_group_history
             .retain(|t| now.duration_since(*t) < self.window);
     }

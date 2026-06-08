@@ -46,6 +46,21 @@ impl GitCache {
     fn insert(&mut self, key: String, output: String, ttl: Duration) {
         if self.entries.len() > 100 {
             self.prune_expired();
+            // Hard cap: if still over after expiry-pruning (>100 distinct live keys
+            // within the TTL window), evict oldest by insertion time. Dropping a live
+            // entry is safe — it just forces a git re-run on next access.
+            if self.entries.len() >= 100 {
+                let mut by_age: Vec<(String, Instant)> = self
+                    .entries
+                    .iter()
+                    .map(|(k, e)| (k.clone(), e.inserted))
+                    .collect();
+                by_age.sort_by_key(|(_, inserted)| *inserted);
+                let to_drop = self.entries.len() + 1 - 100;
+                for (k, _) in by_age.into_iter().take(to_drop) {
+                    self.entries.remove(&k);
+                }
+            }
         }
         self.entries.insert(
             key,

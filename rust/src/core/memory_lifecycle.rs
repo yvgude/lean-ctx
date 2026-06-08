@@ -16,6 +16,10 @@ const DEFAULT_DECAY_RATE: f32 = 0.01;
 const DEFAULT_MAX_FACTS: usize = 1000;
 const LOW_CONFIDENCE_THRESHOLD: f32 = 0.3;
 const STALE_DAYS: i64 = 30;
+/// Bound archive-dir disk growth. The reader (`rehydrate_from_archives`) only ever
+/// consults the newest `KNOWLEDGE_REHYDRATE_MAX_ARCHIVES` (= 4) files, so any value
+/// well above that prunes only already-unreachable files.
+const MAX_ARCHIVE_FILES: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct LifecycleConfig {
@@ -238,13 +242,28 @@ fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
         .join("archive");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
 
-    let filename = format!("archive-{}.json", Utc::now().format("%Y%m%d-%H%M%S"));
+    // Sub-second suffix avoids same-second filename collisions that would otherwise
+    // silently overwrite a prior archive written in the same wall-clock second.
+    let now = Utc::now();
+    let suffix = now.timestamp_subsec_nanos() % 1_000_000;
+    let filename = format!("archive-{}-{suffix:06}.json", now.format("%Y%m%d-%H%M%S"));
     let archive = ArchivedFacts {
-        archived_at: Utc::now(),
+        archived_at: now,
         facts: facts.to_vec(),
     };
     let json = serde_json::to_string_pretty(&archive).map_err(|e| format!("{e}"))?;
-    std::fs::write(dir.join(filename), json).map_err(|e| format!("{e}"))
+    std::fs::write(dir.join(filename), json).map_err(|e| format!("{e}"))?;
+
+    // Prune to the newest MAX_ARCHIVE_FILES; list_archives() is already sorted ascending
+    // (lexical == chronological for the zero-padded timestamp prefix). Best-effort: a
+    // prune failure must not fail the archive write itself.
+    let archives = list_archives();
+    if archives.len() > MAX_ARCHIVE_FILES {
+        for old in &archives[..archives.len() - MAX_ARCHIVE_FILES] {
+            let _ = std::fs::remove_file(old);
+        }
+    }
+    Ok(())
 }
 
 pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String> {

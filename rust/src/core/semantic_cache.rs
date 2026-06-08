@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 
 /// Recompute global IDF after this many mutations; searches refresh IDF when `idf_dirty`.
 const IDF_REBUILD_BATCH: u32 = 100;
+/// Hard cap on cached entries. Matches the search cap so the index stays bounded and
+/// never grows past what `find_similar` will actually search (previously the structure
+/// grew one entry per distinct file ever read, with no eviction).
+const MAX_SEMANTIC_ENTRIES: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticCacheEntry {
@@ -42,6 +46,20 @@ impl SemanticCacheIndex {
             existing.last_session = session_id.to_string();
             add_doc_terms(&mut self.term_document_freq, &existing.tfidf_vector);
         } else {
+            if self.entries.len() >= MAX_SEMANTIC_ENTRIES {
+                // Evict the lowest-access_count entry to bound the index. Decrement its
+                // terms from the DF map via the existing helper so IDF stays correct.
+                if let Some(victim_idx) = self
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, e)| e.access_count)
+                    .map(|(i, _)| i)
+                {
+                    let victim = self.entries.swap_remove(victim_idx);
+                    remove_doc_terms(&mut self.term_document_freq, &victim.tfidf_vector);
+                }
+            }
             let tf_vec: Vec<(String, f64)> = tf.iter().map(|(k, v)| (k.clone(), *v)).collect();
             add_doc_terms(&mut self.term_document_freq, &tf_vec);
             self.entries.push(SemanticCacheEntry {
@@ -103,9 +121,7 @@ impl SemanticCacheIndex {
     }
 
     pub fn find_similar(&mut self, content: &str, threshold: f64) -> Vec<(String, f64)> {
-        const MAX_ENTRIES_FOR_SEARCH: usize = 200;
-
-        if self.entries.len() > MAX_ENTRIES_FOR_SEARCH {
+        if self.entries.len() > MAX_SEMANTIC_ENTRIES {
             return Vec::new();
         }
 

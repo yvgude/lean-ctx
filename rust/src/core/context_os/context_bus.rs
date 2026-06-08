@@ -202,6 +202,10 @@ pub struct ContextBus {
 
 const STREAM_CHANNEL_SIZE: usize = 256;
 const MAX_SUBSCRIBERS_PER_CHANNEL: usize = 64;
+/// Bound the write-side version cache. Each entry is re-derivable from the DB via
+/// `MAX(version)`, so when the map exceeds this (e.g. a client cycling workspace/channel
+/// ids) it is simply cleared — costing at most one extra `MAX()` query per active channel.
+const MAX_VERSION_CACHE_ENTRIES: usize = 4096;
 
 struct Inner {
     write_conn: Mutex<Connection>,
@@ -269,6 +273,10 @@ impl Inner {
             .version_cache
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if cache.len() > MAX_VERSION_CACHE_ENTRIES {
+            // Re-derivable from the DB; drop the whole cache rather than grow unbounded.
+            cache.clear();
+        }
         let entry = cache.entry(key).or_insert(v);
         *entry = (*entry).max(v) + 1;
         *entry
@@ -351,6 +359,11 @@ impl ContextBus {
             .streams
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Reap senders left behind by departed clients (receiver_count() == 0). A removed
+        // key is transparently recreated below; the DB is the durability source so this
+        // loses no deliverable events. Bounds `streams` to ~live connection count even
+        // under client-cycled workspace/channel ids.
+        streams.retain(|_, tx| tx.receiver_count() > 0);
         let tx = streams
             .entry(key)
             .or_insert_with(|| broadcast::channel(STREAM_CHANNEL_SIZE).0);

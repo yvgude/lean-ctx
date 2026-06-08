@@ -3,6 +3,10 @@ use std::sync::{Mutex, OnceLock};
 
 const BOUNCE_WINDOW: u64 = 5;
 const BOUNCE_RATE_THRESHOLD: f64 = 0.30;
+/// Outer-map retention: a path whose newest activity is older than this many seq ticks
+/// can no longer satisfy BOUNCE_WINDOW (5) or the edit-force window (10), so it is inert
+/// and safe to evict. Kept well above both windows to never change detection outcomes.
+const TRACKED_PATH_TTL_SEQ: u64 = 64;
 
 #[derive(Debug, Clone)]
 struct ReadEvent {
@@ -92,6 +96,8 @@ impl BounceTracker {
             let stats = self.per_extension.entry(ext).or_default();
             stats.total_reads += 1;
         }
+
+        self.prune_stale_paths();
     }
 
     fn detect_bounce(&mut self, norm_path: &str, full_seq: u64) {
@@ -128,6 +134,21 @@ impl BounceTracker {
     pub fn record_edit(&mut self, path: &str) {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         self.recently_edited.insert(norm, self.seq_counter);
+        self.prune_stale_paths();
+    }
+
+    /// Evict outer-map entries whose newest seq is older than the detection windows —
+    /// they can no longer affect bounce detection or `should_force_full`. Bounds the
+    /// `recent_reads` / `recently_edited` maps on a long-lived process.
+    fn prune_stale_paths(&mut self) {
+        let seq = self.seq_counter;
+        self.recent_reads.retain(|_, events| {
+            events
+                .last()
+                .is_some_and(|e| seq.saturating_sub(e.seq) <= TRACKED_PATH_TTL_SEQ)
+        });
+        self.recently_edited
+            .retain(|_, &mut edit_seq| seq.saturating_sub(edit_seq) <= TRACKED_PATH_TTL_SEQ);
     }
 
     pub fn should_force_full(&self, path: &str) -> bool {

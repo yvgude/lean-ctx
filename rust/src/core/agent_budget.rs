@@ -100,6 +100,15 @@ pub fn reset(agent_id: &str) {
     });
 }
 
+/// Remove an agent's budget entry entirely. Safe only for agents that can no longer
+/// issue reads (finished / dead PID) — a live agent would have its budget silently
+/// reset to 0 on the next check. Bounds the BUDGETS map on long-lived daemons.
+pub fn remove(agent_id: &str) {
+    with_budgets(|map| {
+        map.remove(agent_id);
+    });
+}
+
 pub fn set_limit(agent_id: &str, limit: usize) {
     with_budgets(|map| {
         let budget = ensure_entry(map, agent_id);

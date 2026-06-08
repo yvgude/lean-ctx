@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::fs;
+use std::io::{BufRead, BufReader};
 
 use crate::core::data_dir::lean_ctx_data_dir;
 
@@ -77,6 +77,11 @@ pub fn is_same_project_identity(hash_a: &str, hash_b: &str) -> bool {
     !hash_a.is_empty() && !hash_b.is_empty() && hash_a == hash_b
 }
 
+/// Cap for the operational cross-project audit mirror. Kept >= the largest limit served
+/// by the /v1/audit/events endpoint (capped at 1000) so no reader observes truncation.
+/// The hash-chained compliance trail is separate (core::audit_trail) and not rotated here.
+const MAX_AUDIT_LINES: usize = 2000;
+
 pub fn record_audit_event(event: &CrossProjectAuditEvent) {
     let dir = match lean_ctx_data_dir() {
         Ok(d) => d.join("audit"),
@@ -97,16 +102,22 @@ pub fn record_audit_event(event: &CrossProjectAuditEvent) {
             return;
         }
     };
-    let file = OpenOptions::new().create(true).append(true).open(&path);
-    match file {
-        Ok(mut f) => {
-            if let Err(e) = writeln!(f, "{line}") {
-                tracing::warn!("cannot write audit event to {}: {e}", path.display());
-            }
-        }
-        Err(e) => {
-            tracing::warn!("cannot open audit log {}: {e}", path.display());
-        }
+    // Rotating cap (mirrors server_metrics::append_tool_call_log): bound the jsonl to
+    // MAX_AUDIT_LINES so disk growth is finite. This is the best-effort operational
+    // mirror — the tamper-evident, hash-chained compliance trail lives in
+    // core::audit_trail and is intentionally not rotated here.
+    let mut lines: Vec<String> = fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .map(std::string::ToString::to_string)
+        .collect();
+    lines.push(line);
+    if lines.len() > MAX_AUDIT_LINES {
+        let excess = lines.len() - MAX_AUDIT_LINES;
+        lines.drain(0..excess);
+    }
+    if let Err(e) = fs::write(&path, lines.join("\n") + "\n") {
+        tracing::warn!("cannot write audit log {}: {e}", path.display());
     }
 }
 

@@ -31,9 +31,9 @@ impl McpBridgeProvider {
     /// are registered once at startup and live for the process lifetime
     /// (same pattern as `ConfigProvider`).
     pub fn new(server_name: &str, server_url: &str) -> Self {
-        let id: &'static str = Box::leak(format!("mcp:{server_name}").into_boxed_str());
+        let id: &'static str = crate::core::providers::intern(format!("mcp:{server_name}"));
         let display_name: &'static str =
-            Box::leak(format!("MCP Bridge ({server_name})").into_boxed_str());
+            crate::core::providers::intern(format!("MCP Bridge ({server_name})"));
         Self {
             id,
             display_name,
@@ -47,9 +47,9 @@ impl McpBridgeProvider {
 
     /// Create a stdio-based MCP Bridge provider.
     pub fn new_stdio(server_name: &str, command: &str, args: &[String]) -> Self {
-        let id: &'static str = Box::leak(format!("mcp:{server_name}").into_boxed_str());
+        let id: &'static str = crate::core::providers::intern(format!("mcp:{server_name}"));
         let display_name: &'static str =
-            Box::leak(format!("MCP Bridge ({server_name}, stdio)").into_boxed_str());
+            crate::core::providers::intern(format!("MCP Bridge ({server_name}, stdio)"));
         Self {
             id,
             display_name,

@@ -53,12 +53,12 @@ impl ConfigProvider {
     pub fn from_config(config: ProviderConfig) -> Result<Self, String> {
         config.validate()?;
 
-        let id: &'static str = Box::leak(config.id.clone().into_boxed_str());
-        let display_name: &'static str = Box::leak(config.name.clone().into_boxed_str());
+        let id: &'static str = crate::core::providers::intern(config.id.clone());
+        let display_name: &'static str = crate::core::providers::intern(config.name.clone());
         let actions: Vec<&'static str> = config
             .resources
             .keys()
-            .map(|k| -> &'static str { Box::leak(k.clone().into_boxed_str()) })
+            .map(|k| crate::core::providers::intern(k.clone()))
             .collect();
 
         Ok(Self {

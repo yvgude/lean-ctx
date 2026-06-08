@@ -10,7 +10,13 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
+
+/// Max distinct project roots kept resident. A daemon touching many roots/branches/
+/// worktrees would otherwise retain every ProjectIndex (MBs each) forever. LRU-evict
+/// beyond this; an evicted root pays one disk reload (read+zstd+serde) on its next
+/// query — bounded and self-healing.
+const MAX_ROOTS: usize = 8;
 
 use crate::core::graph_index::ProjectIndex;
 
@@ -26,6 +32,7 @@ struct Fingerprint {
 struct Entry {
     index: Arc<ProjectIndex>,
     fingerprint: Fingerprint,
+    last_access: Instant,
 }
 
 static CACHE: OnceLock<Mutex<HashMap<String, Entry>>> = OnceLock::new();
@@ -57,11 +64,12 @@ pub fn get_cached(project_root: &str) -> Option<Arc<ProjectIndex>> {
     let fingerprint = index_fingerprint(project_root);
 
     {
-        let map = cache()
+        let mut map = cache()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(entry) = map.get(project_root) {
+        if let Some(entry) = map.get_mut(project_root) {
             if entry.fingerprint == fingerprint {
+                entry.last_access = Instant::now();
                 return Some(Arc::clone(&entry.index));
             }
         }
@@ -73,11 +81,23 @@ pub fn get_cached(project_root: &str) -> Option<Arc<ProjectIndex>> {
     let mut map = cache()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // LRU-evict before inserting a *new* root so the cap holds. Re-inserting an
+    // existing root (fingerprint changed) just overwrites and doesn't grow the map.
+    if !map.contains_key(project_root) && map.len() >= MAX_ROOTS {
+        if let Some(lru_key) = map
+            .iter()
+            .min_by_key(|(_, e)| e.last_access)
+            .map(|(k, _)| k.clone())
+        {
+            map.remove(&lru_key);
+        }
+    }
     map.insert(
         project_root.to_string(),
         Entry {
             index: Arc::clone(&arc),
             fingerprint,
+            last_access: Instant::now(),
         },
     );
     Some(arc)

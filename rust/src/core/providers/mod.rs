@@ -18,6 +18,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::evidence::Claim;
 
+/// Intern a string to a process-global `&'static str`, leaking each *unique* value at
+/// most once. Provider constructors run per `ctx_provider`/`ctx_preload` call, so a
+/// naive `Box::leak` per construction leaked unboundedly; interning bounds the leak to
+/// the finite set of distinct provider ids/names/actions.
+pub(crate) fn intern(s: String) -> &'static str {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static POOL: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+    let pool = POOL.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut guard = pool.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(&existing) = guard.get(s.as_str()) {
+        return existing;
+    }
+    let leaked: &'static str = Box::leak(s.into_boxed_str());
+    guard.insert(leaked);
+    leaked
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderResult {
     pub provider: String,

@@ -36,6 +36,11 @@ pub struct ModelStat {
     pub pricing_estimated: bool,
 }
 
+/// Cap on distinct model buckets. `record` sees the raw request model string, so an
+/// arbitrary-model client could otherwise grow the map without bound; overflow folds
+/// into "unknown" (real model names number < ~50, so this is generous).
+const MAX_TRACKED_MODELS: usize = 256;
+
 fn store() -> &'static Mutex<HashMap<String, ModelAccum>> {
     static STORE: OnceLock<Mutex<HashMap<String, ModelAccum>>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -55,6 +60,15 @@ pub fn record(model: Option<&str>, tokens_saved: u64, bytes_original: u64, bytes
     let mut map = store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Bound distinct model buckets. `record` takes the raw request model string (it does
+    // NOT pass through normalize_model), so a client sending arbitrary model names could
+    // otherwise grow this map unbounded. Fold overflow into "unknown" so aggregate totals
+    // stay exact — only per-model granularity for rare/novel names is lost.
+    let key = if !map.contains_key(&key) && map.len() >= MAX_TRACKED_MODELS {
+        "unknown".to_string()
+    } else {
+        key
+    };
     let acc = map.entry(key).or_default();
     acc.requests += 1;
     acc.tokens_saved += tokens_saved;
