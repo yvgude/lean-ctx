@@ -87,37 +87,84 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           </div>
         </div>
 
-        <div class="team-card team-savings">
-          <div class="team-members-head">
-            <h2 class="team-section-title">Team savings</h2>
-            <span class="team-seats" data-savings-members></span>
-          </div>
-          <p class="team-prose">
-            An opt-in, aggregated roll-up of the signed savings batches your team pushes
-            (<code>lean-ctx savings push</code>). Tokens and cost your team provably did
-            not spend — the ROI of running LeanCTX, in your own data.
-          </p>
-          <div class="team-savings-totals" data-savings-totals hidden>
-            <div class="team-savings-stat">
-              <span class="team-savings-value" data-savings-tokens>—</span>
-              <span class="team-savings-label">net tokens saved</span>
+        <div class="team-card team-roi" data-roi-card>
+          <div class="team-roi-head">
+            <div class="team-roi-intro">
+              <h2 class="team-section-title">Team ROI &amp; usage</h2>
+              <p class="team-prose">
+                An aggregated, privacy-preserving roll-up of the signed savings batches your
+                team pushes (<code>lean-ctx savings push</code>) — provable tokens and cost
+                your team did not spend, and how that compounds over time.
+              </p>
             </div>
-            <div class="team-savings-stat">
-              <span class="team-savings-value" data-savings-usd>—</span>
-              <span class="team-savings-label">≈ USD saved</span>
+            <div class="team-roi-tools">
+              <span class="team-seats" data-roi-members></span>
+              <button type="button" class="team-btn team-btn-ghost team-roi-export" data-roi-export hidden>
+                Export CSV
+              </button>
             </div>
           </div>
-          <div class="team-savings-break" data-savings-members-list hidden>
-            <h3 class="team-savings-subtitle">Per member</h3>
-            <div data-savings-members-rows></div>
+
+          <div class="team-roi-loading" data-roi-loading>
+            <span class="team-spinner" aria-hidden="true"></span>
+            <span>Loading ROI…</span>
           </div>
-          <div class="team-savings-break" data-savings-models hidden>
-            <h3 class="team-savings-subtitle">Per model</h3>
-            <div data-savings-models-rows></div>
+
+          <div class="team-kpis" data-roi-kpis hidden>
+            <div class="team-kpi">
+              <span class="team-kpi-value" data-kpi-tokens>—</span>
+              <span class="team-kpi-label">net tokens saved</span>
+              <span class="team-kpi-delta" data-kpi-tokens-delta hidden></span>
+            </div>
+            <div class="team-kpi">
+              <span class="team-kpi-value" data-kpi-usd>—</span>
+              <span class="team-kpi-label">≈ USD saved</span>
+              <span class="team-kpi-delta" data-kpi-usd-delta hidden></span>
+            </div>
+            <div class="team-kpi">
+              <span class="team-kpi-value" data-kpi-events>—</span>
+              <span class="team-kpi-label">agent actions</span>
+              <span class="team-kpi-delta" data-kpi-events-delta hidden></span>
+            </div>
+            <div class="team-kpi">
+              <span class="team-kpi-value" data-kpi-membercount>—</span>
+              <span class="team-kpi-label">reporting members</span>
+            </div>
           </div>
-          <p class="team-savings-empty" data-savings-empty hidden>
+
+          <div class="team-chart-wrap" data-roi-chart-wrap hidden>
+            <div class="team-chart-bar">
+              <div class="team-seg" role="group" aria-label="Chart metric">
+                <button type="button" class="team-seg-btn is-on" data-metric="net_saved_tokens">Tokens</button>
+                <button type="button" class="team-seg-btn" data-metric="saved_usd">USD</button>
+                <button type="button" class="team-seg-btn" data-metric="total_events">Actions</button>
+              </div>
+              <div class="team-seg" role="group" aria-label="Time range">
+                <button type="button" class="team-seg-btn" data-range="30">30d</button>
+                <button type="button" class="team-seg-btn is-on" data-range="90">90d</button>
+              </div>
+            </div>
+            <figure class="team-chart" data-roi-chart></figure>
+          </div>
+
+          <div class="team-breakdowns" data-roi-breakdowns hidden>
+            <div class="team-break">
+              <h3 class="team-savings-subtitle">Per member</h3>
+              <div class="team-break-rows" data-roi-members-rows></div>
+            </div>
+            <div class="team-break">
+              <h3 class="team-savings-subtitle">Per model</h3>
+              <div class="team-break-rows" data-roi-models-rows></div>
+            </div>
+            <div class="team-break">
+              <h3 class="team-savings-subtitle">Per tool</h3>
+              <div class="team-break-rows" data-roi-tools-rows></div>
+            </div>
+          </div>
+
+          <p class="team-savings-empty" data-roi-empty hidden>
             No signed savings batches yet. Once your team runs
-            <code>lean-ctx savings push</code>, the roll-up appears here.
+            <code>lean-ctx savings push</code>, your ROI and usage trends appear here.
           </p>
         </div>
 
@@ -360,22 +407,70 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   .team-owner-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px solid var(--color-border); }
 
-  .team-savings-totals { display: flex; gap: 2rem; flex-wrap: wrap; margin: 0.4rem 0 0.2rem; }
-  .team-savings-stat { display: flex; flex-direction: column; gap: 0.2rem; }
-  .team-savings-value {
-    font-size: var(--text-h3); font-weight: var(--weight-semibold);
-    color: var(--color-accent-bright); font-variant-numeric: tabular-nums; line-height: 1.1;
+  /* ROI dashboard */
+  .team-roi-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.25rem; flex-wrap: wrap; }
+  .team-roi-intro { flex: 1 1 22rem; min-width: 0; }
+  .team-roi-intro .team-prose { margin-bottom: 0; }
+  .team-roi-tools { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .team-roi-export { padding: 0.5rem 0.95rem !important; font-size: var(--text-caption); }
+  .team-roi-loading { display: flex; align-items: center; gap: 0.6rem; padding: 1.5rem 0 0.25rem; color: var(--color-muted); font-size: var(--text-small); }
+
+  .team-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; margin-top: 1.3rem; }
+  .team-kpi {
+    display: flex; flex-direction: column; gap: 0.25rem; padding: 0.95rem 1rem;
+    border: 1px solid var(--color-border); border-radius: var(--card-radius); background: var(--color-bg);
   }
-  .team-savings-label { font-size: var(--text-caption); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-  .team-savings-break { margin-top: 1.1rem; }
-  .team-savings-subtitle { font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.4rem; }
-  .team-savings :global(.team-savings-row) {
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    padding: 0.45rem 0; border-bottom: 1px solid var(--color-border); font-size: var(--text-small);
+  .team-kpi-value {
+    font-size: var(--text-h3); font-weight: var(--weight-semibold); color: var(--color-accent-bright);
+    font-variant-numeric: tabular-nums; line-height: 1.1;
   }
-  .team-savings :global(.ts-name) { color: var(--color-text); font-family: var(--font-mono, monospace); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .team-savings :global(.ts-val) { color: var(--color-muted); flex: none; font-variant-numeric: tabular-nums; }
-  .team-savings-empty { font-size: var(--text-small); color: var(--color-muted); margin: 0; }
+  .team-kpi-label { font-size: var(--text-caption); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .team-kpi-delta { font-size: var(--text-caption); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+  .team-kpi-delta[data-dir='up'] { color: var(--color-accent-bright); }
+  .team-kpi-delta[data-dir='down'] { color: var(--color-danger); }
+  .team-kpi-delta[data-dir='flat'] { color: var(--color-muted); }
+
+  .team-chart-wrap { margin-top: 1.5rem; }
+  .team-chart-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+  .team-seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--radius-pill); overflow: hidden; }
+  .team-shell :global(.team-seg-btn) {
+    padding: 0.35rem 0.9rem; font-size: var(--text-caption); font-weight: var(--weight-semibold);
+    background: transparent; color: var(--color-muted); border: none; cursor: pointer; font-family: inherit;
+    transition: color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+  }
+  .team-shell :global(.team-seg-btn:hover) { color: var(--color-text-bright); }
+  .team-shell :global(.team-seg-btn.is-on) {
+    color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  }
+
+  .team-chart { margin: 0; }
+  .team-chart :global(svg) { display: block; width: 100%; height: auto; }
+  .team-chart :global(.roi-grid) { stroke: var(--color-border); stroke-width: 1; }
+  .team-chart :global(.roi-grid-label) { fill: var(--color-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .team-chart :global(.roi-x-label) { fill: var(--color-muted); font-size: 10px; }
+  .team-chart :global(.roi-line) { fill: none; stroke: var(--color-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .team-chart :global(.roi-dot) { fill: var(--color-accent-bright); stroke: var(--color-bg); stroke-width: 1.5; }
+  .team-chart :global(.roi-cursor) { stroke: color-mix(in srgb, var(--color-accent) 55%, transparent); stroke-width: 1; stroke-dasharray: 3 3; }
+  .team-chart-tip { margin: 0.55rem 0 0; min-height: 1.15rem; font-size: var(--text-caption); color: var(--color-muted); font-variant-numeric: tabular-nums; }
+  .team-chart-tip strong { color: var(--color-text-bright); }
+  .roi-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  .team-breakdowns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 1.6rem; }
+  .team-savings-subtitle { font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.5rem; }
+  .team-break-rows :global(.roi-row) { padding: 0.5rem 0; border-bottom: 1px solid var(--color-border); }
+  .team-break-rows :global(.roi-row-top) { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; font-size: var(--text-small); }
+  .team-break-rows :global(.roi-name) { color: var(--color-text); font-family: var(--font-mono, monospace); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .team-break-rows :global(.roi-val) { color: var(--color-muted); flex: none; font-variant-numeric: tabular-nums; }
+  .team-break-rows :global(.roi-bar) { margin-top: 0.4rem; height: 4px; border-radius: 2px; background: var(--color-border); overflow: hidden; }
+  .team-break-rows :global(.roi-bar-fill) { display: block; height: 100%; background: var(--color-accent); border-radius: 2px; }
+  .team-break-rows :global(.roi-empty) { font-size: var(--text-caption); color: var(--color-muted); }
+
+  .team-savings-empty { font-size: var(--text-small); color: var(--color-muted); margin: 1rem 0 0; }
+
+  @media (max-width: 720px) {
+    .team-kpis { grid-template-columns: repeat(2, 1fr); }
+    .team-breakdowns { grid-template-columns: 1fr; gap: 1.25rem; }
+  }
 
   .team-help { margin-top: 0; text-align: center; font-size: var(--text-caption); color: var(--color-muted); }
   .team-help a { color: var(--color-accent); text-decoration: none; }
@@ -512,67 +607,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         $('[data-curl-snippet]').textContent = curlSnippet(serverUrl);
         renderMembers(current.members, current.seats);
         showState('live');
-        loadSavings();
+        window.__leanctxTeamLive = true;
+        window.dispatchEvent(new CustomEvent('leanctx:team-live'));
       } catch (err) {
         if (err && err.message === 'unauthorized') return;
         $('[data-loading]').hidden = true;
         showBanner('error', 'Could not load your team server. Please refresh or sign in again.');
-      }
-    }
-
-    function fmtTokens(n) {
-      n = Number(n) || 0;
-      if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
-      return String(n);
-    }
-
-    async function loadSavings() {
-      var totalsEl = $('[data-savings-totals]');
-      var emptyEl = $('[data-savings-empty]');
-      try {
-        var r = await req('GET', '/api/account/team/savings');
-        if (!r.ok) { if (emptyEl) emptyEl.hidden = false; return; }
-        var d = r.data || {};
-        var s = d.summary || {};
-        var totals = s.totals || {};
-        var net = Number(totals.net_saved_tokens) || 0;
-        if (!d.savings_available || !net) {
-          if (totalsEl) totalsEl.hidden = true;
-          if (emptyEl) emptyEl.hidden = false;
-          return;
-        }
-        if (emptyEl) emptyEl.hidden = true;
-        if (totalsEl) totalsEl.hidden = false;
-        $('[data-savings-tokens]').textContent = fmtTokens(net);
-        $('[data-savings-usd]').textContent = '$' + (Number(totals.saved_usd) || 0).toFixed(2);
-        var members = s.by_member || [];
-        $('[data-savings-members]').textContent = (s.member_count || members.length) + ' reporting';
-
-        var mRows = $('[data-savings-members-rows]');
-        var mWrap = $('[data-savings-members-list]');
-        if (mRows && members.length) {
-          mRows.innerHTML = members.map(function (m) {
-            return '<div class="team-savings-row"><span class="ts-name">' + esc(m.agent_id || '?')
-              + '</span><span class="ts-val">' + fmtTokens(m.net_saved_tokens) + ' tok · $'
-              + (Number(m.saved_usd) || 0).toFixed(2) + '</span></div>';
-          }).join('');
-          if (mWrap) mWrap.hidden = false;
-        }
-
-        var models = s.by_model || [];
-        var gRows = $('[data-savings-models-rows]');
-        var gWrap = $('[data-savings-models]');
-        if (gRows && models.length) {
-          gRows.innerHTML = models.map(function (m) {
-            return '<div class="team-savings-row"><span class="ts-name">' + esc(m.model || '?')
-              + '</span><span class="ts-val">' + fmtTokens(m.saved_tokens) + ' tok</span></div>';
-          }).join('');
-          if (gWrap) gWrap.hidden = false;
-        }
-      } catch (_) {
-        if (emptyEl) emptyEl.hidden = false;
       }
     }
 
@@ -626,5 +666,250 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     $('[data-reveal-close]').addEventListener('click', function () { $('[data-reveal]').hidden = true; });
 
     load(false);
+  })();
+</script>
+
+<script>
+  import {
+    fmtCompact, fmtInt, fmtUsd, fmtDay,
+    windowTrend, fmtPct, sliceSeries, chartGeometry, proportion, toCsv,
+  } from '../lib/roi';
+
+  (function () {
+    var API = 'https://api.leanctx.com';
+    var TOKEN_KEY = 'leanctx-api-token';
+
+    function $(s) { return document.querySelector(s); }
+    function token() { try { return localStorage.getItem(TOKEN_KEY); } catch (_) { return null; } }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    }
+
+    var state = { summary: null, metric: 'net_saved_tokens', range: 90 };
+    var started = false;
+    var controlsWired = false;
+
+    var METRICS = {
+      net_saved_tokens: { label: 'tokens', fmt: function (v) { return fmtCompact(v) + ' tokens'; }, axis: fmtCompact },
+      saved_usd: { label: 'USD', fmt: fmtUsd, axis: fmtUsd },
+      total_events: { label: 'actions', fmt: function (v) { return fmtCompact(v) + ' actions'; }, axis: fmtCompact },
+    };
+
+    async function fetchSavings() {
+      var t = token();
+      if (!t) return null;
+      try {
+        var res = await fetch(API + '/api/account/team/savings', {
+          headers: { Authorization: 'Bearer ' + t, Accept: 'application/json' },
+        });
+        if (!res.ok) return null;
+        var text = await res.text();
+        return text ? JSON.parse(text) : null;
+      } catch (_) { return null; }
+    }
+
+    function show(sel, on) { var el = $(sel); if (el) el.hidden = !on; }
+
+    async function loadRoi() {
+      var data = await fetchSavings();
+      show('[data-roi-loading]', false);
+
+      var s = data && data.summary;
+      var hasData = data && data.savings_available && s && s.totals &&
+        (Number(s.totals.net_saved_tokens) > 0 || (s.series && s.series.length));
+      if (!hasData) { show('[data-roi-empty]', true); return; }
+
+      state.summary = s;
+      renderKpis(s);
+      renderBreakdowns(s);
+      renderChart();
+      wireControls();
+
+      show('[data-roi-kpis]', true);
+      show('[data-roi-chart-wrap]', !!(s.series && s.series.length));
+      show('[data-roi-breakdowns]', true);
+      var exp = $('[data-roi-export]'); if (exp) exp.hidden = false;
+      var membersTag = $('[data-roi-members]');
+      if (membersTag) membersTag.textContent = (s.member_count || (s.by_member || []).length) + ' reporting';
+    }
+
+    function setDelta(sel, trend) {
+      var el = $(sel);
+      if (!el) return;
+      if (trend.pct === null) { el.hidden = true; return; }
+      el.hidden = false;
+      el.setAttribute('data-dir', trend.dir);
+      el.textContent = fmtPct(trend.pct) + ' · 30d';
+    }
+
+    function renderKpis(s) {
+      var t = s.totals || {};
+      var series = s.series || [];
+      $('[data-kpi-tokens]').textContent = fmtCompact(t.net_saved_tokens || 0);
+      $('[data-kpi-usd]').textContent = fmtUsd(t.saved_usd || 0);
+      $('[data-kpi-events]').textContent = fmtCompact(t.total_events || 0);
+      $('[data-kpi-membercount]').textContent = fmtInt(s.member_count || (s.by_member || []).length);
+      setDelta('[data-kpi-tokens-delta]', windowTrend(series, 'net_saved_tokens', 30));
+      setDelta('[data-kpi-usd-delta]', windowTrend(series, 'saved_usd', 30));
+      setDelta('[data-kpi-events-delta]', windowTrend(series, 'total_events', 30));
+    }
+
+    function rowsHtml(rows, nameKey, valFn, max) {
+      if (!rows.length) return '<p class="roi-empty">No data yet.</p>';
+      return rows.map(function (r) {
+        var pct = Math.round(proportion(r.__bar, max) * 100);
+        return '<div class="roi-row">'
+          + '<div class="roi-row-top"><span class="roi-name">' + esc(r[nameKey] || '?')
+          + '</span><span class="roi-val">' + valFn(r) + '</span></div>'
+          + '<div class="roi-bar"><span class="roi-bar-fill" style="width:' + pct + '%"></span></div>'
+          + '</div>';
+      }).join('');
+    }
+
+    function renderBreakdowns(s) {
+      var members = (s.by_member || []).map(function (m) { m.__bar = m.net_saved_tokens || 0; return m; });
+      var mMax = members.reduce(function (a, m) { return Math.max(a, m.__bar); }, 0);
+      $('[data-roi-members-rows]').innerHTML = rowsHtml(members, 'agent_id', function (m) {
+        return fmtCompact(m.net_saved_tokens) + ' tok · ' + fmtUsd(m.saved_usd);
+      }, mMax);
+
+      var models = (s.by_model || []).map(function (m) { m.__bar = m.saved_tokens || 0; return m; });
+      var gMax = models.reduce(function (a, m) { return Math.max(a, m.__bar); }, 0);
+      $('[data-roi-models-rows]').innerHTML = rowsHtml(models, 'model', function (m) {
+        return fmtCompact(m.saved_tokens) + ' tok';
+      }, gMax);
+
+      var tools = (s.by_tool || []).map(function (m) { m.__bar = m.saved_tokens || 0; return m; });
+      var tMax = tools.reduce(function (a, m) { return Math.max(a, m.__bar); }, 0);
+      $('[data-roi-tools-rows]').innerHTML = rowsHtml(tools, 'tool', function (m) {
+        return fmtCompact(m.saved_tokens) + ' tok';
+      }, tMax);
+    }
+
+    function renderChart() {
+      var wrap = $('[data-roi-chart]');
+      if (!wrap || !state.summary) return;
+      var series = sliceSeries(state.summary.series || [], state.range);
+      var m = METRICS[state.metric];
+      var geo = chartGeometry(series, state.metric, 720, 220);
+      var W = geo.width, H = geo.height;
+
+      var grid = geo.ticks.map(function (tk) {
+        return '<line class="roi-grid" x1="8" y1="' + tk.y + '" x2="' + (W - 8) + '" y2="' + tk.y + '"/>'
+          + '<text class="roi-grid-label" x="' + (W - 6) + '" y="' + (tk.y - 3) + '" text-anchor="end">'
+          + esc(m.axis(tk.value)) + '</text>';
+      }).join('');
+
+      var xlabels = '';
+      if (series.length) {
+        var idxs = [0, Math.floor((series.length - 1) / 2), series.length - 1];
+        var seen = {};
+        idxs.forEach(function (i) {
+          if (seen[i]) return; seen[i] = 1;
+          var pt = geo.points[i];
+          var anchor = i === 0 ? 'start' : (i === series.length - 1 ? 'end' : 'middle');
+          xlabels += '<text class="roi-x-label" x="' + pt.x + '" y="' + (H - 6) + '" text-anchor="' + anchor + '">'
+            + esc(fmtDay(pt.date)) + '</text>';
+        });
+      }
+
+      var aria = 'Cumulative ' + m.label + ' over the last ' + series.length + ' days';
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(aria) + '">'
+        + '<defs><linearGradient id="roiFill" x1="0" y1="0" x2="0" y2="1">'
+        + '<stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.28"/>'
+        + '<stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0"/>'
+        + '</linearGradient></defs>'
+        + grid
+        + (geo.area ? '<path class="roi-area" d="' + geo.area + '" fill="url(#roiFill)"/>' : '')
+        + (geo.line ? '<path class="roi-line" d="' + geo.line + '"/>' : '')
+        + '<line class="roi-cursor" data-cursor x1="0" y1="14" x2="0" y2="' + (H - 22) + '" style="display:none"/>'
+        + '<circle class="roi-dot" data-dot r="3.5" cx="0" cy="0" style="display:none"/>'
+        + xlabels
+        + '</svg>';
+
+      var table = '<table class="roi-visually-hidden"><caption>' + esc(aria) + '</caption><tbody>'
+        + series.map(function (p) {
+          return '<tr><th scope="row">' + esc(fmtDay(p.date)) + '</th><td>' + esc(m.fmt(p[state.metric])) + '</td></tr>';
+        }).join('')
+        + '</tbody></table>';
+      var tip = '<figcaption class="team-chart-tip" data-tip aria-live="polite"></figcaption>';
+
+      wrap.innerHTML = svg + table + tip;
+      var last = series[series.length - 1];
+      if (last) setTip(fmtDay(last.date), m.fmt(last[state.metric]));
+      wireHover(wrap, geo, series, m);
+    }
+
+    function setTip(dateStr, valStr) {
+      var tip = $('[data-tip]');
+      if (tip) tip.innerHTML = '<strong>' + esc(valStr) + '</strong> · ' + esc(dateStr);
+    }
+
+    function wireHover(wrap, geo, series, m) {
+      var svg = wrap.querySelector('svg');
+      if (!svg || !series.length) return;
+      var cursor = wrap.querySelector('[data-cursor]');
+      var dot = wrap.querySelector('[data-dot]');
+      function move(ev) {
+        var rect = svg.getBoundingClientRect();
+        var clientX = ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX;
+        var ratio = rect.width ? (clientX - rect.left) / rect.width : 0;
+        var i = Math.max(0, Math.min(series.length - 1, Math.round(ratio * (series.length - 1))));
+        var pt = geo.points[i];
+        if (!pt) return;
+        cursor.style.display = ''; cursor.setAttribute('x1', pt.x); cursor.setAttribute('x2', pt.x);
+        dot.style.display = ''; dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
+        setTip(fmtDay(series[i].date), m.fmt(series[i][state.metric]));
+      }
+      function leave() {
+        cursor.style.display = 'none'; dot.style.display = 'none';
+        var last = series[series.length - 1];
+        if (last) setTip(fmtDay(last.date), m.fmt(last[state.metric]));
+      }
+      svg.addEventListener('mousemove', move);
+      svg.addEventListener('touchmove', move, { passive: true });
+      svg.addEventListener('mouseleave', leave);
+    }
+
+    function setOn(sel, active) {
+      document.querySelectorAll(sel).forEach(function (b) { b.classList.toggle('is-on', b === active); });
+    }
+
+    function wireControls() {
+      if (controlsWired) return; controlsWired = true;
+      document.querySelectorAll('[data-metric]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          state.metric = b.getAttribute('data-metric');
+          setOn('[data-metric]', b);
+          renderChart();
+        });
+      });
+      document.querySelectorAll('[data-range]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          state.range = parseInt(b.getAttribute('data-range'), 10) || 90;
+          setOn('[data-range]', b);
+          renderChart();
+        });
+      });
+      var exp = $('[data-roi-export]');
+      if (exp) exp.addEventListener('click', exportCsv);
+    }
+
+    function exportCsv() {
+      if (!state.summary) return;
+      var blob = new Blob([toCsv(state.summary)], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'leanctx-team-roi-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+
+    function start() { if (started) return; started = true; loadRoi(); }
+    if (window.__leanctxTeamLive) start();
+    window.addEventListener('leanctx:team-live', start);
   })();
 </script>
