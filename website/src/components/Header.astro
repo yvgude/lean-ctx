@@ -133,6 +133,11 @@ const useCasesColumns = tracks.map((tr) => {
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.211.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.249.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
         </a>
 
+        <a href={lp('/login/')} class="header-login" data-account-link aria-label="Sign in">
+          <svg class="header-login-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span data-account-label>Sign in</span>
+        </a>
+
         <a href={lp('/docs/getting-started')} class="header-cta">
           {t('nav.install')}
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -205,7 +210,8 @@ const useCasesColumns = tracks.map((tr) => {
       <div class="mobile-section">
         <span class="mobile-section-title">Plans &amp; account</span>
         <a href={lp('/pricing/')} class="mobile-nav-link">Pricing</a>
-        <a href={lp('/account/billing/')} class="mobile-nav-link">Account &amp; billing</a>
+        <a href={lp('/support/')} class="mobile-nav-link">Support the project</a>
+        <a href={lp('/login/')} class="mobile-nav-link" data-account-link><span data-account-label>Sign in</span></a>
       </div>
 
       <div class="mobile-section">
@@ -447,6 +453,30 @@ const useCasesColumns = tracks.map((tr) => {
   @media (min-width: 640px) {
     .header-cta { display: inline-flex; }
   }
+  .header-login {
+    display: none;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-bright);
+    text-decoration: none;
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    white-space: nowrap;
+    line-height: 1;
+  }
+  .header-login:hover {
+    border-color: var(--color-border-light);
+    background: var(--overlay-hover);
+    color: var(--color-accent);
+  }
+  .header-login-icon { width: 16px; height: 16px; flex-shrink: 0; }
+  @media (min-width: 768px) {
+    .header-login { display: inline-flex; }
+  }
   .header-mobile-btn {
     display: flex;
     align-items: center;
@@ -611,6 +641,19 @@ const useCasesColumns = tracks.map((tr) => {
     window.addEventListener('scroll', update, { passive: true });
     update();
   }
+
+  // Account-aware nav: swap "Sign in" → "Account" when a session token exists.
+  (function () {
+    let hasToken = false;
+    try { hasToken = !!localStorage.getItem('leanctx-api-token'); } catch (_) { hasToken = false; }
+    if (!hasToken) return;
+    document.querySelectorAll('[data-account-link]').forEach((a) => {
+      a.setAttribute('href', '/account/billing/');
+      a.setAttribute('aria-label', 'Your account');
+      const label = a.querySelector('[data-account-label]');
+      if (label) label.textContent = 'Account';
+    });
+  })();
 
   function positionPanel(wrapper: HTMLElement) {
     const panel = wrapper.querySelector<HTMLElement>('.mega-dd-panel');

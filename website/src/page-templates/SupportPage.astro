@@ -1,14 +1,96 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import PageHero from '../components/PageHero.astro';
 import { supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
 const lp = (path: string) => getLocalizedPath(path, locale);
 
+const heartPath =
+  'M12 21s-7.55-4.74-10.05-9.36C.4 9.07 1.62 5.4 5.07 4.55c2.04-.5 3.94.42 5.03 1.94l1.9 2.64 1.9-2.64c1.09-1.52 2.99-2.44 5.03-1.94 3.45.85 4.67 4.52 3.12 7.09C19.55 16.26 12 21 12 21z';
+
 const checkIcon =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+
+const arrowIcon =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+
+const trustPills = ['Apache-2.0', 'No VC funding', 'No telemetry', 'Built in Switzerland'];
+
+const fundsItems = [
+  {
+    title: 'Ship faster',
+    text: 'New read modes, more languages and MCP tools land sooner.',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  },
+  {
+    title: 'Stay secure',
+    text: 'Ongoing maintenance, dependency upkeep and security hardening.',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-4z"/><polyline points="9 12 11 14 15 10"/></svg>',
+  },
+  {
+    title: 'Stay independent',
+    text: 'No VC, no ads, no selling your data. The roadmap stays yours.',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  },
+];
+
+const freeForever = [
+  'The entire local engine — reads, search, AST parsing & shell compression',
+  'All MCP tools, every read mode and Context Personas',
+  'Runs fully offline — your code never leaves your machine',
+  'Apache-2.0 — fork it, audit it, self-host it, keep it',
+];
+
+const otherWays = [
+  {
+    title: 'Star on GitHub',
+    text: 'The fastest free way to help — it boosts visibility for everyone.',
+    cta: 'Give a star',
+    href: 'https://github.com/yvgude/lean-ctx',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  },
+  {
+    title: 'Sponsor on GitHub',
+    text: 'Prefer GitHub Sponsors? Back the project right where the code lives.',
+    cta: 'Open Sponsors',
+    href: 'https://github.com/sponsors/yvgude',
+    svg: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${heartPath}"/></svg>`,
+  },
+  {
+    title: 'Buy a coffee',
+    text: 'A simple one-off thank-you — no account, no subscription needed.',
+    cta: 'Buy a coffee',
+    href: 'https://buymeacoffee.com/yvgude',
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>',
+  },
+  {
+    title: 'Spread the word',
+    text: 'Tell a teammate or post about lean-ctx — reach beats budget.',
+    cta: 'Share on X',
+    href:
+      'https://twitter.com/intent/tweet?text=' +
+      encodeURIComponent('lean-ctx — an open-source Context OS that cuts LLM context cost dramatically. Free & Apache-2.0:') +
+      '&url=' +
+      encodeURIComponent('https://leanctx.com'),
+    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>',
+  },
+];
+
+const faq = [
+  {
+    q: 'Does supporting unlock any features?',
+    a: 'No — and that is the point. Every local feature is free forever under Apache-2.0. Supporting is purely voluntary: it funds development and keeps the project independent.',
+  },
+  {
+    q: 'Can I cancel anytime?',
+    a: 'Yes. Manage or cancel in one click from the Stripe billing portal. Your support stays active until the end of the current period — no questions asked.',
+  },
+  {
+    q: 'I already pay for a Team plan — should I also support?',
+    a: 'No need. The Team plan already funds the project. Supporter is for solo developers who rely on the free local tool every day and want to chip in.',
+  },
+];
 ---
 
 <BaseLayout
@@ -19,103 +101,299 @@ const checkIcon =
     { name: 'Support', url: lp('/support/') },
   ]}
 >
-  <PageHero
-    label="Supporter"
-    title="Keep lean-ctx"
-    highlight="free, open & independent."
-    description="Every local feature is free forever — and always will be. If lean-ctx saves you time every day, you can fund its development with a small recurring subscription. It unlocks nothing; it just keeps the project alive and independent."
-  />
+  {/* ── Hero ───────────────────────────────────────────────── */}
+  <section class="sup-hero section-hero">
+    <div class="content-grid-narrow sup-hero-inner">
+      <span class="sup-hero-badge">
+        <span class="sup-hero-badge-dot" aria-hidden="true"></span>
+        Open source · Apache-2.0
+      </span>
+      <h1 class="sup-hero-title font-display">
+        Keep lean-ctx <span class="sup-hero-grad">free, open &amp; independent.</span>
+      </h1>
+      <p class="sup-hero-sub">
+        Every local feature is free forever — and always will be. If lean-ctx saves you time
+        every day, you can fund its development with a small recurring subscription. It unlocks
+        nothing. It simply keeps the project alive and independent.
+      </p>
 
-  <section class="section-y sup-section">
+      <svg class="sup-ekg" viewBox="0 0 640 64" fill="none" aria-hidden="true" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="supEkgGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="var(--color-accent)" stop-opacity="0"></stop>
+            <stop offset="0.5" stop-color="var(--color-accent)"></stop>
+            <stop offset="1" stop-color="var(--color-accent-2)" stop-opacity="0"></stop>
+          </linearGradient>
+        </defs>
+        <path
+          class="sup-ekg-line"
+          stroke="url(#supEkgGrad)"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M0 32 H222 l12 -20 l14 40 l12 -48 l16 56 l12 -28 H430 l14 -14 l12 14 H640"
+        ></path>
+      </svg>
+
+      <ul class="sup-trust" aria-label="What lean-ctx promises">
+        {trustPills.map((p) => (<li>{p}</li>))}
+      </ul>
+    </div>
+  </section>
+
+  {/* ── Pledge card ────────────────────────────────────────── */}
+  <section class="section-y-sm sup-section">
     <div class="content-grid-narrow">
       <div class="sup-banner" data-banner role="status" hidden></div>
 
-      <div class="sup-card" data-cadence="monthly">
-        <div class="sup-head">
-          <div class="sup-head-main">
-            <span class="sup-medallion" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.55-4.74-10.05-9.36C.4 9.07 1.62 5.4 5.07 4.55c2.04-.5 3.94.42 5.03 1.94l1.9 2.64 1.9-2.64c1.09-1.52 2.99-2.44 5.03-1.94 3.45.85 4.67 4.52 3.12 7.09C19.55 16.26 12 21 12 21z"/></svg>
-            </span>
-            <div>
-              <span class="sup-eyebrow">{supporterOffer.name}</span>
-              <p class="sup-tagline">{supporterOffer.tagline}</p>
+      <div class="sup-card-wrap">
+        <div class="sup-card-aura" aria-hidden="true"></div>
+        <div class="sup-card" data-cadence="monthly">
+          <div class="sup-head">
+            <div class="sup-head-main">
+              <span class="sup-medallion" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d={heartPath}></path></svg>
+              </span>
+              <div>
+                <span class="sup-eyebrow">{supporterOffer.name}</span>
+                <p class="sup-tagline">{supporterOffer.tagline}</p>
+              </div>
+            </div>
+            <div class="sup-cadence" role="group" aria-label="Billing cadence">
+              <button type="button" class="sup-cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
+              <button type="button" class="sup-cadence-btn" data-cadence-btn="yearly" aria-pressed="false">
+                Yearly <span class="sup-save">save 17%</span>
+              </button>
             </div>
           </div>
-          <div class="sup-cadence" role="group" aria-label="Billing cadence">
-            <button type="button" class="sup-cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
-            <button type="button" class="sup-cadence-btn" data-cadence-btn="yearly" aria-pressed="false">
-              Yearly <span class="sup-save">save 17%</span>
-            </button>
+
+          <div class="sup-price">
+            <span class="sup-amount" data-price-monthly>{supporterOffer.priceMonthly}</span>
+            <span class="sup-amount" data-price-yearly>{supporterOffer.priceYearly}</span>
+            <span class="sup-unit">
+              <span data-unit-monthly>{supporterOffer.unit}</span>
+              <span data-unit-yearly>/year</span>
+            </span>
+          </div>
+          <p class="sup-note">{supporterOffer.priceNote}</p>
+
+          <button type="button" class="sup-cta btn-primary" data-cta>Become a supporter</button>
+          <p class="sup-loading" data-loading hidden>
+            <span class="sup-spinner" aria-hidden="true"></span> Checking your account…
+          </p>
+
+          <ul class="sup-perks">
+            {supporterOffer.perks.map((perk) => (
+              <li><span class="sup-check" set:html={checkIcon} />{perk}</li>
+            ))}
+          </ul>
+
+          <p class="sup-fineprint">
+            lean-ctx is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
+            supporting is voluntary and unlocks no functionality. Cancel anytime from the billing
+            portal. Need a shared team workspace instead? <a href={lp('/pricing/')}>See the Team plan →</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── Where your support goes ────────────────────────────── */}
+  <section class="section-y-sm">
+    <div class="content-grid">
+      <header class="sup-h2-head animate-entrance">
+        <span class="sup-kicker">Your impact</span>
+        <h2 class="sup-h2 font-display">Where your support goes</h2>
+        <p class="sup-h2-sub">Every subscription flows straight into the work — not marketing, not middlemen.</p>
+      </header>
+      <div class="sup-funds-grid">
+        {fundsItems.map((f, i) => (
+          <article class={`sup-fund animate-entrance stagger-${i + 1}`}>
+            <span class="sup-fund-ic" aria-hidden="true" set:html={f.svg} />
+            <h3 class="sup-fund-title">{f.title}</h3>
+            <p class="sup-fund-text">{f.text}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* ── What stays free (local-free promise) ───────────────── */}
+  <section class="section-y-sm">
+    <div class="content-grid-narrow">
+      <div class="sup-free animate-entrance">
+        <div class="sup-free-head">
+          <span class="sup-free-ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-4z"/></svg>
+          </span>
+          <div>
+            <h2 class="sup-free-title font-display">What stays free — forever</h2>
+            <p class="sup-free-sub">Supporting changes nothing about what runs on your machine. The paid plane lives entirely server-side.</p>
           </div>
         </div>
-
-        <div class="sup-price">
-          <span class="sup-amount" data-price-monthly>{supporterOffer.priceMonthly}</span>
-          <span class="sup-amount" data-price-yearly>{supporterOffer.priceYearly}</span>
-          <span class="sup-unit">
-            <span data-unit-monthly>{supporterOffer.unit}</span>
-            <span data-unit-yearly>/year</span>
-          </span>
-        </div>
-        <p class="sup-note">{supporterOffer.priceNote}</p>
-
-        <button type="button" class="sup-cta btn-primary" data-cta>Become a supporter</button>
-        <p class="sup-loading" data-loading hidden>
-          <span class="sup-spinner" aria-hidden="true"></span> Checking your account…
-        </p>
-
-        <ul class="sup-perks">
-          {supporterOffer.perks.map((perk) => (
-            <li><span class="sup-check" set:html={checkIcon} />{perk}</li>
+        <ul class="sup-free-list">
+          {freeForever.map((item) => (
+            <li><span class="sup-check" set:html={checkIcon} />{item}</li>
           ))}
         </ul>
-
-        <p class="sup-fineprint">
-          lean-ctx is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
-          supporting is voluntary and unlocks no functionality. Cancel anytime from the billing
-          portal. Need a shared team workspace instead? <a href={lp('/pricing/')}>See the Team plan →</a>
-        </p>
+        <a class="sup-free-link" href={lp('/context-os/')}>
+          See how the planes separate <span class="sup-free-arrow" set:html={arrowIcon} />
+        </a>
       </div>
+    </div>
+  </section>
 
-      <section class="sup-funds" aria-label="Where your support goes">
-        <h2 class="sup-funds-title font-display">Where your support goes</h2>
-        <div class="sup-funds-grid">
-          <article class="sup-fund">
-            <span class="sup-fund-ic" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </span>
-            <h3 class="sup-fund-title">Ship faster</h3>
-            <p class="sup-fund-text">New read modes, more languages and MCP tools land sooner.</p>
-          </article>
-          <article class="sup-fund">
-            <span class="sup-fund-ic" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-4z"/><polyline points="9 12 11 14 15 10"/></svg>
-            </span>
-            <h3 class="sup-fund-title">Stay secure</h3>
-            <p class="sup-fund-text">Ongoing maintenance, dependency upkeep and security hardening.</p>
-          </article>
-          <article class="sup-fund">
-            <span class="sup-fund-ic" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-            </span>
-            <h3 class="sup-fund-title">Stay independent</h3>
-            <p class="sup-fund-text">No VC, no ads, no selling your data. The roadmap stays yours.</p>
-          </article>
-        </div>
-      </section>
+  {/* ── Other ways to support ──────────────────────────────── */}
+  <section class="section-y-sm">
+    <div class="content-grid">
+      <header class="sup-h2-head animate-entrance">
+        <span class="sup-kicker">No budget? No problem</span>
+        <h2 class="sup-h2 font-display">Other ways to support</h2>
+        <p class="sup-h2-sub">A subscription is the deepest help — but it is far from the only one.</p>
+      </header>
+      <div class="sup-ways-grid">
+        {otherWays.map((w, i) => (
+          <a class={`sup-way animate-entrance stagger-${(i % 4) + 1}`} href={w.href} target="_blank" rel="noopener">
+            <span class="sup-way-ic" aria-hidden="true" set:html={w.svg} />
+            <h3 class="sup-way-title">{w.title}</h3>
+            <p class="sup-way-text">{w.text}</p>
+            <span class="sup-way-cta">{w.cta} <span class="sup-way-arrow" set:html={arrowIcon} /></span>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
 
-      <p class="sup-aside">
-        Prefer a one-off? You can also
-        <a href="https://github.com/sponsors/yvgude" target="_blank" rel="noopener">sponsor on GitHub</a>
-        or <a href="https://buymeacoffee.com/yvgude" target="_blank" rel="noopener">buy us a coffee</a>.
+  {/* ── FAQ ────────────────────────────────────────────────── */}
+  <section class="section-y-sm sup-faq-section">
+    <div class="content-grid-narrow">
+      <h2 class="sup-h2 font-display sup-faq-title animate-entrance">Questions, answered</h2>
+      <div class="sup-faq animate-entrance">
+        {faq.map((item) => (
+          <details class="sup-faq-item">
+            <summary>
+              <span>{item.q}</span>
+              <svg class="sup-faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+      <p class="sup-closing animate-entrance">
+        Built and maintained by one developer, for developers.
+        <strong> Thank you for keeping it independent.</strong>
       </p>
     </div>
   </section>
 </BaseLayout>
 
 <style>
-  .sup-section { padding-top: clamp(1rem, 0.5rem + 1vw, 2rem); }
+  /* ── Hero ─────────────────────────────────────────────── */
+  .sup-hero {
+    padding-top: clamp(2rem, 1rem + 4vw, 4.5rem);
+    padding-bottom: clamp(0.5rem, 0.25rem + 1.5vw, 1.5rem);
+    text-align: center;
+  }
+  .sup-hero-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .sup-hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+    color: var(--color-accent);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    animation: sup-rise 0.7s var(--ease-out) both;
+  }
+  .sup-hero-badge-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
+    animation: sup-ping 2.4s ease-out infinite;
+  }
+  .sup-hero-title {
+    margin-top: clamp(1rem, 0.75rem + 1vw, 1.5rem);
+    font-size: clamp(2.2rem, 1.5rem + 3.4vw, 4rem);
+    font-weight: var(--weight-bold);
+    line-height: 1.05;
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-bright);
+    max-width: 18ch;
+    animation: sup-rise 0.7s var(--ease-out) 0.06s both;
+  }
+  .sup-hero-grad {
+    background: linear-gradient(120deg, var(--color-accent), var(--color-accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sup-hero-sub {
+    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
+    max-width: 52ch;
+    font-size: var(--text-body-lg, 1.075rem);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+    animation: sup-rise 0.7s var(--ease-out) 0.12s both;
+  }
+  .sup-ekg {
+    width: min(100%, 30rem);
+    height: 54px;
+    margin-top: clamp(1.25rem, 0.75rem + 1.5vw, 2rem);
+    overflow: visible;
+    animation: sup-rise 0.7s var(--ease-out) 0.18s both;
+  }
+  .sup-ekg-line {
+    stroke-dasharray: 820;
+    stroke-dashoffset: 820;
+    animation: sup-ekg-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  .sup-trust {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: clamp(1.25rem, 0.75rem + 1.5vw, 2rem);
+    list-style: none;
+    animation: sup-rise 0.7s var(--ease-out) 0.24s both;
+  }
+  .sup-trust li {
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    font-size: var(--text-caption);
+    color: var(--color-text);
+    white-space: nowrap;
+  }
 
+  @keyframes sup-rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes sup-ping {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 7px transparent; }
+  }
+  @keyframes sup-ekg-draw {
+    0% { stroke-dashoffset: 820; opacity: 0.12; }
+    25% { opacity: 0.85; }
+    55% { stroke-dashoffset: 0; opacity: 0.85; }
+    100% { stroke-dashoffset: -820; opacity: 0.12; }
+  }
+
+  /* ── Banner ───────────────────────────────────────────── */
+  .sup-section { padding-top: clamp(1rem, 0.5rem + 1vw, 1.75rem); }
   .sup-banner {
     margin-bottom: 1.5rem;
     padding: 0.85rem 1.1rem;
@@ -140,12 +418,26 @@ const checkIcon =
     border-color: var(--color-border);
   }
 
+  /* ── Pledge card ──────────────────────────────────────── */
+  .sup-card-wrap { position: relative; }
+  .sup-card-aura {
+    position: absolute;
+    inset: -28% -8% -16%;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(58% 58% at 50% 0%, color-mix(in srgb, var(--color-accent) 24%, transparent), transparent 72%);
+    filter: blur(44px);
+    opacity: 0.85;
+  }
   .sup-card {
+    position: relative;
+    z-index: 1;
     padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem);
     border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
     border-radius: var(--card-radius-lg);
     background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)), var(--color-surface));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent),
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent),
       0 24px 60px -34px color-mix(in srgb, var(--color-accent) 40%, transparent);
   }
   .sup-head {
@@ -177,9 +469,6 @@ const checkIcon =
     0%, 60%, 100% { transform: scale(1); }
     20% { transform: scale(1.18); }
     40% { transform: scale(1.06); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .sup-medallion svg { animation: none; }
   }
   .sup-eyebrow {
     font-size: var(--text-caption);
@@ -311,19 +600,39 @@ const checkIcon =
     color: var(--color-muted);
   }
   .sup-fineprint strong { color: var(--color-text); }
-  .sup-fineprint a, .sup-aside a { color: var(--color-accent); text-decoration: none; }
-  .sup-fineprint a:hover, .sup-aside a:hover { text-decoration: underline; }
-  .sup-funds {
-    margin-top: clamp(2.5rem, 2rem + 2vw, 4rem);
-  }
-  .sup-funds-title {
+  .sup-fineprint a { color: var(--color-accent); text-decoration: none; }
+  .sup-fineprint a:hover { text-decoration: underline; }
+
+  /* ── Section headings (shared) ────────────────────────── */
+  .sup-h2-head {
     text-align: center;
-    font-size: var(--text-h4, 1.15rem);
-    font-weight: var(--weight-semibold);
-    color: var(--color-text-bright);
-    letter-spacing: var(--tracking-snug);
-    margin-bottom: clamp(1.25rem, 1rem + 1vw, 2rem);
+    max-width: 46rem;
+    margin: 0 auto clamp(1.5rem, 1rem + 1.5vw, 2.5rem);
   }
+  .sup-kicker {
+    display: inline-block;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-accent);
+    margin-bottom: 0.6rem;
+  }
+  .sup-h2 {
+    font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2.1rem);
+    font-weight: var(--weight-bold);
+    letter-spacing: var(--tracking-snug);
+    color: var(--color-text-bright);
+    line-height: 1.15;
+  }
+  .sup-h2-sub {
+    margin-top: 0.6rem;
+    font-size: var(--text-body);
+    line-height: var(--leading-snug);
+    color: var(--color-muted);
+  }
+
+  /* ── Where support goes ───────────────────────────────── */
   .sup-funds-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -353,7 +662,7 @@ const checkIcon =
     color: var(--color-accent);
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
-  .sup-fund-ic svg { width: 1.2rem; height: 1.2rem; }
+  .sup-fund-ic :global(svg) { width: 1.2rem; height: 1.2rem; }
   .sup-fund-title {
     margin-top: 0.8rem;
     font-size: var(--text-body);
@@ -366,15 +675,199 @@ const checkIcon =
     line-height: var(--leading-snug);
     color: var(--color-muted);
   }
-  @media (prefers-reduced-motion: reduce) {
-    .sup-fund:hover { transform: none; }
-  }
 
-  .sup-aside {
-    margin-top: 1.5rem;
+  /* ── What stays free ──────────────────────────────────── */
+  .sup-free {
+    padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.25rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background:
+      radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 55%),
+      var(--color-surface);
+  }
+  .sup-free-head { display: flex; align-items: flex-start; gap: 1rem; }
+  .sup-free-ic {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: var(--card-radius);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .sup-free-ic svg { width: 1.35rem; height: 1.35rem; }
+  .sup-free-title {
+    font-size: clamp(1.25rem, 1.05rem + 0.8vw, 1.6rem);
+    font-weight: var(--weight-bold);
+    color: var(--color-text-bright);
+    letter-spacing: var(--tracking-snug);
+  }
+  .sup-free-sub {
+    margin-top: 0.4rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    color: var(--color-muted);
+  }
+  .sup-free-list {
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+    list-style: none;
+  }
+  @media (min-width: 640px) {
+    .sup-free-list { grid-template-columns: 1fr 1fr; column-gap: 1.5rem; }
+  }
+  .sup-free-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+  }
+  .sup-free-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    color: var(--color-accent);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+  }
+  .sup-free-arrow { display: inline-flex; transition: transform var(--dur) var(--ease-out); }
+  .sup-free-arrow :global(svg) { width: 1rem; height: 1rem; }
+  .sup-free-link:hover .sup-free-arrow { transform: translateX(3px); }
+
+  /* ── Other ways ───────────────────────────────────────── */
+  .sup-ways-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+  @media (min-width: 560px) {
+    .sup-ways-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 940px) {
+    .sup-ways-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+  .sup-way {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.1rem, 0.9rem + 0.6vw, 1.4rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-surface);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  }
+  .sup-way:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    transform: translateY(-3px);
+    box-shadow: 0 18px 40px -28px color-mix(in srgb, var(--color-accent) 50%, transparent);
+  }
+  .sup-way-ic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: var(--card-radius);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .sup-way-ic :global(svg) { width: 1.2rem; height: 1.2rem; }
+  .sup-way-title {
+    margin-top: 0.8rem;
+    font-size: var(--text-body);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+  }
+  .sup-way-text {
+    margin-top: 0.3rem;
+    font-size: var(--text-caption);
+    line-height: var(--leading-snug);
+    color: var(--color-muted);
+    flex: 1;
+  }
+  .sup-way-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.9rem;
+    color: var(--color-accent);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+  }
+  .sup-way-arrow { display: inline-flex; transition: transform var(--dur) var(--ease-out); }
+  .sup-way-arrow :global(svg) { width: 0.95rem; height: 0.95rem; }
+  .sup-way:hover .sup-way-arrow { transform: translateX(3px); }
+
+  /* ── FAQ ──────────────────────────────────────────────── */
+  .sup-faq-title { text-align: center; margin-bottom: clamp(1.25rem, 1rem + 1vw, 2rem); }
+  .sup-faq {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-width: 44rem;
+    margin: 0 auto;
+  }
+  .sup-faq-item {
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+  .sup-faq-item summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.15rem;
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+  }
+  .sup-faq-item summary::-webkit-details-marker { display: none; }
+  .sup-faq-chevron {
+    flex-shrink: 0;
+    width: 1.1rem;
+    height: 1.1rem;
+    color: var(--color-muted);
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .sup-faq-item[open] .sup-faq-chevron { transform: rotate(180deg); }
+  .sup-faq-item p {
+    padding: 0 1.15rem 1.1rem;
+    margin: 0;
+    font-size: var(--text-small);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+  }
+  .sup-closing {
+    margin-top: clamp(1.75rem, 1.25rem + 1.5vw, 2.75rem);
     text-align: center;
     font-size: var(--text-small);
     color: var(--color-muted);
+  }
+  .sup-closing strong { color: var(--color-text-bright); }
+
+  /* ── Motion preferences ───────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .sup-hero-badge,
+    .sup-hero-title,
+    .sup-hero-sub,
+    .sup-ekg,
+    .sup-trust { animation: none; }
+    .sup-hero-badge-dot { animation: none; }
+    .sup-ekg-line { animation: none; stroke-dashoffset: 0; opacity: 0.7; }
+    .sup-medallion svg { animation: none; }
+    .sup-fund:hover,
+    .sup-way:hover { transform: none; }
   }
 </style>
 
