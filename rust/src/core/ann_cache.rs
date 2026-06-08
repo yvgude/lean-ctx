@@ -15,7 +15,7 @@
 //! On any lock failure it falls back to brute force, so correctness never
 //! depends on the cache being available.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use super::hnsw::{brute_force_topk, AnnIndex};
 
@@ -38,15 +38,19 @@ fn cache() -> &'static Mutex<Option<Cached>> {
 ///
 /// Small corpora use exact brute force. Large corpora build (once) and reuse a
 /// cached HNSW index. Falls back to brute force on lock failure.
+///
+/// `embeddings` is taken as `Arc<[Vec<f32>]>` (the same allocation the caller
+/// already holds for per-query scoring) so building the cached HNSW index is an
+/// `Arc::clone` — a refcount bump, not a second full-precision corpus copy.
 #[must_use]
-pub fn topk(embeddings: &[Vec<f32>], query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
+pub fn topk(embeddings: &Arc<[Vec<f32>]>, query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
     topk_gated(embeddings, query, top_k, ANN_MIN_VECTORS)
 }
 
 /// Core implementation with an injectable gate so tests can exercise the HNSW
 /// path without materializing a 50k-vector corpus.
 fn topk_gated(
-    embeddings: &[Vec<f32>],
+    embeddings: &Arc<[Vec<f32>]>,
     query: &[f32],
     top_k: usize,
     min_vectors: usize,
@@ -67,7 +71,8 @@ fn topk_gated(
     if needs_build {
         *guard = Some(Cached {
             fingerprint: fp,
-            index: AnnIndex::build(embeddings.to_vec()),
+            // Arc::clone: shares the caller's corpus allocation, zero bytes copied.
+            index: AnnIndex::build(Arc::clone(embeddings)),
         });
     }
 
@@ -180,7 +185,7 @@ mod tests {
 
     #[test]
     fn small_corpus_matches_brute_force_exactly() {
-        let vectors: Vec<Vec<f32>> = (0..200).map(|i| random_vec(32, i)).collect();
+        let vectors: Arc<[Vec<f32>]> = (0..200).map(|i| random_vec(32, i)).collect();
         let query = random_vec(32, 9_999);
 
         // Production gate (50k) → small corpus is exact brute force.
@@ -197,6 +202,7 @@ mod tests {
     fn hnsw_path_recall_matches_brute_force_on_clusters() {
         let _serial = serial();
         let (vectors, centers) = clustered(24, 60, 32); // 1440 vectors
+        let vectors: Arc<[Vec<f32>]> = Arc::from(vectors);
         let query = centers[5].clone();
         let k = 20;
 
@@ -216,6 +222,7 @@ mod tests {
     fn hnsw_path_results_are_descending() {
         let _serial = serial();
         let (vectors, centers) = clustered(20, 60, 24); // 1200 vectors
+        let vectors: Arc<[Vec<f32>]> = Arc::from(vectors);
         let results = topk_gated(&vectors, &centers[3], 10, TEST_GATE);
         for w in results.windows(2) {
             assert!(
@@ -234,6 +241,8 @@ mod tests {
         // directly — deterministic, unlike HNSW's approximate top-1 recall.
         let (a, ca) = clustered(20, 55, 32); // 1100 vectors
         let (b, cb) = clustered(18, 60, 32); // 1080 vectors
+        let a: Arc<[Vec<f32>]> = Arc::from(a);
+        let b: Arc<[Vec<f32>]> = Arc::from(b);
 
         let _ = topk_gated(&a, &ca[7], 5, TEST_GATE);
         assert_eq!(

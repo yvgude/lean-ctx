@@ -153,6 +153,43 @@ pub fn memory_usage(cache: &SharedBm25Cache) -> usize {
     guard.as_ref().map_or(0, |e| e.index.memory_usage_bytes())
 }
 
+/// Trims the RESIDENT cached index for `root` so each chunk keeps only its first
+/// `keep_lines` lines of `content`, reclaiming the RAM held by full source
+/// bodies once the embedding pass has consumed them.
+///
+/// Call this ONLY after embeddings for the current fingerprint are built and
+/// persisted (see `ctx_semantic_search::ensure_embeddings`). The on-disk index
+/// is untouched, so a reload restores full bodies; the resident `content_truncated`
+/// flag guards a later embedding pass against re-embedding the trimmed bodies.
+///
+/// Truncation happens in place via `Arc::get_mut`, so it is a no-op (and costs
+/// nothing) whenever another owner still holds the Arc — e.g. the search handler
+/// has not yet dropped its clone, or a background refresh is in flight. The next
+/// search call retries against the then-sole-owner cache entry. Returns the bytes
+/// reclaimed (0 if skipped).
+pub fn shrink_resident_to_snippet(cache: &SharedBm25Cache, root: &Path, keep_lines: usize) -> usize {
+    let mut guard = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(entry) = guard.as_mut() else {
+        return 0;
+    };
+    if entry.root != root || entry.index.content_truncated {
+        return 0;
+    }
+    // Only mutate when the cache is the sole owner — cloning a multi-MB index
+    // just to trim it would defeat the purpose.
+    let Some(index) = Arc::get_mut(&mut entry.index) else {
+        tracing::debug!(
+            "[bm25_cache] resident index still shared; skipping content shrink for now"
+        );
+        return 0;
+    };
+    let before = index.memory_usage_bytes();
+    index.shrink_resident_content_to_snippet(keep_lines);
+    before.saturating_sub(index.memory_usage_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

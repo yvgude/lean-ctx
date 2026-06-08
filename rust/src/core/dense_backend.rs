@@ -1,4 +1,6 @@
 use std::path::Path;
+#[cfg(feature = "embeddings")]
+use std::sync::Arc;
 
 use crate::core::bm25_index::BM25Index;
 #[cfg(feature = "qdrant")]
@@ -102,7 +104,7 @@ pub fn hybrid_results(
     root: &Path,
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &[Vec<f32>],
+    aligned_embeddings: &Arc<[Vec<f32>]>,
     changed_files: &[String],
     query: &str,
     top_k: usize,

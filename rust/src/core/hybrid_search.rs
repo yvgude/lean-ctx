@@ -14,6 +14,9 @@ use std::collections::HashMap;
 use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
 
 #[cfg(feature = "embeddings")]
+use std::sync::Arc;
+
+#[cfg(feature = "embeddings")]
 use super::embeddings::EmbeddingEngine;
 
 const RRF_K: f64 = 60.0;
@@ -142,7 +145,7 @@ pub fn hybrid_search(
     query: &str,
     index: &BM25Index,
     engine: Option<&EmbeddingEngine>,
-    chunk_embeddings: Option<&[Vec<f32>]>,
+    chunk_embeddings: Option<&Arc<[Vec<f32>]>>,
     top_k: usize,
     config: &HybridConfig,
     graph_file_ranks: Option<&HashMap<String, usize>>,
@@ -214,7 +217,7 @@ fn dense_search(
     query: &str,
     engine: &EmbeddingEngine,
     chunks: &[super::bm25_index::CodeChunk],
-    embeddings: &[Vec<f32>],
+    embeddings: &Arc<[Vec<f32>]>,
     top_k: usize,
 ) -> Vec<DenseSearchResult> {
     let Ok(query_embedding) = engine.embed_query(query) else {

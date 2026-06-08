@@ -241,14 +241,7 @@ mod tests {
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
-        let mut index = BM25Index {
-            chunks: Vec::new(),
-            inverted: std::collections::HashMap::new(),
-            avg_doc_len: 0.0,
-            doc_count: 0,
-            doc_freqs: std::collections::HashMap::new(),
-            files: std::collections::HashMap::new(),
-        };
+        let mut index = BM25Index::new();
 
         let result = apply_artifacts(&artifacts, Some(&mut index), None, None);
         assert_eq!(result.chunks_indexed, 2);
@@ -287,14 +280,7 @@ mod tests {
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
-        let mut index = BM25Index {
-            chunks: Vec::new(),
-            inverted: std::collections::HashMap::new(),
-            avg_doc_len: 0.0,
-            doc_count: 0,
-            doc_freqs: std::collections::HashMap::new(),
-            files: std::collections::HashMap::new(),
-        };
+        let mut index = BM25Index::new();
         let mut edges: Vec<IndexEdge> = Vec::new();
         let mut cache = SessionCache::new();
 

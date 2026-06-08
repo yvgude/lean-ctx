@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
@@ -207,7 +208,12 @@ impl EmbeddingIndex {
 
     /// Get all embeddings in chunk order (aligned with BM25Index.chunks).
     /// Returns None if index doesn't cover all chunks.
-    pub fn get_aligned_embeddings(&self, chunks: &[CodeChunk]) -> Option<Vec<Vec<f32>>> {
+    ///
+    /// Returns `Arc<[Vec<f32>]>` so this single corpus allocation can be shared
+    /// (via `Arc::clone`) with the process-wide cached HNSW [`AnnIndex`] instead
+    /// of being copied a second time. `Arc::from(Vec<_>)` moves the per-vector
+    /// handles into the shared buffer once; the f32 heap data is never copied.
+    pub fn get_aligned_embeddings(&self, chunks: &[CodeChunk]) -> Option<Arc<[Vec<f32>]>> {
         let mut map: HashMap<(&str, usize, usize), &EmbeddingEntry> =
             HashMap::with_capacity(self.entries.len());
         for e in &self.entries {
@@ -219,7 +225,7 @@ impl EmbeddingIndex {
             let entry = map.get(&(chunk.file_path.as_str(), chunk.start_line, chunk.end_line))?;
             result.push(entry.embedding_f32());
         }
-        Some(result)
+        Some(Arc::from(result))
     }
 
     pub fn coverage(&self, total_chunks: usize) -> f64 {

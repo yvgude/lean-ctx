@@ -367,6 +367,7 @@ fn end_to_end_saliency_pipeline() {
         doc_count: 0,
         doc_freqs: std::collections::HashMap::new(),
         files: std::collections::HashMap::new(),
+        content_truncated: false,
     };
     let mut edges: Vec<IndexEdge> = Vec::new();
     let mut cache = SessionCache::new();

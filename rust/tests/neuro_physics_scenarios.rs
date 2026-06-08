@@ -201,7 +201,7 @@ mod hnsw_performance {
     fn scenario_ann_index_small_uses_brute_force() {
         let dim = 16;
         let vectors: Vec<Vec<f32>> = (0..100).map(|i| deterministic_vec(dim, i)).collect();
-        let index = AnnIndex::build(vectors);
+        let index = AnnIndex::build(std::sync::Arc::from(vectors));
 
         let results = index.search(&deterministic_vec(dim, 5000), 5);
         assert_eq!(results.len(), 5);

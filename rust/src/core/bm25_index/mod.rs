@@ -127,6 +127,13 @@ pub struct BM25Index {
     pub doc_freqs: HashMap<String, usize>,
     #[serde(default)]
     pub files: HashMap<String, IndexedFileState>,
+    /// True once `shrink_resident_content_to_snippet` has trimmed each chunk's
+    /// `content` down to the snippet lines. Resident-only RAM-saving state: never
+    /// persisted (`skip`) so the on-disk index keeps full content, and a reload
+    /// always starts as `false`. Guards the embedding pass against re-embedding
+    /// truncated bodies (see `ensure_embeddings`).
+    #[serde(default, skip)]
+    pub content_truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +166,7 @@ impl BM25Index {
             doc_count: 0,
             doc_freqs: HashMap::new(),
             files: HashMap::new(),
+            content_truncated: false,
         }
     }
 
@@ -197,6 +205,45 @@ impl BM25Index {
         tracing::info!(
             "[bm25] unloaded index, freed ~{:.1}MB",
             usage as f64 / 1_048_576.0
+        );
+    }
+
+    /// Shrinks each resident chunk's `content` to its first `keep_lines` lines,
+    /// reclaiming the RAM held by the full source bodies once the embedding pass
+    /// has already consumed them. The search path only ever reads
+    /// `content.lines().take(5)` for snippets, so the trimmed copy is functionally
+    /// complete for BM25/dense/hybrid result rendering.
+    ///
+    /// RESIDENT-ONLY: this mutates the in-memory copy. The persisted `.bin.zst`
+    /// keeps full content (truncation never runs before `save`), so a reload
+    /// restores complete bodies. Sets `content_truncated` so a later
+    /// `ensure_embeddings` against this same resident index skips re-embedding
+    /// (which would otherwise feed truncated bodies to the embedder).
+    ///
+    /// Idempotent and only ever shrinks: chunks shorter than `keep_lines` are
+    /// left untouched.
+    pub fn shrink_resident_content_to_snippet(&mut self, keep_lines: usize) {
+        let before = self.memory_usage_bytes();
+        for chunk in &mut self.chunks {
+            // Cheap line-count gate: only allocate a new string when the body is
+            // actually longer than the snippet window.
+            if chunk.content.lines().nth(keep_lines).is_some() {
+                let trimmed: String = chunk
+                    .content
+                    .lines()
+                    .take(keep_lines)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                chunk.content = trimmed;
+                // Reclaim the spare capacity left by the larger original body.
+                chunk.content.shrink_to_fit();
+            }
+        }
+        self.content_truncated = true;
+        let after = self.memory_usage_bytes();
+        tracing::debug!(
+            "[bm25] shrank resident content to {keep_lines} lines/chunk, freed ~{:.1}MB",
+            before.saturating_sub(after) as f64 / 1_048_576.0
         );
     }
 

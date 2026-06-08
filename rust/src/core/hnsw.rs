@@ -9,6 +9,7 @@
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::sync::Arc;
 
 const BRUTE_FORCE_THRESHOLD: usize = 1000;
 const M: usize = 16; // max connections per node per layer
@@ -68,15 +69,20 @@ struct Node {
 /// Approximate nearest neighbor index using HNSW for large datasets,
 /// with brute-force fallback for small ones.
 pub struct AnnIndex {
-    vectors: Vec<Vec<f32>>,
+    vectors: Arc<[Vec<f32>]>,
     nodes: Vec<Node>,
     entry_point: usize,
     max_level: usize,
 }
 
 impl AnnIndex {
-    /// Build the index from a set of vectors.
-    pub fn build(vectors: Vec<Vec<f32>>) -> Self {
+    /// Build the index from a shared set of vectors.
+    ///
+    /// The corpus is taken as `Arc<[Vec<f32>]>` so the cached index shares the
+    /// *same* full-precision allocation as the per-query aligned corpus: build
+    /// performs an `Arc::clone` (a refcount bump, zero element bytes copied)
+    /// rather than duplicating the whole `Vec<Vec<f32>>`.
+    pub fn build(vectors: Arc<[Vec<f32>]>) -> Self {
         let n = vectors.len();
         if n == 0 {
             return Self {
@@ -96,25 +102,26 @@ impl AnnIndex {
             };
         }
 
+        // HNSW graph path: the vectors slice is shared up front (Arc::clone, no
+        // element copy) and the insert loop reads from it by index. `insert`
+        // only mutates `nodes`, deriving each new id from `nodes.len()`.
         let mut index = Self {
-            vectors: Vec::with_capacity(n),
+            vectors,
             nodes: Vec::with_capacity(n),
             entry_point: 0,
             max_level: 0,
         };
 
-        for vec in vectors {
-            index.insert(vec);
+        for i in 0..n {
+            index.insert(i);
         }
 
         index
     }
 
-    fn insert(&mut self, vec: Vec<f32>) {
-        let new_id = self.vectors.len();
+    fn insert(&mut self, new_id: usize) {
         let level = Self::level_for(new_id);
 
-        self.vectors.push(vec);
         self.nodes.push(Node {
             connections: vec![Vec::new(); level + 1],
         });
@@ -389,14 +396,14 @@ mod tests {
 
     #[test]
     fn empty_index_returns_empty() {
-        let index = AnnIndex::build(Vec::new());
+        let index = AnnIndex::build(Arc::from(Vec::new()));
         assert!(index.search(&[1.0, 0.0], 5).is_empty());
     }
 
     #[test]
     fn small_index_uses_brute_force() {
         let vectors: Vec<Vec<f32>> = (0..50).map(|i| random_vec(4, i)).collect();
-        let index = AnnIndex::build(vectors);
+        let index = AnnIndex::build(Arc::from(vectors));
         assert!(index.nodes.is_empty()); // no HNSW graph built
         let results = index.search(&random_vec(4, 999), 3);
         assert_eq!(results.len(), 3);

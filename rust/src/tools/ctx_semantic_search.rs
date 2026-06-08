@@ -85,8 +85,47 @@ pub fn handle(
             };
             format!("{header}{}", format_search_results(&results, compact))
         }
-        "dense" => dense_search_mode(query, root, &index, top_k, compact, &filter),
-        _ => hybrid_search_mode(query, root, &index, top_k, compact, &filter),
+        "dense" => {
+            let out = dense_search_mode(query, root, &index, top_k, compact, &filter);
+            shrink_resident_after_embedding(root, index);
+            out
+        }
+        _ => {
+            let out = hybrid_search_mode(query, root, &index, top_k, compact, &filter);
+            shrink_resident_after_embedding(root, index);
+            out
+        }
+    }
+}
+
+/// Reclaim the RAM held by full chunk bodies in the resident BM25 cache once the
+/// dense/hybrid embedding pass has consumed and persisted them. Drops this
+/// handler's `Arc` clone first so the cache becomes the sole owner and the trim
+/// is zero-copy (see `bm25_cache::shrink_resident_to_snippet`).
+///
+/// `keep_lines = 5` matches the snippet window used everywhere results are
+/// rendered (`bm25_index::search`, `dense_backend`, `hybrid_search`). Only fires
+/// when embeddings are actually built (feature-gated); a BM25-only fallback build
+/// must keep full bodies for a later real embedding pass.
+fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>) {
+    #[cfg(feature = "embeddings")]
+    {
+        // Release our clone so the cache is the sole Arc owner; otherwise the
+        // in-place trim is skipped and retried on the next search.
+        drop(index);
+        if let Some(cache) = get_thread_cache() {
+            let freed = crate::core::bm25_cache::shrink_resident_to_snippet(&cache, root, 5);
+            if freed > 0 {
+                tracing::info!(
+                    "[bm25_cache] reclaimed ~{:.1}MB of resident chunk bodies post-embedding",
+                    freed as f64 / 1_048_576.0
+                );
+            }
+        }
+    }
+    #[cfg(not(feature = "embeddings"))]
+    {
+        let _ = (root, index);
     }
 }
 
@@ -1159,13 +1198,40 @@ fn load_engine_and_index(
     Ok((engine, idx))
 }
 
+/// Aligned embedding corpus shared with the cached HNSW index, plus coverage
+/// and the list of files re-embedded this call. `Arc<[Vec<f32>]>` lets the
+/// corpus back both per-query scoring and the cached [`AnnIndex`] without a copy.
+#[cfg(feature = "embeddings")]
+type AlignedEmbeddings = (std::sync::Arc<[Vec<f32>]>, f64, Vec<String>);
+
 #[cfg(feature = "embeddings")]
 fn ensure_embeddings(
     root: &Path,
     index: &BM25Index,
     engine: &EmbeddingEngine,
     embed_idx: &mut EmbeddingIndex,
-) -> Result<(Vec<Vec<f32>>, f64, Vec<String>), String> {
+) -> Result<AlignedEmbeddings, String> {
+    // A resident index whose bodies were shrunk to snippets (post-embedding RAM
+    // reclaim) must NEVER drive re-embedding: `files_needing_update` hashes
+    // `c.content`, so truncated bodies would falsely flag every file as changed
+    // and re-embed 5-line snippets over the full-body vectors persisted earlier
+    // this session. Embeddings for exactly these chunks were already built and
+    // saved before truncation, and alignment is keyed by (path, start, end) —
+    // not content — so we just re-align here. If a file genuinely changed, the
+    // BM25 cache fingerprint goes stale and a fresh full-content index (reloaded
+    // from disk) replaces this one, restoring the normal re-embed path.
+    if index.content_truncated {
+        let aligned = embed_idx
+            .get_aligned_embeddings(&index.chunks)
+            .ok_or_else(|| {
+                "embedding alignment failed on truncated resident index; \
+                 refusing to re-embed snippet-only bodies"
+                    .to_string()
+            })?;
+        let coverage = embed_idx.coverage(index.chunks.len());
+        return Ok((aligned, coverage, Vec::new()));
+    }
+
     let mut changed_files = embed_idx.files_needing_update(&index.chunks);
     changed_files.sort();
     changed_files.dedup();
@@ -1349,7 +1415,7 @@ pub fn ensure_embeddings_for_eval(
     index: &BM25Index,
     engine: &EmbeddingEngine,
     embed_idx: &mut EmbeddingIndex,
-) -> Result<(Vec<Vec<f32>>, f64, Vec<String>), String> {
+) -> Result<AlignedEmbeddings, String> {
     ensure_embeddings(root, index, engine, embed_idx)
 }
 
