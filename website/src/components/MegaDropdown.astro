@@ -10,6 +10,9 @@ interface DropdownItem {
 interface DropdownColumn {
   title: string;
   items: DropdownItem[];
+  /** Optional footer link ("View all N →") to a fuller listing for this column. */
+  moreHref?: string;
+  moreLabel?: string;
 }
 
 interface Props {
@@ -55,6 +58,12 @@ const { id, label, columns } = Astro.props;
               </li>
             ))}
           </ul>
+          {col.moreHref && (
+            <a href={col.moreHref} class="mega-dd-more" role="menuitem">
+              {col.moreLabel}
+              <span class="mega-dd-more-arrow" aria-hidden="true">→</span>
+            </a>
+          )}
         </div>
       ))}
     </div>
@@ -204,5 +213,29 @@ const { id, label, columns } = Astro.props;
     color: var(--color-accent);
     margin-inline-start: 6px;
     vertical-align: middle;
+  }
+
+  .mega-dd-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    margin-inline-start: 12px;
+    padding: 6px 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-accent);
+    text-decoration: none;
+    transition: gap 0.15s ease, opacity 0.15s ease;
+  }
+  .mega-dd-more:hover {
+    gap: 9px;
+    opacity: 0.82;
+  }
+  .mega-dd-more-arrow {
+    transition: transform 0.15s ease;
+  }
+  .mega-dd-more:hover .mega-dd-more-arrow {
+    transform: translateX(2px);
   }
 </style>

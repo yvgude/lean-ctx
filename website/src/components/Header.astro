@@ -59,16 +59,37 @@ const productColumns = [
   },
 ];
 
-// Use Cases dropdown — the 4 tracks, each showing its journeys.
-const useCasesColumns = tracks.map((tr) => ({
-  title: tr.title,
-  items: getJourneysForTrack(tr.id).map((j) => ({
-    label: j.title,
-    href: lp(`/docs/journeys/${j.slug}/`),
-    description: j.summary,
-    icon: svgPath(tr.iconPath),
-  })),
-}));
+// Use Cases dropdown — curated so the panel stays compact as journeys grow.
+// Each track surfaces a few representative journeys (ordered) + a "View all N →"
+// link to its section on /docs/journeys/. Every journey stays fully reachable
+// there, in the sidebar and via search — nothing is hidden, only the menu is.
+const FEATURED_USE_CASES: Record<string, string[]> = {
+  'get-started': ['setup-and-onboarding'],
+  'daily-workflow': ['daily-use', 'memory-and-knowledge', 'code-intelligence', 'beyond-coding-web-research'],
+  'scale-teams': ['open-door-sdks-api', 'context-personas', 'mcp-tool-catalog-gateway', 'team-cloud-ci'],
+  'operate-govern': ['security-and-governance', 'team-plane-local-free', 'signed-savings-ledger', 'reproducible-scorecard'],
+};
+
+const useCasesColumns = tracks.map((tr) => {
+  const all = getJourneysForTrack(tr.id);
+  const bySlug = new Map(all.map((j) => [j.slug, j]));
+  const ordered = (FEATURED_USE_CASES[tr.id] ?? [])
+    .map((slug) => bySlug.get(slug))
+    .filter((j): j is NonNullable<typeof j> => Boolean(j));
+  const shown = ordered.length ? ordered : all.slice(0, 4);
+  const hasMore = all.length > shown.length;
+  return {
+    title: tr.title,
+    items: shown.map((j) => ({
+      label: j.title,
+      href: lp(`/docs/journeys/${j.slug}/`),
+      description: j.summary,
+      icon: svgPath(tr.iconPath),
+    })),
+    moreHref: hasMore ? lp(`/docs/journeys/#${tr.id}`) : undefined,
+    moreLabel: hasMore ? `View all ${all.length}` : undefined,
+  };
+});
 ---
 
 <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-accent focus:text-bg focus:text-sm">
