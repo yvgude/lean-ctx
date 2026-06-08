@@ -6,7 +6,7 @@
  * feature is free forever — these tiers only add team coordination, hosting,
  * scale and governance (the Local-Free Invariant). Display prices match the
  * Stripe catalog provisioned by `lean-ctx-cloud/cloud-infra/stripe-setup.py`
- * ($19/month or $190/year for Team).
+ * ($10/seat/month or $100/seat/year for Team, billed per seat).
  *
  * The account dashboard reads live entitlements from
  * `GET /api/account/entitlements`; this module only drives the marketing copy
@@ -102,10 +102,10 @@ export const pricingTiers: PricingTier[] = [
     id: 'team',
     name: 'Team',
     tagline: 'One shared, audited context for your whole team — and its agents.',
-    priceMonthly: '$19',
-    priceYearly: '$190',
-    unit: '/month',
-    priceNote: 'per workspace · or $190/year (save ~17%) · server provisioned on checkout',
+    priceMonthly: '$10',
+    priceYearly: '$100',
+    unit: '/seat/month',
+    priceNote: 'per seat · choose 1–25 seats at checkout · or $100/seat/year (save ~17%)',
     featured: true,
     cta: { label: 'Start with Team', kind: 'checkout', href: '/account/billing/?upgrade=team' },
     features: [
@@ -115,7 +115,8 @@ export const pricingTiers: PricingTier[] = [
       'Full audit log of every context access',
       'Live shared event stream across your agents',
       'BM25 + graph + artifact retrieval over your code',
-      'Up to 25 seats · managed setup while in beta',
+      '1–25 seats, billed per seat — add or remove anytime (prorated)',
+      'Your private team server, provisioned the moment you check out',
     ],
     roadmap: [
       'Self-serve hosted index with a 5 GB quota & usage dashboard',
@@ -163,7 +164,7 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   },
   {
     q: 'How is Team billed?',
-    a: 'A flat $19/month (or $190/year) per workspace, including up to 25 seats. You can switch cadence or cancel any time from the billing portal — cancellations take effect at the end of the period.',
+    a: 'Per seat — $10/seat/month (or $100/seat/year, ~17% off). You pick how many seats you need (1–25) at checkout; add or remove seats anytime from the billing portal and Stripe automatically prorates the difference. Switch cadence or cancel any time — cancellations take effect at the end of the period.',
   },
   {
     q: 'Can we self-host instead?',

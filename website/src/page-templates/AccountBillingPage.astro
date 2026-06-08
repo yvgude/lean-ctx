@@ -48,8 +48,8 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
           <div class="acct-upgrade" data-upgrade hidden>
             <div class="acct-cadence" role="group" aria-label="Billing cadence">
-              <button type="button" class="acct-cadence-btn is-active" data-cadence="monthly" aria-pressed="true">$19 / month</button>
-              <button type="button" class="acct-cadence-btn" data-cadence="yearly" aria-pressed="false">$190 / year</button>
+              <button type="button" class="acct-cadence-btn is-active" data-cadence="monthly" aria-pressed="true">$10 / seat·mo</button>
+              <button type="button" class="acct-cadence-btn" data-cadence="yearly" aria-pressed="false">$100 / seat·yr</button>
             </div>
             <button type="button" class="acct-btn btn-primary" data-upgrade-btn>Upgrade to Team</button>
             <a class="acct-link" href={lp('/pricing/')}>Compare plans →</a>
@@ -354,7 +354,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     var PLAN_DESC = {
       free: 'The full local Context OS — free forever.',
       supporter: 'You fund lean-ctx development. Thank you. ♥',
-      team: 'Shared hosted context for up to 25 seats.',
+      team: 'Shared hosted context, billed per seat (1–25).',
       enterprise: 'Governance and scale across your organisation.',
     };
 
