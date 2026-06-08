@@ -168,12 +168,103 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           </p>
         </div>
 
+        <!-- Hosted retrieval index — storage & quota (#282) -->
+        <div class="team-card" data-storage-card hidden>
+          <div class="team-storage-head">
+            <div class="team-storage-intro">
+              <h2 class="team-section-title">Hosted index storage</h2>
+              <p class="team-prose">
+                Your server continuously indexes the shared workspace (BM25 + graph +
+                knowledge) plus everything your connectors ingest. This is the live
+                on-disk footprint on the persistent volume, measured against your plan
+                quota — it never gates reads, only pauses hosted growth at the limit.
+              </p>
+            </div>
+            <div class="team-storage-figure">
+              <span class="team-storage-used" data-storage-used>—</span>
+              <span class="team-storage-quota" data-storage-quota></span>
+            </div>
+          </div>
+          <div class="team-meter" data-storage-meter role="progressbar" aria-label="Hosted index usage">
+            <span class="team-meter-fill" data-storage-fill style="width:0%"></span>
+          </div>
+          <div class="team-storage-legend" data-storage-legend hidden></div>
+          <p class="team-storage-warn" data-storage-warn hidden></p>
+        </div>
+
+        <!-- Managed knowledge connectors (#281) -->
+        <div class="team-card" data-connectors-card hidden>
+          <div class="team-conn-head">
+            <div class="team-conn-intro">
+              <h2 class="team-section-title">Knowledge connectors</h2>
+              <p class="team-prose">
+                Connect GitLab or GitHub and your server keeps the shared knowledge base
+                in sync on a schedule — issues, merge / pull requests and pipelines become
+                searchable for every seat via <code>ctx_semantic_search</code> and
+                <code>ctx_knowledge</code>. Access tokens are encrypted at rest and never
+                leave the control plane.
+              </p>
+            </div>
+            <span class="team-seats" data-conn-activity></span>
+          </div>
+
+          <div class="team-conn-loading" data-conn-loading>
+            <span class="team-spinner" aria-hidden="true"></span>
+            <span>Loading connectors…</span>
+          </div>
+
+          <div class="team-conn-list" data-conn-list></div>
+
+          <details class="team-details team-conn-add-wrap" data-conn-add-wrap>
+            <summary>+ Add a connector</summary>
+            <form class="team-conn-form" data-conn-form>
+              <div class="team-field">
+                <label for="conn-provider">Source</label>
+                <select id="conn-provider" class="team-input team-select" data-conn-provider>
+                  <option value="gitlab">GitLab</option>
+                  <option value="github">GitHub</option>
+                </select>
+              </div>
+              <div class="team-field">
+                <label for="conn-resource">Resource</label>
+                <select id="conn-resource" class="team-input team-select" data-conn-resource></select>
+              </div>
+              <div class="team-field team-field-wide">
+                <label for="conn-project" data-conn-project-label>Project (group/repo)</label>
+                <input id="conn-project" type="text" class="team-input" data-conn-project placeholder="my-group/my-repo" autocomplete="off" />
+              </div>
+              <div class="team-field">
+                <label for="conn-interval">Sync every</label>
+                <select id="conn-interval" class="team-input team-select" data-conn-interval>
+                  <option value="3600">Hour</option>
+                  <option value="21600">6 hours</option>
+                  <option value="86400" selected>Day</option>
+                </select>
+              </div>
+              <div class="team-field team-field-wide">
+                <label for="conn-secret" data-conn-secret-label>Access token</label>
+                <input id="conn-secret" type="password" class="team-input" data-conn-secret placeholder="glpat-… / github_pat_…" autocomplete="off" />
+              </div>
+              <div class="team-field team-field-wide">
+                <label for="conn-name">Display name (optional)</label>
+                <input id="conn-name" type="text" class="team-input" data-conn-name placeholder="e.g. Backend issues" maxlength="48" autocomplete="off" />
+              </div>
+              <button type="submit" class="team-btn btn-primary" data-conn-add-btn>Add connector</button>
+            </form>
+            <p class="team-prose-sm" data-conn-help></p>
+          </details>
+        </div>
+
         <div class="team-card">
-          <h2 class="team-section-title">Connect your editor</h2>
+          <h2 class="team-section-title">Connect your tools</h2>
           <p class="team-prose">
-            Add the server to any MCP-capable client (Cursor, Claude, …) using a token you
-            issue below. The token travels as a Bearer header — keep it secret.
+            Issue a token under <strong>Members &amp; tokens</strong> below — it travels as
+            a <code>Bearer</code> header, so keep it secret. The <em>same</em> token works
+            for both your editor (MCP) and your local <code>lean-ctx</code> CLI.
           </p>
+
+          <h3 class="team-savings-subtitle">1 · Editor (MCP)</h3>
+          <p class="team-prose">Add the server to any MCP-capable client (Cursor, Claude, …).</p>
           <div class="team-snippet">
             <div class="team-snippet-bar">
               <span>mcp.json</span>
@@ -191,6 +282,26 @@ const lp = (path: string) => getLocalizedPath(path, locale);
               <pre class="team-pre" data-curl-snippet></pre>
             </div>
           </details>
+
+          <h3 class="team-savings-subtitle team-connect-sub2">2 · Local lean-ctx CLI</h3>
+          <p class="team-prose">
+            Link your local engine so your provable savings flow into the team ROI roll-up
+            above and you can pull the org view from your terminal. Run once with a member
+            token:
+          </p>
+          <div class="team-snippet">
+            <div class="team-snippet-bar">
+              <span>shell</span>
+              <button type="button" class="team-copy" data-copy-cli>Copy</button>
+            </div>
+            <pre class="team-pre" data-cli-snippet></pre>
+          </div>
+          <p class="team-prose-sm">
+            With <code>team_auto_push</code> on, every session syncs automatically. One-off:
+            <code>lean-ctx savings push</code>. See the roll-up with
+            <code>lean-ctx savings team</code>. New here?
+            <a class="team-link" href={lp('/docs/getting-started/')}>Install lean-ctx →</a>
+          </p>
         </div>
 
         <div class="team-card">
@@ -467,9 +578,80 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   .team-savings-empty { font-size: var(--text-small); color: var(--color-muted); margin: 1rem 0 0; }
 
+  /* Hosted index storage (#282) */
+  .team-storage-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.25rem; flex-wrap: wrap; }
+  .team-storage-intro { flex: 1 1 22rem; min-width: 0; }
+  .team-storage-intro .team-prose { margin-bottom: 0; }
+  .team-storage-figure { display: flex; flex-direction: column; align-items: flex-end; gap: 0.1rem; flex: none; }
+  .team-storage-used { font-size: var(--text-h3); font-weight: var(--weight-semibold); color: var(--color-accent-bright); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .team-storage-quota { font-size: var(--text-caption); color: var(--color-muted); font-variant-numeric: tabular-nums; }
+  .team-meter { margin-top: 1.2rem; height: 8px; border-radius: var(--radius-pill); background: var(--color-border); overflow: hidden; }
+  .team-meter-fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--color-accent); transition: width var(--dur) var(--ease-out), background var(--dur) var(--ease-out); }
+  .team-meter[data-state='warn'] .team-meter-fill { background: var(--color-warning, #d9a441); }
+  .team-meter[data-state='over'] .team-meter-fill { background: var(--color-danger); }
+  .team-storage-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin-top: 0.9rem; }
+  .team-storage-legend :global(.team-legend-item) { display: inline-flex; align-items: center; gap: 0.4rem; font-size: var(--text-caption); color: var(--color-muted); font-variant-numeric: tabular-nums; }
+  .team-storage-legend :global(.team-legend-dot) { width: 0.6rem; height: 0.6rem; border-radius: 2px; background: var(--color-accent); flex: none; }
+  .team-storage-warn {
+    margin: 1rem 0 0; padding: 0.7rem 0.9rem; border-radius: var(--card-radius); font-size: var(--text-caption);
+    color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+  }
+
+  /* Managed connectors (#281) */
+  .team-conn-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.25rem; flex-wrap: wrap; }
+  .team-conn-intro { flex: 1 1 22rem; min-width: 0; }
+  .team-conn-intro .team-prose { margin-bottom: 0; }
+  .team-conn-loading { display: flex; align-items: center; gap: 0.6rem; padding: 1.25rem 0 0.25rem; color: var(--color-muted); font-size: var(--text-small); }
+  .team-conn-list { display: flex; flex-direction: column; margin-top: 0.5rem; }
+  .team-conn-list :global(.team-conn-row) { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.8rem 0; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+  .team-conn-list :global(.team-conn-main) { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; flex: 1 1 16rem; }
+  .team-conn-list :global(.team-conn-title-row) { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+  .team-conn-list :global(.team-conn-name) { font-size: var(--text-small); color: var(--color-text-bright); font-weight: var(--weight-semibold); }
+  .team-conn-list :global(.team-conn-provider) {
+    font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-muted); border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill); padding: 0.05rem 0.5rem;
+  }
+  .team-conn-list :global(.team-conn-sub) { font-size: var(--text-caption); color: var(--color-muted); font-family: var(--font-mono, monospace); word-break: break-all; }
+  .team-conn-list :global(.team-conn-stat) { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .team-conn-list :global(.team-conn-badge) {
+    display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--text-caption); font-weight: var(--weight-semibold);
+    border-radius: var(--radius-pill); padding: 0.1rem 0.55rem; text-transform: capitalize;
+  }
+  .team-conn-list :global(.team-conn-badge[data-st='ok']) { color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+  .team-conn-list :global(.team-conn-badge[data-st='error']) { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); }
+  .team-conn-list :global(.team-conn-badge[data-st='pending']) { color: var(--color-muted); background: var(--color-surface-2); }
+  .team-conn-list :global(.team-conn-dot) { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; flex: none; }
+  .team-conn-list :global(.team-conn-when) { font-size: var(--text-caption); color: var(--color-muted); }
+  .team-conn-list :global(.team-conn-actions) { display: flex; align-items: center; gap: 0.5rem; flex: none; }
+  .team-conn-list :global(.team-conn-btn) {
+    padding: 0.35rem 0.7rem; border: 1px solid var(--color-border-light); border-radius: var(--card-radius);
+    background: transparent; color: var(--color-muted); font-family: inherit; font-size: var(--text-caption); cursor: pointer;
+    transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  }
+  .team-conn-list :global(.team-conn-btn:hover) { color: var(--color-text-bright); border-color: var(--color-muted); }
+  .team-conn-list :global(.team-conn-btn.is-danger:hover) { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
+  .team-conn-list :global(.team-conn-btn[disabled]) { opacity: 0.5; cursor: progress; }
+  .team-conn-list :global(.team-conn-err) { font-size: var(--text-caption); color: var(--color-danger); margin-top: 0.15rem; }
+  .team-conn-empty { font-size: var(--text-small); color: var(--color-muted); margin: 0.6rem 0 0; }
+
+  .team-conn-add-wrap { margin-top: 1.1rem; }
+  .team-conn-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.8rem; margin-top: 0.9rem; }
+  .team-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+  .team-field-wide { grid-column: 1 / -1; }
+  .team-field label { font-size: var(--text-caption); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .team-conn-form .team-input { width: 100%; }
+  .team-conn-form .team-btn { grid-column: 1 / -1; justify-self: start; }
+  .team-conn-add-wrap .team-prose-sm { margin-top: 0.8rem; }
+
+  .team-connect-sub2 { margin-top: 1.6rem; padding-top: 1.3rem; border-top: 1px solid var(--color-border); }
+
   @media (max-width: 720px) {
     .team-kpis { grid-template-columns: repeat(2, 1fr); }
     .team-breakdowns { grid-template-columns: 1fr; gap: 1.25rem; }
+    .team-conn-form { grid-template-columns: 1fr; }
+    .team-storage-figure { align-items: flex-start; }
   }
 
   .team-help { margin-top: 0; text-align: center; font-size: var(--text-caption); color: var(--color-muted); }
@@ -532,6 +714,36 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     }
     function curlSnippet(url) {
       return 'curl -H "Authorization: Bearer <YOUR_TOKEN>" \\\n     ' + url + '/v1/tools';
+    }
+    function localConfigSnippet(url) {
+      return 'lean-ctx config set team_url ' + url + '\n'
+        + 'lean-ctx config set team_token <YOUR_TOKEN>\n'
+        + 'lean-ctx config set team_auto_push true';
+    }
+
+    function fmtBytes(n) {
+      n = Number(n) || 0;
+      if (n < 1024) return n + ' B';
+      var units = ['KB', 'MB', 'GB', 'TB'];
+      var i = -1;
+      do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
+      return (n >= 100 ? Math.round(n) : n.toFixed(1)) + ' ' + units[i];
+    }
+    function relTime(iso) {
+      if (!iso) return 'never';
+      var then = Date.parse(iso);
+      if (isNaN(then)) return 'never';
+      var s = Math.max(0, Math.round((Date.now() - then) / 1000));
+      if (s < 60) return 'just now';
+      var m = Math.round(s / 60); if (m < 60) return m + 'm ago';
+      var h = Math.round(m / 60); if (h < 24) return h + 'h ago';
+      return Math.round(h / 24) + 'd ago';
+    }
+    function fmtInterval(secs) {
+      secs = Number(secs) || 0;
+      if (secs % 86400 === 0 && secs >= 86400) { var d = secs / 86400; return 'every ' + (d === 1 ? 'day' : d + ' days'); }
+      if (secs % 3600 === 0 && secs >= 3600) { var h = secs / 3600; return 'every ' + (h === 1 ? 'hour' : h + 'h'); }
+      var m = Math.round(secs / 60); return 'every ' + m + 'm';
     }
 
     function showState(name) {
@@ -605,10 +817,13 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         $('[data-status-badge]').textContent = d.status || 'active';
         $('[data-mcp-snippet]').textContent = mcpSnippet(serverUrl);
         $('[data-curl-snippet]').textContent = curlSnippet(serverUrl);
+        $('[data-cli-snippet]').textContent = localConfigSnippet(serverUrl);
         renderMembers(current.members, current.seats);
         showState('live');
         window.__leanctxTeamLive = true;
         window.dispatchEvent(new CustomEvent('leanctx:team-live'));
+        loadStorage();
+        loadConnectors();
       } catch (err) {
         if (err && err.message === 'unauthorized') return;
         $('[data-loading]').hidden = true;
@@ -652,6 +867,228 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.'); if (btn) { btn.disabled = false; btn.textContent = 'Revoke'; } }
     }
 
+    // ── Hosted index storage (#282) ──────────────────────────────────────────
+    async function loadStorage() {
+      try {
+        var r = await req('GET', '/api/account/team/storage');
+        if (!r.ok || !r.data || !r.data.available || !r.data.storage) return;
+        renderStorage(r.data.storage);
+        $('[data-storage-card]').hidden = false;
+      } catch (_) { /* storage is a convenience; never block the page */ }
+    }
+
+    function legendItem(label, bytes) {
+      if (!bytes) return '';
+      return '<span class="team-legend-item">' + esc(label) + ' <strong>' + esc(fmtBytes(bytes)) + '</strong></span>';
+    }
+
+    function renderStorage(s) {
+      var used = Number(s.usedBytes) || 0;
+      var quota = Number(s.quotaBytes) || 0;
+      var pct = quota > 0 ? Math.min(100, Number(s.percent) || (used / quota) * 100) : 0;
+      $('[data-storage-used]').textContent = fmtBytes(used);
+      $('[data-storage-quota]').textContent = quota > 0
+        ? 'of ' + fmtBytes(quota) + ' · ' + (Math.round(pct * 10) / 10) + '%'
+        : 'used · unmetered';
+
+      var meter = $('[data-storage-meter]');
+      var fill = $('[data-storage-fill]');
+      fill.style.width = (quota > 0 ? pct : 0) + '%';
+      meter.setAttribute('aria-valuenow', String(Math.round(pct)));
+      var st = s.overQuota ? 'over' : (pct >= 80 ? 'warn' : 'ok');
+      meter.setAttribute('data-state', st);
+
+      var oh = s.overhead || {};
+      var wsTotal = (s.workspaces || []).reduce(function (a, w) { return a + (Number(w.usedBytes) || 0); }, 0);
+      var legend = legendItem('Index', oh.indexBytes)
+        + legendItem('Workspaces', wsTotal)
+        + legendItem('Audit log', oh.auditBytes)
+        + legendItem('Savings', oh.savingsBytes)
+        + legendItem('Connectors', oh.connectorsBytes);
+      var legendEl = $('[data-storage-legend]');
+      if (legend) { legendEl.innerHTML = legend; legendEl.hidden = false; } else { legendEl.hidden = true; }
+
+      var warn = $('[data-storage-warn]');
+      if (s.overQuota) {
+        warn.textContent = 'Quota reached — hosted connector sync is paused until usage drops. '
+          + 'Existing data and search keep working. Upgrade for more headroom.';
+        warn.hidden = false;
+      } else if (pct >= 80) {
+        warn.textContent = 'You are approaching your hosted index quota (' + (Math.round(pct)) + '%).';
+        warn.hidden = false;
+      } else { warn.hidden = true; }
+    }
+
+    // ── Managed connectors (#281) ────────────────────────────────────────────
+    var RESOURCES = {
+      gitlab: [
+        { v: 'issues', t: 'Issues' },
+        { v: 'merge_requests', t: 'Merge requests' },
+        { v: 'pipelines', t: 'Pipelines' },
+      ],
+      github: [
+        { v: 'issues', t: 'Issues' },
+        { v: 'pull_requests', t: 'Pull requests' },
+        { v: 'actions', t: 'Actions' },
+      ],
+    };
+    var CONN_HINT = {
+      gitlab: 'GitLab: a project or group access token with the <code>read_api</code> scope.',
+      github: 'GitHub: a fine-grained PAT with read access to issues / pull requests / actions.',
+    };
+
+    function syncProviderUI() {
+      var provider = $('[data-conn-provider]').value || 'gitlab';
+      var resSel = $('[data-conn-resource]');
+      resSel.innerHTML = (RESOURCES[provider] || []).map(function (r) {
+        return '<option value="' + r.v + '">' + r.t + '</option>';
+      }).join('');
+      $('[data-conn-project-label]').textContent = provider === 'github'
+        ? 'Repository (owner/repo)' : 'Project (group/repo)';
+      $('[data-conn-project]').placeholder = provider === 'github' ? 'octocat/hello-world' : 'my-group/my-repo';
+      $('[data-conn-secret]').placeholder = provider === 'github' ? 'github_pat_…' : 'glpat-…';
+      $('[data-conn-help]').innerHTML = CONN_HINT[provider] || '';
+    }
+
+    function connStatus(c) {
+      var s = c.status || {};
+      var raw = s.lastStatus || (c.enabled ? 'pending' : 'paused');
+      if (!c.enabled) return { key: 'pending', label: 'paused' };
+      if (raw === 'ok') return { key: 'ok', label: 'ok' };
+      if (raw === 'error') return { key: 'error', label: 'error' };
+      return { key: 'pending', label: 'pending' };
+    }
+
+    function renderConnectors(d) {
+      $('[data-conn-loading]').hidden = true;
+      var list = $('[data-conn-list]');
+      var conns = (d && d.connectors) || [];
+      var max = (d && d.max) || 20;
+
+      var items = 0, runs = 0;
+      conns.forEach(function (c) {
+        var s = c.status || {};
+        items += Number(s.totalItems) || 0;
+        runs += Number(s.totalRuns) || 0;
+      });
+      var activity = conns.length + ' / ' + max + ' connectors';
+      if (runs > 0) activity += ' · ' + items.toLocaleString() + ' items ingested';
+      $('[data-conn-activity]').textContent = activity;
+
+      if (!conns.length) {
+        list.innerHTML = '<p class="team-conn-empty">No connectors yet. Add one below to keep your '
+          + 'team knowledge base in sync with GitLab or GitHub.</p>';
+      } else {
+        list.innerHTML = conns.map(function (c) {
+          var st = connStatus(c);
+          var s = c.status || {};
+          var name = c.display_name || (c.project || c.id);
+          var sub = (c.provider || '') + ' · ' + (c.resource || '') + (c.project ? ' · ' + c.project : '')
+            + ' · ' + fmtInterval(c.interval_secs);
+          var meta = '';
+          if (s.lastItemCount != null) meta += s.lastItemCount + ' items · ';
+          meta += 'last sync ' + relTime(s.lastRunAt);
+          var errHtml = (st.key === 'error' && s.lastError)
+            ? '<span class="team-conn-err">' + esc(s.lastError) + '</span>' : '';
+          var toggleLabel = c.enabled ? 'Pause' : 'Resume';
+          return '<div class="team-conn-row" data-conn-id="' + esc(c.id) + '">'
+            + '<div class="team-conn-main">'
+            + '<div class="team-conn-title-row">'
+            + '<span class="team-conn-name">' + esc(name) + '</span>'
+            + '<span class="team-conn-provider">' + esc(c.provider || '') + '</span>'
+            + '<span class="team-conn-badge" data-st="' + st.key + '"><span class="team-conn-dot"></span>' + esc(st.label) + '</span>'
+            + '</div>'
+            + '<span class="team-conn-sub">' + esc(sub) + '</span>'
+            + '<span class="team-conn-when">' + esc(meta) + '</span>'
+            + errHtml
+            + '</div>'
+            + '<div class="team-conn-actions">'
+            + '<button type="button" class="team-conn-btn" data-conn-toggle="' + esc(c.id) + '" data-enabled="' + c.enabled + '">' + toggleLabel + '</button>'
+            + '<button type="button" class="team-conn-btn is-danger" data-conn-del="' + esc(c.id) + '">Remove</button>'
+            + '</div>'
+            + '</div>';
+        }).join('');
+
+        list.querySelectorAll('[data-conn-toggle]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            toggleConnector(b.getAttribute('data-conn-toggle'), b.getAttribute('data-enabled') !== 'true', b);
+          });
+        });
+        list.querySelectorAll('[data-conn-del]').forEach(function (b) {
+          b.addEventListener('click', function () { deleteConnector(b.getAttribute('data-conn-del'), b); });
+        });
+      }
+
+      var addBtn = $('[data-conn-add-btn]');
+      var atLimit = conns.length >= max;
+      if (addBtn) { addBtn.disabled = atLimit; addBtn.textContent = atLimit ? 'Connector limit reached' : 'Add connector'; }
+    }
+
+    async function loadConnectors() {
+      try {
+        var r = await req('GET', '/api/account/team/connectors');
+        if (!r.ok) { $('[data-conn-loading]').hidden = true; return; }
+        renderConnectors(r.data || {});
+        $('[data-connectors-card]').hidden = false;
+      } catch (err) {
+        if (!(err && err.message === 'unauthorized')) $('[data-conn-loading]').hidden = true;
+      }
+    }
+
+    async function createConnector(ev) {
+      ev.preventDefault();
+      clearBanner();
+      var provider = $('[data-conn-provider]').value || 'gitlab';
+      var resource = $('[data-conn-resource]').value || 'issues';
+      var project = ($('[data-conn-project]').value || '').trim();
+      var interval = parseInt($('[data-conn-interval]').value, 10) || 3600;
+      var secret = ($('[data-conn-secret]').value || '').trim();
+      var name = ($('[data-conn-name]').value || '').trim();
+      if (!project) { showBanner('error', 'Project is required (e.g. ' + (provider === 'github' ? 'owner/repo' : 'group/repo') + ').'); return; }
+      if (!secret) { showBanner('error', 'An access token is required to authorize the connector.'); return; }
+
+      var btn = $('[data-conn-add-btn]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+      var body = { provider: provider, resource: resource, project: project, intervalSecs: interval, secret: secret, enabled: true };
+      if (name) body.displayName = name;
+      try {
+        var r = await req('POST', '/api/account/team/connectors', body);
+        if (r.ok) {
+          $('[data-conn-project]').value = ''; $('[data-conn-secret]').value = ''; $('[data-conn-name]').value = '';
+          var wrap = $('[data-conn-add-wrap]'); if (wrap) wrap.open = false;
+          showBanner('success', 'Connector added — the first sync runs within a minute.');
+          await loadConnectors();
+        } else {
+          showBanner('error', (r.data && (r.data.message || r.data.error)) || 'Could not add the connector.');
+        }
+      } catch (err) {
+        if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Add connector'; }
+    }
+
+    async function toggleConnector(id, enabled, btn) {
+      if (!id) return;
+      clearBanner();
+      if (btn) { btn.disabled = true; btn.textContent = enabled ? 'Resuming…' : 'Pausing…'; }
+      try {
+        var r = await req('PATCH', '/api/account/team/connectors/' + encodeURIComponent(id), { enabled: enabled });
+        if (r.ok) { await loadConnectors(); }
+        else { showBanner('error', (r.data && (r.data.message || r.data.error)) || 'Could not update the connector.'); if (btn) btn.disabled = false; }
+      } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.'); if (btn) btn.disabled = false; }
+    }
+
+    async function deleteConnector(id, btn) {
+      if (!id) return;
+      clearBanner();
+      if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+      try {
+        var r = await req('DELETE', '/api/account/team/connectors/' + encodeURIComponent(id));
+        if (r.ok) { showBanner('info', 'Connector removed.'); await loadConnectors(); }
+        else { showBanner('error', (r.data && (r.data.message || r.data.error)) || 'Could not remove the connector.'); if (btn) { btn.disabled = false; btn.textContent = 'Remove'; } }
+      } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.'); if (btn) { btn.disabled = false; btn.textContent = 'Remove'; } }
+    }
+
     // Wiring
     var signout = $('[data-signout]');
     if (signout) signout.addEventListener('click', function () { clearSession(); window.location.assign('/login/'); });
@@ -662,8 +1099,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     $('[data-copy-url]').addEventListener('click', function (e) { copyText(serverUrl, e.currentTarget); });
     $('[data-copy-mcp]').addEventListener('click', function (e) { copyText(mcpSnippet(serverUrl), e.currentTarget); });
     $('[data-copy-curl]').addEventListener('click', function (e) { copyText(curlSnippet(serverUrl), e.currentTarget); });
+    var copyCli = $('[data-copy-cli]');
+    if (copyCli) copyCli.addEventListener('click', function (e) { copyText(localConfigSnippet(serverUrl), e.currentTarget); });
     $('[data-copy-token]').addEventListener('click', function (e) { copyText($('[data-reveal-token]').textContent, e.currentTarget); });
     $('[data-reveal-close]').addEventListener('click', function () { $('[data-reveal]').hidden = true; });
+
+    var connProvider = $('[data-conn-provider]');
+    if (connProvider) connProvider.addEventListener('change', syncProviderUI);
+    var connForm = $('[data-conn-form]');
+    if (connForm) connForm.addEventListener('submit', createConnector);
+    syncProviderUI();
 
     load(false);
   })();
