@@ -1894,7 +1894,7 @@
   "index.tracksLabel": "Find your journey",
   "index.tracksTitle": "Start where",
   "index.tracksTitleHighlight": "you are.",
-  "index.tracksDesc": "Twenty-seven code-grounded journeys, grouped into four tracks. Pick the one that sounds like you and follow it end to end — from your first install to running LeanCTX across a whole team.",
+  "index.tracksDesc": "Twenty-eight code-grounded journeys, grouped into four tracks. Pick the one that sounds like you and follow it end to end — from your first install to running LeanCTX across a whole team.",
   "index.platformNote": "Beyond the IDE: embed LeanCTX in your own agent via lean-ctx serve and the versioned /v1 API with Python, TypeScript and Rust SDKs, reshape it for any domain with Context Personas, index PDFs, HTML and CSV locally, and extend it with plugins and WASM — every local feature stays free.",
   "index.howItWorksArchLink": "See the full architecture & lifecycle",
   "index.compressTableLabel": "What gets compressed",

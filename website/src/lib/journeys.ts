@@ -1,13 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JOURNEYS SSOT — the 27 code-grounded user journeys.
+// JOURNEYS SSOT — the 28 code-grounded user journeys.
 //
 // Mirrors docs/reference/README.md ("Every Function, Every Path") plus the wave
 // product journeys (J18–J21), the context-layer extension journeys (J22–J26:
-// SDKs/API, personas, universal intake, plugins/WASM, team plane) and the ops
-// deploy journey (J27: self-hosting the team server). These are the content/SEO
-// backbone of the site: every CLI command and MCP tool appears in at least one
-// journey. The journeys are *grouped* into four persona tracks (see tracks.ts)
-// so navigation stays conversion-focused instead of 27 flat entries.
+// SDKs/API, personas, universal intake, plugins/WASM, team plane), the ops
+// deploy journey (J27: self-hosting the team server) and the verification
+// journey (J28: deterministic with/without output-quality proof). These are the
+// content/SEO backbone of the site: every CLI command and MCP tool appears in at
+// least one journey. The journeys are *grouped* into four persona tracks (see
+// tracks.ts) so navigation stays conversion-focused instead of 28 flat entries.
 //
 // Each journey gets its own page at /docs/journeys/<slug>, rendered from this
 // data by a single template (src/page-templates/JourneyPage.astro). `href` is the
@@ -18,7 +19,7 @@ import type { PillarId } from './positioning';
 export type TrackId = 'get-started' | 'daily-workflow' | 'scale-teams' | 'operate-govern';
 
 export interface Journey {
-  /** 1-based number (J1 … J27); J1–J17 mirror docs/reference, J18–J21 are wave journeys, J22–J26 extend the context layer, J27 is the self-host/ops deploy journey. */
+  /** 1-based number (J1 … J28); J1–J17 mirror docs/reference, J18–J21 are wave journeys, J22–J26 extend the context layer, J27 is the self-host/ops deploy journey, J28 is the output-quality verification journey. */
   num: number;
   slug: string;
   title: string;
@@ -309,6 +310,16 @@ export const journeys: Journey[] = [
     covers: ['team serve', 'team token --role', 'team sync', 'ALB / TLS', 'Docker', 'audit log'],
     trackId: 'operate-govern', pillars: ['govern', 'route'],
     href: '/docs/api-reference', refDoc: '09-team-cloud-ci',
+  },
+  {
+    num: 28, slug: 'prove-output-quality', title: 'Prove Output Quality (With vs Without)',
+    persona: 'proving LeanCTX keeps answer quality the same or better',
+    summary: 'A deterministic with/without A/B eval — pinned model, objective scorers, signed verdict.',
+    intro:
+      'Answer the hardest adoption question deterministically: is the agent\u2019s output as good or better with LeanCTX than without? Run the same tasks through the same pinned model under raw vs LeanCTX context, score objectively (unit tests, EM/F1), and emit a signed, reproducible non-regression verdict you can drop into CI.',
+    covers: ['eval init', 'eval ab', 'eval verify', '--replay / --record', 'determinism digest', '--gate'],
+    trackId: 'operate-govern', pillars: ['govern', 'perceive'],
+    href: '/docs/concepts/savings-ledger', refDoc: '11-analytics-and-insights',
   },
 ];
 
