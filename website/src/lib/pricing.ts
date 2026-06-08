@@ -6,7 +6,7 @@
  * feature is free forever — these tiers only add team coordination, hosting,
  * scale and governance (the Local-Free Invariant). Display prices match the
  * Stripe catalog provisioned by `lean-ctx-cloud/cloud-infra/stripe-setup.py`
- * ($10/seat/month or $100/seat/year for Team billed per seat; $9/month or
+ * ($18/seat/month or $180/seat/year for Team billed per seat; $9/month or
  * $90/year for Pro).
  *
  * The account dashboard reads live entitlements from
@@ -15,8 +15,6 @@
  * actual subscription — it describes what each tier grants. Pro adds the hosted
  * Personal Cloud (cross-device sync) at $9/month or $90/year.
  */
-
-export const SALES_EMAIL = 'hello@leanctx.com';
 
 /** Wire id of a self-serve checkout plan (matches `Plan::as_str` in the engine). */
 export type CheckoutPlan = 'team' | 'pro' | 'supporter';
@@ -101,7 +99,7 @@ export const supporterTiers: SupporterTier[] = [
 
 export interface PricingTier {
   /** Stable id; matches the engine's `Plan` wire ids. */
-  id: 'free' | 'pro' | 'team' | 'enterprise';
+  id: 'free' | 'pro' | 'team';
   name: string;
   tagline: string;
   /** Display price for the default (monthly) cadence, e.g. "$10" or "Custom". */
@@ -177,10 +175,10 @@ export const pricingTiers: PricingTier[] = [
     id: 'team',
     name: 'Team',
     tagline: 'One shared, audited context for your whole team — and its agents.',
-    priceMonthly: '$10',
-    priceYearly: '$100',
+    priceMonthly: '$18',
+    priceYearly: '$180',
     unit: '/seat/month',
-    priceNote: 'per seat · choose 1–25 seats at checkout · or $100/seat/year (save ~17%)',
+    priceNote: 'per seat · choose 1–25 seats at checkout · or $180/seat/year (save ~17%)',
     featured: true,
     cta: { label: 'Start with Team', kind: 'checkout', href: '/account/billing/?upgrade=team' },
     features: [
@@ -198,27 +196,6 @@ export const pricingTiers: PricingTier[] = [
       'Managed connectors (GitHub, GitLab, Jira, Postgres …)',
       'Private extension & persona registry',
       'Marketplace revenue share for your authors',
-    ],
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    tagline: 'Governance, scale and compliance for the whole organisation.',
-    priceMonthly: 'Custom',
-    cta: {
-      label: 'Talk to us',
-      kind: 'contact',
-      href: `mailto:${SALES_EMAIL}?subject=LeanCTX%20Enterprise`,
-    },
-    features: [
-      'Everything in Team, for your whole organisation',
-      'Self-host the audited team server on your own cloud',
-      'Negotiated scale: seats, retrieval index & connectors',
-      'Dedicated onboarding, priority support & SLA',
-    ],
-    roadmap: [
-      'SSO + SCIM provisioning',
-      '10-year audit log retention & compliance exports',
     ],
   },
 ];
@@ -243,10 +220,10 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   },
   {
     q: 'How is Team billed?',
-    a: 'Per seat — $10/seat/month (or $100/seat/year, ~17% off). You pick how many seats you need (1–25) at checkout; add or remove seats anytime from the billing portal and Stripe automatically prorates the difference. Switch cadence or cancel any time — cancellations take effect at the end of the period.',
+    a: 'Per seat — $18/seat/month (or $180/seat/year, ~17% off). You pick how many seats you need (1–25) at checkout; add or remove seats anytime from the billing portal and Stripe automatically prorates the difference. Switch cadence or cancel any time — cancellations take effect at the end of the period.',
   },
   {
     q: 'Can we self-host instead?',
-    a: 'Yes. The audited team server is Apache-2.0 and self-hosting is a free capability — see the “Self-host a team server” journey. Enterprise adds SSO/SCIM, unlimited scale and a support SLA on top.',
+    a: 'Yes. The audited team server is Apache-2.0 and self-hosting is a free capability — see the “Self-host a team server” journey. Need SSO/SCIM, unlimited scale or a support SLA? Talk to us at hello@leanctx.com.',
   },
 ];

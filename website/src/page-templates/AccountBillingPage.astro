@@ -53,7 +53,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
             </div>
             <div class="acct-upgrade-opts">
               <button type="button" class="acct-btn btn-primary" data-upgrade-btn="pro">Upgrade to Pro · <span data-price="pro">$9/mo</span></button>
-              <button type="button" class="acct-btn acct-btn-secondary" data-upgrade-btn="team">Get Team · <span data-price="team">$10/seat·mo</span></button>
+              <button type="button" class="acct-btn acct-btn-secondary" data-upgrade-btn="team">Get Team · <span data-price="team">$18/seat·mo</span></button>
             </div>
             <a class="acct-link" href={lp('/pricing/')}>Compare plans →</a>
           </div>
@@ -412,7 +412,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     var cadence = 'monthly';
     var PRICES = {
       pro: { monthly: '$9/mo', yearly: '$90/yr' },
-      team: { monthly: '$10/seat·mo', yearly: '$100/seat·yr' },
+      team: { monthly: '$18/seat·mo', yearly: '$180/seat·yr' },
     };
     function updatePrices() {
       document.querySelectorAll('[data-price]').forEach(function (el) {
