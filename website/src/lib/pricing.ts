@@ -33,13 +33,24 @@ export const supporterOffer = {
   priceMonthly: '$5',
   priceYearly: '$50',
   unit: '/month',
-  priceNote: 'or $50/year · cancel anytime · nothing is ever locked behind it',
+  priceNote: 'or $50/year · no account needed · cancel anytime',
   href: '/support/',
+  /**
+   * Direct Stripe Payment Links for the voluntary Supporter subscription. They
+   * let anyone subscribe without creating a lean-ctx account — Stripe collects
+   * the email and handles the recurring charge. Bound to the live recurring
+   * Supporter prices (`STRIPE_PRICE_SUPPORTER_*`); after payment Stripe redirects
+   * back to `/support/?status=success`.
+   */
+  paymentLinks: {
+    monthly: 'https://buy.stripe.com/fZucMZdjMfnQ88M8YRcjS00',
+    yearly: 'https://buy.stripe.com/bJe3cp1B45Ng9cQdf7cjS01',
+  },
   perks: [
     'Directly fund the open-source Context OS you rely on every day',
-    'A supporter badge on your account',
-    'Priority on your bug reports and feature requests',
-    'Keep lean-ctx independent — no VC, no telemetry, no lock-in',
+    'No account required — subscribe in seconds, straight through Stripe',
+    'Cancel anytime — manage everything from Stripe, no lock-in',
+    'Keep lean-ctx independent — no VC, no telemetry, no ads',
   ],
 };
 

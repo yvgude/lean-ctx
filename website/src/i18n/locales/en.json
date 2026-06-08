@@ -2205,7 +2205,7 @@
   "index.faq4A": "No. Compression, caching, the savings ledger, and project memory all run locally on your machine — nothing is uploaded. The only network features (the Wrapped share card and the public leaderboard) are strictly opt-in and publish just an anonymous, whitelisted aggregate: a token count and a display name you choose.",
   "index.faq5Q": "Which AI tools does it work with?",
   "index.faq5A": "24+ and growing — Cursor, Claude Code, OpenAI Codex, GitHub Copilot, Zed, Windsurf, Cline, Roo Code, Gemini CLI, OpenCode, and any MCP-capable client. LeanCTX integrates through native hooks where a tool supports them and through a standard MCP server everywhere else.",
-  "index.heroCtaSecondary": "See how it works",
+  "index.heroCtaSecondary": "Join Discord",
   "contextOs.subline": "One local binary between your AI and your code. LeanCTX perceives, compresses, remembers, routes, and governs the complete lifecycle of AI context — from file reads to verified outputs.",
   "contextOs.whatIs": "What is a Cognitive Context Layer?",
   "contextOs.whatIsDesc": "A Cognitive Context Layer is the infrastructure between your AI tools and your codebase. It controls what files are read, how output is compressed, what knowledge persists across sessions, and whether results meet quality standards before delivery.",

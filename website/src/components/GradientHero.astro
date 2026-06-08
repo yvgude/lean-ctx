@@ -1,0 +1,114 @@
+---
+/**
+ * Shared, left-aligned lead hero with a gradient highlight and optional trust
+ * pills. Used by /support and /pricing so both pages share one consistent hero
+ * style (no eyebrow label, big display title, muted subline). Self-contained:
+ * its own padding + load animation, so it never depends on the global scroll
+ * reveal system (the hero is always above the fold).
+ */
+interface Props {
+  /** Plain leading part of the headline. */
+  title: string;
+  /** Gradient-highlighted continuation of the headline. */
+  highlight?: string;
+  /** Muted supporting paragraph under the headline. */
+  description?: string;
+  /** Small non-interactive trust pills under the description. */
+  pills?: string[];
+  /** Force a line break before the highlight (defaults to a space). */
+  breakHighlight?: boolean;
+  /** CSS max-width for the headline, to control wrapping. */
+  titleMaxWidth?: string;
+  /** Page container width — align the hero with the page content. */
+  container?: 'wide' | 'standard' | 'narrow';
+}
+
+const {
+  title,
+  highlight,
+  description,
+  pills = [],
+  breakHighlight = false,
+  titleMaxWidth = '20ch',
+  container = 'narrow',
+} = Astro.props;
+
+const gridClass =
+  container === 'wide'
+    ? 'content-grid-wide'
+    : container === 'standard'
+      ? 'content-grid'
+      : 'content-grid-narrow';
+---
+
+<section class="grad-hero">
+  <div class={gridClass}>
+    <h1 class="grad-hero-title font-display" style={`max-width: ${titleMaxWidth};`}>
+      {title}{highlight && (
+        <>{breakHighlight ? <br /> : ' '}<span class="grad-hero-accent">{highlight}</span></>
+      )}
+    </h1>
+    {description && <p class="grad-hero-sub">{description}</p>}
+    {pills.length > 0 && (
+      <ul class="grad-hero-pills" aria-label="Highlights">
+        {pills.map((p) => (<li>{p}</li>))}
+      </ul>
+    )}
+  </div>
+</section>
+
+<style>
+  .grad-hero {
+    padding-top: clamp(3rem, 2rem + 3vw, 6rem);
+    padding-bottom: clamp(1.25rem, 0.75rem + 1.5vw, 2.5rem);
+  }
+  .grad-hero-title {
+    font-size: clamp(2.2rem, 1.5rem + 3.4vw, 4rem);
+    font-weight: var(--weight-bold);
+    line-height: 1.05;
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-bright);
+    animation: gh-rise 0.7s var(--ease-out) both;
+  }
+  .grad-hero-accent {
+    background: linear-gradient(120deg, var(--color-accent), var(--color-accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .grad-hero-sub {
+    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
+    max-width: 52ch;
+    font-size: var(--text-body-lg, 1.075rem);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+    animation: gh-rise 0.7s var(--ease-out) 0.08s both;
+  }
+  .grad-hero-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: clamp(1.25rem, 0.75rem + 1.5vw, 2rem);
+    list-style: none;
+    animation: gh-rise 0.7s var(--ease-out) 0.16s both;
+  }
+  .grad-hero-pills li {
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    font-size: var(--text-caption);
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  @keyframes gh-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grad-hero-title,
+    .grad-hero-sub,
+    .grad-hero-pills { animation: none; }
+  }
+</style>

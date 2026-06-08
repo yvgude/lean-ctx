@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import GradientHero from '../components/GradientHero.astro';
 import { supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
 
@@ -14,6 +15,9 @@ const checkIcon =
 
 const arrowIcon =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+
+const lockIcon =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
 
 const trustPills = ['Apache-2.0', 'No VC funding', 'No telemetry', 'Built in Switzerland'];
 
@@ -101,45 +105,15 @@ const faq = [
     { name: 'Support', url: lp('/support/') },
   ]}
 >
-  {/* ── Hero ───────────────────────────────────────────────── */}
-  <section class="sup-hero section-hero">
-    <div class="content-grid-narrow sup-hero-inner">
-      <span class="sup-hero-badge">
-        <span class="sup-hero-badge-dot" aria-hidden="true"></span>
-        Open source · Apache-2.0
-      </span>
-      <h1 class="sup-hero-title font-display">
-        Keep lean-ctx <span class="sup-hero-grad">free, open &amp; independent.</span>
-      </h1>
-      <p class="sup-hero-sub">
-        Every local feature is free forever — and always will be. If lean-ctx saves you time
-        every day, you can fund its development with a small recurring subscription. It unlocks
-        nothing. It simply keeps the project alive and independent.
-      </p>
-
-      <svg class="sup-ekg" viewBox="0 0 640 64" fill="none" aria-hidden="true" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="supEkgGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="var(--color-accent)" stop-opacity="0"></stop>
-            <stop offset="0.5" stop-color="var(--color-accent)"></stop>
-            <stop offset="1" stop-color="var(--color-accent-2)" stop-opacity="0"></stop>
-          </linearGradient>
-        </defs>
-        <path
-          class="sup-ekg-line"
-          stroke="url(#supEkgGrad)"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M0 32 H222 l12 -20 l14 40 l12 -48 l16 56 l12 -28 H430 l14 -14 l12 14 H640"
-        ></path>
-      </svg>
-
-      <ul class="sup-trust" aria-label="What lean-ctx promises">
-        {trustPills.map((p) => (<li>{p}</li>))}
-      </ul>
-    </div>
-  </section>
+  {/* ── Hero (shared, left-aligned) ────────────────────────── */}
+  <GradientHero
+    title="Keep lean-ctx"
+    highlight="free, open & independent."
+    description="Every local feature is free forever — and always will be. If lean-ctx saves you time every day, you can fund its development with a small recurring subscription. It unlocks nothing. It simply keeps the project alive and independent."
+    pills={trustPills}
+    titleMaxWidth="15ch"
+    container="narrow"
+  />
 
   {/* ── Pledge card ────────────────────────────────────────── */}
   <section class="section-y-sm sup-section">
@@ -177,9 +151,14 @@ const faq = [
           </div>
           <p class="sup-note">{supporterOffer.priceNote}</p>
 
-          <button type="button" class="sup-cta btn-primary" data-cta>Become a supporter</button>
-          <p class="sup-loading" data-loading hidden>
-            <span class="sup-spinner" aria-hidden="true"></span> Checking your account…
+          <a class="sup-cta btn-primary" data-cta-monthly href={supporterOffer.paymentLinks.monthly}>
+            Become a supporter — {supporterOffer.priceMonthly}/mo
+          </a>
+          <a class="sup-cta btn-primary" data-cta-yearly href={supporterOffer.paymentLinks.yearly}>
+            Become a supporter — {supporterOffer.priceYearly}/yr
+          </a>
+          <p class="sup-secure">
+            <span class="sup-secure-ic" set:html={lockIcon} />No account needed — secure checkout by Stripe
           </p>
 
           <ul class="sup-perks">
@@ -190,8 +169,9 @@ const faq = [
 
           <p class="sup-fineprint">
             lean-ctx is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
-            supporting is voluntary and unlocks no functionality. Cancel anytime from the billing
-            portal. Need a shared team workspace instead? <a href={lp('/pricing/')}>See the Team plan →</a>
+            supporting is voluntary and unlocks no functionality. No sign-up required: Stripe handles
+            checkout and lets you cancel anytime. Need a shared team workspace instead?
+            <a href={lp('/pricing/')}>See the Team plan →</a>
           </p>
         </div>
       </div>
@@ -288,110 +268,6 @@ const faq = [
 </BaseLayout>
 
 <style>
-  /* ── Hero ─────────────────────────────────────────────── */
-  .sup-hero {
-    padding-top: clamp(2rem, 1rem + 4vw, 4.5rem);
-    padding-bottom: clamp(0.5rem, 0.25rem + 1.5vw, 1.5rem);
-    text-align: center;
-  }
-  .sup-hero-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .sup-hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.35rem 0.85rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
-    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-    color: var(--color-accent);
-    font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-    animation: sup-rise 0.7s var(--ease-out) both;
-  }
-  .sup-hero-badge-dot {
-    width: 0.45rem;
-    height: 0.45rem;
-    border-radius: 50%;
-    background: var(--color-accent);
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
-    animation: sup-ping 2.4s ease-out infinite;
-  }
-  .sup-hero-title {
-    margin-top: clamp(1rem, 0.75rem + 1vw, 1.5rem);
-    font-size: clamp(2.2rem, 1.5rem + 3.4vw, 4rem);
-    font-weight: var(--weight-bold);
-    line-height: 1.05;
-    letter-spacing: var(--tracking-tight);
-    color: var(--color-text-bright);
-    max-width: 18ch;
-    animation: sup-rise 0.7s var(--ease-out) 0.06s both;
-  }
-  .sup-hero-grad {
-    background: linear-gradient(120deg, var(--color-accent), var(--color-accent-2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .sup-hero-sub {
-    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
-    max-width: 52ch;
-    font-size: var(--text-body-lg, 1.075rem);
-    line-height: var(--leading-relaxed);
-    color: var(--color-muted);
-    animation: sup-rise 0.7s var(--ease-out) 0.12s both;
-  }
-  .sup-ekg {
-    width: min(100%, 30rem);
-    height: 54px;
-    margin-top: clamp(1.25rem, 0.75rem + 1.5vw, 2rem);
-    overflow: visible;
-    animation: sup-rise 0.7s var(--ease-out) 0.18s both;
-  }
-  .sup-ekg-line {
-    stroke-dasharray: 820;
-    stroke-dashoffset: 820;
-    animation: sup-ekg-draw 3.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-  }
-  .sup-trust {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.5rem;
-    margin-top: clamp(1.25rem, 0.75rem + 1.5vw, 2rem);
-    list-style: none;
-    animation: sup-rise 0.7s var(--ease-out) 0.24s both;
-  }
-  .sup-trust li {
-    padding: 0.3rem 0.7rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-pill);
-    background: var(--color-surface);
-    font-size: var(--text-caption);
-    color: var(--color-text);
-    white-space: nowrap;
-  }
-
-  @keyframes sup-rise {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes sup-ping {
-    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent); }
-    70%, 100% { box-shadow: 0 0 0 7px transparent; }
-  }
-  @keyframes sup-ekg-draw {
-    0% { stroke-dashoffset: 820; opacity: 0.12; }
-    25% { opacity: 0.85; }
-    55% { stroke-dashoffset: 0; opacity: 0.85; }
-    100% { stroke-dashoffset: -820; opacity: 0.12; }
-  }
-
   /* ── Banner ───────────────────────────────────────────── */
   .sup-section { padding-top: clamp(1rem, 0.5rem + 1vw, 1.75rem); }
   .sup-banner {
@@ -534,11 +410,13 @@ const faq = [
   .sup-unit { font-size: var(--text-small); color: var(--color-muted); }
   .sup-note { margin-top: 0.5rem; font-size: var(--text-caption); color: var(--color-muted); }
 
-  /* cadence-driven price visibility (CSS, works without JS) */
+  /* cadence-driven visibility (CSS, works without JS) */
   .sup-card[data-cadence='monthly'] [data-price-yearly],
   .sup-card[data-cadence='monthly'] [data-unit-yearly],
+  .sup-card[data-cadence='monthly'] [data-cta-yearly],
   .sup-card[data-cadence='yearly'] [data-price-monthly],
-  .sup-card[data-cadence='yearly'] [data-unit-monthly] { display: none; }
+  .sup-card[data-cadence='yearly'] [data-unit-monthly],
+  .sup-card[data-cadence='yearly'] [data-cta-monthly] { display: none; }
 
   .sup-cta {
     margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
@@ -552,26 +430,20 @@ const faq = [
     border-radius: var(--card-radius);
     border: none;
     cursor: pointer;
+    text-decoration: none;
   }
-  .sup-cta[disabled] { opacity: 0.6; cursor: progress; }
 
-  .sup-loading {
+  .sup-secure {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: center;
+    gap: 0.4rem;
     margin-top: 0.75rem;
     font-size: var(--text-caption);
     color: var(--color-muted);
   }
-  .sup-spinner {
-    width: 0.9rem;
-    height: 0.9rem;
-    border: 2px solid var(--color-border-light);
-    border-top-color: var(--color-accent);
-    border-radius: 50%;
-    animation: sup-spin 0.7s linear infinite;
-  }
-  @keyframes sup-spin { to { transform: rotate(360deg); } }
+  .sup-secure-ic { display: inline-flex; color: var(--color-accent); }
+  .sup-secure-ic :global(svg) { width: 0.9rem; height: 0.9rem; }
 
   .sup-perks {
     margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
@@ -858,13 +730,6 @@ const faq = [
 
   /* ── Motion preferences ───────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
-    .sup-hero-badge,
-    .sup-hero-title,
-    .sup-hero-sub,
-    .sup-ekg,
-    .sup-trust { animation: none; }
-    .sup-hero-badge-dot { animation: none; }
-    .sup-ekg-line { animation: none; stroke-dashoffset: 0; opacity: 0.7; }
     .sup-medallion svg { animation: none; }
     .sup-fund:hover,
     .sup-way:hover { transform: none; }
@@ -873,43 +738,15 @@ const faq = [
 
 <script is:inline>
   (function () {
-    var API = 'https://api.leanctx.com';
-    var TOKEN_KEY = 'leanctx-api-token';
-
     var card = document.querySelector('.sup-card');
     if (!card) return;
-    var banner = document.querySelector('[data-banner]');
-    var cta = document.querySelector('[data-cta]');
-    var loading = document.querySelector('[data-loading]');
-    var here = window.location.pathname;
-    var cadence = 'monthly';
-    var mode = 'subscribe'; // signin | subscribe | manage
 
-    function showBanner(kind, msg) {
-      if (!banner) return;
-      banner.textContent = msg;
-      banner.setAttribute('data-kind', kind);
-      banner.hidden = false;
-    }
-    function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (_) { return null; } }
-    function authHeaders(t) { return { Authorization: 'Bearer ' + t, Accept: 'application/json' }; }
-    function gotoLogin() { window.location.assign('/login/?next=' + encodeURIComponent(here)); }
-
-    async function postJson(path, body, t) {
-      var res = await fetch(API + path, {
-        method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders(t)),
-        body: JSON.stringify(body || {}),
-      });
-      var text = await res.text();
-      var data; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { message: text }; }
-      return { ok: res.ok, status: res.status, data: data };
-    }
-
-    // Cadence toggle
+    // Billing cadence toggle — flips the visible price + payment-link CTA (the
+    // visibility itself is pure CSS via [data-cadence], so this only updates the
+    // button state). Becoming a supporter goes straight to a Stripe Payment Link
+    // — no lean-ctx account required.
     var btns = card.querySelectorAll('[data-cadence-btn]');
     function setCadence(c) {
-      cadence = c;
       card.setAttribute('data-cadence', c);
       btns.forEach(function (b) {
         var on = b.getAttribute('data-cadence-btn') === c;
@@ -917,71 +754,21 @@ const faq = [
         b.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
     }
-    btns.forEach(function (b) { b.addEventListener('click', function () { setCadence(b.getAttribute('data-cadence-btn')); }); });
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () { setCadence(b.getAttribute('data-cadence-btn')); });
+    });
     setCadence('monthly');
 
-    // Status banner from a Stripe redirect
-    var params = new URLSearchParams(window.location.search);
-    var status = params.get('status');
-    if (status === 'success') showBanner('success', 'Thank you for supporting lean-ctx — your supporter subscription is active. You are the reason this project keeps going.');
+    // Friendly banner when Stripe redirects back after checkout.
+    var banner = document.querySelector('[data-banner]');
+    function showBanner(kind, msg) {
+      if (!banner) return;
+      banner.textContent = msg;
+      banner.setAttribute('data-kind', kind);
+      banner.hidden = false;
+    }
+    var status = new URLSearchParams(window.location.search).get('status');
+    if (status === 'success') showBanner('success', 'Thank you for supporting lean-ctx — your subscription is active. You are the reason this project keeps going.');
     else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no charge was made.');
-
-    function applyMode(m) {
-      mode = m;
-      if (m === 'signin') { cta.textContent = 'Sign in to become a supporter'; }
-      else if (m === 'subscribe') { cta.textContent = 'Become a supporter'; }
-      else if (m === 'manage') {
-        cta.textContent = 'Manage your support';
-        var cad = card.querySelector('.sup-cadence');
-        if (cad) cad.style.display = 'none';
-        if (status !== 'success') showBanner('success', 'You already support lean-ctx — thank you. ♥');
-      }
-    }
-
-    async function onCta() {
-      if (mode === 'signin') { gotoLogin(); return; }
-      var token = getToken();
-      if (!token) { gotoLogin(); return; }
-      var prev = cta.textContent;
-      cta.disabled = true;
-      try {
-        if (mode === 'manage') {
-          cta.textContent = 'Opening…';
-          var rp = await postJson('/api/account/portal', {}, token);
-          if (rp.ok && rp.data.url) { window.location.assign(rp.data.url); return; }
-          if (rp.status === 401) { gotoLogin(); return; }
-          showBanner('error', (rp.data && rp.data.message) || 'Could not open the billing portal.');
-        } else {
-          cta.textContent = 'Starting secure checkout…';
-          var rc = await postJson('/api/account/checkout', { plan: 'supporter', interval: cadence }, token);
-          if (rc.ok && rc.data.url) { window.location.assign(rc.data.url); return; }
-          if (rc.status === 401) { gotoLogin(); return; }
-          if (rc.status === 503) { showBanner('info', 'Billing is being switched on — please try again shortly.'); }
-          else showBanner('error', (rc.data && rc.data.message) || 'Could not start checkout. Please try again.');
-        }
-      } catch (_) {
-        showBanner('error', 'Could not reach billing. Please try again.');
-      }
-      cta.disabled = false;
-      cta.textContent = prev;
-    }
-    cta.addEventListener('click', onCta);
-
-    (async function init() {
-      var token = getToken();
-      if (!token) { applyMode('signin'); return; }
-      if (loading) loading.hidden = false;
-      try {
-        var res = await fetch(API + '/api/account/entitlements', { headers: authHeaders(token) });
-        if (res.status === 401) { applyMode('signin'); return; }
-        var data = await res.json().catch(function () { return {}; });
-        var ent = (data && data.entitlements) || {};
-        applyMode(ent.supporter ? 'manage' : 'subscribe');
-      } catch (_) {
-        applyMode('subscribe');
-      } finally {
-        if (loading) loading.hidden = true;
-      }
-    })();
   })();
 </script>
