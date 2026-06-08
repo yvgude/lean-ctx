@@ -193,6 +193,30 @@ Users have found these extensions work well alongside pi-lean-ctx:
 | `pi-search` | Web search | Combine with ctx_knowledge for persistence |
 | `pi-test` | Test runner | lean-ctx compresses test output |
 
+### Coexisting with AFT and magic-context
+
+lean-ctx, [AFT](https://github.com/cortexkit/aft) and
+[magic-context](https://github.com/cortexkit/magic-context) compose cleanly when
+each owns a distinct concern: **AFT** symbol-aware file ops, **lean-ctx** context
+compression + the session cache, **magic-context** long-horizon memory/compaction.
+
+Keep lean-ctx in its default **additive** mode (don't set `LEAN_CTX_PI_MODE=replace`)
+so it never contends for AFT's hoisted `read`/`write`/`edit`/`bash` slots. If two
+extensions register the same tool name (e.g. magic-context's `ctx_expand`), the
+extension that loads second would normally crash Pi — pi-lean-ctx instead **skips
+the clashing tool with a warning** and keeps loading (#359). To control the split:
+
+```bash
+# Hand specific names to the other extension:
+export LEAN_CTX_PI_DISABLE_TOOLS="ctx_memory,ctx_expand,ctx_search"
+# …or prefix all bridge tools so nothing collides:
+export LEAN_CTX_PI_TOOL_PREFIX="lc_"   # ctx_expand → lc_ctx_expand
+```
+
+Run `/lean-ctx` inside Pi to see exactly which tools were registered, handed off,
+or skipped. Full reference:
+[pi-lean-ctx README → Coexisting with AFT and magic-context](https://github.com/yvgude/lean-ctx/blob/main/packages/pi-lean-ctx/README.md#coexisting-with-aft-and-magic-context).
+
 ## Troubleshooting
 
 ### lean-ctx binary not found

@@ -718,6 +718,32 @@ pub fn handle_codex_pretooluse() {
     }
 }
 
+/// Emit SessionStart guidance through Codex's documented hidden-context channel.
+///
+/// Codex's hook contract (<https://developers.openai.com/codex/hooks>) accepts JSON
+/// on stdout with `hookSpecificOutput.additionalContext`, which is injected as
+/// model-visible developer context rather than surfaced to the user as plain text
+/// (#368). Plain stdout text is also added as developer context today, but only the
+/// JSON form is the documented additional-context channel; aligning with it
+/// future-proofs the hook for Codex's TUI-visibility fix (openai/codex#16933) and
+/// matches how the dedicated rules-injection path already emits context.
+pub(crate) fn session_start_additional_context_json(additional_context: &str) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": additional_context,
+        }
+    })
+    .to_string()
+}
+
+pub(crate) fn emit_session_start_additional_context(additional_context: &str) {
+    println!(
+        "{}",
+        session_start_additional_context_json(additional_context)
+    );
+}
+
 pub fn handle_codex_session_start() {
     if is_quiet() {
         return;
@@ -728,8 +754,8 @@ pub fn handle_codex_session_start() {
     if crate::core::config::Config::load().dedicated_session_context_active() {
         return;
     }
-    println!(
-        "For shell commands matched by lean-ctx compression rules, prefer `lean-ctx -c \"<command>\"`. If a Bash call is blocked, rerun it with the exact command suggested by the hook."
+    emit_session_start_additional_context(
+        "For shell commands matched by lean-ctx compression rules, prefer `lean-ctx -c \"<command>\"`. If a Bash call is blocked, rerun it with the exact command suggested by the hook.",
     );
 }
 

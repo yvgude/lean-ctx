@@ -23,21 +23,26 @@ pub fn capture_finding(project_root: &str, finding: &AutoFinding) {
 
     let category = classify_category(&finding.summary);
     let key = derive_key(finding);
-    let mut knowledge = ProjectKnowledge::load_or_create(project_root);
 
     let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() else {
         return;
     };
 
-    knowledge.remember(
-        &category,
-        &key,
-        &finding.summary,
-        "auto-capture",
-        0.6,
-        &policy,
-    );
-    let _ = knowledge.save();
+    // Load-modify-save under the shared in-process + cross-process lock so this
+    // background capture never clobbers facts a concurrent foreground
+    // `remember`/`relate` commits in between (issue #326): a bare
+    // `load_or_create` + `save` loads a stale (possibly empty) snapshot and its
+    // save silently drops just-written facts.
+    let _ = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
+        knowledge.remember(
+            &category,
+            &key,
+            &finding.summary,
+            "auto-capture",
+            0.6,
+            &policy,
+        );
+    });
 }
 
 fn classify_category(summary: &str) -> String {

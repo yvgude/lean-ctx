@@ -1,6 +1,7 @@
 import { LeanCtxHttpError } from "./errors.js";
 import { toolResultToText } from "./toolText.js";
 import type {
+  CapabilitiesV1,
   JsonObject,
   JsonValue,
   ContextEventV1,
@@ -55,6 +56,24 @@ export class LeanCtxClient {
 
   async manifest(): Promise<unknown> {
     return await this.getJson("/v1/manifest");
+  }
+
+  /** Runtime capability discovery document (`GET /v1/capabilities`). */
+  async capabilities(): Promise<CapabilitiesV1> {
+    const v = await this.getJson("/v1/capabilities");
+    if (!isJsonObject(v)) {
+      throw new Error("LeanCtxClient.capabilities: unexpected response shape");
+    }
+    return v as unknown as CapabilitiesV1;
+  }
+
+  /** OpenAPI 3.0 description of the public `/v1` surface (`GET /v1/openapi.json`). */
+  async openapi(): Promise<JsonObject> {
+    const v = await this.getJson("/v1/openapi.json");
+    if (!isJsonObject(v)) {
+      throw new Error("LeanCtxClient.openapi: unexpected response shape");
+    }
+    return v;
   }
 
   async listTools(params?: {

@@ -224,6 +224,14 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
                 .join("antigravity")
                 .join("mcp_config.json"),
         },
+        McpLocation {
+            name: "Antigravity CLI",
+            display: "~/.gemini/antigravity-cli/mcp_config.json".into(),
+            path: home
+                .join(".gemini")
+                .join("antigravity-cli")
+                .join("mcp_config.json"),
+        },
     ];
 
     #[cfg(unix)]

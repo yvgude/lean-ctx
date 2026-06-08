@@ -15,9 +15,11 @@
 
 pub mod citation;
 pub mod distill;
+pub mod feed;
 pub mod fetch;
 pub mod html_to_text;
 pub mod pdf;
+pub mod rewrite;
 pub mod url_guard;
 pub mod youtube;
 
@@ -114,10 +116,24 @@ pub struct ReadResult {
 
 /// Fetch and distill a URL into citation-backed context.
 pub fn read_url(opts: &ReadOptions) -> Result<ReadResult, String> {
-    if let Some(id) = youtube::video_id(opts.url) {
+    // Rewrite known page URLs (e.g. GitHub blob → raw) to their clean-content
+    // equivalent before fetching, so the agent gets the file instead of chrome.
+    let rewritten = rewrite::rewrite_url(opts.url);
+    let url = rewritten.as_deref().unwrap_or(opts.url);
+
+    if let Some(id) = youtube::video_id(url) {
         return read_youtube(&id, opts);
     }
-    read_web(opts)
+
+    let effective = ReadOptions {
+        url,
+        mode: opts.mode,
+        query: opts.query,
+        max_tokens: opts.max_tokens,
+        max_items: opts.max_items,
+        timeout_secs: opts.timeout_secs,
+    };
+    read_web(&effective)
 }
 
 fn read_web(opts: &ReadOptions) -> Result<ReadResult, String> {
@@ -137,7 +153,12 @@ fn read_web(opts: &ReadOptions) -> Result<ReadResult, String> {
         let body = doc.body_text();
         let tokens = crate::core::tokens::count_tokens(&body);
         let looks_html = body.trim_start().starts_with('<');
-        if is_html(&doc.content_type) || (doc.content_type.is_empty() && looks_html) {
+        // RSS/Atom feeds are XML, so check them before the HTML branch (which
+        // would otherwise flatten a feed into unreadable text — GH #feedback).
+        if feed::looks_like_feed(&doc.content_type, &body) {
+            let parsed = feed::parse(&body, &doc.final_url);
+            (parsed.title, parsed.markdown, Vec::new(), tokens)
+        } else if is_html(&doc.content_type) || (doc.content_type.is_empty() && looks_html) {
             let parsed = html_to_text::parse(&body);
             (parsed.title, parsed.markdown, parsed.links, tokens)
         } else if is_textual(&doc.content_type) {

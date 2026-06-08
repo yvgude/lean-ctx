@@ -230,12 +230,35 @@ lean-ctx cep                       # CEP score trends (Context Engineering Proto
 lean-ctx benchmark run             # run the benchmark suite
 lean-ctx benchmark report          # results
 lean-ctx benchmark eval / compare  # evaluate / compare runs
+lean-ctx benchmark scorecard       # reproducible savings + recall/MRR + latency
 ```
 
 - `cep` tracks the Context Engineering Protocol score over time — a measure of
   how well-structured the agent's context has been.
 - `benchmark` measures compression quality/throughput so regressions are caught
   (also used in CI, Journey 9).
+
+### Reproducible scorecard — `benchmark scorecard`
+
+One command runs a **fixed, committed scenario matrix** (`small` / `medium` /
+`large`) and reports the three numbers that matter together: compression
+**savings**, retrieval **recall@5/@10 + MRR**, and search **latency**.
+
+```bash
+lean-ctx benchmark scorecard                       # human-readable table
+lean-ctx benchmark scorecard --json                # structured JSON
+lean-ctx benchmark scorecard --json --output sc.json
+```
+
+The corpus is generated deterministically (content derived purely from the file
+index — no RNG) and retrieval is pure BM25, so the **quality metrics are
+reproducible** run-to-run and machine-to-machine. Each report embeds a
+`determinism_digest` (a fingerprint of the latency-free metrics) in both the JSON
+and the human table, so two artifacts are **self-verifying** — compare the
+digests to confirm identical quality without diffing every number. Latency is
+wall-clock and therefore reported but excluded from the digest. CI runs the
+scorecard on every push and uploads `scorecard.json` as a build artifact, and a
+test (`scorecard_determinism`) asserts the digest is stable.
 
 ---
 

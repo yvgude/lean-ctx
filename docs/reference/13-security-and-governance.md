@@ -107,6 +107,36 @@ Built-in patterns cover common cloud/credential formats; `custom_patterns` lets
 you redact organization-specific secret shapes. Matches are reported with a safe
 preview (e.g. `AKIA…`) so you know redaction fired without seeing the secret.
 
+### 4.1 Sensitivity policy floor — per-item levels
+
+Where `[secret_detection]` masks *known credential shapes*, the **sensitivity
+floor** classifies every item by a level and enforces one uniform **policy
+floor** just before content reaches the model. It is **off by default** (fully
+no-op) and covers both tool outputs and injected knowledge facts.
+
+```toml
+[sensitivity]
+enabled = true            # off by default → no-op
+policy_floor = "secret"   # public < internal < confidential < secret
+action = "redact"         # "redact" masks the spans, "drop" withholds the item
+```
+
+| Level | Raised by (high-precision signals only) |
+|-------|------------------------------------------|
+| `secret` | secret-like paths (`.env`, `.ssh/…`, `*.pem`) or detected credentials |
+| `confidential` | Luhn-validated card numbers, mod-97-validated IBANs |
+| `internal` | reserved for explicit tagging |
+| `public` | default |
+
+Anything classified **at or above** `policy_floor` is dropped or redacted: with
+`action = "drop"` the whole item is replaced by a short notice; with `redact`
+only the offending spans are masked. Knowledge facts store their level at
+creation (`KnowledgeFact.sensitivity`) and are re-checked at injection time, so a
+floor change takes effect immediately. The classifier uses **only high-precision
+signals** (no speculative heuristics) to avoid false positives; `LEAN_CTX_SENSITIVITY=0|1`
+toggles enforcement for a single run. This section lives in the **global**
+`~/.lean-ctx/config.toml` only — an untrusted project file cannot lower the floor.
+
 ---
 
 ## 5. Harden mode — force the compressed path
@@ -167,6 +197,7 @@ which controls address which risks — useful when answering a security review.
 | Never wrap docker mount-escapes | docker/podman off the default allowlist |
 | Confine executed code | Seatbelt (macOS) / Landlock (Linux) |
 | Stop secrets reaching the model | `[secret_detection]` (on by default) |
+| Block whole sensitivity levels (PII/secret) pre-prompt | `[sensitivity]` policy floor (off by default) |
 | Force compressed reads | `lean-ctx harden [--hard]` |
 | Least-privilege agents | role policies |
 | Answer a security review | audit trail + OWASP alignment |

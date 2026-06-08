@@ -21,9 +21,9 @@ impl McpTool for CtxUrlReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_url_read",
-            "Fetch a web page, PDF, or YouTube URL as compressed, cited context.\n\
-             HTML/PDF→clean text, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.\n\
-             facts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).\n\
+            "Fetch a web page, PDF, RSS/Atom feed, or YouTube URL as compressed, cited context.\n\
+             HTML→clean Markdown (tables→GFM), PDF→text, feeds→dated item list, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.\n\
+             GitHub blob/raw page URLs auto-resolve to the raw file. facts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).\n\
              Use for research/crawl instead of raw fetch.",
             json!({
                 "type": "object",

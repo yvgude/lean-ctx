@@ -125,6 +125,7 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(
         registered::ctx_discover_tools::CtxDiscoverToolsTool,
     ));
+    registry.register(Box::new(registered::ctx_tools::CtxToolsTool));
     registry.register(Box::new(registered::ctx_review::CtxReviewTool));
     registry.register(Box::new(registered::ctx_provider::CtxProviderTool));
     registry.register(Box::new(registered::ctx_impact::CtxImpactTool));
@@ -149,6 +150,8 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::shell_alias::ShellAliasTool));
     registry.register(Box::new(registered::ctx_search::CtxSearchTool));
     registry.register(Box::new(registered::ctx_url_read::CtxUrlReadTool));
+    registry.register(Box::new(registered::ctx_git_read::CtxGitReadTool));
+    registry.register(Box::new(registered::ctx_checkpoint::CtxCheckpointTool));
     registry.register(Box::new(registered::ctx_compose::CtxComposeTool));
     registry.register(Box::new(registered::ctx_execute::CtxExecuteTool));
 
@@ -185,5 +188,27 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_workflow::CtxWorkflowTool));
     registry.register(Box::new(registered::ctx_load_tools::CtxLoadToolsTool));
 
+    register_plugin_tools(&mut registry);
+
     registry
+}
+
+/// Append manifest-declared plugin tools (EPIC 12.11) without forking the
+/// registry. Only enabled plugins contribute; a tool whose name collides with a
+/// native tool is skipped (native tools win) so a plugin can never shadow core
+/// behavior. No-op when no plugins are installed.
+fn register_plugin_tools(registry: &mut ToolRegistry) {
+    for spec in crate::core::plugins::PluginManager::tool_specs() {
+        if registry.contains(&spec.name) {
+            tracing::warn!(
+                "plugin '{}' tool '{}' collides with a native tool; skipping",
+                spec.plugin_name,
+                spec.name
+            );
+            continue;
+        }
+        registry.register(Box::new(
+            crate::tools::registered::plugin_tool::PluginTool::from_spec(spec),
+        ));
+    }
 }

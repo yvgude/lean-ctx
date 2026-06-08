@@ -30,6 +30,22 @@ export interface PiLeanCtxFileConfig {
    * (e.g. `{ "LEAN_CTX_COMPRESSION": "aggressive" }`).
    */
   env?: Record<string, string>;
+  /**
+   * Tool names lean-ctx must NOT register, handing them to another Pi
+   * extension instead (issue #359). Use this when coexisting with
+   * magic-context / AFT so duplicate `ctx_memory` / `ctx_search` / `ctx_expand`
+   * tools don't confuse smaller models. Equivalent to
+   * `LEAN_CTX_PI_DISABLE_TOOLS` (the env list and this list are merged).
+   */
+  disableTools?: string[];
+  /**
+   * Optional prefix applied to bridge-registered MCP tools (e.g. `"lc_"` turns
+   * `ctx_expand` into `lc_expand`) to sidestep name collisions entirely while
+   * still exposing the tool (issue #359). The signature tools (`ctx_read`,
+   * `ctx_shell`, …) keep their stable names. Equivalent to
+   * `LEAN_CTX_PI_TOOL_PREFIX`.
+   */
+  toolPrefix?: string;
 }
 
 export type PiMode = "additive" | "replace";
@@ -42,6 +58,10 @@ export interface ResolvedPiConfig {
   binaryOverride?: string;
   /** Engine env overrides forwarded to lean-ctx subprocesses. */
   forwardedEnv: Record<string, string>;
+  /** Lower-cased tool names handed to other extensions / never registered (#359). */
+  disabledTools: Set<string>;
+  /** Optional prefix for bridge-registered MCP tools (#359). */
+  toolPrefix?: string;
   /** Absolute path the loader looked at (whether or not it existed). */
   configPath: string;
   /** True when the file existed and parsed into a JSON object. */
@@ -87,6 +107,42 @@ function resolveMode(fileMode: string | undefined): PiMode {
   return raw === "replace" ? "replace" : "additive";
 }
 
+/** Split a comma/whitespace-separated tool list into trimmed, non-empty names. */
+function parseToolList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,\s]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+}
+
+/**
+ * Union of the file `disableTools` and the `LEAN_CTX_PI_DISABLE_TOOLS` env list,
+ * lower-cased. A deny-list is additive by nature, so both sources contribute
+ * (rather than env replacing file) — the intent is always "do not register X".
+ */
+function resolveDisabledTools(fileList: unknown): Set<string> {
+  const set = new Set<string>();
+  if (Array.isArray(fileList)) {
+    for (const t of fileList) {
+      if (typeof t === "string" && t.trim().length > 0) set.add(t.trim().toLowerCase());
+    }
+  }
+  for (const t of parseToolList(process.env.LEAN_CTX_PI_DISABLE_TOOLS)) {
+    set.add(t.toLowerCase());
+  }
+  return set;
+}
+
+/** Env `LEAN_CTX_PI_TOOL_PREFIX` wins over the file `toolPrefix`; empty ⇒ none. */
+function resolveToolPrefix(filePrefix: unknown): string | undefined {
+  const raw = process.env.LEAN_CTX_PI_TOOL_PREFIX
+    ?? (typeof filePrefix === "string" ? filePrefix : undefined);
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /**
  * Loads and resolves the Pi override config. Precedence per setting is
  * "most explicit wins": an explicit `LEAN_CTX_PI_*` / `LEAN_CTX_BIN` env var
@@ -123,6 +179,8 @@ export function loadPiConfig(): ResolvedPiConfig {
     enableMcp,
     binaryOverride,
     forwardedEnv,
+    disabledTools: resolveDisabledTools(cfg.disableTools),
+    toolPrefix: resolveToolPrefix(cfg.toolPrefix),
     configPath,
     loaded,
   };

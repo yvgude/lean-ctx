@@ -32,7 +32,7 @@ pub(super) fn print_quickstart() {
 /// from the README / feature catalog.
 pub(super) fn capability_banner() -> String {
     format!(
-        "60+ compression patterns | {} MCP tools | 10 read modes | Context Continuity Protocol",
+        "95+ compression patterns | {} MCP tools | 10 read modes | Context Continuity Protocol",
         crate::server::registry::tool_count()
     )
 }
@@ -144,6 +144,7 @@ COMMANDS:
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     index <status|build|build-full|watch>  Codebase index utilities
     cep                            CEP report (compression metrics, cache, modes, trends)
+    verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
     watch                          Live TUI dashboard (real-time event stream)
     dashboard [--port=N] [--host=H] [--base-path=/prefix]  Open web dashboard (default: http://localhost:3333)
     serve [--host H] [--port N]    MCP over HTTP (Streamable HTTP, local-first)
@@ -156,6 +157,7 @@ COMMANDS:
     benchmark run [path] [--json]  Run real benchmark on project files
     benchmark report [path]        Generate shareable Markdown report
     benchmark compare [--output F] Head-to-head comparison vs competitors
+    benchmark scorecard [--json]   Reproducible savings+recall+latency scorecard
     cheatsheet                     Command cheat sheet & workflow quick reference
     onboard                        Zero-prompt golden path: connect tools + sensible defaults
     setup                          Guided setup: shell + editor + verify (full control)

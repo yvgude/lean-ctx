@@ -26,6 +26,22 @@ impl TaskType {
         }
     }
 
+    /// All task types in declaration order. The default (coding) intent
+    /// taxonomy; personas can override it (12.16).
+    pub fn all() -> &'static [TaskType] {
+        &[
+            Self::Generate,
+            Self::FixBug,
+            Self::Refactor,
+            Self::Explore,
+            Self::Test,
+            Self::Debug,
+            Self::Config,
+            Self::Deploy,
+            Self::Review,
+        ]
+    }
+
     pub fn thinking_budget(&self) -> ThinkingBudget {
         match self {
             Self::Generate | Self::FixBug | Self::Test | Self::Config | Self::Deploy => {

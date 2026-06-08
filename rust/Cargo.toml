@@ -3,7 +3,7 @@ name = "lean-ctx"
 version = "3.7.5"
 edition = "2021"
 autobins = false
-description = "Context Runtime for AI Agents with CCP. 69 MCP tools, 10 read modes, 60+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24+ AI tools. Reduces LLM token consumption by up to 99%."
+description = "Context Runtime for AI Agents with CCP. 71 MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24+ AI tools. Reduces LLM token consumption by up to 99%."
 license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
@@ -96,12 +96,16 @@ tree-sitter = [
   "dep:tree-sitter-scala",
   "dep:tree-sitter-elixir",
   "dep:tree-sitter-zig",
+  "dep:tree-sitter-gdscript",
 ]
+wasm = ["dep:wasmi"]
 
 [dependencies]
-rmcp = { version = "1", features = ["server", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "1", features = ["server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+# Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
+http = "1"
 tiktoken-rs = "0.6"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 subtle = "2"
@@ -147,6 +151,7 @@ tree-sitter-scala = { version = "0.25", optional = true }
 tree-sitter-elixir = { version = "0.3", optional = true }
 tree-sitter-zig = { version = "1.1", optional = true }
 tree-sitter-dart = { version = "0.1", optional = true }
+tree-sitter-gdscript = { version = "6.1", optional = true }
 rten = { version = "0.24", optional = true }
 rten-tensor = { version = "0.24", optional = true }
 axum = { version = "0.8", optional = true }
@@ -182,6 +187,7 @@ lsp-types = "0.97"
 fs2 = "0.4.3"
 unicode-width = "0.2"
 resvg = { version = "0.47.0", optional = true }
+wasmi = { version = "1.0.9", optional = true }
 
 [lints.rust]
 unreachable_pub = "warn"
@@ -261,6 +267,7 @@ proptest = "1"
 serial_test = "3.4.0"
 tempfile = "3.27.0"
 tower = "0.5"
+wat = "1.251.0"
 
 [[bench]]
 name = "compression"

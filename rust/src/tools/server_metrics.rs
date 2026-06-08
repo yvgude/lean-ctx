@@ -335,6 +335,23 @@ impl LeanCtxServer {
 
         drop(cache);
         drop(calls);
+
+        // Persist CEP on the live-stats cadence (first call + every 5th) so even
+        // short sessions register `sessions`/`total_cache_hits` instead of only
+        // recording on an `auto_checkpoint` that a brief workload may never reach.
+        // `record_cep_session` is delta-based and PID-guarded, so the extra call
+        // that coincides with a checkpoint is a no-op for the totals (#361).
+        crate::core::stats::record_cep_session(
+            cs.cep_score,
+            cs.cache_hits,
+            cs.total_reads,
+            cs.total_original,
+            cs.total_compressed,
+            &cs.mode_counts,
+            cs.tool_call_count,
+            &cs.complexity,
+        );
+
         let live = serde_json::json!({
             "cep_score": cs.cep_score,
             "cache_utilization": cs.cache_util,

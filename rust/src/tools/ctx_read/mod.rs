@@ -4,6 +4,7 @@ use crate::core::cache::SessionCache;
 use crate::core::compressor;
 use crate::core::deps;
 use crate::core::entropy;
+use crate::core::plugins::{executor::HookPoint, PluginManager};
 use crate::core::protocol;
 use crate::core::signatures;
 use crate::core::symbol_map::{self, SymbolMap};
@@ -286,6 +287,14 @@ fn handle_with_options_resolved(
 ) -> ReadOutput {
     let effective_fresh = fresh || is_subagent_context();
 
+    // Plugin seam: notify listeners before the read resolves. Guarded so the hot
+    // path never allocates or spawns a thread unless a plugin opts into pre_read.
+    if PluginManager::has_listener("pre_read") {
+        PluginManager::fire_hook_background(HookPoint::PreRead {
+            path: path.to_string(),
+        });
+    }
+
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
     }
@@ -317,6 +326,16 @@ fn handle_with_options_resolved(
             result.output_tokens,
             original_tokens,
         );
+    }
+
+    // Plugin seam: emit the realized compression stats. Same zero-cost guard.
+    if PluginManager::has_listener("post_compress") {
+        let original_tokens = cache.get(path).map_or(0, |e| e.original_tokens);
+        PluginManager::fire_hook_background(HookPoint::PostCompress {
+            path: path.to_string(),
+            original_tokens,
+            compressed_tokens: result.output_tokens,
+        });
     }
 
     result

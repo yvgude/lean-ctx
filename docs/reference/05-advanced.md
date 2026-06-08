@@ -10,6 +10,8 @@ Source files referenced here:
 - `rust/src/cli/plugin_cmd.rs`, `rules_cmd.rs`, `pack_cmd.rs`
 - `rust/src/tools/registered/ctx_provider.rs`, `ctx_pack.rs`, `ctx_multi_repo.rs`,
   `ctx_agent.rs`, `ctx_handoff.rs`
+- `rust/src/core/gateway/` (`client.rs`, `catalog.rs`, `router.rs`, `config.rs`),
+  `rust/src/tools/ctx_tools.rs` — the MCP Tool-Catalog Gateway
 
 ---
 
@@ -216,6 +218,101 @@ lean-ctx hook <rewrite|redirect|observe|copilot|codex-pretooluse|codex-session-s
 (Cursor/Claude/Copilot/Codex). They are invoked by the editor's hook mechanism,
 not typed manually — listed here so the integration surface is fully accounted
 for.
+
+---
+
+## 10. MCP Tool-Catalog Gateway — `ctx_tools` (downstream MCP servers)
+
+**The problem it solves:** every MCP server you connect injects its *entire* tool
+catalog into the system prompt — on every request. Ten servers can mean dozens of
+tool schemas the model must read and disambiguate before it does anything. More
+tools measurably *lowers* tool-selection accuracy and raises cost. lean-ctx only
+ever shrank its **own** surface; the gateway extends that to *external* catalogs.
+
+**What it does:** lean-ctx becomes an **MCP gateway** in front of any number of
+downstream MCP servers. Instead of registering all their tools, it exposes one
+meta-tool, `ctx_tools`:
+
+| Action | What it does |
+|--------|--------------|
+| `find` | Rank the aggregated downstream catalog against your query (BM25, the same engine as `ctx_search`) and return the top-N as compact **ChoiceCards** |
+| `call` | Proxy a `server::tool` call to its owning server and return the result |
+| `list` | Show configured servers + how many tools each contributes |
+| `refresh` | Drop the catalog cache and re-aggregate |
+
+Net effect: **unlimited downstream tools at roughly constant context cost** — the
+model only ever sees the handful that matter for the task in front of it.
+
+**How to use it (config is global-only, off by default):**
+
+```toml
+# ~/.lean-ctx/config.toml
+[gateway]
+enabled = true
+top_n = 5              # tools returned per `find`
+cache_ttl_secs = 300  # catalog cache lifetime
+call_timeout_secs = 30
+
+[[gateway.servers]]
+name = "fs"                              # becomes the namespace: fs::read_file
+transport = "stdio"                      # spawn a local server as a child process
+command = "mcp-server-filesystem"
+args = ["/path/to/project"]
+
+[[gateway.servers]]
+name = "linear"
+transport = "http"                       # connect to a remote server
+url = "https://mcp.linear.app/mcp"
+headers = { Authorization = "Bearer ${LINEAR_TOKEN}" }
+```
+
+Then, from the agent:
+
+```jsonc
+// 1) Discover — "what can touch issues?"
+ctx_tools {"action":"find","query":"create an issue with a title and assignee"}
+// 2) Invoke the chosen handle
+ctx_tools {"action":"call","tool":"linear::create_issue",
+           "arguments":{"title":"Fix login","assignee":"me"}}
+```
+
+**Golden output — `ctx_tools find`** returns a ranked, citation-style shortlist
+plus the size of the full catalog it is shielding you from:
+
+```text
+gateway: 3 tool(s) for "create an issue" (catalog: 47 tool(s) across 4 server(s))
+
+1. linear::create_issue — Create a Linear issue
+   params: title*, assignee, team
+2. linear::update_issue — Update fields on an existing issue
+   params: id*, title, state
+3. github::create_issue — Open a GitHub issue
+   params: repo*, title*, body
+
+Invoke one with:
+  ctx_tools {"action":"call","tool":"<server::tool>","arguments":{ ... }}
+```
+
+**What happens under the hood:**
+- `rust/src/core/gateway/client.rs` — a real MCP client built on the official
+  `rmcp` SDK. `stdio` spawns the server as a child process; `http` uses the
+  streamable-HTTP transport with custom headers. Every connect/list/call is
+  bounded by `call_timeout_secs`; sessions are opened per operation and shut down
+  cleanly (no stale child processes).
+- `rust/src/core/gateway/catalog.rs` — aggregates each enabled server's tools
+  into a namespaced `server::tool` catalog behind an in-process **TTL cache**.
+  Per-server fetch errors are *surfaced*, never hidden, so a misconfigured server
+  is visible to the agent.
+- `rust/src/core/gateway/router.rs` — builds an **ephemeral BM25 index** over the
+  catalog per query and returns the top-N. Deterministic for a fixed catalog.
+- `rust/src/tools/ctx_tools.rs` — gates on config, routes the action, and proxies
+  the call; downstream results flow back through the same ephemeral firewall and
+  sensitivity floor as native tools.
+
+**Security:** `[gateway]` is **global-only** — it is never merged from a
+project-local `.lean-ctx.toml`, so cloning an untrusted repo can never point the
+gateway at an arbitrary command or endpoint. It is a complete no-op until you set
+`enabled = true`.
 
 ---
 

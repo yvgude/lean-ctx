@@ -49,7 +49,7 @@ Available for agents with shell access. Combines:
 
 ### MCP-Only Mode
 
-For agents without direct shell access. All 69 tools available via MCP protocol.
+For agents without direct shell access. All 72 tools available via MCP protocol.
 
 ## What lean-ctx Sets Up
 
@@ -62,7 +62,7 @@ Running `lean-ctx init --agent <name>` or `lean-ctx setup` configures:
 
 ## Common Tools Reference
 
-Every agent gets access to the same 69 MCP tools. The most important ones:
+Every agent gets access to the same 72 MCP tools. The most important ones:
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|

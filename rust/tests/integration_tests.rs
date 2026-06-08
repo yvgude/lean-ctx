@@ -268,6 +268,106 @@ rm -f {tmp_path}
     );
 }
 
+// ── Redirect-to-file fidelity under FORCED compression ──────
+// Regression: the agent shell hook deliberately bypasses the `[ ! -t 1 ]` pipe
+// guard (an agent IS the consumer), so an agent running
+// `git status --short > files.txt` reached `lean-ctx -c` with stdout pointing at a
+// regular FILE and forced compression on. The compressed digest was written INTO
+// the file, dropping/abbreviating lines and producing contradictory diffs. Output
+// redirected to a regular file must ALWAYS stay byte-faithful, even when
+// compression is forced; pipes (agent capture) must keep compressing.
+
+// >30 distinct lines so the compression engine definitely rewrites the output
+// (the truncate-with-safety-scan fallback collapses the middle). This makes the
+// assertions below meaningful — pre-fix, the file held the compressed digest.
+// The payload must NOT contain any passthrough/verbatim keyword (notably the
+// literal "lean-ctx", which classifies the whole command as Passthrough), or the
+// output would never be compressed and the test would be vacuous.
+fn redirect_fidelity_command() -> &'static str {
+    "i=0; while [ $i -lt 60 ]; do echo \"row $i alpha beta gamma delta payload\"; i=$((i+1)); done"
+}
+
+/// `lean-ctx -c` with a *hermetic* control environment for the compression
+/// fidelity tests. A developer's shell hook exports `LEAN_CTX_RAW` /
+/// `LEAN_CTX_DISABLED` (and CI may set `LEAN_CTX_ACTIVE`) — each forces raw
+/// passthrough, which would make these tests assert nothing (the redirect test
+/// would pass vacuously). Stripping them pins the exact forced-compress path.
+fn forced_compress_bin() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+    cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
+        .env_remove("LEAN_CTX_RAW")
+        .env_remove("LEAN_CTX_DISABLED")
+        .env_remove("LEAN_CTX_ACTIVE")
+        .env("LEAN_CTX_COMPRESS", "1")
+        .env("__LEAN_CTX_SKIP_EVENTS", "1");
+    cmd
+}
+
+#[test]
+fn force_compress_redirect_to_file_is_byte_faithful() {
+    if cfg!(windows) {
+        return;
+    }
+    let cmd = redirect_fidelity_command();
+
+    // Ground truth: the raw command output (no lean-ctx in the loop).
+    let raw = Command::new("sh")
+        .args(["-c", cmd])
+        .output()
+        .expect("failed to run raw command");
+    let raw_stdout = String::from_utf8_lossy(&raw.stdout).to_string();
+
+    // Run lean-ctx with forced compression, stdout redirected to a real file —
+    // exactly the agent `cmd > file` scenario.
+    let tmp = std::env::temp_dir().join(format!(
+        "lean-ctx-redirect-fidelity-{}.txt",
+        std::process::id()
+    ));
+    let file = std::fs::File::create(&tmp).expect("create temp file");
+    let status = forced_compress_bin()
+        .args(["-c", cmd])
+        .stdout(std::process::Stdio::from(file))
+        .status()
+        .expect("failed to run lean-ctx -c with file redirect");
+    assert!(status.success(), "lean-ctx -c should exit cleanly");
+
+    let file_content = std::fs::read_to_string(&tmp).expect("read temp file");
+    let _ = std::fs::remove_file(&tmp);
+
+    assert_eq!(
+        file_content, raw_stdout,
+        "redirect to a regular file under LEAN_CTX_COMPRESS must be byte-faithful (never compressed)"
+    );
+}
+
+#[test]
+fn force_compress_pipe_still_compresses() {
+    // Companion to the redirect test: proves compression is genuinely active for
+    // the SAME command + env when stdout is a PIPE (an agent's capture). If this
+    // ever stops compressing, the redirect test above would be vacuous.
+    if cfg!(windows) {
+        return;
+    }
+    let cmd = redirect_fidelity_command();
+
+    let raw = Command::new("sh")
+        .args(["-c", cmd])
+        .output()
+        .expect("failed to run raw command");
+    let raw_stdout = String::from_utf8_lossy(&raw.stdout).to_string();
+
+    let piped = forced_compress_bin()
+        .args(["-c", cmd])
+        .output()
+        .expect("failed to run lean-ctx -c with piped stdout");
+    let piped_stdout = String::from_utf8_lossy(&piped.stdout).to_string();
+
+    assert_ne!(
+        piped_stdout, raw_stdout,
+        "piped stdout under LEAN_CTX_COMPRESS should be compressed (changed) — proves the redirect guard is meaningful"
+    );
+}
+
 // ── Extended CLI Smoke Tests ────────────────────────────────
 
 #[test]

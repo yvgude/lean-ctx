@@ -86,46 +86,14 @@ pub fn execute_hook_sync(plugin: &Plugin, hook: &HookPoint) -> HookResult {
         }
     };
 
-    let parts: Vec<&str> = entry.command.split_whitespace().collect();
-    if parts.is_empty() {
-        return HookResult {
-            plugin_name,
-            success: false,
-            output: None,
-            error: Some("empty command".to_string()),
-            duration_ms: start.elapsed().as_millis() as u64,
-        };
-    }
-
-    let mut cmd = std::process::Command::new(parts[0]);
-    if parts.len() > 1 {
-        cmd.args(&parts[1..]);
-    }
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("LEAN_CTX_HOOK", hook_name)
-        .env("LEAN_CTX_PLUGIN_DIR", &plugin.path);
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            return HookResult {
-                plugin_name,
-                success: false,
-                output: None,
-                error: Some(format!("failed to spawn: {e}")),
-                duration_ms: start.elapsed().as_millis() as u64,
-            };
-        }
-    };
-
-    if let Some(ref mut stdin) = child.stdin.take() {
-        use std::io::Write;
-        let _ = stdin.write_all(hook_json.as_bytes());
-    }
-
-    let result = wait_with_timeout(&mut child, timeout);
+    let result = run_subprocess(
+        &entry.command,
+        &plugin.path,
+        &[("LEAN_CTX_HOOK", hook_name)],
+        &hook_json,
+        timeout,
+        &plugin.manifest.trust.policy(),
+    );
     let duration_ms = start.elapsed().as_millis() as u64;
 
     match result {
@@ -159,6 +127,48 @@ pub fn execute_hook_sync(plugin: &Plugin, hook: &HookPoint) -> HookResult {
             duration_ms,
         },
     }
+}
+
+/// Spawn `command` (whitespace-split into program + args) as a sandboxed child:
+/// piped stdio, `LEAN_CTX_PLUGIN_DIR` exported, plus any `extra_env`. The
+/// `stdin_data` is written to the child's stdin and the process is bounded by
+/// `timeout`. The [`SandboxPolicy`] is applied before spawn (env scrub + cwd
+/// jail; EPIC 12.3). Shared by hook execution and manifest-declared tool
+/// invocation (EPIC 12.11) so both honor the same isolation contract.
+pub(crate) fn run_subprocess(
+    command: &str,
+    plugin_dir: &std::path::Path,
+    extra_env: &[(&str, &str)],
+    stdin_data: &str,
+    timeout: Duration,
+    policy: &super::sandbox::SandboxPolicy,
+) -> Result<std::process::Output, String> {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    let Some((program, args)) = parts.split_first() else {
+        return Err("empty command".to_string());
+    };
+
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Apply the sandbox (env scrub + cwd jail) first, then set the trusted
+    // lean-ctx env + caller extras so they always win over the scrubbed base.
+    policy.apply(&mut cmd, plugin_dir);
+    cmd.env("LEAN_CTX_PLUGIN_DIR", plugin_dir);
+    for (key, value) in extra_env {
+        cmd.env(key, value);
+    }
+
+    let mut child = cmd.spawn().map_err(|e| format!("failed to spawn: {e}"))?;
+
+    if let Some(ref mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        let _ = stdin.write_all(stdin_data.as_bytes());
+    }
+
+    wait_with_timeout(&mut child, timeout)
 }
 
 fn wait_with_timeout(
@@ -316,6 +326,36 @@ timeout_ms = 1000
         let result = execute_hook_sync(&plugin, &HookPoint::OnSessionStart);
         assert!(!result.success);
         assert!(result.error.unwrap().contains("failed to spawn"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_subprocess_echoes_stdin() {
+        let out = run_subprocess(
+            "cat",
+            std::path::Path::new("/tmp"),
+            &[("LEAN_CTX_TOOL", "demo")],
+            "hello-stdin",
+            Duration::from_secs(2),
+            &super::super::sandbox::SandboxPolicy::strict(),
+        )
+        .unwrap();
+        assert!(out.status.success());
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "hello-stdin");
+    }
+
+    #[test]
+    fn run_subprocess_empty_command_errors() {
+        let err = run_subprocess(
+            "   ",
+            std::path::Path::new("/tmp"),
+            &[],
+            "",
+            Duration::from_millis(500),
+            &super::super::sandbox::SandboxPolicy::strict(),
+        )
+        .unwrap_err();
+        assert!(err.contains("empty command"));
     }
 
     #[cfg(unix)]

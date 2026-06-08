@@ -81,16 +81,38 @@ pub(super) fn cmd_team(rest: &[String]) {
                         None
                     })
                     .unwrap_or_default();
+                let role_arg = args.iter().enumerate().find_map(|(i, a)| {
+                    if let Some(v) = a.strip_prefix("--role=") {
+                        return Some(v.to_string());
+                    }
+                    if a == "--role" {
+                        return args.get(i + 1).cloned();
+                    }
+                    None
+                });
 
+                // EPIC 13.2: a token may be granted via explicit scopes and/or a
+                // coarse role (viewer/member/admin/owner).
                 if cfg_path.trim().is_empty()
                     || token_id.trim().is_empty()
-                    || scopes_csv.trim().is_empty()
+                    || (scopes_csv.trim().is_empty() && role_arg.is_none())
                 {
                     eprintln!(
-                        "Usage: lean-ctx team token create --config <path> --id <id> --scopes <csv>"
+                        "Usage: lean-ctx team token create --config <path> --id <id> (--scopes <csv> | --role <viewer|member|admin|owner>)"
                     );
                     std::process::exit(1);
                 }
+
+                let role = match role_arg.as_deref() {
+                    Some(r) => {
+                        let Some(role) = crate::http_server::team::TeamRole::parse(r) else {
+                            eprintln!("Unknown role: {r}. Valid: viewer, member, admin, owner");
+                            std::process::exit(1);
+                        };
+                        Some(role)
+                    }
+                    None => None,
+                };
 
                 let cfg_p = std::path::PathBuf::from(&cfg_path);
                 let mut cfg = crate::http_server::team::TeamServerConfig::load(cfg_p.as_path())
@@ -125,8 +147,8 @@ pub(super) fn cmd_team(rest: &[String]) {
                         scopes.push(scope);
                     }
                 }
-                if scopes.is_empty() {
-                    eprintln!("At least 1 scope is required");
+                if scopes.is_empty() && role.is_none() {
+                    eprintln!("At least 1 scope or a role is required");
                     std::process::exit(1);
                 }
 
@@ -139,6 +161,7 @@ pub(super) fn cmd_team(rest: &[String]) {
                     id: token_id,
                     sha256_hex: hash,
                     scopes,
+                    role,
                 });
 
                 cfg.save(cfg_p.as_path()).unwrap_or_else(|e| {

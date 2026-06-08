@@ -158,7 +158,7 @@ fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
         if path.components().any(|c| c.as_os_str() == ".git") {
             continue;
         }
-        if !is_code_file(path) {
+        if !crate::core::ingestion::is_ingestible(path) {
             continue;
         }
         let Ok(meta) = path.metadata() else {
@@ -193,10 +193,6 @@ fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
         );
     }
     out
-}
-
-fn is_code_file(path: &Path) -> bool {
-    crate::core::bm25_index::is_code_file(path)
 }
 
 fn print_human_status(project_root: &str) {

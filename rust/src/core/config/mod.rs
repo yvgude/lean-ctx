@@ -131,6 +131,11 @@ pub struct Config {
     /// Example: `tools_enabled = ["ctx_read", "ctx_shell", "ctx_search"]`
     #[serde(default)]
     pub tools_enabled: Vec<String>,
+    /// Active context persona (`persona-spec-v1`). Selects the domain bundle —
+    /// tool surface, read-mode/compressor/chunker defaults, intent taxonomy,
+    /// sensitivity floor. Override via `LEAN_CTX_PERSONA`. Defaults to `coding`.
+    #[serde(default)]
+    pub persona: Option<String>,
     #[serde(default)]
     pub loop_detection: LoopDetectionConfig,
     /// Controls where lean-ctx installs agent rule files.
@@ -321,6 +326,15 @@ pub struct Config {
     pub boundary_policy: crate::core::memory_boundary::BoundaryPolicy,
     #[serde(default)]
     pub secret_detection: SecretDetectionConfig,
+    /// Per-item sensitivity model with a uniform policy floor (#212).
+    /// Disabled by default → fully no-op until `sensitivity.enabled = true`.
+    #[serde(default)]
+    pub sensitivity: crate::core::sensitivity::SensitivityConfig,
+    /// MCP Tool-Catalog Gateway (#210): aggregate + query-route downstream MCP
+    /// servers. Global-only (never merged from project-local config) and a full
+    /// no-op until `gateway.enabled = true`.
+    #[serde(default)]
+    pub gateway: crate::core::gateway::GatewayConfig,
     /// Allow automatic project-root re-rooting when absolute paths outside the jail are seen.
     /// When false (default), absolute paths outside the jail are rejected without re-rooting.
     /// Override via LEAN_CTX_ALLOW_REROOT env var.
@@ -398,6 +412,7 @@ impl Default for Config {
             profile: None,
             tool_profile: None,
             tools_enabled: Vec::new(),
+            persona: None,
             loop_detection: LoopDetectionConfig::default(),
             rules_scope: None,
             rules_injection: None,
@@ -440,6 +455,8 @@ impl Default for Config {
             cache_policy: None,
             boundary_policy: crate::core::memory_boundary::BoundaryPolicy::default(),
             secret_detection: SecretDetectionConfig::default(),
+            sensitivity: crate::core::sensitivity::SensitivityConfig::default(),
+            gateway: crate::core::gateway::GatewayConfig::default(),
             allow_auto_reroot: false,
             path_jail: None,
             sandbox_level: 0,
@@ -663,9 +680,14 @@ impl Config {
     }
 
     /// Returns the effective tool profile.
-    /// Priority: LEAN_CTX_TOOL_PROFILE env > config tool_profile > config tools_enabled > power.
+    /// Priority: LEAN_CTX_TOOL_PROFILE env > config tool_profile > config
+    /// tools_enabled > active persona's tool surface > power.
+    ///
+    /// Explicit settings win (backward compatible); when none are set, the
+    /// active persona supplies the tool surface (the `coding` default resolves
+    /// to `power`, so existing installs are unaffected).
     pub fn tool_profile_effective(&self) -> super::tool_profiles::ToolProfile {
-        super::tool_profiles::ToolProfile::from_config(self)
+        super::persona::Persona::resolve(self).effective_tool_profile(self)
     }
 
     /// Returns `true` if all automatic read-mode degradation is disabled.

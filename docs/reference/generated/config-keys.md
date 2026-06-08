@@ -133,6 +133,28 @@ Token-savings recap publishing (gain --publish / auto-publish)
 - `display_name` (string?, default `null`) — Optional display name shown on your published card / leaderboard entry
 - `leaderboard` (bool, default `true`) — When auto-publishing, also list the card on the public opt-in leaderboard
 
+## `[gateway]`
+
+MCP Tool-Catalog Gateway: aggregate + query-route downstream MCP servers (#210). Global-only.
+
+- `cache_ttl_secs` (integer, default `300`) — Aggregated-catalog cache lifetime in seconds
+- `call_timeout_secs` (integer, default `30`) — Per-operation timeout for downstream connect/list/call (seconds)
+- `enabled` (bool, default `false`) — Enable the MCP Tool-Catalog Gateway (no-op when false)
+- `top_n` (integer, default `5`) — How many tools `ctx_tools find` returns per query (clamped 1..=50)
+
+## `[gateway.servers]`
+
+Downstream MCP servers (array of tables: `[[gateway.servers]]`)
+
+- `args` (array, default `[]`) — Arguments for the spawned command (stdio transport)
+- `command` (string, default `""`) — Executable to spawn (stdio transport)
+- `enabled` (bool, default `true`) — Per-server switch (default true)
+- `env` (table, default `{}`) — Extra environment variables for the child process (stdio transport)
+- `headers` (table, default `{}`) — Extra request headers, e.g. Authorization (http transport)
+- `name` (string, default `""`) — Stable server id; becomes the catalog namespace (`name::tool`)
+- `transport` (string, default `stdio`) — Transport: stdio (spawn command) or http (connect to url)
+- `url` (string, default `""`) — Streamable-HTTP endpoint (http transport)
+
 ## `[ide_paths]`
 
 Per-IDE allowed paths. Keys are agent names (cursor, codex, opencode, antigravity, etc.), values are arrays of paths to index for that agent
@@ -263,6 +285,14 @@ Secret/credential detection and redaction settings
 - `custom_patterns` (array, default `[]`) — Additional regex patterns to detect as secrets
 - `enabled` (bool, default `true`) — Enable secret/credential detection in tool outputs
 - `redact` (bool, default `true`) — Redact detected secrets from output
+
+## `[sensitivity]`
+
+Per-item sensitivity model with a uniform policy floor (#212)
+
+- `action` (string, default `redact`) — How to enforce the floor: redact (mask spans) or drop (withhold item)
+- `enabled` (bool, default `false`) — Enable the per-item sensitivity policy floor (no-op when false)
+- `policy_floor` (string, default `secret`) — Block items at/above this level: public|internal|confidential|secret
 
 ## `[setup]`
 

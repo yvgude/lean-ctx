@@ -381,6 +381,153 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
+    let mut sensitivity = BTreeMap::new();
+    sensitivity.insert(
+        "enabled".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.sensitivity.enabled),
+            "Enable the per-item sensitivity policy floor (no-op when false)",
+        ),
+    );
+    sensitivity.insert(
+        "policy_floor".into(),
+        key(
+            "string",
+            serde_json::json!(cfg.sensitivity.policy_floor.as_str()),
+            "Block items at/above this level: public|internal|confidential|secret",
+        ),
+    );
+    sensitivity.insert(
+        "action".into(),
+        key(
+            "string",
+            serde_json::json!(cfg.sensitivity.action.as_str()),
+            "How to enforce the floor: redact (mask spans) or drop (withhold item)",
+        ),
+    );
+    sections.insert(
+        "sensitivity".into(),
+        SectionSchema {
+            description: "Per-item sensitivity model with a uniform policy floor (#212)".into(),
+            keys: sensitivity,
+        },
+    );
+
+    let mut gateway = BTreeMap::new();
+    gateway.insert(
+        "enabled".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.gateway.enabled),
+            "Enable the MCP Tool-Catalog Gateway (no-op when false)",
+        ),
+    );
+    gateway.insert(
+        "top_n".into(),
+        key(
+            "integer",
+            serde_json::json!(cfg.gateway.top_n),
+            "How many tools `ctx_tools find` returns per query (clamped 1..=50)",
+        ),
+    );
+    gateway.insert(
+        "cache_ttl_secs".into(),
+        key(
+            "integer",
+            serde_json::json!(cfg.gateway.cache_ttl_secs),
+            "Aggregated-catalog cache lifetime in seconds",
+        ),
+    );
+    gateway.insert(
+        "call_timeout_secs".into(),
+        key(
+            "integer",
+            serde_json::json!(cfg.gateway.call_timeout_secs),
+            "Per-operation timeout for downstream connect/list/call (seconds)",
+        ),
+    );
+    sections.insert(
+        "gateway".into(),
+        SectionSchema {
+            description: "MCP Tool-Catalog Gateway: aggregate + query-route downstream MCP servers (#210). Global-only.".into(),
+            keys: gateway,
+        },
+    );
+
+    let mut gateway_servers = BTreeMap::new();
+    gateway_servers.insert(
+        "name".into(),
+        key(
+            "string",
+            serde_json::json!(""),
+            "Stable server id; becomes the catalog namespace (`name::tool`)",
+        ),
+    );
+    gateway_servers.insert(
+        "transport".into(),
+        key(
+            "string",
+            serde_json::json!("stdio"),
+            "Transport: stdio (spawn command) or http (connect to url)",
+        ),
+    );
+    gateway_servers.insert(
+        "enabled".into(),
+        key(
+            "bool",
+            serde_json::json!(true),
+            "Per-server switch (default true)",
+        ),
+    );
+    gateway_servers.insert(
+        "command".into(),
+        key(
+            "string",
+            serde_json::json!(""),
+            "Executable to spawn (stdio transport)",
+        ),
+    );
+    gateway_servers.insert(
+        "args".into(),
+        key(
+            "array",
+            serde_json::json!([]),
+            "Arguments for the spawned command (stdio transport)",
+        ),
+    );
+    gateway_servers.insert(
+        "env".into(),
+        key(
+            "table",
+            serde_json::json!({}),
+            "Extra environment variables for the child process (stdio transport)",
+        ),
+    );
+    gateway_servers.insert(
+        "url".into(),
+        key(
+            "string",
+            serde_json::json!(""),
+            "Streamable-HTTP endpoint (http transport)",
+        ),
+    );
+    gateway_servers.insert(
+        "headers".into(),
+        key(
+            "table",
+            serde_json::json!({}),
+            "Extra request headers, e.g. Authorization (http transport)",
+        ),
+    );
+    sections.insert(
+        "gateway.servers".into(),
+        SectionSchema {
+            description: "Downstream MCP servers (array of tables: `[[gateway.servers]]`)".into(),
+            keys: gateway_servers,
+        },
+    );
+
     let mut cloud = BTreeMap::new();
     cloud.insert(
         "contribute_enabled".into(),

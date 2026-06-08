@@ -88,7 +88,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           LEAK=0
 
-          PRIVATE_PATHS="cloud/ docker-compose.yml .gitlab-ci.yml deploy.sh DEVELOPMENT.md Makefile.deploy"
+          # Keep in sync with .github-ignore. Business/monetization dirs are
+          # gitignored locally; listing them here is server-side defense-in-depth
+          # in case the local pre-push hook is not installed.
+          PRIVATE_PATHS="cloud/ docker-compose.yml .gitlab-ci.yml deploy.sh DEVELOPMENT.md Makefile.deploy docs/business/ memory-bank/ discord-bot/ n8n-workflows/ lab/"
           for path in $PRIVATE_PATHS; do
             if [ -e "$path" ]; then
               echo "::error::PROPRIETARY CODE DETECTED: $path exists in the GitHub repository!"

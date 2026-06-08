@@ -204,18 +204,55 @@ pub fn record_cep_session(
         return;
     };
 
-    let cep = &mut store.cep;
+    apply_cep_snapshot(
+        &mut store.cep,
+        std::process::id(),
+        score,
+        cache_hits,
+        cache_reads,
+        tokens_original,
+        tokens_compressed,
+        modes,
+        tool_calls,
+        complexity,
+    );
 
-    let pid = std::process::id();
+    maybe_flush(store, baseline, last_flush);
+}
+
+/// Fold one CEP snapshot into `cep`. Pure (no globals, no I/O) so the
+/// delta/aggregation rules are unit-testable in isolation.
+///
+/// `cache_hits`, `cache_reads`, `tokens_original` and `tokens_compressed` arrive
+/// as **cumulative per-process** counters. For repeated snapshots within the same
+/// PID only the delta since the previous snapshot is added, so the lifetime
+/// totals keep tracking cache activity instead of freezing at the first
+/// checkpoint's value (#361). A new PID starts a fresh session and seeds the
+/// cumulative baselines.
+#[allow(clippy::too_many_arguments)]
+fn apply_cep_snapshot(
+    cep: &mut CepStats,
+    pid: u32,
+    score: u32,
+    cache_hits: u64,
+    cache_reads: u64,
+    tokens_original: u64,
+    tokens_compressed: u64,
+    modes: &HashMap<String, u64>,
+    tool_calls: u64,
+    complexity: &str,
+) {
     let prev_original = cep.last_session_original.unwrap_or(0);
     let prev_compressed = cep.last_session_compressed.unwrap_or(0);
+    let prev_cache_hits = cep.last_session_cache_hits.unwrap_or(0);
+    let prev_cache_reads = cep.last_session_cache_reads.unwrap_or(0);
     let is_same_session = cep.last_session_pid == Some(pid);
 
     if is_same_session {
-        let delta_original = tokens_original.saturating_sub(prev_original);
-        let delta_compressed = tokens_compressed.saturating_sub(prev_compressed);
-        cep.total_tokens_original += delta_original;
-        cep.total_tokens_compressed += delta_compressed;
+        cep.total_tokens_original += tokens_original.saturating_sub(prev_original);
+        cep.total_tokens_compressed += tokens_compressed.saturating_sub(prev_compressed);
+        cep.total_cache_hits += cache_hits.saturating_sub(prev_cache_hits);
+        cep.total_cache_reads += cache_reads.saturating_sub(prev_cache_reads);
     } else {
         cep.sessions += 1;
         cep.total_cache_hits += cache_hits;
@@ -231,6 +268,8 @@ pub fn record_cep_session(
     cep.last_session_pid = Some(pid);
     cep.last_session_original = Some(tokens_original);
     cep.last_session_compressed = Some(tokens_compressed);
+    cep.last_session_cache_hits = Some(cache_hits);
+    cep.last_session_cache_reads = Some(cache_reads);
 
     let cache_hit_rate = if cache_reads > 0 {
         (cache_hits as f64 / cache_reads as f64 * 100.0).round() as u32
@@ -265,8 +304,6 @@ pub fn record_cep_session(
     if cep.scores.len() > 100 {
         cep.scores.drain(..cep.scores.len() - 100);
     }
-
-    maybe_flush(store, baseline, last_flush);
 }
 
 #[cfg(test)]
@@ -394,6 +431,52 @@ mod tests {
         assert_eq!(merged_daily[0].input_tokens, 1500);
         // #307: the most recent known version is carried into the merge.
         assert_eq!(merged_daily[0].version, "3.7.0");
+    }
+
+    #[test]
+    fn cep_snapshot_seeds_new_session() {
+        let mut cep = CepStats::default();
+        let modes = HashMap::from([("full".to_string(), 3)]);
+        apply_cep_snapshot(&mut cep, 100, 80, 5, 10, 1000, 200, &modes, 4, "Medium");
+        assert_eq!(cep.sessions, 1);
+        assert_eq!(cep.total_cache_hits, 5);
+        assert_eq!(cep.total_cache_reads, 10);
+        assert_eq!(cep.total_tokens_original, 1000);
+        assert_eq!(cep.total_tokens_compressed, 200);
+        assert_eq!(cep.scores.len(), 1);
+    }
+
+    #[test]
+    fn cep_snapshot_same_pid_accumulates_cache_delta() {
+        // #361: repeated snapshots within one process must keep counting cache
+        // hits/reads (cumulative counters → add the delta), not freeze at the
+        // first checkpoint's value while only tokens advanced.
+        let mut cep = CepStats::default();
+        let modes = HashMap::new();
+        apply_cep_snapshot(&mut cep, 100, 80, 2, 4, 500, 100, &modes, 2, "Low");
+        // Same PID, cumulative counters grew: hits 2→9, reads 4→20.
+        apply_cep_snapshot(&mut cep, 100, 85, 9, 20, 1500, 300, &modes, 6, "Low");
+
+        assert_eq!(cep.sessions, 1, "same PID must not start a new session");
+        assert_eq!(cep.total_cache_hits, 9, "2 + delta(9-2)");
+        assert_eq!(cep.total_cache_reads, 20, "4 + delta(20-4)");
+        assert_eq!(cep.total_tokens_original, 1500);
+        assert_eq!(cep.total_tokens_compressed, 300);
+        assert_eq!(cep.scores.len(), 2);
+    }
+
+    #[test]
+    fn cep_snapshot_new_pid_starts_fresh_session() {
+        let mut cep = CepStats::default();
+        let modes = HashMap::new();
+        apply_cep_snapshot(&mut cep, 100, 80, 5, 10, 1000, 200, &modes, 4, "Medium");
+        apply_cep_snapshot(&mut cep, 200, 80, 3, 6, 800, 150, &modes, 4, "Medium");
+        assert_eq!(cep.sessions, 2);
+        assert_eq!(
+            cep.total_cache_hits, 8,
+            "5 (session 1) + 3 (session 2, fresh)"
+        );
+        assert_eq!(cep.total_cache_reads, 16);
     }
 
     #[test]

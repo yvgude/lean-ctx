@@ -39,4 +39,15 @@ jobs:
           # Maintainer + bots never need to sign.
           allowlist: 'yvgude,dependabot[bot],*[bot]'
           custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
+          # Friendlier, self-contained first message: explains the one-time nature,
+          # the §8 Local-Free guarantee, and the exact phrase — so contributors are
+          # not surprised by a bare red check and can sign in one reply.
+          custom-notsigned-prcomment: |
+            👋 Thanks for the contribution — we would love to merge it!
+
+            One **one-time** step remains: please sign our [CLA](https://github.com/yvgude/lean-ctx/blob/main/CLA.md). It takes ~5 seconds, you sign **once**, and every future PR is then accepted automatically. The CLA keeps lean-ctx **Apache-2.0 and free for individual developers** (guaranteed in §8) while still allowing a hosted/commercial plane.
+
+            **To sign:** reply to this PR with a comment containing exactly:
+
+            > I have read the CLA Document and I hereby sign the CLA
           custom-allsigned-prcomment: 'All contributors have signed the CLA. ✅'

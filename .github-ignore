@@ -1,7 +1,10 @@
 # Paths excluded from this repository.
-# Used by .githooks/pre-push to enforce boundaries.
+# Used by .githooks/pre-push to enforce boundaries (and mirrored by the
+# "Proprietary Code Guard" in .github/workflows/security-check.yml).
 # One path per line. Trailing slashes match directories.
+# See docs/contracts/oss-plane-separation-v1.md for the open vs. private policy.
 
+# ── Deployment / ops (private) ──
 cloud/
 docker-compose.yml
 .gitlab-ci.yml
@@ -9,3 +12,10 @@ deploy.sh
 website/
 DEVELOPMENT.md
 Makefile.deploy
+
+# ── Business / monetization (private; never on the public GitHub mirror) ──
+docs/business/
+memory-bank/
+discord-bot/
+n8n-workflows/
+lab/

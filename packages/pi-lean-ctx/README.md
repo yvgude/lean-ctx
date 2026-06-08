@@ -31,9 +31,13 @@ env vars — `~/.pi/agent/extensions/pi-lean-ctx/config.json`:
 ```
 
 `mode` → `LEAN_CTX_PI_MODE`, `enableMcp` → `LEAN_CTX_PI_ENABLE_MCP`,
-`binary` → `LEAN_CTX_BIN`. The `env` map is forwarded to every `lean-ctx`
-subprocess, so it can override `~/.lean-ctx/config.toml` engine settings.
-Explicit env vars still win over the file; the file wins over defaults.
+`binary` → `LEAN_CTX_BIN`, `disableTools` → `LEAN_CTX_PI_DISABLE_TOOLS`,
+`toolPrefix` → `LEAN_CTX_PI_TOOL_PREFIX` (see
+[Coexisting with AFT and magic-context](#coexisting-with-aft-and-magic-context)).
+The `env` map is forwarded to every `lean-ctx` subprocess, so it can override
+`~/.lean-ctx/config.toml` engine settings. Explicit env vars still win over the
+file; the file wins over defaults. The deny-list is the one exception — the env
+and file lists are **merged**, since a deny-list is additive by intent.
 
 ## What it does
 
@@ -140,6 +144,47 @@ pi
 
 …or set `"enableMcp": false` in `~/.pi/agent/extensions/pi-lean-ctx/config.json`.
 
+## Verifying token savings
+
+The session cache's headline claim — an **unchanged re-read costs ~13 tokens** —
+is now a one-command, machine-checkable self-test (issue #361). No manual
+transcript inspection required:
+
+```bash
+lean-ctx verify-cache
+```
+
+It reads a file twice through the real session cache and asserts the second read
+collapses to a `[unchanged …]` stub:
+
+```text
+lean-ctx verify-cache
+
+  Target:        src/main.rs
+  Cache policy:  aggressive
+  Read #1 (full):     3731 tokens
+  Read #2 (re-read):  13 tokens  [unchanged stub]
+  Re-read savings:    100%
+  Cache hits (run):   1/2
+  CEP sessions:       42 (88% cross-call hit ratio)
+
+  PASS — session cache engaged: the unchanged re-read cost 13 tokens (≈13-token stub).
+```
+
+- Exit code `0` = cache proven, `1` = no stub (cache not engaging), `2` =
+  stubbing disabled by config (e.g. `cache_policy = safe`). Add `--json` for CI.
+- Pass an explicit path to probe a real file: `lean-ctx verify-cache src/app.ts`.
+- `lean-ctx doctor` also prints a **Session cache** line (CEP sessions +
+  cross-call hit ratio) so you can answer "is the cache engaging?" at a glance.
+
+> On Pi specifically, the embedded MCP bridge (on by default) is what holds the
+> cache across calls. If `verify-cache` fails, confirm the bridge is connected
+> via `/lean-ctx`; the one-shot CLI path cannot cache across calls.
+
+This check was added in response to the independent, pre-registered
+[tokbench](https://github.com/Entelligentsia/tokbench) benchmark, where the
+~13-token re-read previously had to be verified by hand.
+
 ## pi-mcp-adapter compatibility
 
 If you prefer using [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter) to manage your MCP servers, lean-ctx integrates automatically:
@@ -195,6 +240,8 @@ Use `/lean-ctx` in Pi to check:
 - Which binary is being used
 - MCP bridge status (disabled / embedded / adapter)
 - Active `ctx_` tool names
+- Coexistence info (#359): active tool prefix, tools handed to other extensions
+  (`Disabled`), and tools skipped due to a name already taken (`Skipped`)
 
 ## Disabling specific tools
 
@@ -209,6 +256,75 @@ Or via environment variable:
 ```bash
 LEAN_CTX_DISABLED_TOOLS=ctx_graph,ctx_benchmark pi
 ```
+
+## Coexisting with AFT and magic-context
+
+pi-lean-ctx is built to **stack** with other Pi extensions such as
+[AFT](https://github.com/cortexkit/aft) and
+[magic-context](https://github.com/cortexkit/magic-context) (issue #359).
+
+**No more load crashes.** If another extension already registered a tool name
+(e.g. magic-context's `ctx_expand`), pi-lean-ctx now **skips that tool with a
+warning** instead of crashing the whole agent. The rest of lean-ctx keeps
+working. Run `/lean-ctx` to see exactly which tools were skipped.
+
+### Hand tool names to another extension
+
+Use a deny-list so the other extension owns shared names while lean-ctx keeps
+its compression + session-cache core (`ctx_read`, `ctx_shell`, …):
+
+```bash
+# env: comma/space separated, case-insensitive
+export LEAN_CTX_PI_DISABLE_TOOLS="ctx_memory,ctx_expand,ctx_search"
+```
+
+…or in `~/.pi/agent/extensions/pi-lean-ctx/config.json` (merged with the env list):
+
+```json
+{
+  "disableTools": ["ctx_memory", "ctx_expand", "ctx_search"]
+}
+```
+
+> This is the **Pi-extension** deny-list — it controls which tools lean-ctx
+> registers *in Pi* (including its own `ctx_*` tools like `ctx_grep`). It is
+> separate from the engine-level `disabled_tools` / `LEAN_CTX_DISABLED_TOOLS`,
+> which hides tools from the MCP server itself.
+
+### Or namespace them with a prefix
+
+Keep every tool but expose the bridge tools under your own prefix, so nothing
+collides and small models see no duplicate names:
+
+```bash
+export LEAN_CTX_PI_TOOL_PREFIX="lc_"   # ctx_expand → lc_ctx_expand
+```
+
+The signature tools (`ctx_read`, `ctx_shell`, `ctx_ls`, `ctx_find`, `ctx_grep`)
+keep their stable names; only the bridge-discovered MCP tools are prefixed.
+
+### Curated profile (recommended division of labor)
+
+| Concern | Owner | Why |
+|---------|-------|-----|
+| File reads, shell, grep/find/ls — **compression + session cache** | **lean-ctx** | ~13-token re-reads, 60–90% savings on every read/shell |
+| **Long-horizon memory** (`ctx_memory`, `ctx_expand`) | magic-context | purpose-built long-term memory |
+| **Symbol-aware file ops** (`aft_*`) | AFT | precise AST edits |
+
+Copy-paste config for the profile above
+(`~/.pi/agent/extensions/pi-lean-ctx/config.json`):
+
+```json
+{
+  "mode": "additive",
+  "enableMcp": true,
+  "disableTools": ["ctx_memory", "ctx_expand", "ctx_search"]
+}
+```
+
+Result: no duplicate search/memory tools in the tool list, no load crash, and
+each extension does what it is best at. Verify with `/lean-ctx`, which now lists
+the active prefix plus any handed-off (`Disabled`) and skipped tools.
 
 ## Links
 

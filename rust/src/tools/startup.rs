@@ -113,61 +113,63 @@ pub(crate) fn auto_consolidate_knowledge(project_root: &str) {
     let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() else {
         return;
     };
-    let mut knowledge = ProjectKnowledge::load_or_create(project_root);
-
-    for finding in &new_findings {
-        let key = if let Some(ref file) = finding.file {
-            if let Some(line) = finding.line {
-                format!("{file}:{line}")
+    // Load-modify-save under the shared in-process + cross-process lock so this
+    // background consolidation merges onto the latest committed facts instead of
+    // clobbering a concurrent foreground `remember`/`relate` write (issue #326).
+    let _ = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
+        for finding in &new_findings {
+            let key = if let Some(ref file) = finding.file {
+                if let Some(line) = finding.line {
+                    format!("{file}:{line}")
+                } else {
+                    file.clone()
+                }
             } else {
-                file.clone()
-            }
-        } else {
-            let slug: String = finding
+                let slug: String = finding
+                    .summary
+                    .chars()
+                    .take(60)
+                    .collect::<String>()
+                    .replace(' ', "-")
+                    .to_lowercase();
+                format!("finding-{slug}")
+            };
+            knowledge.remember("finding", &key, &finding.summary, &session.id, 0.7, &policy);
+        }
+
+        for decision in &new_decisions {
+            let key = decision
                 .summary
                 .chars()
-                .take(60)
+                .take(50)
                 .collect::<String>()
                 .replace(' ', "-")
                 .to_lowercase();
-            format!("finding-{slug}")
-        };
-        knowledge.remember("finding", &key, &finding.summary, &session.id, 0.7, &policy);
-    }
+            knowledge.remember(
+                "decision",
+                &key,
+                &decision.summary,
+                &session.id,
+                0.85,
+                &policy,
+            );
+        }
 
-    for decision in &new_decisions {
-        let key = decision
-            .summary
-            .chars()
-            .take(50)
-            .collect::<String>()
-            .replace(' ', "-")
-            .to_lowercase();
-        knowledge.remember(
-            "decision",
-            &key,
-            &decision.summary,
-            &session.id,
-            0.85,
-            &policy,
+        let task_desc = session
+            .task
+            .as_ref()
+            .map(|t| t.description.clone())
+            .unwrap_or_default();
+
+        let summary = format!(
+            "Auto-consolidate session {}: {} — {} findings, {} decisions",
+            session.id,
+            task_desc,
+            new_findings.len(),
+            new_decisions.len()
         );
-    }
-
-    let task_desc = session
-        .task
-        .as_ref()
-        .map(|t| t.description.clone())
-        .unwrap_or_default();
-
-    let summary = format!(
-        "Auto-consolidate session {}: {} — {} findings, {} decisions",
-        session.id,
-        task_desc,
-        new_findings.len(),
-        new_decisions.len()
-    );
-    knowledge.consolidate(&summary, vec![session.id.clone()], &policy);
-    let _ = knowledge.save();
+        knowledge.consolidate(&summary, vec![session.id.clone()], &policy);
+    });
 
     session.last_consolidate_ts = Some(Utc::now());
     let _ = session.save();

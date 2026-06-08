@@ -47,6 +47,18 @@ lean-ctx savings verify        # core::savings_ledger::verify()
 | `savings export` | `savings_ledger::all_events()` → pretty JSON | No |
 | `savings sign [--out FILE]` | `cmd_savings_sign` → `SignedSavingsBatchV1::build_all` + `sign` | Only the file you share |
 | `savings verify-batch <file>` | `cmd_savings_verify_batch` → `signed_batch::load_artifact` + `verify` | No (any machine) |
+| `savings roi [--json]` | `cmd_savings_roi` → `savings_ledger::roi_report` → `RoiReport::from_signed_batch` | No (read-only aggregate) |
+
+### ROI / metering surface (EPIC 12.20)
+
+`savings roi` derives a [`RoiReport`](../../rust/src/core/savings_ledger/roi.rs)
+**strictly from the signed batch** — `BatchTotals` + the committed
+`last_entry_hash` + the Ed25519 signature. It adds derived metering metrics
+(net tokens, USD, averages per event, top models/tools) plus provenance
+(`chain_valid`, `signed`, signer public key). This is the minimal,
+privacy-preserving aggregate the **Cloud plane** meters on: it carries no raw
+events, paths, prompts, or code — only numbers and hashes — and is read-only
+with respect to the local ledger.
 
 ---
 

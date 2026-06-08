@@ -564,9 +564,11 @@ fn build_terse_agent_block_for_client(_crp_mode: &CrpMode, client_name: &str) ->
     let cfg = Config::load();
     let compression = CompressionLevel::effective(&cfg);
     if compression.is_active() {
-        return crate::core::terse::agent_prompts::build_prompt_block_for_client(
+        let persona = crate::core::persona::Persona::resolve(&cfg);
+        return crate::core::terse::agent_prompts::build_prompt_block_for_persona(
             &compression,
             client_name,
+            &persona,
         );
     }
     String::new()

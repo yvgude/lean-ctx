@@ -6,6 +6,11 @@ pub(crate) fn install_copilot_hook(global: bool) {
     let binary = resolve_binary_path();
 
     if global {
+        // Copilot CLI loads global MCP servers from `~/.copilot/mcp-config.json`,
+        // independent of any project/repo config. Only register lean-ctx there
+        // for global installs (the repo-scoped `.github/mcp.json` covers local).
+        write_copilot_cli_home_mcp();
+
         let mcp_path = crate::core::editor_registry::vscode_mcp_path();
         if mcp_path.as_os_str() == "/nonexistent" {
             if !mcp_server_quiet_mode() {
@@ -27,6 +32,54 @@ pub(crate) fn install_copilot_hook(global: bool) {
         write_copilot_cli_mcp_file(&copilot_mcp, &binary, ".github/mcp.json");
 
         install_copilot_pretooluse_hook(false);
+    }
+}
+
+/// Register lean-ctx in the Copilot CLI's global MCP config at
+/// `~/.copilot/mcp-config.json`. Reuses the canonical `CopilotCli` writer so the
+/// entry format and merge behavior match `configure_agent_mcp`, and uses the
+/// portable binary path so repeated installs stay idempotent (no churn).
+fn write_copilot_cli_home_mcp() {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+
+    let binary = crate::core::portable_binary::resolve_portable_binary();
+    let target = crate::core::editor_registry::EditorTarget {
+        name: "Copilot CLI",
+        agent_key: "copilot".to_string(),
+        detect_path: PathBuf::from("/nonexistent"),
+        config_path: home.join(".copilot/mcp-config.json"),
+        config_type: crate::core::editor_registry::ConfigType::CopilotCli,
+    };
+
+    match crate::core::editor_registry::write_config_with_options(
+        &target,
+        &binary,
+        crate::core::editor_registry::WriteOptions {
+            overwrite_invalid: true,
+        },
+    ) {
+        Ok(result) => {
+            if !mcp_server_quiet_mode() {
+                use crate::core::editor_registry::WriteAction;
+                let label = "~/.copilot/mcp-config.json";
+                let msg = match result.action {
+                    WriteAction::Created => format!("Created {label} with lean-ctx MCP server"),
+                    WriteAction::Updated => format!("Added lean-ctx to {label}"),
+                    WriteAction::Already => format!("lean-ctx already configured in {label}"),
+                };
+                eprintln!("  \x1b[32m✓\x1b[0m {msg}");
+            }
+        }
+        Err(e) => {
+            if !mcp_server_quiet_mode() {
+                eprintln!(
+                    "  \x1b[33m⚠\x1b[0m  Could not configure {}: {e}",
+                    target.config_path.display()
+                );
+            }
+        }
     }
 }
 

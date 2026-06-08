@@ -92,6 +92,20 @@ pub fn init_with_project_root(project_root: Option<&Path>) {
         }
     }
 
+    // --- WASM providers (opt-in, EPIC 12.10) ---
+    // Discovered from `LEAN_CTX_WASM_DIR`; each `<name>.wasm` may ship a
+    // `<name>.provider.json` sidecar declaring id/display/actions.
+    #[cfg(feature = "wasm")]
+    if let Ok(dir) = std::env::var("LEAN_CTX_WASM_DIR") {
+        let ids = crate::core::wasm_ext::register_providers_from_dir(registry, &dir);
+        if !ids.is_empty() {
+            tracing::info!(
+                "[providers] registered {} WASM provider(s): {ids:?}",
+                ids.len()
+            );
+        }
+    }
+
     tracing::debug!(
         "[providers] initialized {} provider(s) ({} config-based), {} available",
         registry.provider_count(),

@@ -27,6 +27,8 @@ served by the same `axum` server that handles MCP protocol messages via fallback
 |--------|------|------|-------------|
 | GET | `/health` | none | Liveness probe (`200 ok`) |
 | GET | `/v1/manifest` | bearer | Full MCP manifest |
+| GET | `/v1/capabilities` | bearer | Instance capabilities discovery ([contract](capabilities-contract-v1.md)) |
+| GET | `/v1/openapi.json` | bearer | OpenAPI 3.0 spec for this surface |
 | GET | `/v1/tools` | bearer | Paginated tool list |
 | POST | `/v1/tools/call` | bearer | Execute a single tool |
 | GET | `/v1/events` | bearer + `Events` scope | SSE stream with replay |

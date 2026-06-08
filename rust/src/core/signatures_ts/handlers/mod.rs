@@ -1,4 +1,5 @@
 mod elixir;
+mod gdscript;
 mod go_java;
 mod kotlin_swift;
 mod python;
@@ -9,6 +10,7 @@ mod typescript;
 mod zig;
 
 pub(crate) use self::elixir::*;
+pub(crate) use self::gdscript::*;
 pub(crate) use self::go_java::*;
 pub(crate) use self::kotlin_swift::*;
 pub(crate) use self::python::*;

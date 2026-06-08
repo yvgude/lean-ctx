@@ -1,4 +1,4 @@
-# Appendix — MCP Tool Map (all 69 tools)
+# Appendix — MCP Tool Map (all 72 tools)
 
 Every tool lean-ctx registers via `rust/src/server/registry.rs`. Your AI editor
 calls these instead of its native file/search tools. The **Profile** column
@@ -14,14 +14,14 @@ shows the smallest tool profile that exposes the tool (`M` minimal, `S` standard
 |---------|-------|--------------|
 | **minimal** | 6 | Lowest context overhead; the absolute essentials |
 | **standard** | 22 | Balanced default for most coding workflows |
-| **power** | 69 | Everything (default for existing installs) |
+| **power** | 72 | Everything (default for existing installs) |
 
 - **minimal (6):** `ctx_read`, `ctx_shell`, `shell`, `ctx_search`, `ctx_tree`, `ctx_session`
 - **standard (+16):** + `ctx_semantic_search`, `ctx_knowledge`, `ctx_overview`,
   `ctx_repomap`, `ctx_callgraph`, `ctx_impact`, `ctx_compress`, `ctx_multi_read`,
   `ctx_delta`, `ctx_edit`, `ctx_agent`, `ctx_architecture`, `ctx_pack`,
   `ctx_routes`, `ctx_refactor`, `ctx_url_read`
-- **power (+47):** all remaining tools.
+- **power (+49):** all remaining tools.
 
 ---
 
@@ -46,7 +46,8 @@ shows the smallest tool profile that exposes the tool (`M` minimal, `S` standard
 | `ctx_compose` | Task composer: keywords + ranked files + matches + top symbol | `task`*, `path` | P |
 | `ctx_execute` | Sandboxed code execution (11 languages); only stdout enters context | `language`*, `code`*, `action`, `timeout` | P |
 | `ctx_multi_repo` | Multi-repo management + cross-repo search (RRF) | `action` (add_root\|remove_root\|list_roots\|search\|status\|save_config) | P |
-| `ctx_url_read` | Fetch a web page, PDF, or YouTube video as compressed, cited context (HTML/PDF→text, transcript; facts/quotes carry confidence + source); SSRF-guarded | `url`*, `mode` (auto\|markdown\|text\|links\|facts\|quotes\|transcript), `query`, `max_tokens`, `max_items`, `timeout_secs` | S |
+| `ctx_url_read` | Fetch a web page, PDF, RSS/Atom feed, or YouTube video as compressed, cited context (HTML→Markdown incl. GFM tables, PDF→text, feeds→dated items, transcript; GitHub blob/raw URLs auto-resolve to the raw file; facts/quotes carry confidence + source); SSRF-guarded | `url`*, `mode` (auto\|markdown\|text\|links\|facts\|quotes\|transcript), `query`, `max_tokens`, `max_items`, `timeout_secs` | S |
+| `ctx_git_read` | Read a remote git repo via a cached shallow clone instead of scraping its web page | `url`*, `mode` (overview\|tree\|read\|grep), `path`, `ref`, `query`, `max_tokens` | P |
 
 ## 2. Memory & knowledge
 
@@ -63,6 +64,7 @@ shows the smallest tool profile that exposes the tool (`M` minimal, `S` standard
 | Tool | Purpose | Key actions | Profile |
 |------|---------|-------------|---------|
 | `ctx_session` | Cross-session memory (CCP): tasks, findings, decisions, snapshots | status\|load\|save\|task\|finding\|decision\|snapshot\|restore\|resume\|diff\|verify | M |
+| `ctx_checkpoint` | Snapshot / diff / restore the agent's code changes via a shadow git history kept outside the project's `.git` | snapshot\|log\|diff\|restore; `message`, `from`, `to`, `ref`, `path`, `limit` | P |
 | `ctx_agent` | Multi-agent coordination + message bus | register\|list\|post\|read\|handoff\|sync\|diary\|share_knowledge | S |
 | `ctx_share` | Share cached file contexts between agents | push\|pull\|list\|clear | P |
 | `ctx_task` | Multi-agent task orchestration (A2A) | create\|update\|list\|get\|cancel\|message | P |
@@ -105,6 +107,7 @@ shows the smallest tool profile that exposes the tool (`M` minimal, `S` standard
 | Tool | Purpose | Key actions | Profile |
 |------|---------|-------------|---------|
 | `ctx_provider` | External context providers (GitHub, GitLab, Jira, Postgres, MCP bridges) | discover\|list\|status\|refresh\|configure\|query\|gitlab_issues\|gitlab_mrs | P |
+| `ctx_tools` | MCP Tool-Catalog Gateway — route/proxy unlimited downstream MCP servers at constant context cost | find\|call\|list\|refresh | P |
 | `ctx_plugins` | Plugin management | list\|enable\|disable\|info\|hooks | P |
 | `ctx_rules` | Cross-agent rules governance (ContextOps) | sync\|diff\|lint\|status\|init | P |
 | `ctx_overview` | Task-relevant project map — ideal at session start | `task`, `path` | S |
@@ -133,9 +136,9 @@ shows the smallest tool profile that exposes the tool (`M` minimal, `S` standard
 
 ## Notes
 
-1. `power` enables all 69 tools; `ToolProfile::is_tool_enabled()` returns `true`
+1. `power` enables all 72 tools; `ToolProfile::is_tool_enabled()` returns `true`
    for everything under power.
 2. `ctx_load_tools` controls *dynamic* categories (`arch`, `debug`, `memory`,
    `metrics`, `session`) independently of the static profile filter.
 3. Lazy clients use `ctx_call` + `ctx_discover_tools` + `ctx_load_tools` to reach
-   tools not in their active profile without listing all 69 upfront.
+   tools not in their active profile without listing all 72 upfront.

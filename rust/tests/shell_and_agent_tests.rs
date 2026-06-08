@@ -430,6 +430,40 @@ fn agent_init_codex_migrates_legacy_lean_ctx_hook_but_keeps_other_hooks() {
 }
 
 #[test]
+fn agent_init_gemini_installs_antigravity_cli_plugin_hooks() {
+    // GH #284: `gemini` setup also configures the Antigravity CLI MCP target, so
+    // it must install the `agy` plugin hooks. `agy` reads hooks only from its
+    // plugin dir (`~/.gemini/config/plugins/lean-ctx`), never from the legacy
+    // `~/.gemini/settings.json` — so the plugin (not just MCP) must be written.
+    let tmpdir = tempfile::tempdir().expect("create tempdir");
+    let home = tmpdir.path();
+    let home_str = home.to_string_lossy().to_string();
+    #[cfg(not(windows))]
+    let envs = vec![("HOME", home_str.as_str())];
+    #[cfg(windows)]
+    let envs = vec![
+        ("HOME", home_str.as_str()),
+        ("USERPROFILE", home_str.as_str()),
+    ];
+
+    let (_stdout, stderr, code) =
+        run_with_env(&["init", "--agent", "gemini", "--global"], &envs, None);
+    assert_eq!(code, 0, "gemini init should succeed: {stderr}");
+
+    let plugin_hooks = home.join(".gemini/config/plugins/lean-ctx/hooks/hooks.json");
+    assert!(
+        plugin_hooks.exists(),
+        "gemini init must install the Antigravity CLI plugin hooks at {plugin_hooks:?}"
+    );
+    let manifest = std::fs::read_to_string(home.join(".gemini/config/import_manifest.json"))
+        .unwrap_or_default();
+    assert!(
+        manifest.contains("lean-ctx"),
+        "the plugin must be registered in import_manifest.json: {manifest}"
+    );
+}
+
+#[test]
 fn agent_init_lists_antigravity_in_supported() {
     let (_stdout, stderr, _code) =
         run_with_env(&["init", "--agent", "nonexistent_agent"], &[], None);

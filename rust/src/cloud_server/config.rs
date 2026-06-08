@@ -13,6 +13,12 @@ pub(super) struct Config {
     pub smtp_username: Option<String>,
     pub smtp_password: Option<String>,
     pub smtp_from: Option<String>,
+    /// Base URL of the private commercial control-plane (`lean-ctx-cloud`). When
+    /// unset, the edge resolves every account to [`Plan::Free`](crate::core::billing::Plan)
+    /// — i.e. the open backend runs fully without the paid plane (Local-Free).
+    pub billing_base_url: Option<String>,
+    /// Shared `X-Internal-Key` secret for calling the billing service.
+    pub billing_internal_key: Option<String>,
 }
 
 impl Config {
@@ -41,6 +47,13 @@ impl Config {
         let smtp_username = std::env::var("LEANCTX_CLOUD_SMTP_USERNAME").ok();
         let smtp_password = std::env::var("LEANCTX_CLOUD_SMTP_PASSWORD").ok();
         let smtp_from = std::env::var("LEANCTX_CLOUD_SMTP_FROM").ok();
+        let billing_base_url = std::env::var("LEANCTX_CLOUD_BILLING_URL")
+            .ok()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
+        let billing_internal_key = std::env::var("LEANCTX_CLOUD_BILLING_INTERNAL_KEY")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
 
         Ok(Self {
             bind_host,
@@ -54,6 +67,8 @@ impl Config {
             smtp_username,
             smtp_password,
             smtp_from,
+            billing_base_url,
+            billing_internal_key,
         })
     }
 

@@ -53,6 +53,7 @@ fn cfg_two(tmp: &tempfile::TempDir) -> TeamServerConfig {
                 TeamScope::Knowledge,
                 TeamScope::Audit,
             ],
+            role: None,
         }],
         audit_log_path: tmp.path().join("audit.jsonl"),
         disable_host_check: true,

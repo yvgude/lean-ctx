@@ -146,6 +146,17 @@ const QUERY_ZIG: &str = r"
 (function_declaration name: (identifier) @name) @def
 ";
 
+/// Queries [tree-sitter-gdscript](https://crates.io/crates/tree-sitter-gdscript).
+/// Godot global class (`class_name X`), inner classes (`class X:`), functions,
+/// signals, and enums each expose a `name` child node.
+const QUERY_GDSCRIPT: &str = r"
+(class_name_statement (name) @name) @def
+(class_definition (name) @name) @def
+(function_definition (name) @name) @def
+(signal_statement (name) @name) @def
+(enum_definition (name) @name) @def
+";
+
 pub(super) fn get_language(ext: &str) -> Option<Language> {
     Some(match ext {
         "rs" => tree_sitter_rust::LANGUAGE.into(),
@@ -167,6 +178,7 @@ pub(super) fn get_language(ext: &str) -> Option<Language> {
         "scala" | "sc" => tree_sitter_scala::LANGUAGE.into(),
         "ex" | "exs" => tree_sitter_elixir::LANGUAGE.into(),
         "zig" => tree_sitter_zig::LANGUAGE.into(),
+        "gd" => tree_sitter_gdscript::LANGUAGE.into(),
         _ => return None,
     })
 }
@@ -191,6 +203,7 @@ pub(super) fn get_query(ext: &str) -> Option<&'static str> {
         "scala" | "sc" => QUERY_SCALA,
         "ex" | "exs" => QUERY_ELIXIR,
         "zig" => QUERY_ZIG,
+        "gd" => QUERY_GDSCRIPT,
         _ => return None,
     })
 }

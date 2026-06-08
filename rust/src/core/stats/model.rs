@@ -31,6 +31,14 @@ pub struct CepStats {
     pub last_session_original: Option<u64>,
     #[serde(default)]
     pub last_session_compressed: Option<u64>,
+    /// Cumulative cache hits/reads observed for the current PID at the last
+    /// snapshot. Used to accumulate *deltas* across repeated snapshots within
+    /// one server process, so `total_cache_hits` keeps tracking cache activity
+    /// after the first checkpoint instead of freezing (#361).
+    #[serde(default)]
+    pub last_session_cache_hits: Option<u64>,
+    #[serde(default)]
+    pub last_session_cache_reads: Option<u64>,
 }
 
 /// Point-in-time snapshot of CEP scores for a single session.

@@ -519,6 +519,28 @@ fn list_code_files_skips_default_vendor_ignores() {
 }
 
 #[test]
+fn list_code_files_includes_extractable_pdf() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+
+    std::fs::write(root.join("main.rs"), "pub fn main() {}\n").expect("write main");
+    // A PDF is a binary document with a dedicated extractor: it must reach the
+    // indexer (gate change) even though office binaries without one do not.
+    std::fs::write(root.join("report.pdf"), b"%PDF-1.7\n%stub\n").expect("write pdf");
+    std::fs::write(root.join("sheet.xlsx"), b"PK\x03\x04binary").expect("write xlsx");
+
+    let files = list_code_files(root);
+    assert!(
+        files.iter().any(|f| f == "report.pdf"),
+        "report.pdf should be ingestible via the extractor"
+    );
+    assert!(
+        !files.iter().any(|f| f == "sheet.xlsx"),
+        "office binaries without an extractor stay excluded"
+    );
+}
+
+#[test]
 fn list_code_files_respects_max_files_cap() {
     let td = tempdir().expect("tempdir");
     let root = td.path();

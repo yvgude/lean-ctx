@@ -104,14 +104,33 @@ pub fn summarize(findings: &[SmellFinding]) -> Vec<SmellSummary> {
         .collect()
 }
 
+/// Symbols with no incoming `calls`/`type_ref`/`imports` edge.
+///
+/// Each finding carries a confidence signal (encoded via severity + an
+/// evidence note) so callers can tell a genuinely-dead private symbol from one
+/// that is merely *available* across files. The latter — exported symbols whose
+/// module is imported elsewhere — are reported at `Info` ("verify") rather than
+/// `Warning`, because a missing reference there can be an unresolved
+/// dynamic/re-export usage rather than true death (see GH #365).
 fn detect_dead_code(conn: &Connection) -> Vec<SmellFinding> {
     let sql = "
-        SELECT n.name, n.file_path, n.line_start
+        SELECT n.name, n.file_path, n.line_start,
+               EXISTS(
+                   SELECT 1 FROM edges e2
+                   WHERE e2.source_id = n.id AND e2.kind = 'exports'
+               ) AS exported,
+               EXISTS(
+                   SELECT 1 FROM edges e3
+                   JOIN nodes f ON f.id = e3.target_id
+                   WHERE e3.kind = 'imports'
+                     AND f.kind = 'file'
+                     AND f.file_path = n.file_path
+               ) AS file_imported
         FROM nodes n
         WHERE n.kind = 'symbol'
           AND n.file_path NOT LIKE '%test%'
           AND n.file_path NOT LIKE '%spec%'
-          AND n.name NOT IN ('main', 'new', 'default', 'fmt', 'drop')
+          AND n.name NOT IN ('main', 'new', 'default', 'fmt', 'drop', '<module>')
           AND n.id NOT IN (
               SELECT DISTINCT e.target_id FROM edges e
               WHERE e.kind IN ('calls', 'type_ref', 'imports')
@@ -119,13 +138,50 @@ fn detect_dead_code(conn: &Connection) -> Vec<SmellFinding> {
         ORDER BY n.file_path, n.line_start
         LIMIT 200
     ";
-    query_findings(
-        conn,
-        sql,
-        "dead_code",
-        Severity::Warning,
-        |name, path, _line| format!("'{name}' defined in {path} but never referenced"),
-    )
+    let mut findings = Vec::new();
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return findings;
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<i64>>(2)?,
+            row.get::<_, bool>(3)?,
+            row.get::<_, bool>(4)?,
+        ))
+    }) else {
+        return findings;
+    };
+    for (name, path, line, exported, file_imported) in rows.flatten() {
+        let (severity, confidence) = if exported && file_imported {
+            (
+                Severity::Info,
+                "low confidence: exported and its module is imported elsewhere — \
+                 may be referenced via an unresolved import or dynamic access",
+            )
+        } else if exported {
+            (
+                Severity::Warning,
+                "high confidence: exported but its module is never imported",
+            )
+        } else {
+            (
+                Severity::Warning,
+                "high confidence: private symbol with no references",
+            )
+        };
+        findings.push(SmellFinding {
+            rule: "dead_code",
+            severity,
+            file_path: path.clone(),
+            symbol: Some(name.clone()),
+            line: line.map(|l| l as usize),
+            message: format!("'{name}' defined in {path} but never referenced ({confidence})"),
+            metric: None,
+        });
+    }
+    findings
 }
 
 fn detect_long_functions(conn: &Connection, threshold: usize) -> Vec<SmellFinding> {
@@ -570,6 +626,76 @@ mod tests {
             .filter(|f| f.symbol.as_deref() == Some("unused_helper"))
             .collect();
         assert!(!dead.is_empty(), "Should detect unused_helper as dead code");
+    }
+
+    #[test]
+    fn dead_code_class_with_incoming_call_is_not_flagged() {
+        // Regression for GH #365: a class that is imported and instantiated
+        // cross-file must NOT be reported as dead code, the synthetic <module>
+        // caller must never be flagged, and remaining findings must carry a
+        // confidence signal (Info for exported-and-imported, Warning for private).
+        //   models/engine.py: class Engine / Orphan / _private  (Defines)
+        //   app.py: Engine(...) (Calls -> Engine) + imports models/engine.py
+        let g = CodeGraph::open_in_memory().unwrap();
+        let engine_file = g.upsert_node(&Node::file("models/engine.py")).unwrap();
+        let app_file = g.upsert_node(&Node::file("app.py")).unwrap();
+
+        let mk = |name: &str, lo: usize, hi: usize| {
+            g.upsert_node(
+                &Node::symbol(name, "models/engine.py", NodeKind::Symbol).with_lines(lo, hi),
+            )
+            .unwrap()
+        };
+        let engine = mk("Engine", 1, 6);
+        let orphan = mk("Orphan", 8, 12);
+        let private_dead = mk("_private", 14, 18);
+        // Synthetic module-level caller node, as emitted for top-level calls.
+        let module_caller = g
+            .upsert_node(&Node::symbol("<module>", "app.py", NodeKind::Symbol))
+            .unwrap();
+
+        for sym in [engine, orphan, private_dead] {
+            g.upsert_edge(&Edge::new(engine_file, sym, EdgeKind::Defines))
+                .unwrap();
+        }
+        // Engine + Orphan are exported; the module is imported by app.py.
+        g.upsert_edge(&Edge::new(engine, engine_file, EdgeKind::Exports))
+            .unwrap();
+        g.upsert_edge(&Edge::new(orphan, engine_file, EdgeKind::Exports))
+            .unwrap();
+        g.upsert_edge(&Edge::new(app_file, engine_file, EdgeKind::Imports))
+            .unwrap();
+        // Engine is actually instantiated -> incoming Calls edge.
+        g.upsert_edge(&Edge::new(module_caller, engine, EdgeKind::Calls))
+            .unwrap();
+
+        let findings = detect_dead_code(g.connection());
+        let by_name = |n: &str| findings.iter().find(|f| f.symbol.as_deref() == Some(n));
+
+        assert!(
+            by_name("Engine").is_none(),
+            "instantiated class must not be dead"
+        );
+        assert!(
+            by_name("<module>").is_none(),
+            "synthetic <module> must never be flagged"
+        );
+
+        let orphan_f = by_name("Orphan").expect("unused exported class should still be reported");
+        assert_eq!(
+            orphan_f.severity,
+            Severity::Info,
+            "exported + imported module = low confidence (Info)"
+        );
+        assert!(orphan_f.message.contains("low confidence"));
+
+        let priv_f = by_name("_private").expect("unused private symbol should be reported");
+        assert_eq!(
+            priv_f.severity,
+            Severity::Warning,
+            "private symbol = high confidence (Warning)"
+        );
+        assert!(priv_f.message.contains("high confidence"));
     }
 
     #[test]

@@ -4,8 +4,8 @@
 
 **Q: What does lean-ctx actually do?**
 lean-ctx sits between your AI tool and the system. It has two layers:
-1. **Shell Hook** — transparently compresses CLI output (git, ls, npm, cargo, etc.) using 60+ patterns before it reaches the LLM
-2. **MCP Server** — 69 tools for cached file reads, 10 read modes, deltas, dedup, memory, multi-agent coordination, graph-powered intelligence, and more
+1. **Shell Hook** — transparently compresses CLI output (git, ls, npm, cargo, etc.) using 95+ patterns before it reaches the LLM
+2. **MCP Server** — 72 tools for cached file reads, 10 read modes, deltas, dedup, memory, multi-agent coordination, graph-powered intelligence, and more
 
 Result: **60–99% fewer tokens** per session.
 

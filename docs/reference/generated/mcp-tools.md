@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **69 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **72 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_agent`
 
@@ -61,6 +61,15 @@ Parameters: `arguments`, `name`*
 Call graph query: callers/callees (multi-hop BFS), trace path between symbols, risk classification by caller count.
 
 Parameters: `action`, `depth`, `direction`, `file`, `from`, `symbol`, `to`
+
+## `ctx_checkpoint`
+
+Local shadow git history of the agent's changes (separate from the user's .git).
+actions: snapshot (record current state) | log (list checkpoints) | diff (vs a checkpoint) | restore (revert files).
+Snapshot before+after a change to capture exactly what the LLM modified; diff/restore to review or roll back.
+Never touches the user's repository.
+
+Parameters: `action`, `from`, `limit`, `message`, `path`, `ref`, `to`
 
 ## `ctx_compile`
 
@@ -163,6 +172,15 @@ Parameters: `budget`*, `paths`*, `task`
 Gain report (includes Wrapped via action=wrapped).
 
 Parameters: `action`, `limit`, `model`, `period`
+
+## `ctx_git_read`
+
+Read a remote git repository via a cached shallow clone (not HTML scraping).
+modes: overview (tree + README) | tree (file list) | read (a file) | grep (search).
+Accepts repo URLs and GitHub/GitLab blob/tree links (ref + path auto-detected). https-only, SSRF-guarded, bounded.
+Use instead of ctx_url_read when you need a whole repo's files/structure.
+
+Parameters: `max_tokens`, `mode`, `path`, `query`, `ref`, `timeout_secs`, `url`*
 
 ## `ctx_graph`
 
@@ -401,6 +419,14 @@ Multi-agent task orchestration. Actions: create|update|list|get|cancel|message|i
 
 Parameters: `action`*, `description`, `message`, `state`, `task_id`, `to_agent`
 
+## `ctx_tools`
+
+Gateway to downstream MCP servers — unlimited external tools at ~constant context cost.
+actions: find (query → top-N relevant tools as ChoiceCards) | call (proxy a `server::tool`) | list (servers+counts) | refresh.
+Use find to discover, then call the chosen `server::tool`. Off by default ([gateway] config).
+
+Parameters: `action`, `arguments`, `query`, `tool`
+
 ## `ctx_tree`
 
 List a directory. Prefer over native ls/find (counts, compact tree).
@@ -410,9 +436,9 @@ Parameters: `depth`, `path`, `paths`, `respect_gitignore`, `show_hidden`
 
 ## `ctx_url_read`
 
-Fetch a web page, PDF, or YouTube URL as compressed, cited context.
-HTML/PDF→clean text, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.
-facts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).
+Fetch a web page, PDF, RSS/Atom feed, or YouTube URL as compressed, cited context.
+HTML→clean Markdown (tables→GFM), PDF→text, feeds→dated item list, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.
+GitHub blob/raw page URLs auto-resolve to the raw file. facts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).
 Use for research/crawl instead of raw fetch.
 
 Parameters: `max_items`, `max_tokens`, `mode`, `query`, `timeout_secs`, `url`*

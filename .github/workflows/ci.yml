@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -145,6 +146,51 @@ jobs:
         working-directory: cookbook
         run: npm run build
 
+  rust-sdk:
+    name: Rust SDK (lean-ctx-client)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: clients/rust/lean-ctx-client -> target
+      - name: Format
+        working-directory: clients/rust/lean-ctx-client
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: clients/rust/lean-ctx-client
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        working-directory: clients/rust/lean-ctx-client
+        run: cargo test
+      - name: Docs
+        working-directory: clients/rust/lean-ctx-client
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
+
+  python-sdk:
+    name: Python SDK (leanctx)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5 # v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        working-directory: clients/python
+        run: pip install -e ".[dev]"
+      - name: Test
+        working-directory: clients/python
+        run: python -m pytest -q
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -216,6 +262,70 @@ jobs:
       - name: Compile benchmarks
         working-directory: rust
         run: cargo bench --no-run
+      - name: Generate reproducible scorecard
+        working-directory: rust
+        run: cargo run --quiet -- benchmark scorecard --json --output ../scorecard.json
+      - name: Upload scorecard artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scorecard
+          path: scorecard.json
+
+  quality-gate:
+    name: Output-Quality Gate (eval A/B)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: rust -> target
+      - name: Build lean-ctx
+        working-directory: rust
+        run: cargo build --quiet
+      # Deterministic with/without output-quality proof. Three modes, in priority order:
+      #   1. A committed recording (rust/eval/recording.json) → byte-stable replay, no secrets,
+      #      and the gate BLOCKS on a regression.
+      #   2. Otherwise, if LEAN_CTX_EVAL_* secrets are set → capture from the live model + gate.
+      #   3. Otherwise → skipped (the harness itself is still covered by the test job).
+      # Capture a recording once with: lean-ctx eval ab --suite … --record rust/eval/recording.json
+      - name: Run deterministic A/B output-quality gate
+        working-directory: rust
+        shell: bash
+        env:
+          LEAN_CTX_EVAL_MODEL_URL: ${{ secrets.LEAN_CTX_EVAL_MODEL_URL }}
+          LEAN_CTX_EVAL_MODEL: ${{ secrets.LEAN_CTX_EVAL_MODEL }}
+          LEAN_CTX_EVAL_MODEL_KEY: ${{ secrets.LEAN_CTX_EVAL_MODEL_KEY }}
+        run: |
+          set -euo pipefail
+          BIN=./target/debug/lean-ctx
+          REC=eval/recording.json
+          "$BIN" eval init eval-suite
+          if [ -f "$REC" ]; then
+            echo "Replaying committed recording (deterministic, no secrets)…"
+            "$BIN" eval ab --suite eval-suite/suite.ndjson --replay "$REC" --out ab-report.json --gate
+          elif [ -n "${LEAN_CTX_EVAL_MODEL_URL:-}" ]; then
+            echo "No committed recording; capturing from the configured live model…"
+            mkdir -p eval
+            "$BIN" eval ab --suite eval-suite/suite.ndjson --record "$REC" --out ab-report.json --gate
+          else
+            echo "::notice::Output-quality gate skipped — commit rust/eval/recording.json or set LEAN_CTX_EVAL_* secrets."
+          fi
+      - name: Verify artifact (signature + determinism digest)
+        working-directory: rust
+        shell: bash
+        run: |
+          if [ -f ab-report.json ]; then ./target/debug/lean-ctx eval verify ab-report.json; fi
+      - name: Upload signed A/B report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: eval-ab-report
+          path: rust/ab-report.json
+          if-no-files-found: ignore
 
   doc:
     name: Documentation

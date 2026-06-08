@@ -302,6 +302,19 @@ impl LeanCtxServer {
 
         let budget_warning = post_process::budget_warning_message();
 
+        // #212 — per-item sensitivity floor. Enforced uniformly here (before
+        // archiving + compression) so it covers both the inline result and the
+        // out-of-band copy. No-op unless `sensitivity.enabled` (default off).
+        {
+            let path_hint = helpers::get_str(args, "path");
+            let enforced = crate::core::sensitivity::enforce_text(
+                std::mem::take(&mut result_text),
+                path_hint.as_deref().map(std::path::Path::new),
+                &config.sensitivity,
+            );
+            result_text = enforced.into_text();
+        }
+
         // Out-of-band archive + optional context firewall for large tool outputs.
         // For firewallable tools (ctx_shell/ctx_execute/ctx_search/ctx_tree) whose output
         // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
@@ -347,14 +360,8 @@ impl LeanCtxServer {
         // A firewalled result is already a compact digest — re-compressing it would mangle
         // the retrieval instructions for no benefit.
         if !firewalled {
-            result_text = post_process::compress_terse(
-                result_text,
-                name,
-                args,
-                &config,
-                tool_saved_tokens,
-                is_raw_shell,
-            );
+            result_text =
+                post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
         }
 
         let profile_hints = crate::core::profiles::active_profile().output_hints;

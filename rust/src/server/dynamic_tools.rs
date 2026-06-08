@@ -60,8 +60,8 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
 
         // Core: always visible
         "ctx_read" | "ctx_search" | "ctx_shell" | "shell" | "ctx_tree" | "ctx_edit"
-        | "ctx_session" | "ctx_knowledge" | "ctx_overview" | "ctx_graph" | "ctx_call"
-        | "ctx_compress" | "ctx_cache" | "ctx_retrieve" => ToolCategory::Core,
+        | "ctx_session" | "ctx_checkpoint" | "ctx_knowledge" | "ctx_overview" | "ctx_graph"
+        | "ctx_call" | "ctx_compress" | "ctx_cache" | "ctx_retrieve" => ToolCategory::Core,
 
         // Merged tools (redirects in registry, treated as Core for backward compat)
         "ctx_multi_read" | "ctx_smart_read" | "ctx_delta" | "ctx_outline" | "ctx_context" => {
@@ -76,9 +76,10 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         "ctx_benchmark" | "ctx_verify" | "ctx_analyze" | "ctx_profile" | "ctx_proof"
         | "ctx_review" => ToolCategory::Debug,
 
-        // Provider + URL reader are Core: gateways to external context
-        // (GitHub issues, Jira, Postgres, web pages, YouTube) — always available.
-        "ctx_provider" | "ctx_url_read" => ToolCategory::Core,
+        // Provider + URL/Git readers + the MCP gateway are Core: gateways to
+        // external context (GitHub issues, Jira, Postgres, web pages, YouTube,
+        // remote git repos, downstream MCP servers) — always available.
+        "ctx_provider" | "ctx_url_read" | "ctx_git_read" | "ctx_tools" => ToolCategory::Core,
 
         // Memory: on-demand semantic tools
         "ctx_semantic_search" | "ctx_artifacts" => ToolCategory::Memory,
@@ -118,6 +119,7 @@ pub fn is_readonly_tool(name: &str) -> bool {
             | "ctx_context"
             | "ctx_call"
             | "ctx_url_read"
+            | "ctx_git_read"
             | "ctx_architecture"
             | "ctx_impact"
             | "ctx_callgraph"

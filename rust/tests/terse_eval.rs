@@ -54,7 +54,7 @@ fn eval_corpus() -> Vec<Sample> {
         // Mixed prose
         Sample {
             category: "prose_readme",
-            content: "# lean-ctx\n\n> Context Engineering Layer for AI coding agents\n\nlean-ctx compresses, remembers, governs and verifies what reaches the model.\n\n## Features\n\n- **10 read modes** — from full cached reads to entropy-filtered compression\n- **60+ shell patterns** — automatic command output compression\n- **Sessions & memory** — persistent knowledge across conversations\n- **Formal verification** — 53 Lean4 theorems, 0 sorry\n\n## Installation\n\n```bash\ncurl -sSf https://leanctx.com/install.sh | sh\nlean-ctx setup\n```\n\n## Quick Start\n\nAfter installation, lean-ctx automatically integrates with your AI coding agent.\nNo manual configuration needed — just start coding.\n\nFor more details, see the [documentation](https://leanctx.com/docs).",
+            content: "# lean-ctx\n\n> Context Engineering Layer for AI coding agents\n\nlean-ctx compresses, remembers, governs and verifies what reaches the model.\n\n## Features\n\n- **10 read modes** — from full cached reads to entropy-filtered compression\n- **95+ shell patterns** — automatic command output compression\n- **Sessions & memory** — persistent knowledge across conversations\n- **Formal verification** — 53 Lean4 theorems, 0 sorry\n\n## Installation\n\n```bash\ncurl -sSf https://leanctx.com/install.sh | sh\nlean-ctx setup\n```\n\n## Quick Start\n\nAfter installation, lean-ctx automatically integrates with your AI coding agent.\nNo manual configuration needed — just start coding.\n\nFor more details, see the [documentation](https://leanctx.com/docs).",
         },
         // NPM output
         Sample {

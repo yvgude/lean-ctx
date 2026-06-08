@@ -248,7 +248,7 @@ impl ModePredictor {
             // Large code files: signatures only
             (
                 "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "rb"
-                | "swift" | "kt" | "cs" | "vue" | "svelte",
+                | "swift" | "kt" | "cs" | "vue" | "svelte" | "gd",
                 4..,
             ) => "signatures",
 
@@ -256,7 +256,7 @@ impl ModePredictor {
             ("lock" | "json" | "yaml" | "yml" | "toml", _)
             | (
                 "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "rb"
-                | "swift" | "kt" | "cs" | "vue" | "svelte",
+                | "swift" | "kt" | "cs" | "vue" | "svelte" | "gd",
                 2 | 3,
             )
             | ("sql", 2..) => "map",

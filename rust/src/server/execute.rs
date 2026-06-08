@@ -38,13 +38,23 @@ pub(crate) fn execute_command_with_env(
 
     ensure_utf8_locale(&mut cmd, extra_env);
 
-    // Auto-forward agent runtime env vars from parent process
+    // Auto-forward agent runtime env vars (CODEX_THREAD_ID, CLAUDE_*, …) so
+    // session-aware commands run through ctx_shell can see the active session.
+    //   1. From this process's own env — covers agents that pass the vars to the
+    //      MCP server process.
+    //   2. From the captured agent-env store — covers agents like Codex where the
+    //      vars live only in the native agent shell, not the MCP server process
+    //      (#370). Hooks / `lean-ctx -c` capture them; the process env wins on
+    //      conflict, and explicit `extra_env` (below) wins over both.
+    let mut forwarded: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (key, val) in std::env::vars() {
-        if key.starts_with("CODEX_")
-            || key.starts_with("CLAUDE_")
-            || key.starts_with("OPENCODE_")
-            || key.starts_with("HERMES_")
-        {
+        if crate::core::agent_runtime_env::is_forwardable(&key) {
+            cmd.env(&key, &val);
+            forwarded.insert(key);
+        }
+    }
+    for (key, val) in crate::core::agent_runtime_env::load() {
+        if !forwarded.contains(&key) {
             cmd.env(&key, &val);
         }
     }
@@ -246,6 +256,36 @@ mod tests {
         assert!(
             output.contains("12345"),
             "child process should receive EOF on stdin, got: {output}"
+        );
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn forwards_captured_agent_runtime_env() {
+        // #370: the MCP server process lacks CODEX_THREAD_ID; a hook captured it
+        // from the agent shell. ctx_shell must still forward it to the child.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let dir = std::env::temp_dir().join("lean_ctx_exec_runtime_env");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("LEAN_CTX_DATA_DIR", &dir);
+
+        // Simulate a hook capturing the var from the native agent environment.
+        std::env::remove_var("CODEX_THREAD_ID");
+        std::env::set_var("CODEX_THREAD_ID", "thread-from-hook");
+        crate::core::agent_runtime_env::capture();
+        // The MCP server process itself does not carry the var.
+        std::env::remove_var("CODEX_THREAD_ID");
+
+        let (output, code) = execute_command_in("printf 'TID=%s' \"$CODEX_THREAD_ID\"", ".");
+
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(code, 0, "command failed: {output}");
+        assert!(
+            output.contains("TID=thread-from-hook"),
+            "captured agent runtime var must be forwarded, got: {output}"
         );
     }
 

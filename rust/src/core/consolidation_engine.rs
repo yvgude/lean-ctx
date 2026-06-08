@@ -42,64 +42,76 @@ pub fn consolidate_latest(
         .memory_policy_effective()
         .map_err(|e| format!("invalid memory policy: {e}"))?;
 
-    let mut knowledge = ProjectKnowledge::load_or_create(project_root);
+    // Read-modify-write under the SAME in-process + cross-process lock that
+    // foreground `remember`/`feedback` use. Loading *inside* the lock is what
+    // keeps this background pass from clobbering facts a concurrent tool call
+    // commits in between (issue #326): a bare `load_or_create` + `save` here
+    // loses those updates and silently drops just-remembered facts (e.g. a
+    // following `relate` then reports "no current fact exists").
+    let (_knowledge, outcome) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
+        let mut promoted_decisions = 0u32;
+        let mut promoted_findings = 0u32;
 
-    let mut promoted_decisions = 0u32;
-    let mut promoted_findings = 0u32;
-
-    let mut decisions = session.decisions.clone();
-    decisions.sort_by_key(|x| std::cmp::Reverse(x.timestamp));
-    decisions.truncate(budgets.max_decisions);
-    for d in &decisions {
-        let key = slug_key(&d.summary, 50);
-        knowledge.remember("decision", &key, &d.summary, &session.id, 0.9, &policy);
-        promoted_decisions += 1;
-    }
-
-    let mut findings = session.findings.clone();
-    findings.sort_by_key(|x| std::cmp::Reverse(x.timestamp));
-    let mut kept = Vec::new();
-    for f in &findings {
-        if kept.len() >= budgets.max_findings {
-            break;
+        let mut decisions = session.decisions.clone();
+        decisions.sort_by_key(|x| std::cmp::Reverse(x.timestamp));
+        decisions.truncate(budgets.max_decisions);
+        for d in &decisions {
+            let key = slug_key(&d.summary, 50);
+            knowledge.remember("decision", &key, &d.summary, &session.id, 0.9, &policy);
+            promoted_decisions += 1;
         }
-        if finding_salience(&f.summary) < 45 {
-            continue;
-        }
-        kept.push(f.clone());
-    }
 
-    for f in &kept {
-        let key = if let Some(ref file) = f.file {
-            if let Some(line) = f.line {
-                format!("{file}:{line}")
-            } else {
-                file.clone()
+        let mut findings = session.findings.clone();
+        findings.sort_by_key(|x| std::cmp::Reverse(x.timestamp));
+        let mut kept = Vec::new();
+        for f in &findings {
+            if kept.len() >= budgets.max_findings {
+                break;
             }
-        } else {
-            format!("finding-{}", slug_key(&f.summary, 36))
-        };
-        knowledge.remember("finding", &key, &f.summary, &session.id, 0.75, &policy);
-        promoted_findings += 1;
-    }
+            if finding_salience(&f.summary) < 45 {
+                continue;
+            }
+            kept.push(f.clone());
+        }
 
-    // One compact history entry (no prose output to user; stored for auditability).
-    let task_desc = session
-        .task
-        .as_ref()
-        .map_or_else(|| "(no task)".into(), |t| t.description.clone());
-    let summary = format!(
-        "consolidate@{} session={} task=\"{}\" decisions={} findings={}",
-        Utc::now().format("%Y-%m-%d"),
-        session.id,
-        task_desc,
-        promoted_decisions,
-        promoted_findings
-    );
-    knowledge.consolidate(&summary, vec![session.id.clone()], &policy);
+        for f in &kept {
+            let key = if let Some(ref file) = f.file {
+                if let Some(line) = f.line {
+                    format!("{file}:{line}")
+                } else {
+                    file.clone()
+                }
+            } else {
+                format!("finding-{}", slug_key(&f.summary, 36))
+            };
+            knowledge.remember("finding", &key, &f.summary, &session.id, 0.75, &policy);
+            promoted_findings += 1;
+        }
 
-    let lifecycle = knowledge.run_memory_lifecycle(&policy);
-    knowledge.save()?;
+        // One compact history entry (no prose output to user; stored for auditability).
+        let task_desc = session
+            .task
+            .as_ref()
+            .map_or_else(|| "(no task)".into(), |t| t.description.clone());
+        let summary = format!(
+            "consolidate@{} session={} task=\"{}\" decisions={} findings={}",
+            Utc::now().format("%Y-%m-%d"),
+            session.id,
+            task_desc,
+            promoted_decisions,
+            promoted_findings
+        );
+        knowledge.consolidate(&summary, vec![session.id.clone()], &policy);
+
+        let lifecycle = knowledge.run_memory_lifecycle(&policy);
+        ConsolidationOutcome {
+            promoted: promoted_decisions + promoted_findings,
+            promoted_decisions,
+            promoted_findings,
+            lifecycle_archived: lifecycle.archived_count,
+            lifecycle_remaining: lifecycle.remaining_facts,
+        }
+    })?;
 
     crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
         category: "memory".to_string(),
@@ -107,13 +119,7 @@ pub fn consolidate_latest(
         action: "run".to_string(),
     });
 
-    Ok(ConsolidationOutcome {
-        promoted: promoted_decisions + promoted_findings,
-        promoted_decisions,
-        promoted_findings,
-        lifecycle_archived: lifecycle.archived_count,
-        lifecycle_remaining: lifecycle.remaining_facts,
-    })
+    Ok(outcome)
 }
 
 fn slug_key(s: &str, max: usize) -> String {

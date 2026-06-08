@@ -127,6 +127,13 @@ fn integration_generic(
         crate::core::editor_registry::types::ConfigType::McpJson
         | crate::core::editor_registry::types::ConfigType::QoderSettings => {
             checks.push(check_mcp_json(&target.config_path, binary, data_dir));
+            // The Antigravity CLI also installs observe hooks as a plugin under
+            // ~/.gemini/config/plugins/lean-ctx (registered in import_manifest.json,
+            // NOT in any settings.json — see GH #284); verify that plugin too.
+            if target.agent_key == "antigravity-cli" {
+                checks.push(check_antigravity_cli_hooks(home, binary));
+                checks.push(antigravity_cli_hooks_note());
+            }
         }
         crate::core::editor_registry::types::ConfigType::JetBrains => {
             checks.push(check_jetbrains_snippet(
@@ -1023,6 +1030,137 @@ fn check_gemini_trust_and_hooks(home: &std::path::Path, binary: &str) -> NamedCh
     }
 }
 
+/// Verify that the lean-ctx **plugin** for the Antigravity CLI (`agy`) is
+/// installed and registered, pointing at the *current* binary.
+///
+/// `agy` (verified against the real binary, v1.0.6) loads plugins only from
+/// `~/.gemini/config/plugins/<name>/` — exactly where `agy plugin install` itself
+/// stages them — with a root `plugin.json`, hooks in the `hooks/hooks.json`
+/// **subdir** (a root `hooks.json` is *not* processed) and an optional
+/// plugin-local `mcp_config.json`; the plugin is registered in
+/// `~/.gemini/config/import_manifest.json`. This guards the GH #284 regression
+/// where hooks were written to a `settings.json` that `agy` ignores. We verify
+/// the full self-contained bundle (`plugin.json` + `hooks/hooks.json` +
+/// `mcp_config.json`) so the check stays in lockstep with the installer.
+///
+/// Note: hook *firing* is additionally gated by `agy`'s server-side
+/// `enable_json_hooks` experiment, which no local config can force — so a green
+/// check here means "installed exactly as `agy` expects", not "hooks are live".
+fn check_antigravity_cli_hooks(home: &std::path::Path, binary: &str) -> NamedCheck {
+    let name = "Antigravity CLI plugin".to_string();
+    let plugin_dir = crate::hooks::agents::antigravity_cli_plugin_dir(home);
+    let hooks_json = plugin_dir.join("hooks").join("hooks.json");
+    if !hooks_json.exists() {
+        return NamedCheck {
+            name,
+            ok: false,
+            detail: format!("missing ({})", hooks_json.display()),
+        };
+    }
+
+    let Some(v) = std::fs::read_to_string(&hooks_json)
+        .ok()
+        .and_then(|c| crate::core::jsonc::parse_jsonc(&c).ok())
+    else {
+        return NamedCheck {
+            name,
+            ok: false,
+            detail: format!("invalid JSON ({})", hooks_json.display()),
+        };
+    };
+
+    // observe hook on PostToolUse, pointing at the current binary.
+    let observe_ok = v
+        .get("hooks")
+        .and_then(|h| h.get("PostToolUse"))
+        .and_then(|x| x.as_array())
+        .is_some_and(|arr| {
+            arr.iter().any(|entry| {
+                entry
+                    .get("hooks")
+                    .and_then(|x| x.as_array())
+                    .is_some_and(|hooks| {
+                        hooks.iter().any(|h| {
+                            let cmd = h
+                                .get("command")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or_default();
+                            let first = cmd.split_whitespace().next().unwrap_or_default();
+                            cmd.contains("hook observe") && cmd_matches_expected(first, binary)
+                        })
+                    })
+            })
+        });
+
+    // The plugin must be registered in the shared import manifest so `agy`
+    // discovers it (`agy plugin list`).
+    let manifest =
+        crate::hooks::agents::antigravity_cli_config_dir(home).join("import_manifest.json");
+    let registered = std::fs::read_to_string(&manifest)
+        .ok()
+        .and_then(|c| crate::core::jsonc::parse_jsonc(&c).ok())
+        .and_then(|v| {
+            v.get("imports").and_then(|i| i.as_array()).map(|a| {
+                a.iter()
+                    .any(|e| e.get("name").and_then(|n| n.as_str()) == Some("lean-ctx"))
+            })
+        })
+        .unwrap_or(false);
+
+    // Self-contained bundle (#284): the plugin ships its own `mcp_config.json`
+    // next to `plugin.json`/`hooks/`, so `agy plugin validate` reports
+    // `mcpServers` and the `ctx_*` tools travel with the plugin. Verify it exists
+    // and defines the lean-ctx server pointing at the current binary.
+    let mcp_config = plugin_dir.join("mcp_config.json");
+    let mcp_ok = std::fs::read_to_string(&mcp_config)
+        .ok()
+        .and_then(|c| crate::core::jsonc::parse_jsonc(&c).ok())
+        .and_then(|v| {
+            v.get("mcpServers")
+                .and_then(|s| s.get("lean-ctx"))
+                .and_then(|s| s.get("command"))
+                .and_then(|c| c.as_str())
+                .map(|cmd| cmd_matches_expected(cmd, binary))
+        })
+        .unwrap_or(false);
+
+    let ok = observe_ok && registered && mcp_ok;
+    NamedCheck {
+        name,
+        ok,
+        detail: if ok {
+            format!("ok ({})", plugin_dir.display())
+        } else if !registered {
+            format!(
+                "not registered in import_manifest.json ({})",
+                plugin_dir.display()
+            )
+        } else if !mcp_ok {
+            format!(
+                "missing/stale plugin mcp_config.json ({})",
+                mcp_config.display()
+            )
+        } else {
+            format!("drift (observe hook) ({})", hooks_json.display())
+        },
+    }
+}
+
+/// Informational note (always `ok`): even when the lean-ctx plugin is installed
+/// exactly as `agy` expects, hook *execution* is gated server-side by the
+/// Antigravity CLI's `enable_json_hooks` experiment (`json-hooks-enabled`),
+/// which no local config can force. Until that flag reaches the account, `/hooks`
+/// shows the observe hook as dormant — yet the plugin is correctly installed and
+/// the MCP `ctx_*` tools compress regardless. Surfacing this stops users from
+/// chasing a local misconfiguration that isn't there (GH #284).
+fn antigravity_cli_hooks_note() -> NamedCheck {
+    NamedCheck {
+        name: "Antigravity CLI hook gating".to_string(),
+        ok: true,
+        detail: "hook execution is gated server-side by agy's enable_json_hooks experiment (no local config can force it) — if /hooks shows lean-ctx dormant, the plugin is still installed correctly; verify with `agy plugin validate ~/.gemini/config/plugins/lean-ctx`. The ctx_* MCP tools compress on every surface regardless.".to_string(),
+    }
+}
+
 fn check_cursor_hooks(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
@@ -1138,6 +1276,25 @@ mod tests {
     }
 
     #[test]
+    fn antigravity_cli_hooks_note_is_informational_and_explains_gating() {
+        let note = antigravity_cli_hooks_note();
+        assert!(
+            note.ok,
+            "the Antigravity CLI gating note is informational, never a failure"
+        );
+        assert!(
+            note.detail.contains("enable_json_hooks"),
+            "note must name the server-side flag that gates hook execution: {}",
+            note.detail
+        );
+        assert!(
+            note.detail.contains("ctx_") && note.detail.contains("regardless"),
+            "note must reassure that the MCP tools compress regardless: {}",
+            note.detail
+        );
+    }
+
+    #[test]
     fn hook_binary_refs_extracts_token_before_hook_keyword() {
         let content = r#"{"command": "/opt/lean-ctx hook rewrite"} {"command": "/opt/lean-ctx hook redirect"}"#;
         let refs = hook_binary_refs(content);
@@ -1210,6 +1367,56 @@ mod tests {
         let healthy = finalize_hook_check("Hooks", p, true, None);
         assert!(healthy.ok);
         assert!(healthy.detail.contains("ok"));
+    }
+
+    #[test]
+    fn check_antigravity_cli_verifies_self_contained_bundle() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+        let plugin_dir = crate::hooks::agents::antigravity_cli_plugin_dir(home);
+        std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
+
+        std::fs::write(
+            plugin_dir.join("plugin.json"),
+            r#"{"name":"lean-ctx","version":"0.0.1"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            plugin_dir.join("hooks").join("hooks.json"),
+            r#"{"hooks":{"PostToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"lean-ctx hook observe"}]}]}}"#,
+        )
+        .unwrap();
+        // The self-contained, spec-compliant piece (#284): plugin-local MCP config.
+        std::fs::write(
+            plugin_dir.join("mcp_config.json"),
+            r#"{"mcpServers":{"lean-ctx":{"command":"lean-ctx"}}}"#,
+        )
+        .unwrap();
+        let cfg_dir = crate::hooks::agents::antigravity_cli_config_dir(home);
+        std::fs::create_dir_all(&cfg_dir).unwrap();
+        std::fs::write(
+            cfg_dir.join("import_manifest.json"),
+            r#"{"imports":[{"name":"lean-ctx"}]}"#,
+        )
+        .unwrap();
+
+        let full = check_antigravity_cli_hooks(home, "lean-ctx");
+        assert!(
+            full.ok,
+            "full self-contained bundle must pass: {}",
+            full.detail
+        );
+
+        // Drop the plugin-local mcp_config.json -> the check must fail and name it
+        // (so `doctor --fix`, which re-runs the installer, knows what to repair).
+        std::fs::remove_file(plugin_dir.join("mcp_config.json")).unwrap();
+        let drift = check_antigravity_cli_hooks(home, "lean-ctx");
+        assert!(!drift.ok, "missing plugin-local mcp_config.json must fail");
+        assert!(
+            drift.detail.contains("mcp_config.json"),
+            "detail must point at the missing mcp_config.json: {}",
+            drift.detail
+        );
     }
 
     #[test]

@@ -46,6 +46,10 @@ pub fn run() {
                 } else {
                     shell::join_command(cmd_args)
                 };
+                // The `lean-ctx -c` wrapper runs inside the agent shell, which
+                // carries runtime/session vars the MCP server never sees. Bridge
+                // them so ctx_shell can forward them too (#370).
+                core::agent_runtime_env::capture();
                 if std::env::var("LEAN_CTX_ACTIVE").is_ok()
                     || std::env::var("LEAN_CTX_DISABLED").is_ok()
                 {
@@ -90,6 +94,14 @@ pub fn run() {
                 cmd_savings(&rest);
                 return;
             }
+            "conformance" | "selftest" => {
+                cmd_conformance(&rest);
+                return;
+            }
+            "billing" => {
+                cmd_billing(&rest);
+                return;
+            }
             "token-report" | "report-tokens" => {
                 let code = token_report::run_cli(&rest);
                 if code != 0 {
@@ -115,6 +127,17 @@ pub fn run() {
             }
             "verify" => {
                 crate::cli::cmd_verify(&rest);
+                return;
+            }
+            "eval" => {
+                crate::cli::eval_cmd::cmd_eval(&rest);
+                return;
+            }
+            "verify-cache" | "cache-selftest" => {
+                let code = crate::cli::verify_cache_cmd::cmd_verify_cache(&rest);
+                if code != 0 {
+                    std::process::exit(code);
+                }
                 return;
             }
             "visualize" => {
@@ -490,6 +513,10 @@ pub fn run() {
             }
             "hook" => {
                 hook_handlers::mark_hook_environment();
+                // Hooks run inside the agent shell environment, so they can see
+                // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived
+                // MCP server process never receives. Bridge them for ctx_shell (#370).
+                core::agent_runtime_env::capture();
                 hook_handlers::arm_watchdog(std::time::Duration::from_secs(5));
                 let action = rest.first().map_or("help", std::string::String::as_str);
                 match action {

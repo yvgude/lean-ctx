@@ -1,4 +1,5 @@
 mod auth;
+mod billing_edge;
 mod buddy;
 mod cep;
 mod commands;
@@ -17,7 +18,7 @@ mod site_theme;
 mod stats;
 mod wrapped;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
@@ -115,6 +116,38 @@ pub async fn run() -> anyhow::Result<()> {
         .route("/leaderboard", get(wrapped::get_leaderboard_page))
         .route("/api/global-stats", get(global_stats::get_global_stats))
         .route("/api/cloud/models", get(models::get_models))
+        .route(
+            // Edge to the private commercial plane: resolves the caller's plan +
+            // additive entitlements. Free (gates nothing) when billing is unset.
+            "/api/account/entitlements",
+            get(billing_edge::get_account_entitlements),
+        )
+        // Self-serve billing: proxy Checkout / Portal to the private plane so the
+        // shared internal key never reaches the browser. 503 when billing is unset.
+        .route(
+            "/api/account/checkout",
+            post(billing_edge::post_account_checkout),
+        )
+        .route(
+            "/api/account/portal",
+            post(billing_edge::post_account_portal),
+        )
+        // Hosted Team server dashboard: proxy status + token management to the
+        // private plane on behalf of the logged-in owner. 503 when billing is
+        // unset; 404 (from the plane) until a Team subscription provisions one.
+        .route("/api/account/team", get(billing_edge::get_account_team))
+        .route(
+            "/api/account/team/owner-token",
+            post(billing_edge::post_account_team_owner_token),
+        )
+        .route(
+            "/api/account/team/members",
+            post(billing_edge::post_account_team_member),
+        )
+        .route(
+            "/api/account/team/members/{token_id}",
+            delete(billing_edge::delete_account_team_member),
+        )
         .with_state(state)
         .layer(cors)
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024));

@@ -114,19 +114,24 @@ pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
 }
 
 /// Whether the terse compression stage must be skipped for this call (raw shell,
-/// already deeply compressed output, or structural shell output).
-fn skip_terse(
-    name: &str,
-    args: Option<&Map<String, Value>>,
-    tool_saved_tokens: usize,
-    is_raw_shell: bool,
-) -> bool {
-    let deeply_compressed = matches!(
+/// any read-family output, or structural shell output).
+///
+/// Read-family tools return file content the agent reads and *edits against*. The
+/// prose terse pipeline (dictionary `return`→`ret`, `string`→`str`, … plus
+/// line-score filtering) corrupts source and drops repeated lines, turning a
+/// `mode="full"` read — whose contract is "guaranteed complete content" — into a
+/// lossy, un-editable digest. The read tools already apply their own mode-aware,
+/// structure-preserving compression (map/signatures/aggressive), so the generic
+/// terse layer must never post-process their output. Previously this only skipped
+/// when the read had *already saved* tokens, so verbatim `full`/`lines:` reads
+/// (0 savings) were silently dictionary-mangled and de-duplicated.
+fn skip_terse(name: &str, args: Option<&Map<String, Value>>, is_raw_shell: bool) -> bool {
+    let is_read_family = matches!(
         name,
         "ctx_read" | "ctx_multi_read" | "ctx_smart_read" | "ctx_compress" | "ctx_overview"
     );
     is_raw_shell
-        || (tool_saved_tokens > 0 && deeply_compressed)
+        || is_read_family
         || (name == "ctx_shell"
             && crate::server::helpers::get_str(args, "command")
                 .is_some_and(|c| crate::shell::compress::has_structural_output(&c)))
@@ -140,10 +145,9 @@ pub(super) fn compress_terse(
     name: &str,
     args: Option<&Map<String, Value>>,
     config: &Config,
-    tool_saved_tokens: usize,
     is_raw_shell: bool,
 ) -> String {
-    if skip_terse(name, args, tool_saved_tokens, is_raw_shell) {
+    if skip_terse(name, args, is_raw_shell) {
         return text;
     }
     let compression = CompressionLevel::effective(config);
@@ -240,17 +244,25 @@ mod tests {
     }
 
     #[test]
-    fn skip_terse_for_raw_shell_and_deeply_compressed() {
+    fn skip_terse_for_raw_shell_and_reads() {
+        assert!(skip_terse("ctx_shell", None, true), "raw shell skips terse");
+        // Reads always skip terse — even a verbatim `full` read that saved 0 tokens —
+        // so file content stays byte-faithful for editing (no `return`→`ret` mangling,
+        // no de-dup of repeated lines).
         assert!(
-            skip_terse("ctx_shell", None, 0, true),
-            "raw shell skips terse"
+            skip_terse("ctx_read", None, false),
+            "full/verbatim read (0 savings) must still skip terse"
         );
         assert!(
-            skip_terse("ctx_read", None, 10, false),
-            "already-compressed read skips terse"
+            skip_terse("ctx_multi_read", None, false),
+            "multi_read must skip terse"
         );
         assert!(
-            !skip_terse("ctx_grep", None, 0, false),
+            skip_terse("ctx_smart_read", None, false),
+            "smart_read must skip terse"
+        );
+        assert!(
+            !skip_terse("ctx_grep", None, false),
             "ordinary tool output is eligible for terse"
         );
     }

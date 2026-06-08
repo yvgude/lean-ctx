@@ -6,6 +6,7 @@ pub mod ctx_benchmark;
 pub mod ctx_cache;
 pub mod ctx_call;
 pub mod ctx_callgraph;
+pub mod ctx_checkpoint;
 pub mod ctx_compile;
 pub mod ctx_compose;
 pub mod ctx_compress;
@@ -23,6 +24,7 @@ pub mod ctx_expand;
 pub mod ctx_feedback;
 pub mod ctx_fill;
 pub mod ctx_gain;
+pub mod ctx_git_read;
 pub mod ctx_graph;
 pub mod ctx_handoff;
 pub mod ctx_heatmap;
@@ -62,10 +64,12 @@ pub mod ctx_smart_read;
 pub mod ctx_smells;
 pub mod ctx_symbol;
 pub mod ctx_task;
+pub mod ctx_tools;
 pub mod ctx_tree;
 pub mod ctx_url_read;
 pub mod ctx_verify;
 pub mod ctx_workflow;
+pub mod plugin_tool;
 pub mod shell_alias;
 
 /// Resolve a relative path against session state (sync version).

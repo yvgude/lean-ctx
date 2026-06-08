@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Stdio;
 
-const GRAPH_SOURCE_EXTS: &[&str] = &["rs", "ts", "tsx", "js", "jsx", "py", "go", "java"];
+const GRAPH_SOURCE_EXTS: &[&str] = &["rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "gd"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OutputFormat {
@@ -1253,5 +1253,59 @@ mod tests {
             "C:/repo/src/main.rs"
         };
         assert_eq!(target, expected);
+    }
+
+    /// End-to-end regression for GH #365: build the property graph from real
+    /// Python sources and assert that a class which is imported + instantiated
+    /// cross-file is NOT reported as `dead_code`. This exercises the *builder*
+    /// (symbol-level `Calls` edge for class instantiation), not just the SQL
+    /// rule covered by the synthetic test in `core::smells`. The unused class
+    /// must still be flagged so the test cannot pass vacuously.
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn dead_code_builder_does_not_flag_instantiated_python_class() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("models")).unwrap();
+        std::fs::write(
+            root.join("models/engine.py"),
+            "class Engine:\n    def __init__(self, power):\n        self.power = power\n\n\n\
+             class Pipeline:\n    def __init__(self, cfg):\n        self.cfg = cfg\n\n\n\
+             class UnusedOrphan:\n    pass\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("app.py"),
+            "from models.engine import Engine, Pipeline\n\n\
+             engine = Engine(power=100)\npipeline = Pipeline(cfg={})\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let findings = crate::core::smells::scan_rule(
+            graph.connection(),
+            "dead_code",
+            &crate::core::smells::SmellConfig::default(),
+        );
+        let dead: Vec<String> = findings.iter().filter_map(|f| f.symbol.clone()).collect();
+
+        assert!(
+            !dead.iter().any(|s| s == "Engine"),
+            "instantiated class `Engine` must not be dead_code; findings: {dead:?}"
+        );
+        assert!(
+            !dead.iter().any(|s| s == "Pipeline"),
+            "instantiated class `Pipeline` must not be dead_code; findings: {dead:?}"
+        );
+        assert!(
+            dead.iter().any(|s| s == "UnusedOrphan"),
+            "never-referenced class `UnusedOrphan` should still be flagged (non-vacuous); \
+             findings: {dead:?}"
+        );
     }
 }

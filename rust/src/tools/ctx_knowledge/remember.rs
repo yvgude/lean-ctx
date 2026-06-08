@@ -3,6 +3,8 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::core::plugins::{executor::HookPoint, PluginManager};
+
 pub(crate) fn handle_remember(
     project_root: &str,
     category: Option<&str>,
@@ -38,6 +40,13 @@ pub(crate) fn handle_remember(
         Ok(pair) => pair,
         Err(e) => return format!("Remembered [{cat}] {k}: {v}\n(save failed: {e})"),
     };
+
+    // Plugin seam: a fact was written. Guarded so it is a no-op without a plugin.
+    if PluginManager::has_listener("on_knowledge_update") {
+        PluginManager::fire_hook_background(HookPoint::OnKnowledgeUpdate {
+            fact_id: format!("{cat}:{k}"),
+        });
+    }
 
     let current_fact = knowledge
         .facts
@@ -153,14 +162,14 @@ pub(crate) fn handle_recall(
                         Some(cat),
                         &knowledge.judged_pairs,
                     );
-                    save_knowledge_deferred(knowledge);
+                    save_knowledge_deferred(knowledge, project_root);
                     return out2;
                 }
             }
             return format!("No facts in category '{cat}'.");
         }
         let out = format_facts_with_annotations(&facts, total, Some(cat), &knowledge.judged_pairs);
-        save_knowledge_deferred(knowledge);
+        save_knowledge_deferred(knowledge, project_root);
         return out;
     }
 
@@ -201,7 +210,7 @@ pub(crate) fn handle_recall(
                             .collect();
                         apply_retrieval_signals_from_hits(&mut knowledge, &hits);
                         let out = format_semantic_facts(&format!("{q} (mode=semantic)"), &hits);
-                        save_knowledge_deferred(knowledge);
+                        save_knowledge_deferred(knowledge, project_root);
                         return out;
                     }
 
@@ -223,7 +232,7 @@ pub(crate) fn handle_recall(
                                 .collect();
                             apply_retrieval_signals_from_hits(&mut knowledge, &hits);
                             let out = format_semantic_facts(&format!("{q} (mode=hybrid)"), &hits);
-                            save_knowledge_deferred(knowledge);
+                            save_knowledge_deferred(knowledge, project_root);
                             return out;
                         }
                     }
@@ -250,28 +259,50 @@ pub(crate) fn handle_recall(
                         None,
                         &knowledge.judged_pairs,
                     );
-                    save_knowledge_deferred(knowledge);
+                    save_knowledge_deferred(knowledge, project_root);
                     return out2;
                 }
             }
             return format!("No facts matching '{q}'.");
         }
         let out = format_facts_with_annotations(&facts, total, None, &knowledge.judged_pairs);
-        save_knowledge_deferred(knowledge);
+        save_knowledge_deferred(knowledge, project_root);
         return out;
     }
 
     "Error: provide query or category for recall".to_string()
 }
 
-/// Persist knowledge to disk on a background thread so recall returns immediately.
-/// Retrieval signals (retrieval_count, last_retrieved) are best-effort metadata;
-/// losing them on crash is acceptable.
-pub(crate) fn save_knowledge_deferred(knowledge: ProjectKnowledge) {
+/// Persist recall state to disk on a background thread so recall returns
+/// immediately. Retrieval signals (retrieval_count, last_retrieved) are
+/// best-effort metadata; losing them on crash is acceptable.
+///
+/// The save is reconciled against the latest on-disk state *under the shared
+/// lock* so it never clobbers facts a concurrent writer committed after
+/// `knowledge` was snapshotted (issue #326): a bare `knowledge.save()` here was
+/// a blind overwrite and could drop a just-`remember`ed fact. Recall only
+/// rehydrates archived facts and bumps retrieval metadata — it never removes or
+/// supersedes — so re-adding any current snapshot fact missing from the fresh
+/// copy (and carrying over the higher retrieval count) is the correct, lossless
+/// reconciliation.
+pub(crate) fn save_knowledge_deferred(knowledge: ProjectKnowledge, project_root: &str) {
+    let root = project_root.to_string();
     std::thread::Builder::new()
         .name("knowledge-save".into())
         .spawn(move || {
-            let _ = knowledge.save();
+            let _ = ProjectKnowledge::mutate_locked(&root, |fresh| {
+                for sf in knowledge.facts.iter().filter(|f| f.is_current()) {
+                    if let Some(existing) = fresh
+                        .facts
+                        .iter_mut()
+                        .find(|f| f.category == sf.category && f.key == sf.key && f.is_current())
+                    {
+                        existing.retrieval_count = existing.retrieval_count.max(sf.retrieval_count);
+                    } else {
+                        fresh.facts.push(sf.clone());
+                    }
+                }
+            });
         })
         .ok();
 }

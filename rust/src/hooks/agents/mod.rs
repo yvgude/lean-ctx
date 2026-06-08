@@ -18,6 +18,9 @@ mod shared;
 mod windsurf;
 
 pub(super) use amp::install_amp_hook;
+pub(crate) use antigravity::{
+    antigravity_cli_config_dir, antigravity_cli_plugin_dir, uninstall_antigravity_cli_plugin,
+};
 pub(super) use antigravity::{install_antigravity_cli_hook, install_antigravity_hook};
 pub(super) use claude::{
     install_claude_hook_config, install_claude_hook_scripts, install_claude_hook_with_mode,

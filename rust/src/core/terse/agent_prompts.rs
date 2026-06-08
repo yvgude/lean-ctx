@@ -35,6 +35,69 @@ fn is_cursor_client(name: &str) -> bool {
     lower.contains("cursor")
 }
 
+/// Persona-aware variant: the base terse block plus a domain addendum for
+/// non-coding personas (vocabulary + the persona's intent taxonomy). The
+/// `coding` persona returns the base block **unchanged** — no regression
+/// (EPIC 12.16).
+pub fn build_prompt_block_for_persona(
+    level: &CompressionLevel,
+    client_name: &str,
+    persona: &crate::core::persona::Persona,
+) -> String {
+    let base = build_prompt_block_for_client(level, client_name);
+    if base.is_empty() || persona.name == "coding" {
+        return base;
+    }
+
+    let mut extra = String::new();
+    if let Some(domain) = domain_block(&persona.name) {
+        extra.push('\n');
+        extra.push_str(domain);
+    }
+    if !persona.intent_taxonomy.is_empty() {
+        extra.push_str("\n- INTENTS: ");
+        extra.push_str(&persona.intent_taxonomy.join(", "));
+    }
+    if extra.is_empty() {
+        return base;
+    }
+
+    let combined = format!("{base}{extra}");
+    if is_cursor_client(client_name) {
+        crate::core::output_sanitizer::ascii_safe_symbols(&combined)
+    } else {
+        combined
+    }
+}
+
+/// Domain-specific terse vocabulary for a non-coding persona. `None` keeps the
+/// generic (coding-flavored) block.
+fn domain_block(persona_name: &str) -> Option<&'static str> {
+    match persona_name {
+        "research" => Some(
+            "DOMAIN: research\n\
+             - Cite every claim (source#Lx); separate fact from inference\n\
+             - Summary first, evidence second; flag uncertainty (~) and gaps (∅)",
+        ),
+        "lead-gen" => Some(
+            "DOMAIN: lead-gen\n\
+             - Structured records: name, role, company, signal, source\n\
+             - Dedupe contacts; never invent contact data; mark unverified (~)",
+        ),
+        "support" => Some(
+            "DOMAIN: support\n\
+             - Steps: symptom → cause → fix → verification\n\
+             - Link prior tickets; quote exact errors; no speculation as fact",
+        ),
+        "data-analysis" => Some(
+            "DOMAIN: data-analysis\n\
+             - State assumptions + units; show transforms as steps\n\
+             - Numbers with source + n; flag estimates (~) vs measured",
+        ),
+        _ => None,
+    }
+}
+
 const LITE_PROMPT: &str = "\
 OUTPUT STYLE: concise
 - Bullet points over paragraphs
@@ -131,5 +194,42 @@ mod tests {
     fn resume_hint_present_for_max() {
         let hint = resume_block_hint(&CompressionLevel::Max).unwrap();
         assert!(hint.contains("max"));
+    }
+
+    #[test]
+    fn coding_persona_prompt_is_unchanged() {
+        let base = build_prompt_block_for_client(&CompressionLevel::Standard, "");
+        let coding = build_prompt_block_for_persona(
+            &CompressionLevel::Standard,
+            "",
+            &crate::core::persona::Persona::coding(),
+        );
+        assert_eq!(
+            base, coding,
+            "coding persona must not alter the base prompt"
+        );
+    }
+
+    #[test]
+    fn non_coding_persona_appends_domain_and_intents() {
+        let research = build_prompt_block_for_persona(
+            &CompressionLevel::Standard,
+            "",
+            &crate::core::persona::Persona::research(),
+        );
+        assert!(research.contains("DOMAIN: research"));
+        assert!(research.contains("INTENTS: explore, summarize"));
+        // Still built on the base block.
+        assert!(research.contains("OUTPUT STYLE"));
+    }
+
+    #[test]
+    fn persona_prompt_empty_when_compression_off() {
+        let off = build_prompt_block_for_persona(
+            &CompressionLevel::Off,
+            "",
+            &crate::core::persona::Persona::research(),
+        );
+        assert!(off.is_empty());
     }
 }

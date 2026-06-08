@@ -223,6 +223,13 @@ impl LeanCtxServer {
             let mut session = self.session.write().await;
             let _ = session.save();
         }
+        // Persist buffered stats (incl. CEP cache-hit/session counters) before
+        // the process exits. Short bridge sessions — e.g. a phase-isolated
+        // benchmark harness that spawns a fresh server per phase — may never
+        // reach the 30s live-stats flush cadence, which left
+        // `cep.sessions`/`total_cache_hits` at 0 in stats.json despite real
+        // cache hits (#361).
+        crate::core::stats::flush();
         {
             let mut cache = self.cache.write().await;
             let count = cache.clear();

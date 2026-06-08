@@ -206,6 +206,43 @@ fn exec_direct(args: &[String]) -> i32 {
     }
 }
 
+/// True when this process's stdout is a **regular file** — i.e. the caller
+/// redirected output to a file (`cmd > out`, `cmd >> out`).
+///
+/// Output captured to a file is consumed as *data*, so it must stay byte-faithful:
+/// compression would silently drop/abbreviate lines and corrupt the file
+/// (e.g. `git status --short > files.txt` losing entries). Pipes (agent capture)
+/// and TTYs are NOT regular files and return `false`, so they keep their normal
+/// behavior — this only ever *adds* a verbatim guarantee, never removes one.
+///
+/// Uses only `std`: it wraps the existing stdout descriptor in a `ManuallyDrop`
+/// `File` purely to read its metadata (`fstat` on Unix, `GetFileInformation` on
+/// Windows) without ever closing the real stdout.
+fn stdout_is_regular_file() -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::{AsRawFd, FromRawFd};
+        let fd = io::stdout().as_raw_fd();
+        // SAFETY: fd 1 stays valid for the whole process. `ManuallyDrop` prevents
+        // the wrapper's `Drop` from closing stdout; we only read metadata.
+        let file = std::mem::ManuallyDrop::new(unsafe { std::fs::File::from_raw_fd(fd) });
+        file.metadata().is_ok_and(|m| m.is_file())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::{AsRawHandle, FromRawHandle};
+        let handle = io::stdout().as_raw_handle();
+        // SAFETY: the stdout handle stays valid for the whole process.
+        // `ManuallyDrop` prevents the wrapper's `Drop` from closing it.
+        let file = std::mem::ManuallyDrop::new(unsafe { std::fs::File::from_raw_handle(handle) });
+        file.metadata().is_ok_and(|m| m.is_file())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        false
+    }
+}
+
 pub fn exec(command: &str) -> i32 {
     if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(command) {
         tracing::warn!("[CLI] Command would be blocked in MCP mode: {msg}");
@@ -248,6 +285,18 @@ pub fn exec(command: &str) -> i32 {
         let code = exec_inherit(command, &shell, &shell_flag);
         crate::core::tool_lifecycle::record_shell_command(0, 0);
         return code;
+    }
+
+    // Compression is forced (`-c` / LEAN_CTX_COMPRESS, e.g. the agent shell hook).
+    // It must STILL never alter bytes destined for a file: a redirect
+    // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
+    // a human or agent. Writing the compressed digest there would silently
+    // drop/abbreviate lines and corrupt the file (e.g. contradictory `git diff`
+    // dumps). Pass redirected-to-file output through verbatim; pipes (agent
+    // capture) and TTYs keep compressing. This is the single choke point, so it
+    // holds for every caller (hook, direct CLI, Pi/MCP bridges).
+    if stdout_is_regular_file() {
+        return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
     exec_buffered(command, &shell, &shell_flag, &cfg)

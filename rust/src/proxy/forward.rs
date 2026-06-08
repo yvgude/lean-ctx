@@ -108,6 +108,29 @@ fn build_upstream_url(parts: &Parts, base: &str, default_path: &str) -> String {
     )
 }
 
+/// Request headers forwarded verbatim to the upstream provider. Anything not
+/// listed here is stripped before the request leaves the loopback proxy.
+///
+/// `openai-project` (and `openai-organization`) must be forwarded: OpenCode and
+/// the OpenAI SDK send the project scope via this header for project-scoped API
+/// keys when calling the Responses API (`/responses`). Dropping it makes OpenAI
+/// reject the request with `Missing scopes: api.responses.write` (#366).
+const ALLOWED_REQUEST_HEADERS: &[&str] = &[
+    "authorization",
+    "x-api-key",
+    "content-type",
+    "accept",
+    "user-agent",
+    "anthropic-version",
+    "anthropic-beta",
+    "anthropic-dangerous-direct-browser-access",
+    "openai-organization",
+    "openai-project",
+    "openai-beta",
+    "x-goog-api-key",
+    "x-goog-api-client",
+];
+
 async fn send_upstream(
     state: &ProxyState,
     parts: &Parts,
@@ -117,23 +140,9 @@ async fn send_upstream(
 ) -> Result<reqwest::Response, StatusCode> {
     let mut req = state.client.request(parts.method.clone(), url);
 
-    const ALLOWED_HEADERS: &[&str] = &[
-        "authorization",
-        "x-api-key",
-        "content-type",
-        "accept",
-        "user-agent",
-        "anthropic-version",
-        "anthropic-beta",
-        "anthropic-dangerous-direct-browser-access",
-        "openai-organization",
-        "openai-beta",
-        "x-goog-api-key",
-        "x-goog-api-client",
-    ];
     for (key, value) in &parts.headers {
         let k = key.as_str().to_lowercase();
-        if ALLOWED_HEADERS.contains(&k.as_str()) {
+        if ALLOWED_REQUEST_HEADERS.contains(&k.as_str()) {
             req = req.header(key.clone(), value.clone());
         }
     }
@@ -254,5 +263,18 @@ mod tests {
             build_upstream_url(&parts, base, "/v1/messages"),
             "https://api.anthropic.com/v1/messages/count_tokens?model=claude-4"
         );
+    }
+
+    #[test]
+    fn forwards_openai_project_and_auth_headers() {
+        // #366: project-scoped OpenAI keys carry the scope via `OpenAI-Project`.
+        // It must be forwarded upstream, otherwise the Responses API rejects the
+        // call with `Missing scopes: api.responses.write`.
+        for required in ["authorization", "openai-project", "openai-organization"] {
+            assert!(
+                ALLOWED_REQUEST_HEADERS.contains(&required),
+                "request header `{required}` must be forwarded upstream"
+            );
+        }
     }
 }

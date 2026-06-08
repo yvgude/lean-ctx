@@ -173,10 +173,23 @@ mod double_compression_guard {
     #[test]
     fn scenario_skip_terse_when_already_compressed() {
         let src = crate::server_dispatch_src();
+
+        // Reads already produce mode-aware, structure-preserving output, so the
+        // generic terse layer must never re-compress them. The guard skips the
+        // whole read family unconditionally (a verbatim `full`/`lines:` read has
+        // 0 savings yet must still be protected from dictionary-mangling).
         let body = crate::skip_terse_body(&src);
         assert!(
-            body.contains("tool_saved_tokens > 0"),
-            "skip_terse must guard already-compressed output via `tool_saved_tokens > 0`"
+            body.contains("is_read_family"),
+            "skip_terse must skip the read family to avoid re-compressing reads"
+        );
+
+        // The double-counting guard for already-saving tools moved to the
+        // post-terse stats correction: savings are only recomputed when the tool
+        // had already saved tokens (`tool_saved_tokens > 0`).
+        assert!(
+            src.contains("tool_saved_tokens > 0"),
+            "dispatch must guard already-compressed output via `tool_saved_tokens > 0`"
         );
     }
 
@@ -704,20 +717,20 @@ mod integration {
         // Structural test: verify the pipeline
         let src = crate::server_dispatch_src();
 
-        // 1. dispatch returns saved_tokens
+        // 1. dispatch threads saved_tokens out of the tool call
         assert!(src.contains("let (mut result_text, tool_saved_tokens)"));
 
-        // 2. skip_terse uses it
-        let body = crate::skip_terse_body(&src);
-        assert!(
-            body.contains("tool_saved_tokens"),
-            "skip_terse must reference tool_saved_tokens"
-        );
-
-        // 3. Terse compression is gated by skip_terse()
+        // 2. Terse compression is gated by skip_terse()
         assert!(
             src.contains("if skip_terse("),
             "terse compression must be gated by an early skip_terse() return"
+        );
+
+        // 3. The post-terse stats correction is guarded by saved tokens so a
+        // tool that already compressed (saved_tokens > 0) never double-counts.
+        assert!(
+            src.contains("tool_saved_tokens > 0"),
+            "post-terse stats correction must be guarded by tool_saved_tokens"
         );
     }
 }

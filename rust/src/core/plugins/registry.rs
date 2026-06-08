@@ -145,7 +145,18 @@ impl PluginRegistry {
     }
 }
 
+/// The directory the registry scans for plugin sub-directories.
+///
+/// `LEAN_CTX_PLUGINS_DIR` (the *root* containing plugin folders) overrides the
+/// default so containers, CI, and tests can point at an isolated location. Note
+/// this is distinct from the per-hook `LEAN_CTX_PLUGIN_DIR` the executor sets
+/// for a *single* plugin's child process.
 pub fn default_plugin_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("LEAN_CTX_PLUGINS_DIR") {
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
     if let Some(config_dir) = dirs::config_dir() {
         config_dir.join("lean-ctx").join("plugins")
     } else {

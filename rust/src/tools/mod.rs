@@ -58,6 +58,7 @@ pub mod ctx_smart_read;
 pub mod ctx_smells;
 pub mod ctx_symbol;
 pub mod ctx_task;
+pub mod ctx_tools;
 pub mod ctx_tree;
 pub mod ctx_verify;
 pub mod ctx_workflow;

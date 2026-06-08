@@ -27,6 +27,20 @@ type McpTool = {
   inputSchema?: Record<string, unknown>;
 };
 
+/**
+ * How the bridge should expose discovered MCP tools, so lean-ctx can coexist
+ * with other Pi extensions (AFT, magic-context) instead of crashing on a name
+ * collision (issue #359).
+ */
+export type BridgeToolPolicy = {
+  /** Lower-cased tool names the bridge must not register at all. */
+  disabledTools: Set<string>;
+  /** Optional prefix applied to the Pi-facing tool name (not the MCP call). */
+  toolPrefix?: string;
+};
+
+const DEFAULT_TOOL_POLICY: BridgeToolPolicy = { disabledTools: new Set() };
+
 function isAbortLikeError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message.toLowerCase();
@@ -57,17 +71,25 @@ export class McpBridge {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
   private registeredTools: string[] = [];
+  private skippedTools: string[] = [];
+  private disabledToolNames: string[] = [];
   private connected = false;
   private binary: string;
   private extraEnv: Record<string, string>;
+  private policy: BridgeToolPolicy;
   private reconnectAttempts = 0;
   private lastError: string | undefined;
   private lastHungTool: string | undefined;
   private lastRetry: McpBridgeRetryState | undefined;
 
-  constructor(binary: string, extraEnv: Record<string, string> = {}) {
+  constructor(
+    binary: string,
+    extraEnv: Record<string, string> = {},
+    policy: BridgeToolPolicy = DEFAULT_TOOL_POLICY,
+  ) {
     this.binary = binary;
     this.extraEnv = extraEnv;
+    this.policy = policy;
   }
 
   async start(pi: ExtensionAPI): Promise<void> {
@@ -155,6 +177,10 @@ export class McpBridge {
 
     for (const tool of tools) {
       if (CLI_OVERRIDE_TOOLS.has(tool.name)) continue;
+      if (this.policy.disabledTools.has(tool.name.toLowerCase())) {
+        this.disabledToolNames.push(tool.name);
+        continue;
+      }
       this.registerMcpTool(pi, tool);
     }
   }
@@ -162,25 +188,41 @@ export class McpBridge {
   private registerMcpTool(pi: ExtensionAPI, tool: McpTool): void {
     const bridge = this;
     const schema = this.jsonSchemaToTypebox(tool.inputSchema);
+    // The prefix renames only the Pi-facing tool; the MCP call still targets
+    // the real `tool.name` captured in the closure below.
+    const exposedName = this.policy.toolPrefix
+      ? `${this.policy.toolPrefix}${tool.name}`
+      : tool.name;
 
-    pi.registerTool({
-      name: tool.name,
-      label: tool.name,
-      description: tool.description ?? `lean-ctx MCP tool: ${tool.name}`,
-      promptSnippet: tool.description ?? tool.name,
-      parameters: schema,
-      async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
-        const result = await bridge.callTool(
-          tool.name,
-          params as Record<string, unknown>,
-          signal,
-        );
-        // Pi's AgentToolResult requires a `details` field; MCP tool output has none.
-        return { ...result, details: undefined };
-      },
-    });
-
-    this.registeredTools.push(tool.name);
+    try {
+      pi.registerTool({
+        name: exposedName,
+        label: exposedName,
+        description: tool.description ?? `lean-ctx MCP tool: ${tool.name}`,
+        promptSnippet: tool.description ?? tool.name,
+        parameters: schema,
+        async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+          const result = await bridge.callTool(
+            tool.name,
+            params as Record<string, unknown>,
+            signal,
+          );
+          // Pi's AgentToolResult requires a `details` field; MCP tool output has none.
+          return { ...result, details: undefined };
+        },
+      });
+      this.registeredTools.push(exposedName);
+    } catch (err) {
+      // Another extension (e.g. magic-context) already owns this name. Skip it
+      // and keep going so the whole agent doesn't crash on load (#359). Set a
+      // prefix (LEAN_CTX_PI_TOOL_PREFIX) or disable the tool to resolve cleanly.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.skippedTools.push(exposedName);
+      console.error(
+        `[lean-ctx MCP bridge] Skipped tool "${exposedName}" — already registered by another extension? (${msg}). `
+          + "Set LEAN_CTX_PI_TOOL_PREFIX or add it to LEAN_CTX_PI_DISABLE_TOOLS to silence this.",
+      );
+    }
   }
 
   async callTool(
@@ -352,6 +394,9 @@ export class McpBridge {
       connected: this.connected,
       toolCount: this.registeredTools.length,
       toolNames: [...this.registeredTools],
+      skippedTools: [...this.skippedTools],
+      disabledTools: [...this.disabledToolNames],
+      toolPrefix: this.policy.toolPrefix,
       reconnectAttempts: this.reconnectAttempts,
       lastError: this.lastError,
       lastHungTool: this.lastHungTool,

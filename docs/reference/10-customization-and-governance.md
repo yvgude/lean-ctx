@@ -88,7 +88,7 @@ lean-ctx tools list                # list tools per profile
 |---------|-------|----------|
 | `minimal` | ~6 | small models / strict token budgets |
 | `standard` | ~22 | most users — recommended everyday trim |
-| `power` | all (69) | code-intelligence + multi-agent + context-engineering work |
+| `power` | all (71) | code-intelligence + multi-agent + context-engineering work |
 
 > **Default:** with no explicit `tool_profile` in config, lean-ctx exposes the
 > **`power`** set (every tool) — `tool_profile_effective()` falls back to `power`.

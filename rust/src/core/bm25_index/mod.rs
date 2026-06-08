@@ -311,7 +311,21 @@ impl BM25Index {
                 mtime_ms: state.mtime_ms,
                 size_bytes: state.size_bytes,
             };
-            let content = if let Some(cached) = content_hint.get(rel) {
+            let content = if crate::core::extractors::is_binary_document(&abs) {
+                // Binary document (PDF, …): extract clean text from raw bytes.
+                // Skipped if extraction yields nothing (e.g. scanned/image-only).
+                // Never populates the shared UTF-8 content cache (not text).
+                match std::fs::read(&abs) {
+                    Ok(bytes) => {
+                        let text = crate::core::extractors::extract(&abs, &bytes).text;
+                        if text.is_empty() {
+                            continue;
+                        }
+                        std::borrow::Cow::Owned(text)
+                    }
+                    Err(_) => continue,
+                }
+            } else if let Some(cached) = content_hint.get(rel) {
                 cache_hits += 1;
                 std::borrow::Cow::Borrowed(cached.as_str())
             } else if let Some(arc) = crate::core::content_cache::get(&abs, cache_state) {
@@ -406,19 +420,31 @@ impl BM25Index {
             if state.size_bytes > MAX_FILE_SIZE_BYTES {
                 continue;
             }
-            if let Ok(content) = std::fs::read_to_string(&abs) {
-                let mut chunks = extract_chunks(rel, &content);
-                chunks.sort_by(|a, b| {
-                    a.start_line
-                        .cmp(&b.start_line)
-                        .then_with(|| a.end_line.cmp(&b.end_line))
-                        .then_with(|| a.symbol_name.cmp(&b.symbol_name))
-                });
-                for chunk in chunks {
-                    index.add_chunk(chunk);
+            let content = if crate::core::extractors::is_binary_document(&abs) {
+                match std::fs::read(&abs) {
+                    Ok(bytes) => crate::core::extractors::extract(&abs, &bytes).text,
+                    Err(_) => continue,
                 }
-                index.files.insert(rel.clone(), state);
+            } else {
+                match std::fs::read_to_string(&abs) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                }
+            };
+            if content.is_empty() {
+                continue;
             }
+            let mut chunks = extract_chunks(rel, &content);
+            chunks.sort_by(|a, b| {
+                a.start_line
+                    .cmp(&b.start_line)
+                    .then_with(|| a.end_line.cmp(&b.end_line))
+                    .then_with(|| a.symbol_name.cmp(&b.symbol_name))
+            });
+            for chunk in chunks {
+                index.add_chunk(chunk);
+            }
+            index.files.insert(rel.clone(), state);
         }
 
         index.finalize();
@@ -887,7 +913,7 @@ fn list_code_files(root: &Path) -> Vec<String> {
         if !path.is_file() {
             continue;
         }
-        if !is_code_file(path) {
+        if !crate::core::ingestion::is_ingestible(path) {
             continue;
         }
         let rel = path

@@ -1,6 +1,6 @@
 # LeanCTX Feature Catalog (SSOT Snapshot)
 
-**Version:** `3.6.10`  
+**Version:** `3.7.5`  
 **Updated:** `2026-05-15`  
 **Primary Sources:** `website/generated/mcp-tools.json`, `rust/src/tool_defs/granular.rs`, `README.md`
 
@@ -21,7 +21,7 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 
 ## Runtime Surface (Current)
 
-- Granular MCP tools: **69**
+- Granular MCP tools: **72**
 - Unified MCP tools: **5**
 - MCP Resources: **5**
 - MCP Prompts: **5**
@@ -43,7 +43,7 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 
 ---
 
-## Granular MCP Tools (69)
+## Granular MCP Tools (72)
 
 ### A) Read / Search / IO Surface
 
@@ -123,6 +123,7 @@ Import supports three formats: native `ProjectKnowledge` JSON, simple `[{categor
 - `ctx_execute`
 - `ctx_benchmark`
 - `ctx_response`
+- `ctx_tools` _(MCP Tool-Catalog Gateway — actions: find, call, list, refresh; routes/proxies unlimited downstream MCP servers at constant context cost)_
 
 ---
 

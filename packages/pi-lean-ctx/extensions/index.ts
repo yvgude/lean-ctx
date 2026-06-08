@@ -224,6 +224,7 @@ function withFooter(text: string, opts?: {
   limit?: number;
   always?: boolean;
   preferEstimate?: boolean;
+  suppressIfNoSaving?: boolean;
 }) {
   const parsed = parseLeanCtxOutput(text);
   const limited = limitLines(parsed.text, opts?.limit);
@@ -237,6 +238,14 @@ function withFooter(text: string, opts?: {
     stats = clampStats(tokens, tokens);
   }
   if (!stats) return { text: limited.text, stats: undefined, truncated: limited.truncated };
+
+  // On tiny files compression cannot beat the envelope, so a "0%" footer would
+  // be pure overhead — larger payload than the source for no gain (#361). Keep
+  // the computed stats for telemetry (`details.compression`) but drop the
+  // visible footer when nothing was actually saved.
+  if (opts?.suppressIfNoSaving && stats.percentSaved <= 0) {
+    return { text: limited.text, stats, truncated: limited.truncated };
+  }
 
   const footer = formatFooter(stats);
   const base = limited.text.trimEnd();
@@ -332,6 +341,31 @@ export default async function (pi: ExtensionAPI) {
   // registered (the bridge is started at the end of this function).
   let mcpBridge: McpBridge | null = null;
 
+  // ── Collision-safe registration (#359) ───────────────────────────────────
+  // lean-ctx must coexist with other Pi extensions (AFT, magic-context). If a
+  // tool name is already claimed, skip it with a warning instead of letting the
+  // whole agent crash on load. Users can also hand a name to another extension
+  // via LEAN_CTX_PI_DISABLE_TOOLS / config.json `disableTools`. All ctx_* tools
+  // below register through this wrapper instead of pi.registerTool directly.
+  const skippedExtensionTools: string[] = [];
+  const disabledExtensionTools: string[] = [];
+  const registerTool = ((def: { name?: unknown }): void => {
+    const name = typeof def.name === "string" ? def.name : String(def.name);
+    if (PI_CONFIG.disabledTools.has(name.toLowerCase())) {
+      disabledExtensionTools.push(name);
+      return;
+    }
+    try {
+      (pi.registerTool as (d: unknown) => void)(def);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      skippedExtensionTools.push(name);
+      console.error(
+        `[pi-lean-ctx] Skipped tool "${name}" — already registered elsewhere? (${msg})`,
+      );
+    }
+  }) as unknown as ExtensionAPI["registerTool"];
+
   const baseBashTool = createBashToolDefinition(process.cwd(), {
     spawnHook: ({ command, cwd, env }) => {
       const bin = resolveBinary();
@@ -352,7 +386,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ── ctx_shell (replaces bash) ─────────────────────────────────────────
-  pi.registerTool({
+  registerTool({
     name: "ctx_shell",
     label: "ctx_shell",
     description:
@@ -413,7 +447,7 @@ export default async function (pi: ExtensionAPI) {
   // ── ctx_read (replaces read) ──────────────────────────────────────────
   const nativeReadTool = createReadToolDefinition(process.cwd());
 
-  pi.registerTool({
+  registerTool({
     name: "ctx_read",
     label: "ctx_read",
     description:
@@ -505,7 +539,7 @@ export default async function (pi: ExtensionAPI) {
             const bridged = await mcpBridge.callTool("ctx_read", { path: absolutePath, mode }, signal);
             const bridgedText = bridged.content.map((block) => block.text).join("");
             const originalSlice = await readSlice(absolutePath, params.offset, params.limit);
-            const decorated = withFooter(bridgedText, { originalText: originalSlice.text, always: true, preferEstimate: true });
+            const decorated = withFooter(bridgedText, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
             return {
               content: [{ type: "text", text: decorated.text }],
               details: { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx-bridge", mode, compression: decorated.stats },
@@ -518,7 +552,7 @@ export default async function (pi: ExtensionAPI) {
         try {
           const output = await execLeanCtx(pi, args);
           const originalSlice = await readSlice(absolutePath, params.offset, params.limit);
-          const decorated = withFooter(output, { originalText: originalSlice.text, always: true, preferEstimate: true });
+          const decorated = withFooter(output, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
           return {
             content: [{ type: "text", text: decorated.text }],
             details: { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx", mode, compression: decorated.stats },
@@ -555,7 +589,7 @@ export default async function (pi: ExtensionAPI) {
           );
           const bridgedText = bridged.content.map((block) => block.text).join("");
           const originalText = await readFile(absolutePath, "utf8");
-          const decorated = withFooter(bridgedText, { originalText, always: true, preferEstimate: true });
+          const decorated = withFooter(bridgedText, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
           return {
             content: [{ type: "text", text: decorated.text }],
             details: { path: absolutePath, source: "lean-ctx-bridge", mode, compression: decorated.stats },
@@ -568,7 +602,7 @@ export default async function (pi: ExtensionAPI) {
       const args = ["read", absolutePath, "-m", mode, ...(isExplicitFull ? ["--fresh"] : [])];
       const output = await execLeanCtx(pi, args);
       const originalText = await readFile(absolutePath, "utf8");
-      const decorated = withFooter(output, { originalText, always: true, preferEstimate: true });
+      const decorated = withFooter(output, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
 
       return {
         content: [{ type: "text", text: decorated.text }],
@@ -578,7 +612,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ── ctx_ls (replaces ls) ──────────────────────────────────────────────
-  pi.registerTool({
+  registerTool({
     name: "ctx_ls",
     label: "ctx_ls",
     description: "List a directory. Prefer over native ls (compact, summarized). Use limit to reduce output size.",
@@ -597,7 +631,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ── ctx_find (replaces find) ──────────────────────────────────────────
-  pi.registerTool({
+  registerTool({
     name: "ctx_find",
     label: "ctx_find",
     description: "Find files by glob. Prefer over native find/fd (gitignore-aware). Use limit to reduce output size.",
@@ -616,7 +650,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ── ctx_grep (replaces grep) ──────────────────────────────────────────
-  pi.registerTool({
+  registerTool({
     name: "ctx_grep",
     label: "ctx_grep",
     description: "Search code. Prefer over native Grep/ripgrep (compact, ranked). Use limit to cap matches, context for surrounding lines.",
@@ -649,7 +683,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ── lean_ctx (CLI passthrough) ────────────────────────────────────────
-  pi.registerTool({
+  registerTool({
     name: "lean_ctx",
     label: "lean_ctx",
     description:
@@ -674,7 +708,10 @@ export default async function (pi: ExtensionAPI) {
   // --agent pi` writes that entry by default — so it must not silently disable the
   // bridge a user explicitly requested via LEAN_CTX_PI_ENABLE_MCP=1 / enableMcp.
   mcpBridge = enableMcpBridge
-    ? new McpBridge(resolveBinary(), PI_CONFIG.forwardedEnv)
+    ? new McpBridge(resolveBinary(), PI_CONFIG.forwardedEnv, {
+        disabledTools: PI_CONFIG.disabledTools,
+        toolPrefix: PI_CONFIG.toolPrefix,
+      })
     : null;
 
   if (mcpBridge) {
@@ -724,6 +761,22 @@ export default async function (pi: ExtensionAPI) {
         if (status.lastError) {
           lines.push(`Last bridge error: ${status.lastError}`);
         }
+      }
+
+      // Coexistence diagnostics (#359): the active prefix plus which tools we
+      // handed off or skipped, so a user stacking AFT / magic-context can see
+      // the exact split at a glance.
+      const skipped = [...(status?.skippedTools ?? []), ...skippedExtensionTools];
+      const disabled = [...(status?.disabledTools ?? []), ...disabledExtensionTools];
+      const prefix = status?.toolPrefix ?? PI_CONFIG.toolPrefix;
+      if (prefix) {
+        lines.push(`Tool prefix: "${prefix}" (bridge tools exposed as ${prefix}<name>)`);
+      }
+      if (disabled.length > 0) {
+        lines.push(`Disabled (handed to other extensions): ${disabled.join(", ")}`);
+      }
+      if (skipped.length > 0) {
+        lines.push(`Skipped (name already taken): ${skipped.join(", ")}`);
       }
 
       // Show active ctx_ tools

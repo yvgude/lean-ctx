@@ -415,10 +415,11 @@ pub(super) fn cmd_savings(rest: &[String]) {
         "sign" => cmd_savings_sign(&rest[1..]),
         "push" => cmd_savings_push(&rest[1..]),
         "verify-batch" => cmd_savings_verify_batch(rest.get(1).map(String::as_str)),
+        "roi" => cmd_savings_roi(&rest[1..]),
         "summary" | "" => print!("{}", format_savings_summary()),
         _ => {
             eprintln!(
-                "Usage: lean-ctx savings [summary|verify|rechain|export|sign|push|verify-batch]"
+                "Usage: lean-ctx savings [summary|verify|rechain|export|sign|push|verify-batch|roi]"
             );
             std::process::exit(1);
         }
@@ -448,6 +449,201 @@ fn cmd_savings_rechain() {
         Err(e) => {
             eprintln!("Re-chain failed: {e}");
             std::process::exit(1);
+        }
+    }
+}
+
+/// `lean-ctx conformance [--json]` — run the conformance & reproducibility
+/// scorecard (EPIC 12.17) and exit non-zero if any check fails, so CI can gate.
+pub(super) fn cmd_conformance(args: &[String]) {
+    let card = core::conformance::run();
+
+    if args.iter().any(|a| a == "--json") {
+        match serde_json::to_string_pretty(&card.to_json()) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                eprintln!("conformance serialization failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        println!(
+            "Conformance scorecard ({}/{} passed)",
+            card.passed(),
+            card.total()
+        );
+        for check in &card.checks {
+            let mark = if check.passed { "ok" } else { "FAIL" };
+            let detail = if check.detail.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", check.detail)
+            };
+            println!("  [{mark}] {}/{}{detail}", check.category, check.name);
+        }
+    }
+
+    if !card.all_passed() {
+        std::process::exit(1);
+    }
+}
+
+/// `lean-ctx billing <plans|entitlements|usage>` — the commercial-plane billing
+/// substrate (EPIC 13.6). All subcommands are **informational and read-only**:
+/// they describe plans/entitlements and meter local savings. The local plane is
+/// never gated — there are no entitlement checks here, only reporting.
+pub(super) fn cmd_billing(rest: &[String]) {
+    let action = rest.first().map_or("usage", String::as_str);
+    let json = rest.iter().any(|a| a == "--json");
+    match action {
+        "plans" => cmd_billing_plans(json),
+        "entitlements" => cmd_billing_entitlements(rest.get(1).map(String::as_str), json),
+        "usage" => cmd_billing_usage(json),
+        other => {
+            eprintln!("unknown billing action '{other}'. Use: plans | entitlements <plan> | usage [--json]");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_billing_plans(json: bool) {
+    let plans: Vec<core::billing::Entitlements> = core::billing::Plan::all()
+        .iter()
+        .map(|p| p.entitlements())
+        .collect();
+    if json {
+        print_json_or_die(&plans, "plans");
+        return;
+    }
+    println!("lean-ctx plans (commercial plane — additive, never gates local):\n");
+    for e in &plans {
+        println!("  {} — seats: {}", e.plan.as_str(), quota(e.seats));
+        println!(
+            "    hosted_index_mb: {}  connectors: {}  private_registry: {}",
+            quota(e.hosted_index_mb),
+            quota(e.managed_connectors),
+            e.private_registry
+        );
+        println!(
+            "    sso_scim: {}  audit_retention_days: {}  revenue_share: {}",
+            e.sso_scim, e.audit_retention_days, e.revenue_share
+        );
+    }
+    println!("\nThe Personal plane (local engine) is free + ungated regardless of plan.");
+}
+
+fn cmd_billing_entitlements(plan_arg: Option<&str>, json: bool) {
+    let plan = core::billing::Plan::parse(plan_arg.unwrap_or("free"));
+    let e = plan.entitlements();
+    if json {
+        print_json_or_die(&e, "entitlements");
+        return;
+    }
+    println!("Entitlements for plan '{}':", plan.as_str());
+    println!("  seats:                {}", quota(e.seats));
+    println!("  hosted_index_mb:      {}", quota(e.hosted_index_mb));
+    println!("  managed_connectors:   {}", quota(e.managed_connectors));
+    println!("  private_registry:     {}", e.private_registry);
+    println!("  sso_scim:             {}", e.sso_scim);
+    println!("  audit_retention_days: {}", e.audit_retention_days);
+    println!("  revenue_share:        {}", e.revenue_share);
+}
+
+fn cmd_billing_usage(json: bool) {
+    let agent_id = savings_agent_id();
+    let usage = core::billing::metered_usage(&agent_id);
+    if json {
+        print_json_or_die(&usage, "usage");
+        return;
+    }
+    println!("{}", usage.headline());
+    println!();
+    println!("  Period:        {}", usage.period);
+    println!("  Metered events: {}", usage.metered_events);
+    println!("  Net tokens:    {}", usage.net_saved_tokens);
+    println!("  Saved USD:     ${:.4}", usage.saved_usd);
+    println!(
+        "  Billable:      {}",
+        if usage.is_billable() {
+            "yes (signed + chain intact)"
+        } else {
+            "no (requires a signed, intact ledger)"
+        }
+    );
+    println!("  Provenance:    {}", usage.last_entry_hash);
+}
+
+/// Render a quota: [`core::billing::plans::UNBOUNDED`] → "unlimited", else the
+/// number (a plain `0` means *none*).
+fn quota(n: u32) -> String {
+    if n == core::billing::plans::UNBOUNDED {
+        "unlimited".to_string()
+    } else {
+        n.to_string()
+    }
+}
+
+fn print_json_or_die<T: serde::Serialize>(value: &T, what: &str) {
+    match serde_json::to_string_pretty(value) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("{what} serialization failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `lean-ctx savings roi [--json]` — the privacy-preserving ROI/metering surface
+/// derived from the signed savings batch (EPIC 12.20). Read-only: it never
+/// mutates the ledger.
+fn cmd_savings_roi(args: &[String]) {
+    let agent_id = savings_agent_id();
+    let report = core::savings_ledger::roi_report(&agent_id);
+
+    if args.iter().any(|a| a == "--json") {
+        match serde_json::to_string_pretty(&report) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                eprintln!("ROI report serialization failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    println!("{}", report.headline());
+    println!();
+    println!("  Period:        {}", report.period);
+    println!("  Events:        {}", report.total_events);
+    println!(
+        "  Saved tokens:  {} gross / {} net",
+        report.saved_tokens, report.net_saved_tokens
+    );
+    println!("  Saved USD:     ${:.4}", report.saved_usd);
+    println!(
+        "  Avg / event:   {:.1} tok, ${:.6}",
+        report.avg_saved_tokens_per_event, report.avg_saved_usd_per_event
+    );
+    println!(
+        "  Chain:         {}",
+        if report.chain_valid {
+            "valid (SHA-256 intact)"
+        } else {
+            "BROKEN — run `lean-ctx savings rechain`"
+        }
+    );
+    println!(
+        "  Signature:     {}",
+        if report.signed {
+            "present (Ed25519)"
+        } else {
+            "unsigned (machine identity unavailable)"
+        }
+    );
+    if !report.top_tools.is_empty() {
+        println!("  Top tools:");
+        for (tool, tokens) in report.top_tools.iter().take(5) {
+            println!("    {tool}: {tokens} tok");
         }
     }
 }

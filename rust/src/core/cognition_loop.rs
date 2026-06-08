@@ -57,53 +57,58 @@ pub fn run_cognition_loop(project_root: &str, max_steps: u8) -> CognitionLoopRep
         return report;
     };
 
-    let mut knowledge = ProjectKnowledge::load_or_create(project_root);
-    let project_hash = knowledge.project_hash.clone();
-    let mut graph = KnowledgeRelationGraph::load_or_create(&project_hash);
+    // Knowledge read-modify-write under the shared in-process + cross-process
+    // lock so this loop (also driven by the background cognition scheduler)
+    // never clobbers a concurrent foreground `remember`/`relate` write (issue
+    // #326). The relation graph is loaded and saved inside the same critical
+    // section; no step re-enters the knowledge lock, so this cannot deadlock.
+    let _ = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
+        let project_hash = knowledge.project_hash.clone();
+        let mut graph = KnowledgeRelationGraph::load_or_create(&project_hash);
 
-    if max_steps >= 1 {
-        report.facts_promoted = step_seed_promote(project_root, &mut knowledge, &policy);
-        report.steps_run = 1;
-    }
+        if max_steps >= 1 {
+            report.facts_promoted = step_seed_promote(project_root, knowledge, &policy);
+            report.steps_run = 1;
+        }
 
-    if max_steps >= 2 {
-        report.edges_repaired = step_structural_repair(&mut graph, &knowledge);
-        report.steps_run = 2;
-    }
+        if max_steps >= 2 {
+            report.edges_repaired = step_structural_repair(&mut graph, knowledge);
+            report.steps_run = 2;
+        }
 
-    // Step 3: Fidelity Check (structural only, no LLM)
-    if max_steps >= 3 {
-        report.steps_run = 3;
-    }
+        // Step 3: Fidelity Check (structural only, no LLM)
+        if max_steps >= 3 {
+            report.steps_run = 3;
+        }
 
-    if max_steps >= 4 {
-        report.lateral_connections = step_lateral_synthesis(&knowledge, &mut graph);
-        report.steps_run = 4;
-    }
+        if max_steps >= 4 {
+            report.lateral_connections = step_lateral_synthesis(knowledge, &mut graph);
+            report.steps_run = 4;
+        }
 
-    if max_steps >= 5 {
-        report.contradictions_resolved = step_contradiction_resolution(&mut knowledge);
-        report.steps_run = 5;
-    }
+        if max_steps >= 5 {
+            report.contradictions_resolved = step_contradiction_resolution(knowledge);
+            report.steps_run = 5;
+        }
 
-    if max_steps >= 6 {
-        report.edges_strengthened = step_hebbian_strengthen(&knowledge, &mut graph);
-        report.steps_run = 6;
-    }
+        if max_steps >= 6 {
+            report.edges_strengthened = step_hebbian_strengthen(knowledge, &mut graph);
+            report.steps_run = 6;
+        }
 
-    if max_steps >= 7 {
-        report.facts_decayed = step_decay(&mut knowledge, &mut graph, &policy);
-        report.steps_run = 7;
-    }
+        if max_steps >= 7 {
+            report.facts_decayed = step_decay(knowledge, &mut graph, &policy);
+            report.steps_run = 7;
+        }
 
-    if max_steps >= 8 {
-        let lifecycle = knowledge.run_memory_lifecycle(&policy);
-        report.facts_archived = lifecycle.archived_count as u32;
-        report.steps_run = 8;
-    }
+        if max_steps >= 8 {
+            let lifecycle = knowledge.run_memory_lifecycle(&policy);
+            report.facts_archived = lifecycle.archived_count as u32;
+            report.steps_run = 8;
+        }
 
-    let _ = knowledge.save();
-    let _ = graph.save();
+        let _ = graph.save();
+    });
 
     report.duration_ms = start.elapsed().as_millis() as u64;
     report
@@ -401,6 +406,7 @@ mod tests {
             feedback_down: 0,
             last_feedback: None,
             privacy: FactPrivacy::default(),
+            sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
             fidelity: None,

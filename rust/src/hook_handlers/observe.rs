@@ -41,13 +41,7 @@ fn emit_dedicated_session_context(input: &str) {
     if !crate::core::config::Config::load().dedicated_session_context_active() {
         return;
     }
-    let payload = serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": crate::rules_inject::dedicated_session_summary(),
-        }
-    });
-    println!("{payload}");
+    emit_session_start_additional_context(crate::rules_inject::dedicated_session_summary());
 }
 
 #[derive(serde::Serialize)]

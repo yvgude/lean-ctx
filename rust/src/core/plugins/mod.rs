@@ -1,6 +1,8 @@
 pub mod executor;
 pub mod manifest;
 pub mod registry;
+pub mod sandbox;
+pub mod tools;
 
 use executor::{execute_hooks_for_point, HookPoint, HookResult};
 use registry::PluginRegistry;
@@ -69,6 +71,52 @@ impl PluginManager {
             }
         });
     }
+
+    /// True if any enabled plugin declares `hook_name`. A cheap guard so the hot
+    /// path never spawns a hook thread when nothing would run — the default
+    /// (no plugins installed → registry uninitialized → `false`).
+    pub fn has_listener(hook_name: &str) -> bool {
+        Self::with_registry(|reg| any_enabled_listener(reg, hook_name)).unwrap_or(false)
+    }
+
+    /// Fire a hook in the background, but only when a plugin is actually
+    /// listening for it. Call sites should prefer this over
+    /// `fire_hook_background` so they stay zero-cost without plugins.
+    pub fn notify(hook: HookPoint) {
+        if Self::has_listener(hook.hook_name()) {
+            Self::fire_hook_background(hook);
+        }
+    }
+
+    /// Flattened `[[tools]]` from all enabled plugins (EPIC 12.11). Empty unless
+    /// plugins are installed + enabled, so it is zero-cost by default.
+    pub fn tool_specs() -> Vec<tools::PluginToolSpec> {
+        Self::with_registry(|reg| {
+            reg.enabled_plugins()
+                .iter()
+                .flat_map(|p| {
+                    let policy = p.manifest.trust.policy();
+                    p.manifest.tools.iter().map(move |t| tools::PluginToolSpec {
+                        plugin_name: p.manifest.plugin.name.clone(),
+                        plugin_dir: p.path.clone(),
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        command: t.command.clone(),
+                        timeout_ms: t.timeout_ms,
+                        input_schema: t.input_schema.clone(),
+                        policy,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+}
+
+fn any_enabled_listener(reg: &PluginRegistry, hook_name: &str) -> bool {
+    reg.enabled_plugins()
+        .iter()
+        .any(|p| p.manifest.hooks.contains_key(hook_name))
 }
 
 pub fn init_plugin_template(name: &str, dir: &std::path::Path) -> std::io::Result<()> {
@@ -98,6 +146,23 @@ command = "{name} stop"
 
 # [hooks.on_knowledge_update]
 # command = "{name} knowledge-updated"
+
+# Native MCP tools (no fork needed). Each [[tools]] entry becomes a tool the
+# agent can call; arguments arrive as JSON on stdin, the result is stdout.
+# [[tools]]
+# name = "{name}_lookup"
+# description = "What this tool does"
+# command = "{name} tool lookup"
+# timeout_ms = 5000
+# input_schema = {{ type = "object", properties = {{ query = {{ type = "string" }} }}, required = ["query"] }}
+
+# Trust & sandbox (least privilege by default). Hooks/tools run with a scrubbed
+# environment and a working-dir jail. Declare only what you need:
+#   network         — you make outbound network calls (surfaced for consent)
+#   fs_write        — you write files outside the plugin dir (surfaced)
+#   env_passthrough — you need the full host env (disables env scrubbing)
+# [trust]
+# permissions = ["network"]
 "#
     );
 
@@ -148,5 +213,49 @@ mod tests {
     fn fire_hook_with_no_plugins_returns_empty() {
         let results = PluginManager::fire_hook(&HookPoint::OnSessionStart);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn any_enabled_listener_detects_declared_hook() {
+        use registry::PluginRegistry;
+        use std::fs;
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("p");
+        fs::create_dir_all(&p).unwrap();
+        fs::write(
+            p.join("plugin.toml"),
+            "[plugin]\nname = \"p\"\nversion = \"1.0.0\"\n\n\
+             [hooks.pre_read]\ncommand = \"echo hi\"\n",
+        )
+        .unwrap();
+
+        let mut reg = PluginRegistry::new(dir.path().to_path_buf());
+        reg.discover();
+
+        assert!(any_enabled_listener(&reg, "pre_read"));
+        assert!(!any_enabled_listener(&reg, "post_compress"));
+    }
+
+    #[test]
+    fn any_enabled_listener_ignores_disabled_plugin() {
+        use registry::PluginRegistry;
+        use std::fs;
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("p");
+        fs::create_dir_all(&p).unwrap();
+        fs::write(
+            p.join("plugin.toml"),
+            "[plugin]\nname = \"p\"\nversion = \"1.0.0\"\n\n\
+             [hooks.pre_read]\ncommand = \"echo hi\"\n",
+        )
+        .unwrap();
+
+        let mut reg = PluginRegistry::new(dir.path().to_path_buf());
+        reg.discover();
+        reg.disable("p").unwrap();
+
+        assert!(!any_enabled_listener(&reg, "pre_read"));
     }
 }

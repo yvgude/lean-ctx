@@ -126,13 +126,14 @@ fn bench_tool_descriptions_token_count() {
     eprintln!("{}", "=".repeat(70));
 
     // Budgets reflect the real registry tool surface (single source of truth,
-    // #141): all 69 tools with their full `McpTool::tool_def()` descriptions —
+    // #141): all 72 tools with their full `McpTool::tool_def()` descriptions —
     // i.e. exactly what the live server advertises in full mode. The previous
     // (lower) budget measured the retired `list_all_tool_defs` abbreviated set,
-    // which never matched what agents actually received.
+    // which never matched what agents actually received. Bumped to 2600 with the
+    // ctx_tools gateway meta-tool (#210).
     assert!(
-        total < 2400,
-        "Total tool description tokens should be <2400, got {total}"
+        total < 2600,
+        "Total tool description tokens should be <2600, got {total}"
     );
 
     for (name, desc) in &descriptions {
@@ -176,7 +177,7 @@ fn bench_total_input_overhead() {
     );
     eprintln!("{}", "=".repeat(70));
 
-    // Full tool surface (all 69 tools, registry SSOT incl. full property
+    // Full tool surface (all 72 tools, registry SSOT incl. full property
     // schemas) — the worst-case opt-in overhead. The default lazy surface is
     // far smaller; see `bench_lazy_default_vs_full_overhead` (#141).
     assert!(

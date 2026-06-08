@@ -18,7 +18,7 @@
 
 **claude-context** (by Zilliz) adds semantic code search to Claude Code and other agents by indexing your codebase into a vector database (Milvus or Zilliz Cloud). It's a focused tool: index your code, search it semantically, done.
 
-**lean-ctx** provides semantic search *as one of 68+ tools* in a comprehensive context layer. It runs entirely locally — no API keys, no external vector database, no Docker containers. Beyond search, it adds file compression, shell compression, session memory, multi-agent support, and observability.
+**lean-ctx** provides semantic search *as one of 72+ tools* in a comprehensive context layer. It runs entirely locally — no API keys, no external vector database, no Docker containers. Beyond search, it adds file compression, shell compression, session memory, multi-agent support, and observability.
 
 ## Feature Comparison
 
@@ -193,7 +193,7 @@ lean-ctx setup
 
 claude-context is a well-built semantic search plugin backed by Zilliz's vector database expertise. With 11.5k+ stars, it has strong community adoption.
 
-The fundamental trade-off is architecture: claude-context requires external services (embedding APIs + vector database) in exchange for access to state-of-the-art cloud models. lean-ctx runs entirely locally with no external dependencies, providing semantic search as one capability in a comprehensive 68+ tool context layer.
+The fundamental trade-off is architecture: claude-context requires external services (embedding APIs + vector database) in exchange for access to state-of-the-art cloud models. lean-ctx runs entirely locally with no external dependencies, providing semantic search as one capability in a comprehensive 72+ tool context layer.
 
 If privacy and local-first operation matter to you — or if you want more than just search — lean-ctx is the more complete solution.
 

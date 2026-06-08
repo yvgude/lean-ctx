@@ -292,6 +292,25 @@ struct ListCtx {
     index: usize,
 }
 
+/// Accumulates a `<table>` so it can be flushed as a GitHub-Flavored-Markdown
+/// table (leading `|`, header separator row) instead of the ambiguous
+/// `cell | cell |` lines the streaming renderer produced before.
+#[derive(Default)]
+struct TableCtx {
+    /// Completed rows, each a list of finalized (escaped) cell strings.
+    rows: Vec<Vec<String>>,
+    /// Cells of the row currently being built.
+    cur_row: Vec<String>,
+    /// Active cell buffer; text/inline content is routed here while open.
+    cell: Option<String>,
+    /// Index into `rows` of the row to use as the header, if known.
+    header_idx: Option<usize>,
+    /// Inside a `<thead>` section.
+    in_thead: bool,
+    /// The in-progress row contains at least one `<th>`.
+    cur_row_has_th: bool,
+}
+
 #[derive(Default)]
 struct Renderer {
     out: String,
@@ -300,6 +319,7 @@ struct Renderer {
     pre_depth: usize,
     anchor: Option<(String, String)>,
     list_stack: Vec<ListCtx>,
+    table_stack: Vec<TableCtx>,
 }
 
 impl Renderer {
@@ -321,17 +341,34 @@ impl Renderer {
         }
         let decoded = decode_entities(raw);
         if self.pre_depth > 0 {
-            self.out.push_str(&decoded);
+            self.active_sink().push_str(&decoded);
             return;
         }
         let collapsed = collapse_ws(&decoded);
         if collapsed.is_empty() {
             return;
         }
-        match self.anchor {
-            Some((_, ref mut buf)) => buf.push_str(&collapsed),
-            None => self.out.push_str(&collapsed),
+        self.active_sink().push_str(&collapsed);
+    }
+
+    /// The string buffer inline content should currently be written to:
+    /// an open `<a>` anchor first, then the innermost open table cell, else the
+    /// main document body. Keeps link/cell capture working when nested.
+    fn active_sink(&mut self) -> &mut String {
+        if let Some((_, buf)) = self.anchor.as_mut() {
+            return buf;
         }
+        // Probe immutably first so that borrow is released before the mutable
+        // re-borrow returns (keeps the borrow checker happy across fields).
+        let cell_active = matches!(self.table_stack.last(), Some(tc) if tc.cell.is_some());
+        if cell_active {
+            return self
+                .table_stack
+                .last_mut()
+                .and_then(|tc| tc.cell.as_mut())
+                .expect("cell active by the check above");
+        }
+        &mut self.out
     }
 
     fn open(&mut self, name: &str, attrs: &str, self_closing: bool) {
@@ -360,7 +397,38 @@ impl Renderer {
                 self.newline();
                 self.pre_depth += 1;
             }
-            "code" if self.pre_depth == 0 => self.out.push('`'),
+            "code" if self.pre_depth == 0 => {
+                self.active_sink().push('`');
+            }
+            "table" => {
+                self.block_break();
+                self.table_stack.push(TableCtx::default());
+            }
+            "thead" => {
+                if let Some(tc) = self.table_stack.last_mut() {
+                    tc.in_thead = true;
+                }
+            }
+            "tr" => {
+                if let Some(tc) = self.table_stack.last_mut() {
+                    tc.cur_row = Vec::new();
+                    tc.cur_row_has_th = false;
+                } else {
+                    // A stray <tr> outside any table: keep the legacy line break.
+                    self.newline();
+                }
+            }
+            "td" => {
+                if let Some(tc) = self.table_stack.last_mut() {
+                    tc.cell = Some(String::new());
+                }
+            }
+            "th" => {
+                if let Some(tc) = self.table_stack.last_mut() {
+                    tc.cell = Some(String::new());
+                    tc.cur_row_has_th = true;
+                }
+            }
             "ul" => {
                 self.list_stack.push(ListCtx {
                     ordered: false,
@@ -386,7 +454,6 @@ impl Renderer {
                 };
                 self.out.push_str(&marker);
             }
-            "tr" => self.newline(),
             "blockquote" => {
                 self.block_break();
                 self.out.push_str("> ");
@@ -453,12 +520,53 @@ impl Renderer {
                 self.out.push_str("```");
                 self.block_break();
             }
-            "code" if self.pre_depth == 0 => self.out.push('`'),
+            "code" if self.pre_depth == 0 => {
+                self.active_sink().push('`');
+            }
             "ul" | "ol" => {
                 self.list_stack.pop();
                 self.block_break();
             }
-            "td" | "th" => self.out.push_str(" | "),
+            "td" | "th" => {
+                if let Some(tc) = self.table_stack.last_mut() {
+                    if let Some(cell) = tc.cell.take() {
+                        tc.cur_row.push(finalize_cell(&cell));
+                    }
+                }
+            }
+            "tr" => {
+                if let Some(tc) = self.table_stack.last_mut() {
+                    let row = std::mem::take(&mut tc.cur_row);
+                    if !row.is_empty() {
+                        if tc.header_idx.is_none() && (tc.in_thead || tc.cur_row_has_th) {
+                            tc.header_idx = Some(tc.rows.len());
+                        }
+                        tc.rows.push(row);
+                    }
+                }
+            }
+            "thead" => {
+                if let Some(tc) = self.table_stack.last_mut() {
+                    tc.in_thead = false;
+                }
+            }
+            "table" => {
+                if let Some(tc) = self.table_stack.pop() {
+                    let rendered = render_gfm_table(&tc);
+                    if rendered.is_empty() {
+                        return;
+                    }
+                    // A nested table flushes into its parent cell; a top-level
+                    // one becomes its own block in the document body.
+                    if self.table_stack.last().is_some_and(|p| p.cell.is_some()) {
+                        self.active_sink().push_str(&rendered);
+                    } else {
+                        self.block_break();
+                        self.out.push_str(&rendered);
+                        self.block_break();
+                    }
+                }
+            }
             h if is_heading(h) => self.block_break(),
             b if is_block(b) => self.block_break(),
             _ => {}
@@ -487,6 +595,61 @@ impl Renderer {
             self.out.push_str("\n\n");
         }
     }
+}
+
+/// Clean a raw cell buffer into a single-line, pipe-escaped GFM cell.
+fn finalize_cell(raw: &str) -> String {
+    let single_line = raw.replace(['\n', '\r'], " ");
+    collapse_ws(&single_line).trim().replace('|', "\\|")
+}
+
+/// Render an accumulated [`TableCtx`] as a GitHub-Flavored-Markdown table.
+///
+/// Guarantees a header row + separator (GFM requires both): an explicit
+/// `<thead>`/`<th>` row is used when present, otherwise the first row becomes
+/// the header. Rows are padded to a uniform column count. Returns an empty
+/// string for an empty table so the caller can skip it.
+fn render_gfm_table(tc: &TableCtx) -> String {
+    if tc.rows.is_empty() {
+        return String::new();
+    }
+    let cols = tc.rows.iter().map(Vec::len).max().unwrap_or(0);
+    if cols == 0 {
+        return String::new();
+    }
+
+    let header_idx = tc.header_idx.unwrap_or(0);
+    let header = tc.rows.get(header_idx).cloned().unwrap_or_default();
+
+    let mut out = String::new();
+    push_table_row(&mut out, &header, cols);
+    push_separator_row(&mut out, cols);
+    for (i, row) in tc.rows.iter().enumerate() {
+        if i == header_idx {
+            continue;
+        }
+        push_table_row(&mut out, row, cols);
+    }
+    out.trim_end().to_string()
+}
+
+fn push_table_row(out: &mut String, cells: &[String], cols: usize) {
+    out.push('|');
+    for c in 0..cols {
+        let cell = cells.get(c).map_or("", String::as_str);
+        out.push(' ');
+        out.push_str(cell);
+        out.push_str(" |");
+    }
+    out.push('\n');
+}
+
+fn push_separator_row(out: &mut String, cols: usize) {
+    out.push('|');
+    for _ in 0..cols {
+        out.push_str(" --- |");
+    }
+    out.push('\n');
 }
 
 fn is_skip(name: &str) -> bool {
@@ -538,10 +701,6 @@ fn is_block(name: &str) -> bool {
             | "dl"
             | "dd"
             | "dt"
-            | "table"
-            | "thead"
-            | "tbody"
-            | "tfoot"
             | "figure"
             | "figcaption"
             | "address"
@@ -743,6 +902,53 @@ mod tests {
         let doc = parse(html);
         assert!(doc.markdown.contains("```"));
         assert!(doc.markdown.contains("line1\n  line2"));
+    }
+
+    #[test]
+    fn renders_table_as_gfm_with_header_separator() {
+        let html = "<body><table>\
+            <thead><tr><th>A</th><th>B</th></tr></thead>\
+            <tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody>\
+            </table></body>";
+        let doc = parse(html);
+        assert_eq!(
+            doc.markdown, "| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |",
+            "thead row must become the GFM header with a separator row"
+        );
+    }
+
+    #[test]
+    fn table_without_thead_promotes_first_row_to_header() {
+        let html = "<body><table><tr><td>h1</td><td>h2</td></tr>\
+            <tr><td>a</td><td>b</td></tr></table></body>";
+        let doc = parse(html);
+        assert_eq!(doc.markdown, "| h1 | h2 |\n| --- | --- |\n| a | b |");
+    }
+
+    #[test]
+    fn table_cells_escape_pipes_and_keep_links() {
+        let html = r#"<body><table><tr><th>name</th><th>url</th></tr>
+            <tr><td>a|b</td><td><a href="https://x.com/p">site</a></td></tr></table></body>"#;
+        let doc = parse(html);
+        assert!(doc.markdown.contains(r"| a\|b |"), "pipe must be escaped");
+        assert!(
+            doc.markdown.contains("[site](https://x.com/p)"),
+            "links inside cells must render: {}",
+            doc.markdown
+        );
+        assert_eq!(doc.links.len(), 1, "cell links are still collected");
+    }
+
+    #[test]
+    fn ragged_table_rows_are_padded() {
+        let html = "<body><table><tr><th>a</th><th>b</th><th>c</th></tr>\
+            <tr><td>1</td></tr></table></body>";
+        let doc = parse(html);
+        // Short row padded to 3 columns so the GFM grid stays valid.
+        assert_eq!(
+            doc.markdown,
+            "| a | b | c |\n| --- | --- | --- |\n| 1 |  |  |"
+        );
     }
 
     #[test]

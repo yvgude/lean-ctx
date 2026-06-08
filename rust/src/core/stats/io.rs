@@ -237,5 +237,7 @@ fn merge_cep(merged: &mut CepStats, current: &CepStats, baseline: &CepStats) {
         merged.last_session_pid = current.last_session_pid;
         merged.last_session_original = current.last_session_original;
         merged.last_session_compressed = current.last_session_compressed;
+        merged.last_session_cache_hits = current.last_session_cache_hits;
+        merged.last_session_cache_reads = current.last_session_cache_reads;
     }
 }

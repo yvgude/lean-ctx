@@ -310,6 +310,10 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
             home.join(".gemini/antigravity/mcp_config.json"),
         ),
         (
+            "Antigravity CLI",
+            home.join(".gemini/antigravity-cli/mcp_config.json"),
+        ),
+        (
             "Codex CLI",
             crate::core::home::resolve_codex_dir()
                 .unwrap_or_else(|| home.join(".codex"))
@@ -824,6 +828,21 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
             &content,
             dry_run,
         );
+    }
+
+    // Antigravity CLI (`agy`) installs hooks as a *plugin* under
+    // ~/.gemini/config/plugins/lean-ctx (registered in import_manifest.json),
+    // not as a hooks block in any settings.json (GH #284). Remove that plugin
+    // and its manifest entry surgically.
+    let plugin_present = crate::hooks::agents::antigravity_cli_plugin_dir(home).exists();
+    if dry_run {
+        if plugin_present {
+            removed = true;
+            println!("  Would remove Antigravity CLI plugin");
+        }
+    } else if crate::hooks::agents::uninstall_antigravity_cli_plugin(home) {
+        removed = true;
+        println!("  ✓ Antigravity CLI plugin removed");
     }
 
     // hooks.json: surgically remove lean-ctx entries instead of deleting

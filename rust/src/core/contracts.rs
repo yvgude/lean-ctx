@@ -40,6 +40,7 @@ pub fn default_package_filename(name: &str, version: &str) -> String {
 // Documentation-level contracts (do not have a schema field in payloads).
 pub const HTTP_MCP_CONTRACT_VERSION: u32 = 1;
 pub const TEAM_SERVER_CONTRACT_VERSION: u32 = 1;
+pub const CAPABILITIES_CONTRACT_VERSION: u32 = 1;
 
 pub fn versions_kv() -> BTreeMap<&'static str, u32> {
     BTreeMap::from([
@@ -134,6 +135,10 @@ pub fn versions_kv() -> BTreeMap<&'static str, u32> {
         (
             "leanctx.contract.team_server.contract_version",
             TEAM_SERVER_CONTRACT_VERSION,
+        ),
+        (
+            "leanctx.contract.capabilities.contract_version",
+            CAPABILITIES_CONTRACT_VERSION,
         ),
     ])
 }

@@ -295,18 +295,14 @@ pub fn apply_side_effects(
     let policy = crate::core::config::Config::load()
         .memory_policy_effective()
         .map_err(|e| format!("invalid memory policy: {e}"))?;
-    let mut knowledge = crate::core::knowledge::ProjectKnowledge::load(root)
-        .unwrap_or_else(|| crate::core::knowledge::ProjectKnowledge::new(root));
-    let _ = knowledge.remember(
-        category,
-        key,
-        value,
-        session_id,
-        intent.confidence.clamp(0.0, 1.0),
-        &policy,
-    );
-    let _ = knowledge.run_memory_lifecycle(&policy);
-    let _ = knowledge.save();
+    // Load-modify-save under the shared lock so an intent side effect never
+    // clobbers a fact a concurrent (possibly background) writer commits in
+    // between (issue #326): a bare load + save would lose that update.
+    let confidence = intent.confidence.clamp(0.0, 1.0);
+    crate::core::knowledge::ProjectKnowledge::mutate_locked(root, |knowledge| {
+        let _ = knowledge.remember(category, key, value, session_id, confidence, &policy);
+        let _ = knowledge.run_memory_lifecycle(&policy);
+    })?;
     Ok(())
 }
 

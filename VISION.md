@@ -76,7 +76,7 @@ LeanCTX delivers strong coverage of Dimensions 1 and 3, with foundations for 2 a
 ### Dimension 1 — Compression Layer (Production-Ready)
 - 95+ CLI compression patterns for git, npm, docker, kubectl, cargo, and more
 - 18 tree-sitter languages for AST-based signatures and outlines
-- 69 MCP tools with 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto)
+- 72 MCP tools with 10 read modes (full, map, signatures, diff, aggressive, entropy, task, reference, lines, auto)
 - Session caching with mtime-validation — re-reads cost ~13 tokens
 - Cross-file codebook compression and archive system (`ctx_expand`)
 

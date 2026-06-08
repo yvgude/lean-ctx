@@ -25,6 +25,16 @@ pub fn is_firewallable_tool(name: &str) -> bool {
     )
 }
 
+/// Explicit file-read tools whose result *is* the file content the agent reads and
+/// edits against. They must always return that content inline — never a head/tail
+/// digest (firewall) nor a stored-reference stub (`reference_results`) — regardless
+/// of output size or config. This is the single source of truth for "an explicit
+/// read always returns content"; both the firewall and the reference-results path
+/// honour it so a `ctx_read` can never degrade to a preview the agent can't edit.
+pub fn is_protected_read(name: &str) -> bool {
+    matches!(name, "ctx_read" | "ctx_multi_read" | "ctx_smart_read")
+}
+
 /// Effective minimum token count before firewalling (config + env override).
 pub fn min_tokens(config: &Config) -> usize {
     config.archive.ephemeral_min_tokens_effective()
@@ -103,6 +113,21 @@ mod tests {
         assert!(!is_firewallable_tool("ctx_read"));
         assert!(!is_firewallable_tool("ctx_multi_read"));
         assert!(!is_firewallable_tool("ctx_knowledge"));
+    }
+
+    #[test]
+    fn protected_reads_are_file_readers_and_never_firewallable() {
+        // Explicit reads must always return content (no firewall digest, no
+        // reference stub) so the agent can edit against the lines.
+        for read in ["ctx_read", "ctx_multi_read", "ctx_smart_read"] {
+            assert!(is_protected_read(read), "{read} must be a protected read");
+            assert!(
+                !is_firewallable_tool(read),
+                "{read} must never be firewallable"
+            );
+        }
+        assert!(!is_protected_read("ctx_shell"));
+        assert!(!is_protected_read("ctx_search"));
     }
 
     #[test]

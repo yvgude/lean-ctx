@@ -190,7 +190,14 @@ fn format_cep_live(lv: &serde_json::Value, t: &Theme) -> String {
 }
 
 fn load_mcp_live() -> Option<serde_json::Value> {
-    let path = dirs::home_dir()?.join(".lean-ctx/mcp-live.json");
+    // Must resolve the same directory the writer uses
+    // (`server_metrics::write_mcp_live_stats` → `lean_ctx_data_dir()`). The MCP
+    // config always sets `LEAN_CTX_DATA_DIR`, so the previous hardcoded
+    // `~/.lean-ctx/mcp-live.json` read missed the live file under a custom/XDG
+    // data dir — making `gain` / `/lean-ctx` report 0 despite live CEP data (#361).
+    let path = crate::core::data_dir::lean_ctx_data_dir()
+        .ok()?
+        .join("mcp-live.json");
     let content = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()
 }
@@ -1447,4 +1454,53 @@ pub fn format_gain_daily() -> String {
 pub fn format_gain_json() -> String {
     let store = super::load();
     serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #361: the live-stats reader must look in `lean_ctx_data_dir()` (honoring
+    /// `LEAN_CTX_DATA_DIR`, which the MCP config always sets), not a hardcoded
+    /// `~/.lean-ctx`. Otherwise `gain` / `/lean-ctx` report 0 despite live data.
+    #[test]
+    fn load_mcp_live_reads_from_configured_data_dir() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let dir = std::env::temp_dir().join("lean_ctx_mcp_live_datadir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("LEAN_CTX_DATA_DIR", &dir);
+        std::fs::write(
+            dir.join("mcp-live.json"),
+            r#"{"cep_score":42,"tokens_saved":123}"#,
+        )
+        .unwrap();
+
+        let loaded = load_mcp_live();
+
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let live = loaded.expect("live stats must load from the configured data dir");
+        assert_eq!(
+            live.get("cep_score").and_then(serde_json::Value::as_u64),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn load_mcp_live_none_when_file_absent() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let dir = std::env::temp_dir().join("lean_ctx_mcp_live_absent");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("LEAN_CTX_DATA_DIR", &dir);
+
+        let loaded = load_mcp_live();
+
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(loaded.is_none(), "no mcp-live.json → None");
+    }
 }

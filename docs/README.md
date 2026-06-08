@@ -18,6 +18,12 @@ End-user documentation lives at **https://leanctx.com/docs/getting-started**.
 - Cookbook (real examples + `@leanctx/sdk`): [`cookbook/`](../cookbook/)
 - Editor integrations: [`packages/`](../packages/)
 
+## Reference & journeys
+
+- Full function-by-function reference (organized as user journeys): [`reference/README.md`](reference/README.md)
+- **User journeys (website narrative)** — the governed, scalable context runtime wave (MCP Gateway, Context Firewall, Sensitivity Floor, Reproducible Scorecard): [`user-journeys.md`](user-journeys.md)
+- Always-current, generated appendices: [MCP tools](reference/generated/mcp-tools.md) · [config keys](reference/generated/config-keys.md)
+
 ## Guides
 
 - Monorepo usage: [`guides/monorepo.md`](guides/monorepo.md)

@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::core::memory_boundary::FactPrivacy;
+use crate::core::sensitivity::SensitivityLevel;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -117,6 +118,10 @@ pub struct KnowledgeFact {
     pub last_feedback: Option<DateTime<Utc>>,
     #[serde(default)]
     pub privacy: FactPrivacy,
+    /// Per-item sensitivity classification (#212). Defaults to `Public`; set at
+    /// creation from content and enforced by the policy floor at injection time.
+    #[serde(default)]
+    pub sensitivity: SensitivityLevel,
     #[serde(default)]
     pub imported_from: Option<String>,
     #[serde(default)]
@@ -217,6 +222,7 @@ mod archetype_tests {
             feedback_down: 0,
             last_feedback: None,
             privacy: FactPrivacy::default(),
+            sensitivity: SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
             fidelity: None,

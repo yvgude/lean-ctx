@@ -470,3 +470,23 @@ fn wrap_single_command_find_with_many_excludes() {
     let r = wrap_single_command(cmd, "lean-ctx");
     assert_eq!(r, expect_wrapped(cmd, "lean-ctx"));
 }
+
+#[test]
+fn session_start_uses_codex_additional_context_channel() {
+    // #368: SessionStart guidance must travel via the documented JSON
+    // `hookSpecificOutput.additionalContext` channel, not plain stdout text.
+    let json = session_start_additional_context_json("prefer lean-ctx -c");
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON on stdout");
+    assert_eq!(
+        v["hookSpecificOutput"]["hookEventName"]
+            .as_str()
+            .unwrap_or_default(),
+        "SessionStart"
+    );
+    assert_eq!(
+        v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or_default(),
+        "prefer lean-ctx -c"
+    );
+}

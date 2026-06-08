@@ -5,10 +5,12 @@
 //! `docs/business/03-verified-savings-ledger.md`.
 
 pub mod event;
+pub mod roi;
 pub mod signed_batch;
 pub mod store;
 
 pub use event::SavingsEvent;
+pub use roi::{roi_report, RoiReport};
 pub use signed_batch::{BatchVerifyResult, SignedSavingsBatchV1};
 pub use store::{LedgerSummary, VerifyResult};
 

@@ -11,7 +11,7 @@
 | **Language** | Rust | Python |
 | **Availability** | MCP server (works with 28 agents) | Locked to Aider CLI |
 | **PageRank** | Session-aware personalized PageRank | Personalized PageRank |
-| **Scope** | 68+ MCP tools (repo-map is one) | Repo-map + AI coding assistant |
+| **Scope** | 72+ MCP tools (repo-map is one) | Repo-map + AI coding assistant |
 
 ## The Core Difference
 

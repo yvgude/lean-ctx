@@ -293,7 +293,7 @@ jobs:
 
           cat > Formula/lean-ctx.rb <<EOF
           class LeanCtx < Formula
-            desc "The Context Engineering Layer for AI Coding — 69 MCP tools, 10 read modes, 60+ shell patterns"
+            desc "The Context Engineering Layer for AI Coding — 71 MCP tools, 10 read modes, 95+ shell patterns"
             homepage "https://leanctx.com"
             version "${VERSION}"
             license "Apache-2.0"

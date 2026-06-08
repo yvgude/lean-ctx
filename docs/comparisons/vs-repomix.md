@@ -160,7 +160,7 @@ lean-ctx and Repomix don't conflict. You can use Repomix for quick one-off packi
 
 Repomix is an excellent tool for what it does: pack a codebase into an LLM-friendly format. With 25k+ stars, it's proven and well-maintained.
 
-lean-ctx goes further by providing a complete context engineering layer — compression is just one of 68+ tools. If you use AI coding agents daily and want persistent memory, shell compression, semantic search, and real-time observability, lean-ctx is built for that workflow.
+lean-ctx goes further by providing a complete context engineering layer — compression is just one of 72+ tools. If you use AI coding agents daily and want persistent memory, shell compression, semantic search, and real-time observability, lean-ctx is built for that workflow.
 
 ---
 

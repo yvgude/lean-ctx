@@ -55,6 +55,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         let facts = entries
             .into_iter()
             .map(|e| KnowledgeFact {
+                sensitivity: crate::core::sensitivity::classify_content(&e.value),
                 category: e.category,
                 key: e.key,
                 value: e.value,
@@ -90,6 +91,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         if let Ok(entry) = serde_json::from_str::<SimpleFactEntry>(line) {
             let now = Utc::now();
             facts.push(KnowledgeFact {
+                sensitivity: crate::core::sensitivity::classify_content(&entry.value),
                 category: entry.category,
                 key: entry.key,
                 value: entry.value,
@@ -146,6 +148,7 @@ fn imported_fact(source: &KnowledgeFact, session_id: &str) -> KnowledgeFact {
         feedback_down: 0,
         last_feedback: None,
         privacy: source.privacy,
+        sensitivity: source.sensitivity,
         imported_from: source.imported_from.clone(),
         archetype: source.archetype.clone(),
         fidelity: None,

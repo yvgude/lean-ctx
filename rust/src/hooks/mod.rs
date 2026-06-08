@@ -219,21 +219,18 @@ fn file_contains_lean_ctx(path: &std::path::Path) -> bool {
     std::fs::read_to_string(path).is_ok_and(|c| c.contains("lean-ctx"))
 }
 
+/// Resolve the lean-ctx binary to an **absolute** path for generated hook
+/// commands and MCP server entries.
+///
+/// Agent hooks (Codex, Cursor, Claude, Gemini, Antigravity, …) are executed by
+/// the host under a plain non-login shell (`sh -c …`) whose `PATH` is not
+/// guaranteed to contain the install dir (e.g. `/usr/local/bin`). A bare
+/// `lean-ctx` therefore fails with exit code 127 (#367). Always emitting the
+/// resolved absolute path makes hook execution deterministic and matches what
+/// MCP setup (`setup/mcp.rs`) and `doctor` already do. Existing configs with a
+/// bare command are rewritten on the next `lean-ctx init` / `doctor` run.
 fn resolve_binary_path() -> String {
-    if is_lean_ctx_in_path() {
-        return "lean-ctx".to_string();
-    }
     crate::core::portable_binary::resolve_portable_binary()
-}
-
-fn is_lean_ctx_in_path() -> bool {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    std::process::Command::new(which_cmd)
-        .arg("lean-ctx")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
 }
 
 fn resolve_binary_path_for_bash() -> String {
@@ -610,7 +607,15 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
     match agent {
         "claude" | "claude-code" => install_claude_hook_with_mode(global, mode),
         "cursor" => install_cursor_hook_with_mode(global, mode),
-        "gemini" => install_gemini_hook(),
+        "gemini" => {
+            install_gemini_hook();
+            // Google is transitioning Gemini CLI → Antigravity CLI (`agy`), and
+            // `gemini` setup also configures the Antigravity CLI MCP target. The
+            // hooks must follow: `agy` reads hooks only from its plugin dir
+            // (`~/.gemini/config/plugins/lean-ctx`), never from the legacy
+            // `~/.gemini/settings.json`, so install the plugin too (#284).
+            install_antigravity_cli_hook();
+        }
         "antigravity" => install_antigravity_hook(),
         "antigravity-cli" => install_antigravity_cli_hook(),
         "augment" => install_mcp_json_agent(

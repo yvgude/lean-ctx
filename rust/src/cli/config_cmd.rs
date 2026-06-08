@@ -422,6 +422,29 @@ pub fn cmd_benchmark(args: &[String]) {
             println!("       lean-ctx benchmark report [path]");
             println!("       lean-ctx benchmark eval [path] [--json]");
             println!("       lean-ctx benchmark compare [--repo path] [--output file.md]");
+            println!("       lean-ctx benchmark scorecard [--json] [--output file]");
+        }
+        "scorecard" => {
+            let is_json = args.iter().any(|a| a == "--json");
+            let output = parse_flag_value(args, "--output");
+            match crate::core::scorecard::run_scorecard() {
+                Ok(sc) => {
+                    let rendered = if is_json { sc.to_json() } else { sc.to_human() };
+                    if let Some(path) = output {
+                        if let Err(e) = std::fs::write(&path, &rendered) {
+                            eprintln!("Failed to write scorecard to {path}: {e}");
+                            std::process::exit(1);
+                        }
+                        eprintln!("Wrote scorecard to {path}");
+                    } else {
+                        print!("{rendered}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Scorecard failed: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         "eval" => {
             let path = args.get(1).map_or(".", std::string::String::as_str);
@@ -487,7 +510,9 @@ pub fn cmd_benchmark(args: &[String]) {
             } else {
                 eprintln!("Usage: lean-ctx benchmark run [path] [--json]");
                 eprintln!("       lean-ctx benchmark report [path]");
+                eprintln!("       lean-ctx benchmark eval [path] [--json]");
                 eprintln!("       lean-ctx benchmark compare [--repo path] [--output file.md]");
+                eprintln!("       lean-ctx benchmark scorecard [--json] [--output file]");
                 std::process::exit(1);
             }
         }

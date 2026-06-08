@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leanctx"
+version = "0.1.0"
+description = "Thin, dependency-free Python client for the lean-ctx HTTP /v1 contract"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "lean-ctx" }]
+keywords = ["lean-ctx", "llm", "context", "mcp", "agent"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+]
+# Standard-library only: no runtime dependencies.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+# Framework adapters (EPIC 12.6). The OpenAI adapter is pure and needs no extra.
+langchain = ["langchain-core>=0.2"]
+llamaindex = ["llama-index-core>=0.10"]
+crewai = ["crewai>=0.30"]
+
+[project.urls]
+Homepage = "https://github.com/yvgude/lean-ctx"
+Repository = "https://github.com/yvgude/lean-ctx"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["leanctx*"]

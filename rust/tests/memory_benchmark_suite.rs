@@ -123,7 +123,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
         }),
     )
     .await;
-    let _ = call_tool_json(
+    let relate_resp = call_tool_json(
         &svc,
         "ctx_knowledge",
         json!({
@@ -169,7 +169,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     );
     assert!(
         knowledge_dir.join("relations.json").exists(),
-        "expected relations.json to exist"
+        "expected relations.json to exist (relate said: {relate_resp})"
     );
 
     let graph =

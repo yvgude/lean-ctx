@@ -38,7 +38,7 @@ fn auto_detect_large_project() -> bool {
     *DETECTED.get_or_init(|| {
         let cwd = std::env::current_dir().unwrap_or_default();
         let source_exts = [
-            "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "rb", "cpp", "c", "h",
+            "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "rb", "cpp", "c", "h", "gd",
         ];
         let count = ignore::WalkBuilder::new(&cwd)
             .hidden(true)

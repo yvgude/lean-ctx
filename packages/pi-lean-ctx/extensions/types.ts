@@ -16,6 +16,12 @@ export type McpBridgeStatus = {
   connected: boolean;
   toolCount: number;
   toolNames: string[];
+  /** Tools skipped because another extension already claimed the name (#359). */
+  skippedTools: string[];
+  /** Tools not registered because the user disabled them via config (#359). */
+  disabledTools: string[];
+  /** Active prefix applied to bridge tool names, if any (#359). */
+  toolPrefix?: string;
   reconnectAttempts: number;
   lastError?: string;
   lastHungTool?: string;
