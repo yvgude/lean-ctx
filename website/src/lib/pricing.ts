@@ -17,7 +17,31 @@
 export const SALES_EMAIL = 'hello@leanctx.com';
 
 /** Wire id of a self-serve checkout plan (matches `Plan::as_str` in the engine). */
-export type CheckoutPlan = 'team';
+export type CheckoutPlan = 'team' | 'supporter';
+
+/**
+ * The voluntary "Supporter" (a.k.a. "Pro") subscription. It funds development
+ * and grants account-level recognition only — it never unlocks a feature, so it
+ * lives outside the tier ladder. Prices mirror the Stripe catalog provisioned by
+ * `stripe-setup.py` ($5/month or $50/year). Rendered on `/support/` and as a
+ * callout under the pricing tiers.
+ */
+export const supporterOffer = {
+  id: 'supporter' as const,
+  name: 'Supporter',
+  tagline: 'Love lean-ctx? Help fund its development.',
+  priceMonthly: '$5',
+  priceYearly: '$50',
+  unit: '/month',
+  priceNote: 'or $50/year · cancel anytime · nothing is ever locked behind it',
+  href: '/support/',
+  perks: [
+    'Directly fund the open-source Context OS you rely on every day',
+    'A supporter badge on your account',
+    'Priority on your bug reports and feature requests',
+    'Keep lean-ctx independent — no VC, no telemetry, no lock-in',
+  ],
+};
 
 export interface PricingTier {
   /** Stable id; matches the engine's `Plan` wire ids. */
@@ -81,7 +105,7 @@ export const pricingTiers: PricingTier[] = [
     priceMonthly: '$19',
     priceYearly: '$190',
     unit: '/month',
-    priceNote: 'per workspace · or $190/year (save ~17%) · managed setup (beta)',
+    priceNote: 'per workspace · or $190/year (save ~17%) · server provisioned on checkout',
     featured: true,
     cta: { label: 'Start with Team', kind: 'checkout', href: '/account/billing/?upgrade=team' },
     features: [
@@ -135,7 +159,7 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   },
   {
     q: 'Is the hosted team server available right now?',
-    a: 'The team server itself is production-ready today and you can self-host it for free (Apache-2.0). Managed hosting — where we run it for you — is in beta: after you start Team we provision your private team server and send you the connection details plus an owner token. One-click self-serve provisioning is rolling out next.',
+    a: 'Yes. The team server is production-ready and you can self-host it for free (Apache-2.0). Prefer managed hosting? The moment your Team checkout completes we provision your private team server for you — then you manage everything (server URL, owner token, member seats with role-based access) yourself from your account dashboard under Account → Team.',
   },
   {
     q: 'How is Team billed?',

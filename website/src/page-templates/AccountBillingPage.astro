@@ -353,6 +353,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     var PLAN_DESC = {
       free: 'The full local Context OS — free forever.',
+      supporter: 'You fund lean-ctx development. Thank you. ♥',
       team: 'Shared hosted context for up to 25 seats.',
       enterprise: 'Governance and scale across your organisation.',
     };
@@ -386,6 +387,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       // is still rolling out (managed/hosted plane). It is shown with a "soon"
       // badge so the dashboard never implies a capability is live before it is.
       var rows = [
+        ['Supporter', bool(e.supporter), false],
         ['Seats', num(e.seats), false],
         ['Hosted retrieval index', mb(e.hosted_index_mb), true],
         ['Managed connectors', num(e.managed_connectors), true],
@@ -427,8 +429,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     function renderActions(plan) {
       var wrap = $('[data-actions]');
-      var paid = plan === 'team' || plan === 'enterprise';
-      if (paid) {
+      if (plan === 'team' || plan === 'enterprise') {
         var teamLink = plan === 'team'
           ? '<a class="acct-btn btn-primary" href="/account/team/">Manage team server</a>'
           : '';
@@ -436,6 +437,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         wrap.innerHTML = teamLink + '<button type="button" class="' + billingCls + '" data-portal>Manage billing</button>';
         wrap.querySelector('[data-portal]').addEventListener('click', function (e) { openPortal(e.currentTarget); });
         $('[data-upgrade]').hidden = true;
+      } else if (plan === 'supporter') {
+        // A supporter is a paying member but not on Team — let them manage their
+        // supporter subscription, while still offering the Team upgrade below.
+        wrap.innerHTML = '<button type="button" class="acct-btn acct-btn-secondary" data-portal>Manage billing</button>';
+        wrap.querySelector('[data-portal]').addEventListener('click', function (e) { openPortal(e.currentTarget); });
+        $('[data-upgrade]').hidden = false;
       } else {
         wrap.innerHTML = '';
         $('[data-upgrade]').hidden = false;
@@ -463,7 +470,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     // status banners from Stripe redirect
     var status = params.get('status');
-    if (status === 'success') showBanner('success', 'Payment received — your Team plan is now active. Thank you!');
+    if (status === 'success') showBanner('success', 'Payment received — thank you! Your subscription is now active.');
     else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no changes were made.');
 
     wireUpgradeControls();
@@ -481,7 +488,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
         var badge = $('[data-plan-badge]');
         badge.textContent = plan;
-        badge.setAttribute('data-paid', (plan === 'team' || plan === 'enterprise') ? 'true' : 'false');
+        badge.setAttribute('data-paid', (plan === 'team' || plan === 'enterprise' || plan === 'supporter') ? 'true' : 'false');
         $('[data-plan-desc]').textContent = PLAN_DESC[plan] || '';
 
         renderEntitlements(entitlements);

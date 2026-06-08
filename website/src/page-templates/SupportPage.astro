@@ -1,0 +1,379 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import { supporterOffer } from '../lib/pricing';
+import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const checkIcon =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+---
+
+<BaseLayout
+  title="Support lean-ctx — Become a Supporter"
+  description="lean-ctx is free and open source forever. Become a Supporter to fund its development — a voluntary subscription that unlocks no features, just our gratitude and a supporter badge."
+  breadcrumbs={[
+    { name: 'Home', url: lp('/') },
+    { name: 'Support', url: lp('/support/') },
+  ]}
+>
+  <PageHero
+    label="Supporter"
+    title="Keep lean-ctx"
+    highlight="free, open & independent."
+    description="Every local feature is free forever — and always will be. If lean-ctx saves you time every day, you can fund its development with a small recurring subscription. It unlocks nothing; it just keeps the project alive and independent."
+  />
+
+  <section class="section-y sup-section">
+    <div class="content-grid-narrow">
+      <div class="sup-banner" data-banner role="status" hidden></div>
+
+      <div class="sup-card" data-cadence="monthly">
+        <div class="sup-head">
+          <div>
+            <span class="sup-eyebrow">{supporterOffer.name}</span>
+            <p class="sup-tagline">{supporterOffer.tagline}</p>
+          </div>
+          <div class="sup-cadence" role="group" aria-label="Billing cadence">
+            <button type="button" class="sup-cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
+            <button type="button" class="sup-cadence-btn" data-cadence-btn="yearly" aria-pressed="false">
+              Yearly <span class="sup-save">save 17%</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="sup-price">
+          <span class="sup-amount" data-price-monthly>{supporterOffer.priceMonthly}</span>
+          <span class="sup-amount" data-price-yearly>{supporterOffer.priceYearly}</span>
+          <span class="sup-unit">
+            <span data-unit-monthly>{supporterOffer.unit}</span>
+            <span data-unit-yearly>/year</span>
+          </span>
+        </div>
+        <p class="sup-note">{supporterOffer.priceNote}</p>
+
+        <button type="button" class="sup-cta btn-primary" data-cta>Become a supporter</button>
+        <p class="sup-loading" data-loading hidden>
+          <span class="sup-spinner" aria-hidden="true"></span> Checking your account…
+        </p>
+
+        <ul class="sup-perks">
+          {supporterOffer.perks.map((perk) => (
+            <li><span class="sup-check" set:html={checkIcon} />{perk}</li>
+          ))}
+        </ul>
+
+        <p class="sup-fineprint">
+          lean-ctx is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
+          supporting is voluntary and unlocks no functionality. Cancel anytime from the billing
+          portal. Need a shared team workspace instead? <a href={lp('/pricing/')}>See the Team plan →</a>
+        </p>
+      </div>
+
+      <p class="sup-aside">
+        Prefer a one-off? You can also
+        <a href="https://github.com/sponsors/yvgude" target="_blank" rel="noopener">sponsor on GitHub</a>
+        or <a href="https://buymeacoffee.com/yvgude" target="_blank" rel="noopener">buy us a coffee</a>.
+      </p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .sup-section { padding-top: clamp(1rem, 0.5rem + 1vw, 2rem); }
+
+  .sup-banner {
+    margin-bottom: 1.5rem;
+    padding: 0.85rem 1.1rem;
+    border-radius: var(--card-radius);
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    border: 1px solid transparent;
+  }
+  .sup-banner[data-kind='success'] {
+    color: var(--color-accent-bright);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .sup-banner[data-kind='error'] {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  }
+  .sup-banner[data-kind='info'] {
+    color: var(--color-text);
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+  }
+
+  .sup-card {
+    padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    border-radius: var(--card-radius-lg);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)), var(--color-surface));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent),
+      0 24px 60px -34px color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  .sup-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .sup-eyebrow {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-accent);
+  }
+  .sup-tagline {
+    margin-top: 0.35rem;
+    font-size: var(--text-body);
+    color: var(--color-text-bright);
+    font-weight: var(--weight-medium);
+  }
+
+  .sup-cadence {
+    display: inline-flex;
+    gap: 0.2rem;
+    padding: 0.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-bg);
+  }
+  .sup-cadence-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.85rem;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--color-muted);
+    font-family: inherit;
+    font-size: var(--text-small);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .sup-cadence-btn.is-active { background: var(--color-surface-3); color: var(--color-text-bright); }
+  .sup-save {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-pill);
+  }
+
+  .sup-price {
+    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .sup-amount {
+    font-family: var(--font-display);
+    font-size: clamp(2.25rem, 1.8rem + 2vw, 3rem);
+    font-weight: var(--weight-bold);
+    color: var(--color-text-bright);
+    line-height: 1;
+    letter-spacing: var(--tracking-tight);
+  }
+  .sup-unit { font-size: var(--text-small); color: var(--color-muted); }
+  .sup-note { margin-top: 0.5rem; font-size: var(--text-caption); color: var(--color-muted); }
+
+  /* cadence-driven price visibility (CSS, works without JS) */
+  .sup-card[data-cadence='monthly'] [data-price-yearly],
+  .sup-card[data-cadence='monthly'] [data-unit-yearly],
+  .sup-card[data-cadence='yearly'] [data-price-monthly],
+  .sup-card[data-cadence='yearly'] [data-unit-monthly] { display: none; }
+
+  .sup-cta {
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.8rem 1.25rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    border-radius: var(--card-radius);
+    border: none;
+    cursor: pointer;
+  }
+  .sup-cta[disabled] { opacity: 0.6; cursor: progress; }
+
+  .sup-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: var(--text-caption);
+    color: var(--color-muted);
+  }
+  .sup-spinner {
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid var(--color-border-light);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: sup-spin 0.7s linear infinite;
+  }
+  @keyframes sup-spin { to { transform: rotate(360deg); } }
+
+  .sup-perks {
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    padding-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    list-style: none;
+  }
+  .sup-perks li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+  }
+  .sup-check { flex-shrink: 0; margin-top: 0.05rem; color: var(--color-accent); }
+  .sup-check :global(svg) { width: 1rem; height: 1rem; }
+
+  .sup-fineprint {
+    margin-top: 1.25rem;
+    font-size: var(--text-caption);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+  }
+  .sup-fineprint strong { color: var(--color-text); }
+  .sup-fineprint a, .sup-aside a { color: var(--color-accent); text-decoration: none; }
+  .sup-fineprint a:hover, .sup-aside a:hover { text-decoration: underline; }
+  .sup-aside {
+    margin-top: 1.5rem;
+    text-align: center;
+    font-size: var(--text-small);
+    color: var(--color-muted);
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    var API = 'https://api.leanctx.com';
+    var TOKEN_KEY = 'leanctx-api-token';
+
+    var card = document.querySelector('.sup-card');
+    if (!card) return;
+    var banner = document.querySelector('[data-banner]');
+    var cta = document.querySelector('[data-cta]');
+    var loading = document.querySelector('[data-loading]');
+    var here = window.location.pathname;
+    var cadence = 'monthly';
+    var mode = 'subscribe'; // signin | subscribe | manage
+
+    function showBanner(kind, msg) {
+      if (!banner) return;
+      banner.textContent = msg;
+      banner.setAttribute('data-kind', kind);
+      banner.hidden = false;
+    }
+    function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (_) { return null; } }
+    function authHeaders(t) { return { Authorization: 'Bearer ' + t, Accept: 'application/json' }; }
+    function gotoLogin() { window.location.assign('/login/?next=' + encodeURIComponent(here)); }
+
+    async function postJson(path, body, t) {
+      var res = await fetch(API + path, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders(t)),
+        body: JSON.stringify(body || {}),
+      });
+      var text = await res.text();
+      var data; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { message: text }; }
+      return { ok: res.ok, status: res.status, data: data };
+    }
+
+    // Cadence toggle
+    var btns = card.querySelectorAll('[data-cadence-btn]');
+    function setCadence(c) {
+      cadence = c;
+      card.setAttribute('data-cadence', c);
+      btns.forEach(function (b) {
+        var on = b.getAttribute('data-cadence-btn') === c;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    btns.forEach(function (b) { b.addEventListener('click', function () { setCadence(b.getAttribute('data-cadence-btn')); }); });
+    setCadence('monthly');
+
+    // Status banner from a Stripe redirect
+    var params = new URLSearchParams(window.location.search);
+    var status = params.get('status');
+    if (status === 'success') showBanner('success', 'Thank you for supporting lean-ctx — your supporter subscription is active. You are the reason this project keeps going.');
+    else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no charge was made.');
+
+    function applyMode(m) {
+      mode = m;
+      if (m === 'signin') { cta.textContent = 'Sign in to become a supporter'; }
+      else if (m === 'subscribe') { cta.textContent = 'Become a supporter'; }
+      else if (m === 'manage') {
+        cta.textContent = 'Manage your support';
+        var cad = card.querySelector('.sup-cadence');
+        if (cad) cad.style.display = 'none';
+        if (status !== 'success') showBanner('success', 'You already support lean-ctx — thank you. ♥');
+      }
+    }
+
+    async function onCta() {
+      if (mode === 'signin') { gotoLogin(); return; }
+      var token = getToken();
+      if (!token) { gotoLogin(); return; }
+      var prev = cta.textContent;
+      cta.disabled = true;
+      try {
+        if (mode === 'manage') {
+          cta.textContent = 'Opening…';
+          var rp = await postJson('/api/account/portal', {}, token);
+          if (rp.ok && rp.data.url) { window.location.assign(rp.data.url); return; }
+          if (rp.status === 401) { gotoLogin(); return; }
+          showBanner('error', (rp.data && rp.data.message) || 'Could not open the billing portal.');
+        } else {
+          cta.textContent = 'Starting secure checkout…';
+          var rc = await postJson('/api/account/checkout', { plan: 'supporter', interval: cadence }, token);
+          if (rc.ok && rc.data.url) { window.location.assign(rc.data.url); return; }
+          if (rc.status === 401) { gotoLogin(); return; }
+          if (rc.status === 503) { showBanner('info', 'Billing is being switched on — please try again shortly.'); }
+          else showBanner('error', (rc.data && rc.data.message) || 'Could not start checkout. Please try again.');
+        }
+      } catch (_) {
+        showBanner('error', 'Could not reach billing. Please try again.');
+      }
+      cta.disabled = false;
+      cta.textContent = prev;
+    }
+    cta.addEventListener('click', onCta);
+
+    (async function init() {
+      var token = getToken();
+      if (!token) { applyMode('signin'); return; }
+      if (loading) loading.hidden = false;
+      try {
+        var res = await fetch(API + '/api/account/entitlements', { headers: authHeaders(token) });
+        if (res.status === 401) { applyMode('signin'); return; }
+        var data = await res.json().catch(function () { return {}; });
+        var ent = (data && data.entitlements) || {};
+        applyMode(ent.supporter ? 'manage' : 'subscribe');
+      } catch (_) {
+        applyMode('subscribe');
+      } finally {
+        if (loading) loading.hidden = true;
+      }
+    })();
+  })();
+</script>

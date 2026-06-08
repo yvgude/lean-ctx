@@ -2,7 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PageHero from '../components/PageHero.astro';
 import CtaSection from '../components/CtaSection.astro';
-import { pricingTiers, pricingFaq } from '../lib/pricing';
+import { pricingTiers, pricingFaq, supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -119,6 +119,15 @@ const faqJsonLd = JSON.stringify({
         <span class="lf-dot" aria-hidden="true"></span>
         <span><strong>Local-Free guarantee.</strong> Upgrading never changes what runs on your machine — the paid plane lives entirely server-side. <a href={lp('/context-os/')}>See how the planes separate →</a></span>
       </p>
+
+      <a class="pricing-supporter" href={lp(supporterOffer.href)}>
+        <span class="ps-heart" aria-hidden="true">♥</span>
+        <span class="ps-text">
+          <strong>Just you, and you love lean-ctx?</strong> Become a Supporter for {supporterOffer.priceMonthly}/month.
+          It unlocks nothing — it simply funds the project and keeps it independent.
+        </span>
+        <span class="ps-cta">Support lean-ctx →</span>
+      </a>
     </div>
   </section>
 
@@ -377,6 +386,39 @@ const faqJsonLd = JSON.stringify({
     border-radius: 50%;
     background: var(--color-accent);
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+
+  .pricing-supporter {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 1rem auto 0;
+    max-width: 46rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-surface);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+  }
+  .pricing-supporter:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    transform: translateY(-1px);
+  }
+  .ps-heart { flex-shrink: 0; color: var(--color-accent); font-size: 1.2rem; line-height: 1; }
+  .ps-text { font-size: var(--text-small); line-height: var(--leading-snug); color: var(--color-muted); }
+  .ps-text strong { color: var(--color-text-bright); }
+  .ps-cta {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--color-accent);
+    white-space: nowrap;
+  }
+  @media (max-width: 560px) {
+    .pricing-supporter { flex-wrap: wrap; }
+    .ps-cta { margin-left: 0; }
   }
 
   .faq-section { padding-top: 0; }
