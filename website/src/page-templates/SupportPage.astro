@@ -1,6 +1,5 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
 import { supporterOffer } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
@@ -104,76 +103,88 @@ const faq = [
     { name: 'Support', url: lp('/support/') },
   ]}
 >
-  {/* ── Hero ───────────────────────────────────────────────── */}
-  <PageHero
-    label="Support"
-    title="Keep lean-ctx free,"
-    highlight="open & independent."
-    descriptionHtml="Every local feature is <strong class='text-text-bright'>free forever</strong> — and always will be. If lean-ctx saves you time every day, you can fund its development with a small recurring subscription. It unlocks nothing — it simply keeps the project alive and independent."
-    kickerTone="accent"
-    titleVariant="display"
-    highlightStyle="italic"
-    descMaxWidth="44rem"
-  />
-
-  {/* ── Pledge card ────────────────────────────────────────── */}
-  <section class="section-y-sm sup-section">
-    <div class="content-grid-narrow">
-      <div class="sup-banner" data-banner role="status" hidden></div>
-
-      <div class="sup-card-wrap">
-        <div class="sup-card-aura" aria-hidden="true"></div>
-        <div class="sup-card" data-cadence="monthly">
-          <div class="sup-head">
-            <div class="sup-head-main">
-              <span class="sup-medallion" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d={heartPath}></path></svg>
-              </span>
-              <div>
-                <span class="sup-eyebrow">{supporterOffer.name}</span>
-                <p class="sup-tagline">{supporterOffer.tagline}</p>
-              </div>
-            </div>
-            <div class="sup-cadence" role="group" aria-label="Billing cadence">
-              <button type="button" class="sup-cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
-              <button type="button" class="sup-cadence-btn" data-cadence-btn="yearly" aria-pressed="false">
-                Yearly <span class="sup-save">save 17%</span>
-              </button>
-            </div>
+  {/* ── Hero + pledge (landing-style split) ─────────────────── */}
+  <section class="section-hero hero-split sup-hero">
+    <div class="content-grid">
+      <div class="split sup-hero-split">
+        {/* Left — the pitch */}
+        <div class="hero-copy">
+          <div class="animate-entrance" style="margin-bottom: clamp(1rem, 0.75rem + 0.5vw, 1.5rem);">
+            <span class="kicker-pill text-accent">Support</span>
           </div>
-
-          <div class="sup-price">
-            <span class="sup-amount" data-price-monthly>{supporterOffer.priceMonthly}</span>
-            <span class="sup-amount" data-price-yearly>{supporterOffer.priceYearly}</span>
-            <span class="sup-unit">
-              <span data-unit-monthly>{supporterOffer.unit}</span>
-              <span data-unit-yearly>/year</span>
-            </span>
-          </div>
-          <p class="sup-note">{supporterOffer.priceNote}</p>
-
-          <a class="sup-cta btn-primary" data-cta-monthly href={supporterOffer.paymentLinks.monthly}>
-            Become a supporter — {supporterOffer.priceMonthly}/mo
-          </a>
-          <a class="sup-cta btn-primary" data-cta-yearly href={supporterOffer.paymentLinks.yearly}>
-            Become a supporter — {supporterOffer.priceYearly}/yr
-          </a>
-          <p class="sup-secure">
-            <span class="sup-secure-ic" set:html={lockIcon} />No account needed — secure checkout by Stripe
+          <h1 class="font-display fluid-display text-text-bright animate-entrance stagger-1">
+            Keep lean-ctx free,<br /><span class="italic-accent">open &amp; independent.</span>
+          </h1>
+          <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-top: clamp(1.25rem, 1rem + 1vw, 2rem); max-width: 40rem;">
+            Every local feature is <strong class="text-text-bright">free forever</strong> — and always
+            will be. If lean-ctx saves you time every day, you can fund its development with a small
+            recurring subscription. It unlocks nothing — it simply keeps the project alive and independent.
           </p>
-
-          <ul class="sup-perks">
-            {supporterOffer.perks.map((perk) => (
-              <li><span class="sup-check" set:html={checkIcon} />{perk}</li>
-            ))}
+          <ul class="sup-hero-trust animate-entrance stagger-3">
+            <li><span class="sup-check" set:html={checkIcon} />Apache-2.0, forever</li>
+            <li><span class="sup-check" set:html={checkIcon} />No VC, no ads</li>
+            <li><span class="sup-check" set:html={checkIcon} />No telemetry, ever</li>
           </ul>
+        </div>
 
-          <p class="sup-fineprint">
-            lean-ctx is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
-            supporting is voluntary and unlocks no functionality. No sign-up required: Stripe handles
-            checkout and lets you cancel anytime. Need a shared team workspace instead?
-            <a href={lp('/pricing/')}>See the Team plan →</a>
-          </p>
+        {/* Right — the pledge card */}
+        <div class="hero-visual animate-entrance stagger-2">
+          <div class="sup-banner" data-banner role="status" hidden></div>
+          <div class="sup-card-wrap">
+            <div class="sup-card-aura" aria-hidden="true"></div>
+            <div class="sup-card" data-cadence="monthly">
+              <div class="sup-head">
+                <div class="sup-head-main">
+                  <span class="sup-medallion" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d={heartPath}></path></svg>
+                  </span>
+                  <div>
+                    <span class="sup-eyebrow">{supporterOffer.name}</span>
+                    <p class="sup-tagline">{supporterOffer.tagline}</p>
+                  </div>
+                </div>
+                <div class="sup-cadence" role="group" aria-label="Billing cadence">
+                  <button type="button" class="sup-cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
+                  <button type="button" class="sup-cadence-btn" data-cadence-btn="yearly" aria-pressed="false">
+                    Yearly <span class="sup-save">save 17%</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="sup-price">
+                <span class="sup-amount" data-price-monthly>{supporterOffer.priceMonthly}</span>
+                <span class="sup-amount" data-price-yearly>{supporterOffer.priceYearly}</span>
+                <span class="sup-unit">
+                  <span data-unit-monthly>{supporterOffer.unit}</span>
+                  <span data-unit-yearly>/year</span>
+                </span>
+              </div>
+              <p class="sup-note">{supporterOffer.priceNote}</p>
+
+              <a class="sup-cta btn-primary" data-cta-monthly href={supporterOffer.paymentLinks.monthly}>
+                Become a supporter — {supporterOffer.priceMonthly}/mo
+              </a>
+              <a class="sup-cta btn-primary" data-cta-yearly href={supporterOffer.paymentLinks.yearly}>
+                Become a supporter — {supporterOffer.priceYearly}/yr
+              </a>
+              <p class="sup-secure">
+                <span class="sup-secure-ic" set:html={lockIcon} />No account needed — secure checkout by Stripe
+              </p>
+
+              <ul class="sup-perks">
+                {supporterOffer.perks.map((perk) => (
+                  <li><span class="sup-check" set:html={checkIcon} />{perk}</li>
+                ))}
+              </ul>
+
+              <p class="sup-fineprint">
+                lean-ctx is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
+                supporting is voluntary and unlocks no functionality. No sign-up required: Stripe handles
+                checkout and lets you cancel anytime. Need a shared team workspace instead?
+                <a href={lp('/pricing/')}>See the Team plan →</a>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -211,7 +222,7 @@ const faq = [
 
   {/* ── What stays free (local-free promise) ───────────────── */}
   <section class="relative section-y">
-    <div class="content-grid-narrow">
+    <div class="content-grid">
       <SectionHeading
         label="Local-Free promise"
         title="What stays free,"
@@ -223,14 +234,16 @@ const faq = [
         titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
         descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
       />
-      <ul class="sup-free-list animate-entrance">
-        {freeForever.map((item) => (
-          <li><span class="sup-check" set:html={checkIcon} />{item}</li>
-        ))}
-      </ul>
-      <a class="sup-free-link animate-entrance" href={lp('/context-os/')}>
-        See how the planes separate <span class="sup-free-arrow" set:html={arrowIcon} />
-      </a>
+      <div class="sup-free animate-entrance">
+        <ul class="sup-free-list">
+          {freeForever.map((item) => (
+            <li><span class="sup-check" set:html={checkIcon} />{item}</li>
+          ))}
+        </ul>
+        <a class="sup-free-link" href={lp('/context-os/')}>
+          See how the planes separate <span class="sup-free-arrow" set:html={arrowIcon} />
+        </a>
+      </div>
     </div>
   </section>
 
@@ -267,7 +280,7 @@ const faq = [
 
   {/* ── FAQ ────────────────────────────────────────────────── */}
   <section class="relative section-y sup-faq-section">
-    <div class="content-grid-narrow">
+    <div class="content-grid">
       <SectionHeading
         label="FAQ"
         title="Questions,"
@@ -299,8 +312,26 @@ const faq = [
 </BaseLayout>
 
 <style>
+  /* ── Hero (landing-style split) ───────────────────────── */
+  .sup-hero { padding-bottom: clamp(2rem, 1.25rem + 2vw, 3.5rem); }
+  .sup-hero-split { align-items: center; }
+  .sup-hero .hero-visual { width: 100%; min-width: 0; }
+  .sup-hero-trust {
+    margin-top: clamp(1.5rem, 1.25rem + 1vw, 2.25rem);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    list-style: none;
+  }
+  .sup-hero-trust li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: var(--text-small);
+    color: var(--color-text);
+  }
+
   /* ── Banner ───────────────────────────────────────────── */
-  .sup-section { padding-top: clamp(1rem, 0.5rem + 1vw, 1.75rem); }
   .sup-banner {
     margin-bottom: 1.5rem;
     padding: 0.85rem 1.1rem;
@@ -551,6 +582,14 @@ const faq = [
   }
 
   /* ── What stays free ──────────────────────────────────── */
+  .sup-free {
+    padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.25rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background:
+      radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 55%),
+      var(--color-surface);
+  }
   .sup-free-list {
     display: grid;
     grid-template-columns: 1fr;
@@ -651,8 +690,7 @@ const faq = [
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    max-width: 44rem;
-    margin: 0 auto;
+    max-width: 48rem;
   }
   .sup-faq-item {
     border: 1px solid var(--color-border);
@@ -690,7 +728,7 @@ const faq = [
   }
   .sup-closing {
     margin-top: clamp(1.75rem, 1.25rem + 1.5vw, 2.75rem);
-    text-align: center;
+    max-width: 48rem;
     font-size: var(--text-small);
     color: var(--color-muted);
   }
