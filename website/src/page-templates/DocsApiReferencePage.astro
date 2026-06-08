@@ -9,19 +9,25 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
 ---
 
-<DocsLayout title="API Reference" description="REST API endpoints, authentication, rate limiting, and TypeScript SDK reference for the LeanCTX Team Server.">
+<DocsLayout title="API Reference" description="The versioned /v1 HTTP API plus the Python, TypeScript and Rust SDKs for LeanCTX — served locally by lean-ctx serve and by the Team Server.">
 
-  <p>The LeanCTX Team Server exposes a REST API for programmatic access to sessions, events, tools, and knowledge. All endpoints are available when the Team Server is running.</p>
+  <p>LeanCTX exposes a versioned <code>/v1</code> HTTP API for programmatic access to tools, events, sessions and knowledge. The same contract is served two ways: locally by <code>lean-ctx serve</code> for your own agent loops, and by the multi-tenant Team Server for shared deployments.</p>
 
-  <DocsCallout variant="note" title="Most users don't need this">
-    <p>The REST API is for <strong>teams running the Team Server</strong> — CI bots, dashboards, and custom integrations. For everyday coding, use the MCP tools in your editor or the <a href={lp('/docs/cli-reference')}>CLI</a> instead.</p>
+  <DocsCallout variant="note" title="Two ways to reach the same /v1 contract">
+    <p><strong>Open Door (local):</strong> run <code>lean-ctx serve</code> and embed LeanCTX in any language via the Python, TypeScript or Rust SDK. <strong>Team Server:</strong> CI bots, dashboards and shared workspaces. For everyday coding inside an editor, use the MCP tools or the <a href={lp('/docs/cli-reference')}>CLI</a> instead.</p>
   </DocsCallout>
+
+  <h2 id="serve">Run the server</h2>
+  <p>Start the local server — it serves REST + SSE + MCP on one port and prints a loopback bearer token:</p>
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> serve                      <span class="text-muted"># → http://127.0.0.1:8080</span></code></pre>
+  </div>
 
   <h2 id="auth">Authentication</h2>
   <p>All API requests require a bearer token in the <code>Authorization</code> header. Create tokens with the CLI:</p>
 
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope read,write --name "ci-bot"
+    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --config team.toml --id ci-bot --role member
 <span class="text-muted">→</span> Token: lctx_t_a3f8c2...</code></pre>
   </div>
 
@@ -242,6 +248,16 @@ data: {'{'}"agent_id":"a1b2c3","reason":"heartbeat_timeout"{'}'}</code></pre>
   </div>
 
   <h2 id="discovery">Discovery</h2>
+  <p>Branch on facts, not guesses. Two endpoints describe the running server:</p>
+  <ul>
+    <li><code>GET /v1/capabilities</code> — runtime document: contract version, active persona, transports, presets, the live tool surface and every registered extension.</li>
+    <li><code>GET /v1/openapi.json</code> — a standard OpenAPI 3.0 schema you can generate a typed client from.</li>
+  </ul>
+  <div class="not-prose">
+    <pre class="code-block"><code><span class="text-muted">$</span> curl -s -H <span class="text-accent">"Authorization: Bearer $TOKEN"</span> http://127.0.0.1:8080/v1/capabilities</code></pre>
+  </div>
+
+  <p>A lightweight MCP Server Card is also published for client auto-configuration:</p>
 
   <div class="not-prose">
     <pre class="code-block"><code><span class="text-accent">GET</span>  /.well-known/mcp-server.json  <span class="text-muted"># MCP Server Card</span>
@@ -249,7 +265,7 @@ data: {'{'}"agent_id":"a1b2c3","reason":"heartbeat_timeout"{'}'}</code></pre>
 <span class="text-muted">Response:</span>
 {'{'}
   "name": "lean-ctx",
-  "version": "3.7.0",
+  "version": "3.7.5",
   "capabilities": ["tools", "resources", "prompts"],
   "tool_categories": ["read", "search", "shell", "knowledge", "agent", "session"],
   "security": {'{'}
@@ -275,55 +291,58 @@ data: {'{'}"agent_id":"a1b2c3","reason":"heartbeat_timeout"{'}'}</code></pre>
   </table>
   <p>Rate limit headers are included in all responses: <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, <code>X-RateLimit-Reset</code>.</p>
 
-  <h2 id="sdk">TypeScript SDK</h2>
-  <p>The SDK wraps all REST endpoints with type-safe methods:</p>
+  <h2 id="sdk">SDKs</h2>
+  <p>Three first-party SDKs wrap the <code>/v1</code> contract with the same surface in every language. They are thin wire clients — they never link the engine — so they stay stable as LeanCTX evolves.</p>
 
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-muted">// Install</span>
+    <pre class="code-block"><code><span class="text-muted"># Python</span>
+pip install leanctx
+<span class="text-muted"># TypeScript</span>
 npm install @leanctx/sdk
+<span class="text-muted"># Rust</span>
+cargo add lean-ctx-client</code></pre>
+  </div>
 
-<span class="text-muted">// Usage</span>
-import {'{'} LeanCtx {'}'} from "@leanctx/sdk";
+  <h3>TypeScript</h3>
+  <div class="not-prose">
+    <pre class="code-block"><code>import {'{'} LeanCtxClient {'}'} from "@leanctx/sdk";
 
-const ctx = new LeanCtx({'{'}
-  baseUrl: "http://localhost:7700",
-  token: process.env.LEANCTX_TOKEN,
-  workspace: "my-team",
+const client = new LeanCtxClient({'{'}
+  baseUrl: "http://127.0.0.1:8080",
+  bearerToken: process.env.LEANCTX_TOKEN,
 {'}'});
 
-<span class="text-muted">// Read a file</span>
-const result = await ctx.tools.call("ctx_read", {'{'}
-  path: "src/lib/auth.ts",
-  mode: "map",
-{'}'});
+const caps = await client.capabilities();              <span class="text-muted">// branch on real features</span>
+const text = await client.callToolText("ctx_read", {'{'} path: "src/lib/auth.ts", mode: "map" {'}'});
 
-<span class="text-muted">// Subscribe to events</span>
-for await (const event of ctx.events.subscribe()) {'{'}
-  console.log(event.type, event.data);
-{'}'}
-
-<span class="text-muted">// Error handling</span>
-try {'{'}
-  await ctx.tools.call("ctx_read", {'{'} path: "/etc/passwd" {'}'});
-{'}'} catch (e) {'{'}
-  if (e instanceof LeanCtxError) {'{'}
-    console.error(e.code, e.message);
-  {'}'}
+for await (const ev of client.subscribeEvents({'{'} channelId: "feat/auth" {'}'})) {'{'}
+  console.log(ev.kind, ev.payload);
 {'}'}</code></pre>
+  </div>
+
+  <h3>Python</h3>
+  <div class="not-prose">
+    <pre class="code-block"><code>from leanctx import LeanCtxClient
+
+client = LeanCtxClient("http://127.0.0.1:8080", bearer_token=TOKEN)
+caps = client.capabilities()
+text = client.call_tool_text("ctx_read", {'{'}"path": "src/lib/auth.ts", "mode": "map"{'}'})
+
+<span class="text-muted"># Framework adapters — present when the framework is installed</span>
+from leanctx.adapters import to_openai_tools, to_langchain_tools</code></pre>
   </div>
 
   <h3>SDK Methods</h3>
   <table>
     <thead><tr><th>Method</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>ctx.tools.call(name, args)</code></td><td>Execute any MCP tool</td></tr>
-      <tr><td><code>ctx.tools.list()</code></td><td>List available tools</td></tr>
-      <tr><td><code>ctx.session.get(channel)</code></td><td>Get session state</td></tr>
-      <tr><td><code>ctx.session.list()</code></td><td>List active sessions</td></tr>
-      <tr><td><code>ctx.knowledge.search(query)</code></td><td>Search knowledge base</td></tr>
-      <tr><td><code>ctx.knowledge.remember(fact)</code></td><td>Store a fact</td></tr>
-      <tr><td><code>ctx.events.subscribe(opts)</code></td><td>SSE event stream (async iterator)</td></tr>
-      <tr><td><code>ctx.status()</code></td><td>Server status</td></tr>
+      <tr><td><code>capabilities()</code></td><td>Runtime capability document (<code>GET /v1/capabilities</code>)</td></tr>
+      <tr><td><code>openapi()</code></td><td>OpenAPI 3.0 schema (<code>GET /v1/openapi.json</code>)</td></tr>
+      <tr><td><code>listTools()</code> / <code>list_tools()</code></td><td>List the live tool surface</td></tr>
+      <tr><td><code>callToolResult(name, args)</code></td><td>Execute a tool, return the raw result</td></tr>
+      <tr><td><code>callToolText(name, args)</code></td><td>Execute a tool, return text content</td></tr>
+      <tr><td><code>subscribeEvents(opts)</code></td><td>SSE event stream (async iterator)</td></tr>
+      <tr><td><code>health()</code> / <code>manifest()</code></td><td>Liveness check and the full tool manifest</td></tr>
     </tbody>
   </table>
 

@@ -46,26 +46,30 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   </table>
   <p>When PathJail is disabled, LeanCTX still logs all file access paths but does not block operations outside the project root.</p>
 
-  <h2 id="scopes">Token Scopes & ACL</h2>
-  <p>When using the Team Server, every API token has explicit scopes that limit what it can do:</p>
+  <h2 id="scopes">Token Roles & Scopes</h2>
+  <p>The Team Server is part of the optional, additive <strong>Team plane</strong> — local single-user features stay free and ungated (the Local-Free Invariant). When you do run a Team Server, every API token carries an RBAC <strong>role</strong> and/or an explicit set of <strong>scopes</strong> that limit what it can do:</p>
 
   <table>
-    <thead><tr><th>Scope</th><th>Permissions</th><th>Use Case</th></tr></thead>
+    <thead><tr><th>Role</th><th>Permissions</th><th>Use Case</th></tr></thead>
     <tbody>
-      <tr><td><code>read</code></td><td>Read sessions, knowledge, events</td><td>Read-only agents, monitoring</td></tr>
-      <tr><td><code>write</code></td><td>Mutate sessions, store knowledge, execute tools</td><td>Active development agents</td></tr>
-      <tr><td><code>admin</code></td><td>Manage tokens, workspaces, server config</td><td>Team leads, CI/CD</td></tr>
-      <tr><td><code>events</code></td><td>Subscribe to SSE event stream</td><td>Dashboards, automation</td></tr>
+      <tr><td><code>viewer</code></td><td>Read-only access to sessions, knowledge and events</td><td>Dashboards, monitoring, read-only agents</td></tr>
+      <tr><td><code>member</code></td><td>Read plus mutate sessions, store knowledge, call tools</td><td>Active development agents</td></tr>
+      <tr><td><code>admin</code></td><td>Manage tokens and workspaces, server configuration</td><td>Team leads, CI/CD</td></tr>
+      <tr><td><code>owner</code></td><td>Full control, including billing and ownership transfer</td><td>Account owner</td></tr>
     </tbody>
   </table>
 
-  <p>Create scoped tokens with the CLI:</p>
+  <p>For fine-grained tokens, grant individual scopes instead of a role: <code>search</code>, <code>graph</code>, <code>artifacts</code>, <code>index</code>, <code>events</code>, <code>knowledge</code>, <code>sessionmutations</code>, <code>audit</code>.</p>
+
+  <p>Create tokens with the CLI (a Team Server config supplies the workspace and signing key):</p>
 
   <div class="not-prose">
-    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope read --name "dashboard"
-<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope read,write --name "developer"
-<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --scope admin --name "ops"</code></pre>
+    <pre class="code-block"><code><span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --config team.toml --id dashboard --role viewer
+<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --config team.toml --id developer --role member
+<span class="text-muted">$</span> <span class="text-accent">lean-ctx</span> team token create --config team.toml --id indexer --scope search,graph,index</code></pre>
   </div>
+
+  <p class="text-sm text-muted">Note: these Team Server <em>token roles</em> (<code>viewer/member/admin/owner</code>) are distinct from the five built-in <em>agent roles</em> used for local capability policies (<code>admin/coder/debugger/reviewer/ops</code>).</p>
 
   <h2 id="audit">Audit Trail</h2>
   <p>LeanCTX logs every tool execution, session mutation, and knowledge operation in SHA-256 chained JSONL format. Each entry includes a hash of the previous entry, forming a tamper-evident chain that can be verified for integrity:</p>

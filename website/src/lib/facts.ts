@@ -56,7 +56,7 @@ const STATIC_FACTS = {
   integrationModes: ['CLI-Redirect', 'Hybrid', 'Full MCP'],
   shellPatterns: '95+',
   license: 'Apache-2.0',
-  version: '3.7.0',
+  version: '3.7.5',
   tokenSavingsPerRead: '60–90% per read',
   tokenSavingsCache: 'up to 99% from cache',
   tokenSavingsReread: '~13 tokens on re-read',

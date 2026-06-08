@@ -81,7 +81,7 @@ Signed savings batch: VALID
   Signed by:  7b1e90…c4d2
   Agent:      local
   Created:    2026-06-02T18:45:00Z
-  lean-ctx:   3.7.0
+  lean-ctx:   3.7.5
   Net saved:  12.8M tokens (~$32.41) over 1,240 event(s)
   Chain head: 9f2c4b…e1a7
 ```

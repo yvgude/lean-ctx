@@ -347,7 +347,7 @@ export const pillars: Pillar[] = [
         'Cursor: CLI-redirect (MCP removed, rules installed)',
         'Claude Code: CLI-redirect (rules + skill installed)',
         'Windsurf: Hybrid (MCP active, CLI for shell)',
-        'Copilot: MCP (56 tools, lazy set)',
+        'Copilot: MCP (lazy-loaded tool set)',
         'Daemon started (PID 4139, UDS ready)',
       ] },
       { tool: 'lean-ctx', args: 'serve --status', output: [
@@ -455,7 +455,7 @@ export const pillars: Pillar[] = [
     metaDescKey: 'pillar.contextBus.metaDesc',
     demoDescKey: 'pillar.contextBus.demoDesc',
     demoCommands: [
-      { tool: 'curl', args: '-N http://localhost:7700/v1/events?workspaceId=my-team', output: [
+      { tool: 'curl', args: '-N http://localhost:8080/v1/events?workspaceId=my-team', output: [
         'id: 42',
         'event: session_mutated',
         'data: {"id":42,"workspaceId":"my-team","channelId":"feat/auth",',
@@ -513,15 +513,15 @@ export const pillars: Pillar[] = [
     demoDescKey: 'pillar.sdk.demoDesc',
     demoCommands: [
       { tool: 'typescript', args: '', output: [
-        'import { LeanCtx } from "@anthropic/lean-ctx-sdk";',
+        'import { LeanCtxClient } from "@leanctx/sdk";',
         '',
-        'const ctx = new LeanCtx({',
-        '  baseUrl: "http://localhost:7700",',
-        '  workspace: "my-team",',
+        'const client = new LeanCtxClient({',
+        '  baseUrl: "http://127.0.0.1:8080",',
+        '  workspaceId: "my-team",',
         '});',
         '',
-        'for await (const ev of ctx.subscribe("feat/auth")) {',
-        '  console.log(ev.type, ev.data);',
+        'for await (const ev of client.subscribeEvents({ channelId: "feat/auth" })) {',
+        '  console.log(ev.kind, ev.payload);',
         '}',
       ] },
     ],

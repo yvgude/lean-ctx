@@ -459,6 +459,26 @@ max_staleness_days = 30</code></pre>
     </thead>
     <tbody>
       <tr>
+        <td><code>LEAN_CTX_PERSONA</code></td>
+        <td><code>coding</code> (default), <code>research</code>, <code>support</code>, <code>data-analysis</code>, <code>lead-gen</code></td>
+        <td>Active context persona. Reshapes the tool surface, default read modes, compressors and the sensitivity floor for the session. Custom personas are loaded by id from the personas directory.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_PERSONAS_DIR</code></td>
+        <td>path (default: <code>&lt;config-dir&gt;/lean-ctx/personas</code>)</td>
+        <td>Directory of custom persona TOML files. Each <code>&lt;id&gt;.toml</code> defines the tool profile, read modes, compressors and sensitivity floor for that persona.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_PLUGINS_DIR</code></td>
+        <td>path (default: <code>&lt;config-dir&gt;/lean-ctx/plugins</code>)</td>
+        <td>Directory of plugins. Each plugin ships a <code>plugin.toml</code> manifest plus lifecycle hooks, discovered at startup.</td>
+      </tr>
+      <tr>
+        <td><code>LEAN_CTX_WASM_DIR</code></td>
+        <td>path</td>
+        <td>Directory of WebAssembly extensions (custom compressors / chunkers) loaded into the extension registry — extend LeanCTX without forking it.</td>
+      </tr>
+      <tr>
         <td><code>LEAN_CTX_CRP_MODE</code></td>
         <td>tdd (default), compact, off</td>
         <td set:html={t('docsConfiguration.crpModeDesc')} />

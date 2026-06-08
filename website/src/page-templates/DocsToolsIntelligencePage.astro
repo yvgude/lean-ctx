@@ -435,12 +435,28 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   <h2 id="ctx_index">ctx_index <span class="text-xs font-normal text-muted ml-2">v3.4.5</span></h2>
   <p class="text-muted mb-4">
-    <code>ctx_index</code> orchestrates project indexing - builds the property graph, symbol map, and dependency index used by <code>ctx_graph</code>, <code>ctx_impact</code>, and <code>ctx_architecture</code>.
+    <code>ctx_index</code> orchestrates project indexing - it builds the property graph, symbol map, and dependency index used by <code>ctx_graph</code>, <code>ctx_impact</code>, and <code>ctx_architecture</code>, and ingests a mixed local corpus through format-aware extractors so non-code documents become searchable agent context (Universal Intake).
   </p>
   <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
     <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Param</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Req</th><th class="px-4 py-2 text-left">Description</th></tr></thead>
     <tbody>
       <tr><td><code>action</code></td><td>string</td><td>No</td><td><code>status</code> (default), <code>build</code>, <code>build-full</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="mt-8">Format extractors (Universal Intake)</h3>
+  <p class="text-muted mb-4">
+    Beyond source code, <code>ctx_index</code> extracts and chunks these local document formats so they can be searched and retrieved as context. Extraction runs entirely on your machine — no upload, no external service.
+  </p>
+  <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+    <thead><tr class="bg-surface"><th class="px-4 py-2 text-left">Format</th><th class="px-4 py-2 text-left">Extensions</th></tr></thead>
+    <tbody>
+      <tr><td>PDF</td><td><code>.pdf</code></td></tr>
+      <tr><td>HTML</td><td><code>.html</code>, <code>.htm</code>, <code>.xhtml</code></td></tr>
+      <tr><td>CSV / TSV</td><td><code>.csv</code>, <code>.tsv</code></td></tr>
+      <tr><td>Email</td><td><code>.eml</code></td></tr>
+      <tr><td>JSON / NDJSON</td><td><code>.json</code>, <code>.jsonl</code>, <code>.ndjson</code></td></tr>
+      <tr><td>Plain text</td><td>any other UTF-8 file</td></tr>
     </tbody>
   </table>
 

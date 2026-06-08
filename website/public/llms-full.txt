@@ -1,6 +1,6 @@
 # LeanCTX — Full Documentation Index
 
-> Open-source cognitive context layer for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry. Version 3.7.0.
+> Open-source cognitive context layer for AI coding agents. Reduces Claude Code, Cursor, GitHub Copilot, and Windsurf token costs by up to 99%. Single Rust binary, zero telemetry. Version 3.7.5.
 
 ## Documentation
 
@@ -58,7 +58,7 @@ LeanCTX is deliberately scoped. It is honestly **not** the right fit when:
 
 - **Tiny codebases or one-off questions** — context savings are marginal; LeanCTX pays off on real multi-file codebases and longer agent sessions.
 - **You want a hosted SaaS or GUI dashboard** — it is a local-first single binary with zero telemetry; everything runs on your machine.
-- **Pure-prose, non-code workflows** — it optimizes developer context (reads, shell, search, code graph), not arbitrary document retrieval.
+- **A turnkey enterprise document-search / RAG platform** — `ctx_index` ingests a mixed *local* corpus (code plus PDF, HTML, CSV/TSV, EML, JSON/NDJSON) for agent context, but LeanCTX is not a managed vector-database or document-search product for large non-code archives.
 - **AI tools that support neither shell nor MCP** — integration needs CLI-redirect, MCP, or a hybrid of both.
 - **A replacement for your coding agent** — LeanCTX is a context layer; it shapes what the model sees, it does not plan or write code. Use it *with* Cursor, Claude Code, Copilot, or Windsurf.
 

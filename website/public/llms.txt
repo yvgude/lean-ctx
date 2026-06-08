@@ -9,7 +9,7 @@ LeanCTX is the cognitive context layer for AI coding agents. It intercepts every
 Three integration modes:
 - **CLI-Redirect** (recommended): Zero MCP overhead. AI agents call `lean-ctx` via shell commands. Used by Cursor, Claude Code, Codex, Gemini CLI.
 - **Hybrid**: MCP for cached reads (13 tokens per re-read) + CLI for shell/search. Used by Windsurf, Amp, Antigravity.
-- **Full MCP**: 63 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
+- **Full MCP**: 70 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
 
 ## Capabilities
 
@@ -36,7 +36,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 ## Key Facts
 
-- Version: 3.7.0
+- Version: 3.7.5
 - License: Apache-2.0
 - Language: Rust (single binary, ~15MB)
 - Install: `curl -fsSL https://leanctx.com/install.sh | sh` or `npm install -g lean-ctx-bin` or `cargo install lean-ctx` or `brew install yvgude/lean-ctx/lean-ctx` or `pi install npm:pi-lean-ctx`
@@ -51,7 +51,7 @@ Active developers save **$30-100+ per month** on AI API costs.
 
 Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CLI, Gemini CLI, Cline, Roo Code, Google Antigravity, OpenCode, Aider, Amp, AWS Kiro, JetBrains IDEs, Amazon Q Developer, Trae, Continue, Crush, Hermes, Sublime Text, Emacs, Neovim.
 
-## Security Features (v3.7.0)
+## Security Features (v3.7.5)
 
 - **PathJail**: Prevents file access outside the project directory (sandbox)
 - **Shell Allowlist**: Opt-in command allowlisting with AST-based multi-segment validation
@@ -60,7 +60,7 @@ Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CL
 - **Role-Based Access**: 5 built-in roles with configurable permissions
 - **OS-Level Sandbox**: Optional Seatbelt (macOS) / Landlock (Linux) process isolation
 
-## MCP Tools (63)
+## MCP Tools (70)
 
 Full tool manifest with schemas: https://leanctx.com/generated/mcp-tools.json
 
@@ -85,7 +85,7 @@ LeanCTX is deliberately scoped. It is honestly **not** the right tool when:
 
 - **Your codebase is tiny or the task is a one-off.** On a handful of files or a single quick question, the context savings are marginal and setup is not worth it. LeanCTX pays off on real multi-file codebases and longer agent sessions, where file reads, search, and shell output dominate the token budget.
 - **You need a hosted SaaS or a GUI dashboard.** LeanCTX is a local-first single binary with zero telemetry by design — everything runs on your machine. If you specifically want a managed cloud service, that is a different product category.
-- **Your workflow is pure prose, not code.** LeanCTX optimizes developer context: file reads, shell, search, and a code dependency graph. It is not a general document or knowledge-base retrieval system for arbitrary PDFs or wikis.
+- **You want a turnkey enterprise document-search / RAG platform.** LeanCTX optimizes developer context: file reads, shell, search, and a code dependency graph. Its `ctx_index` does ingest a mixed *local* corpus — code plus PDF, HTML, CSV/TSV, EML and JSON/NDJSON — for agent context, but it is not a managed vector-database or document-search product for large non-code archives.
 - **Your AI tool can neither run shell commands nor speak MCP.** Integration happens via CLI-redirect, MCP, or a hybrid of both. A tool that supports neither cannot hook in.
 - **You expect it to replace your coding agent.** LeanCTX shapes what the model sees and remembers; it does not plan or write code for you. Use it *with* Cursor, Claude Code, Copilot, or Windsurf — not instead of them.
 
@@ -94,7 +94,7 @@ If none of these apply, LeanCTX is built exactly for you: large codebases, long 
 ## FAQ
 
 **How much does LeanCTX cost?**
-Free and open source. Apache-2.0 licensed.
+Free and open source (Apache-2.0). Local features stay free forever — the Local-Free Invariant. An optional Team plane adds RBAC, usage-based billing and a shared, signed savings ledger for organizations that want shared memory and ROI reporting.
 
 **How much money does LeanCTX save?**
 Active developers save $30-100+ per month on API costs. Use `lean-ctx gain --score` to measure your savings.
@@ -112,4 +112,4 @@ Zero telemetry. Everything runs locally. PathJail sandbox, shell allowlist, secr
 Context engineering is the discipline of managing what information an AI agent sees, remembers, and acts on. LeanCTX automates this with compression, caching, verification, and governance.
 
 **What is the difference between LeanCTX and other MCP tools?**
-LeanCTX is not just an MCP server — it's a full context runtime with CLI integration, shell hooks, persistent memory, code intelligence, and a governance layer. It works with or without MCP.
+LeanCTX is not just an MCP server — it's a full cognitive context layer with CLI integration, shell hooks, persistent memory, code intelligence, and a governance layer. It works with or without MCP.

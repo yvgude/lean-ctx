@@ -801,7 +801,7 @@ lean-ctx-on        # re-enable for AI sessions</code></pre>
   <table>
     <thead><tr><th>{t('docs.cliReference.thFlag')}</th><th>{t('docs.cliReference.thDefault')}</th><th>{t('docs.cliReference.thDescription')}</th></tr></thead>
     <tbody>
-      <tr><td><code>--port=&lt;N&gt;</code></td><td><code>9119</code></td><td>{t('docs.cliReference.servePortDesc')}</td></tr>
+      <tr><td><code>--port=&lt;N&gt;</code></td><td><code>8080</code></td><td>{t('docs.cliReference.servePortDesc')}</td></tr>
       <tr><td><code>--host=&lt;addr&gt;</code></td><td><code>127.0.0.1</code></td><td set:html={t('docs.cliReference.serveHostDesc')} /></tr>
       <tr><td><code>--stateless</code></td><td>off</td><td>{t('docs.cliReference.serveStatelessDesc')}</td></tr>
       <tr><td><code>--rate-limit=&lt;N&gt;</code></td><td><code>100</code></td><td>{t('docs.cliReference.serveRateLimitDesc')}</td></tr>
@@ -820,7 +820,7 @@ lean-ctx serve --host=0.0.0.0 --port=8080 --rate-limit=50
 lean-ctx serve --stateless --timeout=60000
 
 # With CORS for web dashboard
-lean-ctx serve --cors --port=9119</code></pre>
+lean-ctx serve --cors --port=8080</code></pre>
 
   <p set:html={t('docs.cliReference.serveEndpointsNote')} />
 
@@ -854,6 +854,66 @@ lean-ctx watch --no-tui                 # headless JSONL to stdout</code></pre>
   <pre><code>lean-ctx proxy start       # start proxy daemon
 lean-ctx proxy status      # check if proxy is running
 lean-ctx proxy stop        # stop the proxy</code></pre>
+
+  <hr />
+
+  <h2 id="team-plane">Team Plane &amp; Extensions <span class="text-xs font-normal text-muted ml-2">optional · additive</span></h2>
+  <p>Local single-user features stay free and ungated (the Local-Free Invariant). These commands drive the optional commercial Team plane and the open extension surface.</p>
+
+  <h3 id="team"><code>lean-ctx team &lt;serve|token|sync&gt;</code></h3>
+  <table>
+    <thead><tr><th>Command</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>team serve --config &lt;path&gt;</code></td><td>Run the multi-tenant Team Server from a TOML config (workspaces, signing key, port).</td></tr>
+      <tr><td><code>team token create --config &lt;path&gt; --id &lt;name&gt; --role &lt;role&gt;</code></td><td>Mint an RBAC token. <code>--role</code> = <code>viewer|member|admin|owner</code>; or grant explicit <code>--scope</code> (CSV).</td></tr>
+      <tr><td><code>team sync --config &lt;path&gt; --workspace &lt;id&gt;</code></td><td>Synchronise local session / knowledge state with a Team Server workspace.</td></tr>
+    </tbody>
+  </table>
+  <pre><code>lean-ctx team serve --config team.toml
+lean-ctx team token create --config team.toml --id ci --role member
+lean-ctx team token create --config team.toml --id indexer --scope search,graph,index</code></pre>
+
+  <h3 id="billing"><code>lean-ctx billing &lt;plans|entitlements|usage&gt;</code></h3>
+  <table>
+    <thead><tr><th>Command</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>billing plans</code></td><td>List available plans (<code>--json</code> for machine output).</td></tr>
+      <tr><td><code>billing entitlements &lt;plan&gt;</code></td><td>Show the entitlements a plan grants.</td></tr>
+      <tr><td><code>billing usage</code></td><td>Show current usage / metering (default subcommand; <code>--json</code> supported).</td></tr>
+    </tbody>
+  </table>
+  <pre><code>lean-ctx billing plans
+lean-ctx billing usage --json</code></pre>
+
+  <h3 id="savings"><code>lean-ctx savings &lt;summary|roi|verify|rechain|sign&gt;</code></h3>
+  <p>The savings ledger is a signed, tamper-evident receipt of every token you saved.</p>
+  <table>
+    <thead><tr><th>Command</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>savings summary</code></td><td>Human-readable savings summary (default subcommand).</td></tr>
+      <tr><td><code>savings roi</code></td><td>Return-on-investment view of the ledger (<code>--json</code> supported).</td></tr>
+      <tr><td><code>savings verify</code> / <code>verify-batch</code></td><td>Verify the hash chain (whole ledger or a batch file).</td></tr>
+      <tr><td><code>savings rechain</code></td><td>Repair / rebuild the ledger hash chain.</td></tr>
+      <tr><td><code>savings sign</code> / <code>push</code></td><td>Sign a snapshot (<code>--out</code>) or push it to a Team Server (<code>--team-url</code>).</td></tr>
+    </tbody>
+  </table>
+  <pre><code>lean-ctx savings roi --json
+lean-ctx savings sign --out savings.signed.json</code></pre>
+
+  <h3 id="plugins"><code>lean-ctx plugin &lt;list|enable|disable|info|init|hooks&gt;</code></h3>
+  <p>Plugins are discovered from <code>&lt;config-dir&gt;/lean-ctx/plugins</code> (override with <code>LEAN_CTX_PLUGINS_DIR</code>); WebAssembly extensions load from <code>LEAN_CTX_WASM_DIR</code>.</p>
+  <table>
+    <thead><tr><th>Command</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>plugin list</code></td><td>List discovered plugins and their status.</td></tr>
+      <tr><td><code>plugin init &lt;name&gt;</code></td><td>Scaffold a new plugin (<code>plugin.toml</code> + hooks).</td></tr>
+      <tr><td><code>plugin enable|disable &lt;name&gt;</code></td><td>Toggle a plugin on or off.</td></tr>
+      <tr><td><code>plugin info &lt;name&gt;</code> / <code>hooks</code></td><td>Inspect a plugin manifest, or list available lifecycle hooks.</td></tr>
+    </tbody>
+  </table>
+  <pre><code>lean-ctx plugin init my-compressor
+lean-ctx plugin list
+lean-ctx conformance --json        # verify the binary + extensions meet the contract</code></pre>
 
   <hr />
 

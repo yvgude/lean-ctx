@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // TRACKS SSOT — the four persona tracks that group the 26 journeys.
 //
-// Navigation and the self-select landing use these four tracks instead of 21
+// Navigation and the self-select landing use these four tracks instead of 26
 // flat journeys (paradox of choice). Each track owns a slice of the journey
 // backbone and leads with the pillars it exercises most.
 // ─────────────────────────────────────────────────────────────────────────────
