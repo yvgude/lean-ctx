@@ -42,6 +42,7 @@ fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Op
         "go" => match_type_def_go(node, src)?,
         "java" => match_type_def_java(node, src)?,
         "kt" | "kts" => match_type_def_kotlin(node, src)?,
+        "gd" => match_type_def_gdscript(node, src)?,
         _ => return None,
     };
 
@@ -208,6 +209,22 @@ fn match_type_def_kotlin(node: Node, src: &str) -> Option<(String, TypeDefKind)>
     }
 }
 
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_gdscript(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
+    match node.kind() {
+        // `class_name X` (script-level global) and inner `class X:` both define a class.
+        "class_name_statement" | "class_definition" => {
+            let name = find_child_by_kind(node, "name")?;
+            Some((node_text(name, src).to_string(), TypeDefKind::Class))
+        }
+        "enum_definition" => {
+            let name = find_child_by_kind(node, "name")?;
+            Some((node_text(name, src).to_string(), TypeDefKind::Enum))
+        }
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
@@ -251,6 +268,9 @@ fn is_exported_node(node: Node, src: &str, ext: &str) -> bool {
         }
         "java" => node_text(node, src).trim_start().starts_with("public "),
         "kt" | "kts" => kotlin_declaration_exported(node, src),
+        // GDScript has no visibility keyword; the `_name` convention marks privates.
+        "gd" => find_child_by_kind(node, "name")
+            .is_some_and(|name| !node_text(name, src).starts_with('_')),
         "py" => {
             if let Some(name) = get_declaration_name(node, src) {
                 !name.starts_with('_')

@@ -743,6 +743,62 @@ pub(super) fn resolve_dart(
 }
 
 // ---------------------------------------------------------------------------
+// GDScript (Godot)
+// ---------------------------------------------------------------------------
+
+/// Resolves GDScript `extends "res://…"` and `preload`/`load` resource paths.
+/// `res://` is anchored at the project root; `user://` is a runtime data path
+/// (never a source file); other paths are resolved relative to the importer.
+pub(super) fn resolve_gd(
+    imp: &ImportInfo,
+    file_path: &str,
+    ctx: &ResolverContext,
+) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+
+    let try_paths = |rel: &str| -> Option<String> {
+        let rel = rel.trim();
+        let mut candidates: Vec<String> = vec![rel.to_string()];
+        if !Path::new(rel)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("gd"))
+        {
+            candidates.push(format!("{rel}.gd"));
+        }
+        candidates.into_iter().find(|c| ctx.file_exists(c))
+    };
+
+    if let Some(rest) = source.strip_prefix("res://") {
+        let rel = rest.trim_start_matches('/');
+        return (try_paths(rel), false);
+    }
+
+    // Runtime user data path — not a project source file.
+    if source.starts_with("user://") {
+        return (None, true);
+    }
+
+    if source.starts_with('.') || source.contains('/') {
+        let stripped = source.trim_start_matches("./");
+        let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+        let joined = if dir.as_os_str().is_empty() {
+            stripped.to_string()
+        } else {
+            format!("{}/{stripped}", dir.to_string_lossy())
+        };
+        if let Some(found) = try_paths(&joined) {
+            return (Some(found), false);
+        }
+        return (try_paths(stripped), false);
+    }
+
+    (None, true)
+}
+
+// ---------------------------------------------------------------------------
 // Zig
 // ---------------------------------------------------------------------------
 

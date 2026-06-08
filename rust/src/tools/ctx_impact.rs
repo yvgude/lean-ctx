@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Stdio;
 
-const GRAPH_SOURCE_EXTS: &[&str] = &["rs", "ts", "tsx", "js", "jsx", "py", "go", "java"];
+const GRAPH_SOURCE_EXTS: &[&str] = &["rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "gd"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OutputFormat {

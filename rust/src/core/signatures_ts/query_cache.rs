@@ -13,7 +13,7 @@ pub(crate) fn get_cached_sig_query(file_ext: &str) -> Option<&'static Query> {
         let exts: &[&str] = &[
             "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "c", "h", "cpp", "cc", "cxx",
             "hpp", "rb", "cs", "kt", "kts", "swift", "php", "sh", "bash", "dart", "scala", "sc",
-            "ex", "exs", "zig",
+            "ex", "exs", "zig", "gd",
         ];
         for &ext in exts {
             if let (Some(lang), Some(src)) = (get_language(ext), get_query(ext)) {

@@ -612,4 +612,49 @@ pub fn main() !void {
         let helper_sig = sigs.iter().find(|s| s.name == "helper").unwrap();
         assert!(!helper_sig.is_exported);
     }
+
+    #[test]
+    fn test_gdscript_signatures() {
+        let src = r#"
+class_name Player
+extends "res://actors/base_actor.gd"
+
+signal health_changed(old, new)
+
+enum State { IDLE, RUNNING }
+
+func _ready() -> void:
+    pass
+
+func take_damage(amount: int) -> int:
+    return amount
+
+class Inventory:
+    func add(item) -> void:
+        pass
+"#;
+        let sigs = extract_signatures_ts(src, "gd").unwrap();
+        let names: Vec<&str> = sigs.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Player"), "got {names:?}");
+        assert!(names.contains(&"health_changed"), "got {names:?}");
+        assert!(names.contains(&"State"), "got {names:?}");
+        assert!(names.contains(&"take_damage"), "got {names:?}");
+        assert!(names.contains(&"Inventory"), "got {names:?}");
+
+        let player = sigs.iter().find(|s| s.name == "Player").unwrap();
+        assert_eq!(player.kind, "class");
+        assert!(player.is_exported);
+
+        let signal = sigs.iter().find(|s| s.name == "health_changed").unwrap();
+        assert_eq!(signal.kind, "signal");
+
+        // `_ready` is a Godot virtual callback → private by `_` convention.
+        let ready = sigs.iter().find(|s| s.name == "_ready").unwrap();
+        assert!(!ready.is_exported);
+        assert_eq!(ready.return_type, "void");
+
+        let take_damage = sigs.iter().find(|s| s.name == "take_damage").unwrap();
+        assert!(take_damage.is_exported);
+        assert_eq!(take_damage.kind, "fn");
+    }
 }

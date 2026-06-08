@@ -18,6 +18,7 @@ pub enum LanguageId {
     Scala,
     Elixir,
     Zig,
+    Gdscript,
     Vue,
     Svelte,
 }
@@ -50,6 +51,7 @@ impl LanguageId {
             LanguageId::Scala => "scala",
             LanguageId::Elixir => "elixir",
             LanguageId::Zig => "zig",
+            LanguageId::Gdscript => "gdscript",
             LanguageId::Vue => "vue",
             LanguageId::Svelte => "svelte",
         }
@@ -76,7 +78,8 @@ pub fn capabilities(lang: LanguageId) -> LanguageCapabilities {
         | LanguageId::Dart
         | LanguageId::Scala
         | LanguageId::Elixir
-        | LanguageId::Zig => LanguageCapabilities {
+        | LanguageId::Zig
+        | LanguageId::Gdscript => LanguageCapabilities {
             deps_edges: true,
             deep_queries: true,
             import_resolver: true,
@@ -111,6 +114,7 @@ pub fn language_for_ext(ext: &str) -> Option<LanguageId> {
         "scala" | "sc" => Some(LanguageId::Scala),
         "ex" | "exs" => Some(LanguageId::Elixir),
         "zig" => Some(LanguageId::Zig),
+        "gd" => Some(LanguageId::Gdscript),
         "vue" => Some(LanguageId::Vue),
         "svelte" => Some(LanguageId::Svelte),
         _ => None,
@@ -149,6 +153,7 @@ pub const ALL_LANGUAGES: &[LanguageId] = &[
     LanguageId::Scala,
     LanguageId::Elixir,
     LanguageId::Zig,
+    LanguageId::Gdscript,
     LanguageId::Vue,
     LanguageId::Svelte,
 ];

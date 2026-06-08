@@ -1,7 +1,10 @@
 //! Tree-sitter deep queries for extracting imports, call sites, and type definitions.
 //!
 //! Replaces regex-based extraction in `deps.rs` with precise AST parsing.
-//! Supports: TypeScript/JavaScript, Python, Rust, Go, Java.
+//! Supported languages are gated by [`get_language`] (and kept in sync with
+//! `core::language_capabilities`): the TypeScript/JavaScript family, Python,
+//! Rust, Go, Java, C/C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala,
+//! Elixir, Zig, and GDScript.
 
 mod calls;
 mod imports;
@@ -74,6 +77,7 @@ fn get_language(ext: &str) -> Option<Language> {
         "scala" | "sc" => Some(tree_sitter_scala::LANGUAGE.into()),
         "ex" | "exs" => Some(tree_sitter_elixir::LANGUAGE.into()),
         "zig" => Some(tree_sitter_zig::LANGUAGE.into()),
+        "gd" => Some(tree_sitter_gdscript::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -543,5 +547,82 @@ const std = @import("std");
 "#;
         let analysis = analyze(src, "zig");
         assert!(analysis.imports.iter().any(|i| i.source == "lib/math.zig"));
+    }
+
+    #[test]
+    fn gdscript_imports_extends_and_preload() {
+        let src = r#"
+extends "res://actors/base_actor.gd"
+
+const Bullet = preload("res://weapons/bullet.gd")
+var sfx = load("res://audio/shot.wav")
+"#;
+        let analysis = analyze(src, "gd");
+        let sources: Vec<&str> = analysis.imports.iter().map(|i| i.source.as_str()).collect();
+        assert!(
+            sources.contains(&"res://actors/base_actor.gd"),
+            "expected extends import, got {sources:?}"
+        );
+        assert!(
+            sources.contains(&"res://weapons/bullet.gd"),
+            "expected preload import, got {sources:?}"
+        );
+        assert!(
+            sources.contains(&"res://audio/shot.wav"),
+            "expected load import, got {sources:?}"
+        );
+    }
+
+    #[test]
+    fn gdscript_types_class_name_and_enum() {
+        let src = r"
+class_name Player
+
+enum State { IDLE, RUNNING }
+
+class Inventory:
+    var items = []
+";
+        let analysis = analyze(src, "gd");
+        let names: Vec<&str> = analysis.types.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            names.contains(&"Player"),
+            "expected class_name, got {names:?}"
+        );
+        assert!(names.contains(&"State"), "expected enum, got {names:?}");
+        assert!(
+            names.contains(&"Inventory"),
+            "expected inner class, got {names:?}"
+        );
+        let player = analysis.types.iter().find(|t| t.name == "Player").unwrap();
+        assert_eq!(player.kind, TypeDefKind::Class);
+        assert!(player.is_exported);
+        let state = analysis.types.iter().find(|t| t.name == "State").unwrap();
+        assert_eq!(state.kind, TypeDefKind::Enum);
+    }
+
+    #[test]
+    fn gdscript_calls_method_and_instantiation() {
+        let src = r"
+func _ready():
+    var mgr = MapDataManager.new()
+    mgr.load_map_data()
+    update_state()
+";
+        let analysis = analyze(src, "gd");
+        let callees: Vec<&str> = analysis.calls.iter().map(|c| c.callee.as_str()).collect();
+        // `MapDataManager.new()` registers a reference to the class itself.
+        assert!(
+            callees.contains(&"MapDataManager"),
+            "expected instantiation to reference class, got {callees:?}"
+        );
+        assert!(
+            callees.contains(&"load_map_data"),
+            "expected method call, got {callees:?}"
+        );
+        assert!(
+            callees.contains(&"update_state"),
+            "expected direct call, got {callees:?}"
+        );
     }
 }

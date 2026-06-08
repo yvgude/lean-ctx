@@ -105,6 +105,7 @@ fn resolve_one(
         "swift" => resolve_swift(imp, file_path, ctx),
         "scala" | "sc" => resolve_scala(imp, ctx),
         "ex" | "exs" => resolve_elixir(imp, file_path, ctx),
+        "gd" => resolve_gd(imp, file_path, ctx),
         _ => (None, true),
     }
 }

@@ -40,7 +40,12 @@ fn walk_calls(node: Node, src: &str, ext: &str, calls: &mut Vec<CallSite>) {
 fn is_call_node(kind: &str) -> bool {
     matches!(
         kind,
-        "call_expression" | "method_invocation" | "call" | "object_creation_expression"
+        "call_expression"
+            | "method_invocation"
+            | "call"
+            | "object_creation_expression"
+            // GDScript method calls and `X.new()` instantiation are `attribute_call`.
+            | "attribute_call"
     )
 }
 
@@ -53,6 +58,67 @@ fn parse_call(node: Node, src: &str, ext: &str) -> Option<CallSite> {
         "go" => parse_call_go(node, src),
         "java" => parse_call_java(node, src),
         "kt" | "kts" => parse_call_kotlin(node, src),
+        "gd" => parse_call_gd(node, src),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "tree-sitter")]
+fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
+    let line = node.start_position().row + 1;
+    let col = node.start_position().column;
+    match node.kind() {
+        // Direct call: `func(...)` / `preload(...)`.
+        "call" => {
+            let func = node.child(0)?;
+            if func.kind() == "identifier" {
+                Some(CallSite {
+                    callee: node_text(func, src).to_string(),
+                    line,
+                    col,
+                    receiver: None,
+                    is_method: false,
+                })
+            } else {
+                find_descendant_by_kind(func, "identifier").map(|id| CallSite {
+                    callee: node_text(id, src).to_string(),
+                    line,
+                    col,
+                    receiver: None,
+                    is_method: false,
+                })
+            }
+        }
+        // Method call / instantiation: `receiver.method(...)` under an `attribute`.
+        "attribute_call" => {
+            let method_node = find_child_by_kind(node, "identifier")?;
+            let method = node_text(method_node, src).to_string();
+            let receiver = node
+                .parent()
+                .filter(|p| p.kind() == "attribute")
+                .and_then(|p| p.child(0))
+                .map(|r| node_text(r, src).to_string());
+            // `X.new()` instantiates class `X`; attribute the reference to the
+            // class so it registers in the call graph / dead-code analysis (#365).
+            if method == "new" {
+                if let Some(class) = receiver {
+                    return Some(CallSite {
+                        callee: class,
+                        line,
+                        col,
+                        receiver: None,
+                        is_method: false,
+                    });
+                }
+            }
+            Some(CallSite {
+                callee: method,
+                line,
+                col,
+                receiver,
+                is_method: true,
+            })
+        }
         _ => None,
     }
 }

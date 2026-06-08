@@ -29,7 +29,66 @@ pub(super) fn extract_imports(root: Node, src: &str, ext: &str) -> Vec<ImportInf
         "scala" | "sc" => extract_imports_scala(root, src),
         "ex" | "exs" => extract_imports_elixir(root, src),
         "zig" => extract_imports_zig(root, src),
+        "gd" => extract_imports_gd(root, src),
         _ => Vec::new(),
+    }
+}
+
+/// GDScript dependencies: `extends "res://base.gd"` plus `preload(...)` /
+/// `load(...)` resource references (which can appear in `const`, `var`, or
+/// inline expressions, so the whole tree is scanned for them).
+#[cfg(feature = "tree-sitter")]
+fn extract_imports_gd(root: Node, src: &str) -> Vec<ImportInfo> {
+    let mut imports = Vec::new();
+
+    let mut cursor = root.walk();
+    for node in root.children(&mut cursor) {
+        if node.kind() == "extends_statement" {
+            if let Some(s) = find_descendant_by_kind(node, "string") {
+                let source_text = unquote(node_text(s, src));
+                if !source_text.is_empty() {
+                    imports.push(ImportInfo {
+                        source: source_text,
+                        names: Vec::new(),
+                        kind: ImportKind::SideEffect,
+                        line: node.start_position().row + 1,
+                        is_type_only: false,
+                    });
+                }
+            }
+        }
+    }
+
+    walk_gd_preload(root, src, &mut imports);
+    imports
+}
+
+#[cfg(feature = "tree-sitter")]
+fn walk_gd_preload(node: Node, src: &str, imports: &mut Vec<ImportInfo>) {
+    if node.kind() == "call" {
+        if let Some(callee) = find_child_by_kind(node, "identifier") {
+            let name = node_text(callee, src);
+            if name == "preload" || name == "load" {
+                if let Some(args) = find_child_by_kind(node, "arguments") {
+                    if let Some(s) = find_descendant_by_kind(args, "string") {
+                        let source_text = unquote(node_text(s, src));
+                        if !source_text.is_empty() {
+                            imports.push(ImportInfo {
+                                source: source_text,
+                                names: Vec::new(),
+                                kind: ImportKind::Dynamic,
+                                line: node.start_position().row + 1,
+                                is_type_only: false,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_gd_preload(child, src, imports);
     }
 }
 
