@@ -45,10 +45,18 @@ export interface PricingTier {
     href: string;
   };
   /**
-   * What this tier adds, top to bottom. The first entry of a paid tier is the
-   * "everything in <lower tier>" carry-over.
+   * What this tier adds, top to bottom — **only capabilities that ship today**.
+   * The first entry of a paid tier is the "everything in <lower tier>"
+   * carry-over. Anything not yet delivered belongs in [`roadmap`](Self.roadmap),
+   * never here (no-vaporware rule).
    */
   features: string[];
+  /**
+   * Capabilities that are announced but not yet generally available. Rendered
+   * under a distinct "On the roadmap" heading so buyers can tell apart what they
+   * get now from what is coming — we never bill for these as if they shipped.
+   */
+  roadmap?: string[];
 }
 
 export const pricingTiers: PricingTier[] = [
@@ -69,20 +77,26 @@ export const pricingTiers: PricingTier[] = [
   {
     id: 'team',
     name: 'Team',
-    tagline: 'One shared, hosted context for your whole team — and its agents.',
+    tagline: 'One shared, audited context for your whole team — and its agents.',
     priceMonthly: '$19',
     priceYearly: '$190',
     unit: '/month',
-    priceNote: 'billed monthly · or $190/year (save ~17%)',
+    priceNote: 'per workspace · or $190/year (save ~17%) · managed setup (beta)',
     featured: true,
     cta: { label: 'Start with Team', kind: 'checkout', href: '/account/billing/?upgrade=team' },
     features: [
       'Everything in Free, for your whole team',
-      'Up to 25 seats on one shared workspace',
-      '5 GB hosted retrieval index (BM25 + graph + artifacts)',
-      '5 managed connectors (GitHub, GitLab, Jira, Postgres …)',
+      'One shared workspace your team — and its CI agents — query',
+      'Role-based access: viewer · member · admin · owner',
+      'Full audit log of every context access',
+      'Live shared event stream across your agents',
+      'BM25 + graph + artifact retrieval over your code',
+      'Up to 25 seats · managed setup while in beta',
+    ],
+    roadmap: [
+      'Self-serve hosted index with a 5 GB quota & usage dashboard',
+      'Managed connectors (GitHub, GitLab, Jira, Postgres …)',
       'Private extension & persona registry',
-      '90-day audit log retention',
       'Marketplace revenue share for your authors',
     ],
   },
@@ -97,12 +111,14 @@ export const pricingTiers: PricingTier[] = [
       href: `mailto:${SALES_EMAIL}?subject=LeanCTX%20Enterprise`,
     },
     features: [
-      'Everything in Team, without the ceilings',
-      'Unlimited seats, hosted index & connectors',
-      'SSO + SCIM provisioning',
-      '10-year audit log retention',
+      'Everything in Team, for your whole organisation',
       'Self-host the audited team server on your own cloud',
-      'Dedicated support & SLA',
+      'Negotiated scale: seats, retrieval index & connectors',
+      'Dedicated onboarding, priority support & SLA',
+    ],
+    roadmap: [
+      'SSO + SCIM provisioning',
+      '10-year audit log retention & compliance exports',
     ],
   },
 ];
@@ -115,11 +131,15 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What exactly does a paid plan add?',
-    a: 'A shared, hosted context plane: one retrieval index your whole team and your CI agents query, managed connectors to your tools, a private registry, audit retention and SSO/SCIM at the top. It is additive — your local setup keeps working exactly as before.',
+    a: 'A shared, audited context plane: one workspace your whole team and your CI agents query, with role-based access (viewer / member / admin / owner), a full audit log of every access and a live shared event stream. It is additive — your local setup keeps working exactly as before. Managed connectors, a private registry, marketplace revenue share and SSO/SCIM are on the roadmap and labelled as such on each plan.',
+  },
+  {
+    q: 'Is the hosted team server available right now?',
+    a: 'The team server itself is production-ready today and you can self-host it for free (Apache-2.0). Managed hosting — where we run it for you — is in beta: after you start Team we provision your private team server and send you the connection details plus an owner token. One-click self-serve provisioning is rolling out next.',
   },
   {
     q: 'How is Team billed?',
-    a: 'A flat $19/month (or $190/year) for the workspace, including up to 25 seats. You can upgrade, switch cadence or cancel any time from the billing portal — cancellations take effect at the end of the period.',
+    a: 'A flat $19/month (or $190/year) per workspace, including up to 25 seats. You can switch cadence or cancel any time from the billing portal — cancellations take effect at the end of the period.',
   },
   {
     q: 'Can we self-host instead?',

@@ -12,6 +12,11 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 const checkIcon =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
 
+// Roadmap rows use a clock glyph (not a check) so buyers can instantly tell
+// "ships today" from "announced / coming soon".
+const clockIcon =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
+
 const ctaHref = (tier: (typeof pricingTiers)[number]) =>
   tier.cta.href.startsWith('mailto') ? tier.cta.href : lp(tier.cta.href);
 
@@ -28,7 +33,7 @@ const faqJsonLd = JSON.stringify({
 
 <BaseLayout
   title="Pricing — LeanCTX"
-  description="LeanCTX is free forever for local use. Paid Team and Enterprise plans add a shared, hosted context plane — seats, hosted retrieval, connectors, audit and SSO — without ever gating a local feature."
+  description="LeanCTX is free forever for local use. Paid Team and Enterprise plans add a shared, audited context plane — one team workspace, role-based access, a full audit log and a live event stream — without ever gating a local feature."
   breadcrumbs={[
     { name: 'Home', url: lp('/') },
     { name: 'Pricing', url: lp('/pricing/') },
@@ -39,7 +44,7 @@ const faqJsonLd = JSON.stringify({
     label="Pricing"
     title="Start free."
     highlight="Scale when your team does."
-    description="Every local capability is free, forever. Paid plans are purely additive — they give your team and its agents one shared, hosted context plane. Nothing local is ever locked behind a paywall."
+    description="Every local capability is free, forever. Paid plans are purely additive — they give your team and its agents one shared, audited context plane. Nothing local is ever locked behind a paywall."
   />
 
   <section class="section-y pricing-section" data-cadence="monthly">
@@ -95,6 +100,17 @@ const faqJsonLd = JSON.stringify({
                 <li><span class="feat-check" set:html={checkIcon} />{f}</li>
               ))}
             </ul>
+
+            {tier.roadmap && tier.roadmap.length > 0 && (
+              <div class="pricing-roadmap">
+                <p class="roadmap-label">On the roadmap</p>
+                <ul class="roadmap-list">
+                  {tier.roadmap.map((r) => (
+                    <li><span class="feat-clock" set:html={clockIcon} />{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </article>
         ))}
       </div>
@@ -305,6 +321,36 @@ const faqJsonLd = JSON.stringify({
     color: var(--color-accent);
   }
   .feat-check :global(svg) { width: 1rem; height: 1rem; }
+
+  .pricing-roadmap {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--color-border);
+  }
+  .roadmap-label {
+    margin-bottom: 0.6rem;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .roadmap-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .roadmap-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    color: var(--color-muted);
+  }
+  .feat-clock { flex-shrink: 0; margin-top: 0.05rem; color: var(--color-muted); }
+  .feat-clock :global(svg) { width: 1rem; height: 1rem; }
 
   .pricing-localfree {
     display: flex;

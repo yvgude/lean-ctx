@@ -263,6 +263,18 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     border-bottom: 1px solid var(--color-border);
   }
   .acct-entitlements :global(.acct-ent-row dt) { font-size: var(--text-small); color: var(--color-muted); }
+  .acct-entitlements :global(.acct-soon) {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-muted);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    vertical-align: middle;
+  }
   .acct-entitlements :global(.acct-ent-row dd) { margin: 0; font-size: var(--text-small); font-weight: var(--weight-medium); color: var(--color-text-bright); display: inline-flex; align-items: center; gap: 0.35rem; }
   .acct-entitlements :global(.acct-ent-row dd .yes) { color: var(--color-accent); }
   .acct-entitlements :global(.acct-ent-row dd .no) { color: var(--color-muted); }
@@ -364,18 +376,22 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     }
 
     function renderEntitlements(e) {
+      // Third field flags an entitlement that is part of the plan allowance but
+      // is still rolling out (managed/hosted plane). It is shown with a "soon"
+      // badge so the dashboard never implies a capability is live before it is.
       var rows = [
-        ['Seats', num(e.seats)],
-        ['Hosted retrieval index', mb(e.hosted_index_mb)],
-        ['Managed connectors', num(e.managed_connectors)],
-        ['Private registry', bool(e.private_registry)],
-        ['SSO + SCIM', bool(e.sso_scim)],
-        ['Audit log retention', days(e.audit_retention_days)],
-        ['Marketplace revenue share', bool(e.revenue_share)],
+        ['Seats', num(e.seats), false],
+        ['Hosted retrieval index', mb(e.hosted_index_mb), true],
+        ['Managed connectors', num(e.managed_connectors), true],
+        ['Private registry', bool(e.private_registry), true],
+        ['SSO + SCIM', bool(e.sso_scim), true],
+        ['Audit log retention', days(e.audit_retention_days), false],
+        ['Marketplace revenue share', bool(e.revenue_share), true],
       ];
       var dl = $('[data-entitlements]');
       dl.innerHTML = rows.map(function (r) {
-        return '<div class="acct-ent-row"><dt>' + r[0] + '</dt><dd>' + r[1] + '</dd></div>';
+        var soon = r[2] ? ' <span class="acct-soon">soon</span>' : '';
+        return '<div class="acct-ent-row"><dt>' + r[0] + soon + '</dt><dd>' + r[1] + '</dd></div>';
       }).join('');
     }
 
