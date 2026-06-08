@@ -136,7 +136,7 @@ const faq = [
           <div class="sup-banner" data-banner role="status" hidden></div>
           <div class="sup-card-wrap">
             <div class="sup-card-aura" aria-hidden="true"></div>
-            <div class="sup-card" data-cadence="monthly">
+            <div class="sup-card">
               <div class="sup-head">
                 <div class="sup-head-main">
                   <span class="sup-medallion" aria-hidden="true">
@@ -147,12 +147,6 @@ const faq = [
                     <p class="sup-tagline">{supporterOffer.tagline}</p>
                   </div>
                 </div>
-                <div class="sup-cadence" role="group" aria-label="Billing cadence">
-                  <button type="button" class="sup-cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
-                  <button type="button" class="sup-cadence-btn" data-cadence-btn="yearly" aria-pressed="false">
-                    Yearly <span class="sup-save">save 17%</span>
-                  </button>
-                </div>
               </div>
 
               <div class="sup-tiers" role="group" aria-label="Choose your amount">
@@ -161,10 +155,8 @@ const faq = [
                     type="button"
                     class:list={['sup-tier', { 'is-featured': t.featured }]}
                     data-tier={t.id}
-                    data-amt-monthly={t.monthly}
-                    data-amt-yearly={t.yearly}
-                    data-link-monthly={t.links.monthly}
-                    data-link-yearly={t.links.yearly}
+                    data-amt={t.monthly}
+                    data-link={t.links.monthly}
                     aria-pressed={t.id === defaultTier.id ? 'true' : 'false'}
                   >
                     {t.featured && <span class="sup-tier-flag">Popular</span>}
@@ -460,38 +452,6 @@ const faq = [
     font-size: var(--text-body);
     color: var(--color-text-bright);
     font-weight: var(--weight-medium);
-  }
-
-  .sup-cadence {
-    display: inline-flex;
-    gap: 0.2rem;
-    padding: 0.25rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-pill);
-    background: var(--color-bg);
-  }
-  .sup-cadence-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.85rem;
-    border: none;
-    border-radius: var(--radius-pill);
-    background: transparent;
-    color: var(--color-muted);
-    font-family: inherit;
-    font-size: var(--text-small);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .sup-cadence-btn.is-active { background: var(--color-surface-3); color: var(--color-text-bright); }
-  .sup-save {
-    font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-    padding: 0.1rem 0.4rem;
-    border-radius: var(--radius-pill);
   }
 
   .sup-price {
@@ -933,53 +893,32 @@ const faq = [
     var card = document.querySelector('.sup-card');
     if (!card) return;
 
-    // Amount ($5/$10/$25) + cadence (monthly/yearly) selector. Each combination
-    // maps to a distinct Stripe Payment Link (carried on the tier buttons as
-    // data-link-*), so becoming a supporter goes straight to Stripe — no lean-ctx
-    // account required. The server-rendered default (featured tier, monthly) is a
-    // fully valid no-JS state; this only enhances switching.
-    var cadenceBtns = card.querySelectorAll('[data-cadence-btn]');
+    // Amount ($5/$10/$25) selector. Each tier carries its own no-account Stripe
+    // Payment Link (data-link), so becoming a supporter goes straight to Stripe —
+    // no lean-ctx account required. Supporting is a flat monthly contribution with
+    // no discount tiers: people are donating, not buying. The server-rendered
+    // default (featured tier) is a fully valid no-JS state; this only enhances it.
     var tierBtns = card.querySelectorAll('[data-tier]');
     var priceEl = card.querySelector('[data-price]');
-    var unitEl = card.querySelector('[data-unit]');
     var cta = card.querySelector('[data-cta]');
     var ctaAmt = card.querySelector('[data-cta-amt]');
-    var ctaUnit = card.querySelector('[data-cta-unit]');
     var state = {
-      cadence: 'monthly',
       tier: card.querySelector('[data-tier][aria-pressed="true"]') || tierBtns[0],
     };
 
     function render() {
-      var c = state.cadence;
       var t = state.tier;
       if (!t) return;
-      var amt = t.getAttribute('data-amt-' + c);
-      var link = t.getAttribute('data-link-' + c);
+      var amt = t.getAttribute('data-amt');
+      var link = t.getAttribute('data-link');
       tierBtns.forEach(function (b) {
-        var label = b.querySelector('[data-tier-amt]');
-        if (label) label.textContent = b.getAttribute('data-amt-' + c);
         b.setAttribute('aria-pressed', b === t ? 'true' : 'false');
       });
-      cadenceBtns.forEach(function (b) {
-        var on = b.getAttribute('data-cadence-btn') === c;
-        b.classList.toggle('is-active', on);
-        b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
       if (priceEl && amt) priceEl.textContent = amt;
-      if (unitEl) unitEl.textContent = c === 'yearly' ? '/year' : '/month';
       if (ctaAmt && amt) ctaAmt.textContent = amt;
-      if (ctaUnit) ctaUnit.textContent = c === 'yearly' ? '/yr' : '/mo';
       if (cta && link) cta.setAttribute('href', link);
-      card.setAttribute('data-cadence', c);
     }
 
-    cadenceBtns.forEach(function (b) {
-      b.addEventListener('click', function () {
-        state.cadence = b.getAttribute('data-cadence-btn');
-        render();
-      });
-    });
     tierBtns.forEach(function (b) {
       b.addEventListener('click', function () {
         state.tier = b;

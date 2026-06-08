@@ -31,21 +31,9 @@ export const supporterOffer = {
   name: 'Supporter',
   tagline: 'Love lean-ctx? Help fund its development.',
   priceMonthly: '$5',
-  priceYearly: '$50',
   unit: '/month',
   priceNote: 'pick any amount · no account needed · cancel anytime',
   href: '/support/',
-  /**
-   * Direct Stripe Payment Links for the voluntary Supporter subscription. They
-   * let anyone subscribe without creating a lean-ctx account — Stripe collects
-   * the email and handles the recurring charge. Bound to the live recurring
-   * Supporter prices (`STRIPE_PRICE_SUPPORTER_*`); after payment Stripe redirects
-   * back to `/support/?status=success`.
-   */
-  paymentLinks: {
-    monthly: 'https://buy.stripe.com/4gM9AN0x04JcagU2AtcjS02',
-    yearly: 'https://buy.stripe.com/fZueV75RkcbE3Sw5MFcjS03',
-  },
   perks: [
     'Directly fund the open-source Context OS you rely on every day',
     'No account required — subscribe in seconds, straight through Stripe',
@@ -57,24 +45,24 @@ export const supporterOffer = {
 /**
  * Open, voluntary Supporter tiers — pick whatever feels right. They all live on
  * the same Stripe "Supporter" product; larger amounts simply give more (the
- * Local-Free Invariant means none of them unlock a feature). Every tier has a
- * no-account Stripe Payment Link per cadence, and those links also collect the
- * optional supporters-wall fields (display name, message, opt-in). Prices and
+ * Local-Free Invariant means none of them unlock a feature). Supporting is a flat
+ * monthly contribution — there is no annual discount, because people are donating,
+ * not buying. Every tier has a no-account Stripe Payment Link that also collects
+ * the optional supporters-wall fields (display name, message, opt-in). Prices and
  * links are provisioned idempotently by `stripe-setup.py --supporter-links`.
  */
 export interface SupporterTier {
   id: 'base' | 'plus' | 'pro';
   /** Short recognition label shown under the amount. */
   label: string;
-  /** Display price per cadence (whole USD). */
+  /** Display price (whole USD). */
   monthly: string;
-  yearly: string;
   /** Monthly amount in whole USD — drives selector ordering. */
   amount: number;
   /** Highlighted as the suggested amount. */
   featured?: boolean;
-  /** Direct, account-free Stripe Payment Links (one per cadence). */
-  links: { monthly: string; yearly: string };
+  /** Direct, account-free monthly Stripe Payment Link. */
+  links: { monthly: string };
 }
 
 export const supporterTiers: SupporterTier[] = [
@@ -82,34 +70,28 @@ export const supporterTiers: SupporterTier[] = [
     id: 'base',
     label: 'Supporter',
     monthly: '$5',
-    yearly: '$50',
     amount: 5,
     links: {
       monthly: 'https://buy.stripe.com/4gM9AN0x04JcagU2AtcjS02',
-      yearly: 'https://buy.stripe.com/fZueV75RkcbE3Sw5MFcjS03',
     },
   },
   {
     id: 'plus',
     label: 'Backer',
     monthly: '$10',
-    yearly: '$100',
     amount: 10,
     featured: true,
     links: {
       monthly: 'https://buy.stripe.com/cNi28lgvYdfI2Os4IBcjS04',
-      yearly: 'https://buy.stripe.com/5kQ00d4Ng2B4exaejbcjS05',
     },
   },
   {
     id: 'pro',
     label: 'Sponsor',
     monthly: '$25',
-    yearly: '$250',
     amount: 25,
     links: {
       monthly: 'https://buy.stripe.com/eVq28l4Ng5NgbkYcb3cjS06',
-      yearly: 'https://buy.stripe.com/28E00d7Zs0sWgFi4IBcjS07',
     },
   },
 ];
