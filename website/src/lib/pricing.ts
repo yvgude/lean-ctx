@@ -190,10 +190,10 @@ export const pricingTiers: PricingTier[] = [
       'BM25 + graph + artifact retrieval over your code',
       '1–25 seats, billed per seat — add or remove anytime (prorated)',
       'Your private team server, provisioned the moment you check out',
+      'Hosted retrieval index — 5 GB quota with a live usage dashboard',
+      'Managed connectors — scheduled GitHub & GitLab sync into your index',
     ],
     roadmap: [
-      'Self-serve hosted index with a 5 GB quota & usage dashboard',
-      'Managed connectors (GitHub, GitLab, Jira, Postgres …)',
       'Private extension & persona registry',
       'Marketplace revenue share for your authors',
     ],
@@ -212,7 +212,7 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What exactly does a paid plan add?',
-    a: 'A shared, audited context plane: one workspace your whole team and your CI agents query, with role-based access (viewer / member / admin / owner), a full audit log of every access and a live shared event stream. It is additive — your local setup keeps working exactly as before. Managed connectors, a private registry, marketplace revenue share and SSO/SCIM are on the roadmap and labelled as such on each plan.',
+    a: 'A shared, audited context plane: one workspace your whole team and your CI agents query, with role-based access (viewer / member / admin / owner), a full audit log of every access and a live shared event stream — plus a hosted retrieval index with a usage dashboard and managed GitHub/GitLab connectors. It is additive — your local setup keeps working exactly as before. A private registry, marketplace revenue share and SSO/SCIM are on the roadmap and labelled as such on each plan.',
   },
   {
     q: 'Is the hosted team server available right now?',
@@ -220,7 +220,7 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   },
   {
     q: 'How is Team billed?',
-    a: 'Per seat — $18/seat/month (or $180/seat/year, ~17% off). You pick how many seats you need (1–25) at checkout; add or remove seats anytime from the billing portal and Stripe automatically prorates the difference. Switch cadence or cancel any time — cancellations take effect at the end of the period.',
+    a: 'Per seat — $18/seat/month (or $180/seat/year, ~17% off). You pick how many seats you need (1–25) at checkout; afterwards add or remove seats anytime — straight from your team dashboard or the billing portal — and Stripe automatically prorates the difference. Adding a member when every seat is taken simply buys one more seat. Switch cadence or cancel any time — cancellations take effect at the end of the period.',
   },
   {
     q: 'Can we self-host instead?',

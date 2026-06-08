@@ -1,0 +1,432 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title="Personal Cloud — LeanCTX"
+  description="View and manage your hosted Personal Cloud: your own learned context, synced across every device."
+  noindex={true}
+  hideAscii={true}
+>
+  <section class="acct-shell">
+    <div class="content-grid-narrow">
+      <header class="acct-head">
+        <div>
+          <p class="acct-eyebrow">Account · Pro</p>
+          <h1 class="acct-title font-display">Personal Cloud</h1>
+        </div>
+        <div class="acct-id" data-id hidden>
+          <span class="acct-email" data-email></span>
+          <button type="button" class="acct-signout" data-signout>Sign out</button>
+        </div>
+      </header>
+
+      <nav class="acct-subnav">
+        <a href={lp('/account/billing/')}>Plan &amp; billing</a>
+        <a href={lp('/account/cloud/')} aria-current="page">Personal Cloud</a>
+        <a href={lp('/account/team/')}>Team</a>
+      </nav>
+
+      <div class="acct-banner" data-banner role="status" hidden></div>
+
+      <div class="acct-loading" data-loading>
+        <span class="acct-spinner" aria-hidden="true"></span>
+        <span>Loading your Personal Cloud…</span>
+      </div>
+
+      <!-- Gated state: Free / Supporter (no cloud_sync entitlement) -->
+      <div class="acct-main" data-locked hidden>
+        <div class="acct-card cloud-cta">
+          <span class="cloud-badge-pill">Pro</span>
+          <h2 class="acct-section-title">Your context, on every machine</h2>
+          <p class="cloud-cta-lead">
+            Pro gives you a hosted <strong>Personal Cloud</strong> — your own learned context,
+            synced and backed up across every device you work on. Nothing local ever changes; this
+            plane lives entirely server-side.
+          </p>
+          <ul class="cloud-cta-list">
+            <li>Knowledge &amp; memory synced across every machine</li>
+            <li>Learned shell patterns, CEP score history &amp; gotchas, synced</li>
+            <li>Buddy state and feedback thresholds follow you everywhere</li>
+            <li>Cross-device backup &amp; restore with one command</li>
+          </ul>
+          <div class="cloud-cta-actions">
+            <div class="acct-cadence" role="group" aria-label="Billing cadence">
+              <button type="button" class="acct-cadence-btn is-active" data-cadence="monthly" aria-pressed="true">Monthly</button>
+              <button type="button" class="acct-cadence-btn" data-cadence="yearly" aria-pressed="false">Yearly · save ~17%</button>
+            </div>
+            <button type="button" class="acct-btn btn-primary" data-upgrade-btn="pro">Upgrade to Pro · <span data-price="pro">$9/mo</span></button>
+            <a class="acct-link" href={lp('/pricing/')}>Compare plans →</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active state: Pro / Team / Enterprise (cloud_sync granted) -->
+      <div class="acct-main" data-dashboard hidden>
+        <div class="acct-card cloud-hero">
+          <div class="cloud-hero-row">
+            <div>
+              <span class="acct-plan-label">Personal Cloud</span>
+              <div class="cloud-hero-status">
+                <span class="cloud-dot" data-sync-dot></span>
+                <span class="cloud-hero-sync" data-last-synced>Never synced yet</span>
+              </div>
+            </div>
+            <div class="acct-plan-actions">
+              <span class="plan-badge" data-plan-badge data-paid="true">Pro</span>
+              <button type="button" class="acct-btn acct-btn-secondary" data-portal>Manage billing</button>
+            </div>
+          </div>
+          <p class="cloud-supporter" data-supporter hidden>
+            <span class="cloud-badge-pill">♥ Supporter</span>
+            Thank you for keeping LeanCTX independent.
+          </p>
+        </div>
+
+        <div class="acct-card">
+          <h2 class="acct-section-title">What's synced</h2>
+          <div class="cloud-grid" data-buckets></div>
+          <p class="acct-foot-note">
+            Counts reflect what this account has synced to your Personal Cloud. The synced content
+            itself never leaves your account — this dashboard only shows its footprint.
+          </p>
+        </div>
+
+        <div class="acct-card cloud-buddy" data-buddy-card hidden>
+          <h2 class="acct-section-title">Buddy</h2>
+          <div class="cloud-buddy-row">
+            <span class="cloud-buddy-emoji" data-buddy-emoji>🐢</span>
+            <div class="cloud-buddy-meta">
+              <span class="cloud-buddy-name" data-buddy-name>Buddy</span>
+              <span class="cloud-buddy-sub" data-buddy-sub></span>
+            </div>
+            <div class="cloud-buddy-stats" data-buddy-stats></div>
+          </div>
+        </div>
+
+        <div class="acct-card">
+          <h2 class="acct-section-title">Connect a machine</h2>
+          <p class="cloud-prose">
+            Sign in once per machine, then sync. Your knowledge, shell patterns, CEP history,
+            gotchas, buddy and feedback thresholds follow you everywhere.
+          </p>
+          <div class="cloud-snippet">
+            <div class="cloud-snippet-bar"><span>Terminal</span><button type="button" class="team-copy" data-copy-cli>Copy</button></div>
+            <pre class="cloud-pre" data-cli-snippet></pre>
+          </div>
+          <p class="acct-foot-note">
+            <code>lean-ctx sync</code> pushes this machine's context up; <code>lean-ctx cloud pull</code>
+            restores it onto any other machine.
+          </p>
+        </div>
+
+        <p class="acct-help">
+          Questions? <a href="mailto:hello@leanctx.com">hello@leanctx.com</a>
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .acct-shell { padding: clamp(2rem, 1.5rem + 3vw, 5rem) 0 clamp(3rem, 2rem + 3vw, 6rem); min-height: calc(100dvh - 16rem); }
+  .acct-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: clamp(1.2rem, 1rem + 1vw, 1.8rem); }
+  .acct-eyebrow { font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-accent); }
+  .acct-title { margin-top: 0.35rem; font-size: var(--text-h1); font-weight: var(--weight-semibold); color: var(--color-text-bright); letter-spacing: var(--tracking-tight); }
+  .acct-id { display: flex; align-items: center; gap: 0.75rem; }
+  .acct-email { font-size: var(--text-small); color: var(--color-muted); }
+  .acct-signout { padding: 0.4rem 0.85rem; border: 1px solid var(--color-border-light); border-radius: var(--card-radius); background: transparent; color: var(--color-text); font-family: inherit; font-size: var(--text-small); cursor: pointer; transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out); }
+  .acct-signout:hover { color: var(--color-text-bright); border-color: var(--color-muted); }
+
+  .acct-subnav { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); }
+  .acct-subnav a { padding: 0.5rem 0.9rem; font-size: var(--text-small); color: var(--color-muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .acct-subnav a:hover { color: var(--color-text-bright); }
+  .acct-subnav a[aria-current='page'] { color: var(--color-accent-bright); border-bottom-color: var(--color-accent); }
+
+  .acct-banner { margin-bottom: 1.5rem; padding: 0.85rem 1.1rem; border-radius: var(--card-radius); font-size: var(--text-small); line-height: var(--leading-snug); border: 1px solid transparent; }
+  .acct-banner[data-kind='success'] { color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 10%, transparent); border-color: color-mix(in srgb, var(--color-accent) 35%, transparent); }
+  .acct-banner[data-kind='error'] { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); border-color: color-mix(in srgb, var(--color-danger) 35%, transparent); }
+  .acct-banner[data-kind='info'] { color: var(--color-text); background: var(--color-surface-2); border-color: var(--color-border); }
+
+  .acct-loading { display: flex; align-items: center; gap: 0.75rem; padding: 3rem 0; color: var(--color-muted); font-size: var(--text-small); }
+  .acct-spinner { width: 1.1rem; height: 1.1rem; border: 2px solid var(--color-border-light); border-top-color: var(--color-accent); border-radius: 50%; animation: acct-spin 0.7s linear infinite; }
+  @keyframes acct-spin { to { transform: rotate(360deg); } }
+
+  .acct-main { display: flex; flex-direction: column; gap: 1.25rem; }
+  .acct-card { padding: clamp(1.25rem, 1rem + 1vw, 2rem); border: 1px solid var(--color-border); border-radius: var(--card-radius-lg); background: var(--color-surface); }
+  .acct-section-title { font-size: var(--text-h4); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 1.1rem; }
+  .acct-plan-label { font-size: var(--text-caption); text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted); }
+  .acct-plan-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+  .plan-badge { display: inline-flex; align-items: center; padding: 0.3rem 0.8rem; font-size: var(--text-small); font-weight: var(--weight-semibold); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent-bright); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent); text-transform: capitalize; }
+
+  .acct-shell :global(.acct-btn) { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.65rem 1.25rem; font-size: var(--text-small); font-weight: var(--weight-semibold); border-radius: var(--card-radius); border: none; cursor: pointer; text-decoration: none; }
+  .acct-shell :global(.acct-btn[disabled]) { opacity: 0.6; cursor: progress; }
+  .acct-shell :global(.acct-btn-secondary) { background: transparent; color: var(--color-text); border: 1px solid var(--color-border-light); }
+  .acct-shell :global(.acct-btn-secondary:hover) { color: var(--color-text-bright); border-color: var(--color-muted); }
+  .acct-link { font-size: var(--text-small); color: var(--color-accent); text-decoration: none; }
+  .acct-link:hover { text-decoration: underline; }
+
+  /* Gated CTA */
+  .cloud-cta { text-align: left; }
+  .cloud-badge-pill { display: inline-flex; align-items: center; padding: 0.2rem 0.7rem; margin-bottom: 0.8rem; font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-label); text-transform: uppercase; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent-bright); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+  .cloud-cta-lead { font-size: var(--text-small); color: var(--color-text); line-height: var(--leading-relaxed); max-width: 60ch; }
+  .cloud-cta-list { margin: 1rem 0 1.5rem; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+  .cloud-cta-list li { position: relative; padding-left: 1.5rem; font-size: var(--text-small); color: var(--color-text); }
+  .cloud-cta-list li::before { content: '✓'; position: absolute; left: 0; color: var(--color-accent); font-weight: var(--weight-semibold); }
+  .cloud-cta-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .acct-cadence { display: inline-flex; gap: 0.2rem; padding: 0.25rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-bg); }
+  .acct-cadence-btn { padding: 0.4rem 0.85rem; border: none; border-radius: var(--radius-pill); background: transparent; color: var(--color-muted); font-family: inherit; font-size: var(--text-small); cursor: pointer; white-space: nowrap; }
+  .acct-cadence-btn.is-active { background: var(--color-surface-3); color: var(--color-text-bright); }
+
+  /* Hero */
+  .cloud-hero-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .cloud-hero-status { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+  .cloud-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--color-muted); flex-shrink: 0; }
+  .cloud-dot[data-on='true'] { background: var(--color-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent); }
+  .cloud-hero-sync { font-size: var(--text-body); font-weight: var(--weight-semibold); color: var(--color-text-bright); }
+  .cloud-supporter { margin: 1rem 0 0; display: flex; align-items: center; gap: 0.6rem; font-size: var(--text-small); color: var(--color-muted); }
+  .cloud-supporter .cloud-badge-pill { margin-bottom: 0; }
+
+  /* Bucket grid */
+  .cloud-grid { display: grid; grid-template-columns: 1fr; gap: 0.9rem; }
+  @media (min-width: 520px) { .cloud-grid { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 820px) { .cloud-grid { grid-template-columns: 1fr 1fr 1fr; } }
+  .cloud-grid :global(.cloud-bucket) { padding: 1rem; border: 1px solid var(--color-border); border-radius: var(--card-radius); background: var(--color-bg); }
+  .cloud-grid :global(.cloud-bucket-top) { display: flex; align-items: baseline; gap: 0.4rem; }
+  .cloud-grid :global(.cloud-bucket-count) { font-size: var(--text-h3); font-weight: var(--weight-semibold); color: var(--color-text-bright); font-variant-numeric: tabular-nums; }
+  .cloud-grid :global(.cloud-bucket-unit) { font-size: var(--text-caption); color: var(--color-muted); }
+  .cloud-grid :global(.cloud-bucket-label) { display: block; margin-top: 0.25rem; font-size: var(--text-small); color: var(--color-text); }
+  .cloud-grid :global(.cloud-bucket-ago) { display: block; margin-top: 0.35rem; font-size: var(--text-caption); color: var(--color-muted); }
+  .cloud-grid :global(.cloud-bucket[data-empty='true']) { opacity: 0.6; }
+
+  /* Buddy */
+  .cloud-buddy-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .cloud-buddy-emoji { font-size: 2.5rem; line-height: 1; }
+  .cloud-buddy-meta { display: flex; flex-direction: column; }
+  .cloud-buddy-name { font-size: var(--text-body); font-weight: var(--weight-semibold); color: var(--color-text-bright); }
+  .cloud-buddy-sub { font-size: var(--text-caption); color: var(--color-muted); }
+  .cloud-buddy-stats { display: flex; gap: 1.25rem; margin-left: auto; flex-wrap: wrap; }
+  .cloud-buddy-stats :global(.cloud-buddy-stat) { display: flex; flex-direction: column; }
+  .cloud-buddy-stats :global(.cloud-buddy-stat b) { font-size: var(--text-body); color: var(--color-text-bright); font-variant-numeric: tabular-nums; }
+  .cloud-buddy-stats :global(.cloud-buddy-stat span) { font-size: var(--text-caption); color: var(--color-muted); }
+
+  /* Snippet */
+  .cloud-prose { font-size: var(--text-small); color: var(--color-text); line-height: var(--leading-relaxed); margin-bottom: 0.9rem; }
+  .cloud-snippet { border: 1px solid var(--color-border); border-radius: var(--card-radius); overflow: hidden; background: var(--color-bg); }
+  .cloud-snippet-bar { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.7rem; font-size: var(--text-caption); color: var(--color-muted); background: var(--color-surface-2); border-bottom: 1px solid var(--color-border); }
+  .acct-shell :global(.team-copy) { background: transparent; border: 1px solid var(--color-border); color: var(--color-text); border-radius: var(--radius-sm, 6px); padding: 0.15rem 0.6rem; font-size: var(--text-caption); cursor: pointer; }
+  .acct-shell :global(.team-copy:hover) { color: var(--color-text-bright); border-color: var(--color-accent); }
+  .cloud-pre { margin: 0; padding: 0.85rem 0.9rem; font-family: var(--font-mono, monospace); font-size: var(--text-caption); line-height: var(--leading-relaxed); color: var(--color-text); overflow-x: auto; white-space: pre; }
+
+  .acct-foot-note, .acct-help { margin-top: 1.1rem; font-size: var(--text-caption); line-height: var(--leading-relaxed); color: var(--color-muted); }
+  .acct-foot-note code { font-family: var(--font-mono, monospace); color: var(--color-text); }
+  .acct-help { margin-top: 0; text-align: center; }
+  .acct-foot-note a, .acct-help a { color: var(--color-accent); text-decoration: none; }
+  .acct-foot-note a:hover, .acct-help a:hover { text-decoration: underline; }
+</style>
+
+<script is:inline>
+  (function () {
+    var API = 'https://api.leanctx.com';
+    var TOKEN_KEY = 'leanctx-api-token';
+    var EMAIL_KEY = 'leanctx-account-email';
+
+    function $(s) { return document.querySelector(s); }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (_) { return null; } }
+    function clearSession() { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); } catch (_) {} }
+
+    var params = new URLSearchParams(window.location.search);
+    var here = window.location.pathname + window.location.search;
+    var banner = $('[data-banner]');
+    function showBanner(kind, msg) { if (!banner) return; banner.textContent = msg; banner.setAttribute('data-kind', kind); banner.hidden = false; }
+    function gotoLogin() { window.location.replace('/login/?next=' + encodeURIComponent(here)); }
+
+    var token = getToken();
+    if (!token) { gotoLogin(); return; }
+    function authHeaders() { return { Authorization: 'Bearer ' + token, Accept: 'application/json' }; }
+
+    async function getJson(path) {
+      var res = await fetch(API + path, { headers: authHeaders() });
+      if (res.status === 401) { clearSession(); gotoLogin(); throw new Error('unauthorized'); }
+      var text = await res.text();
+      var data; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+      return { ok: res.ok, status: res.status, data: data };
+    }
+    async function postJson(path, body) {
+      var res = await fetch(API + path, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()), body: JSON.stringify(body || {}) });
+      if (res.status === 401) { clearSession(); gotoLogin(); throw new Error('unauthorized'); }
+      var text = await res.text();
+      var data; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { message: text }; }
+      return { ok: res.ok, status: res.status, data: data };
+    }
+
+    function ago(iso) {
+      if (!iso) return 'never';
+      var then = new Date(iso).getTime();
+      if (isNaN(then)) return 'never';
+      var s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+      if (s < 45) return 'just now';
+      if (s < 90) return 'a minute ago';
+      var m = Math.floor(s / 60);
+      if (m < 60) return m + ' min ago';
+      var h = Math.floor(m / 60);
+      if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+      var d = Math.floor(h / 24);
+      if (d < 30) return d + (d === 1 ? ' day ago' : ' days ago');
+      return 'on ' + new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    var BUCKETS = [
+      ['knowledge', 'Knowledge & memory', 'facts'],
+      ['commands', 'Learned shell patterns', 'patterns'],
+      ['cep', 'CEP score history', 'snapshots'],
+      ['gain', 'GAIN score history', 'snapshots'],
+      ['gotchas', 'Gotchas', 'fixes'],
+      ['feedback', 'Feedback thresholds', 'languages'],
+    ];
+
+    var SPECIES_EMOJI = { turtle: '🐢', cat: '🐱', dog: '🐶', fox: '🦊', owl: '🦉', dragon: '🐉', robot: '🤖', penguin: '🐧' };
+
+    function cliSnippet(email) {
+      var who = email || 'you@example.com';
+      return '# 1 · sign in on this machine\n'
+        + 'lean-ctx login ' + who + '\n\n'
+        + "# 2 · push this machine's learned context to your Personal Cloud\n"
+        + 'lean-ctx sync\n\n'
+        + '# 3 · on any other machine, restore everything\n'
+        + 'lean-ctx cloud pull';
+    }
+
+    function copyText(text, btn) {
+      try {
+        navigator.clipboard.writeText(text);
+        if (btn) { var p = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = p; }, 1400); }
+      } catch (_) {}
+    }
+
+    function renderBuckets(buckets) {
+      var grid = $('[data-buckets]');
+      grid.innerHTML = BUCKETS.map(function (b) {
+        var d = (buckets && buckets[b[0]]) || { count: 0, last_synced_at: null };
+        var empty = !d.count;
+        return '<div class="cloud-bucket" data-empty="' + empty + '">'
+          + '<div class="cloud-bucket-top"><span class="cloud-bucket-count">' + (d.count || 0) + '</span>'
+          + '<span class="cloud-bucket-unit">' + esc(b[2]) + '</span></div>'
+          + '<span class="cloud-bucket-label">' + esc(b[1]) + '</span>'
+          + '<span class="cloud-bucket-ago">' + (d.count ? 'synced ' + esc(ago(d.last_synced_at)) : 'nothing synced yet') + '</span>'
+          + '</div>';
+      }).join('');
+    }
+
+    function renderBuddy(buddy) {
+      var card = $('[data-buddy-card]');
+      if (!buddy || !buddy.present) { card.hidden = true; return; }
+      card.hidden = false;
+      var species = (buddy.species || '').toLowerCase();
+      $('[data-buddy-emoji]').textContent = SPECIES_EMOJI[species] || '🐢';
+      $('[data-buddy-name]').textContent = buddy.name || 'Buddy';
+      var sub = [buddy.species, buddy.rarity, buddy.mood].filter(Boolean).join(' · ');
+      $('[data-buddy-sub]').textContent = sub + (buddy.last_synced_at ? '  ·  synced ' + ago(buddy.last_synced_at) : '');
+      $('[data-buddy-stats]').innerHTML = ''
+        + '<div class="cloud-buddy-stat"><b>' + (buddy.level || 1) + '</b><span>level</span></div>'
+        + '<div class="cloud-buddy-stat"><b>' + (buddy.xp || 0) + '</b><span>xp</span></div>'
+        + '<div class="cloud-buddy-stat"><b>' + (buddy.streak || 0) + '</b><span>streak</span></div>';
+    }
+
+    var cadence = 'monthly';
+    var PRICES = { pro: { monthly: '$9/mo', yearly: '$90/yr' } };
+    function updatePrices() {
+      document.querySelectorAll('[data-price]').forEach(function (el) {
+        var p = el.getAttribute('data-price');
+        if (PRICES[p]) el.textContent = PRICES[p][cadence];
+      });
+    }
+    function wireCadence() {
+      var btns = document.querySelectorAll('[data-cadence]');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          cadence = b.getAttribute('data-cadence');
+          btns.forEach(function (x) { var on = x === b; x.classList.toggle('is-active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+          updatePrices();
+        });
+      });
+    }
+    async function startCheckout(plan, btn) {
+      var label = btn ? btn.innerHTML : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Starting secure checkout…'; }
+      try {
+        var r = await postJson('/api/account/checkout', { plan: plan, interval: cadence });
+        if (r.ok && r.data.url) { window.location.assign(r.data.url); return; }
+        if (r.status === 503) showBanner('info', 'Billing is being switched on — please try again shortly.');
+        else showBanner('error', (r.data && r.data.message) || 'Could not start checkout. Please try again.');
+      } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach billing. Please try again.'); }
+      if (btn) { btn.disabled = false; btn.innerHTML = label; }
+    }
+    async function openPortal(btn) {
+      if (btn) { btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Opening…'; }
+      try {
+        var r = await postJson('/api/account/portal', {});
+        if (r.ok && r.data.url) { window.location.assign(r.data.url); return; }
+        showBanner('error', (r.data && r.data.message) || 'Could not open the billing portal.');
+      } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach billing. Please try again.'); }
+      if (btn) { btn.disabled = false; btn.textContent = prev; }
+    }
+
+    var signout = $('[data-signout]');
+    if (signout) signout.addEventListener('click', function () { clearSession(); window.location.assign('/login/'); });
+    wireCadence();
+    document.querySelectorAll('[data-upgrade-btn]').forEach(function (b) { b.addEventListener('click', function () { startCheckout(b.getAttribute('data-upgrade-btn'), b); }); });
+    var status = params.get('status');
+    if (status === 'success') showBanner('success', 'Welcome to Pro — your Personal Cloud is now active.');
+    else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no changes were made.');
+
+    (async function init() {
+      try {
+        var me = await getJson('/api/auth/me');
+        var email = (me.data && me.data.email) || (function () { try { return localStorage.getItem(EMAIL_KEY); } catch (_) { return ''; } })();
+        if (email) $('[data-email]').textContent = email;
+        $('[data-id]').hidden = false;
+
+        var r = await getJson('/api/account/cloud');
+        var d = r.data || {};
+        $('[data-loading]').hidden = true;
+
+        if (!d.cloud_sync) {
+          updatePrices();
+          $('[data-locked]').hidden = false;
+          return;
+        }
+
+        // Active Personal Cloud dashboard.
+        var dot = $('[data-sync-dot]');
+        if (d.last_synced_at) { dot.setAttribute('data-on', 'true'); $('[data-last-synced]').textContent = 'Last synced ' + ago(d.last_synced_at); }
+        else { $('[data-last-synced]').textContent = 'No machine has synced yet — connect one below'; }
+
+        var badge = $('[data-plan-badge]');
+        if (badge) badge.textContent = d.plan || 'pro';
+        // Every cloud_sync plan (Pro/Team/Enterprise) carries supporter recognition.
+        var sup = $('[data-supporter]'); if (sup) sup.hidden = false;
+
+        renderBuckets(d.buckets);
+        renderBuddy(d.buddy);
+        $('[data-cli-snippet]').textContent = cliSnippet(email);
+
+        var portal = $('[data-portal]');
+        if (portal) portal.addEventListener('click', function (e) { openPortal(e.currentTarget); });
+        var copyCli = $('[data-copy-cli]');
+        if (copyCli) copyCli.addEventListener('click', function (e) { copyText(cliSnippet(email), e.currentTarget); });
+
+        $('[data-dashboard]').hidden = false;
+      } catch (err) {
+        if (err && err.message === 'unauthorized') return;
+        $('[data-loading]').hidden = true;
+        showBanner('error', 'Could not load your Personal Cloud. Please refresh or sign in again.');
+      }
+    })();
+  })();
+</script>

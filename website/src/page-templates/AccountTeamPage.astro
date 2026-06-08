@@ -27,6 +27,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         </div>
       </header>
 
+      <nav class="team-subnav">
+        <a href={lp('/account/billing/')}>Plan &amp; billing</a>
+        <a href={lp('/account/cloud/')}>Personal Cloud</a>
+        <a href={lp('/account/team/')} aria-current="page">Team</a>
+      </nav>
+
       <div class="team-banner" data-banner role="status" hidden></div>
 
       <div class="team-loading" data-loading>
@@ -310,6 +316,29 @@ const lp = (path: string) => getLocalizedPath(path, locale);
             <span class="team-seats" data-seats-2></span>
           </div>
 
+          <!-- Dynamic per-seat billing: grow/shrink the team and the price scales
+               with it (prorated via Stripe). Shown only for live per-seat plans. -->
+          <div class="team-seatbar" data-seatbar hidden>
+            <div class="team-seatbar-main">
+              <div class="team-seatbar-info">
+                <span class="team-seatbar-used" data-seat-used></span>
+                <span class="team-seatbar-price" data-seat-price></span>
+              </div>
+              <div class="team-stepper" role="group" aria-label="Seat count">
+                <button type="button" class="team-step" data-seat-dec aria-label="Remove a seat">−</button>
+                <span class="team-step-val" data-seat-count aria-live="polite">—</span>
+                <button type="button" class="team-step" data-seat-inc aria-label="Add a seat">+</button>
+              </div>
+            </div>
+            <p class="team-seatbar-note" data-seat-note>
+              Add or remove seats anytime — changes are prorated on your next invoice.
+            </p>
+          </div>
+          <div class="team-seatbar-portal" data-seatbar-portal hidden>
+            <span class="team-prose-sm">Seats for this plan are managed in the Stripe billing portal.</span>
+            <a class="team-btn team-btn-ghost" href="/account/billing/">Manage in billing</a>
+          </div>
+
           <!-- Token reveal: shown exactly once, right after issuing -->
           <div class="team-reveal" data-reveal hidden>
             <div class="team-reveal-head">
@@ -474,6 +503,32 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   .team-details summary { font-size: var(--text-small); color: var(--color-accent); cursor: pointer; margin-bottom: 0.6rem; }
 
   .team-members-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  .team-seatbar {
+    margin: 0.4rem 0 1.1rem; padding: 0.9rem 1rem; border-radius: var(--card-radius);
+    background: var(--color-surface-2); border: 1px solid var(--color-border);
+  }
+  .team-seatbar-main { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .team-seatbar-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+  .team-seatbar-used { font-size: var(--text-small); color: var(--color-text-bright); font-weight: var(--weight-semibold); }
+  .team-seatbar-price { font-size: var(--text-caption); color: var(--color-muted); }
+  .team-seatbar-note { margin: 0.6rem 0 0; font-size: var(--text-caption); color: var(--color-muted); }
+  .team-stepper { display: inline-flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
+  .team-step {
+    width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; line-height: 1; border-radius: var(--radius-sm, 8px); cursor: pointer;
+    background: var(--color-bg); color: var(--color-text-bright);
+    border: 1px solid var(--color-border); transition: border-color 0.15s, background 0.15s;
+  }
+  .team-step:hover:not(:disabled) { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+  .team-step:disabled { opacity: 0.4; cursor: not-allowed; }
+  .team-step-val { min-width: 2.4rem; text-align: center; font-size: var(--text-body); font-weight: var(--weight-semibold); color: var(--color-text-bright); font-variant-numeric: tabular-nums; }
+  .team-seatbar-portal { margin: 0.4rem 0 1.1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  .team-subnav { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); }
+  .team-subnav a { padding: 0.5rem 0.9rem; font-size: var(--text-small); color: var(--color-muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .team-subnav a:hover { color: var(--color-text-bright); }
+  .team-subnav a[aria-current='page'] { color: var(--color-accent-bright); border-bottom-color: var(--color-accent); }
 
   .team-reveal {
     margin: 0.4rem 0 1.1rem; padding: 0.9rem 1rem; border-radius: var(--card-radius);
@@ -789,10 +844,70 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
       var atLimit = used >= seats;
       var addBtn = $('[data-add-btn]');
-      if (addBtn) { addBtn.disabled = atLimit; addBtn.textContent = atLimit ? 'Seat limit reached' : 'Add member'; }
+      if (addBtn) {
+        if (current.seatPricing) {
+          // Dynamic per-seat: adding when full auto-buys one more seat, so the
+          // button only ever locks at the plan's hard tier ceiling.
+          var capped = used >= current.seatsMax;
+          addBtn.disabled = capped;
+          addBtn.textContent = capped ? 'Tier limit reached (' + current.seatsMax + ')'
+            : (atLimit ? 'Add member · +1 seat' : 'Add member');
+        } else {
+          addBtn.disabled = atLimit;
+          addBtn.textContent = atLimit ? 'Seat limit reached' : 'Add member';
+        }
+      }
     }
 
-    var current = { seats: 0, members: [] };
+    function fmtUsd(cents) {
+      if (cents == null) return '';
+      return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    // Render the dynamic seat controls. For a live per-seat plan this shows the
+    // stepper + live per-seat / total price; otherwise it points at the portal.
+    function renderSeats() {
+      var bar = $('[data-seatbar]'); var portal = $('[data-seatbar-portal]');
+      if (!bar || !portal) return;
+      var used = current.members.length;
+      if (current.seatPricing) {
+        portal.hidden = true; bar.hidden = false;
+        $('[data-seat-count]').textContent = current.seats;
+        $('[data-seat-used]').textContent = used + ' of ' + current.seats + ' seat' + (current.seats === 1 ? '' : 's') + ' in use';
+        var price = '';
+        if (current.pricePerSeatCents != null) {
+          var iv = current.interval === 'year' ? 'yr' : 'mo';
+          price = fmtUsd(current.pricePerSeatCents) + '/seat · ' + fmtUsd(current.pricePerSeatCents * current.seats) + '/' + iv + ' total';
+        }
+        $('[data-seat-price]').textContent = price;
+        var dec = $('[data-seat-dec]'); var inc = $('[data-seat-inc]');
+        if (dec) dec.disabled = current.seats <= Math.max(used, 1);
+        if (inc) inc.disabled = current.seats >= current.seatsMax;
+      } else {
+        bar.hidden = true; portal.hidden = false;
+      }
+    }
+
+    async function setSeats(next) {
+      clearBanner();
+      var dec = $('[data-seat-dec]'); var inc = $('[data-seat-inc]');
+      if (dec) dec.disabled = true; if (inc) inc.disabled = true;
+      try {
+        var r = await req('POST', '/api/account/team/seats', { seats: next });
+        if (r.ok) {
+          await load(true);
+          showBanner('success', 'Seats updated to ' + ((r.data && r.data.seats) || next) + ' — prorated on your next invoice.');
+        } else {
+          showBanner('error', (r.data && (r.data.message || r.data.error)) || 'Could not update seats.');
+          renderSeats();
+        }
+      } catch (err) {
+        if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.');
+        renderSeats();
+      }
+    }
+
+    var current = { seats: 0, members: [], seatsUsed: 0, seatsMax: 25, pricePerSeatCents: null, interval: null, seatPricing: false };
 
     async function load(silent) {
       if (!silent) { $('[data-loading]').hidden = false; }
@@ -812,6 +927,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         serverUrl = d.server_url || '';
         current.seats = d.seats || 0;
         current.members = d.members || [];
+        current.seatsMax = d.seats_max || 25;
+        current.pricePerSeatCents = (typeof d.price_per_seat_cents === 'number') ? d.price_per_seat_cents : null;
+        current.interval = d.interval || null;
+        current.seatPricing = !!d.seat_pricing;
 
         $('[data-server-url]').textContent = serverUrl;
         $('[data-status-badge]').textContent = d.status || 'active';
@@ -819,6 +938,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         $('[data-curl-snippet]').textContent = curlSnippet(serverUrl);
         $('[data-cli-snippet]').textContent = localConfigSnippet(serverUrl);
         renderMembers(current.members, current.seats);
+        renderSeats();
         showState('live');
         window.__leanctxTeamLive = true;
         window.dispatchEvent(new CustomEvent('leanctx:team-live'));
@@ -1096,6 +1216,9 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     if (refresh) refresh.addEventListener('click', function () { load(false); });
     $('[data-owner-btn]').addEventListener('click', function (e) { issueOwner(e.currentTarget); });
     $('[data-add-form]').addEventListener('submit', addMember);
+    var seatDec = $('[data-seat-dec]'); var seatInc = $('[data-seat-inc]');
+    if (seatDec) seatDec.addEventListener('click', function () { if (current.seats > 1) setSeats(current.seats - 1); });
+    if (seatInc) seatInc.addEventListener('click', function () { if (current.seats < current.seatsMax) setSeats(current.seats + 1); });
     $('[data-copy-url]').addEventListener('click', function (e) { copyText(serverUrl, e.currentTarget); });
     $('[data-copy-mcp]').addEventListener('click', function (e) { copyText(mcpSnippet(serverUrl), e.currentTarget); });
     $('[data-copy-curl]').addEventListener('click', function (e) { copyText(curlSnippet(serverUrl), e.currentTarget); });
