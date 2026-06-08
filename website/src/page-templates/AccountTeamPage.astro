@@ -1,0 +1,522 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title="Team server — LeanCTX"
+  description="Connect to and manage your hosted LeanCTX team server."
+  noindex={true}
+  hideAscii={true}
+>
+  <section class="team-shell">
+    <div class="content-grid-narrow">
+      <header class="team-head">
+        <div>
+          <p class="team-eyebrow">Account</p>
+          <h1 class="team-title font-display">Team server</h1>
+        </div>
+        <div class="team-id" data-id hidden>
+          <span class="team-email" data-email></span>
+          <a class="team-link" href={lp('/account/billing/')}>Billing →</a>
+          <button type="button" class="team-signout" data-signout>Sign out</button>
+        </div>
+      </header>
+
+      <div class="team-banner" data-banner role="status" hidden></div>
+
+      <div class="team-loading" data-loading>
+        <span class="team-spinner" aria-hidden="true"></span>
+        <span>Loading your team server…</span>
+      </div>
+
+      <!-- State A — no hosted server provisioned for this account yet -->
+      <div class="team-main" data-empty hidden>
+        <div class="team-card team-empty">
+          <h2 class="team-section-title">No hosted team server yet</h2>
+          <p class="team-prose">
+            The hosted team server gives your whole team one shared, always-on Context OS:
+            shared workspaces, role-based access (viewer / member / admin / owner), a live
+            event bus and a per-call audit log — reachable over MCP from every editor.
+          </p>
+          <p class="team-prose">
+            It is provisioned automatically the moment your <strong>Team</strong> subscription
+            becomes active. Upgrade to spin one up.
+          </p>
+          <div class="team-actions">
+            <a class="team-btn btn-primary" href={lp('/account/billing/?upgrade=team')}>Upgrade to Team</a>
+            <a class="team-btn team-btn-ghost" href={lp('/pricing/')}>Compare plans</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- State B — subscription active, server still being provisioned -->
+      <div class="team-main" data-pending hidden>
+        <div class="team-card team-pending">
+          <div class="team-pending-head">
+            <span class="team-spinner" aria-hidden="true"></span>
+            <h2 class="team-section-title">Setting up your server…</h2>
+          </div>
+          <p class="team-prose">
+            Your subscription is active and we are provisioning your dedicated team server.
+            This usually takes a minute or two (including the first TLS certificate).
+          </p>
+          <button type="button" class="team-btn btn-primary" data-refresh>Refresh status</button>
+        </div>
+      </div>
+
+      <!-- State C — live -->
+      <div class="team-main" data-live hidden>
+        <div class="team-card">
+          <div class="team-live-head">
+            <div>
+              <span class="team-card-label">Your team server</span>
+              <div class="team-url-row">
+                <code class="team-url" data-server-url></code>
+                <button type="button" class="team-copy" data-copy-url title="Copy URL">Copy</button>
+              </div>
+            </div>
+            <div class="team-stat">
+              <span class="team-status-badge" data-status-badge>active</span>
+              <span class="team-seats" data-seats></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="team-card">
+          <h2 class="team-section-title">Connect your editor</h2>
+          <p class="team-prose">
+            Add the server to any MCP-capable client (Cursor, Claude, …) using a token you
+            issue below. The token travels as a Bearer header — keep it secret.
+          </p>
+          <div class="team-snippet">
+            <div class="team-snippet-bar">
+              <span>mcp.json</span>
+              <button type="button" class="team-copy" data-copy-mcp>Copy</button>
+            </div>
+            <pre class="team-pre" data-mcp-snippet></pre>
+          </div>
+          <details class="team-details">
+            <summary>Or call the HTTP API directly</summary>
+            <div class="team-snippet">
+              <div class="team-snippet-bar">
+                <span>shell</span>
+                <button type="button" class="team-copy" data-copy-curl>Copy</button>
+              </div>
+              <pre class="team-pre" data-curl-snippet></pre>
+            </div>
+          </details>
+        </div>
+
+        <div class="team-card">
+          <div class="team-members-head">
+            <h2 class="team-section-title">Members &amp; tokens</h2>
+            <span class="team-seats" data-seats-2></span>
+          </div>
+
+          <!-- Token reveal: shown exactly once, right after issuing -->
+          <div class="team-reveal" data-reveal hidden>
+            <div class="team-reveal-head">
+              <strong data-reveal-title>New token</strong>
+              <button type="button" class="team-reveal-close" data-reveal-close aria-label="Dismiss">×</button>
+            </div>
+            <p class="team-reveal-note">
+              Copy it now — for security it is shown only once and cannot be retrieved later.
+            </p>
+            <div class="team-url-row">
+              <code class="team-url team-token" data-reveal-token></code>
+              <button type="button" class="team-copy" data-copy-token>Copy</button>
+            </div>
+          </div>
+
+          <div class="team-member-list" data-members></div>
+
+          <form class="team-add" data-add-form>
+            <input
+              type="text"
+              class="team-input"
+              data-add-label
+              placeholder="Label (e.g. Alex · backend)"
+              maxlength="48"
+              autocomplete="off"
+            />
+            <select class="team-input team-select" data-add-role>
+              <option value="member">Member</option>
+              <option value="viewer">Viewer</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button type="submit" class="team-btn btn-primary" data-add-btn>Add member</button>
+          </form>
+
+          <div class="team-owner-row">
+            <span class="team-prose-sm">
+              Lost the owner token? Rotating issues a fresh one and invalidates the old.
+            </span>
+            <button type="button" class="team-btn team-btn-ghost" data-owner-btn>Rotate owner token</button>
+          </div>
+        </div>
+
+        <p class="team-help">
+          Questions? <a href="mailto:hello@leanctx.com">hello@leanctx.com</a>
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .team-shell { padding: clamp(2rem, 1.5rem + 3vw, 5rem) 0 clamp(3rem, 2rem + 3vw, 6rem); min-height: calc(100dvh - 16rem); }
+  .team-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap; margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
+  }
+  .team-eyebrow {
+    font-size: var(--text-caption); font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-accent);
+  }
+  .team-title {
+    margin-top: 0.35rem; font-size: var(--text-h1); font-weight: var(--weight-semibold);
+    color: var(--color-text-bright); letter-spacing: var(--tracking-tight);
+  }
+  .team-id { display: flex; align-items: center; gap: 0.85rem; }
+  .team-email { font-size: var(--text-small); color: var(--color-muted); }
+  .team-link { font-size: var(--text-small); color: var(--color-accent); text-decoration: none; }
+  .team-link:hover { text-decoration: underline; }
+  .team-signout {
+    padding: 0.4rem 0.85rem; border: 1px solid var(--color-border-light);
+    border-radius: var(--card-radius); background: transparent; color: var(--color-text);
+    font-family: inherit; font-size: var(--text-small); cursor: pointer;
+    transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  }
+  .team-signout:hover { color: var(--color-text-bright); border-color: var(--color-muted); }
+
+  .team-banner {
+    margin-bottom: 1.5rem; padding: 0.85rem 1.1rem; border-radius: var(--card-radius);
+    font-size: var(--text-small); line-height: var(--leading-snug); border: 1px solid transparent;
+  }
+  .team-banner[data-kind='success'] {
+    color: var(--color-accent-bright);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .team-banner[data-kind='error'] {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  }
+  .team-banner[data-kind='info'] {
+    color: var(--color-text); background: var(--color-surface-2); border-color: var(--color-border);
+  }
+
+  .team-loading { display: flex; align-items: center; gap: 0.75rem; padding: 3rem 0; color: var(--color-muted); font-size: var(--text-small); }
+  .team-spinner {
+    width: 1.1rem; height: 1.1rem; border: 2px solid var(--color-border-light);
+    border-top-color: var(--color-accent); border-radius: 50%; animation: team-spin 0.7s linear infinite; flex: none;
+  }
+  @keyframes team-spin { to { transform: rotate(360deg); } }
+
+  .team-main { display: flex; flex-direction: column; gap: 1.25rem; }
+  .team-card {
+    padding: clamp(1.25rem, 1rem + 1vw, 2rem); border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg); background: var(--color-surface);
+  }
+  .team-section-title { font-size: var(--text-h4); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.85rem; }
+  .team-prose { font-size: var(--text-small); line-height: var(--leading-relaxed); color: var(--color-muted); margin-bottom: 0.9rem; }
+  .team-prose strong { color: var(--color-text-bright); font-weight: var(--weight-semibold); }
+  .team-prose-sm { font-size: var(--text-caption); line-height: var(--leading-relaxed); color: var(--color-muted); }
+
+  .team-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.4rem; }
+  .team-shell :global(.team-btn) {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+    padding: 0.65rem 1.25rem; font-size: var(--text-small); font-weight: var(--weight-semibold);
+    border-radius: var(--card-radius); border: none; cursor: pointer; text-decoration: none;
+    font-family: inherit;
+  }
+  .team-shell :global(.team-btn[disabled]) { opacity: 0.6; cursor: progress; }
+  .team-btn-ghost { background: transparent; color: var(--color-text); border: 1px solid var(--color-border-light) !important; }
+  .team-btn-ghost:hover { color: var(--color-text-bright); border-color: var(--color-muted) !important; }
+
+  .team-pending-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem; }
+  .team-pending-head .team-section-title { margin-bottom: 0; }
+
+  .team-live-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .team-card-label { font-size: var(--text-caption); text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted); }
+  .team-url-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .team-url {
+    font-family: var(--font-mono, monospace); font-size: var(--text-small); color: var(--color-text-bright);
+    background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--card-radius);
+    padding: 0.4rem 0.7rem; word-break: break-all;
+  }
+  .team-token { color: var(--color-accent-bright); }
+  .team-copy {
+    padding: 0.4rem 0.7rem; border: 1px solid var(--color-border-light); border-radius: var(--card-radius);
+    background: transparent; color: var(--color-text); font-family: inherit; font-size: var(--text-caption);
+    cursor: pointer; flex: none; transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  }
+  .team-copy:hover { color: var(--color-text-bright); border-color: var(--color-muted); }
+
+  .team-stat { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+  .team-status-badge {
+    display: inline-flex; align-items: center; padding: 0.3rem 0.8rem; font-size: var(--text-small);
+    font-weight: var(--weight-semibold); border-radius: var(--radius-pill); text-transform: capitalize;
+    background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent-bright);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  .team-seats { font-size: var(--text-small); color: var(--color-muted); }
+
+  .team-snippet { border: 1px solid var(--color-border); border-radius: var(--card-radius); overflow: hidden; background: var(--color-bg); }
+  .team-snippet-bar {
+    display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.7rem;
+    font-size: var(--text-caption); color: var(--color-muted); background: var(--color-surface-2);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .team-pre {
+    margin: 0; padding: 0.85rem 0.9rem; font-family: var(--font-mono, monospace); font-size: var(--text-caption);
+    line-height: var(--leading-relaxed); color: var(--color-text); overflow-x: auto; white-space: pre;
+  }
+  .team-details { margin-top: 0.9rem; }
+  .team-details summary { font-size: var(--text-small); color: var(--color-accent); cursor: pointer; margin-bottom: 0.6rem; }
+
+  .team-members-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  .team-reveal {
+    margin: 0.4rem 0 1.1rem; padding: 0.9rem 1rem; border-radius: var(--card-radius);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .team-reveal-head { display: flex; align-items: center; justify-content: space-between; }
+  .team-reveal-head strong { color: var(--color-text-bright); font-size: var(--text-small); }
+  .team-reveal-close { background: transparent; border: none; color: var(--color-muted); font-size: 1.2rem; line-height: 1; cursor: pointer; }
+  .team-reveal-note { margin: 0.3rem 0 0.6rem; font-size: var(--text-caption); color: var(--color-muted); }
+
+  .team-member-list { display: flex; flex-direction: column; }
+  .team-member-list :global(.team-member-row) {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.7rem 0; border-bottom: 1px solid var(--color-border);
+  }
+  .team-member-list :global(.team-member-meta) { display: flex; align-items: center; gap: 0.6rem; min-width: 0; flex-wrap: wrap; }
+  .team-member-list :global(.team-member-label) { font-size: var(--text-small); color: var(--color-text-bright); }
+  .team-member-list :global(.team-role) {
+    font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--color-muted); border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill); padding: 0.05rem 0.5rem;
+  }
+  .team-member-list :global(.team-role[data-owner='true']) {
+    color: var(--color-accent-bright); border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  .team-member-list :global(.team-member-id) { font-size: var(--text-caption); color: var(--color-muted); font-family: var(--font-mono, monospace); }
+  .team-member-list :global(.team-revoke) {
+    padding: 0.35rem 0.7rem; border: 1px solid var(--color-border-light); border-radius: var(--card-radius);
+    background: transparent; color: var(--color-muted); font-family: inherit; font-size: var(--text-caption); cursor: pointer; flex: none;
+  }
+  .team-member-list :global(.team-revoke:hover) { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
+  .team-member-list :global(.team-revoke[disabled]) { opacity: 0.4; cursor: not-allowed; }
+
+  .team-add { display: flex; gap: 0.6rem; margin-top: 1.1rem; flex-wrap: wrap; }
+  .team-input {
+    padding: 0.6rem 0.8rem; border: 1px solid var(--color-border); border-radius: var(--card-radius);
+    background: var(--color-bg); color: var(--color-text); font-family: inherit; font-size: var(--text-small);
+  }
+  .team-add [data-add-label] { flex: 1 1 12rem; min-width: 0; }
+  .team-select { cursor: pointer; }
+
+  .team-owner-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px solid var(--color-border); }
+
+  .team-help { margin-top: 0; text-align: center; font-size: var(--text-caption); color: var(--color-muted); }
+  .team-help a { color: var(--color-accent); text-decoration: none; }
+  .team-help a:hover { text-decoration: underline; }
+</style>
+
+<script is:inline>
+  (function () {
+    var API = 'https://api.leanctx.com';
+    var TOKEN_KEY = 'leanctx-api-token';
+    var EMAIL_KEY = 'leanctx-account-email';
+
+    function $(s) { return document.querySelector(s); }
+    function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (_) { return null; } }
+    function clearSession() { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); } catch (_) {} }
+
+    var here = window.location.pathname + window.location.search;
+    var banner = $('[data-banner]');
+    function showBanner(kind, msg) { if (!banner) return; banner.textContent = msg; banner.setAttribute('data-kind', kind); banner.hidden = false; }
+    function clearBanner() { if (banner) banner.hidden = true; }
+    function gotoLogin() { window.location.replace('/login/?next=' + encodeURIComponent(here)); }
+
+    var token = getToken();
+    if (!token) { gotoLogin(); return; }
+
+    function authHeaders() { return { Authorization: 'Bearer ' + token, Accept: 'application/json' }; }
+
+    async function req(method, path, body) {
+      var opts = { method: method, headers: authHeaders() };
+      if (body !== undefined) {
+        opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers);
+        opts.body = JSON.stringify(body || {});
+      }
+      var res = await fetch(API + path, opts);
+      if (res.status === 401) { clearSession(); gotoLogin(); throw new Error('unauthorized'); }
+      var text = await res.text();
+      var data; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { message: text }; }
+      return { ok: res.ok, status: res.status, data: data };
+    }
+
+    function copyText(value, btn) {
+      var done = function () { if (!btn) return; var p = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = p; }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(value).then(done, function () {}); }
+      else { try { var ta = document.createElement('textarea'); ta.value = value; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done(); } catch (_) {} }
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+    var serverUrl = '';
+
+    function mcpSnippet(url) {
+      return '{\n'
+        + '  "mcpServers": {\n'
+        + '    "leanctx-team": {\n'
+        + '      "url": "' + url + '",\n'
+        + '      "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }\n'
+        + '    }\n'
+        + '  }\n'
+        + '}';
+    }
+    function curlSnippet(url) {
+      return 'curl -H "Authorization: Bearer <YOUR_TOKEN>" \\\n     ' + url + '/v1/tools';
+    }
+
+    function showState(name) {
+      ['empty', 'pending', 'live'].forEach(function (s) {
+        var el = $('[data-' + s + ']'); if (el) el.hidden = s !== name;
+      });
+      $('[data-loading]').hidden = true;
+    }
+
+    function revealToken(title, value) {
+      $('[data-reveal-title]').textContent = title;
+      $('[data-reveal-token]').textContent = value;
+      $('[data-reveal]').hidden = false;
+      $('[data-reveal]').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function renderMembers(members, seats) {
+      var used = members.length;
+      var seatsTxt = used + ' / ' + seats + ' seats in use';
+      $('[data-seats]').textContent = seatsTxt;
+      $('[data-seats-2]').textContent = seatsTxt;
+
+      var list = $('[data-members]');
+      if (!members.length) { list.innerHTML = '<p class="team-prose-sm">No tokens issued yet. Add a member or rotate the owner token to get started.</p>'; }
+      else {
+        list.innerHTML = members.map(function (m) {
+          var isOwner = m.role === 'owner';
+          var label = m.label || (isOwner ? 'Owner' : 'Member');
+          var revoke = isOwner
+            ? '<button type="button" class="team-revoke" disabled title="The owner token is rotated, not revoked">Owner</button>'
+            : '<button type="button" class="team-revoke" data-revoke="' + esc(m.token_id) + '">Revoke</button>';
+          return '<div class="team-member-row">'
+            + '<div class="team-member-meta">'
+            + '<span class="team-member-label">' + esc(label) + '</span>'
+            + '<span class="team-role" data-owner="' + isOwner + '">' + esc(m.role) + '</span>'
+            + '<span class="team-member-id">' + esc(m.token_id) + '</span>'
+            + '</div>' + revoke + '</div>';
+        }).join('');
+        list.querySelectorAll('[data-revoke]').forEach(function (b) {
+          b.addEventListener('click', function () { revokeMember(b.getAttribute('data-revoke'), b); });
+        });
+      }
+
+      var atLimit = used >= seats;
+      var addBtn = $('[data-add-btn]');
+      if (addBtn) { addBtn.disabled = atLimit; addBtn.textContent = atLimit ? 'Seat limit reached' : 'Add member'; }
+    }
+
+    var current = { seats: 0, members: [] };
+
+    async function load(silent) {
+      if (!silent) { $('[data-loading]').hidden = false; }
+      try {
+        var r = await req('GET', '/api/account/team');
+        if (r.status === 503) { $('[data-loading]').hidden = true; showState('empty'); showBanner('info', 'Team hosting is being switched on — please try again shortly.'); return; }
+        var d = r.data || {};
+
+        var me = await req('GET', '/api/auth/me');
+        var email = (me.data && me.data.email) || (function () { try { return localStorage.getItem(EMAIL_KEY); } catch (_) { return ''; } })();
+        if (email) $('[data-email]').textContent = email;
+        $('[data-id]').hidden = false;
+
+        if (!d.provisioned && d.status === 'none') { showState('empty'); return; }
+        if (!d.provisioned) { showState('pending'); return; }
+
+        serverUrl = d.server_url || '';
+        current.seats = d.seats || 0;
+        current.members = d.members || [];
+
+        $('[data-server-url]').textContent = serverUrl;
+        $('[data-status-badge]').textContent = d.status || 'active';
+        $('[data-mcp-snippet]').textContent = mcpSnippet(serverUrl);
+        $('[data-curl-snippet]').textContent = curlSnippet(serverUrl);
+        renderMembers(current.members, current.seats);
+        showState('live');
+      } catch (err) {
+        if (err && err.message === 'unauthorized') return;
+        $('[data-loading]').hidden = true;
+        showBanner('error', 'Could not load your team server. Please refresh or sign in again.');
+      }
+    }
+
+    async function issueOwner(btn) {
+      clearBanner();
+      if (btn) { btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Rotating…'; }
+      try {
+        var r = await req('POST', '/api/account/team/owner-token', {});
+        if (r.ok && r.data && r.data.token) { revealToken('Owner token', r.data.token); await load(true); }
+        else { showBanner('error', (r.data && (r.data.message || r.data.error)) || 'Could not issue the owner token.'); }
+      } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.'); }
+      if (btn) { btn.disabled = false; btn.textContent = prev; }
+    }
+
+    async function addMember(ev) {
+      ev.preventDefault();
+      clearBanner();
+      var label = ($('[data-add-label]').value || '').trim();
+      var role = $('[data-add-role]').value || 'member';
+      var btn = $('[data-add-btn]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+      try {
+        var r = await req('POST', '/api/account/team/members', { role: role, label: label || null });
+        if (r.ok && r.data && r.data.token) { $('[data-add-label]').value = ''; revealToken('Member token · ' + (label || role), r.data.token); await load(true); }
+        else { showBanner('error', (r.data && (r.data.message || r.data.error)) || 'Could not add the member.'); if (btn) { btn.disabled = false; btn.textContent = 'Add member'; } }
+      } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.'); if (btn) { btn.disabled = false; btn.textContent = 'Add member'; } }
+    }
+
+    async function revokeMember(tokenId, btn) {
+      if (!tokenId) return;
+      clearBanner();
+      if (btn) { btn.disabled = true; btn.textContent = 'Revoking…'; }
+      try {
+        var r = await req('DELETE', '/api/account/team/members/' + encodeURIComponent(tokenId));
+        if (r.ok) { await load(true); }
+        else { showBanner('error', (r.data && (r.data.message || r.data.error)) || 'Could not revoke the token.'); if (btn) { btn.disabled = false; btn.textContent = 'Revoke'; } }
+      } catch (err) { if (!(err && err.message === 'unauthorized')) showBanner('error', 'Could not reach the server. Please try again.'); if (btn) { btn.disabled = false; btn.textContent = 'Revoke'; } }
+    }
+
+    // Wiring
+    var signout = $('[data-signout]');
+    if (signout) signout.addEventListener('click', function () { clearSession(); window.location.assign('/login/'); });
+    var refresh = $('[data-refresh]');
+    if (refresh) refresh.addEventListener('click', function () { load(false); });
+    $('[data-owner-btn]').addEventListener('click', function (e) { issueOwner(e.currentTarget); });
+    $('[data-add-form]').addEventListener('submit', addMember);
+    $('[data-copy-url]').addEventListener('click', function (e) { copyText(serverUrl, e.currentTarget); });
+    $('[data-copy-mcp]').addEventListener('click', function (e) { copyText(mcpSnippet(serverUrl), e.currentTarget); });
+    $('[data-copy-curl]').addEventListener('click', function (e) { copyText(curlSnippet(serverUrl), e.currentTarget); });
+    $('[data-copy-token]').addEventListener('click', function (e) { copyText($('[data-reveal-token]').textContent, e.currentTarget); });
+    $('[data-reveal-close]').addEventListener('click', function () { $('[data-reveal]').hidden = true; });
+
+    load(false);
+  })();
+</script>

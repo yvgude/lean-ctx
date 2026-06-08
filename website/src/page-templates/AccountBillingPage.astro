@@ -204,6 +204,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     text-decoration: none;
   }
   .acct-shell :global(.acct-btn[disabled]) { opacity: 0.6; cursor: progress; }
+  .acct-shell :global(.acct-btn-secondary) {
+    background: transparent;
+    color: var(--color-text);
+    border: 1px solid var(--color-border-light);
+  }
+  .acct-shell :global(.acct-btn-secondary:hover) { color: var(--color-text-bright); border-color: var(--color-muted); }
 
   .acct-upgrade {
     margin-top: 1.25rem;
@@ -423,7 +429,11 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       var wrap = $('[data-actions]');
       var paid = plan === 'team' || plan === 'enterprise';
       if (paid) {
-        wrap.innerHTML = '<button type="button" class="acct-btn btn-primary" data-portal>Manage billing</button>';
+        var teamLink = plan === 'team'
+          ? '<a class="acct-btn btn-primary" href="/account/team/">Manage team server</a>'
+          : '';
+        var billingCls = plan === 'team' ? 'acct-btn acct-btn-secondary' : 'acct-btn btn-primary';
+        wrap.innerHTML = teamLink + '<button type="button" class="' + billingCls + '" data-portal>Manage billing</button>';
         wrap.querySelector('[data-portal]').addEventListener('click', function (e) { openPortal(e.currentTarget); });
         $('[data-upgrade]').hidden = true;
       } else {
