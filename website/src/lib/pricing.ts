@@ -6,25 +6,28 @@
  * feature is free forever — these tiers only add team coordination, hosting,
  * scale and governance (the Local-Free Invariant). Display prices match the
  * Stripe catalog provisioned by `lean-ctx-cloud/cloud-infra/stripe-setup.py`
- * ($10/seat/month or $100/seat/year for Team, billed per seat).
+ * ($10/seat/month or $100/seat/year for Team billed per seat; $9/month or
+ * $90/year for Pro).
  *
  * The account dashboard reads live entitlements from
  * `GET /api/account/entitlements`; this module only drives the marketing copy
  * on the pricing page, so it never has to be perfectly in sync with a user's
- * actual subscription — it describes what each tier grants.
+ * actual subscription — it describes what each tier grants. Pro adds the hosted
+ * Personal Cloud (cross-device sync) at $9/month or $90/year.
  */
 
 export const SALES_EMAIL = 'hello@leanctx.com';
 
 /** Wire id of a self-serve checkout plan (matches `Plan::as_str` in the engine). */
-export type CheckoutPlan = 'team' | 'supporter';
+export type CheckoutPlan = 'team' | 'pro' | 'supporter';
 
 /**
- * The voluntary "Supporter" (a.k.a. "Pro") subscription. It funds development
- * and grants account-level recognition only — it never unlocks a feature, so it
- * lives outside the tier ladder. Prices mirror the Stripe catalog provisioned by
- * `stripe-setup.py` ($5/month or $50/year). Rendered on `/support/` and as a
- * callout under the pricing tiers.
+ * The voluntary "Supporter" subscription. It funds development and grants
+ * account-level recognition only — it never unlocks a feature, so it lives
+ * outside the tier ladder (the paid capability tier for individuals is now
+ * **Pro**, below). Prices mirror the Stripe catalog provisioned by
+ * `stripe-setup.py` ($5/month). Rendered on `/support/` and as a callout under
+ * the pricing tiers.
  */
 export const supporterOffer = {
   id: 'supporter' as const,
@@ -98,7 +101,7 @@ export const supporterTiers: SupporterTier[] = [
 
 export interface PricingTier {
   /** Stable id; matches the engine's `Plan` wire ids. */
-  id: 'free' | 'team' | 'enterprise';
+  id: 'free' | 'pro' | 'team' | 'enterprise';
   name: string;
   tagline: string;
   /** Display price for the default (monthly) cadence, e.g. "$10" or "Custom". */
@@ -149,6 +152,25 @@ export const pricingTiers: PricingTier[] = [
       'All MCP tools, 10 read modes, Context Personas, plugins & WASM',
       'Runs fully offline — your code never leaves your machine',
       'One developer · Apache-2.0 open source',
+    ],
+  },
+  {
+    id: 'pro',
+    name: 'Pro',
+    tagline: 'Your Personal Cloud — your own context, synced across every device.',
+    priceMonthly: '$9',
+    priceYearly: '$90',
+    unit: '/month',
+    priceNote: 'one account · or $90/year (save ~17%) · cancel anytime',
+    cta: { label: 'Upgrade to Pro', kind: 'checkout', href: '/account/billing/?upgrade=pro' },
+    features: [
+      'Everything in Free, plus your hosted Personal Cloud',
+      'Cross-device sync & backup of your own learned context',
+      'Knowledge & memory synced across every machine you work on',
+      'Learned shell patterns, CEP score history & gotchas, synced',
+      'Buddy state and feedback thresholds follow you everywhere',
+      'Supporter badge — keep LeanCTX independent',
+      'One account, single seat · manage or cancel anytime via Stripe',
     ],
   },
   {
@@ -206,6 +228,10 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   {
     q: 'Is the local tool really free?',
     a: 'Yes — forever. The entire local engine (reads, search, AST, shell compression, MCP tools, read modes, personas, plugins) is Apache-2.0 and runs without an account. Paid plans never gate a local feature; they only add team coordination, hosting, scale and governance.',
+  },
+  {
+    q: 'What is Pro, and how is it different from Supporter?',
+    a: 'Pro ($9/month or $90/year) is your Personal Cloud: a hosted, account-bound service that syncs and backs up your own learned context — knowledge & memory, shell patterns, CEP scores, gotchas and more — across every device you work on. Supporter is a voluntary tip that funds development and grants recognition only (a badge), never a capability. Pro is for an individual who wants their own context everywhere; Team is for sharing one audited context across people.',
   },
   {
     q: 'What exactly does a paid plan add?',

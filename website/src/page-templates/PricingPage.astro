@@ -34,7 +34,7 @@ const faqJsonLd = JSON.stringify({
 
 <BaseLayout
   title="Pricing — LeanCTX"
-  description="LeanCTX is free forever for local use. Paid Team and Enterprise plans add a shared, audited context plane — one team workspace, role-based access, a full audit log and a live event stream — without ever gating a local feature."
+  description="LeanCTX is free forever for local use. Pro adds a hosted Personal Cloud that syncs your own context across devices; Team and Enterprise add a shared, audited context plane — one workspace, role-based access, a full audit log and a live event stream — without ever gating a local feature."
   breadcrumbs={[
     { name: 'Home', url: lp('/') },
     { name: 'Pricing', url: lp('/pricing/') },
@@ -45,7 +45,7 @@ const faqJsonLd = JSON.stringify({
     label="Pricing"
     title="Start free."
     highlight="Scale when your team does."
-    descriptionHtml="Every local capability is <strong class='text-text-bright'>free, forever</strong>. Paid plans are purely additive — they give your team and its agents one shared, audited context plane. Nothing local is ever locked behind a paywall."
+    descriptionHtml="Every local capability is <strong class='text-text-bright'>free, forever</strong>. Paid plans are purely additive — <strong class='text-text-bright'>Pro</strong> gives you a hosted Personal Cloud, and <strong class='text-text-bright'>Team</strong> gives your team and its agents one shared, audited context plane. Nothing local is ever locked behind a paywall."
     kickerTone="accent"
     titleVariant="display"
     highlightStyle="italic"
@@ -249,8 +249,11 @@ const faqJsonLd = JSON.stringify({
     gap: clamp(1rem, 0.5rem + 1.5vw, 1.5rem);
     align-items: stretch;
   }
-  @media (min-width: 900px) {
-    .pricing-grid { grid-template-columns: repeat(3, 1fr); }
+  @media (min-width: 600px) {
+    .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (min-width: 1024px) {
+    .pricing-grid { grid-template-columns: repeat(4, 1fr); }
   }
 
   .pricing-card {
@@ -270,7 +273,7 @@ const faqJsonLd = JSON.stringify({
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
       0 24px 60px -30px color-mix(in srgb, var(--color-accent) 40%, transparent);
   }
-  @media (min-width: 900px) {
+  @media (min-width: 1024px) {
     .pricing-card.is-featured { transform: translateY(-0.75rem); }
   }
 

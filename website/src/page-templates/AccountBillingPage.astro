@@ -48,10 +48,13 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
           <div class="acct-upgrade" data-upgrade hidden>
             <div class="acct-cadence" role="group" aria-label="Billing cadence">
-              <button type="button" class="acct-cadence-btn is-active" data-cadence="monthly" aria-pressed="true">$10 / seat·mo</button>
-              <button type="button" class="acct-cadence-btn" data-cadence="yearly" aria-pressed="false">$100 / seat·yr</button>
+              <button type="button" class="acct-cadence-btn is-active" data-cadence="monthly" aria-pressed="true">Monthly</button>
+              <button type="button" class="acct-cadence-btn" data-cadence="yearly" aria-pressed="false">Yearly · save ~17%</button>
             </div>
-            <button type="button" class="acct-btn btn-primary" data-upgrade-btn>Upgrade to Team</button>
+            <div class="acct-upgrade-opts">
+              <button type="button" class="acct-btn btn-primary" data-upgrade-btn="pro">Upgrade to Pro · <span data-price="pro">$9/mo</span></button>
+              <button type="button" class="acct-btn acct-btn-secondary" data-upgrade-btn="team">Get Team · <span data-price="team">$10/seat·mo</span></button>
+            </div>
             <a class="acct-link" href={lp('/pricing/')}>Compare plans →</a>
           </div>
         </div>
@@ -240,6 +243,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     white-space: nowrap;
   }
   .acct-cadence-btn.is-active { background: var(--color-surface-3); color: var(--color-text-bright); }
+  .acct-upgrade-opts { display: flex; gap: 0.6rem; flex-wrap: wrap; }
   .acct-link { font-size: var(--text-small); color: var(--color-accent); text-decoration: none; }
   .acct-link:hover { text-decoration: underline; }
 
@@ -354,6 +358,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     var PLAN_DESC = {
       free: 'The full local Context OS — free forever.',
       supporter: 'You fund LeanCTX development. Thank you. ♥',
+      pro: 'Your Personal Cloud — context synced across every device.',
       team: 'Shared hosted context, billed per seat (1–25).',
       enterprise: 'Governance and scale across your organisation.',
     };
@@ -388,6 +393,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       // badge so the dashboard never implies a capability is live before it is.
       var rows = [
         ['Supporter', bool(e.supporter), false],
+        ['Cloud sync (Personal Cloud)', bool(e.cloud_sync), false],
         ['Seats', num(e.seats), false],
         ['Hosted retrieval index', mb(e.hosted_index_mb), true],
         ['Managed connectors', num(e.managed_connectors), true],
@@ -404,17 +410,28 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     }
 
     var cadence = 'monthly';
+    var PRICES = {
+      pro: { monthly: '$9/mo', yearly: '$90/yr' },
+      team: { monthly: '$10/seat·mo', yearly: '$100/seat·yr' },
+    };
+    function updatePrices() {
+      document.querySelectorAll('[data-price]').forEach(function (el) {
+        var p = el.getAttribute('data-price');
+        if (PRICES[p]) el.textContent = PRICES[p][cadence];
+      });
+    }
 
-    async function startCheckout() {
-      var btn = $('[data-upgrade-btn]');
+    async function startCheckout(plan) {
+      var btn = $('[data-upgrade-btn="' + plan + '"]');
+      var label = btn ? btn.innerHTML : '';
       if (btn) { btn.disabled = true; btn.textContent = 'Starting secure checkout…'; }
       try {
-        var r = await postJson('/api/account/checkout', { plan: 'team', interval: cadence });
+        var r = await postJson('/api/account/checkout', { plan: plan, interval: cadence });
         if (r.ok && r.data.url) { window.location.assign(r.data.url); return; }
         if (r.status === 503) { showBanner('info', 'Billing is being switched on — please try again shortly.'); }
         else { showBanner('error', (r.data && r.data.message) || 'Could not start checkout. Please try again.'); }
       } catch (err) { if (err && err.message === 'unauthorized') return; showBanner('error', 'Could not reach billing. Please try again.'); }
-      if (btn) { btn.disabled = false; btn.textContent = 'Upgrade to Team'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = label; }
     }
 
     async function openPortal(triggerBtn) {
@@ -437,9 +454,17 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         wrap.innerHTML = teamLink + '<button type="button" class="' + billingCls + '" data-portal>Manage billing</button>';
         wrap.querySelector('[data-portal]').addEventListener('click', function (e) { openPortal(e.currentTarget); });
         $('[data-upgrade]').hidden = true;
+      } else if (plan === 'pro') {
+        // Pro is a paying member: let them manage billing; only the Team upsell
+        // remains, so hide the redundant "Upgrade to Pro" button.
+        wrap.innerHTML = '<button type="button" class="acct-btn acct-btn-secondary" data-portal>Manage billing</button>';
+        wrap.querySelector('[data-portal]').addEventListener('click', function (e) { openPortal(e.currentTarget); });
+        $('[data-upgrade]').hidden = false;
+        var proBtn = $('[data-upgrade-btn="pro"]');
+        if (proBtn) proBtn.hidden = true;
       } else if (plan === 'supporter') {
-        // A supporter is a paying member but not on Team — let them manage their
-        // supporter subscription, while still offering the Team upgrade below.
+        // A supporter funds development but holds no capability — let them manage
+        // their subscription, and offer both the Pro and Team upgrades below.
         wrap.innerHTML = '<button type="button" class="acct-btn acct-btn-secondary" data-portal>Manage billing</button>';
         wrap.querySelector('[data-portal]').addEventListener('click', function (e) { openPortal(e.currentTarget); });
         $('[data-upgrade]').hidden = false;
@@ -459,10 +484,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
             x.classList.toggle('is-active', on);
             x.setAttribute('aria-pressed', on ? 'true' : 'false');
           });
+          updatePrices();
         });
       });
-      var up = $('[data-upgrade-btn]');
-      if (up) up.addEventListener('click', startCheckout);
+      document.querySelectorAll('[data-upgrade-btn]').forEach(function (b) {
+        b.addEventListener('click', function () { startCheckout(b.getAttribute('data-upgrade-btn')); });
+      });
     }
 
     var signout = $('[data-signout]');
@@ -488,7 +515,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
         var badge = $('[data-plan-badge]');
         badge.textContent = plan;
-        badge.setAttribute('data-paid', (plan === 'team' || plan === 'enterprise' || plan === 'supporter') ? 'true' : 'false');
+        badge.setAttribute('data-paid', (plan === 'team' || plan === 'enterprise' || plan === 'supporter' || plan === 'pro') ? 'true' : 'false');
         $('[data-plan-desc]').textContent = PLAN_DESC[plan] || '';
 
         renderEntitlements(entitlements);
@@ -508,8 +535,13 @@ const lp = (path: string) => getLocalizedPath(path, locale);
             x.setAttribute('aria-pressed', on ? 'true' : 'false');
           });
         }
-        if (upgrade === 'team') {
-          if (plan === 'free') { startCheckout(); }
+        updatePrices();
+        if (upgrade === 'pro' || upgrade === 'team') {
+          // Additive ladder: Pro needs free/supporter; Team needs free/supporter/pro.
+          var canBuy = upgrade === 'pro'
+            ? (plan === 'free' || plan === 'supporter')
+            : (plan === 'free' || plan === 'supporter' || plan === 'pro');
+          if (canBuy) { startCheckout(upgrade); }
           else { showBanner('info', 'You are already on the ' + plan + ' plan.'); history.replaceState(null, '', window.location.pathname); }
         }
       } catch (err) {
