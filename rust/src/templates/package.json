@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode-ai/plugin": "^1.16.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2"
+  }
+}

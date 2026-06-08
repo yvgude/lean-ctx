@@ -15,6 +15,7 @@ CRITICAL: ALWAYS use lean-ctx tools. This is NOT optional.
 |------------|----------|---------|
 | Read/cat/head/tail | `ctx_read(path, mode)` | `ctx_read("src/main.rs", "full")` |
 | Grep/rg/find | `ctx_search(pattern, path)` | `ctx_search("fn handle", "src/")` |
+| Glob/find | `ctx_glob(pattern, path)` | `ctx_glob("**/*.rs", "src/")` |
 | Shell/bash | `lean-ctx -c "<cmd>"` | `lean-ctx -c "cargo test"` |
 | ls/find | `lean-ctx ls [path]` | `lean-ctx ls src/ --depth 3` |
 | Edit (when Read unavail.) | `ctx_edit(path, old, new)` | `ctx_edit("f.rs", "old", "new")` |

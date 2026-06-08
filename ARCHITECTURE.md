@@ -851,7 +851,8 @@ flowchart LR
 | `ctx_read` | Read file with 10 compression modes |
 | `ctx_multi_read` | Batch read multiple files |
 | `ctx_shell` | Execute shell command with pattern compression |
-| `ctx_search` | Code search (regex + glob) |
+| `ctx_search` | Code search (regex) |
+| `ctx_glob` | File pattern matching |
 | `ctx_edit` | Safe file editing with TOCTOU guard |
 | `ctx_tree` | Directory listing |
 | `ctx_session` | Session management (25 actions incl. output_stats) |

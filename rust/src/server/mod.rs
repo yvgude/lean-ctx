@@ -276,7 +276,7 @@ mod tests {
         let registry = crate::server::registry::build_registry();
         assert_eq!(
             registry.len(),
-            72,
+            73,
             "Registry tool count drift! Update this test AND all docs when adding/removing tools."
         );
     }

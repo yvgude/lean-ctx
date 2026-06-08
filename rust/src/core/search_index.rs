@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use glob::Pattern;
 use ignore::WalkBuilder;
 
 use crate::tools::ctx_search::{is_binary_ext, is_generated_file, MAX_FILE_SIZE, MAX_WALK_DEPTH};
@@ -266,7 +267,7 @@ impl SearchIndex {
         self.respect_gitignore == respect_gitignore && self.allow_secret_paths == allow_secret_paths
     }
 
-    /// Candidate files for `pattern`, filtered by `ext`. `None` means "no safe
+    /// Candidate files for `pattern`, filtered by `include` glob pattern. `None` means "no safe
     /// narrowing possible" — the caller should scan the full file list.
     ///
     /// Narrowing is applied only for pure `[A-Za-z0-9_]` literals of length ≥ 3.
@@ -274,19 +275,24 @@ impl SearchIndex {
     /// file contains all of its consecutive trigrams: intersecting their
     /// posting lists yields a *superset* of matching files (zero false
     /// negatives), which the caller then regex-verifies.
-    pub fn candidate_paths(&self, pattern: &str, ext: Option<&str>) -> CandidateSet {
+    pub fn candidate_paths(
+        &self,
+        pattern: &str,
+        include: Option<&Pattern>,
+        root: &Path,
+    ) -> CandidateSet {
         if let Some(ids) = self.literal_candidates(pattern) {
             let paths = ids
                 .into_iter()
                 .map(|id| self.files[id as usize].clone())
-                .filter(|p| ext_matches(p, ext))
+                .filter(|p| glob_matches(p, include, root))
                 .collect();
             CandidateSet::Narrowed(paths)
         } else {
             let paths = self
                 .files
                 .iter()
-                .filter(|p| ext_matches(p, ext))
+                .filter(|p| glob_matches(p, include, root))
                 .cloned()
                 .collect();
             CandidateSet::FullList(paths)
@@ -391,10 +397,13 @@ impl CandidateSet {
     }
 }
 
-fn ext_matches(path: &Path, ext: Option<&str>) -> bool {
-    match ext {
+fn glob_matches(path: &Path, include: Option<&Pattern>, root: &Path) -> bool {
+    match include {
         None => true,
-        Some(want) => path.extension().and_then(|e| e.to_str()) == Some(want),
+        Some(pat) => {
+            let rel = path.strip_prefix(root).unwrap_or(path);
+            pat.matches(&rel.to_string_lossy())
+        }
     }
 }
 
@@ -590,7 +599,7 @@ mod tests {
     fn narrows_to_files_containing_literal() {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
-        let cands = idx.candidate_paths("handler", None);
+        let cands = idx.candidate_paths("handler", None, dir.path());
         let paths = cands.into_paths();
         // a.rs and c.txt contain "handler"; b.rs must be excluded.
         assert!(paths.iter().any(|p| p.ends_with("a.rs")));
@@ -602,7 +611,7 @@ mod tests {
     fn absent_trigram_yields_empty_candidates() {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
-        match idx.candidate_paths("zzzqqq", None) {
+        match idx.candidate_paths("zzzqqq", None, dir.path()) {
             CandidateSet::Narrowed(p) => assert!(p.is_empty()),
             CandidateSet::FullList(_) => panic!("pure literal should narrow"),
         }
@@ -612,7 +621,9 @@ mod tests {
     fn ext_filter_restricts_candidates() {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
-        let paths = idx.candidate_paths("handler", Some("rs")).into_paths();
+        let paths = idx
+            .candidate_paths("handler", Some(&Pattern::new("*.rs").unwrap()), dir.path())
+            .into_paths();
         assert!(paths.iter().all(|p| p.extension().unwrap() == "rs"));
         assert!(paths.iter().any(|p| p.ends_with("a.rs")));
     }
@@ -640,7 +651,10 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let built = SearchIndex::build(&root, true, false);
-            let _ = tx.send(built.map(|idx| idx.candidate_paths("handler", None).into_paths()));
+            let _ = tx.send(built.map(|idx| {
+                idx.candidate_paths("handler", None, std::path::Path::new(&root))
+                    .into_paths()
+            }));
         });
         let paths = rx
             .recv_timeout(Duration::from_secs(5))
@@ -654,7 +668,7 @@ mod tests {
     fn regex_query_falls_back_to_full_list() {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
-        match idx.candidate_paths("fn .*\\(\\)", None) {
+        match idx.candidate_paths("fn .*\\(\\)", None, dir.path()) {
             CandidateSet::FullList(p) => assert!(!p.is_empty()),
             CandidateSet::Narrowed(_) => panic!("metachar query must not narrow"),
         }
@@ -665,7 +679,7 @@ mod tests {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
         assert!(matches!(
-            idx.candidate_paths("fn", None),
+            idx.candidate_paths("fn", None, dir.path()),
             CandidateSet::FullList(_)
         ));
     }
@@ -719,7 +733,7 @@ mod tests {
 
         for query in ["authenticate", "Session", "retries", "token"] {
             let re = Regex::new(query).unwrap();
-            let candidates = idx.candidate_paths(query, None).into_paths();
+            let candidates = idx.candidate_paths(query, None, dir.path()).into_paths();
             let mut narrowed = BTreeSet::new();
             for path in &candidates {
                 let content = std::fs::read_to_string(path).unwrap();
@@ -863,7 +877,7 @@ mod tests {
 
         for query in ["authenticate", "Session", "retries", "token"] {
             let cands: HashSet<String> = idx
-                .candidate_paths(query, None)
+                .candidate_paths(query, None, Path::new(""))
                 .into_paths()
                 .iter()
                 .map(|p| p.to_string_lossy().to_string())

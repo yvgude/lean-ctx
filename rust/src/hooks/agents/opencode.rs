@@ -190,7 +190,48 @@ fn install_opencode_plugin(home: &std::path::Path) {
     let plugin_path = plugin_dir.join("lean-ctx.ts");
 
     let plugin_content = include_str!("../../templates/opencode-plugin.ts");
-    let _ = std::fs::write(&plugin_path, plugin_content);
+    if let Err(e) = std::fs::write(&plugin_path, plugin_content) {
+        eprintln!("  \x1b[33m⚠\x1b[0m Failed to write OpenCode plugin: {e}");
+    }
+
+    let package_json_path = plugin_dir.join("package.json");
+    let package_json_content = include_str!("../../templates/package.json");
+
+    if package_json_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&package_json_path) {
+            if let Ok(mut pkg) = serde_json::from_str::<serde_json::Value>(&content) {
+                let template: serde_json::Value =
+                    serde_json::from_str(package_json_content).unwrap_or_default();
+                let mut changed = false;
+
+                // Merge dependencies from template
+                if let (Some(existing), Some(required)) =
+                    (pkg.get_mut("dependencies"), template.get("dependencies"))
+                {
+                    if let (Some(existing_obj), Some(required_obj)) =
+                        (existing.as_object_mut(), required.as_object())
+                    {
+                        for (key, value) in required_obj {
+                            if !existing_obj.contains_key(key) {
+                                existing_obj.insert(key.clone(), value.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+
+                if changed {
+                    if let Ok(formatted) = serde_json::to_string_pretty(&pkg) {
+                        if let Err(e) = std::fs::write(&package_json_path, formatted) {
+                            eprintln!("  \x1b[33m⚠\x1b[0m Failed to update package.json: {e}");
+                        }
+                    }
+                }
+            }
+        }
+    } else if let Err(e) = std::fs::write(&package_json_path, package_json_content) {
+        eprintln!("  \x1b[33m⚠\x1b[0m Failed to write package.json: {e}");
+    }
 
     if !mcp_server_quiet_mode() {
         eprintln!(

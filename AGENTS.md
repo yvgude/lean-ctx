@@ -14,6 +14,7 @@ lean-ctx optimizes LLM context by compressing file reads, shell output, and sear
 |------|---------|
 | `ctx_read(path, mode)` | Cached, compressed file reads (10 modes) |
 | `ctx_search(pattern, path)` | Token-efficient code search |
+| `ctx_glob(pattern, path)` | File pattern matching |
 | `ctx_shell(command)` | Compressed shell output (alternative to CLI) |
 
 ## CLI commands (optimized shell, lower overhead)

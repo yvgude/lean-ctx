@@ -53,7 +53,7 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
     let cache_tokens = count_tokens(&cache_hit);
 
     let mut sym = SymbolMap::new();
-    let idents = symbol_map::extract_identifiers(&content, ext);
+    let idents = symbol_map::extract_identifiers(&content, &[ext]);
     for ident in &idents {
         sym.register(ident);
     }

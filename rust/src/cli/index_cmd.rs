@@ -221,7 +221,20 @@ fn print_human_status(project_root: &str) {
         Some(ms) => format!(" (built in {:.1}s)", ms as f64 / 1000.0),
         None => String::new(),
     };
-    println!("  Semantic:    {}{timing}", summary.state);
+    // When the in-memory state is idle but the index exists on disk, report
+    // "ready" — the index was built in a prior session and can be loaded on
+    // demand.  (Mirrors the fallback in doctor/checks.rs semantic_index_outcome.)
+    let display_state = if summary.state == "idle" && disk.bm25_index.exists {
+        "ready"
+    } else {
+        summary.state
+    };
+    let disk_note = if display_state == "ready" && summary.state == "idle" {
+        " (on disk)"
+    } else {
+        ""
+    };
+    println!("  Semantic:    {display_state}{disk_note}{timing}");
     if let Some(note) = summary.note {
         println!("  Note:        {note}");
     }

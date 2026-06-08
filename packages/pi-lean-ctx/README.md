@@ -49,9 +49,9 @@ Adds `ctx_`-prefixed tools alongside Pi's builtins (or replaces them in `replace
 |------|----------|-------------|
 | `ctx_read` | `read` | Smart mode selection (full/map/signatures) based on file type and size |
 | `ctx_shell` | `bash` | All shell commands compressed via lean-ctx's 95+ patterns |
-| `ctx_grep` | `grep` | Results grouped and compressed via ripgrep + lean-ctx |
-| `ctx_find` | `find` | File listings compressed and .gitignore-aware |
-| `ctx_ls` | `ls` | Directory output compressed |
+| `ctx_search` | `grep` | Results grouped and compressed via ripgrep + lean-ctx |
+| `ctx_glob` | `find` | File listings compressed and .gitignore-aware |
+| `ctx_tree` | `ls` | Directory output compressed |
 
 Pi's `edit` and `write` builtins remain unchanged.
 
@@ -287,7 +287,7 @@ export LEAN_CTX_PI_DISABLE_TOOLS="ctx_memory,ctx_expand,ctx_search"
 ```
 
 > This is the **Pi-extension** deny-list — it controls which tools lean-ctx
-> registers *in Pi* (including its own `ctx_*` tools like `ctx_grep`). It is
+> registers *in Pi* (including its own `ctx_*` tools like `ctx_search`). It is
 > separate from the engine-level `disabled_tools` / `LEAN_CTX_DISABLED_TOOLS`,
 > which hides tools from the MCP server itself.
 
@@ -300,7 +300,7 @@ collides and small models see no duplicate names:
 export LEAN_CTX_PI_TOOL_PREFIX="lc_"   # ctx_expand → lc_ctx_expand
 ```
 
-The signature tools (`ctx_read`, `ctx_shell`, `ctx_ls`, `ctx_find`, `ctx_grep`)
+The signature tools (`ctx_read`, `ctx_shell`, `ctx_tree`, `ctx_glob`, `ctx_search`)
 keep their stable names; only the bridge-discovered MCP tools are prefixed.
 
 ### Curated profile (recommended division of labor)

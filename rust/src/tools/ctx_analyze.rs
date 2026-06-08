@@ -89,7 +89,7 @@ pub fn handle(path: &str, crp_mode: CrpMode) -> String {
 
     if crp_mode.is_tdd() {
         let mut sym = SymbolMap::new();
-        let idents = symbol_map::extract_identifiers(&content, ext);
+        let idents = symbol_map::extract_identifiers(&content, &[ext]);
         for ident in &idents {
             sym.register(ident);
         }

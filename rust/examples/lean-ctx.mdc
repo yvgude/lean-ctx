@@ -15,6 +15,7 @@ Always use lean-ctx MCP tools. Never use the standard equivalents.
 | `Read` | `ctx_read` | Session caching, 6 compression modes, re-reads cost ~13 tokens |
 | `Shell` | `ctx_shell` | Pattern-based compression for git, npm, cargo, docker, tsc |
 | `Grep` | `ctx_search` | Compact context, token-efficient results |
+| `Glob` | `ctx_glob` | File pattern matching |
 | `ls`, `find` | `ctx_tree` | Compact directory maps with file counts |
 
 ## ctx_read Modes

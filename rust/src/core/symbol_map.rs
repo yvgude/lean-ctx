@@ -163,13 +163,13 @@ pub fn should_register(identifier: &str, occurrences: usize, next_id: usize) -> 
     total_savings > entry_cost
 }
 
-pub fn extract_identifiers(content: &str, ext: &str) -> Vec<String> {
+pub fn extract_identifiers(content: &str, exts: &[&str]) -> Vec<String> {
     let ident_re = static_regex!(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b");
 
     let mut seen = HashMap::new();
     for mat in ident_re.find_iter(content) {
         let word = mat.as_str();
-        if word.len() >= MIN_IDENT_LENGTH && !is_keyword(word, ext) {
+        if word.len() >= MIN_IDENT_LENGTH && !is_keyword(word, exts) {
             *seen.entry(word.to_string()).or_insert(0usize) += 1;
         }
     }
@@ -195,8 +195,8 @@ pub fn extract_identifiers(content: &str, ext: &str) -> Vec<String> {
     idents.into_iter().map(|(s, _)| s).collect()
 }
 
-fn is_keyword(word: &str, ext: &str) -> bool {
-    match ext {
+fn is_keyword(word: &str, exts: &[&str]) -> bool {
+    exts.iter().any(|&ext| match ext {
         "rs" => matches!(
             word,
             "continue" | "default" | "return" | "struct" | "unsafe" | "where"
@@ -207,7 +207,7 @@ fn is_keyword(word: &str, ext: &str) -> bool {
         ),
         "py" => matches!(word, "continue" | "lambda" | "return" | "import" | "class"),
         _ => false,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -256,7 +256,7 @@ mod tests {
         // Repeat a long identifier enough times that ROI is positive
         let long = "authenticate_user_credentials_handler";
         let content = format!("{long} {long} {long} {long} {long} short");
-        let result = extract_identifiers(&content, "rs");
+        let result = extract_identifiers(&content, &["rs"]);
         assert!(result.contains(&long.to_string()));
         assert!(!result.contains(&"short".to_string()));
     }

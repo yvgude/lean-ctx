@@ -62,7 +62,7 @@ pub(crate) fn install_pi_hook_with_mode(global: bool, mode: HookMode) {
 
     println!();
     println!(
-        "Setup complete. Prefer the ctx_* tools (ctx_read/ctx_shell/ctx_grep/ctx_find/ctx_ls) — \
+        "Setup complete. Prefer the ctx_* tools (ctx_read/ctx_shell/ctx_search/ctx_glob/ctx_tree) — \
          only those are compressed; native read/bash/grep are not."
     );
     match mode {

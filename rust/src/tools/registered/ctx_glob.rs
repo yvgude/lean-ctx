@@ -5,30 +5,29 @@ use serde_json::{json, Map, Value};
 use crate::server::tool_trait::{get_bool, get_int, get_str, McpTool, ToolContext, ToolOutput};
 use crate::tool_defs::tool_def;
 
-pub struct CtxSearchTool;
+pub struct CtxGlobTool;
 
-impl McpTool for CtxSearchTool {
+impl McpTool for CtxGlobTool {
     fn name(&self) -> &'static str {
-        "ctx_search"
+        "ctx_glob"
     }
 
     fn tool_def(&self) -> Tool {
         tool_def(
-            "ctx_search",
-            "Search code by regex. Prefer over native Grep/rg/find (compact output).\n\
-             Respects .gitignore; supports multi-root via `paths` array. Secret-like files skipped unless role allows.",
+            "ctx_glob",
+            "Find files by glob pattern. Prefer over native Glob for consistency.\n\
+             Respects .gitignore; supports multi-root via `paths` array.",
             json!({
                 "type": "object",
                 "properties": {
-                    "pattern": { "type": "string", "description": "Regex pattern" },
-                    "path": { "type": "string", "description": "Directory to search" },
+                    "pattern": { "type": "string", "description": "Glob pattern (e.g. **/*.ts, *.rs)" },
+                    "path": { "type": "string", "description": "Directory to search (default: .)" },
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Multiple directories to search (alternative to path)"
                     },
-                    "include": { "type": "string", "description": "File filter glob (e.g. *.ts, *.{rs,ts}, src/**/*.tsx)" },
-                    "max_results": { "type": "integer", "description": "Max results (default: 20)" },
+                    "max_results": { "type": "integer", "description": "Max results (default: 200)" },
                     "ignore_gitignore": { "type": "boolean", "description": "Set true to scan ALL files including .gitignore'd paths (default: false). Requires role policy (e.g. admin)." }
                 },
                 "required": ["pattern"]
@@ -44,34 +43,29 @@ impl McpTool for CtxSearchTool {
         let pattern = get_str(args, "pattern")
             .ok_or_else(|| ErrorData::invalid_params("pattern is required", None))?;
         let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx);
-        let include = get_str(args, "include");
-        let max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
+        let max = (get_int(args, "max_results").unwrap_or(200) as usize).min(500);
         let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
         if no_gitignore {
-            if let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
-            {
+            if let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_glob") {
                 return Ok(ToolOutput::simple(e));
             }
         }
 
-        let crp = ctx.crp_mode;
         let respect = !no_gitignore;
         let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
 
         if !resolved.is_multi {
-            return search_single(
+            return handle_single(
                 &pattern,
                 &resolved.roots[0],
-                include.as_deref(),
-                max,
-                crp,
                 respect,
                 allow_secret_paths,
+                max,
             );
         }
 
-        let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
+        let _mode_guard = crate::core::savings_footer::ModeGuard::new("glob");
         let per_root_max = (max / resolved.roots.len()).max(5);
         let mut combined = String::new();
         let mut total_original: usize = 0;
@@ -80,42 +74,32 @@ impl McpTool for CtxSearchTool {
         for root in &resolved.roots {
             let pat = pattern.clone();
             let r = root.clone();
-            let inc = include.clone();
 
-            let search_result = tokio::task::block_in_place(|| {
+            let result = tokio::task::block_in_place(|| {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    crate::tools::ctx_search::handle(
+                    crate::tools::ctx_glob::handle(
                         &pat,
                         &r,
-                        inc.as_deref(),
-                        per_root_max,
-                        crp,
                         respect,
                         allow_secret_paths,
+                        per_root_max,
                     )
                 }))
-                .ok()
             });
 
-            let Some((result, original)) = search_result else {
-                combined.push_str(&format!("── {root} ──\nERROR: search panicked\n\n"));
+            let Ok((result, original)) = result else {
+                combined.push_str(&format!("── {root} ──\nERROR: internal panic\n\n"));
                 continue;
             };
 
-            if result.starts_with("ERROR:") || result.trim().is_empty() {
-                if !result.trim().is_empty() {
-                    combined.push_str(&format!("── {root} ──\n{result}\n\n"));
-                }
+            if result.starts_with("ERROR:") {
+                combined.push_str(&format!("── {root} ──\n{result}\n\n"));
                 continue;
             }
 
             combined.push_str(&format!("── {root} ──\n{result}\n\n"));
             total_original += original;
             total_sent += crate::core::tokens::count_tokens(&result);
-        }
-
-        if combined.is_empty() {
-            combined = "No matches found across any root.".to_string();
         }
 
         let final_out =
@@ -133,45 +117,30 @@ impl McpTool for CtxSearchTool {
     }
 }
 
-fn search_single(
+fn handle_single(
     pattern: &str,
     path: &str,
-    include: Option<&str>,
-    max: usize,
-    crp: crate::tools::CrpMode,
     respect_gitignore: bool,
     allow_secret_paths: bool,
+    max_results: usize,
 ) -> Result<ToolOutput, ErrorData> {
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
-    let pattern_clone = pattern.to_string();
+    let pattern = pattern.to_string();
     let path_clone = path.to_string();
-
-    let search_result = tokio::task::block_in_place(|| {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::tools::ctx_search::handle(
-                &pattern_clone,
-                &path_clone,
-                include,
-                max,
-                crp,
-                respect_gitignore,
-                allow_secret_paths,
-            )
-        }));
-        match result {
-            Ok(r) => Ok(r),
-            Err(_) => Err("search task panicked"),
-        }
-    });
-
-    let (result, original) = match search_result {
-        Ok(r) => r,
-        Err(e) => {
-            return Err(ErrorData::internal_error(
-                format!("search task failed: {e}"),
-                None,
-            ));
-        }
+    let Ok((result, original)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::tools::ctx_glob::handle(
+            &pattern,
+            &path_clone,
+            respect_gitignore,
+            allow_secret_paths,
+            max_results,
+        )
+    })) else {
+        return Err(ErrorData::internal_error(
+            format!(
+                "ctx_glob panicked while processing '{path}'. This is a bug — please report it."
+            ),
+            None,
+        ));
     };
 
     if result.starts_with("ERROR:") {

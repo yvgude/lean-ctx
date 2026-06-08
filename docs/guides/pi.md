@@ -49,9 +49,9 @@ export LEAN_CTX_PI_MODE=replace
 |------|----------|-------------|
 | `ctx_read` | `read` | Smart mode selection (full/map/signatures) based on file type and size |
 | `ctx_shell` | `bash` | All shell commands compressed via lean-ctx's 95+ patterns |
-| `ctx_grep` | `grep` | Results grouped and compressed via ripgrep + lean-ctx |
-| `ctx_find` | `find` | File listings compressed and .gitignore-aware |
-| `ctx_ls` | `ls` | Directory output compressed |
+| `ctx_search` | `grep` | Results grouped and compressed via ripgrep + lean-ctx |
+| `ctx_glob` | `find` | File listings compressed and .gitignore-aware |
+| `ctx_tree` | `ls` | Directory output compressed |
 | `lean_ctx` | — | Direct lean-ctx CLI access (overview, session, knowledge, gain) |
 
 Pi's `edit` and `write` builtins remain unchanged in both modes.
@@ -152,7 +152,7 @@ You (in Pi): "Read the auth module and find security issues"
 
 Pi uses:
   ctx_read src/auth/mod.rs    → compressed, ~60% smaller
-  ctx_grep "password" src/    → grouped results
+  ctx_search "password" src/  → grouped results
   ctx_shell "cargo clippy"    → compressed output
 ```
 

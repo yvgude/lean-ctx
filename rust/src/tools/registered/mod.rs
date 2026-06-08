@@ -25,6 +25,7 @@ pub mod ctx_feedback;
 pub mod ctx_fill;
 pub mod ctx_gain;
 pub mod ctx_git_read;
+pub mod ctx_glob;
 pub mod ctx_graph;
 pub mod ctx_handoff;
 pub mod ctx_heatmap;
@@ -103,6 +104,7 @@ mod adoption_tests {
             ("ctx_search", Box::new(ctx_search::CtxSearchTool)),
             ("ctx_shell", Box::new(ctx_shell::CtxShellTool)),
             ("ctx_tree", Box::new(ctx_tree::CtxTreeTool)),
+            ("ctx_glob", Box::new(ctx_glob::CtxGlobTool)),
         ];
         for (name, tool) in tools {
             let def = tool.tool_def();

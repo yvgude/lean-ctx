@@ -249,7 +249,7 @@ pub(crate) fn process_mode(
             let header = build_header(file_ref, short, ext, content, line_count, true);
 
             let mut sym = SymbolMap::new();
-            let idents = symbol_map::extract_identifiers(&compressed, ext);
+            let idents = symbol_map::extract_identifiers(&compressed, &[ext]);
             for ident in &idents {
                 sym.register(ident);
             }

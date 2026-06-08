@@ -392,7 +392,7 @@ export default async function (pi: ExtensionAPI) {
     description:
       "Run shell commands. Prefer over native Bash/shell (auto-compressed output). "
       + "IMPORTANT: Do NOT use ctx_shell to read files (cat/head/tail) — use ctx_read instead. "
-      + "Do NOT use ctx_shell for grep/find/ls — use ctx_grep, ctx_find, ctx_ls. "
+      + "Do NOT use ctx_shell for grep/find/ls — use ctx_search, ctx_glob, ctx_tree. "
       + "Set raw=true to skip compression when exact output matters. "
       + "Use timeout (seconds) to prevent hanging commands.",
     promptSnippet: "Run shell commands (not for file reading — use ctx_read)",

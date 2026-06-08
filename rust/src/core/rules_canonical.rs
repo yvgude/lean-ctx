@@ -142,7 +142,7 @@ pub fn litm_end_block(mode: Mode) -> &'static str {
     match mode {
         Mode::Hybrid => {
             "--- TOOL PREFERENCE (LITM-END) ---\n\
-             ctx_read>Read ctx_search>Grep lean-ctx_-c>Shell lean-ctx_ls>ls | Edit/Write/Glob=native"
+             ctx_read>Read ctx_search>Grep lean-ctx_-c>Shell lean-ctx_tree>ls | Edit/Write/Glob=native"
         }
         Mode::Mcp => {
             "--- TOOL PREFERENCE (LITM-END) ---\n\

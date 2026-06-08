@@ -12,6 +12,7 @@ alwaysApply: true
 |------------|-----|---------|
 | Read/cat/head/tail | `ctx_read(path, mode)` | `ctx_read("src/main.rs", "full")` |
 | Grep/rg/find | `ctx_search(pattern, path)` | `ctx_search("fn handle", "src/")` |
+| Glob/find | `ctx_glob(pattern, path)` | `ctx_glob("**/*.rs", "src/")` |
 | Shell/bash | `ctx_shell(command)` | `ctx_shell("cargo test")` |
 | ls/find (tree) | `lean-ctx ls [path]` or `ctx_tree(path)` | `ctx_tree("src", depth=3)` |
 | Edit (when Read unavailable) | `ctx_edit(path, old, new)` | `ctx_edit("f.rs", "old", "new")` |
@@ -32,10 +33,7 @@ alwaysApply: true
 4. **Edit:** `ctx_edit(path, old, new)` or native Edit
 5. **Verify:** `ctx_read(path, "diff")` + `ctx_shell("test command")`
 6. **Record:** `ctx_knowledge(action="remember", content="...")`
-
-## Session
 - **Start:** `ctx_session(action="status")` + `ctx_knowledge(action="wakeup")`
 - **End:** `ctx_session(action="decision", content="what was done + next steps")`
-
 NEVER use native Read/Grep/Shell when ctx_* equivalents are available.
 <!-- /lean-ctx -->

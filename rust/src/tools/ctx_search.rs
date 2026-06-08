@@ -3,6 +3,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use glob::Pattern;
 use ignore::WalkBuilder;
 use regex::RegexBuilder;
 
@@ -34,13 +35,13 @@ fn search_deadline() -> Option<Duration> {
 pub fn handle(
     pattern: &str,
     dir: &str,
-    ext_filter: Option<&str>,
+    include: Option<&str>,
     max_results: usize,
     _crp_mode: CrpMode,
     respect_gitignore: bool,
     allow_secret_paths: bool,
 ) -> (String, usize) {
-    let ext_filter = ext_filter.map(|e| e.strip_prefix('.').unwrap_or(e));
+    let include_pattern = include.and_then(|g| Pattern::new(g).ok());
     const MAX_PATTERN_LEN: usize = 1024;
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
 
@@ -87,7 +88,9 @@ pub fn handle(
     let used_index = if let Some(idx) =
         crate::core::search_index::get_fresh(dir, respect_gitignore, allow_secret_paths)
     {
-        files = idx.candidate_paths(pattern, ext_filter).into_paths();
+        files = idx
+            .candidate_paths(pattern, include_pattern.as_ref(), root)
+            .into_paths();
         true
     } else {
         false
@@ -123,9 +126,9 @@ pub fn handle(
                 continue;
             }
 
-            if let Some(ext) = ext_filter {
-                let file_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                if file_ext != ext {
+            if let Some(ref pat) = include_pattern {
+                let rel = path.strip_prefix(root).unwrap_or(path);
+                if !pat.matches(&rel.to_string_lossy()) {
                     continue;
                 }
             }
@@ -328,9 +331,9 @@ pub fn handle(
     }
 
     if symbol_map::substitution_enabled() {
-        let file_ext = ext_filter.unwrap_or("rs");
+        let exts = extract_extensions(include);
         let mut sym = SymbolMap::new();
-        let idents = symbol_map::extract_identifiers(&result, file_ext);
+        let idents = symbol_map::extract_identifiers(&result, &exts);
         for ident in &idents {
             sym.register(ident);
         }
@@ -416,6 +419,73 @@ pub(crate) fn is_generated_file(path: &Path) -> bool {
         || name.ends_with(".css.map")
 }
 
+/// Extract file extensions from a glob pattern for symbol_map context.
+/// Returns all extensions found in brace expansions or single patterns.
+/// Examples:
+///   `*.rs` → `["rs"]`
+///   `*.{rs,ts}` → `["rs", "ts"]`
+///   `src/**/*.tsx` → `["tsx"]`
+///   `*.{py,rb,js}` → `["py", "rb", "js"]`
+#[must_use]
+fn extract_extensions(include: Option<&str>) -> Vec<&'static str> {
+    let Some(pattern) = include else {
+        return vec![];
+    };
+
+    // Find the last extension-like suffix: *.EXT or *.{EXT1,EXT2}
+    let Some(pos) = pattern.rfind('.') else {
+        return vec![];
+    };
+
+    let ext_part = &pattern[pos + 1..];
+
+    // Handle brace expansion: {rs,ts,js} → ["rs", "ts", "js"]
+    if ext_part.starts_with('{') && ext_part.ends_with('}') {
+        let inner = &ext_part[1..ext_part.len() - 1];
+        return inner
+            .split(',')
+            .filter_map(|e| match e.trim() {
+                "rs" => Some("rs"),
+                "ts" => Some("ts"),
+                "tsx" => Some("tsx"),
+                "js" => Some("js"),
+                "jsx" => Some("jsx"),
+                "py" => Some("py"),
+                "go" => Some("go"),
+                "java" => Some("java"),
+                "c" => Some("c"),
+                "cpp" => Some("cpp"),
+                "h" => Some("h"),
+                "rb" => Some("rb"),
+                "swift" => Some("swift"),
+                "kt" => Some("kt"),
+                "cs" => Some("cs"),
+                _ => None,
+            })
+            .collect();
+    }
+
+    // Single extension
+    match ext_part {
+        "rs" => vec!["rs"],
+        "ts" => vec!["ts"],
+        "tsx" => vec!["tsx"],
+        "js" => vec!["js"],
+        "jsx" => vec!["jsx"],
+        "py" => vec!["py"],
+        "go" => vec!["go"],
+        "java" => vec!["java"],
+        "c" => vec!["c"],
+        "cpp" => vec!["cpp"],
+        "h" => vec!["h"],
+        "rb" => vec!["rb"],
+        "swift" => vec!["swift"],
+        "kt" => vec!["kt"],
+        "cs" => vec!["cs"],
+        _ => vec![],
+    }
+}
+
 /// Extract file path from a grep match line, handling Windows drive letters (e.g. "C:").
 fn extract_file_from_match(line: &str) -> &str {
     let start = if line.len() >= 2
@@ -483,7 +553,7 @@ mod tests {
         let (out, _orig) = handle(
             "match",
             dir.path().to_string_lossy().as_ref(),
-            Some("txt"),
+            Some("*.txt"),
             10,
             CrpMode::Off,
             true,
@@ -562,7 +632,7 @@ mod tests {
         let (out, _orig) = handle(
             "longIdentifier",
             dir.path().to_string_lossy().as_ref(),
-            Some("rs"),
+            Some("*.rs"),
             10,
             CrpMode::Off,
             true,
