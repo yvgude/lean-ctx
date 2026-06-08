@@ -87,6 +87,40 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           </div>
         </div>
 
+        <div class="team-card team-savings">
+          <div class="team-members-head">
+            <h2 class="team-section-title">Team savings</h2>
+            <span class="team-seats" data-savings-members></span>
+          </div>
+          <p class="team-prose">
+            An opt-in, aggregated roll-up of the signed savings batches your team pushes
+            (<code>lean-ctx savings push</code>). Tokens and cost your team provably did
+            not spend — the ROI of running LeanCTX, in your own data.
+          </p>
+          <div class="team-savings-totals" data-savings-totals hidden>
+            <div class="team-savings-stat">
+              <span class="team-savings-value" data-savings-tokens>—</span>
+              <span class="team-savings-label">net tokens saved</span>
+            </div>
+            <div class="team-savings-stat">
+              <span class="team-savings-value" data-savings-usd>—</span>
+              <span class="team-savings-label">≈ USD saved</span>
+            </div>
+          </div>
+          <div class="team-savings-break" data-savings-members-list hidden>
+            <h3 class="team-savings-subtitle">Per member</h3>
+            <div data-savings-members-rows></div>
+          </div>
+          <div class="team-savings-break" data-savings-models hidden>
+            <h3 class="team-savings-subtitle">Per model</h3>
+            <div data-savings-models-rows></div>
+          </div>
+          <p class="team-savings-empty" data-savings-empty hidden>
+            No signed savings batches yet. Once your team runs
+            <code>lean-ctx savings push</code>, the roll-up appears here.
+          </p>
+        </div>
+
         <div class="team-card">
           <h2 class="team-section-title">Connect your editor</h2>
           <p class="team-prose">
@@ -326,6 +360,23 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
   .team-owner-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px solid var(--color-border); }
 
+  .team-savings-totals { display: flex; gap: 2rem; flex-wrap: wrap; margin: 0.4rem 0 0.2rem; }
+  .team-savings-stat { display: flex; flex-direction: column; gap: 0.2rem; }
+  .team-savings-value {
+    font-size: var(--text-h3); font-weight: var(--weight-semibold);
+    color: var(--color-accent-bright); font-variant-numeric: tabular-nums; line-height: 1.1;
+  }
+  .team-savings-label { font-size: var(--text-caption); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .team-savings-break { margin-top: 1.1rem; }
+  .team-savings-subtitle { font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.4rem; }
+  .team-savings :global(.team-savings-row) {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.45rem 0; border-bottom: 1px solid var(--color-border); font-size: var(--text-small);
+  }
+  .team-savings :global(.ts-name) { color: var(--color-text); font-family: var(--font-mono, monospace); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .team-savings :global(.ts-val) { color: var(--color-muted); flex: none; font-variant-numeric: tabular-nums; }
+  .team-savings-empty { font-size: var(--text-small); color: var(--color-muted); margin: 0; }
+
   .team-help { margin-top: 0; text-align: center; font-size: var(--text-caption); color: var(--color-muted); }
   .team-help a { color: var(--color-accent); text-decoration: none; }
   .team-help a:hover { text-decoration: underline; }
@@ -461,10 +512,67 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         $('[data-curl-snippet]').textContent = curlSnippet(serverUrl);
         renderMembers(current.members, current.seats);
         showState('live');
+        loadSavings();
       } catch (err) {
         if (err && err.message === 'unauthorized') return;
         $('[data-loading]').hidden = true;
         showBanner('error', 'Could not load your team server. Please refresh or sign in again.');
+      }
+    }
+
+    function fmtTokens(n) {
+      n = Number(n) || 0;
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+      return String(n);
+    }
+
+    async function loadSavings() {
+      var totalsEl = $('[data-savings-totals]');
+      var emptyEl = $('[data-savings-empty]');
+      try {
+        var r = await req('GET', '/api/account/team/savings');
+        if (!r.ok) { if (emptyEl) emptyEl.hidden = false; return; }
+        var d = r.data || {};
+        var s = d.summary || {};
+        var totals = s.totals || {};
+        var net = Number(totals.net_saved_tokens) || 0;
+        if (!d.savings_available || !net) {
+          if (totalsEl) totalsEl.hidden = true;
+          if (emptyEl) emptyEl.hidden = false;
+          return;
+        }
+        if (emptyEl) emptyEl.hidden = true;
+        if (totalsEl) totalsEl.hidden = false;
+        $('[data-savings-tokens]').textContent = fmtTokens(net);
+        $('[data-savings-usd]').textContent = '$' + (Number(totals.saved_usd) || 0).toFixed(2);
+        var members = s.by_member || [];
+        $('[data-savings-members]').textContent = (s.member_count || members.length) + ' reporting';
+
+        var mRows = $('[data-savings-members-rows]');
+        var mWrap = $('[data-savings-members-list]');
+        if (mRows && members.length) {
+          mRows.innerHTML = members.map(function (m) {
+            return '<div class="team-savings-row"><span class="ts-name">' + esc(m.agent_id || '?')
+              + '</span><span class="ts-val">' + fmtTokens(m.net_saved_tokens) + ' tok · $'
+              + (Number(m.saved_usd) || 0).toFixed(2) + '</span></div>';
+          }).join('');
+          if (mWrap) mWrap.hidden = false;
+        }
+
+        var models = s.by_model || [];
+        var gRows = $('[data-savings-models-rows]');
+        var gWrap = $('[data-savings-models]');
+        if (gRows && models.length) {
+          gRows.innerHTML = models.map(function (m) {
+            return '<div class="team-savings-row"><span class="ts-name">' + esc(m.model || '?')
+              + '</span><span class="ts-val">' + fmtTokens(m.saved_tokens) + ' tok</span></div>';
+          }).join('');
+          if (gWrap) gWrap.hidden = false;
+        }
+      } catch (_) {
+        if (emptyEl) emptyEl.hidden = false;
       }
     }
 
