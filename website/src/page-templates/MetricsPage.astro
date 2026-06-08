@@ -19,6 +19,8 @@ interface LeaderRow {
   compression_rate_pct: number;
   period: string;
   pricing_estimated: boolean;
+  /** Server-side plausibility flag: self-reported figures that look statistically implausible. */
+  flagged: boolean;
 }
 
 /**
@@ -163,7 +165,7 @@ const stats = [
         title="Top realized"
         highlight="savings"
         highlightStyle="italic"
-        description="These developers have compressed the most context — and saved the most energy doing it. Claim your spot with a single command; every figure is signed by your local ledger and verifiable offline."
+        description="These developers have compressed the most context — and saved the most energy doing it. Figures are self-reported from each user's local ledger — not server-verified — so entries that look statistically implausible are flagged unverified and ranked last. Claim your spot with a single command."
         variant="full"
         breakHighlight={false}
         descMaxWidth="48rem"
@@ -186,11 +188,12 @@ const stats = [
             </thead>
             <tbody id="mx-rows">
               {entries.map((e) => (
-                <tr class={`mx-row${e.rank === 1 ? ' mx-row--lead' : ''}`} data-href={e.url}>
+                <tr class={`mx-row${e.rank === 1 && !e.flagged ? ' mx-row--lead' : ''}${e.flagged ? ' mx-row--flagged' : ''}`} data-href={e.url}>
                   <td class="mx-col-rank"><span class="mx-rank">{e.rank}</span></td>
                   <td>
                     <a class="mx-name" href={e.url}>{e.display_name || 'anonymous'}</a>
-                    {e.rank === 1 && <span class="mx-badge">Leader</span>}
+                    {e.rank === 1 && !e.flagged && <span class="mx-badge">Leader</span>}
+                    {e.flagged && <span class="mx-flag" title="Self-reported and statistically implausible (very high compression over very large volume). Not server-verified.">unverified</span>}
                   </td>
                   <td class="num"><span class="mx-tok">{fmtTokens(e.tokens_saved)}</span></td>
                   <td class="num mx-col-comp"><span class="mx-comp">{fmtPct(e.compression_rate_pct)}</span></td>
@@ -322,11 +325,13 @@ const stats = [
       function rowHtml(e) {
         var est = e.pricing_estimated ? ' est.' : '';
         var name = e.display_name ? esc(e.display_name) : 'anonymous';
-        var lead = e.rank === 1 ? ' mx-row--lead' : '';
-        var badge = e.rank === 1 ? '<span class="mx-badge">Leader</span>' : '';
-        return '<tr class="mx-row' + lead + '" data-href="' + esc(e.url) + '">' +
+        var lead = (e.rank === 1 && !e.flagged) ? ' mx-row--lead' : '';
+        var flaggedCls = e.flagged ? ' mx-row--flagged' : '';
+        var badge = (e.rank === 1 && !e.flagged) ? '<span class="mx-badge">Leader</span>' : '';
+        var flag = e.flagged ? '<span class="mx-flag" title="Self-reported and statistically implausible (very high compression over very large volume). Not server-verified.">unverified</span>' : '';
+        return '<tr class="mx-row' + lead + flaggedCls + '" data-href="' + esc(e.url) + '">' +
           '<td class="mx-col-rank"><span class="mx-rank">' + e.rank + '</span></td>' +
-          '<td><a class="mx-name" href="' + esc(e.url) + '">' + name + '</a>' + badge + '</td>' +
+          '<td><a class="mx-name" href="' + esc(e.url) + '">' + name + '</a>' + badge + flag + '</td>' +
           '<td class="num"><span class="mx-tok">' + fmtTokens(e.tokens_saved) + '</span></td>' +
           '<td class="num mx-col-comp"><span class="mx-comp">' + fmtPct(e.compression_rate_pct) + '</span></td>' +
           '<td class="num"><span class="mx-energy">' + fmtEnergy(energyWhFor(e.tokens_saved)) + '</span></td>' +
@@ -570,6 +575,22 @@ const stats = [
       background: color-mix(in srgb, var(--color-accent) 10%, transparent);
       vertical-align: middle;
     }
+    .mx-table-card .mx-flag {
+      display: inline-block;
+      margin-left: 0.6rem;
+      padding: 0.1rem 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: var(--weight-semibold);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      vertical-align: middle;
+    }
+    .mx-table-card .mx-row--flagged { opacity: 0.62; }
+    .mx-table-card .mx-row--flagged:hover { opacity: 0.85; }
     .mx-table-card .mx-tok {
       font-family: var(--font-mono);
       font-weight: var(--weight-semibold);
