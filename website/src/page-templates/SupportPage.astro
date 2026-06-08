@@ -32,9 +32,14 @@ const checkIcon =
 
       <div class="sup-card" data-cadence="monthly">
         <div class="sup-head">
-          <div>
-            <span class="sup-eyebrow">{supporterOffer.name}</span>
-            <p class="sup-tagline">{supporterOffer.tagline}</p>
+          <div class="sup-head-main">
+            <span class="sup-medallion" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.55-4.74-10.05-9.36C.4 9.07 1.62 5.4 5.07 4.55c2.04-.5 3.94.42 5.03 1.94l1.9 2.64 1.9-2.64c1.09-1.52 2.99-2.44 5.03-1.94 3.45.85 4.67 4.52 3.12 7.09C19.55 16.26 12 21 12 21z"/></svg>
+            </span>
+            <div>
+              <span class="sup-eyebrow">{supporterOffer.name}</span>
+              <p class="sup-tagline">{supporterOffer.tagline}</p>
+            </div>
           </div>
           <div class="sup-cadence" role="group" aria-label="Billing cadence">
             <button type="button" class="sup-cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
@@ -71,6 +76,33 @@ const checkIcon =
           portal. Need a shared team workspace instead? <a href={lp('/pricing/')}>See the Team plan →</a>
         </p>
       </div>
+
+      <section class="sup-funds" aria-label="Where your support goes">
+        <h2 class="sup-funds-title font-display">Where your support goes</h2>
+        <div class="sup-funds-grid">
+          <article class="sup-fund">
+            <span class="sup-fund-ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </span>
+            <h3 class="sup-fund-title">Ship faster</h3>
+            <p class="sup-fund-text">New read modes, more languages and MCP tools land sooner.</p>
+          </article>
+          <article class="sup-fund">
+            <span class="sup-fund-ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-4z"/><polyline points="9 12 11 14 15 10"/></svg>
+            </span>
+            <h3 class="sup-fund-title">Stay secure</h3>
+            <p class="sup-fund-text">Ongoing maintenance, dependency upkeep and security hardening.</p>
+          </article>
+          <article class="sup-fund">
+            <span class="sup-fund-ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+            </span>
+            <h3 class="sup-fund-title">Stay independent</h3>
+            <p class="sup-fund-text">No VC, no ads, no selling your data. The roadmap stays yours.</p>
+          </article>
+        </div>
+      </section>
 
       <p class="sup-aside">
         Prefer a one-off? You can also
@@ -122,6 +154,32 @@ const checkIcon =
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
+  }
+  .sup-head-main { display: flex; align-items: center; gap: 0.9rem; }
+  .sup-medallion {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    color: #0a0a0f;
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  }
+  .sup-medallion svg {
+    width: 1.5rem;
+    height: 1.5rem;
+    transform-origin: center;
+    animation: sup-beat 2.4s ease-in-out infinite;
+  }
+  @keyframes sup-beat {
+    0%, 60%, 100% { transform: scale(1); }
+    20% { transform: scale(1.18); }
+    40% { transform: scale(1.06); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sup-medallion svg { animation: none; }
   }
   .sup-eyebrow {
     font-size: var(--text-caption);
@@ -255,6 +313,63 @@ const checkIcon =
   .sup-fineprint strong { color: var(--color-text); }
   .sup-fineprint a, .sup-aside a { color: var(--color-accent); text-decoration: none; }
   .sup-fineprint a:hover, .sup-aside a:hover { text-decoration: underline; }
+  .sup-funds {
+    margin-top: clamp(2.5rem, 2rem + 2vw, 4rem);
+  }
+  .sup-funds-title {
+    text-align: center;
+    font-size: var(--text-h4, 1.15rem);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    letter-spacing: var(--tracking-snug);
+    margin-bottom: clamp(1.25rem, 1rem + 1vw, 2rem);
+  }
+  .sup-funds-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+  @media (min-width: 720px) {
+    .sup-funds-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  .sup-fund {
+    padding: clamp(1.1rem, 0.9rem + 0.6vw, 1.5rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-surface);
+    transition: border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+  }
+  .sup-fund:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+    transform: translateY(-2px);
+  }
+  .sup-fund-ic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: var(--card-radius);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .sup-fund-ic svg { width: 1.2rem; height: 1.2rem; }
+  .sup-fund-title {
+    margin-top: 0.8rem;
+    font-size: var(--text-body);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+  }
+  .sup-fund-text {
+    margin-top: 0.35rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    color: var(--color-muted);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sup-fund:hover { transform: none; }
+  }
+
   .sup-aside {
     margin-top: 1.5rem;
     text-align: center;

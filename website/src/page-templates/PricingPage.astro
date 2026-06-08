@@ -115,19 +115,37 @@ const faqJsonLd = JSON.stringify({
         ))}
       </div>
 
+      <ul class="pricing-assurances" aria-label="What every plan includes">
+        <li><span class="pa-check" set:html={checkIcon} />Local stays free, forever</li>
+        <li><span class="pa-check" set:html={checkIcon} />Cancel or change seats anytime</li>
+        <li><span class="pa-check" set:html={checkIcon} />Self-host or bring your own keys</li>
+        <li><span class="pa-check" set:html={checkIcon} />Apache-2.0 core — no lock-in</li>
+      </ul>
+
       <p class="pricing-localfree">
         <span class="lf-dot" aria-hidden="true"></span>
         <span><strong>Local-Free guarantee.</strong> Upgrading never changes what runs on your machine — the paid plane lives entirely server-side. <a href={lp('/context-os/')}>See how the planes separate →</a></span>
       </p>
 
-      <a class="pricing-supporter" href={lp(supporterOffer.href)}>
-        <span class="ps-heart" aria-hidden="true">♥</span>
-        <span class="ps-text">
-          <strong>Just you, and you love lean-ctx?</strong> Become a Supporter for {supporterOffer.priceMonthly}/month.
-          It unlocks nothing — it simply funds the project and keeps it independent.
-        </span>
-        <span class="ps-cta">Support lean-ctx →</span>
-      </a>
+      <aside class="supporter-banner">
+        <div class="sb-glow" aria-hidden="true"></div>
+        <div class="sb-heart" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.55-4.74-10.05-9.36C.4 9.07 1.62 5.4 5.07 4.55c2.04-.5 3.94.42 5.03 1.94l1.9 2.64 1.9-2.64c1.09-1.52 2.99-2.44 5.03-1.94 3.45.85 4.67 4.52 3.12 7.09C19.55 16.26 12 21 12 21z"/></svg>
+        </div>
+        <div class="sb-body">
+          <p class="sb-eyebrow">Solo developer · no team needed</p>
+          <h3 class="sb-title font-display">Love lean-ctx? Become a Supporter.</h3>
+          <p class="sb-text">
+            From <strong>{supporterOffer.priceMonthly}/month</strong> — it unlocks nothing and gates nothing.
+            It simply funds the open-source Context OS you rely on every day and keeps it
+            independent: no VC, no telemetry, no lock-in.
+          </p>
+        </div>
+        <a class="sb-cta" href={lp(supporterOffer.href)}>
+          <span>Support lean-ctx</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+      </aside>
     </div>
   </section>
 
@@ -361,11 +379,32 @@ const faqJsonLd = JSON.stringify({
   .feat-clock { flex-shrink: 0; margin-top: 0.05rem; color: var(--color-muted); }
   .feat-clock :global(svg) { width: 1rem; height: 1rem; }
 
+  .pricing-assurances {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem clamp(1rem, 0.5rem + 1.5vw, 2rem);
+    margin: clamp(2rem, 1.5rem + 1.5vw, 3rem) auto 0;
+    max-width: 52rem;
+    padding: 0;
+  }
+  .pricing-assurances li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    color: var(--color-text);
+  }
+  .pa-check { display: inline-flex; flex-shrink: 0; color: var(--color-accent); }
+  .pa-check :global(svg) { width: 0.95rem; height: 0.95rem; }
+
   .pricing-localfree {
     display: flex;
     align-items: flex-start;
     gap: 0.6rem;
-    margin: clamp(2rem, 1.5rem + 1.5vw, 3rem) auto 0;
+    margin: clamp(1.25rem, 1rem + 0.75vw, 1.75rem) auto 0;
     max-width: 46rem;
     padding: 1rem 1.25rem;
     border: 1px dashed color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
@@ -388,37 +427,103 @@ const faqJsonLd = JSON.stringify({
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
   }
 
-  .pricing-supporter {
+  .supporter-banner {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 0.9rem;
-    margin: 1rem auto 0;
+    gap: clamp(1rem, 0.5rem + 1.5vw, 1.75rem);
+    margin: clamp(1.25rem, 1rem + 0.75vw, 1.75rem) auto 0;
     max-width: 46rem;
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--card-radius);
-    background: var(--color-surface);
-    text-decoration: none;
-    transition: border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+    padding: clamp(1.25rem, 1rem + 1vw, 1.9rem);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    border-radius: var(--card-radius-lg);
+    background:
+      radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--color-accent) 12%, transparent), transparent 55%),
+      radial-gradient(120% 140% at 100% 100%, color-mix(in srgb, var(--color-accent-2) 12%, transparent), transparent 55%),
+      var(--color-surface);
+    box-shadow: 0 24px 60px -36px color-mix(in srgb, var(--color-accent) 45%, transparent);
+    overflow: hidden;
   }
-  .pricing-supporter:hover {
-    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
-    transform: translateY(-1px);
+  .sb-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(60% 80% at 12% 0%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 60%);
+    pointer-events: none;
   }
-  .ps-heart { flex-shrink: 0; color: var(--color-accent); font-size: 1.2rem; line-height: 1; }
-  .ps-text { font-size: var(--text-small); line-height: var(--leading-snug); color: var(--color-muted); }
-  .ps-text strong { color: var(--color-text-bright); }
-  .ps-cta {
+  .sb-heart {
+    position: relative;
     flex-shrink: 0;
-    margin-left: auto;
+    display: grid;
+    place-items: center;
+    width: 3.4rem;
+    height: 3.4rem;
+    border-radius: 50%;
+    color: #0a0a0f;
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  }
+  .sb-heart svg {
+    width: 1.6rem;
+    height: 1.6rem;
+    transform-origin: center;
+    animation: sb-beat 2.4s ease-in-out infinite;
+  }
+  @keyframes sb-beat {
+    0%, 60%, 100% { transform: scale(1); }
+    20% { transform: scale(1.18); }
+    40% { transform: scale(1.06); }
+  }
+  .sb-body { position: relative; flex: 1; min-width: 0; }
+  .sb-eyebrow {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-accent);
+  }
+  .sb-title {
+    margin-top: 0.3rem;
+    font-size: var(--text-h4, 1.15rem);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    letter-spacing: var(--tracking-snug);
+    line-height: var(--leading-tight, 1.2);
+  }
+  .sb-text {
+    margin-top: 0.5rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+  }
+  .sb-text strong { color: var(--color-text-bright); }
+  .sb-cta {
+    position: relative;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.8rem 1.3rem;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    color: #0a0a0f;
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
-    color: var(--color-accent);
+    text-decoration: none;
     white-space: nowrap;
+    box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--color-accent) 60%, transparent);
+    transition: transform var(--dur) var(--ease-out), filter var(--dur) var(--ease-out);
   }
-  @media (max-width: 560px) {
-    .pricing-supporter { flex-wrap: wrap; }
-    .ps-cta { margin-left: 0; }
+  .sb-cta svg { width: 1.05rem; height: 1.05rem; transition: transform var(--dur) var(--ease-out); }
+  .sb-cta:hover { transform: translateY(-2px); filter: brightness(1.05); }
+  .sb-cta:hover svg { transform: translateX(3px); }
+  @media (max-width: 640px) {
+    .supporter-banner { flex-direction: column; align-items: flex-start; text-align: left; }
+    .sb-cta { width: 100%; justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sb-heart svg { animation: none; }
+    .sb-cta:hover { transform: none; }
+    .sb-cta:hover svg { transform: none; }
   }
 
   .faq-section { padding-top: 0; }

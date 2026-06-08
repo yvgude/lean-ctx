@@ -6,6 +6,7 @@ import Footer from '../components/Footer.astro';
 import DocsTopBar from '../components/DocsTopBar.astro';
 import DocsFooter from '../components/DocsFooter.astro';
 import AsciiHeroBg from '../components/AsciiHeroBg.astro';
+import SupportFab from '../components/SupportFab.astro';
 import { locales, isRtl, type Locale } from '../i18n/config';
 import { getLocaleFromUrl, getLocalizedPath, removeLocalePrefix, useTranslations } from '../i18n/utils';
 import siteVersionRaw from '../../public/version.txt?raw';
@@ -43,6 +44,9 @@ const dir = isRtl(locale) ? 'rtl' : 'ltr';
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const currentPathWithoutLocale = removeLocalePrefix(Astro.url.pathname);
 const isHome = Astro.url.pathname === '/';
+// The global "Support this project" button shows everywhere except the Supporter
+// page itself (where it would just point at the page you are already on).
+const showSupportFab = !currentPathWithoutLocale.startsWith('/support');
 
 const todayIso = new Date().toISOString().slice(0, 10);
 const siteVersion = siteVersionRaw.trim();
@@ -260,6 +264,8 @@ const breadcrumbJsonLd = breadcrumbs ? JSON.stringify({
     <slot />
   </main>
   {docs ? <DocsFooter /> : <Footer />}
+
+  {showSupportFab && <SupportFab />}
 
   <div class="scroll-indicator" id="scroll-indicator" aria-hidden="true">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>

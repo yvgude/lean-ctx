@@ -1,0 +1,111 @@
+---
+// Global "Support this project" floating action button.
+//
+// Rendered site-wide from BaseLayout (suppressed on /support itself, where it
+// would be redundant). Always-visible pill on desktop, icon-only on mobile;
+// links to the Supporter page. Cosmetic only — it never gates anything.
+---
+
+<a
+  class="support-fab"
+  href="/support/"
+  aria-label="Support this project"
+  data-support-fab
+>
+  <span class="sf-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 21s-7.55-4.74-10.05-9.36C.4 9.07 1.62 5.4 5.07 4.55c2.04-.5 3.94.42 5.03 1.94l1.9 2.64 1.9-2.64c1.09-1.52 2.99-2.44 5.03-1.94 3.45.85 4.67 4.52 3.12 7.09C19.55 16.26 12 21 12 21z"/>
+    </svg>
+  </span>
+  <span class="sf-label">Support this project</span>
+</a>
+
+<style>
+  .support-fab {
+    position: fixed;
+    right: clamp(1rem, 0.5rem + 1.5vw, 2rem);
+    bottom: clamp(1rem, 0.5rem + 1.5vw, 2rem);
+    z-index: 45;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.7rem 1.05rem;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    color: #0a0a0f;
+    font-family: var(--font-display, inherit);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+    line-height: 1;
+    box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--color-accent) 55%, transparent),
+      0 2px 8px rgba(0, 0, 0, 0.25);
+    transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out),
+      filter var(--dur) var(--ease-out);
+    animation: sf-enter 0.55s var(--ease-out) 0.7s both;
+  }
+  .support-fab:hover,
+  .support-fab:focus-visible {
+    transform: translateY(-3px);
+    filter: brightness(1.06);
+    box-shadow: 0 16px 40px -10px color-mix(in srgb, var(--color-accent) 70%, transparent),
+      0 4px 12px rgba(0, 0, 0, 0.3);
+    outline: none;
+  }
+  .support-fab:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent),
+      0 16px 40px -10px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  }
+
+  .sf-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+  .sf-icon svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    transform-origin: center;
+    animation: sf-beat 2.4s var(--ease-in-out, ease-in-out) infinite;
+  }
+  .sf-label {
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+
+  @keyframes sf-enter {
+    from { opacity: 0; transform: translateY(120%) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes sf-beat {
+    0%, 60%, 100% { transform: scale(1); }
+    20% { transform: scale(1.22); }
+    40% { transform: scale(1.08); }
+  }
+
+  /* Icon-only on small screens so it never covers content. */
+  @media (max-width: 600px) {
+    .support-fab {
+      padding: 0;
+      width: 3.1rem;
+      height: 3.1rem;
+      justify-content: center;
+      gap: 0;
+    }
+    .sf-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    .sf-icon svg { width: 1.35rem; height: 1.35rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .support-fab { animation: none; }
+    .sf-icon svg { animation: none; }
+    .support-fab:hover,
+    .support-fab:focus-visible { transform: none; }
+  }
+</style>
