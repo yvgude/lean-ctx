@@ -1,12 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JOURNEYS SSOT — the 26 code-grounded user journeys.
+// JOURNEYS SSOT — the 27 code-grounded user journeys.
 //
 // Mirrors docs/reference/README.md ("Every Function, Every Path") plus the wave
-// product journeys (J18–J21) and the context-layer extension journeys (J22–J26:
-// SDKs/API, personas, universal intake, plugins/WASM, team plane). These are the
-// content/SEO backbone of the site: every CLI command and MCP tool appears in at
-// least one journey. The journeys are *grouped* into four persona tracks (see
-// tracks.ts) so navigation stays conversion-focused instead of 26 flat entries.
+// product journeys (J18–J21), the context-layer extension journeys (J22–J26:
+// SDKs/API, personas, universal intake, plugins/WASM, team plane) and the ops
+// deploy journey (J27: self-hosting the team server). These are the content/SEO
+// backbone of the site: every CLI command and MCP tool appears in at least one
+// journey. The journeys are *grouped* into four persona tracks (see tracks.ts)
+// so navigation stays conversion-focused instead of 27 flat entries.
 //
 // Each journey gets its own page at /docs/journeys/<slug>, rendered from this
 // data by a single template (src/page-templates/JourneyPage.astro). `href` is the
@@ -17,7 +18,7 @@ import type { PillarId } from './positioning';
 export type TrackId = 'get-started' | 'daily-workflow' | 'scale-teams' | 'operate-govern';
 
 export interface Journey {
-  /** 1-based number (J1 … J26); J1–J17 mirror docs/reference, J18–J21 are wave journeys, J22–J26 extend the context layer. */
+  /** 1-based number (J1 … J27); J1–J17 mirror docs/reference, J18–J21 are wave journeys, J22–J26 extend the context layer, J27 is the self-host/ops deploy journey. */
   num: number;
   slug: string;
   title: string;
@@ -297,6 +298,16 @@ export const journeys: Journey[] = [
       'Take LeanCTX to a team without gating what a single developer gets locally. Role-scoped team tokens, an audited team server, informational billing and a signed ROI artifact add coordination and proof \u2014 while the Local-Free Invariant, enforced in CI, keeps every local capability free forever.',
     covers: ['team token --role', 'team serve', 'billing plans', 'billing usage', 'savings roi'],
     trackId: 'operate-govern', pillars: ['govern', 'remember'],
+    href: '/docs/api-reference', refDoc: '09-team-cloud-ci',
+  },
+  {
+    num: 27, slug: 'self-host-team-server', title: 'Self-Host the Team Server',
+    persona: 'self-hosting LeanCTX for a whole company',
+    summary: 'Run the audited team server on your own AWS or Docker infra — one shared brain for the org.',
+    intro:
+      'Host LeanCTX yourself and give an entire company one governed, compressed context layer. The audited team server — Apache-2.0, self-hosting is free — goes from a single team.json to a hardened service on AWS behind your own TLS and SSO.',
+    covers: ['team serve', 'team token --role', 'team sync', 'ALB / TLS', 'Docker', 'audit log'],
+    trackId: 'operate-govern', pillars: ['govern', 'route'],
     href: '/docs/api-reference', refDoc: '09-team-cloud-ci',
   },
 ];
