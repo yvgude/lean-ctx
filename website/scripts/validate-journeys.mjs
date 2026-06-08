@@ -52,8 +52,8 @@ const resolves = (href) => {
   return new RegExp(`['"]${clean}/?['"]\\s*:`).test(astroConfig);
 };
 
-// 1) Exactly 21 journeys, all mapped to a declared track.
-const EXPECTED_JOURNEYS = 21;
+// 1) Exactly 26 journeys, all mapped to a declared track.
+const EXPECTED_JOURNEYS = 26;
 const journeyHrefs = extractHrefs(journeysSrc);
 const journeyNums = [...journeysSrc.matchAll(/num:\s*(\d+)/g)].map((m) => Number(m[1]));
 if (journeyNums.length === EXPECTED_JOURNEYS) ok(`${EXPECTED_JOURNEYS} journeys defined`);

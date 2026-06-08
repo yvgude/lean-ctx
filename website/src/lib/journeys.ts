@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// JOURNEYS SSOT — the 21 code-grounded user journeys.
+// JOURNEYS SSOT — the 26 code-grounded user journeys.
 //
 // Mirrors docs/reference/README.md ("Every Function, Every Path") plus the wave
-// product journeys (J18–J21). These are the content/SEO backbone of the site:
-// every CLI command and MCP tool appears in at least one journey. The journeys are
-// *grouped* into four persona tracks (see tracks.ts) so navigation stays
-// conversion-focused instead of 21 flat entries.
+// product journeys (J18–J21) and the context-layer extension journeys (J22–J26:
+// SDKs/API, personas, universal intake, plugins/WASM, team plane). These are the
+// content/SEO backbone of the site: every CLI command and MCP tool appears in at
+// least one journey. The journeys are *grouped* into four persona tracks (see
+// tracks.ts) so navigation stays conversion-focused instead of 26 flat entries.
 //
 // Each journey gets its own page at /docs/journeys/<slug>, rendered from this
 // data by a single template (src/page-templates/JourneyPage.astro). `href` is the
@@ -16,7 +17,7 @@ import type { PillarId } from './positioning';
 export type TrackId = 'get-started' | 'daily-workflow' | 'scale-teams' | 'operate-govern';
 
 export interface Journey {
-  /** 1-based number (J1 … J21); J1–J17 mirror docs/reference, J18–J21 are wave journeys. */
+  /** 1-based number (J1 … J26); J1–J17 mirror docs/reference, J18–J21 are wave journeys, J22–J26 extend the context layer. */
   num: number;
   slug: string;
   title: string;
@@ -247,6 +248,56 @@ export const journeys: Journey[] = [
     covers: ['benchmark scorecard', '--json', 'recall@5', 'MRR', 'determinism_digest'],
     trackId: 'operate-govern', pillars: ['govern'],
     href: '/docs/observatory', refDoc: '11-analytics-and-insights',
+  },
+  {
+    num: 22, slug: 'open-door-sdks-api', title: 'Build Your Own Agent: SDKs & /v1 API',
+    persona: 'building your own agent in any language',
+    summary: 'Embed LeanCTX in your own harness over a stable, discoverable /v1 contract.',
+    intro:
+      'Drive LeanCTX from your own loop, in your own language. A stable /v1 HTTP+SSE contract, a capabilities endpoint you branch on instead of guessing, and first-party Python, TypeScript and Rust SDKs turn the Cognitive Context Layer into a service any developer embeds \u2014 verified by a shared conformance kit before you ship.',
+    covers: ['serve', '/v1/capabilities', '/v1/openapi.json', 'leanctx', '@leanctx/sdk', 'lean-ctx-client'],
+    trackId: 'scale-teams', pillars: ['route', 'perceive'],
+    href: '/docs/api-reference', refDoc: '09-team-cloud-ci',
+  },
+  {
+    num: 23, slug: 'context-personas', title: 'Context Personas',
+    persona: 'building a non-coding agent (sales, research, support)',
+    summary: 'One switch reshapes the whole context surface for your domain.',
+    intro:
+      'LeanCTX is not only for code. A persona is a declarative bundle \u2014 tool surface, read-mode, compressor, chunker, intent taxonomy and sensitivity floor \u2014 that reshapes the entire context surface for sales, research, support or data work in one switch, with the coding default left exactly as it was.',
+    covers: ['LEAN_CTX_PERSONA', 'persona', 'lead-gen', 'research', 'support', 'data-analysis'],
+    trackId: 'scale-teams', pillars: ['route', 'govern'],
+    href: '/context-os', refDoc: '10-customization-and-governance',
+  },
+  {
+    num: 24, slug: 'universal-intake', title: 'Universal Intake: Docs, Data & Email',
+    persona: 'feeding PDFs, CSV, email and HTML to your agent',
+    summary: 'Index any corpus \u2014 not just code \u2014 with format-aware extractors.',
+    intro:
+      'Point the index at PDFs, web captures, CRM exports and mailboxes, not just source code. An ingestion front-door admits documents and data, and a format extractor per type turns each into clean, structure-aware chunks that the same BM25, semantic and knowledge engine can search.',
+    covers: ['ctx_index', 'pdf', 'csv', 'eml', 'html', 'json'],
+    trackId: 'scale-teams', pillars: ['perceive', 'compress'],
+    href: '/docs/data-sources', refDoc: '05-advanced',
+  },
+  {
+    num: 25, slug: 'extensions-plugins-wasm', title: 'Extend Without Forking: Plugins & WASM',
+    persona: 'adding your own tools, compressors or providers',
+    summary: 'Add tools, compressors and providers as sandboxed plugins or WASM \u2014 no fork.',
+    intro:
+      'Extend the context layer without patching its source. Declare a tool in a plugin manifest, react to lifecycle hooks, or compile a custom compressor or chunker to a sandboxed WASM module \u2014 each is discovered, advertised in /v1/capabilities and conformance-checked exactly like a built-in.',
+    covers: ['plugin.toml', '[[tools]]', 'hooks', 'LEAN_CTX_WASM_DIR', 'conformance', '/v1/capabilities'],
+    trackId: 'scale-teams', pillars: ['route', 'govern'],
+    href: '/docs/data-sources', refDoc: '05-advanced',
+  },
+  {
+    num: 26, slug: 'team-plane-local-free', title: 'Team Plane & the Local-Free Invariant',
+    persona: 'rolling out to a team and proving ROI',
+    summary: 'Team RBAC, real plans and reproducible ROI \u2014 local stays free and ungated.',
+    intro:
+      'Take LeanCTX to a team without gating what a single developer gets locally. Role-scoped team tokens, an audited team server, informational billing and a signed ROI artifact add coordination and proof \u2014 while the Local-Free Invariant, enforced in CI, keeps every local capability free forever.',
+    covers: ['team token --role', 'team serve', 'billing plans', 'billing usage', 'savings roi'],
+    trackId: 'operate-govern', pillars: ['govern', 'remember'],
+    href: '/docs/api-reference', refDoc: '09-team-cloud-ci',
   },
 ];
 
