@@ -1,0 +1,404 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import CtaSection from '../components/CtaSection.astro';
+import { pricingTiers, pricingFaq } from '../lib/pricing';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+
+const checkIcon =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+
+const ctaHref = (tier: (typeof pricingTiers)[number]) =>
+  tier.cta.href.startsWith('mailto') ? tier.cta.href : lp(tier.cta.href);
+
+const faqJsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: pricingFaq.map((item) => ({
+    '@type': 'Question',
+    name: item.q,
+    acceptedAnswer: { '@type': 'Answer', text: item.a },
+  })),
+});
+---
+
+<BaseLayout
+  title="Pricing — LeanCTX"
+  description="LeanCTX is free forever for local use. Paid Team and Enterprise plans add a shared, hosted context plane — seats, hosted retrieval, connectors, audit and SSO — without ever gating a local feature."
+  breadcrumbs={[
+    { name: 'Home', url: lp('/') },
+    { name: 'Pricing', url: lp('/pricing/') },
+  ]}
+  extraJsonLd={faqJsonLd}
+>
+  <PageHero
+    label="Pricing"
+    title="Start free."
+    highlight="Scale when your team does."
+    description="Every local capability is free, forever. Paid plans are purely additive — they give your team and its agents one shared, hosted context plane. Nothing local is ever locked behind a paywall."
+  />
+
+  <section class="section-y pricing-section" data-cadence="monthly">
+    <div class="content-grid">
+      <div class="cadence-toggle" role="group" aria-label="Billing cadence">
+        <button type="button" class="cadence-btn is-active" data-cadence-btn="monthly" aria-pressed="true">Monthly</button>
+        <button type="button" class="cadence-btn" data-cadence-btn="yearly" aria-pressed="false">
+          Yearly <span class="cadence-save">save 17%</span>
+        </button>
+      </div>
+
+      <div class="pricing-grid">
+        {pricingTiers.map((tier) => (
+          <article class:list={['pricing-card', tier.featured && 'is-featured']}>
+            {tier.featured && <span class="pricing-badge">Most popular</span>}
+
+            <header>
+              <h2 class="pricing-name font-display">{tier.name}</h2>
+              <p class="pricing-tagline">{tier.tagline}</p>
+            </header>
+
+            <div class="pricing-price">
+              {tier.priceYearly ? (
+                <>
+                  <span class="price-amount" data-price-monthly>{tier.priceMonthly}</span>
+                  <span class="price-amount" data-price-yearly>{tier.priceYearly}</span>
+                  <span class="price-unit">
+                    <span data-unit-monthly>{tier.unit}</span>
+                    <span data-unit-yearly>/year</span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span class="price-amount">{tier.priceMonthly}</span>
+                  {tier.unit && <span class="price-unit">{tier.unit}</span>}
+                </>
+              )}
+            </div>
+
+            <p class="pricing-note">{tier.priceNote ?? '\u00A0'}</p>
+
+            <a
+              href={ctaHref(tier)}
+              class:list={['pricing-cta', tier.featured ? 'btn-primary' : 'btn-outline']}
+              data-tier={tier.id}
+              {...(tier.cta.kind === 'checkout' ? { 'data-checkout-cta': '' } : {})}
+            >
+              {tier.cta.label}
+            </a>
+
+            <ul class="pricing-features">
+              {tier.features.map((f) => (
+                <li><span class="feat-check" set:html={checkIcon} />{f}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+
+      <p class="pricing-localfree">
+        <span class="lf-dot" aria-hidden="true"></span>
+        <span><strong>Local-Free guarantee.</strong> Upgrading never changes what runs on your machine — the paid plane lives entirely server-side. <a href={lp('/context-os/')}>See how the planes separate →</a></span>
+      </p>
+    </div>
+  </section>
+
+  <section class="section-y faq-section">
+    <div class="content-grid-narrow">
+      <h2 class="faq-title font-display">Common questions</h2>
+      <div class="faq-list">
+        {pricingFaq.map((item) => (
+          <details class="faq-item">
+            <summary class="faq-q">
+              {item.q}
+              <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <p class="faq-a">{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <CtaSection
+    eyebrow="Ready?"
+    title="Free to start."
+    titleHighlight="Yours to scale."
+    description="Install in seconds and keep everything local — upgrade only when your team needs one shared context."
+    align="center"
+    actions={[
+      { label: 'Install LeanCTX', href: lp('/docs/getting-started/'), variant: 'primary', icon: 'arrow' },
+      { label: 'Manage your account', href: lp('/account/billing/'), variant: 'outline' },
+    ]}
+  />
+</BaseLayout>
+
+<style>
+  .cadence-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.3rem;
+    margin: 0 auto clamp(2rem, 1.5rem + 1.5vw, 3rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    width: fit-content;
+  }
+  .pricing-section .content-grid { display: flex; flex-direction: column; }
+  .cadence-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.1rem;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--color-muted);
+    font-family: inherit;
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition: color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+    white-space: nowrap;
+  }
+  .cadence-btn:hover { color: var(--color-text-bright); }
+  .cadence-btn.is-active {
+    background: var(--color-surface-3);
+    color: var(--color-text-bright);
+  }
+  .cadence-save {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-pill);
+  }
+
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: clamp(1rem, 0.5rem + 1.5vw, 1.5rem);
+    align-items: stretch;
+  }
+  @media (min-width: 900px) {
+    .pricing-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  .pricing-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--color-surface);
+    transition: border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+  }
+  .pricing-card:hover { border-color: var(--color-border-light); }
+  .pricing-card.is-featured {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)), var(--color-surface));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
+      0 24px 60px -30px color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  @media (min-width: 900px) {
+    .pricing-card.is-featured { transform: translateY(-0.75rem); }
+  }
+
+  .pricing-badge {
+    position: absolute;
+    top: -0.7rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.25rem 0.75rem;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-bg);
+    background: var(--color-accent);
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+  }
+
+  .pricing-name {
+    font-size: var(--text-h3);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    letter-spacing: var(--tracking-snug);
+  }
+  .pricing-tagline {
+    margin-top: 0.5rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-normal);
+    color: var(--color-muted);
+    min-height: 2.8em;
+  }
+
+  .pricing-price {
+    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .price-amount {
+    font-family: var(--font-display);
+    font-size: clamp(2.25rem, 1.8rem + 2vw, 3rem);
+    font-weight: var(--weight-bold);
+    color: var(--color-text-bright);
+    line-height: 1;
+    letter-spacing: var(--tracking-tight);
+  }
+  .price-unit { font-size: var(--text-small); color: var(--color-muted); }
+  .pricing-note {
+    margin-top: 0.5rem;
+    font-size: var(--text-caption);
+    color: var(--color-muted);
+    min-height: 1.2em;
+  }
+
+  /* cadence-driven price visibility (CSS, works without JS) */
+  .pricing-section[data-cadence='monthly'] [data-price-yearly],
+  .pricing-section[data-cadence='monthly'] [data-unit-yearly],
+  .pricing-section[data-cadence='yearly'] [data-price-monthly],
+  .pricing-section[data-cadence='yearly'] [data-unit-monthly] { display: none; }
+
+  .pricing-cta {
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.75rem 1.25rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    border-radius: var(--card-radius);
+    text-decoration: none;
+  }
+
+  .pricing-features {
+    margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    padding-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    list-style: none;
+  }
+  .pricing-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+  }
+  .feat-check {
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+    color: var(--color-accent);
+  }
+  .feat-check :global(svg) { width: 1rem; height: 1rem; }
+
+  .pricing-localfree {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin: clamp(2rem, 1.5rem + 1.5vw, 3rem) auto 0;
+    max-width: 46rem;
+    padding: 1rem 1.25rem;
+    border: 1px dashed color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+    border-radius: var(--card-radius);
+    background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+    font-size: var(--text-small);
+    line-height: var(--leading-relaxed);
+    color: var(--color-text);
+  }
+  .pricing-localfree strong { color: var(--color-text-bright); }
+  .pricing-localfree a { color: var(--color-accent); text-decoration: none; white-space: nowrap; }
+  .pricing-localfree a:hover { text-decoration: underline; }
+  .lf-dot {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-top: 0.5rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+
+  .faq-section { padding-top: 0; }
+  .faq-title {
+    font-size: var(--text-h2);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    letter-spacing: var(--tracking-tight);
+    margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
+    text-align: center;
+  }
+  .faq-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .faq-item {
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+  .faq-item[open] { border-color: var(--color-border-light); }
+  .faq-q {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    font-size: var(--text-body);
+    font-weight: var(--weight-medium);
+    color: var(--color-text-bright);
+    cursor: pointer;
+    list-style: none;
+  }
+  .faq-q::-webkit-details-marker { display: none; }
+  .faq-chevron { width: 1.1rem; height: 1.1rem; color: var(--color-muted); flex-shrink: 0; transition: transform var(--dur) var(--ease-out); }
+  .faq-item[open] .faq-chevron { transform: rotate(180deg); }
+  .faq-a {
+    padding: 0 1.25rem 1.25rem;
+    font-size: var(--text-small);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+    margin: 0;
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    var section = document.querySelector('.pricing-section');
+    if (!section) return;
+    var buttons = section.querySelectorAll('[data-cadence-btn]');
+    var checkoutCtas = section.querySelectorAll('[data-checkout-cta]');
+
+    function setCadence(cadence) {
+      section.setAttribute('data-cadence', cadence);
+      buttons.forEach(function (b) {
+        var active = b.getAttribute('data-cadence-btn') === cadence;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      checkoutCtas.forEach(function (a) {
+        var url = a.getAttribute('href').split('&interval=')[0];
+        a.setAttribute('href', url + '&interval=' + cadence);
+      });
+    }
+
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        setCadence(b.getAttribute('data-cadence-btn'));
+      });
+    });
+    setCadence('monthly');
+  })();
+</script>

@@ -1,0 +1,450 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title="Sign in — LeanCTX"
+  description="Sign in to your LeanCTX account to manage your Team plan, seats and billing."
+  noindex={true}
+  hideAscii={true}
+>
+  <section class="auth-shell">
+    <div class="auth-card">
+      <a href={lp('/')} class="auth-logo font-display" aria-label="LeanCTX home">
+        <span class="auth-logo-ascii">&lt;<span>|</span>&gt;</span>
+        <span><span class="text-text-bright">Lean</span><span class="text-accent">CTX</span></span>
+      </a>
+
+      <h1 class="auth-title font-display" data-title>Sign in</h1>
+      <p class="auth-sub" data-sub>Welcome back — manage your plan and billing.</p>
+
+      <div class="auth-tabs" data-tabs>
+        <button type="button" class="auth-tab is-active" data-tab="signin">Sign in</button>
+        <button type="button" class="auth-tab" data-tab="signup">Create account</button>
+      </div>
+
+      <div class="auth-banner" data-banner role="status" hidden></div>
+
+      <form class="auth-form" data-panel="signin" novalidate>
+        <label class="auth-field">
+          <span>Email</span>
+          <input type="email" name="email" autocomplete="email" required placeholder="you@company.com" />
+        </label>
+        <label class="auth-field">
+          <span class="auth-field-row">Password <button type="button" class="auth-link" data-goto="forgot">Forgot?</button></span>
+          <input type="password" name="password" autocomplete="current-password" required placeholder="••••••••" />
+        </label>
+        <button type="submit" class="auth-submit btn-primary">Sign in</button>
+      </form>
+
+      <form class="auth-form" data-panel="signup" hidden novalidate>
+        <label class="auth-field">
+          <span>Email</span>
+          <input type="email" name="email" autocomplete="email" required placeholder="you@company.com" />
+        </label>
+        <label class="auth-field">
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" />
+        </label>
+        <button type="submit" class="auth-submit btn-primary">Create account</button>
+        <p class="auth-hint">We'll email you a link to verify your address. Local LeanCTX stays free — an account is only for Team &amp; billing.</p>
+      </form>
+
+      <form class="auth-form" data-panel="forgot" hidden novalidate>
+        <p class="auth-hint">Enter your email and we'll send a reset link.</p>
+        <label class="auth-field">
+          <span>Email</span>
+          <input type="email" name="email" autocomplete="email" required placeholder="you@company.com" />
+        </label>
+        <button type="submit" class="auth-submit btn-primary">Send reset link</button>
+        <button type="button" class="auth-link auth-back" data-goto="signin">← Back to sign in</button>
+      </form>
+
+      <form class="auth-form" data-panel="reset" hidden novalidate>
+        <p class="auth-hint">Choose a new password for your account.</p>
+        <label class="auth-field">
+          <span>New password</span>
+          <input type="password" name="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" />
+        </label>
+        <button type="submit" class="auth-submit btn-primary">Set new password</button>
+      </form>
+
+      <p class="auth-foot" data-foot-signin>
+        New to LeanCTX? <button type="button" class="auth-link" data-goto="signup">Create an account</button>
+      </p>
+      <p class="auth-foot" data-foot-signup hidden>
+        Already have an account? <button type="button" class="auth-link" data-goto="signin">Sign in</button>
+      </p>
+    </div>
+
+    <p class="auth-legal">
+      By continuing you agree to the <a href={lp('/terms/')}>Terms</a> and <a href={lp('/privacy/')}>Privacy Policy</a>.
+    </p>
+  </section>
+</BaseLayout>
+
+<style>
+  .auth-shell {
+    min-height: calc(100dvh - 12rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: clamp(2rem, 1.5rem + 3vw, 5rem) 1.25rem;
+  }
+  .auth-card {
+    width: 100%;
+    max-width: 27rem;
+    padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--color-surface);
+    box-shadow: 0 24px 80px -40px rgba(0, 0, 0, 0.6);
+  }
+  .auth-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    margin-bottom: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+  }
+  .auth-logo-ascii {
+    font-family: var(--font-mono);
+    color: var(--color-text-bright);
+    font-feature-settings: "liga" 0;
+  }
+  .auth-logo-ascii span { color: var(--color-accent); }
+
+  .auth-title {
+    font-size: var(--text-h2);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    letter-spacing: var(--tracking-tight);
+  }
+  .auth-sub {
+    margin-top: 0.4rem;
+    font-size: var(--text-small);
+    color: var(--color-muted);
+    line-height: var(--leading-normal);
+  }
+
+  .auth-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin: clamp(1.25rem, 1rem + 0.75vw, 1.75rem) 0 1.25rem;
+    padding: 0.3rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-bg);
+  }
+  .auth-tab {
+    flex: 1;
+    padding: 0.55rem 0.75rem;
+    border: none;
+    border-radius: calc(var(--card-radius) - 2px);
+    background: transparent;
+    color: var(--color-muted);
+    font-family: inherit;
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition: color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+  }
+  .auth-tab:hover { color: var(--color-text-bright); }
+  .auth-tab.is-active { background: var(--color-surface-3); color: var(--color-text-bright); }
+
+  .auth-banner {
+    margin-bottom: 1.25rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--card-radius);
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    border: 1px solid transparent;
+  }
+  .auth-banner[data-kind='error'] {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  }
+  .auth-banner[data-kind='success'] {
+    color: var(--color-accent-bright);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .auth-banner[data-kind='info'] {
+    color: var(--color-text);
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+  }
+
+  .auth-form { display: flex; flex-direction: column; gap: 1rem; }
+  .auth-field { display: flex; flex-direction: column; gap: 0.4rem; }
+  .auth-field > span {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
+    color: var(--color-text);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .auth-field-row { display: flex; align-items: center; justify-content: space-between; }
+  .auth-field input {
+    width: 100%;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--card-radius);
+    background: var(--color-bg);
+    color: var(--color-text-bright);
+    font-family: inherit;
+    font-size: var(--text-body);
+    transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  }
+  .auth-field input::placeholder { color: var(--color-muted); }
+  .auth-field input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+
+  .auth-submit {
+    width: 100%;
+    padding: 0.8rem 1.25rem;
+    font-size: var(--text-body);
+    font-weight: var(--weight-semibold);
+    border-radius: var(--card-radius);
+    cursor: pointer;
+    border: none;
+  }
+  .auth-submit[disabled] { opacity: 0.6; cursor: progress; }
+
+  .auth-hint {
+    font-size: var(--text-caption);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+    margin: 0;
+  }
+  .auth-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--color-accent);
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+  }
+  .auth-link:hover { text-decoration: underline; }
+  .auth-back { align-self: flex-start; margin-top: -0.25rem; }
+
+  .auth-foot {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+    font-size: var(--text-small);
+    color: var(--color-muted);
+    text-align: center;
+  }
+  .auth-legal {
+    font-size: var(--text-caption);
+    color: var(--color-muted);
+    text-align: center;
+    max-width: 27rem;
+  }
+  .auth-legal a { color: var(--color-text); text-decoration: none; }
+  .auth-legal a:hover { color: var(--color-accent); }
+</style>
+
+<script is:inline>
+  (function () {
+    var API = 'https://api.leanctx.com';
+    var TOKEN_KEY = 'leanctx-api-token';
+    var EMAIL_KEY = 'leanctx-account-email';
+
+    function $(sel) { return document.querySelector(sel); }
+    function $all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+
+    function safeNext() {
+      var params = new URLSearchParams(window.location.search);
+      var next = params.get('next') || '/account/billing/';
+      // Only allow same-origin relative paths (no open redirects).
+      if (!next.startsWith('/') || next.startsWith('//')) next = '/account/billing/';
+      return next;
+    }
+
+    function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (_) { return null; } }
+    function setSession(token, email) {
+      try {
+        localStorage.setItem(TOKEN_KEY, token);
+        if (email) localStorage.setItem(EMAIL_KEY, email);
+      } catch (_) {}
+    }
+
+    var banner = $('[data-banner]');
+    function showBanner(kind, msg) {
+      if (!banner) return;
+      banner.textContent = msg;
+      banner.setAttribute('data-kind', kind);
+      banner.hidden = false;
+    }
+    function clearBanner() { if (banner) banner.hidden = true; }
+
+    var titleEl = $('[data-title]');
+    var subEl = $('[data-sub]');
+    var tabs = $('[data-tabs]');
+    var TITLES = {
+      signin: ['Sign in', 'Welcome back — manage your plan and billing.'],
+      signup: ['Create account', 'Free local LeanCTX needs no account — this is for Team & billing.'],
+      forgot: ['Reset password', 'We\u2019ll email you a secure reset link.'],
+      reset: ['New password', 'Set a new password to finish.'],
+    };
+
+    function showPanel(name) {
+      $all('.auth-form').forEach(function (f) { f.hidden = f.getAttribute('data-panel') !== name; });
+      $all('.auth-tab').forEach(function (b) {
+        b.classList.toggle('is-active', b.getAttribute('data-tab') === name);
+      });
+      if (tabs) tabs.style.display = (name === 'signin' || name === 'signup') ? '' : 'none';
+      var foots = { signin: '[data-foot-signin]', signup: '[data-foot-signup]' };
+      var fs = $('[data-foot-signin]'); var fu = $('[data-foot-signup]');
+      if (fs) fs.hidden = name !== 'signin';
+      if (fu) fu.hidden = name !== 'signup';
+      if (titleEl && TITLES[name]) titleEl.textContent = TITLES[name][0];
+      if (subEl && TITLES[name]) subEl.textContent = TITLES[name][1];
+      var first = $('.auth-form[data-panel="' + name + '"] input');
+      if (first) try { first.focus(); } catch (_) {}
+    }
+
+    $all('[data-tab]').forEach(function (b) {
+      b.addEventListener('click', function () { clearBanner(); showPanel(b.getAttribute('data-tab')); });
+    });
+    $all('[data-goto]').forEach(function (b) {
+      b.addEventListener('click', function () { clearBanner(); showPanel(b.getAttribute('data-goto')); });
+    });
+
+    async function post(path, body) {
+      var res = await fetch(API + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      });
+      var text = await res.text();
+      var data;
+      try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { message: text }; }
+      return { ok: res.ok, status: res.status, data: data, raw: text };
+    }
+
+    function withLoading(form, label, fn) {
+      var btn = form.querySelector('button[type="submit"]');
+      var original = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = label; }
+      return Promise.resolve()
+        .then(fn)
+        .finally(function () { if (btn) { btn.disabled = false; btn.textContent = original; } });
+    }
+
+    function errMsg(r, fallback) {
+      if (r && r.data && typeof r.data.message === 'string' && r.data.message) return r.data.message;
+      if (r && typeof r.raw === 'string' && r.raw && r.raw.length < 200) return r.raw;
+      return fallback;
+    }
+
+    // ── Sign in ──
+    $('.auth-form[data-panel="signin"]').addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearBanner();
+      var form = e.currentTarget;
+      var email = form.email.value.trim();
+      var password = form.password.value;
+      if (!email || !password) { showBanner('error', 'Enter your email and password.'); return; }
+      withLoading(form, 'Signing in…', async function () {
+        var r = await post('/api/auth/login', { email: email, password: password });
+        if (r.ok && r.data.api_key) {
+          setSession(r.data.api_key, email);
+          window.location.assign(safeNext());
+          return;
+        }
+        if (r.status === 403) { showBanner('info', 'Please verify your email first — we just sent a fresh link to ' + email + '.'); return; }
+        showBanner('error', errMsg(r, 'Invalid email or password.'));
+      });
+    });
+
+    // ── Sign up ──
+    $('.auth-form[data-panel="signup"]').addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearBanner();
+      var form = e.currentTarget;
+      var email = form.email.value.trim();
+      var password = form.password.value;
+      if (!email || email.indexOf('@') < 0) { showBanner('error', 'Enter a valid email address.'); return; }
+      if (password.length < 8) { showBanner('error', 'Password must be at least 8 characters.'); return; }
+      withLoading(form, 'Creating account…', async function () {
+        var r = await post('/api/auth/register', { email: email, password: password });
+        if (r.ok) {
+          showPanel('signin');
+          showBanner('success', 'Account created. Check ' + email + ' to verify your address, then sign in.');
+          return;
+        }
+        if (r.status === 409) { showPanel('signin'); showBanner('info', 'An account with this email already exists — sign in instead.'); return; }
+        showBanner('error', errMsg(r, 'Could not create the account. Please try again.'));
+      });
+    });
+
+    // ── Forgot password ──
+    $('.auth-form[data-panel="forgot"]').addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearBanner();
+      var form = e.currentTarget;
+      var email = form.email.value.trim();
+      if (!email || email.indexOf('@') < 0) { showBanner('error', 'Enter a valid email address.'); return; }
+      withLoading(form, 'Sending…', async function () {
+        var r = await post('/api/auth/forgot-password', { email: email });
+        showPanel('signin');
+        showBanner('success', 'If an account exists for ' + email + ', a reset link is on its way.');
+      });
+    });
+
+    // ── Reset password ──
+    $('.auth-form[data-panel="reset"]').addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearBanner();
+      var form = e.currentTarget;
+      var password = form.password.value;
+      var params = new URLSearchParams(window.location.search);
+      var token = params.get('reset_token') || '';
+      if (password.length < 8) { showBanner('error', 'Password must be at least 8 characters.'); return; }
+      withLoading(form, 'Updating…', async function () {
+        var r = await post('/api/auth/reset-password', { token: token, password: password });
+        if (r.ok) {
+          // strip the token from the URL so it can't be reused/bookmarked
+          history.replaceState(null, '', window.location.pathname);
+          showPanel('signin');
+          showBanner('success', 'Password updated. You can sign in now.');
+          return;
+        }
+        showBanner('error', errMsg(r, 'This reset link is invalid or has expired.'));
+      });
+    });
+
+    // ── Initial state from query / session ──
+    (function init() {
+      var params = new URLSearchParams(window.location.search);
+      var resetToken = params.get('reset_token');
+      if (resetToken) { showPanel('reset'); return; }
+
+      // Already signed in → continue to the destination.
+      if (getToken()) { window.location.replace(safeNext()); return; }
+
+      showPanel('signin');
+      if (params.get('verified') === 'true') showBanner('success', 'Email verified — you can sign in now.');
+      else if (params.get('intent') === 'checkout') showBanner('info', 'Sign in to continue to checkout.');
+    })();
+  })();
+</script>

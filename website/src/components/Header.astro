@@ -112,6 +112,7 @@ const useCasesColumns = tracks.map((tr) => {
           <MegaDropdown id="product" label={t('nav.productLabel')} columns={productColumns} />
           <MegaDropdown id="usecases" label="Use Cases" columns={useCasesColumns} />
           <a href={lp('/docs/')} class:list={['header-nav-item', currentPath.startsWith('/docs') && !currentPath.includes('/getting-started') && 'is-active']}>Docs</a>
+          <a href={lp('/pricing/')} class:list={['header-nav-item', currentPath.startsWith('/pricing') && 'is-active']}>Pricing</a>
           <a href={lp('/metrics/')} class:list={['header-nav-item', currentPath.startsWith('/metrics') && 'is-active']}>Metrics</a>
         </div>
       </div>
@@ -199,6 +200,12 @@ const useCasesColumns = tracks.map((tr) => {
         <a href={lp('/docs/')} class="mobile-nav-link">Documentation</a>
         <a href={lp('/docs/cli-reference')} class="mobile-nav-link">{t('nav.docs.cliComplete')}</a>
         <a href={lp('/docs/tools')} class="mobile-nav-link">{t('nav.tools.allTools')}</a>
+      </div>
+
+      <div class="mobile-section">
+        <span class="mobile-section-title">Plans &amp; account</span>
+        <a href={lp('/pricing/')} class="mobile-nav-link">Pricing</a>
+        <a href={lp('/account/billing/')} class="mobile-nav-link">Account &amp; billing</a>
       </div>
 
       <div class="mobile-section">

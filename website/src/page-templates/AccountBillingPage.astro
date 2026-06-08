@@ -1,0 +1,490 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
+
+const locale = getLocaleFromUrl(Astro.url);
+const t = useTranslations(locale);
+const lp = (path: string) => getLocalizedPath(path, locale);
+---
+
+<BaseLayout
+  title="Account & Billing — LeanCTX"
+  description="Manage your LeanCTX plan, seats and billing."
+  noindex={true}
+  hideAscii={true}
+>
+  <section class="acct-shell">
+    <div class="content-grid-narrow">
+      <header class="acct-head">
+        <div>
+          <p class="acct-eyebrow">Account</p>
+          <h1 class="acct-title font-display">Plan &amp; billing</h1>
+        </div>
+        <div class="acct-id" data-id hidden>
+          <span class="acct-email" data-email></span>
+          <button type="button" class="acct-signout" data-signout>Sign out</button>
+        </div>
+      </header>
+
+      <div class="acct-banner" data-banner role="status" hidden></div>
+
+      <div class="acct-loading" data-loading>
+        <span class="acct-spinner" aria-hidden="true"></span>
+        <span>Loading your account…</span>
+      </div>
+
+      <div class="acct-main" data-main hidden>
+        <div class="acct-card acct-plan">
+          <div class="acct-plan-head">
+            <div>
+              <span class="acct-plan-label">Current plan</span>
+              <div class="acct-plan-name">
+                <span class="plan-badge" data-plan-badge>Free</span>
+                <span class="acct-plan-desc" data-plan-desc></span>
+              </div>
+            </div>
+            <div class="acct-plan-actions" data-actions></div>
+          </div>
+
+          <div class="acct-upgrade" data-upgrade hidden>
+            <div class="acct-cadence" role="group" aria-label="Billing cadence">
+              <button type="button" class="acct-cadence-btn is-active" data-cadence="monthly" aria-pressed="true">$19 / month</button>
+              <button type="button" class="acct-cadence-btn" data-cadence="yearly" aria-pressed="false">$190 / year</button>
+            </div>
+            <button type="button" class="acct-btn btn-primary" data-upgrade-btn>Upgrade to Team</button>
+            <a class="acct-link" href={lp('/pricing/')}>Compare plans →</a>
+          </div>
+        </div>
+
+        <div class="acct-card">
+          <h2 class="acct-section-title">What your plan includes</h2>
+          <dl class="acct-entitlements" data-entitlements></dl>
+          <p class="acct-foot-note">
+            Every local feature stays free on every plan. These entitlements describe the additive
+            Team / Cloud capabilities. <a href={lp('/pricing/')}>See all plans →</a>
+          </p>
+        </div>
+
+        <p class="acct-help">
+          Questions about billing? <a href="mailto:hello@leanctx.com">hello@leanctx.com</a>
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .acct-shell { padding: clamp(2rem, 1.5rem + 3vw, 5rem) 0 clamp(3rem, 2rem + 3vw, 6rem); min-height: calc(100dvh - 16rem); }
+  .acct-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.25rem);
+  }
+  .acct-eyebrow {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-accent);
+  }
+  .acct-title {
+    margin-top: 0.35rem;
+    font-size: var(--text-h1);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    letter-spacing: var(--tracking-tight);
+  }
+  .acct-id { display: flex; align-items: center; gap: 0.75rem; }
+  .acct-email { font-size: var(--text-small); color: var(--color-muted); }
+  .acct-signout {
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--card-radius);
+    background: transparent;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: var(--text-small);
+    cursor: pointer;
+    transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  }
+  .acct-signout:hover { color: var(--color-text-bright); border-color: var(--color-muted); }
+
+  .acct-banner {
+    margin-bottom: 1.5rem;
+    padding: 0.85rem 1.1rem;
+    border-radius: var(--card-radius);
+    font-size: var(--text-small);
+    line-height: var(--leading-snug);
+    border: 1px solid transparent;
+  }
+  .acct-banner[data-kind='success'] {
+    color: var(--color-accent-bright);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .acct-banner[data-kind='error'] {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  }
+  .acct-banner[data-kind='info'] {
+    color: var(--color-text);
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+  }
+
+  .acct-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 3rem 0;
+    color: var(--color-muted);
+    font-size: var(--text-small);
+  }
+  .acct-spinner {
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 2px solid var(--color-border-light);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: acct-spin 0.7s linear infinite;
+  }
+  @keyframes acct-spin { to { transform: rotate(360deg); } }
+
+  .acct-main { display: flex; flex-direction: column; gap: 1.25rem; }
+  .acct-card {
+    padding: clamp(1.25rem, 1rem + 1vw, 2rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--color-surface);
+  }
+  .acct-plan-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .acct-plan-label {
+    font-size: var(--text-caption);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+  }
+  .acct-plan-name { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .plan-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.8rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    text-transform: capitalize;
+  }
+  .plan-badge[data-paid='true'] {
+    background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+    color: var(--color-accent-bright);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  .acct-plan-desc { font-size: var(--text-small); color: var(--color-muted); }
+
+  .acct-plan-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  /* Used by the static upgrade button and the runtime-injected portal button.
+     Anchor at .acct-shell + :global() so both variants get the same styling. */
+  .acct-shell :global(.acct-btn) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.65rem 1.25rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    border-radius: var(--card-radius);
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .acct-shell :global(.acct-btn[disabled]) { opacity: 0.6; cursor: progress; }
+
+  .acct-upgrade {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .acct-cadence {
+    display: inline-flex;
+    gap: 0.2rem;
+    padding: 0.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-bg);
+  }
+  .acct-cadence-btn {
+    padding: 0.4rem 0.85rem;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--color-muted);
+    font-family: inherit;
+    font-size: var(--text-small);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .acct-cadence-btn.is-active { background: var(--color-surface-3); color: var(--color-text-bright); }
+  .acct-link { font-size: var(--text-small); color: var(--color-accent); text-decoration: none; }
+  .acct-link:hover { text-decoration: underline; }
+
+  .acct-section-title {
+    font-size: var(--text-h4);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    margin-bottom: 1.1rem;
+  }
+  .acct-entitlements {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin: 0;
+  }
+  @media (min-width: 560px) { .acct-entitlements { grid-template-columns: 1fr 1fr; gap: 0 1.5rem; } }
+  /* Entitlement rows are injected at runtime via innerHTML and therefore do not
+     receive Astro's scope attribute. Anchor at the static .acct-entitlements and
+     target the dynamic descendants with :global() so the scoped styles apply
+     (without a size constraint the inline SVG icons blow up to fill the column). */
+  .acct-entitlements :global(.acct-ent-row) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .acct-entitlements :global(.acct-ent-row dt) { font-size: var(--text-small); color: var(--color-muted); }
+  .acct-entitlements :global(.acct-ent-row dd) { margin: 0; font-size: var(--text-small); font-weight: var(--weight-medium); color: var(--color-text-bright); display: inline-flex; align-items: center; gap: 0.35rem; }
+  .acct-entitlements :global(.acct-ent-row dd .yes) { color: var(--color-accent); }
+  .acct-entitlements :global(.acct-ent-row dd .no) { color: var(--color-muted); }
+  .acct-entitlements :global(.acct-ent-row dd svg) { width: 1rem; height: 1rem; }
+
+  .acct-foot-note, .acct-help {
+    margin-top: 1.1rem;
+    font-size: var(--text-caption);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+  }
+  .acct-help { margin-top: 0; text-align: center; }
+  .acct-foot-note a, .acct-help a { color: var(--color-accent); text-decoration: none; }
+  .acct-foot-note a:hover, .acct-help a:hover { text-decoration: underline; }
+</style>
+
+<script is:inline>
+  (function () {
+    var API = 'https://api.leanctx.com';
+    var TOKEN_KEY = 'leanctx-api-token';
+    var EMAIL_KEY = 'leanctx-account-email';
+    var UNBOUNDED = 4294967295; // u32::MAX — engine sentinel for unlimited/negotiated
+
+    function $(s) { return document.querySelector(s); }
+    function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (_) { return null; } }
+    function clearSession() {
+      try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); } catch (_) {}
+    }
+
+    var params = new URLSearchParams(window.location.search);
+    var here = window.location.pathname + window.location.search;
+
+    var banner = $('[data-banner]');
+    function showBanner(kind, msg) {
+      if (!banner) return;
+      banner.textContent = msg;
+      banner.setAttribute('data-kind', kind);
+      banner.hidden = false;
+    }
+
+    function gotoLogin() {
+      window.location.replace('/login/?next=' + encodeURIComponent(here));
+    }
+
+    var token = getToken();
+    if (!token) { gotoLogin(); return; }
+
+    function authHeaders() {
+      return { Authorization: 'Bearer ' + token, Accept: 'application/json' };
+    }
+
+    async function getJson(path) {
+      var res = await fetch(API + path, { headers: authHeaders() });
+      if (res.status === 401) { clearSession(); gotoLogin(); throw new Error('unauthorized'); }
+      var text = await res.text();
+      var data; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+      return { ok: res.ok, status: res.status, data: data, raw: text };
+    }
+    async function postJson(path, body) {
+      var res = await fetch(API + path, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify(body || {}),
+      });
+      if (res.status === 401) { clearSession(); gotoLogin(); throw new Error('unauthorized'); }
+      var text = await res.text();
+      var data; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { message: text }; }
+      return { ok: res.ok, status: res.status, data: data, raw: text };
+    }
+
+    var PLAN_DESC = {
+      free: 'The full local Context OS — free forever.',
+      team: 'Shared hosted context for up to 25 seats.',
+      enterprise: 'Governance and scale across your organisation.',
+    };
+
+    var ICON_YES = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    var ICON_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+    function num(v) {
+      if (v === UNBOUNDED) return 'Unlimited';
+      if (v === 0) return '—';
+      return String(v);
+    }
+    function mb(v) {
+      if (v === UNBOUNDED) return 'Unlimited';
+      if (!v) return '—';
+      return v >= 1000 ? (v / 1000) + ' GB' : v + ' MB';
+    }
+    function days(v) {
+      if (v === UNBOUNDED) return 'Unlimited';
+      if (!v) return '—';
+      return v >= 365 ? Math.round(v / 365) + ' yr' : v + ' days';
+    }
+    function bool(v) {
+      return v
+        ? '<span class="yes">' + ICON_YES + '</span>'
+        : '<span class="no">' + ICON_NO + '</span>';
+    }
+
+    function renderEntitlements(e) {
+      var rows = [
+        ['Seats', num(e.seats)],
+        ['Hosted retrieval index', mb(e.hosted_index_mb)],
+        ['Managed connectors', num(e.managed_connectors)],
+        ['Private registry', bool(e.private_registry)],
+        ['SSO + SCIM', bool(e.sso_scim)],
+        ['Audit log retention', days(e.audit_retention_days)],
+        ['Marketplace revenue share', bool(e.revenue_share)],
+      ];
+      var dl = $('[data-entitlements]');
+      dl.innerHTML = rows.map(function (r) {
+        return '<div class="acct-ent-row"><dt>' + r[0] + '</dt><dd>' + r[1] + '</dd></div>';
+      }).join('');
+    }
+
+    var cadence = 'monthly';
+
+    async function startCheckout() {
+      var btn = $('[data-upgrade-btn]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Starting secure checkout…'; }
+      try {
+        var r = await postJson('/api/account/checkout', { plan: 'team', interval: cadence });
+        if (r.ok && r.data.url) { window.location.assign(r.data.url); return; }
+        if (r.status === 503) { showBanner('info', 'Billing is being switched on — please try again shortly.'); }
+        else { showBanner('error', (r.data && r.data.message) || 'Could not start checkout. Please try again.'); }
+      } catch (err) { if (err && err.message === 'unauthorized') return; showBanner('error', 'Could not reach billing. Please try again.'); }
+      if (btn) { btn.disabled = false; btn.textContent = 'Upgrade to Team'; }
+    }
+
+    async function openPortal(triggerBtn) {
+      if (triggerBtn) { triggerBtn.disabled = true; var prev = triggerBtn.textContent; triggerBtn.textContent = 'Opening…'; }
+      try {
+        var r = await postJson('/api/account/portal', {});
+        if (r.ok && r.data.url) { window.location.assign(r.data.url); return; }
+        showBanner('error', (r.data && r.data.message) || 'Could not open the billing portal.');
+      } catch (err) { if (err && err.message === 'unauthorized') return; showBanner('error', 'Could not reach billing. Please try again.'); }
+      if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = prev; }
+    }
+
+    function renderActions(plan) {
+      var wrap = $('[data-actions]');
+      var paid = plan === 'team' || plan === 'enterprise';
+      if (paid) {
+        wrap.innerHTML = '<button type="button" class="acct-btn btn-primary" data-portal>Manage billing</button>';
+        wrap.querySelector('[data-portal]').addEventListener('click', function (e) { openPortal(e.currentTarget); });
+        $('[data-upgrade]').hidden = true;
+      } else {
+        wrap.innerHTML = '';
+        $('[data-upgrade]').hidden = false;
+      }
+    }
+
+    function wireUpgradeControls() {
+      var btns = document.querySelectorAll('[data-cadence]');
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          cadence = b.getAttribute('data-cadence');
+          btns.forEach(function (x) {
+            var on = x === b;
+            x.classList.toggle('is-active', on);
+            x.setAttribute('aria-pressed', on ? 'true' : 'false');
+          });
+        });
+      });
+      var up = $('[data-upgrade-btn]');
+      if (up) up.addEventListener('click', startCheckout);
+    }
+
+    var signout = $('[data-signout]');
+    if (signout) signout.addEventListener('click', function () { clearSession(); window.location.assign('/login/'); });
+
+    // status banners from Stripe redirect
+    var status = params.get('status');
+    if (status === 'success') showBanner('success', 'Payment received — your Team plan is now active. Thank you!');
+    else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no changes were made.');
+
+    wireUpgradeControls();
+
+    (async function init() {
+      try {
+        var me = await getJson('/api/auth/me');
+        var ent = await getJson('/api/account/entitlements');
+        var email = (me.data && me.data.email) || (function () { try { return localStorage.getItem(EMAIL_KEY); } catch (_) { return ''; } })();
+        var plan = (ent.data && ent.data.plan) || 'free';
+        var entitlements = (ent.data && ent.data.entitlements) || {};
+
+        if (email) { $('[data-email]').textContent = email; }
+        $('[data-id]').hidden = false;
+
+        var badge = $('[data-plan-badge]');
+        badge.textContent = plan;
+        badge.setAttribute('data-paid', (plan === 'team' || plan === 'enterprise') ? 'true' : 'false');
+        $('[data-plan-desc]').textContent = PLAN_DESC[plan] || '';
+
+        renderEntitlements(entitlements);
+        renderActions(plan);
+
+        $('[data-loading]').hidden = true;
+        $('[data-main]').hidden = false;
+
+        // Seamless upgrade hand-off from the pricing page.
+        var upgrade = params.get('upgrade');
+        var interval = params.get('interval');
+        if (interval === 'yearly' || interval === 'monthly') {
+          cadence = interval;
+          document.querySelectorAll('[data-cadence]').forEach(function (x) {
+            var on = x.getAttribute('data-cadence') === interval;
+            x.classList.toggle('is-active', on);
+            x.setAttribute('aria-pressed', on ? 'true' : 'false');
+          });
+        }
+        if (upgrade === 'team') {
+          if (plan === 'free') { startCheckout(); }
+          else { showBanner('info', 'You are already on the ' + plan + ' plan.'); history.replaceState(null, '', window.location.pathname); }
+        }
+      } catch (err) {
+        if (err && err.message === 'unauthorized') return;
+        $('[data-loading]').hidden = true;
+        showBanner('error', 'Could not load your account. Please refresh or sign in again.');
+        $('[data-main]').hidden = false;
+      }
+    })();
+  })();
+</script>

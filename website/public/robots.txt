@@ -3,6 +3,8 @@ Allow: /
 Disallow: /index-backup/
 Disallow: /checkout/
 Disallow: /admin/
+Disallow: /account/
+Disallow: /login/
 
 Sitemap: https://leanctx.com/sitemap-index.xml
 

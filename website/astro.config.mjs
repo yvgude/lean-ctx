@@ -51,12 +51,11 @@ export default defineConfig({
   redirects: {
     '/benchmark/': '/context-os/benchmark/',
     '/protocols/': '/docs/concepts/protocols/',
-    // Commercial / internal pages → homepage
-    '/checkout/': '/',
-    '/pro/': '/',
-    '/login/': '/',
-    '/dashboard/': '/',
-    '/cloud/': '/',
+    // Commercial pages → their canonical home (/login/ & /account/ are real pages)
+    '/checkout/': '/pricing/',
+    '/pro/': '/pricing/',
+    '/dashboard/': '/account/billing/',
+    '/cloud/': '/pricing/',
 
     // Redundant product pages
     '/features/': '/how-it-works/',
@@ -201,8 +200,12 @@ export default defineConfig({
   },
   integrations: [
     sitemap({
-      // Exclude backups and the per-card Wrapped share pages (noindex share targets, not SEO pages).
-      filter: (page) => !page.includes('/index-backup/') && !page.includes('/w/'),
+      // Exclude backups, per-card Wrapped share pages, and the noindex account/auth pages.
+      filter: (page) =>
+        !page.includes('/index-backup/') &&
+        !page.includes('/w/') &&
+        !page.includes('/login/') &&
+        !page.includes('/account/'),
     }),
   ],
   image: {
