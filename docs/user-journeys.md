@@ -273,7 +273,7 @@ lean-ctx serve                      # → http://127.0.0.1:8080  (prints a loopb
    persona, transports, presets, the live tool surface, and every extension:
 
 ```bash
-curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/capabilities
+curl -s --oauth2-bearer "$TOKEN" http://127.0.0.1:8080/v1/capabilities
 ```
 
 3. He installs an SDK — same wire contract in every language — and calls tools:
