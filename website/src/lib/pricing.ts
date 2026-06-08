@@ -33,7 +33,7 @@ export const supporterOffer = {
   priceMonthly: '$5',
   priceYearly: '$50',
   unit: '/month',
-  priceNote: 'or $50/year · no account needed · cancel anytime',
+  priceNote: 'pick any amount · no account needed · cancel anytime',
   href: '/support/',
   /**
    * Direct Stripe Payment Links for the voluntary Supporter subscription. They
@@ -43,8 +43,8 @@ export const supporterOffer = {
    * back to `/support/?status=success`.
    */
   paymentLinks: {
-    monthly: 'https://buy.stripe.com/fZucMZdjMfnQ88M8YRcjS00',
-    yearly: 'https://buy.stripe.com/bJe3cp1B45Ng9cQdf7cjS01',
+    monthly: 'https://buy.stripe.com/4gM9AN0x04JcagU2AtcjS02',
+    yearly: 'https://buy.stripe.com/fZueV75RkcbE3Sw5MFcjS03',
   },
   perks: [
     'Directly fund the open-source Context OS you rely on every day',
@@ -53,6 +53,66 @@ export const supporterOffer = {
     'Keep lean-ctx independent — no VC, no telemetry, no ads',
   ],
 };
+
+/**
+ * Open, voluntary Supporter tiers — pick whatever feels right. They all live on
+ * the same Stripe "Supporter" product; larger amounts simply give more (the
+ * Local-Free Invariant means none of them unlock a feature). Every tier has a
+ * no-account Stripe Payment Link per cadence, and those links also collect the
+ * optional supporters-wall fields (display name, message, opt-in). Prices and
+ * links are provisioned idempotently by `stripe-setup.py --supporter-links`.
+ */
+export interface SupporterTier {
+  id: 'base' | 'plus' | 'pro';
+  /** Short recognition label shown under the amount. */
+  label: string;
+  /** Display price per cadence (whole USD). */
+  monthly: string;
+  yearly: string;
+  /** Monthly amount in whole USD — drives selector ordering. */
+  amount: number;
+  /** Highlighted as the suggested amount. */
+  featured?: boolean;
+  /** Direct, account-free Stripe Payment Links (one per cadence). */
+  links: { monthly: string; yearly: string };
+}
+
+export const supporterTiers: SupporterTier[] = [
+  {
+    id: 'base',
+    label: 'Supporter',
+    monthly: '$5',
+    yearly: '$50',
+    amount: 5,
+    links: {
+      monthly: 'https://buy.stripe.com/4gM9AN0x04JcagU2AtcjS02',
+      yearly: 'https://buy.stripe.com/fZueV75RkcbE3Sw5MFcjS03',
+    },
+  },
+  {
+    id: 'plus',
+    label: 'Backer',
+    monthly: '$10',
+    yearly: '$100',
+    amount: 10,
+    featured: true,
+    links: {
+      monthly: 'https://buy.stripe.com/cNi28lgvYdfI2Os4IBcjS04',
+      yearly: 'https://buy.stripe.com/5kQ00d4Ng2B4exaejbcjS05',
+    },
+  },
+  {
+    id: 'pro',
+    label: 'Sponsor',
+    monthly: '$25',
+    yearly: '$250',
+    amount: 25,
+    links: {
+      monthly: 'https://buy.stripe.com/eVq28l4Ng5NgbkYcb3cjS06',
+      yearly: 'https://buy.stripe.com/28E00d7Zs0sWgFi4IBcjS07',
+    },
+  },
+];
 
 export interface PricingTier {
   /** Stable id; matches the engine's `Plan` wire ids. */

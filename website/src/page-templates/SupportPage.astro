@@ -1,11 +1,15 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SectionHeading from '../components/SectionHeading.astro';
-import { supporterOffer } from '../lib/pricing';
+import { supporterOffer, supporterTiers } from '../lib/pricing';
 import { getLocaleFromUrl, getLocalizedPath } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
 const lp = (path: string) => getLocalizedPath(path, locale);
+
+// The amount pre-selected on load (and the no-JS fallback): the suggested tier,
+// billed monthly. Everything else is switched client-side by the card script.
+const defaultTier = supporterTiers.find((t) => t.featured) ?? supporterTiers[0];
 
 const heartPath =
   'M12 21s-7.55-4.74-10.05-9.36C.4 9.07 1.62 5.4 5.07 4.55c2.04-.5 3.94.42 5.03 1.94l1.9 2.64 1.9-2.64c1.09-1.52 2.99-2.44 5.03-1.94 3.45.85 4.67 4.52 3.12 7.09C19.55 16.26 12 21 12 21z';
@@ -151,21 +155,33 @@ const faq = [
                 </div>
               </div>
 
+              <div class="sup-tiers" role="group" aria-label="Choose your amount">
+                {supporterTiers.map((t) => (
+                  <button
+                    type="button"
+                    class:list={['sup-tier', { 'is-featured': t.featured }]}
+                    data-tier={t.id}
+                    data-amt-monthly={t.monthly}
+                    data-amt-yearly={t.yearly}
+                    data-link-monthly={t.links.monthly}
+                    data-link-yearly={t.links.yearly}
+                    aria-pressed={t.id === defaultTier.id ? 'true' : 'false'}
+                  >
+                    {t.featured && <span class="sup-tier-flag">Popular</span>}
+                    <span class="sup-tier-amt" data-tier-amt>{t.monthly}</span>
+                    <span class="sup-tier-label">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+
               <div class="sup-price">
-                <span class="sup-amount" data-price-monthly>{supporterOffer.priceMonthly}</span>
-                <span class="sup-amount" data-price-yearly>{supporterOffer.priceYearly}</span>
-                <span class="sup-unit">
-                  <span data-unit-monthly>{supporterOffer.unit}</span>
-                  <span data-unit-yearly>/year</span>
-                </span>
+                <span class="sup-amount" data-price>{defaultTier.monthly}</span>
+                <span class="sup-unit" data-unit>{supporterOffer.unit}</span>
               </div>
               <p class="sup-note">{supporterOffer.priceNote}</p>
 
-              <a class="sup-cta btn-primary" data-cta-monthly href={supporterOffer.paymentLinks.monthly}>
-                Become a supporter — {supporterOffer.priceMonthly}/mo
-              </a>
-              <a class="sup-cta btn-primary" data-cta-yearly href={supporterOffer.paymentLinks.yearly}>
-                Become a supporter — {supporterOffer.priceYearly}/yr
+              <a class="sup-cta btn-primary" data-cta href={defaultTier.links.monthly}>
+                Become a supporter — <span data-cta-amt>{defaultTier.monthly}</span><span data-cta-unit>/mo</span>
               </a>
               <p class="sup-secure">
                 <span class="sup-secure-ic" set:html={lockIcon} />No account needed — secure checkout by Stripe
@@ -214,6 +230,30 @@ const faq = [
             <p class="sup-fund-text">{f.text}</p>
           </article>
         ))}
+      </div>
+    </div>
+  </section>
+
+  <div class="section-divider content-grid"></div>
+
+  {/* ── Supporters wall ────────────────────────────────────── */}
+  <section class="relative section-y" id="supporters">
+    <div class="content-grid">
+      <SectionHeading
+        label="The wall"
+        title="People who keep it"
+        highlight="independent"
+        description="Every name below chose to fund lean-ctx — many left a note. Add yours right at checkout."
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="48rem"
+        titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+        descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      />
+      <p class="sup-wall-count" data-wall-count hidden></p>
+      <div class="sup-wall" data-wall>
+        <div class="sup-wall-state" data-wall-state>Loading supporters…</div>
+        <ul class="sup-wall-grid" data-wall-grid hidden></ul>
       </div>
     </div>
   </section>
@@ -472,13 +512,66 @@ const faq = [
   .sup-unit { font-size: var(--text-small); color: var(--color-muted); }
   .sup-note { margin-top: 0.5rem; font-size: var(--text-caption); color: var(--color-muted); }
 
-  /* cadence-driven visibility (CSS, works without JS) */
-  .sup-card[data-cadence='monthly'] [data-price-yearly],
-  .sup-card[data-cadence='monthly'] [data-unit-yearly],
-  .sup-card[data-cadence='monthly'] [data-cta-yearly],
-  .sup-card[data-cadence='yearly'] [data-price-monthly],
-  .sup-card[data-cadence='yearly'] [data-unit-monthly],
-  .sup-card[data-cadence='yearly'] [data-cta-monthly] { display: none; }
+  /* ── Amount selector ($5 / $10 / $25) ─────────────────── */
+  .sup-tiers {
+    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+  .sup-tier {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.75rem 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: inherit;
+    cursor: pointer;
+    transition:
+      border-color var(--dur) var(--ease-out),
+      background var(--dur) var(--ease-out),
+      transform var(--dur) var(--ease-out);
+  }
+  .sup-tier:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    transform: translateY(-1px);
+  }
+  .sup-tier[aria-pressed='true'] {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent) inset;
+  }
+  .sup-tier-amt {
+    font-family: var(--font-display);
+    font-size: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
+    font-weight: var(--weight-bold);
+    color: var(--color-text-bright);
+    line-height: 1;
+  }
+  .sup-tier-label {
+    font-size: var(--text-caption);
+    color: var(--color-muted);
+  }
+  .sup-tier-flag {
+    position: absolute;
+    top: -0.55rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    font-weight: var(--weight-bold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: #0a0a0f;
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+  }
 
   .sup-cta {
     margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
@@ -685,6 +778,97 @@ const faq = [
   .sup-way-arrow :global(svg) { width: 0.95rem; height: 0.95rem; }
   .sup-way:hover .sup-way-arrow { transform: translateX(3px); }
 
+  /* ── Supporters wall ──────────────────────────────────── */
+  .sup-wall-count {
+    margin: -0.5rem 0 clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--color-accent);
+  }
+  .sup-wall-state {
+    padding: clamp(2rem, 1.5rem + 2vw, 3.25rem);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--card-radius-lg);
+    text-align: center;
+    font-size: var(--text-small);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+    background: var(--color-surface);
+  }
+  .sup-wall-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.9rem;
+    color: var(--color-accent);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+  }
+  .sup-wall-cta:hover { text-decoration: underline; }
+  .sup-wall-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+    list-style: none;
+  }
+  @media (min-width: 560px) {
+    .sup-wall-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 940px) {
+    .sup-wall-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  .sup-wall-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: clamp(1.1rem, 0.9rem + 0.6vw, 1.4rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-surface);
+    transition: border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+  }
+  .sup-wall-card:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+    transform: translateY(-2px);
+  }
+  .sup-wall-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .sup-wall-name {
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+    overflow-wrap: anywhere;
+  }
+  .sup-wall-msg {
+    font-size: var(--text-small);
+    line-height: var(--leading-relaxed);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+  }
+  .sup-wall-badge {
+    flex-shrink: 0;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius-pill);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+  .sup-wall-badge[data-tier='Backer'] {
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  }
+  .sup-wall-badge[data-tier='Sponsor'] {
+    color: #0a0a0f;
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    border-color: transparent;
+  }
+
   /* ── FAQ ──────────────────────────────────────────────── */
   .sup-faq {
     display: flex;
@@ -738,6 +922,8 @@ const faq = [
   @media (prefers-reduced-motion: reduce) {
     .sup-medallion svg { animation: none; }
     .sup-fund:hover,
+    .sup-tier:hover,
+    .sup-wall-card:hover,
     .sup-way:hover { transform: none; }
   }
 </style>
@@ -747,23 +933,60 @@ const faq = [
     var card = document.querySelector('.sup-card');
     if (!card) return;
 
-    // Billing cadence toggle — flips the visible price + payment-link CTA (the
-    // visibility itself is pure CSS via [data-cadence], so this only updates the
-    // button state). Becoming a supporter goes straight to a Stripe Payment Link
-    // — no lean-ctx account required.
-    var btns = card.querySelectorAll('[data-cadence-btn]');
-    function setCadence(c) {
-      card.setAttribute('data-cadence', c);
-      btns.forEach(function (b) {
+    // Amount ($5/$10/$25) + cadence (monthly/yearly) selector. Each combination
+    // maps to a distinct Stripe Payment Link (carried on the tier buttons as
+    // data-link-*), so becoming a supporter goes straight to Stripe — no lean-ctx
+    // account required. The server-rendered default (featured tier, monthly) is a
+    // fully valid no-JS state; this only enhances switching.
+    var cadenceBtns = card.querySelectorAll('[data-cadence-btn]');
+    var tierBtns = card.querySelectorAll('[data-tier]');
+    var priceEl = card.querySelector('[data-price]');
+    var unitEl = card.querySelector('[data-unit]');
+    var cta = card.querySelector('[data-cta]');
+    var ctaAmt = card.querySelector('[data-cta-amt]');
+    var ctaUnit = card.querySelector('[data-cta-unit]');
+    var state = {
+      cadence: 'monthly',
+      tier: card.querySelector('[data-tier][aria-pressed="true"]') || tierBtns[0],
+    };
+
+    function render() {
+      var c = state.cadence;
+      var t = state.tier;
+      if (!t) return;
+      var amt = t.getAttribute('data-amt-' + c);
+      var link = t.getAttribute('data-link-' + c);
+      tierBtns.forEach(function (b) {
+        var label = b.querySelector('[data-tier-amt]');
+        if (label) label.textContent = b.getAttribute('data-amt-' + c);
+        b.setAttribute('aria-pressed', b === t ? 'true' : 'false');
+      });
+      cadenceBtns.forEach(function (b) {
         var on = b.getAttribute('data-cadence-btn') === c;
         b.classList.toggle('is-active', on);
         b.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
+      if (priceEl && amt) priceEl.textContent = amt;
+      if (unitEl) unitEl.textContent = c === 'yearly' ? '/year' : '/month';
+      if (ctaAmt && amt) ctaAmt.textContent = amt;
+      if (ctaUnit) ctaUnit.textContent = c === 'yearly' ? '/yr' : '/mo';
+      if (cta && link) cta.setAttribute('href', link);
+      card.setAttribute('data-cadence', c);
     }
-    btns.forEach(function (b) {
-      b.addEventListener('click', function () { setCadence(b.getAttribute('data-cadence-btn')); });
+
+    cadenceBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        state.cadence = b.getAttribute('data-cadence-btn');
+        render();
+      });
     });
-    setCadence('monthly');
+    tierBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        state.tier = b;
+        render();
+      });
+    });
+    render();
 
     // Friendly banner when Stripe redirects back after checkout.
     var banner = document.querySelector('[data-banner]');
@@ -776,5 +999,73 @@ const faq = [
     var status = new URLSearchParams(window.location.search).get('status');
     if (status === 'success') showBanner('success', 'Thank you for supporting lean-ctx — your subscription is active. You are the reason this project keeps going.');
     else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no charge was made.');
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    // Live supporters wall — fetched client-side from the public API so it stays
+    // current without a rebuild. All supporter-provided text is inserted via
+    // textContent (never innerHTML), so names/messages can't inject markup.
+    var section = document.getElementById('supporters');
+    if (!section) return;
+    var stateEl = section.querySelector('[data-wall-state]');
+    var grid = section.querySelector('[data-wall-grid]');
+    var countEl = section.querySelector('[data-wall-count]');
+
+    function el(tag, cls, text) {
+      var node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+
+    function showEmpty() {
+      stateEl.textContent = '';
+      stateEl.appendChild(el('p', null, 'No supporters yet — be the first to keep lean-ctx independent.'));
+      var cta = el('a', 'sup-wall-cta', 'Become a supporter →');
+      cta.href = '#';
+      cta.addEventListener('click', function (e) {
+        e.preventDefault();
+        var pledge = document.querySelector('.sup-card');
+        if (pledge) pledge.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      stateEl.appendChild(cta);
+    }
+
+    fetch('https://api.leanctx.com/api/supporters', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('bad status')); })
+      .then(function (data) {
+        var list = (data && data.supporters) || [];
+        if (!list.length) { showEmpty(); return; }
+
+        list.forEach(function (s) {
+          var card = el('li', 'sup-wall-card');
+          var top = el('div', 'sup-wall-card-top');
+          top.appendChild(el('span', 'sup-wall-name', s.name || 'Anonymous'));
+          if (s.tier) {
+            var badge = el('span', 'sup-wall-badge', s.tier);
+            badge.setAttribute('data-tier', s.tier);
+            top.appendChild(badge);
+          }
+          card.appendChild(top);
+          if (s.message) card.appendChild(el('p', 'sup-wall-msg', s.message));
+          grid.appendChild(card);
+        });
+
+        stateEl.hidden = true;
+        grid.hidden = false;
+
+        if (countEl && typeof data.count === 'number' && data.count > 0) {
+          countEl.textContent =
+            data.count === 1 ? '1 supporter and counting' : data.count + ' supporters and counting';
+          countEl.hidden = false;
+        }
+      })
+      .catch(function () {
+        // Never show a broken wall: if the API is unreachable, drop the section
+        // entirely rather than leaving a permanent "loading" state.
+        section.remove();
+      });
   })();
 </script>
