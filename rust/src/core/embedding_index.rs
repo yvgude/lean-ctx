@@ -210,7 +210,8 @@ impl EmbeddingIndex {
     /// Returns None if index doesn't cover all chunks.
     ///
     /// Returns `Arc<[Vec<f32>]>` so this single corpus allocation can be shared
-    /// (via `Arc::clone`) with the process-wide cached HNSW [`AnnIndex`] instead
+    /// (via `Arc::clone`) with the process-wide cached HNSW
+    /// [`AnnIndex`](crate::core::hnsw::AnnIndex) instead
     /// of being copied a second time. `Arc::from(Vec<_>)` moves the per-vector
     /// handles into the shared buffer once; the f32 heap data is never copied.
     pub fn get_aligned_embeddings(&self, chunks: &[CodeChunk]) -> Option<Arc<[Vec<f32>]>> {

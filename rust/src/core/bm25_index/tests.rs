@@ -224,7 +224,11 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
     index.shrink_resident_content_to_snippet(5);
 
     assert!(index.content_truncated, "flag must be set after shrink");
-    let long_chunk = index.chunks.iter().find(|c| c.file_path == "long.rs").unwrap();
+    let long_chunk = index
+        .chunks
+        .iter()
+        .find(|c| c.file_path == "long.rs")
+        .unwrap();
     assert_eq!(
         long_chunk.content.lines().count(),
         5,
@@ -257,7 +261,11 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
 
     // Idempotent: second shrink is a no-op on already-short content.
     index.shrink_resident_content_to_snippet(5);
-    let long_chunk = index.chunks.iter().find(|c| c.file_path == "long.rs").unwrap();
+    let long_chunk = index
+        .chunks
+        .iter()
+        .find(|c| c.file_path == "long.rs")
+        .unwrap();
     assert_eq!(long_chunk.content.lines().count(), 5);
 }
 
@@ -276,7 +284,12 @@ fn shrink_resident_is_not_persisted_to_disk() {
     .expect("write");
 
     let mut index = BM25Index::build_from_directory(root);
-    let full_lines: usize = index.chunks.iter().map(|c| c.content.lines().count()).max().unwrap();
+    let full_lines: usize = index
+        .chunks
+        .iter()
+        .map(|c| c.content.lines().count())
+        .max()
+        .unwrap();
     assert!(full_lines > 5, "fixture body must exceed snippet window");
 
     // Real-flow ordering: the index is persisted with FULL content (during the

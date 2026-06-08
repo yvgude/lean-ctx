@@ -27,7 +27,9 @@ pub(crate) fn intern(s: String) -> &'static str {
     use std::sync::{Mutex, OnceLock};
     static POOL: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
     let pool = POOL.get_or_init(|| Mutex::new(HashSet::new()));
-    let mut guard = pool.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut guard = pool
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(&existing) = guard.get(s.as_str()) {
         return existing;
     }
