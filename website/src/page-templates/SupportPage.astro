@@ -10,6 +10,21 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 // The amount pre-selected on load (and the no-JS fallback): the suggested tier,
 // billed monthly. Everything else is switched client-side by the card script.
 const defaultTier = supporterTiers.find((t) => t.featured) ?? supporterTiers[0];
+const defaultAmount = defaultTier.amount;
+
+// Fast presets for the amount picker. Supporters can also drag the slider or type
+// any amount; these chips just jump to common values. The ones backed by a fixed
+// Stripe Payment Link double as an offline fallback if the checkout API is down.
+const quickPicks: Array<{ amount: number; label: string; link: string | null }> = [
+  ...supporterTiers.map((t) => ({ amount: t.amount, label: t.monthly, link: t.links.monthly })),
+  { amount: 50, label: '$50', link: null },
+];
+
+// Wall recognition badge for an amount — mirrors the billing service's tiers
+// (≥$25 Sponsor · ≥$10 Backer · else Supporter) so the live preview matches what
+// the supporter will actually be shown as on the wall.
+const tierForAmount = (a: number) => (a >= 25 ? 'Sponsor' : a >= 10 ? 'Backer' : 'Supporter');
+const defaultBadge = tierForAmount(defaultAmount);
 
 const heartPath =
   'M12 21s-7.55-4.74-10.05-9.36C.4 9.07 1.62 5.4 5.07 4.55c2.04-.5 3.94.42 5.03 1.94l1.9 2.64 1.9-2.64c1.09-1.52 2.99-2.44 5.03-1.94 3.45.85 4.67 4.52 3.12 7.09C19.55 16.26 12 21 12 21z';
@@ -147,33 +162,59 @@ const faq = [
                     <p class="sup-tagline">{supporterOffer.tagline}</p>
                   </div>
                 </div>
-              </div>
-
-              <div class="sup-tiers" role="group" aria-label="Choose your amount">
-                {supporterTiers.map((t) => (
-                  <button
-                    type="button"
-                    class:list={['sup-tier', { 'is-featured': t.featured }]}
-                    data-tier={t.id}
-                    data-amt={t.monthly}
-                    data-link={t.links.monthly}
-                    aria-pressed={t.id === defaultTier.id ? 'true' : 'false'}
-                  >
-                    {t.featured && <span class="sup-tier-flag">Popular</span>}
-                    <span class="sup-tier-amt" data-tier-amt>{t.monthly}</span>
-                    <span class="sup-tier-label">{t.label}</span>
-                  </button>
-                ))}
+                <span class="sup-headflag"><span class="sup-dot" aria-hidden="true"></span>Cancel anytime</span>
               </div>
 
               <div class="sup-price">
-                <span class="sup-amount" data-price>{defaultTier.monthly}</span>
-                <span class="sup-unit" data-unit>{supporterOffer.unit}</span>
+                <span class="sup-amount" data-price>${defaultAmount}</span>
+                <span class="sup-unit">/month</span>
+                <span class="sup-tierbadge" data-tier-badge title="How you'll be recognised on the supporters wall">{defaultBadge}</span>
               </div>
               <p class="sup-note">{supporterOffer.priceNote}</p>
 
+              <div class="sup-picker">
+                <input
+                  class="sup-slider"
+                  type="range"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={defaultAmount}
+                  data-slider
+                  aria-label="Monthly support amount in US dollars"
+                  style={`--sup-fill:${((defaultAmount - 1) / 99) * 100}%`}
+                />
+                <div class="sup-quick" role="group" aria-label="Quick amounts">
+                  {quickPicks.map((q) => (
+                    <button
+                      type="button"
+                      class="sup-chip"
+                      data-quick={q.amount}
+                      data-link={q.link}
+                      aria-pressed={q.amount === defaultAmount ? 'true' : 'false'}
+                    >
+                      {q.label}
+                    </button>
+                  ))}
+                  <label class="sup-chip sup-chip--custom">
+                    <span class="sup-cur">$</span>
+                    <input
+                      class="sup-custom"
+                      type="number"
+                      min="1"
+                      max="1000"
+                      step="1"
+                      inputmode="numeric"
+                      data-custom
+                      placeholder="Other"
+                      aria-label="Custom monthly amount in US dollars"
+                    />
+                  </label>
+                </div>
+              </div>
+
               <a class="sup-cta btn-primary" data-cta href={defaultTier.links.monthly}>
-                Become a supporter — <span data-cta-amt>{defaultTier.monthly}</span><span data-cta-unit>/mo</span>
+                Become a supporter — <span data-cta-amt>${defaultAmount}</span>/mo
               </a>
               <p class="sup-secure">
                 <span class="sup-secure-ic" set:html={lockIcon} />No account needed — secure checkout by Stripe
@@ -472,66 +513,158 @@ const faq = [
   .sup-unit { font-size: var(--text-small); color: var(--color-muted); }
   .sup-note { margin-top: 0.5rem; font-size: var(--text-caption); color: var(--color-muted); }
 
-  /* ── Amount selector ($5 / $10 / $25) ─────────────────── */
-  .sup-tiers {
-    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.5rem;
+  /* Head status pill — balances the heart eyebrow, echoes the hero terminal. */
+  .sup-headflag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    font-size: var(--text-caption);
+    color: var(--color-muted);
+    white-space: nowrap;
   }
-  .sup-tier {
-    position: relative;
+  .sup-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  }
+
+  /* Live recognition badge shown beside the chosen amount. */
+  .sup-tierbadge {
+    margin-left: auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-pill);
+  }
+
+  /* ── Amount picker: slider + quick chips + free amount ──── */
+  .sup-picker {
+    margin-top: clamp(1rem, 0.75rem + 0.75vw, 1.4rem);
     display: flex;
     flex-direction: column;
+    gap: 0.85rem;
+  }
+  .sup-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 0.5rem;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(
+      to right,
+      var(--color-accent) var(--sup-fill, 10%),
+      var(--color-surface-3, var(--color-border)) var(--sup-fill, 10%)
+    );
+    cursor: pointer;
+    outline: none;
+  }
+  .sup-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    border: 3px solid var(--color-bg);
+    box-shadow: 0 2px 10px -2px color-mix(in srgb, var(--color-accent) 70%, transparent);
+    cursor: grab;
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .sup-slider::-webkit-slider-thumb:active { transform: scale(1.12); cursor: grabbing; }
+  .sup-slider::-moz-range-thumb {
+    width: 1.4rem;
+    height: 1.4rem;
+    border: 3px solid var(--color-bg);
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    box-shadow: 0 2px 10px -2px color-mix(in srgb, var(--color-accent) 70%, transparent);
+    cursor: grab;
+  }
+  .sup-slider::-moz-range-track {
+    height: 0.5rem;
+    border-radius: var(--radius-pill);
+    background: transparent;
+  }
+  .sup-slider:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  .sup-quick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .sup-chip {
+    flex: 1 1 0;
+    min-width: 3.1rem;
+    display: inline-flex;
     align-items: center;
-    gap: 0.15rem;
-    padding: 0.75rem 0.5rem;
+    justify-content: center;
+    padding: 0.5rem 0.6rem;
     border: 1px solid var(--color-border);
-    border-radius: var(--card-radius);
+    border-radius: var(--radius-pill);
     background: var(--color-bg);
     color: var(--color-text);
-    font-family: inherit;
+    font-family: var(--font-display);
+    font-weight: var(--weight-semibold);
+    font-size: var(--text-small);
     cursor: pointer;
     transition:
       border-color var(--dur) var(--ease-out),
       background var(--dur) var(--ease-out),
+      color var(--dur) var(--ease-out),
       transform var(--dur) var(--ease-out);
   }
-  .sup-tier:hover {
+  .sup-chip:hover {
     border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
     transform: translateY(-1px);
   }
-  .sup-tier[aria-pressed='true'] {
+  .sup-chip[aria-pressed='true'] {
     border-color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    color: var(--color-text-bright);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent) inset;
   }
-  .sup-tier-amt {
-    font-family: var(--font-display);
-    font-size: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
-    font-weight: var(--weight-bold);
+  .sup-chip--custom {
+    gap: 0.05rem;
+    padding-left: 0.7rem;
+    cursor: text;
+  }
+  .sup-chip--custom:focus-within {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent) inset;
+  }
+  .sup-cur { color: var(--color-muted); }
+  .sup-custom {
+    width: 3.1rem;
+    border: none;
+    background: transparent;
     color: var(--color-text-bright);
-    line-height: 1;
+    font-family: var(--font-display);
+    font-weight: var(--weight-semibold);
+    font-size: var(--text-small);
+    outline: none;
+    padding: 0;
+    -moz-appearance: textfield;
+    appearance: textfield;
   }
-  .sup-tier-label {
-    font-size: var(--text-caption);
-    color: var(--color-muted);
+  .sup-custom::-webkit-outer-spin-button,
+  .sup-custom::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
-  .sup-tier-flag {
-    position: absolute;
-    top: -0.55rem;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.6rem;
-    font-weight: var(--weight-bold);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-    color: #0a0a0f;
-    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
-    padding: 0.1rem 0.4rem;
-    border-radius: var(--radius-pill);
-    white-space: nowrap;
-  }
+  .sup-custom::placeholder { color: var(--color-muted); font-weight: 400; }
 
   .sup-cta {
     margin-top: clamp(1.25rem, 1rem + 0.75vw, 1.75rem);
@@ -893,38 +1026,116 @@ const faq = [
     var card = document.querySelector('.sup-card');
     if (!card) return;
 
-    // Amount ($5/$10/$25) selector. Each tier carries its own no-account Stripe
-    // Payment Link (data-link), so becoming a supporter goes straight to Stripe —
-    // no lean-ctx account required. Supporting is a flat monthly contribution with
-    // no discount tiers: people are donating, not buying. The server-rendered
-    // default (featured tier) is a fully valid no-JS state; this only enhances it.
-    var tierBtns = card.querySelectorAll('[data-tier]');
+    // Amount picker — a slider, quick-pick chips and a typed value all set one
+    // chosen monthly amount. The CTA creates a custom-amount Stripe Checkout
+    // Session via the public API and redirects to it; supporting is a flat monthly
+    // donation (no discounts). If the API is ever unreachable it falls back to a
+    // fixed preset Payment Link, and the server-rendered <a> already works with no
+    // JS at all.
+    var API_BASE = 'https://api.leanctx.com';
+    var MIN = 1;
+    var MAX = 1000;
+    var slider = card.querySelector('[data-slider]');
+    var custom = card.querySelector('[data-custom]');
+    var chips = card.querySelectorAll('[data-quick]');
     var priceEl = card.querySelector('[data-price]');
+    var badgeEl = card.querySelector('[data-tier-badge]');
     var cta = card.querySelector('[data-cta]');
-    var ctaAmt = card.querySelector('[data-cta-amt]');
-    var state = {
-      tier: card.querySelector('[data-tier][aria-pressed="true"]') || tierBtns[0],
-    };
+    var ctaInner = cta ? cta.innerHTML : '';
 
-    function render() {
-      var t = state.tier;
-      if (!t) return;
-      var amt = t.getAttribute('data-amt');
-      var link = t.getAttribute('data-link');
-      tierBtns.forEach(function (b) {
-        b.setAttribute('aria-pressed', b === t ? 'true' : 'false');
-      });
-      if (priceEl && amt) priceEl.textContent = amt;
-      if (ctaAmt && amt) ctaAmt.textContent = amt;
-      if (cta && link) cta.setAttribute('href', link);
+    // Preset amount → its fixed Payment Link, used only as an offline fallback.
+    var presetLinks = {};
+    chips.forEach(function (c) {
+      var link = c.getAttribute('data-link');
+      if (link) presetLinks[c.getAttribute('data-quick')] = link;
+    });
+
+    var amount = parseInt(slider && slider.value, 10) || 10;
+
+    function tierFor(a) {
+      return a >= 25 ? 'Sponsor' : a >= 10 ? 'Backer' : 'Supporter';
     }
 
-    tierBtns.forEach(function (b) {
-      b.addEventListener('click', function () {
-        state.tier = b;
-        render();
+    function render(opts) {
+      opts = opts || {};
+      if (priceEl) priceEl.textContent = '$' + amount;
+      if (badgeEl) badgeEl.textContent = tierFor(amount);
+      var ctaAmt = cta && cta.querySelector('[data-cta-amt]');
+      if (ctaAmt) ctaAmt.textContent = '$' + amount;
+      var capped = Math.min(100, Math.max(1, amount));
+      if (slider && !opts.fromSlider) slider.value = String(capped);
+      if (slider) slider.style.setProperty('--sup-fill', ((capped - 1) / 99) * 100 + '%');
+      if (custom && !opts.fromCustom) custom.value = '';
+      chips.forEach(function (c) {
+        c.setAttribute(
+          'aria-pressed',
+          parseInt(c.getAttribute('data-quick'), 10) === amount ? 'true' : 'false'
+        );
+      });
+    }
+
+    function setAmount(a, opts) {
+      a = Math.round(a);
+      if (isNaN(a)) return;
+      amount = Math.min(MAX, Math.max(MIN, a));
+      render(opts);
+    }
+
+    if (slider)
+      slider.addEventListener('input', function () {
+        setAmount(parseInt(slider.value, 10), { fromSlider: true });
+      });
+    chips.forEach(function (c) {
+      c.addEventListener('click', function () {
+        setAmount(parseInt(c.getAttribute('data-quick'), 10));
       });
     });
+    if (custom)
+      custom.addEventListener('input', function () {
+        var v = parseInt(custom.value, 10);
+        if (!isNaN(v)) setAmount(v, { fromCustom: true });
+      });
+
+    function fallback() {
+      var link = presetLinks[String(amount)];
+      if (link) {
+        window.location.href = link;
+        return true;
+      }
+      return false;
+    }
+
+    if (cta)
+      cta.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (cta.getAttribute('aria-busy') === 'true') return;
+        cta.setAttribute('aria-busy', 'true');
+        cta.textContent = 'Starting secure checkout…';
+        fetch(API_BASE + '/api/supporters/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount_cents: amount * 100 }),
+        })
+          .then(function (r) {
+            return r.ok ? r.json() : Promise.reject(r.status);
+          })
+          .then(function (d) {
+            if (d && d.url) {
+              window.location.href = d.url;
+              return;
+            }
+            throw new Error('no url');
+          })
+          .catch(function () {
+            // API down: use the exact preset link if the amount matches one,
+            // else restore the button so the supporter can retry.
+            if (fallback()) return;
+            cta.removeAttribute('aria-busy');
+            cta.innerHTML = ctaInner;
+            render();
+          });
+      });
+
     render();
 
     // Friendly banner when Stripe redirects back after checkout.
