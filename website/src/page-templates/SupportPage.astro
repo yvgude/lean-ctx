@@ -87,11 +87,11 @@ const otherWays = [
   },
   {
     title: 'Spread the word',
-    text: 'Tell a teammate or post about lean-ctx — reach beats budget.',
+    text: 'Tell a teammate or post about LeanCTX — reach beats budget.',
     cta: 'Share on X',
     href:
       'https://twitter.com/intent/tweet?text=' +
-      encodeURIComponent('lean-ctx — an open-source Context OS that cuts LLM context cost dramatically. Free & Apache-2.0:') +
+      encodeURIComponent('LeanCTX — an open-source Context OS that cuts LLM context cost dramatically. Free & Apache-2.0:') +
       '&url=' +
       encodeURIComponent('https://leanctx.com'),
     svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>',
@@ -115,8 +115,8 @@ const faq = [
 ---
 
 <BaseLayout
-  title="Support lean-ctx — Become a Supporter"
-  description="lean-ctx is free and open source forever. Become a Supporter to fund its development — a voluntary subscription that unlocks no features, just our gratitude and a supporter badge."
+  title="Support LeanCTX — Become a Supporter"
+  description="LeanCTX is free and open source forever. Become a Supporter to fund its development — a voluntary subscription that unlocks no features, just our gratitude and a supporter badge."
   breadcrumbs={[
     { name: 'Home', url: lp('/') },
     { name: 'Support', url: lp('/support/') },
@@ -132,11 +132,11 @@ const faq = [
             <span class="kicker-pill text-accent">Support</span>
           </div>
           <h1 class="font-display fluid-display text-text-bright animate-entrance stagger-1">
-            Keep lean-ctx free,<br /><span class="italic-accent">open &amp; independent.</span>
+            Keep LeanCTX free,<br /><span class="italic-accent">open &amp; independent.</span>
           </h1>
           <p class="fluid-body text-muted animate-entrance stagger-2" style="margin-top: clamp(1.25rem, 1rem + 1vw, 2rem); max-width: 40rem;">
             Every local feature is <strong class="text-text-bright">free forever</strong> — and always
-            will be. If lean-ctx saves you time every day, you can fund its development with a small
+            will be. If LeanCTX saves you time every day, you can fund its development with a small
             recurring subscription. It unlocks nothing — it simply keeps the project alive and independent.
           </p>
           <ul class="sup-hero-trust animate-entrance stagger-3">
@@ -227,7 +227,7 @@ const faq = [
               </ul>
 
               <p class="sup-fineprint">
-                lean-ctx is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
+                LeanCTX is Apache-2.0 and <strong>100% free for every local feature, forever</strong> —
                 supporting is voluntary and unlocks no functionality. No sign-up required: Stripe handles
                 checkout and lets you cancel anytime. Need a shared team workspace instead?
                 <a href={lp('/pricing/')}>See the Team plan →</a>
@@ -276,7 +276,7 @@ const faq = [
         label="The wall"
         title="People who keep it"
         highlight="independent"
-        description="Every name below chose to fund lean-ctx — many left a note. Add yours right at checkout."
+        description="Every name below chose to fund LeanCTX — many left a note. Add yours right at checkout."
         variant="full"
         breakHighlight={false}
         descMaxWidth="48rem"
@@ -436,20 +436,18 @@ const faq = [
     inset: -28% -8% -16%;
     z-index: 0;
     pointer-events: none;
-    background: radial-gradient(58% 58% at 50% 0%, color-mix(in srgb, var(--color-accent) 24%, transparent), transparent 72%);
+    background: radial-gradient(58% 58% at 50% 0%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 72%);
     filter: blur(44px);
-    opacity: 0.85;
+    opacity: 0.45;
   }
   .sup-card {
     position: relative;
     z-index: 1;
     padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    border: 1px solid var(--color-border);
     border-radius: var(--card-radius-lg);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)), var(--color-surface));
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent),
-      0 24px 60px -34px color-mix(in srgb, var(--color-accent) 40%, transparent);
+    background: var(--color-surface);
+    box-shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.5);
   }
   .sup-head {
     display: flex;
@@ -541,9 +539,9 @@ const faq = [
     font-weight: var(--weight-semibold);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+    color: var(--color-text-bright);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
     padding: 0.2rem 0.55rem;
     border-radius: var(--radius-pill);
   }
@@ -627,14 +625,13 @@ const faq = [
       transform var(--dur) var(--ease-out);
   }
   .sup-chip:hover {
-    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    border-color: var(--color-muted);
     transform: translateY(-1px);
   }
   .sup-chip[aria-pressed='true'] {
-    border-color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    border-color: var(--color-muted);
+    background: var(--color-surface-2);
     color: var(--color-text-bright);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent) inset;
   }
   .sup-chip--custom {
     gap: 0.05rem;
@@ -642,8 +639,7 @@ const faq = [
     cursor: text;
   }
   .sup-chip--custom:focus-within {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent) inset;
+    border-color: var(--color-muted);
   }
   .sup-cur { color: var(--color-muted); }
   .sup-custom {
@@ -1147,7 +1143,7 @@ const faq = [
       banner.hidden = false;
     }
     var status = new URLSearchParams(window.location.search).get('status');
-    if (status === 'success') showBanner('success', 'Thank you for supporting lean-ctx — your subscription is active. You are the reason this project keeps going.');
+    if (status === 'success') showBanner('success', 'Thank you for supporting LeanCTX — your subscription is active. You are the reason this project keeps going.');
     else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no charge was made.');
   })();
 </script>
@@ -1172,7 +1168,7 @@ const faq = [
 
     function showEmpty() {
       stateEl.textContent = '';
-      stateEl.appendChild(el('p', null, 'No supporters yet — be the first to keep lean-ctx independent.'));
+      stateEl.appendChild(el('p', null, 'No supporters yet — be the first to keep LeanCTX independent.'));
       var cta = el('a', 'sup-wall-cta', 'Become a supporter →');
       cta.href = '#';
       cta.addEventListener('click', function (e) {

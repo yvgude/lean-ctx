@@ -29,7 +29,7 @@ export type CheckoutPlan = 'team' | 'supporter';
 export const supporterOffer = {
   id: 'supporter' as const,
   name: 'Supporter',
-  tagline: 'Love lean-ctx? Help fund its development.',
+  tagline: 'Love LeanCTX? Help fund its development.',
   priceMonthly: '$5',
   unit: '/month',
   priceNote: 'pick any amount · no account needed · cancel anytime',
@@ -38,7 +38,7 @@ export const supporterOffer = {
     'Directly fund the open-source Context OS you rely on every day',
     'No account required — subscribe in seconds, straight through Stripe',
     'Cancel anytime — manage everything from Stripe, no lock-in',
-    'Keep lean-ctx independent — no VC, no telemetry, no ads',
+    'Keep LeanCTX independent — no VC, no telemetry, no ads',
   ],
 };
 
