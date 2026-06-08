@@ -119,7 +119,7 @@ export interface PricingTier {
   id: 'free' | 'team' | 'enterprise';
   name: string;
   tagline: string;
-  /** Display price for the default (monthly) cadence, e.g. "$19" or "Custom". */
+  /** Display price for the default (monthly) cadence, e.g. "$10" or "Custom". */
   priceMonthly: string;
   /** Display price for the yearly cadence, when the tier is self-serve. */
   priceYearly?: string;

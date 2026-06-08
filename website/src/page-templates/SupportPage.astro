@@ -795,7 +795,7 @@ const faq = [
     color: var(--color-muted);
     background: var(--color-surface);
   }
-  .sup-wall-cta {
+  :global(.sup-wall-cta) {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -805,7 +805,7 @@ const faq = [
     font-weight: var(--weight-semibold);
     text-decoration: none;
   }
-  .sup-wall-cta:hover { text-decoration: underline; }
+  :global(.sup-wall-cta:hover) { text-decoration: underline; }
   .sup-wall-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -818,7 +818,7 @@ const faq = [
   @media (min-width: 940px) {
     .sup-wall-grid { grid-template-columns: repeat(3, 1fr); }
   }
-  .sup-wall-card {
+  :global(.sup-wall-card) {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
@@ -828,29 +828,29 @@ const faq = [
     background: var(--color-surface);
     transition: border-color var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
   }
-  .sup-wall-card:hover {
+  :global(.sup-wall-card:hover) {
     border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
     transform: translateY(-2px);
   }
-  .sup-wall-card-top {
+  :global(.sup-wall-card-top) {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-  .sup-wall-name {
+  :global(.sup-wall-name) {
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
     color: var(--color-text-bright);
     overflow-wrap: anywhere;
   }
-  .sup-wall-msg {
+  :global(.sup-wall-msg) {
     font-size: var(--text-small);
     line-height: var(--leading-relaxed);
     color: var(--color-text);
     overflow-wrap: anywhere;
   }
-  .sup-wall-badge {
+  :global(.sup-wall-badge) {
     flex-shrink: 0;
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
@@ -860,10 +860,10 @@ const faq = [
     background: color-mix(in srgb, var(--color-accent) 14%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
   }
-  .sup-wall-badge[data-tier='Backer'] {
+  :global(.sup-wall-badge[data-tier='Backer']) {
     background: color-mix(in srgb, var(--color-accent) 22%, transparent);
   }
-  .sup-wall-badge[data-tier='Sponsor'] {
+  :global(.sup-wall-badge[data-tier='Sponsor']) {
     color: #0a0a0f;
     background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
     border-color: transparent;
@@ -923,7 +923,7 @@ const faq = [
     .sup-medallion svg { animation: none; }
     .sup-fund:hover,
     .sup-tier:hover,
-    .sup-wall-card:hover,
+    :global(.sup-wall-card:hover),
     .sup-way:hover { transform: none; }
   }
 </style>
