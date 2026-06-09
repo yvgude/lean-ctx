@@ -87,7 +87,7 @@ fn cmd_lint(ops: &ContextOps) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            eprintln!("Run `lean-ctx rules init` first to create .leanctx/rules.toml");
+            eprintln!("Run `lean-ctx rules init` first to create .lean-ctx/rules.toml");
             std::process::exit(1);
         }
     }
@@ -100,7 +100,7 @@ fn cmd_status(ops: &ContextOps) {
     let has_config = ops.has_config();
     println!();
     if has_config {
-        println!("Central config: ✓ (.leanctx/rules.toml)");
+        println!("Central config: ✓ (.lean-ctx/rules.toml)");
     } else {
         println!("Central config: ✗ (run `lean-ctx rules init` to create)");
     }
@@ -108,17 +108,17 @@ fn cmd_status(ops: &ContextOps) {
 
 fn cmd_init(ops: &ContextOps) {
     if ops.has_config() {
-        eprintln!("Config already exists at .leanctx/rules.toml");
+        eprintln!("Config already exists at .lean-ctx/rules.toml");
         eprintln!("Delete it first if you want to reinitialize.");
         std::process::exit(1);
     }
 
     match ops.init() {
         Ok(_config) => {
-            println!("Created .leanctx/rules.toml from existing rules.");
+            println!("Created .lean-ctx/rules.toml from existing rules.");
             println!();
             println!("Next steps:");
-            println!("  1. Review .leanctx/rules.toml");
+            println!("  1. Review .lean-ctx/rules.toml");
             println!("  2. Run `lean-ctx rules lint` to check consistency");
             println!("  3. Run `lean-ctx rules sync` to distribute");
         }
@@ -141,7 +141,7 @@ fn print_help() {
              diff              Show drift between central and distributed rules\n    \
              lint              Check rules for consistency and completeness\n    \
              status            Show sync status for all targets\n    \
-             init              Create .leanctx/rules.toml from existing rules\n    \
+             init              Create .lean-ctx/rules.toml from existing rules\n    \
              help              Show this help"
     );
 }

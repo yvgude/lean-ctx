@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 const CONFIG_FILENAME: &str = "rules.toml";
-const CONFIG_DIR: &str = ".leanctx";
+const CONFIG_DIR: &str = ".lean-ctx";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RulesConfig {
@@ -135,7 +135,7 @@ mod tests {
     fn config_path_is_correct() {
         let root = PathBuf::from("/tmp/project");
         let path = RulesConfig::config_path(&root);
-        assert_eq!(path, PathBuf::from("/tmp/project/.leanctx/rules.toml"));
+        assert_eq!(path, PathBuf::from("/tmp/project/.lean-ctx/rules.toml"));
     }
 
     #[test]

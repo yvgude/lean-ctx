@@ -41,7 +41,7 @@ pub fn handle(action: &str, agent: Option<&str>) -> String {
         "lint" => match ops.lint() {
             Ok(warnings) => contextops::format_lint(&warnings),
             Err(e) => {
-                format!("Error: {e}\nRun ctx_rules(action=\"init\") to create .leanctx/rules.toml")
+                format!("Error: {e}\nRun ctx_rules(action=\"init\") to create .lean-ctx/rules.toml")
             }
         },
         "status" => {
@@ -49,7 +49,7 @@ pub fn handle(action: &str, agent: Option<&str>) -> String {
             let mut output = contextops::format_status(&statuses);
             output.push('\n');
             if ops.has_config() {
-                output.push_str("\nCentral config: present (.leanctx/rules.toml)");
+                output.push_str("\nCentral config: present (.lean-ctx/rules.toml)");
             } else {
                 output.push_str(
                     "\nCentral config: missing (run ctx_rules(action=\"init\") to create)",
@@ -59,10 +59,10 @@ pub fn handle(action: &str, agent: Option<&str>) -> String {
         }
         "init" => {
             if ops.has_config() {
-                return "Config already exists at .leanctx/rules.toml. Delete it first to reinitialize.".to_string();
+                return "Config already exists at .lean-ctx/rules.toml. Delete it first to reinitialize.".to_string();
             }
             match ops.init() {
-                Ok(_) => "Created .leanctx/rules.toml from existing rules.\nRun ctx_rules(action=\"lint\") to check, then ctx_rules(action=\"sync\") to distribute.".to_string(),
+                Ok(_) => "Created .lean-ctx/rules.toml from existing rules.\nRun ctx_rules(action=\"lint\") to check, then ctx_rules(action=\"sync\") to distribute.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         }
