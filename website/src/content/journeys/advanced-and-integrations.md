@@ -31,10 +31,21 @@ lean-ctx proxy:
 started — run `lean-ctx proxy start` (or rely on the LaunchAgent/systemd unit).
 
 **Under the hood:** runs on `LEAN_CTX_PROXY_PORT` (default 4444), auth via
-`session_token`. `proxy enable` writes `*_BASE_URL` exports into your shell RC,
-`~/.claude/settings.json` (`ANTHROPIC_BASE_URL`), and Codex `config.toml`
-(`OPENAI_BASE_URL`), and installs `com.leanctx.proxy.plist` (macOS) or a systemd
-user unit (Linux). Upstreams are configurable in `[proxy]`.
+`session_token`. `proxy enable` writes `*_BASE_URL` exports into your shell RC and
+Codex `config.toml` (`OPENAI_BASE_URL`), and installs `com.leanctx.proxy.plist`
+(macOS) or a systemd user unit (Linux). For Claude it sets `ANTHROPIC_BASE_URL`
+(shell RC + `~/.claude/settings.json`) **only when an Anthropic API key is
+detectable** — see the Pro/Max note below. Upstreams are configurable in `[proxy]`.
+
+> **Claude Pro/Max subscription?** The proxy forwards your upstream credential but
+> never injects one, and a Pro/Max plan authenticates via OAuth directly against
+> `api.anthropic.com` — a custom `ANTHROPIC_BASE_URL` is rejected (login loop /
+> 401). So `proxy enable` deliberately leaves Claude on `api.anthropic.com`
+> whenever no `ANTHROPIC_API_KEY` is set (it even repairs a stale local redirect),
+> while OpenAI and Gemini still route through the proxy. On a subscription, get
+> your savings from the lean-ctx MCP tools (`ctx_read`, `ctx_search`, `ctx_shell`)
+> instead. Pay-as-you-go? Set `ANTHROPIC_API_KEY` and re-run `lean-ctx proxy
+> enable` (or `--force`). `lean-ctx doctor` flags a conflicting redirect.
 
 > **Heads-up (community-reported):** `proxy enable` modifies your shell RC. If a
 > base URL "defaults to the wrong provider," check the exported `*_BASE_URL`

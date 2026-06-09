@@ -9,7 +9,7 @@ LeanCTX is the cognitive context layer for AI coding agents. It intercepts every
 Three integration modes:
 - **CLI-Redirect** (recommended): Zero MCP overhead. AI agents call `lean-ctx` via shell commands. Used by Cursor, Claude Code, Codex, Gemini CLI.
 - **Hybrid**: MCP for cached reads (13 tokens per re-read) + CLI for shell/search. Used by Windsurf, Amp, Antigravity.
-- **Full MCP**: 72 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
+- **Full MCP**: 75 intelligent MCP tools. Used by JetBrains, Copilot, Cline, VS Code.
 
 ## Capabilities
 
@@ -60,7 +60,7 @@ Cursor, Claude Code, GitHub Copilot, Windsurf, Pi, VS Code, Zed, OpenAI Codex CL
 - **Role-Based Access**: 5 built-in roles with configurable permissions
 - **OS-Level Sandbox**: Optional Seatbelt (macOS) / Landlock (Linux) process isolation
 
-## MCP Tools (72)
+## MCP Tools (75)
 
 Full tool manifest with schemas: https://leanctx.com/generated/mcp-tools.json
 
@@ -75,7 +75,7 @@ Core tools: ctx_read, ctx_shell, ctx_search, ctx_tree, ctx_overview, ctx_session
 - [Getting Started](https://leanctx.com/docs/getting-started/): Installation guide
 - [Configuration](https://leanctx.com/docs/configuration/): Config, env vars, hooks, security
 - [CLI Reference](https://leanctx.com/docs/cli-reference/): Terminal commands
-- [Tool Reference](https://leanctx.com/docs/tools/): All 72 MCP tools documented
+- [Tool Reference](https://leanctx.com/docs/tools/): All 75 MCP tools documented
 - [Security](https://leanctx.com/docs/security/): PathJail, allowlist, sandbox, roles
 - [Changelog](https://leanctx.com/docs/changelog/): Version history
 
