@@ -93,6 +93,50 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           </div>
         </div>
 
+        <!-- First-run orientation — shown until the first teammate is added -->
+        <div class="team-card team-start" data-start-card hidden>
+          <div class="team-start-head">
+            <h2 class="team-section-title">Get your team started</h2>
+            <span class="team-start-badge">3 steps</span>
+          </div>
+          <ol class="team-start-steps">
+            <li class="team-start-step">
+              <span class="team-start-n">1</span>
+              <div class="team-start-body">
+                <span class="team-start-label">Invite a teammate</span>
+                <p class="team-start-text">
+                  Issue a member token under <strong>Members &amp; tokens</strong> — each teammate
+                  (or editor) gets their own, and you can revoke any token anytime.
+                </p>
+                <button type="button" class="team-btn btn-primary team-start-cta" data-start-invite>
+                  Invite your first teammate
+                </button>
+              </div>
+            </li>
+            <li class="team-start-step">
+              <span class="team-start-n">2</span>
+              <div class="team-start-body">
+                <span class="team-start-label">Connect editor &amp; CLI</span>
+                <p class="team-start-text">
+                  Share the snippets under <strong>Connect your tools</strong>. The new token is
+                  filled in for you — the same token works in any MCP editor (Cursor, Claude, …)
+                  and the local <code>lean-ctx</code> CLI.
+                </p>
+              </div>
+            </li>
+            <li class="team-start-step">
+              <span class="team-start-n">3</span>
+              <div class="team-start-body">
+                <span class="team-start-label">Add knowledge &amp; seats <span class="team-start-opt">optional</span></span>
+                <p class="team-start-text">
+                  Connect GitLab / GitHub so issues, MRs and pipelines become searchable for
+                  everyone, and scale seats as your team grows — prorated automatically.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+
         <div class="team-card team-roi" data-roi-card>
           <div class="team-roi-head">
             <div class="team-roi-intro">
@@ -268,6 +312,9 @@ const lp = (path: string) => getLocalizedPath(path, locale);
             Issue a token under <strong>Members &amp; tokens</strong> below — it travels as
             a <code>Bearer</code> header, so keep it secret. The <em>same</em> token works
             for both your editor (MCP) and your local <code>lean-ctx</code> CLI.
+          </p>
+          <p class="team-connect-filled" data-connect-filled hidden>
+            Your new token is filled into the snippets below — copy it now, it is shown only once.
           </p>
 
           <h3 class="team-savings-subtitle">1 · Editor (MCP)</h3>
@@ -448,6 +495,21 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   }
   .team-section-title { font-size: var(--text-h4); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.85rem; }
   .team-prose { font-size: var(--text-small); line-height: var(--leading-relaxed); color: var(--color-muted); margin-bottom: 0.9rem; }
+
+  /* First-run team onboarding card + connect-filled note */
+  .team-start { border-color: color-mix(in srgb, var(--color-accent) 38%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent 55%), var(--color-surface); }
+  .team-start-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .team-start-head .team-section-title { margin-bottom: 0; }
+  .team-start-badge { font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 16%, transparent); border-radius: var(--radius-pill); padding: 0.2rem 0.7rem; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+  .team-start-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.1rem; }
+  .team-start-step { display: flex; gap: 0.85rem; align-items: flex-start; }
+  .team-start-n { flex-shrink: 0; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 38%, transparent); font-variant-numeric: tabular-nums; }
+  .team-start-body { flex: 1; min-width: 0; }
+  .team-start-label { display: block; font-size: var(--text-body); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.3rem; }
+  .team-start-opt { font-size: var(--text-caption); font-weight: 400; text-transform: uppercase; letter-spacing: var(--tracking-label); color: var(--color-muted); margin-left: 0.4rem; }
+  .team-start-text { font-size: var(--text-small); line-height: var(--leading-relaxed); color: var(--color-muted); margin: 0; }
+  .team-start-cta { margin-top: 0.7rem; }
+  .team-connect-filled { font-size: var(--text-small); line-height: var(--leading-snug); color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent); border-radius: var(--card-radius); padding: 0.6rem 0.85rem; margin: 0 0 0.9rem; }
   .team-prose strong { color: var(--color-text-bright); font-weight: var(--weight-semibold); }
   .team-prose-sm { font-size: var(--text-caption); line-height: var(--leading-relaxed); color: var(--color-muted); }
 
@@ -769,23 +831,42 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     var serverUrl = '';
 
-    function mcpSnippet(url) {
+    // The most recently issued token, kept in memory only so the connect
+    // snippets below can be filled in copy-paste-ready the instant a token is
+    // minted. It is never persisted (the token itself is shown only once).
+    var lastToken = null;
+    function tok(token) { return token || '<YOUR_TOKEN>'; }
+    function mcpSnippet(url, token) {
       return '{\n'
         + '  "mcpServers": {\n'
         + '    "leanctx-team": {\n'
         + '      "url": "' + url + '",\n'
-        + '      "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }\n'
+        + '      "headers": { "Authorization": "Bearer ' + tok(token) + '" }\n'
         + '    }\n'
         + '  }\n'
         + '}';
     }
-    function curlSnippet(url) {
-      return 'curl -H "Authorization: Bearer <YOUR_TOKEN>" \\\n     ' + url + '/v1/tools';
+    function curlSnippet(url, token) {
+      return 'curl -H "Authorization: Bearer ' + tok(token) + '" \\\n     ' + url + '/v1/tools';
     }
-    function localConfigSnippet(url) {
+    function localConfigSnippet(url, token) {
       return 'lean-ctx config set team_url ' + url + '\n'
-        + 'lean-ctx config set team_token <YOUR_TOKEN>\n'
+        + 'lean-ctx config set team_token ' + tok(token) + '\n'
         + 'lean-ctx config set team_auto_push true';
+    }
+    function refreshSnippets() {
+      if (!serverUrl) return;
+      $('[data-mcp-snippet]').textContent = mcpSnippet(serverUrl, lastToken);
+      $('[data-curl-snippet]').textContent = curlSnippet(serverUrl, lastToken);
+      $('[data-cli-snippet]').textContent = localConfigSnippet(serverUrl, lastToken);
+      var filled = $('[data-connect-filled]');
+      if (filled) filled.hidden = !lastToken;
+    }
+    function toggleStartCard() {
+      var card = $('[data-start-card]');
+      if (!card) return;
+      var hasMembers = (current.members || []).some(function (m) { return m.role !== 'owner'; });
+      card.hidden = hasMembers;
     }
 
     function fmtBytes(n) {
@@ -824,6 +905,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       $('[data-reveal-title]').textContent = title;
       $('[data-reveal-token]').textContent = value;
       $('[data-reveal]').hidden = false;
+      // Fill the connect snippets with this exact token so they are
+      // copy-paste-ready — no manual <YOUR_TOKEN> replacement.
+      lastToken = value;
+      refreshSnippets();
       $('[data-reveal]').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -946,11 +1031,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
         $('[data-server-url]').textContent = serverUrl;
         $('[data-status-badge]').textContent = d.status || 'active';
-        $('[data-mcp-snippet]').textContent = mcpSnippet(serverUrl);
-        $('[data-curl-snippet]').textContent = curlSnippet(serverUrl);
-        $('[data-cli-snippet]').textContent = localConfigSnippet(serverUrl);
+        refreshSnippets();
         renderMembers(current.members, current.seats);
         renderSeats();
+        toggleStartCard();
         showState('live');
         window.__leanctxTeamLive = true;
         window.dispatchEvent(new CustomEvent('leanctx:team-live'));
@@ -1255,12 +1339,20 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     if (seatDec) seatDec.addEventListener('click', function () { if (current.seats > 1) setSeats(current.seats - 1); });
     if (seatInc) seatInc.addEventListener('click', function () { if (current.seats < current.seatsMax) setSeats(current.seats + 1); });
     $('[data-copy-url]').addEventListener('click', function (e) { copyText(serverUrl, e.currentTarget); });
-    $('[data-copy-mcp]').addEventListener('click', function (e) { copyText(mcpSnippet(serverUrl), e.currentTarget); });
-    $('[data-copy-curl]').addEventListener('click', function (e) { copyText(curlSnippet(serverUrl), e.currentTarget); });
+    $('[data-copy-mcp]').addEventListener('click', function (e) { copyText(mcpSnippet(serverUrl, lastToken), e.currentTarget); });
+    $('[data-copy-curl]').addEventListener('click', function (e) { copyText(curlSnippet(serverUrl, lastToken), e.currentTarget); });
     var copyCli = $('[data-copy-cli]');
-    if (copyCli) copyCli.addEventListener('click', function (e) { copyText(localConfigSnippet(serverUrl), e.currentTarget); });
+    if (copyCli) copyCli.addEventListener('click', function (e) { copyText(localConfigSnippet(serverUrl, lastToken), e.currentTarget); });
     $('[data-copy-token]').addEventListener('click', function (e) { copyText($('[data-reveal-token]').textContent, e.currentTarget); });
     $('[data-reveal-close]').addEventListener('click', function () { $('[data-reveal]').hidden = true; });
+
+    var startInvite = $('[data-start-invite]');
+    if (startInvite) startInvite.addEventListener('click', function () {
+      var form = $('[data-add-form]');
+      if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var l = $('[data-add-label]');
+      if (l) setTimeout(function () { l.focus(); }, 350);
+    });
 
     var connProvider = $('[data-conn-provider]');
     if (connProvider) connProvider.addEventListener('change', syncProviderUI);

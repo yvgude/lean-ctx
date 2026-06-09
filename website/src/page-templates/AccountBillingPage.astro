@@ -40,6 +40,16 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       </div>
 
       <div class="acct-main" data-main hidden>
+        <div class="acct-card acct-welcome" data-welcome hidden>
+          <span class="acct-welcome-eyebrow" data-welcome-eyebrow></span>
+          <h2 class="acct-welcome-title" data-welcome-title></h2>
+          <p class="acct-welcome-text" data-welcome-text></p>
+          <div class="acct-welcome-actions">
+            <a class="acct-btn btn-primary" data-welcome-cta href="#"></a>
+            <button type="button" class="acct-link acct-welcome-dismiss" data-welcome-dismiss>Dismiss</button>
+          </div>
+        </div>
+
         <div class="acct-card acct-plan">
           <div class="acct-plan-head">
             <div>
@@ -175,6 +185,29 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     border-radius: var(--card-radius-lg);
     background: var(--color-surface);
   }
+
+  /* Post-purchase welcome — the activation hand-off after Stripe checkout. */
+  .acct-welcome {
+    border-color: color-mix(in srgb, var(--color-accent) 38%, transparent);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 60%),
+      var(--color-surface);
+  }
+  .acct-welcome-eyebrow {
+    font-size: var(--text-caption); font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-accent-bright);
+  }
+  .acct-welcome-title {
+    margin: 0.45rem 0 0; font-size: var(--text-h3); font-weight: var(--weight-semibold);
+    color: var(--color-text-bright); letter-spacing: var(--tracking-tight);
+  }
+  .acct-welcome-text {
+    margin: 0.6rem 0 0; font-size: var(--text-small); line-height: var(--leading-relaxed);
+    color: var(--color-text); max-width: 62ch;
+  }
+  .acct-welcome-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1.1rem; }
+  .acct-welcome-dismiss { background: transparent; border: none; cursor: pointer; font-family: inherit; }
+
   .acct-plan-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
   .acct-plan-label {
     font-size: var(--text-caption);
@@ -508,8 +541,50 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     // status banners from Stripe redirect
     var status = params.get('status');
-    if (status === 'success') showBanner('success', 'Payment received — thank you! Your subscription is now active.');
-    else if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no changes were made.');
+    // A successful checkout is acknowledged by the plan-aware welcome card in
+    // init() (it needs the resolved plan to point at the right setup page).
+    var justPaid = status === 'success';
+    if (status === 'cancelled' || status === 'canceled') showBanner('info', 'Checkout cancelled — no changes were made.');
+
+    function showWelcome(plan) {
+      var card = $('[data-welcome]');
+      if (!card) return;
+      var cfg;
+      if (plan === 'team' || plan === 'enterprise') {
+        cfg = {
+          eyebrow: plan === 'enterprise' ? "You're on Enterprise" : "You're on Team",
+          title: 'Welcome — set up your team',
+          text: 'Your hosted team server is spinning up. Next, invite your teammates and connect your editors — it only takes a couple of minutes.',
+          cta: 'Set up your team', href: '/account/team/'
+        };
+      } else if (plan === 'pro') {
+        cfg = {
+          eyebrow: "You're on Pro",
+          title: 'Welcome — your Personal Cloud is ready',
+          text: 'Connect your first machine to start syncing your learned context, knowledge and buddy across every device you work on.',
+          cta: 'Set up Personal Cloud', href: '/account/cloud/'
+        };
+      } else if (plan === 'supporter') {
+        cfg = {
+          eyebrow: 'Thank you',
+          title: 'You keep LeanCTX independent',
+          text: 'Every local feature stays free, forever. When you want context that follows you across machines, Pro adds a hosted Personal Cloud.',
+          cta: 'Explore Pro', href: '/pricing/'
+        };
+      } else { return; }
+      $('[data-welcome-eyebrow]').textContent = cfg.eyebrow;
+      $('[data-welcome-title]').textContent = cfg.title;
+      $('[data-welcome-text]').textContent = cfg.text;
+      var cta = $('[data-welcome-cta]');
+      cta.textContent = cfg.cta + ' →';
+      cta.setAttribute('href', cfg.href);
+      var dismiss = $('[data-welcome-dismiss]');
+      if (dismiss) dismiss.addEventListener('click', function () {
+        card.hidden = true;
+        history.replaceState(null, '', window.location.pathname);
+      });
+      card.hidden = false;
+    }
 
     wireUpgradeControls();
 
@@ -534,6 +609,8 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
         $('[data-loading]').hidden = true;
         $('[data-main]').hidden = false;
+
+        if (justPaid) showWelcome(plan);
 
         // Seamless upgrade hand-off from the pricing page.
         var upgrade = params.get('upgrade');

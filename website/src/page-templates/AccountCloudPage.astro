@@ -87,6 +87,22 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           </p>
         </div>
 
+        <div class="acct-card cloud-setup" data-setup-card>
+          <div class="cloud-setup-head">
+            <h2 class="acct-section-title" data-setup-title>Set up your Personal Cloud</h2>
+            <span class="cloud-setup-badge" data-setup-badge>3 steps</span>
+          </div>
+          <p class="cloud-prose" data-setup-lead>
+            Run these once on each machine. Your knowledge, shell patterns, CEP history,
+            gotchas, buddy and feedback thresholds then follow you everywhere.
+          </p>
+          <ol class="cloud-steps" data-setup-steps></ol>
+          <p class="acct-foot-note">
+            Already set up on another machine? There, <code>lean-ctx cloud pull</code> restores
+            everything from your Personal Cloud.
+          </p>
+        </div>
+
         <div class="acct-card">
           <h2 class="acct-section-title">What's synced</h2>
           <div class="cloud-grid" data-buckets></div>
@@ -106,22 +122,6 @@ const lp = (path: string) => getLocalizedPath(path, locale);
             </div>
             <div class="cloud-buddy-stats" data-buddy-stats></div>
           </div>
-        </div>
-
-        <div class="acct-card">
-          <h2 class="acct-section-title">Connect a machine</h2>
-          <p class="cloud-prose">
-            Sign in once per machine, then sync. Your knowledge, shell patterns, CEP history,
-            gotchas, buddy and feedback thresholds follow you everywhere.
-          </p>
-          <div class="cloud-snippet">
-            <div class="cloud-snippet-bar"><span>Terminal</span><button type="button" class="team-copy" data-copy-cli>Copy</button></div>
-            <pre class="cloud-pre" data-cli-snippet></pre>
-          </div>
-          <p class="acct-foot-note">
-            <code>lean-ctx sync</code> pushes this machine's context up; <code>lean-ctx cloud pull</code>
-            restores it onto any other machine.
-          </p>
         </div>
 
         <p class="acct-help">
@@ -222,6 +222,18 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   .acct-shell :global(.team-copy:hover) { color: var(--color-text-bright); border-color: var(--color-accent); }
   .cloud-pre { margin: 0; padding: 0.85rem 0.9rem; font-family: var(--font-mono, monospace); font-size: var(--text-caption); line-height: var(--leading-relaxed); color: var(--color-text); overflow-x: auto; white-space: pre; }
 
+  /* First-run setup stepper */
+  .cloud-setup.is-firstrun { border-color: color-mix(in srgb, var(--color-accent) 38%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent 55%), var(--color-surface); }
+  .cloud-setup-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+  .cloud-setup-head .acct-section-title { margin-bottom: 0; }
+  .cloud-setup-badge { font-size: var(--text-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 16%, transparent); border-radius: var(--radius-pill); padding: 0.2rem 0.7rem; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+  .cloud-steps { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: 0.9rem; }
+  .cloud-steps :global(.cloud-step) { display: flex; gap: 0.85rem; align-items: flex-start; }
+  .cloud-steps :global(.cloud-step-n) { flex-shrink: 0; width: 1.6rem; height: 1.6rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 38%, transparent); font-variant-numeric: tabular-nums; }
+  .cloud-steps :global(.cloud-step-body) { flex: 1; min-width: 0; }
+  .cloud-steps :global(.cloud-step-label) { display: block; font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.4rem; }
+  .cloud-steps :global(.cloud-snippet) { margin: 0; }
+
   .acct-foot-note, .acct-help { margin-top: 1.1rem; font-size: var(--text-caption); line-height: var(--leading-relaxed); color: var(--color-muted); }
   .acct-foot-note code { font-family: var(--font-mono, monospace); color: var(--color-text); }
   .acct-help { margin-top: 0; text-align: center; }
@@ -292,14 +304,39 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
     var SPECIES_EMOJI = { turtle: '🐢', cat: '🐱', dog: '🐶', fox: '🦊', owl: '🦉', dragon: '🐉', robot: '🤖', penguin: '🐧' };
 
-    function cliSnippet(email) {
-      var who = email || 'you@example.com';
-      return '# 1 · sign in on this machine\n'
-        + 'lean-ctx login ' + who + '\n\n'
-        + "# 2 · push this machine's learned context to your Personal Cloud\n"
-        + 'lean-ctx sync\n\n'
-        + '# 3 · on any other machine, restore everything\n'
-        + 'lean-ctx cloud pull';
+    function renderSetup(email, synced) {
+      var steps = [
+        ['Install lean-ctx', 'curl -fsSL https://leanctx.com/install.sh | sh'],
+        ['Sign in on this machine', 'lean-ctx login ' + (email || 'you@example.com')],
+        ['Sync this machine', 'lean-ctx sync']
+      ];
+      var ol = $('[data-setup-steps]');
+      if (!ol) return;
+      ol.innerHTML = steps.map(function (s, i) {
+        return '<li class="cloud-step">'
+          + '<span class="cloud-step-n">' + (i + 1) + '</span>'
+          + '<div class="cloud-step-body">'
+          + '<span class="cloud-step-label">' + esc(s[0]) + '</span>'
+          + '<div class="cloud-snippet"><div class="cloud-snippet-bar"><span>Terminal</span>'
+          + '<button type="button" class="team-copy" data-copy-step="' + i + '">Copy</button></div>'
+          + '<pre class="cloud-pre">' + esc(s[1]) + '</pre></div>'
+          + '</div></li>';
+      }).join('');
+      ol.querySelectorAll('[data-copy-step]').forEach(function (b) {
+        b.addEventListener('click', function (e) { copyText(steps[+b.getAttribute('data-copy-step')][1], e.currentTarget); });
+      });
+      var card = $('[data-setup-card]'), title = $('[data-setup-title]'), badge = $('[data-setup-badge]'), lead = $('[data-setup-lead]');
+      if (synced) {
+        if (card) card.classList.remove('is-firstrun');
+        if (title) title.textContent = 'Connect another machine';
+        if (badge) badge.hidden = true;
+        if (lead) lead.textContent = 'Bring your Personal Cloud to another machine — run these there to sync it down.';
+      } else {
+        if (card) card.classList.add('is-firstrun');
+        if (title) title.textContent = 'Set up your Personal Cloud';
+        if (badge) { badge.hidden = false; badge.textContent = '3 steps'; }
+        if (lead) lead.textContent = 'Run these once on this machine. Your knowledge, shell patterns, CEP history, gotchas, buddy and feedback thresholds then follow you everywhere.';
+      }
     }
 
     function copyText(text, btn) {
@@ -403,9 +440,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         }
 
         // Active Personal Cloud dashboard.
+        var synced = !!d.last_synced_at;
         var dot = $('[data-sync-dot]');
-        if (d.last_synced_at) { dot.setAttribute('data-on', 'true'); $('[data-last-synced]').textContent = 'Last synced ' + ago(d.last_synced_at); }
-        else { $('[data-last-synced]').textContent = 'No machine has synced yet — connect one below'; }
+        if (synced) { dot.setAttribute('data-on', 'true'); $('[data-last-synced]').textContent = 'Last synced ' + ago(d.last_synced_at); }
+        else { $('[data-last-synced]').textContent = 'No machine has synced yet — follow the steps below'; }
 
         var badge = $('[data-plan-badge]');
         if (badge) badge.textContent = d.plan || 'pro';
@@ -414,12 +452,10 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
         renderBuckets(d.buckets);
         renderBuddy(d.buddy);
-        $('[data-cli-snippet]').textContent = cliSnippet(email);
+        renderSetup(email, synced);
 
         var portal = $('[data-portal]');
         if (portal) portal.addEventListener('click', function (e) { openPortal(e.currentTarget); });
-        var copyCli = $('[data-copy-cli]');
-        if (copyCli) copyCli.addEventListener('click', function (e) { copyText(cliSnippet(email), e.currentTarget); });
 
         $('[data-dashboard]').hidden = false;
       } catch (err) {
