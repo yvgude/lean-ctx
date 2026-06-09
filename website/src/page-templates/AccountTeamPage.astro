@@ -1432,11 +1432,15 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         + xlabels
         + '</svg>';
 
-      var table = '<table class="roi-visually-hidden"><caption>' + esc(aria) + '</caption><tbody>'
+      // Screen-reader data table. Wrapped in a div because a <table> treats
+      // height as a *minimum* and ignores the visually-hidden 1px box, which
+      // would otherwise add ~2000px of empty scroll space below the chart. A
+      // div honours height:1px + overflow:hidden, clipping the table cleanly.
+      var table = '<div class="roi-visually-hidden"><table><caption>' + esc(aria) + '</caption><tbody>'
         + series.map(function (p) {
           return '<tr><th scope="row">' + esc(fmtDay(p.date)) + '</th><td>' + esc(m.fmt(p[state.metric])) + '</td></tr>';
         }).join('')
-        + '</tbody></table>';
+        + '</tbody></table></div>';
       var tip = '<figcaption class="team-chart-tip" data-tip aria-live="polite"></figcaption>';
 
       wrap.innerHTML = svg + table + tip;
