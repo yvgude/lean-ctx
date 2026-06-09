@@ -305,7 +305,7 @@
   "docs.cliReference.gainJsonDesc": "Raw JSON export of all stats (for scripting/automation)",
   "docs.cliReference.gainLiveDesc": "Auto-refreshing mode (updates every 2s). Press <kbd>q</kbd> to quit.",
   "docs.cliReference.gainNoneDesc": "Full dashboard: total saved, rate, USD, top commands, sparklines",
-  "docs.cliReference.graphBuildDesc": "Scan the project directory and build the dependency graph index. The graph is also built automatically when MCP tools are used.",
+  "docs.cliReference.graphBuildDesc": "Scan the project and (re)build the dependency-graph index. A plain <code>graph build</code> rescans incrementally — files whose content is unchanged are reused via their content hash, so the graph always reflects the current source. Pass <code>--force</code> (<code>-f</code>) to purge the cached index and rebuild from scratch. The graph is also built automatically when MCP tools are used.",
   "docs.cliReference.graphDesc": "Build or inspect the project dependency graph. The graph indexes file relationships (imports, exports, symbols) and is used by heat-ranking, intent analysis, and smart preloading.",
   "docs.cliReference.graphTitle": "Project Graph",
   "docs.cliReference.grepDesc": "Search file contents with compressed, grouped results. Uses ripgrep internally.",

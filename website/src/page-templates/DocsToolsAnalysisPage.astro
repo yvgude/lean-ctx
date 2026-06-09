@@ -36,7 +36,11 @@ const tools = category.tools.map(name => ({
     <strong>Svelte</strong>). Other languages — for example <strong>Lua/Luau</strong>
     — are <em>not</em> graph-indexed yet: BM25 search, <code>ctx_read</code>
     compression, and the session cache still work for them, but the graph,
-    symbols, and roads views will show an empty state instead of a graph.
+    symbols, and roads views will show an empty state instead of a graph. That
+    empty state shows a per-language capability legend — files, plus whether
+    symbol extraction, import edges, and the call graph are available for each
+    detected language (with real counts) — so it explains <em>why</em> a view is
+    empty rather than implying an index rebuild will help.
   </div>
 
   <h2>Tools Overview</h2>
