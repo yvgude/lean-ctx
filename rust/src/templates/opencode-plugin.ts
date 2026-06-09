@@ -68,10 +68,224 @@ async function callTool(
   }
 }
 
+/** Convert a JSON Schema property to a Zod schema field.
+ *  Handles string, number, integer, boolean, array, object, and anyOf/oneOf. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ZodField = any
+
+function jsonSchemaToZod(prop: Record<string, unknown>): ZodField {
+  const z = tool.schema
+
+  if (Array.isArray(prop.anyOf) || Array.isArray(prop.oneOf)) {
+    const variants = (prop.anyOf ?? prop.oneOf) as Record<string, unknown>[]
+    const nonNull = variants.find((v) => v.type !== "null")
+    if (nonNull) return jsonSchemaToZod(nonNull)
+    return z.any()
+  }
+
+  switch (prop.type) {
+    case "string":
+      return z.string()
+    case "number":
+      return z.number()
+    case "integer":
+      return z.number()
+    case "boolean":
+      return z.boolean()
+    case "array": {
+      const items = prop.items as Record<string, unknown> | undefined
+      return z.array(items ? jsonSchemaToZod(items) : z.any())
+    }
+    case "object":
+      return z.record(z.string(), z.any())
+    default:
+      return z.any()
+  }
+}
+
+/** Convert MCP tool inputSchema (JSON Schema) to opencode args (Zod map). */
+function mcpSchemaToArgs(
+  schema: { properties?: Record<string, object>; required?: string[] },
+): Record<string, ZodField> {
+  const properties = schema.properties ?? {}
+  const required = new Set(schema.required ?? [])
+  const args: Record<string, ZodField> = {}
+
+  for (const [key, prop] of Object.entries(properties)) {
+    let field = jsonSchemaToZod(prop as Record<string, unknown>)
+    if (!required.has(key)) field = field.optional()
+    if ((prop as Record<string, unknown>).description) {
+      field = field.describe(String((prop as Record<string, unknown>).description))
+    }
+    if ((prop as Record<string, unknown>).default !== undefined) {
+      field = field.default((prop as Record<string, unknown>).default)
+    }
+    args[key] = field
+  }
+
+  return args
+}
+
+/** Build dynamic tools from MCP server. */
+async function buildDynamicTools(): Promise<Record<string, ReturnType<typeof tool>>> {
+  const client = await getClient()
+  const { tools: mcpTools } = await client.listTools()
+  const dynamic: Record<string, ReturnType<typeof tool>> = {}
+
+  for (const mcpTool of mcpTools) {
+    const args = mcpSchemaToArgs(mcpTool.inputSchema)
+    dynamic[mcpTool.name] = tool({
+      description: mcpTool.description ?? mcpTool.name,
+      args,
+      async execute(toolArgs) {
+        return await callTool(mcpTool.name, toolArgs as Record<string, unknown>)
+      },
+    })
+  }
+
+  return dynamic
+}
+
 export const LeanCtxOpenCodePlugin: Plugin = async (_ctx) => {
+  // ── Static tools that replace native opencode tools ──────────
+  const staticTools: Record<string, ReturnType<typeof tool>> = {
+    // ── read → lean-ctx ctx_read ───────────────────────────
+    read: tool({
+      description: `Read a file with caching and compression. Unchanged re-reads cost ~13 tokens.
+
+        Mode: auto (default), full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M
+      - auto: best-effort selection
+      - full: complete content
+      - map: deps + API signatures
+      - signatures: function/type signatures via tree-sitter
+      - diff: changed lines only
+      - aggressive: syntax stripped
+      - entropy: low-info lines removed
+      - task: task-filtered with graph context
+      - reference: ultra-compact pointer
+      - lines:N-M: specific ranges (e.g. lines:10-80)
+
+      Use read for files you'll edit or analyze. Use grep for content search, glob for filename patterns.`,
+      args: {
+        path: tool.schema.string().describe("Absolute file path to read"),
+        mode: tool.schema
+          .string()
+          .optional()
+          .default("auto")
+          .describe("Compression mode (default: auto). Options: full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M"),
+        fresh: tool.schema
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Force re-read from disk (bypasses lean-ctx cache). Use after external file modifications."),
+      },
+      async execute({ path, mode, fresh }) {
+        return await callTool("ctx_read", { path, mode, fresh })
+      },
+    }),
+
+    // ── grep → lean-ctx ctx_search ─────────────────────────
+    grep: tool({
+      description: `Search file contents by regex. Compact, token-efficient results. Respects .gitignore.
+
+        Use grep to find code patterns, function definitions, variable usages. Use glob for filename patterns, read for full file content.`,
+      args: {
+        pattern: tool.schema.string().describe("Regex pattern to search for in file contents"),
+        path: tool.schema.string().optional().default(".").describe("Directory to search in (default: current directory)"),
+        include: tool.schema
+          .string()
+          .optional()
+          .describe('file filter glob (e.g. "*.ts", "*.{rs,ts}", "src/**/*.tsx")'),
+        max_results: tool.schema
+          .number()
+          .optional()
+          .default(20)
+          .describe("max results (default: 20)"),
+      },
+      async execute({ pattern, path, include, max_results }) {
+        return await callTool("ctx_search", {
+          pattern,
+          path,
+          ...(include ? { include } : {}),
+          max_results,
+        })
+      },
+    }),
+
+    // ── glob → lean-ctx ctx_glob ────────────────────────────
+    glob: tool({
+      description: `Find files by glob pattern. Fast matching for any codebase size. Respects .gitignore.
+
+          Use glob for filename patterns. Use grep for content search, read for file content.`,
+      args: {
+        pattern: tool.schema.string().describe("glob pattern to match files against"),
+        path: tool.schema.string().optional().default(".").describe("directory to search in. If not specified, the current working directory will be used"),
+      },
+      async execute({ pattern, path }) {
+        return await callTool("ctx_glob", { pattern, path })
+      },
+    }),
+
+    // ── edit → lean-ctx ctx_edit ───────────────────────────
+    edit: tool({
+      description: `Edit a file via search-and-replace. oldString must be unique unless replaceAll=true.
+
+        Use edit for modifications. Use write for new files, read to view content first.`,
+      args: {
+        filePath: tool.schema.string().describe("absolute file path"),
+        oldString: tool.schema.string().describe("text to replace"),
+        newString: tool.schema.string().describe("replacement text"),
+        replaceAll: tool.schema
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Replace all occurrences (default: false)"),
+      },
+      async execute({ filePath, oldString, newString, replaceAll }) {
+        return await callTool("ctx_edit", {
+          path: filePath,
+          old_string: oldString,
+          new_string: newString,
+          replace_all: replaceAll,
+        })
+      },
+    }),
+
+    // ── bash → lean-ctx ctx_shell ──────────────────────────
+    bash: tool({
+      description: `Execute a shell command. Set raw=true for verbatim output.`,
+      args: {
+        command: tool.schema.string().describe("Shell command to execute"),
+        raw: tool.schema
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Skip output compression. Use when exact verbatim output is required."),
+        cwd: tool.schema
+          .string()
+          .optional()
+          .describe("Working directory for the command. Defaults to current directory."),
+      },
+      async execute({ command, raw, cwd }) {
+        return await callTool("ctx_shell", {
+          command,
+          raw,
+          ...(cwd ? { cwd } : {}),
+        })
+      },
+    }),
+  }
+
+  // ── Dynamic tools from MCP ────────────────
+  let dynamicTools: Record<string, ReturnType<typeof tool>> = {}
+  try {
+    dynamicTools = await buildDynamicTools()
+  } catch {
+    console.error("[lean-ctx] failed to dynamically load mcp tools")
+  }
+
   return {
     dispose: async () => {
-      // If still connecting, wait for it to settle so we can close it safely
       if (_clientPromise) {
         await _clientPromise.catch(() => { })
       }
@@ -82,150 +296,6 @@ export const LeanCtxOpenCodePlugin: Plugin = async (_ctx) => {
       _clientPromise = null
     },
 
-    tool: {
-      // ── read → lean-ctx ctx_read ───────────────────────────
-      read: tool({
-        description: `Read a file with caching and compression. Unchanged re-reads cost ~13 tokens.
-
-Mode: auto (default), full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M
-- auto: best-effort selection
-- full: complete content
-- map: deps + API signatures
-- signatures: function/type signatures via tree-sitter
-- diff: changed lines only
-- aggressive: syntax stripped
-- entropy: low-info lines removed
-- task: task-filtered with graph context
-- reference: ultra-compact pointer
-- lines:N-M: specific ranges (e.g. lines:10-80)
-
-Use read for files you'll edit or analyze. Use grep for content search, glob for filename patterns.`,
-        args: {
-          path: tool.schema.string().describe("Absolute file path to read"),
-          mode: tool.schema
-            .string()
-            .optional()
-            .default("auto")
-            .describe("Compression mode (default: auto). Options: full, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M"),
-          fresh: tool.schema
-            .boolean()
-            .optional()
-            .default(false)
-            .describe("Force re-read from disk (bypasses lean-ctx cache). Use after external file modifications."),
-        },
-        async execute({ path, mode, fresh }) {
-          const out = await callTool("ctx_read", {
-            path,
-            mode,
-            fresh,
-          })
-
-          return out
-        },
-      }),
-
-      // ── grep → lean-ctx ctx_search ─────────────────────────
-      grep: tool({
-        description: `Search file contents by regex. Compact, token-efficient results. Respects .gitignore.
-
-Use grep to find code patterns, function definitions, variable usages. Use glob for filename patterns, read for full file content.`,
-        args: {
-          pattern: tool.schema.string().describe("Regex pattern to search for in file contents"),
-          path: tool.schema.string().optional().default(".").describe("Directory to search in (default: current directory)"),
-          include: tool.schema
-            .string()
-            .optional()
-            .describe('file filter glob (e.g. "*.ts", "*.{rs,ts}", "src/**/*.tsx")'),
-          max_results: tool.schema
-            .number()
-            .optional()
-            .default(20)
-            .describe("max results (default: 20)"),
-        },
-        async execute({ pattern, path, include, max_results }) {
-          const out = await callTool("ctx_search", {
-            pattern,
-            path,
-            ...(include ? { include } : {}),
-            max_results,
-          })
-
-          return out
-        },
-      }),
-
-      // ── glob → lean-ctx ctx_glob ────────────────────────────
-      glob: tool({
-        description: `Find files by glob pattern. Fast matching for any codebase size. Respects .gitignore.
-
-Use glob for filename patterns. Use grep for content search, read for file content.`,
-        args: {
-          pattern: tool.schema.string().describe("glob pattern to match files against"),
-          path: tool.schema.string().optional().default(".").describe("directory to search in. If not specified, the current working directory will be used"),
-        },
-        async execute({ pattern, path }) {
-          const out = await callTool("ctx_glob", {
-            pattern,
-            path,
-          })
-
-          return out
-        },
-      }),
-
-      // ── edit → lean-ctx ctx_edit ───────────────────────────
-      edit: tool({
-        description: `Edit a file via search-and-replace. oldString must be unique unless replaceAll=true.
-
-Use edit for modifications. Use write for new files, read to view content first.`,
-        args: {
-          filePath: tool.schema.string().describe("absolute file path"),
-          oldString: tool.schema.string().describe("text to replace"),
-          newString: tool.schema.string().describe("replacement text"),
-          replaceAll: tool.schema
-            .boolean()
-            .optional()
-            .default(false)
-            .describe("Replace all occurrences (default: false)"),
-        },
-        async execute({ filePath, oldString, newString, replaceAll }) {
-          const out = await callTool("ctx_edit", {
-            path: filePath,
-            old_string: oldString,
-            new_string: newString,
-            replace_all: replaceAll,
-          })
-
-          return out
-        },
-      }),
-
-      // ── bash → lean-ctx ctx_shell ──────────────────────────
-      bash: tool({
-        description: `Execute a shell command. Set raw=true for verbatim output.`,
-        args: {
-          command: tool.schema.string().describe("Shell command to execute"),
-          raw: tool.schema
-            .boolean()
-            .optional()
-            .default(false)
-            .describe("Skip output compression. Use when exact verbatim output is required."),
-          cwd: tool.schema
-            .string()
-            .optional()
-            .describe("Working directory for the command. Defaults to current directory."),
-        },
-        async execute({ command, raw, cwd }) {
-          const out = await callTool("ctx_shell", {
-            command,
-            raw,
-            ...(cwd ? { cwd } : {}),
-          })
-
-          return out
-        },
-      }),
-    },
+    tool: { ...dynamicTools, ...staticTools },
   }
 }
-
