@@ -2,6 +2,11 @@ FROM rust:1-bookworm AS builder
 
 WORKDIR /app
 COPY rust ./rust
+# `rust/src/core/locomo/dataset.rs` pulls the reference suite in at compile time via
+# `include_str!("../../../../benchmark/locomo/...")`, which resolves outside `rust/`.
+# The benchmark tree is tiny (~150K) and only used by the builder stage, so copy it
+# so the cloud-api image builds from a clean `git archive` checkout.
+COPY benchmark ./benchmark
 
 # The cloud API is a feature-gated example target (`required-features = ["cloud-server"]`),
 # so it must be built with `--example`; the artifact lands in target/release/examples/.
