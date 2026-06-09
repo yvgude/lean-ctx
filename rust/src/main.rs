@@ -1,17 +1,8 @@
 fn main() {
-    std::panic::set_hook(Box::new(|info| {
-        eprintln!("lean-ctx: unexpected error (your command was not affected)");
-        eprintln!("  Disable temporarily: lean-ctx-off");
-        eprintln!("  Full uninstall:      lean-ctx uninstall");
-        if let Some(msg) = info.payload().downcast_ref::<&str>() {
-            eprintln!("  Details: {msg}");
-        } else if let Some(msg) = info.payload().downcast_ref::<String>() {
-            eprintln!("  Details: {msg}");
-        }
-        if let Some(loc) = info.location() {
-            eprintln!("  Location: {}:{}", loc.file(), loc.line());
-        }
-    }));
+    // Crash log + stderr message for every panic in any thread (#378
+    // diagnosability: stderr is lost for daemon/LaunchAgent processes,
+    // ~/.lean-ctx/logs/crash.log is not).
+    lean_ctx::core::crash_log::install_panic_hook();
 
     // Prevent SIGABRT on uncaught panics (e.g. during MCP startup bursts).
     // The panic hook above still prints details; we just exit cleanly.
