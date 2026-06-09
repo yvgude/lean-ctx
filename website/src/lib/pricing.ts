@@ -73,7 +73,7 @@ export const supporterTiers: SupporterTier[] = [
     monthly: '$5',
     amount: 5,
     links: {
-      monthly: 'https://buy.stripe.com/4gM9AN0x04JcagU2AtcjS02',
+      monthly: 'https://buy.stripe.com/7sYfZj0pl1M00zpfFlgMw00',
     },
   },
   {
@@ -83,7 +83,7 @@ export const supporterTiers: SupporterTier[] = [
     amount: 10,
     featured: true,
     links: {
-      monthly: 'https://buy.stripe.com/cNi28lgvYdfI2Os4IBcjS04',
+      monthly: 'https://buy.stripe.com/9B69AVgoj4Yc3LBdxdgMw02',
     },
   },
   {
@@ -92,7 +92,7 @@ export const supporterTiers: SupporterTier[] = [
     monthly: '$25',
     amount: 25,
     links: {
-      monthly: 'https://buy.stripe.com/eVq28l4Ng5NgbkYcb3cjS06',
+      monthly: 'https://buy.stripe.com/28E7sN2xt4Ycfuj2SzgMw04',
     },
   },
 ];
