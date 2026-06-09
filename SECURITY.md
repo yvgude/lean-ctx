@@ -200,9 +200,9 @@ Critical vulnerabilities (RCE, data exfiltration) are fast-tracked.
 
 ### TOCTOU (Time-of-Check to Time-of-Use)
 
-**Status:** Accepted residual risk.
+**Status:** Mitigated on Unix; residual risk on Windows.
 
-A race condition exists between `jail_path` validation and the subsequent file read. The filesystem could change between the check and the operation (e.g., a symlink replaced after validation). Complete mitigation would require `openat`/`O_NOFOLLOW` at the syscall level, which is impractical across all supported platforms.
+A race window exists between `jail_path` validation and the subsequent file operation. Mitigations in place: standard reads open with `O_NOFOLLOW` (Unix) and reject symlinks; `ctx_edit` additionally rejects symlinks on both its read and write paths (lstat pre-check on all platforms, `O_NOFOLLOW` on Unix) and re-verifies the file fingerprint (size/mtime/md5) immediately before writing. On Windows there is no `O_NOFOLLOW` equivalent, so the lstat pre-check is the only guard.
 
 **Recommendation for regulated environments:** Run lean-ctx inside a container or VM where the filesystem is controlled and no untrusted processes can modify symlinks concurrently.
 
@@ -216,21 +216,21 @@ The `ctx_execute` tool provides **timeout enforcement** and **output capping** b
 
 ### Shell Command Validation (REQ-57177)
 
-**Status:** Accepted risk — by design.
+**Status:** Defense in depth — the agent's permission model remains the primary boundary.
 
-`ctx_shell` executes commands requested by the user or their AI agent. lean-ctx does **not** validate or sanitize shell command content itself — that responsibility lies with the agent's permission model (e.g., Claude Code's allowlists, Cursor's approval dialogs). lean-ctx enforces CWD jail boundaries and output capping but does not attempt to parse or restrict shell syntax.
+`ctx_shell` and `lean-ctx -c` enforce a deny-by-default executable allowlist (AST-segmented: every segment of a pipeline/compound command must be allowed), block `eval`/`$()`/backticks at command position, and reject pipe-to-bare-interpreter patterns. Enforcement applies to the MCP path, hook-child mode and every non-interactive CLI invocation; an interactive human terminal gets a warning instead (`LEAN_CTX_ALLOWLIST_WARN_ONLY=1` opts out explicitly). Cloud/infra mutation CLIs (terraform, kubectl, aws, …) are excluded from the default allowlist and require per-tool opt-in (`lean-ctx allow <cmd>`).
 
-**Rationale:** Any shell validation can be bypassed (encoding, quoting, aliases). The correct security boundary is the AI agent's permission model, not a regex-based shell filter.
+**Rationale:** Shell filters can be bypassed by a sufficiently creative attacker, so the agent's permission model (Claude Code allowlists, Cursor approval dialogs) remains the primary boundary — lean-ctx's allowlist is a second, independent layer, not a replacement.
 
 **Mitigation:** Use role-based `denied: ["ctx_shell"]` to disable shell access entirely in sensitive environments.
 
 ### PathJail TOCTOU Race (REQ-57178)
 
-**Status:** Accepted residual risk.
+**Status:** Mitigated on Unix; residual risk on Windows.
 
-A race condition exists between `jail_path` validation and the subsequent file operation. The filesystem could change between the check and the operation (e.g., a symlink replaced after validation). Complete mitigation would require `openat`/`O_NOFOLLOW` at the syscall level, which is impractical across all supported platforms.
+A race window exists between `jail_path` validation and the subsequent file operation. Mitigations: symlink-following canonicalization before access, `O_NOFOLLOW` + symlink rejection on read paths (Unix), and symlink rejection on `ctx_edit` write paths (all platforms, lstat-based). Home-level IDE config dirs (`~/.cursor`, `~/.claude`, …) are excluded from the jail's allow-list by default (`allow_ide_config_dirs` opts in).
 
-**Mitigation:** Symlink-following canonicalization before access. For regulated environments: run lean-ctx inside a container where no untrusted processes can modify symlinks concurrently.
+**Mitigation:** For regulated environments: run lean-ctx inside a container where no untrusted processes can modify symlinks concurrently.
 
 ### Cloud Server Database TLS (REQ-57188)
 

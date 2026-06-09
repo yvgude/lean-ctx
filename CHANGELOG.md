@@ -5,6 +5,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Security
+- **CLI shell allowlist is now enforced for agents** (P0-1, GL #413):
+  `lean-ctx -c` blocks allowlist violations (exit 126) whenever the caller is
+  non-interactive (stderr is not a TTY) or in hook-child mode — the CLI path is
+  no longer weaker than the MCP path. Humans at a terminal keep the warn-only
+  behavior; `LEAN_CTX_ALLOWLIST_WARN_ONLY=1` is the explicit opt-out. The block
+  message explains the one-line fix (`lean-ctx allow <cmd>`).
+- **Cloud credentials are written 0o600, atomically** (P0-2, GL #414):
+  `~/.lean-ctx/cloud/credentials.json` is created owner-only (dir 0o700) via
+  tmp+rename; pre-existing world-readable files are tightened on load.
+- **Deterministic path resolution** (P0-3, GL #415): relative tool paths are
+  never resolved against the process CWD anymore (daemon CWD ≠ project);
+  resolution is strictly project_root → shell_cwd → jail_root.
+- **Proxy can no longer start unauthenticated** (P0-4, GL #416):
+  `start_proxy_with_token(None)` now auto-resolves the session token instead of
+  disabling auth. Provider routes still accept provider API keys, so IDE
+  clients need no setup.
+- **Postgres provider validates schema identifiers** (P0-5, GL #417): the
+  agent-controlled `schema` param is restricted to `[A-Za-z_][A-Za-z0-9_$]*`
+  (max 63 chars) before SQL interpolation — closes an injection vector.
+- **ctx_edit rejects symlinks** (P0-6, GL #418): reads open with `O_NOFOLLOW`
+  (plus an lstat pre-check on all platforms) and writes refuse symlink
+  destinations — closes a TOCTOU window where a link planted inside the jail
+  could read or overwrite files outside it.
+- **Cloud/infra CLIs removed from the default shell allowlist** (P0-9, GL #421):
+  terraform, ansible, kubectl, helm, az, aws, gcloud, firebase, heroku, vercel,
+  netlify, fly, wrangler, pulumi now require explicit opt-in
+  (`lean-ctx allow <cmd>`) — they mutate remote infrastructure with ambient
+  credentials. Dev-essential tools (git, cargo, rm, psql, …) are unchanged.
+- **Home-level IDE config dirs are jail-opt-in** (P0-10, GL #422): `~/.cursor`,
+  `~/.claude` & co. are no longer automatically reachable through the PathJail
+  (they expose foreign projects' sessions, MCP configs and tokens). Opt in via
+  `allow_ide_config_dirs = true` or `LEAN_CTX_ALLOW_IDE_DIRS=1`; `~/.lean-ctx`
+  stays allowed.
+
+### Fixed
+- **Stale cache stubs can no longer mislead the agent** (P0-7, GL #419):
+  staleness now treats *any* mtime change as stale (backward mtimes from
+  `git checkout` previously read as fresh) and verifies the content hash before
+  serving an `[unchanged]` stub when the mtime claims no change (same-second
+  writes, restored timestamps). Opt out: `LEAN_CTX_CACHE_VERIFY=0`.
+- **Panics are now diagnosable after the fact** (P0-8, GL #420, upstream #378):
+  every panic appends thread, location, payload and backtrace to
+  `~/.lean-ctx/logs/crash.log` (0o600, size-rotated) — stderr-only reporting was
+  lost for daemon/LaunchAgent/MCP-child processes.
+
 ### Added
 - **Honest metering on phase-isolated / non-caching workloads** (#361): `lean-ctx
   gain` now states its denominator — savings are compression on
