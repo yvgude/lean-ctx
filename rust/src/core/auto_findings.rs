@@ -16,6 +16,16 @@ static RECENT: Mutex<Vec<RecentEntry>> = Mutex::new(Vec::new());
 const DEDUP_WINDOW_SECS: u64 = 60;
 const MAX_SUMMARY_LEN: usize = 120;
 
+/// Truncate `s` to at most `n` bytes, snapping back to the nearest valid
+/// UTF-8 char boundary so we never panic on multibyte characters.
+fn byte_truncate(s: &str, n: usize) -> &str {
+    if s.len() <= n {
+        return s;
+    }
+    let safe_end = (0..=n).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0);
+    &s[..safe_end]
+}
+
 /// Extract a finding from a tool call result. Returns `None` if the output
 /// is not interesting or if a duplicate was emitted within the dedup window.
 pub fn extract(tool_name: &str, output: &str) -> Option<AutoFinding> {
@@ -31,7 +41,7 @@ pub fn extract(tool_name: &str, output: &str) -> Option<AutoFinding> {
     let dedup_key = format!(
         "{}:{}",
         finding.file.as_deref().unwrap_or(""),
-        &finding.summary[..finding.summary.len().min(80)]
+        byte_truncate(&finding.summary, 80)
     );
 
     if let Ok(mut recent) = RECENT.lock() {
@@ -205,12 +215,12 @@ fn extract_ctx_shell(output: &str) -> Option<AutoFinding> {
     if let Some(rest) = first_line.strip_prefix("exit:") {
         let code = rest.split_whitespace().next().unwrap_or("?");
         if code != "0" {
-            let short_cmd = &cmd[..cmd.len().min(50)];
+            let short_cmd = byte_truncate(cmd, 50);
             let error_hint = lines
                 .iter()
                 .find(|l| l.contains("error") || l.contains("Error") || l.contains("FAILED"))
                 .map_or("", |l| l.trim());
-            let error_short = &error_hint[..error_hint.len().min(50)];
+            let error_short = byte_truncate(error_hint, 50);
 
             let summary = if error_short.is_empty() {
                 format!("FAILED (exit {code}): {short_cmd}")
@@ -394,7 +404,7 @@ pub fn extract_content_hint(output: &str) -> String {
             || trimmed.starts_with("exports:")
             || trimmed.starts_with("//!")
         {
-            return trimmed[..trimmed.len().min(80)].to_string();
+            return byte_truncate(trimmed, 80).to_string();
         }
     }
 
@@ -413,7 +423,7 @@ pub fn extract_content_hint(output: &str) -> String {
             || trimmed.starts_with("def ")
             || trimmed.starts_with("func ")
         {
-            return trimmed[..trimmed.len().min(70)].to_string();
+            return byte_truncate(trimmed, 70).to_string();
         }
     }
 
@@ -421,7 +431,7 @@ pub fn extract_content_hint(output: &str) -> String {
     for line in &lines {
         let trimmed = line.trim();
         if trimmed.starts_with("///") || trimmed.starts_with("# ") {
-            return trimmed[..trimmed.len().min(70)].to_string();
+            return byte_truncate(trimmed, 70).to_string();
         }
     }
 
@@ -472,7 +482,7 @@ fn extract_test_result(lines: &[&str], cmd: &str) -> Option<String> {
     for line in lines.iter().rev().take(10) {
         // Rust: "test result: ok. 2845 passed; 0 failed;"
         if line.contains("test result:") {
-            let short_cmd = &cmd[..cmd.len().min(30)];
+            let short_cmd = byte_truncate(cmd, 30);
             let result = line.trim();
             return Some(truncate(
                 &format!("Test `{short_cmd}`: {result}"),
@@ -483,7 +493,7 @@ fn extract_test_result(lines: &[&str], cmd: &str) -> Option<String> {
         if (line.contains(" passed") || line.contains(" failed"))
             && (line.contains("pytest") || line.contains("==="))
         {
-            let short_cmd = &cmd[..cmd.len().min(30)];
+            let short_cmd = byte_truncate(cmd, 30);
             let result = line.trim().trim_matches('=').trim();
             return Some(truncate(
                 &format!("Test `{short_cmd}`: {result}"),
@@ -508,7 +518,7 @@ fn extract_build_result(lines: &[&str], cmd: &str) -> Option<String> {
     // Look for Finished line (cargo)
     for line in lines.iter().rev().take(5) {
         if line.contains("Finished") {
-            let short_cmd = &cmd[..cmd.len().min(30)];
+            let short_cmd = byte_truncate(cmd, 30);
             // Count errors/warnings
             let errors = lines.iter().filter(|l| l.contains("error[")).count();
             let warnings = lines
