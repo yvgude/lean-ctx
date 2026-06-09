@@ -1,6 +1,6 @@
 {
   "counts": {
-    "granular": 72,
+    "granular": 75,
     "unified": 5
   },
   "read_modes": {
@@ -839,7 +839,7 @@
         "schema_md5": "9eb286b15efefef5205393a10b13cff104e2d0b7646dfecdf7e2ba1419dae395"
       },
       {
-        "description": "Unified code graph. Actions: build (index), related (connected files), symbol (def/usages), impact (blast radius), status (stats), enrich (add commits+tests+knowledge), context (task-based query), diagram (Mermaid deps/calls).",
+        "description": "Unified code graph. Actions: build (index), related (connected files), symbol (def/usages), impact (blast radius), status (stats), enrich (add commits+tests+knowledge), context (task-based query), diagram (Mermaid deps/calls), neighbors (direct in/out edges of a file), path (shortest connection between two files), explain (why a file matters: degree/community/bridge), diff (files changed since a git ref + their blast radius).",
         "input_schema": {
           "properties": {
             "action": {
@@ -852,24 +852,40 @@
                 "status",
                 "enrich",
                 "context",
-                "diagram"
+                "diagram",
+                "neighbors",
+                "path",
+                "explain",
+                "diff"
               ],
               "type": "string"
             },
             "depth": {
-              "description": "Optional depth for action=diagram (default: 2)",
+              "description": "Optional traversal depth for action=diagram (default 2) and action=neighbors (default 1)",
               "type": "integer"
+            },
+            "format": {
+              "description": "Output format for neighbors/path/explain/diff: text (default) or json",
+              "type": "string"
             },
             "kind": {
               "description": "Optional kind for action=diagram: deps|calls",
               "type": "string"
             },
             "path": {
-              "description": "File path (related/impact) or file::symbol_name (symbol)",
+              "description": "File path (related/impact/neighbors/explain), file::symbol_name (symbol), or the FROM file (path)",
               "type": "string"
             },
             "project_root": {
               "description": "Project root directory (default: .)",
+              "type": "string"
+            },
+            "since": {
+              "description": "Base git ref for action=diff (default HEAD~1), e.g. a commit SHA, tag or HEAD~5",
+              "type": "string"
+            },
+            "to": {
+              "description": "Target file for action=path (shortest path destination)",
               "type": "string"
             }
           },
@@ -879,7 +895,7 @@
           "type": "object"
         },
         "name": "ctx_graph",
-        "schema_md5": "5d1753cbab7a3b63452a8099e5da93d8b6f4d2ceb084e790b1be88c71bdb1a89"
+        "schema_md5": "558e1722ac4f3af2699846f11f145d94ace123d23706fd0340544a14ebdf6b56"
       },
       {
         "description": "Context Ledger Protocol (hashed, deterministic, local-first). Actions: create|show|list|pull|clear|export|import.",
@@ -1421,6 +1437,37 @@
         },
         "name": "ctx_pack",
         "schema_md5": "3e3de7df26d4353ac8f99d2f1ddf9d6ef74d75ac869e314048f06a69d0984477"
+      },
+      {
+        "description": "Save or resume portable context packages — self-contained JSON bundles with session state, summaries, and knowledge. Use to hand off context between agents, persist session snapshots for later, or onboard a new agent into a previous session's context. Actions: save (export current session), resume (import from a package file), list (show saved packages), info (inspect a package without importing).",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Package action (required)",
+              "enum": [
+                "save",
+                "resume",
+                "list",
+                "info"
+              ],
+              "type": "string"
+            },
+            "description": {
+              "description": "Human-readable description for the saved package",
+              "type": "string"
+            },
+            "path": {
+              "description": "File path for resume/info, or custom output path for save",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        "name": "ctx_package",
+        "schema_md5": "485b70bfef664c105d32dd81092575d8519817a39124fc0c93ebad2d5c7d0c10"
       },
       {
         "description": "Context planning (CFT). Computes optimal context plan with Phi scoring, budget allocation, and policy-driven view selection.",
@@ -2081,6 +2128,30 @@
         "schema_md5": "4eb7ea0630a062f9d2555be141d836645c410a62ee6781405c2261ef25a32dae"
       },
       {
+        "description": "Codify recurring patterns from this project's session diary + knowledge into versioned, git-committable .cursor/rules/skillify-*.mdc files. Actions: mine (distill & write/merge rules), list (show generated rules), status (config + counts), promote (copy a project rule to ~/.cursor/rules). Precision-biased; only acts when invoked; re-runs are idempotent.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Skillify action (default: mine)",
+              "enum": [
+                "mine",
+                "list",
+                "status",
+                "promote"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "description": "Rule slug for the promote action (e.g. skillify-stop-before-build)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_skillify",
+        "schema_md5": "ae5a77445b7bd89368e26a7fe590ee4bb0e254cfce128cff6b1b57f710661417"
+      },
+      {
         "description": "Auto-select optimal read mode for a file.",
         "input_schema": {
           "properties": {
@@ -2132,6 +2203,33 @@
         },
         "name": "ctx_smells",
         "schema_md5": "31430c987dcc80580e35c7cee4b9f924ddb6d80a4e4ceca8f0b20c4c07880f82"
+      },
+      {
+        "description": "Record and recall AI session summaries — compact, semantically-recallable digests of what was done (task, files, decisions, next steps). Actions: recall (find past summaries by query; semantic when embeddings are warm, else lexical), record (snapshot the current session now), list (recent summaries). Summaries are also captured automatically on the checkpoint cadence.",
+        "input_schema": {
+          "properties": {
+            "action": {
+              "description": "Summary action (default: recall)",
+              "enum": [
+                "recall",
+                "record",
+                "list"
+              ],
+              "type": "string"
+            },
+            "query": {
+              "description": "Recall query, e.g. \"what did I change in the graph index?\"",
+              "type": "string"
+            },
+            "top_k": {
+              "description": "Max summaries to return for recall (default 5, max 20)",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "name": "ctx_summary",
+        "schema_md5": "2b4e085f441638c58e6bfba01443825ea9b9102250488bbf915be348650636bd"
       },
       {
         "description": "Read a specific symbol (function, struct, class) by name. Returns only the symbol code block instead of the entire file. 90-97% fewer tokens than full file read.",

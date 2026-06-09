@@ -56,7 +56,8 @@
         "ctx_task",
         "ctx_cost",
         "ctx_knowledge",
-        "ctx_context"
+        "ctx_context",
+        "ctx_summary"
       ]
     },
     "session": {
@@ -92,7 +93,9 @@
         "ctx_compile",
         "ctx_plan",
         "ctx_call",
-        "ctx_rules"
+        "ctx_rules",
+        "ctx_package",
+        "ctx_skillify"
       ]
     },
     "analysis": {
@@ -110,6 +113,92 @@
     }
   },
   "tools": {
+    "ctx_summary": {
+      "when_to_use": "Recalling what a past session did, or snapshotting the current session's task, touched files, decisions, and next steps. Recall is semantic when embeddings are warm and falls back to lexical otherwise.",
+      "when_not_to_use": "For durable structured facts (use ctx_knowledge), live session state (use ctx_session), or exporting a full portable bundle for another agent (use ctx_package).",
+      "related": [
+        "ctx_knowledge",
+        "ctx_session",
+        "ctx_package",
+        "ctx_checkpoint"
+      ],
+      "token_impact": "Returns compact digests instead of replaying full history — a handful of summaries recall an entire session in a few hundred tokens. Summaries are also captured automatically on the checkpoint cadence.",
+      "cli_equivalent": null,
+      "examples": [
+        {
+          "title": "Recall past work",
+          "call": "ctx_summary action=\"recall\" query=\"what did I change in the graph index?\"",
+          "description": "Finds the most relevant prior session summaries — semantic when embeddings are warm, lexical otherwise."
+        },
+        {
+          "title": "Snapshot the current session",
+          "call": "ctx_summary action=\"record\"",
+          "description": "Writes a digest of the current task, files, decisions, and next steps right now."
+        },
+        {
+          "title": "List recent summaries",
+          "call": "ctx_summary action=\"list\" top_k=10",
+          "description": "Shows the most recent summaries without a query."
+        }
+      ]
+    },
+    "ctx_package": {
+      "when_to_use": "Handing off context between agents, persisting a session snapshot for later, or onboarding a new agent into a previous session — as a self-contained JSON bundle of session state, summaries, and knowledge.",
+      "when_not_to_use": "For lightweight in-session recall (use ctx_summary), structured fact storage (use ctx_knowledge), or a live cross-agent handoff inside the same project (use ctx_handoff).",
+      "related": [
+        "ctx_handoff",
+        "ctx_summary",
+        "ctx_session",
+        "ctx_knowledge"
+      ],
+      "token_impact": "Bundles an entire session into one portable file, so a fresh agent resumes full context in a single import instead of re-deriving it from scratch.",
+      "cli_equivalent": null,
+      "examples": [
+        {
+          "title": "Save the current session",
+          "call": "ctx_package action=\"save\" description=\"auth refactor handoff\"",
+          "description": "Exports session state, summaries, and knowledge into a portable package file."
+        },
+        {
+          "title": "Resume from a package",
+          "call": "ctx_package action=\"resume\" path=\"./handoff.json\"",
+          "description": "Imports a previously saved package so a new agent starts with full context."
+        },
+        {
+          "title": "Inspect without importing",
+          "call": "ctx_package action=\"info\" path=\"./handoff.json\"",
+          "description": "Shows what a package contains before deciding to resume it."
+        }
+      ]
+    },
+    "ctx_skillify": {
+      "when_to_use": "Codifying recurring patterns from this project's session diary and knowledge into versioned, git-committable .cursor/rules/skillify-*.mdc files. Precision-biased and idempotent — re-runs only act when there is something new to distill.",
+      "when_not_to_use": "For ad-hoc one-off facts (use ctx_knowledge) or for inspecting and managing already-injected rules (use ctx_rules).",
+      "related": [
+        "ctx_rules",
+        "ctx_knowledge",
+        "ctx_agent"
+      ],
+      "token_impact": "Turns repeated session learnings into persistent project rules, so future sessions inherit them automatically instead of re-discovering them.",
+      "cli_equivalent": "lean-ctx skillify <action>",
+      "examples": [
+        {
+          "title": "Mine new rules",
+          "call": "ctx_skillify action=\"mine\"",
+          "description": "Distills the session diary + knowledge into new or merged .cursor/rules/skillify-*.mdc files."
+        },
+        {
+          "title": "List generated rules",
+          "call": "ctx_skillify action=\"list\"",
+          "description": "Shows the skillify rules already generated for this project."
+        },
+        {
+          "title": "Promote a rule globally",
+          "call": "ctx_skillify action=\"promote\" slug=\"skillify-stop-before-build\"",
+          "description": "Copies a project rule to ~/.cursor/rules so it applies across all projects."
+        }
+      ]
+    },
     "ctx_url_read": {
       "when_to_use": "Pulling an external web page, PDF, RSS/Atom feed, or YouTube video into context as compressed, citation-backed text — docs, specs, changelogs, blog posts, research, news feeds, and video transcripts. HTML tables render as GitHub-Flavored Markdown, and GitHub blob/raw URLs auto-resolve to the raw file.",
       "when_not_to_use": "For local files (use ctx_read), code search (use ctx_search / ctx_semantic_search), or browsing a whole remote repository (use ctx_git_read). Only public http(s) is allowed — it cannot reach authenticated, private, or loopback endpoints (SSRF-guarded).",

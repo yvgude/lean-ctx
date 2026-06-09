@@ -190,7 +190,7 @@ export const pricingTiers: PricingTier[] = [
       'BM25 + graph + artifact retrieval over your code',
       '1–25 seats, billed per seat — add or remove anytime (prorated)',
       'Your private team server, provisioned the moment you check out',
-      'Hosted retrieval index — 5 GB quota with a live usage dashboard',
+      'Hosted retrieval index — 5 GB included, then $0.25/GB/mo, with a live usage dashboard',
       'Managed connectors — scheduled GitHub & GitLab sync into your index',
     ],
     roadmap: [
@@ -221,6 +221,10 @@ export const pricingFaq: Array<{ q: string; a: string }> = [
   {
     q: 'How is Team billed?',
     a: 'Per seat — $18/seat/month (or $180/seat/year, ~17% off). You pick how many seats you need (1–25) at checkout; afterwards add or remove seats anytime — straight from your team dashboard or the billing portal — and Stripe automatically prorates the difference. Adding a member when every seat is taken simply buys one more seat. Switch cadence or cancel any time — cancellations take effect at the end of the period.',
+  },
+  {
+    q: 'What happens if our hosted index goes over 5 GB?',
+    a: 'Nothing breaks. The hosted retrieval index includes 5 GB; beyond that, storage is metered at $0.25/GB per month and billed through Stripe alongside your seats. Your account dashboard shows live usage against the quota, and we email the team owner at 50%, 80% and 100% — so there are never surprise bills. Prefer no metered storage at all? Self-host the team server (Apache-2.0) and you own the disk.',
   },
   {
     q: 'Can we self-host instead?',
