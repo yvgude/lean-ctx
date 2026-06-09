@@ -27,6 +27,39 @@ fn is_filesystem_root(path: &str) -> bool {
     p.parent().is_none() || (cfg!(windows) && p.parent() == Some(Path::new("")))
 }
 
+/// Project markers that mark a directory as a legitimate project root.
+const PROJECT_MARKERS: &[&str] = &[
+    ".git",
+    "Cargo.toml",
+    "package.json",
+    "go.mod",
+    "pyproject.toml",
+];
+
+fn dir_has_project_marker(dir: &Path) -> bool {
+    PROJECT_MARKERS.iter().any(|m| dir.join(m).exists())
+}
+
+/// True if `p` or any ancestor strictly *below* `stop` contains a project
+/// marker. Subdirectories of a real project (e.g. `repo/rust/src`) are
+/// legitimate scan roots even though the marker lives at the repo root —
+/// refusing them produced WARN noise on every grep/ls inside ~/Documents
+/// projects (GL#438). `stop` itself is never checked, so a marker-less
+/// `~/Documents` stays refused.
+fn has_marker_in_ancestry(p: &Path, stop: &Path) -> bool {
+    let mut cur = Some(p);
+    while let Some(dir) = cur {
+        if dir == stop {
+            return false;
+        }
+        if dir_has_project_marker(dir) {
+            return true;
+        }
+        cur = dir.parent();
+    }
+    false
+}
+
 fn is_safe_scan_root(path: &str) -> bool {
     let normalized = normalize_project_root(path);
     let p = Path::new(&normalized);
@@ -90,9 +123,11 @@ fn is_safe_scan_root(path: &str) -> bool {
         for blocked in BLOCKED_HOME_SUBDIRS {
             let blocked_path = home_path.join(blocked);
             let is_inside_blocked = p == blocked_path || p.starts_with(&blocked_path);
-            let has_marker = p.join(".git").exists()
-                || p.join("Cargo.toml").exists()
-                || p.join("package.json").exists();
+            // Markers may live in an *ancestor*: `repo/rust/src` is a legitimate
+            // scan root of the project rooted at `repo` (GL#438). Walk up to (but
+            // not past) the blocked dir itself, so `~/Documents` without any
+            // project stays refused.
+            let has_marker = has_marker_in_ancestry(p, &blocked_path);
             if is_inside_blocked
                 && !has_marker
                 && !crate::core::pathutil::has_multi_repo_children(p)
@@ -107,19 +142,15 @@ fn is_safe_scan_root(path: &str) -> bool {
 
         // Block directories that are direct children of home without project markers
         // (but allow multi-repo workspace parents like ~/code/)
-        if p.parent() == Some(home_path) {
-            let has_marker = p.join(".git").exists()
-                || p.join("Cargo.toml").exists()
-                || p.join("package.json").exists()
-                || p.join("go.mod").exists()
-                || p.join("pyproject.toml").exists();
-            if !has_marker && !crate::core::pathutil::has_multi_repo_children(p) {
-                tracing::warn!(
-                    "[graph_index: refusing to scan {normalized} — \
-                     direct child of home without project markers]"
-                );
-                return false;
-            }
+        if p.parent() == Some(home_path)
+            && !dir_has_project_marker(p)
+            && !crate::core::pathutil::has_multi_repo_children(p)
+        {
+            tracing::warn!(
+                "[graph_index: refusing to scan {normalized} — \
+                 direct child of home without project markers]"
+            );
+            return false;
         }
     }
 

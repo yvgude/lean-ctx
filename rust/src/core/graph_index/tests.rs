@@ -5,6 +5,53 @@ use super::*;
 use tempfile::tempdir;
 
 #[test]
+fn marker_in_ancestry_found_at_repo_root() {
+    let tmp = tempdir().unwrap();
+    let stop = tmp.path().join("Documents");
+    let repo = stop.join("Projects").join("myrepo");
+    let sub = repo.join("rust").join("src");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::create_dir(repo.join(".git")).unwrap();
+
+    // repo/rust/src is a legit scan root: .git lives two levels up (GL#438).
+    assert!(has_marker_in_ancestry(&sub, &stop));
+    assert!(has_marker_in_ancestry(&repo, &stop));
+}
+
+#[test]
+fn marker_in_ancestry_stops_at_boundary() {
+    let tmp = tempdir().unwrap();
+    // Marker at the *stop* dir itself must NOT count: a marker-less
+    // ~/Documents tree stays refused even if ~/Documents has a stray .git.
+    let stop = tmp.path().join("Documents");
+    let sub = stop.join("no-project").join("deep");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::create_dir(stop.join(".git")).unwrap();
+
+    assert!(!has_marker_in_ancestry(&sub, &stop));
+}
+
+#[test]
+fn marker_in_ancestry_none_without_markers() {
+    let tmp = tempdir().unwrap();
+    let stop = tmp.path().join("Documents");
+    let sub = stop.join("a").join("b");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    assert!(!has_marker_in_ancestry(&sub, &stop));
+}
+
+#[test]
+fn dir_marker_detects_each_project_type() {
+    for marker in ["Cargo.toml", "package.json", "go.mod", "pyproject.toml"] {
+        let tmp = tempdir().unwrap();
+        assert!(!dir_has_project_marker(tmp.path()), "{marker}: empty dir");
+        std::fs::write(tmp.path().join(marker), "x").unwrap();
+        assert!(dir_has_project_marker(tmp.path()), "{marker}: present");
+    }
+}
+
+#[test]
 fn test_short_hash_deterministic() {
     let h1 = short_hash("/Users/test/project");
     let h2 = short_hash("/Users/test/project");

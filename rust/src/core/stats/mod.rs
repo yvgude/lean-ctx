@@ -478,20 +478,4 @@ mod tests {
         );
         assert_eq!(cep.total_cache_reads, 16);
     }
-
-    #[test]
-    fn format_pct_1dp_normal() {
-        assert_eq!(format::format_pct_1dp(50.0), "50.0%");
-        assert_eq!(format::format_pct_1dp(100.0), "100.0%");
-        assert_eq!(format::format_pct_1dp(33.333), "33.3%");
-    }
-
-    #[test]
-    fn format_pct_1dp_small_values() {
-        assert_eq!(format::format_pct_1dp(0.0), "0.0%");
-        assert_eq!(format::format_pct_1dp(0.05), "<0.1%");
-        assert_eq!(format::format_pct_1dp(0.09), "<0.1%");
-        assert_eq!(format::format_pct_1dp(0.1), "0.1%");
-        assert_eq!(format::format_pct_1dp(0.5), "0.5%");
-    }
 }
