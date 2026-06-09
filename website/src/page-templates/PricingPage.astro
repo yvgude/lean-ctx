@@ -4,6 +4,7 @@ import PageHero from '../components/PageHero.astro';
 import SectionHeading from '../components/SectionHeading.astro';
 import CtaSection from '../components/CtaSection.astro';
 import { pricingTiers, pricingFaq, supporterOffer } from '../lib/pricing';
+import { WORKING_DAYS_PER_MONTH, TEAM_SEAT_MONTHLY_USD } from '../lib/roiCalculator';
 import { getLocaleFromUrl, getLocalizedPath, useTranslations } from '../i18n/utils';
 
 const locale = getLocaleFromUrl(Astro.url);
@@ -153,6 +154,71 @@ const faqJsonLd = JSON.stringify({
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
         </a>
       </aside>
+    </div>
+  </section>
+
+  <div class="section-divider content-grid"></div>
+
+  <section class="relative section-y roi-calc-section">
+    <div class="content-grid-narrow">
+      <SectionHeading
+        label="ROI calculator"
+        title="See what lean-ctx"
+        highlight="saves your team"
+        description="The savings come from the free, local engine — never gated behind a plan. Adjust the assumptions to match your team; everything below is an estimate."
+        variant="full"
+        breakHighlight={false}
+        descMaxWidth="48rem"
+        titleMb="clamp(0.75rem, 0.5rem + 0.5vw, 1.25rem)"
+        descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
+      />
+
+      <div class="roi-calc">
+        <form class="roi-inputs" data-roi-form>
+          <label class="roi-field">
+            <span class="roi-label">Developers <output class="roi-val" data-out="developers">5</output></span>
+            <input type="range" min="1" max="100" step="1" value="5" data-roi="developers" aria-label="Developers" />
+          </label>
+          <label class="roi-field">
+            <span class="roi-label">Context tokens / dev / day <output class="roi-val" data-out="tokensPerDevPerDayM">2 M</output></span>
+            <input type="range" min="0.25" max="20" step="0.25" value="2" data-roi="tokensPerDevPerDayM" aria-label="Context tokens per developer per day, in millions" />
+          </label>
+          <label class="roi-field">
+            <span class="roi-label">Price / 1M tokens <output class="roi-val" data-out="pricePerMillionUsd">$3.00</output></span>
+            <input type="range" min="0.5" max="15" step="0.5" value="3" data-roi="pricePerMillionUsd" aria-label="Blended price per million tokens, in USD" />
+          </label>
+          <label class="roi-field">
+            <span class="roi-label">Tokens lean-ctx removes <output class="roi-val" data-out="savingsPct">55%</output></span>
+            <input type="range" min="20" max="80" step="5" value="55" data-roi="savingsPct" aria-label="Share of context tokens lean-ctx removes, in percent" />
+          </label>
+        </form>
+
+        <div class="roi-results">
+          <div class="roi-result roi-result--hero">
+            <span class="roi-result-label">Estimated savings / month</span>
+            <span class="roi-result-value" data-result="monthlyUsd">$0</span>
+          </div>
+          <div class="roi-result">
+            <span class="roi-result-label">Per year</span>
+            <span class="roi-result-value" data-result="yearlyUsd">$0</span>
+          </div>
+          <div class="roi-result">
+            <span class="roi-result-label">Tokens saved / month</span>
+            <span class="roi-result-value" data-result="monthlyTokens">0</span>
+          </div>
+          <div class="roi-result">
+            <span class="roi-result-label">vs a full Team plan</span>
+            <span class="roi-result-value" data-result="roiMultiple">&mdash;</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="roi-disclaimer">
+        Estimate only — every input is yours to change. Savings are request-side
+        estimates produced by the <strong>free, local</strong> engine; no plan is
+        required to realise them. Monthly figures assume {WORKING_DAYS_PER_MONTH} working
+        days; the Team comparison uses the ${TEAM_SEAT_MONTHLY_USD}/seat list price.
+      </p>
     </div>
   </section>
 
@@ -581,6 +647,123 @@ const faqJsonLd = JSON.stringify({
     color: var(--color-muted);
     margin: 0;
   }
+
+  /* ROI calculator */
+  .roi-calc-section { padding-top: 0; }
+  .roi-calc {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: clamp(1rem, 0.5rem + 1.5vw, 1.75rem);
+    align-items: stretch;
+  }
+  @media (min-width: 860px) {
+    .roi-calc { grid-template-columns: 1.05fr 0.95fr; }
+  }
+
+  .roi-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(1rem, 0.75rem + 0.75vw, 1.5rem);
+    padding: clamp(1.25rem, 1rem + 1vw, 1.9rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius-lg);
+    background: var(--color-surface);
+  }
+  .roi-field { display: flex; flex-direction: column; gap: 0.55rem; }
+  .roi-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    color: var(--color-text);
+  }
+  .roi-val {
+    font-family: var(--font-mono, monospace);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-bright);
+  }
+  .roi-field input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 0.4rem;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-3, color-mix(in srgb, var(--color-accent) 14%, var(--color-border)));
+    outline: none;
+    cursor: pointer;
+  }
+  .roi-field input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    border: 2px solid var(--color-bg);
+    box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  }
+  .roi-field input[type='range']::-moz-range-thumb {
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: var(--color-accent);
+    border: 2px solid var(--color-bg);
+  }
+
+  .roi-results {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: clamp(0.6rem, 0.4rem + 0.6vw, 1rem);
+    align-content: start;
+  }
+  .roi-result {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: clamp(1rem, 0.8rem + 0.6vw, 1.4rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    background: var(--color-surface);
+  }
+  .roi-result--hero {
+    grid-column: 1 / -1;
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 8%, var(--color-surface)), var(--color-surface));
+  }
+  .roi-result-label {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .roi-result-value {
+    font-family: var(--font-display);
+    font-weight: var(--weight-bold);
+    color: var(--color-text-bright);
+    line-height: 1;
+    letter-spacing: var(--tracking-tight);
+    font-size: clamp(1.4rem, 1.1rem + 1vw, 1.9rem);
+  }
+  .roi-result--hero .roi-result-value {
+    font-size: clamp(2rem, 1.5rem + 2.4vw, 3rem);
+    color: var(--color-accent);
+  }
+
+  .roi-disclaimer {
+    margin: clamp(1.25rem, 1rem + 0.75vw, 1.75rem) auto 0;
+    max-width: 48rem;
+    font-size: var(--text-caption);
+    line-height: var(--leading-relaxed);
+    color: var(--color-muted);
+    text-align: center;
+  }
+  .roi-disclaimer strong { color: var(--color-text); }
+  @media (prefers-reduced-motion: reduce) {
+    .roi-result-value { transition: none; }
+  }
 </style>
 
 <script is:inline>
@@ -610,4 +793,51 @@ const faqJsonLd = JSON.stringify({
     });
     setCadence('monthly');
   })();
+</script>
+
+<script>
+  import { computeRoi, DEFAULT_ROI_INPUTS, type RoiInputs } from '../lib/roiCalculator';
+  import { fmtUsd, fmtCompact } from '../lib/roi';
+
+  const form = document.querySelector<HTMLFormElement>('[data-roi-form]');
+  if (form) {
+    const out = (key: string, text: string) => {
+      const el = form.querySelector(`[data-out="${key}"]`);
+      if (el) el.textContent = text;
+    };
+    const res = (key: string, text: string) => {
+      const el = document.querySelector(`[data-result="${key}"]`);
+      if (el) el.textContent = text;
+    };
+    const money0 = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
+    const num = (key: string, fallback: number): number => {
+      const el = form.querySelector<HTMLInputElement>(`[data-roi="${key}"]`);
+      const n = el ? parseFloat(el.value) : NaN;
+      return Number.isFinite(n) ? n : fallback;
+    };
+
+    const render = () => {
+      const v: RoiInputs = {
+        developers: num('developers', DEFAULT_ROI_INPUTS.developers),
+        tokensPerDevPerDayM: num('tokensPerDevPerDayM', DEFAULT_ROI_INPUTS.tokensPerDevPerDayM),
+        pricePerMillionUsd: num('pricePerMillionUsd', DEFAULT_ROI_INPUTS.pricePerMillionUsd),
+        savingsPct: num('savingsPct', DEFAULT_ROI_INPUTS.savingsPct),
+      };
+      out('developers', String(v.developers));
+      out('tokensPerDevPerDayM', v.tokensPerDevPerDayM + ' M');
+      out('pricePerMillionUsd', fmtUsd(v.pricePerMillionUsd));
+      out('savingsPct', v.savingsPct + '%');
+
+      const r = computeRoi(v);
+      res('monthlyUsd', money0(r.monthlySavedUsd));
+      res('yearlyUsd', money0(r.yearlySavedUsd));
+      res('monthlyTokens', fmtCompact(r.monthlySavedTokens));
+      res('roiMultiple', r.roiMultiple ? Math.round(r.roiMultiple) + '\u00d7' : '\u2014');
+    };
+
+    form.querySelectorAll<HTMLInputElement>('[data-roi]').forEach((el) =>
+      el.addEventListener('input', render),
+    );
+    render();
+  }
 </script>
