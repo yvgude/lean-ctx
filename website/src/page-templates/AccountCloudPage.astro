@@ -70,7 +70,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         <div class="acct-card cloud-hero">
           <div class="cloud-hero-row">
             <div>
-              <span class="acct-plan-label">Personal Cloud</span>
+              <span class="acct-plan-label">Your Personal Cloud</span>
               <div class="cloud-hero-status">
                 <span class="cloud-dot" data-sync-dot></span>
                 <span class="cloud-hero-sync" data-last-synced>Never synced yet</span>
@@ -103,25 +103,80 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           </p>
         </div>
 
-        <div class="acct-card">
-          <h2 class="acct-section-title">What's synced</h2>
-          <div class="cloud-grid" data-buckets></div>
+        <div class="acct-card cloud-usage" data-usage-card>
+          <div class="cloud-usage-head">
+            <div class="cloud-usage-intro">
+              <h2 class="acct-section-title">Your context &amp; usage</h2>
+              <p class="cloud-prose-muted">
+                A privacy-preserving roll-up of the session snapshots this account syncs
+                (<code>lean-ctx sync</code>) — provable tokens your local engine did not
+                spend, and how your synced context compounds over time.
+              </p>
+            </div>
+            <div class="cloud-usage-tools">
+              <span class="cloud-tag" data-usage-sessions hidden></span>
+              <button type="button" class="acct-btn acct-btn-secondary cloud-usage-export" data-usage-export hidden>
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          <div class="cloud-kpis" data-usage-kpis hidden>
+            <div class="cloud-kpi">
+              <span class="cloud-kpi-value" data-kpi-tokens>—</span>
+              <span class="cloud-kpi-label">tokens saved</span>
+              <span class="cloud-kpi-delta" data-kpi-tokens-delta hidden></span>
+            </div>
+            <div class="cloud-kpi">
+              <span class="cloud-kpi-value" data-kpi-actions>—</span>
+              <span class="cloud-kpi-label">agent actions</span>
+              <span class="cloud-kpi-delta" data-kpi-actions-delta hidden></span>
+            </div>
+            <div class="cloud-kpi">
+              <span class="cloud-kpi-value" data-kpi-score>—</span>
+              <span class="cloud-kpi-label">CEP score</span>
+            </div>
+            <div class="cloud-kpi">
+              <span class="cloud-kpi-value" data-kpi-items>—</span>
+              <span class="cloud-kpi-label">items synced</span>
+            </div>
+          </div>
+
+          <div class="cloud-chart-wrap" data-usage-chart-wrap hidden>
+            <div class="cloud-chart-bar">
+              <div class="cloud-seg" role="group" aria-label="Chart metric">
+                <button type="button" class="cloud-seg-btn is-on" data-metric="net_saved_tokens">Tokens</button>
+                <button type="button" class="cloud-seg-btn" data-metric="total_events">Actions</button>
+                <button type="button" class="cloud-seg-btn" data-metric="score">CEP score</button>
+              </div>
+              <div class="cloud-seg" role="group" aria-label="Time range">
+                <button type="button" class="cloud-seg-btn" data-range="30">30d</button>
+                <button type="button" class="cloud-seg-btn is-on" data-range="90">90d</button>
+              </div>
+            </div>
+            <figure class="cloud-chart" data-usage-chart></figure>
+          </div>
+
+          <div class="cloud-breakdowns" data-usage-breakdowns hidden>
+            <div class="cloud-break">
+              <h3 class="cloud-subtitle">What's synced</h3>
+              <div class="cloud-break-rows" data-buckets-rows></div>
+            </div>
+            <div class="cloud-break">
+              <h3 class="cloud-subtitle">Buddy</h3>
+              <div class="cloud-break-rows" data-buddy-rows></div>
+            </div>
+          </div>
+
+          <p class="cloud-usage-empty" data-usage-empty hidden>
+            No sessions synced yet. Once this machine runs <code>lean-ctx sync</code>,
+            your tokens-saved and CEP trends appear here.
+          </p>
+
           <p class="acct-foot-note">
             Counts reflect what this account has synced to your Personal Cloud. The synced content
             itself never leaves your account — this dashboard only shows its footprint.
           </p>
-        </div>
-
-        <div class="acct-card cloud-buddy" data-buddy-card hidden>
-          <h2 class="acct-section-title">Buddy</h2>
-          <div class="cloud-buddy-row">
-            <span class="cloud-buddy-emoji" data-buddy-emoji>🐢</span>
-            <div class="cloud-buddy-meta">
-              <span class="cloud-buddy-name" data-buddy-name>Buddy</span>
-              <span class="cloud-buddy-sub" data-buddy-sub></span>
-            </div>
-            <div class="cloud-buddy-stats" data-buddy-stats></div>
-          </div>
         </div>
 
         <p class="acct-help">
@@ -191,28 +246,81 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   .cloud-supporter { margin: 1rem 0 0; display: flex; align-items: center; gap: 0.6rem; font-size: var(--text-small); color: var(--color-muted); }
   .cloud-supporter .cloud-badge-pill { margin-bottom: 0; }
 
-  /* Bucket grid */
-  .cloud-grid { display: grid; grid-template-columns: 1fr; gap: 0.9rem; }
-  @media (min-width: 520px) { .cloud-grid { grid-template-columns: 1fr 1fr; } }
-  @media (min-width: 820px) { .cloud-grid { grid-template-columns: 1fr 1fr 1fr; } }
-  .cloud-grid :global(.cloud-bucket) { padding: 1rem; border: 1px solid var(--color-border); border-radius: var(--card-radius); background: var(--color-bg); }
-  .cloud-grid :global(.cloud-bucket-top) { display: flex; align-items: baseline; gap: 0.4rem; }
-  .cloud-grid :global(.cloud-bucket-count) { font-size: var(--text-h3); font-weight: var(--weight-semibold); color: var(--color-text-bright); font-variant-numeric: tabular-nums; }
-  .cloud-grid :global(.cloud-bucket-unit) { font-size: var(--text-caption); color: var(--color-muted); }
-  .cloud-grid :global(.cloud-bucket-label) { display: block; margin-top: 0.25rem; font-size: var(--text-small); color: var(--color-text); }
-  .cloud-grid :global(.cloud-bucket-ago) { display: block; margin-top: 0.35rem; font-size: var(--text-caption); color: var(--color-muted); }
-  .cloud-grid :global(.cloud-bucket[data-empty='true']) { opacity: 0.6; }
+  /* Usage dashboard — mirrors the team ROI card so both account surfaces
+     share one visual language (KPI boxes, segmented toggles, area chart,
+     breakdown rows with proportional bars). */
+  .cloud-usage-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.25rem; flex-wrap: wrap; }
+  .cloud-usage-intro { flex: 1 1 22rem; min-width: 0; }
+  .cloud-usage-intro .acct-section-title { margin-bottom: 0.85rem; }
+  .cloud-prose-muted { font-size: var(--text-small); line-height: var(--leading-relaxed); color: var(--color-muted); margin-bottom: 0; }
+  .cloud-prose-muted code { font-family: var(--font-mono, monospace); color: var(--color-text); }
+  .cloud-usage-tools { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .cloud-tag { font-size: var(--text-small); color: var(--color-muted); }
+  .cloud-usage-export { padding: 0.5rem 0.95rem !important; font-size: var(--text-caption) !important; }
 
-  /* Buddy */
-  .cloud-buddy-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .cloud-buddy-emoji { font-size: 2.5rem; line-height: 1; }
-  .cloud-buddy-meta { display: flex; flex-direction: column; }
-  .cloud-buddy-name { font-size: var(--text-body); font-weight: var(--weight-semibold); color: var(--color-text-bright); }
-  .cloud-buddy-sub { font-size: var(--text-caption); color: var(--color-muted); }
-  .cloud-buddy-stats { display: flex; gap: 1.25rem; margin-left: auto; flex-wrap: wrap; }
-  .cloud-buddy-stats :global(.cloud-buddy-stat) { display: flex; flex-direction: column; }
-  .cloud-buddy-stats :global(.cloud-buddy-stat b) { font-size: var(--text-body); color: var(--color-text-bright); font-variant-numeric: tabular-nums; }
-  .cloud-buddy-stats :global(.cloud-buddy-stat span) { font-size: var(--text-caption); color: var(--color-muted); }
+  .cloud-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; margin-top: 1.3rem; }
+  .cloud-kpi {
+    display: flex; flex-direction: column; gap: 0.25rem; padding: 0.95rem 1rem;
+    border: 1px solid var(--color-border); border-radius: var(--card-radius); background: var(--color-bg);
+  }
+  .cloud-kpi-value {
+    font-size: var(--text-h3); font-weight: var(--weight-semibold); color: var(--color-accent-bright);
+    font-variant-numeric: tabular-nums; line-height: 1.1;
+  }
+  .cloud-kpi-label { font-size: var(--text-caption); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .cloud-kpi-delta { font-size: var(--text-caption); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+  .cloud-kpi-delta[data-dir='up'] { color: var(--color-accent-bright); }
+  .cloud-kpi-delta[data-dir='down'] { color: var(--color-danger); }
+  .cloud-kpi-delta[data-dir='flat'] { color: var(--color-muted); }
+
+  .cloud-chart-wrap { margin-top: 1.5rem; }
+  .cloud-chart-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+  .cloud-seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--radius-pill); overflow: hidden; }
+  .acct-shell :global(.cloud-seg-btn) {
+    padding: 0.35rem 0.9rem; font-size: var(--text-caption); font-weight: var(--weight-semibold);
+    background: transparent; color: var(--color-muted); border: none; cursor: pointer; font-family: inherit;
+    transition: color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+  }
+  .acct-shell :global(.cloud-seg-btn:hover) { color: var(--color-text-bright); }
+  .acct-shell :global(.cloud-seg-btn.is-on) {
+    color: var(--color-accent-bright); background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  }
+
+  .cloud-chart { margin: 0; }
+  .cloud-chart :global(svg) { display: block; width: 100%; height: auto; }
+  .cloud-chart :global(.roi-grid) { stroke: var(--color-border); stroke-width: 1; }
+  .cloud-chart :global(.roi-grid-label) { fill: var(--color-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .cloud-chart :global(.roi-x-label) { fill: var(--color-muted); font-size: 10px; }
+  .cloud-chart :global(.roi-line) { fill: none; stroke: var(--color-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .cloud-chart :global(.roi-dot) { fill: var(--color-accent-bright); stroke: var(--color-bg); stroke-width: 1.5; }
+  .cloud-chart :global(.roi-cursor) { stroke: color-mix(in srgb, var(--color-accent) 55%, transparent); stroke-width: 1; stroke-dasharray: 3 3; }
+  /* Tip + screen-reader table are injected via innerHTML and never receive
+     Astro's scoped attribute — style them through :global() or they miss. */
+  .cloud-chart :global(.cloud-chart-tip) { margin: 0.55rem 0 0; min-height: 1.15rem; font-size: var(--text-caption); color: var(--color-muted); font-variant-numeric: tabular-nums; }
+  .cloud-chart :global(.cloud-chart-tip strong) { color: var(--color-text-bright); }
+  .cloud-chart :global(.roi-visually-hidden) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  .cloud-breakdowns { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-top: 1.6rem; }
+  .cloud-subtitle { font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-text-bright); margin-bottom: 0.5rem; }
+  .cloud-break-rows :global(.roi-row) { padding: 0.5rem 0; border-bottom: 1px solid var(--color-border); }
+  .cloud-break-rows :global(.roi-row-top) { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; font-size: var(--text-small); }
+  .cloud-break-rows :global(.roi-name) { color: var(--color-text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cloud-break-rows :global(.roi-val) { color: var(--color-muted); flex: none; font-variant-numeric: tabular-nums; }
+  .cloud-break-rows :global(.roi-bar) { margin-top: 0.4rem; height: 4px; border-radius: 2px; background: var(--color-border); overflow: hidden; }
+  .cloud-break-rows :global(.roi-bar-fill) { display: block; height: 100%; background: var(--color-accent); border-radius: 2px; }
+  .cloud-break-rows :global(.roi-empty) { font-size: var(--text-caption); color: var(--color-muted); }
+  .cloud-break-rows :global(.cloud-buddy-head) { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0; border-bottom: 1px solid var(--color-border); }
+  .cloud-break-rows :global(.cloud-buddy-emoji) { font-size: 1.6rem; line-height: 1; }
+  .cloud-break-rows :global(.cloud-buddy-name) { font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--color-text-bright); }
+  .cloud-break-rows :global(.cloud-buddy-sub) { display: block; font-size: var(--text-caption); color: var(--color-muted); }
+
+  .cloud-usage-empty { margin-top: 1.2rem; font-size: var(--text-small); color: var(--color-muted); }
+  .cloud-usage-empty code { font-family: var(--font-mono, monospace); color: var(--color-text); }
+
+  @media (max-width: 720px) {
+    .cloud-kpis { grid-template-columns: repeat(2, 1fr); }
+    .cloud-breakdowns { grid-template-columns: 1fr; gap: 1.25rem; }
+  }
 
   /* Snippet */
   .cloud-prose { font-size: var(--text-small); color: var(--color-text); line-height: var(--leading-relaxed); margin-bottom: 0.9rem; }
@@ -293,17 +401,6 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       return 'on ' + new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
-    var BUCKETS = [
-      ['knowledge', 'Knowledge & memory', 'facts'],
-      ['commands', 'Learned shell patterns', 'patterns'],
-      ['cep', 'CEP score history', 'snapshots'],
-      ['gain', 'GAIN score history', 'snapshots'],
-      ['gotchas', 'Gotchas', 'fixes'],
-      ['feedback', 'Feedback thresholds', 'languages'],
-    ];
-
-    var SPECIES_EMOJI = { turtle: '🐢', cat: '🐱', dog: '🐶', fox: '🦊', owl: '🦉', dragon: '🐉', robot: '🤖', penguin: '🐧' };
-
     function renderSetup(email, synced) {
       // First run: push this machine's context up. Once something is synced,
       // the card targets the *next* machine — there the third step is a pull.
@@ -350,35 +447,6 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         navigator.clipboard.writeText(text);
         if (btn) { var p = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = p; }, 1400); }
       } catch (_) {}
-    }
-
-    function renderBuckets(buckets) {
-      var grid = $('[data-buckets]');
-      grid.innerHTML = BUCKETS.map(function (b) {
-        var d = (buckets && buckets[b[0]]) || { count: 0, last_synced_at: null };
-        var empty = !d.count;
-        return '<div class="cloud-bucket" data-empty="' + empty + '">'
-          + '<div class="cloud-bucket-top"><span class="cloud-bucket-count">' + (d.count || 0) + '</span>'
-          + '<span class="cloud-bucket-unit">' + esc(b[2]) + '</span></div>'
-          + '<span class="cloud-bucket-label">' + esc(b[1]) + '</span>'
-          + '<span class="cloud-bucket-ago">' + (d.count ? 'synced ' + esc(ago(d.last_synced_at)) : 'nothing synced yet') + '</span>'
-          + '</div>';
-      }).join('');
-    }
-
-    function renderBuddy(buddy) {
-      var card = $('[data-buddy-card]');
-      if (!buddy || !buddy.present) { card.hidden = true; return; }
-      card.hidden = false;
-      var species = (buddy.species || '').toLowerCase();
-      $('[data-buddy-emoji]').textContent = SPECIES_EMOJI[species] || '🐢';
-      $('[data-buddy-name]').textContent = buddy.name || 'Buddy';
-      var sub = [buddy.species, buddy.rarity, buddy.mood].filter(Boolean).join(' · ');
-      $('[data-buddy-sub]').textContent = sub + (buddy.last_synced_at ? '  ·  synced ' + ago(buddy.last_synced_at) : '');
-      $('[data-buddy-stats]').innerHTML = ''
-        + '<div class="cloud-buddy-stat"><b>' + (buddy.level || 1) + '</b><span>level</span></div>'
-        + '<div class="cloud-buddy-stat"><b>' + (buddy.xp || 0) + '</b><span>xp</span></div>'
-        + '<div class="cloud-buddy-stat"><b>' + (buddy.streak || 0) + '</b><span>streak</span></div>';
     }
 
     var cadence = 'monthly';
@@ -458,19 +526,305 @@ const lp = (path: string) => getLocalizedPath(path, locale);
         // Every cloud_sync plan (Pro/Team/Enterprise) carries supporter recognition.
         var sup = $('[data-supporter]'); if (sup) sup.hidden = false;
 
-        renderBuckets(d.buckets);
-        renderBuddy(d.buddy);
         renderSetup(email, synced);
 
         var portal = $('[data-portal]');
         if (portal) portal.addEventListener('click', function (e) { openPortal(e.currentTarget); });
 
         $('[data-dashboard]').hidden = false;
+
+        // The usage dashboard (KPIs, chart, breakdowns) renders in the bundled
+        // module script — hand it the payload, same pattern as the team page.
+        window.__leanctxCloudData = d;
+        window.dispatchEvent(new CustomEvent('leanctx:cloud-live'));
       } catch (err) {
         if (err && err.message === 'unauthorized') return;
         $('[data-loading]').hidden = true;
         showBanner('error', 'Could not load your Personal Cloud. Please refresh or sign in again.');
       }
     })();
+  })();
+</script>
+
+<script>
+  import {
+    fmtCompact, fmtDay, windowTrend, fmtPct, sliceSeries, chartGeometry, proportion,
+  } from '../lib/roi';
+
+  (function () {
+    function $(s) { return document.querySelector(s); }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    }
+    function ago(iso) {
+      if (!iso) return 'never';
+      var then = new Date(iso).getTime();
+      if (isNaN(then)) return 'never';
+      var s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+      if (s < 45) return 'just now';
+      if (s < 90) return 'a minute ago';
+      var m = Math.floor(s / 60);
+      if (m < 60) return m + ' min ago';
+      var h = Math.floor(m / 60);
+      if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+      var d = Math.floor(h / 24);
+      if (d < 30) return d + (d === 1 ? ' day ago' : ' days ago');
+      return 'on ' + new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    var BUCKETS = [
+      ['knowledge', 'Knowledge & memory', 'facts'],
+      ['commands', 'Learned shell patterns', 'patterns'],
+      ['cep', 'CEP score history', 'snapshots'],
+      ['gain', 'GAIN score history', 'snapshots'],
+      ['gotchas', 'Gotchas', 'fixes'],
+      ['feedback', 'Feedback thresholds', 'languages'],
+    ];
+    var SPECIES_EMOJI = { turtle: '🐢', cat: '🐱', dog: '🐶', fox: '🦊', owl: '🦉', dragon: '🐉', robot: '🤖', penguin: '🐧' };
+
+    var state = { series: [], metric: 'net_saved_tokens', range: 90 };
+    var started = false;
+    var controlsWired = false;
+
+    // CEP scores travel as 0..1; the dashboard shows them on the familiar /100 scale.
+    var METRICS = {
+      net_saved_tokens: { label: 'tokens', fmt: function (v) { return fmtCompact(v) + ' tokens'; }, axis: fmtCompact },
+      total_events: { label: 'actions', fmt: function (v) { return fmtCompact(v) + ' actions'; }, axis: fmtCompact },
+      score: {
+        label: 'CEP score',
+        fmt: function (v) { return Math.round(v * 100) + ' / 100'; },
+        axis: function (v) { return String(Math.round(v * 100)); },
+      },
+    };
+
+    function show(sel, on) { var el = $(sel); if (el) el.hidden = !on; }
+
+    function setDelta(sel, trend) {
+      var el = $(sel);
+      if (!el) return;
+      if (trend.pct === null) { el.hidden = true; return; }
+      el.hidden = false;
+      el.setAttribute('data-dir', trend.dir);
+      el.textContent = fmtPct(trend.pct) + ' · 30d';
+    }
+
+    function renderKpis(usage, buckets, buddy) {
+      var t = usage.totals || {};
+      var series = usage.series || [];
+      $('[data-kpi-tokens]').textContent = fmtCompact(t.tokens_saved || 0);
+      $('[data-kpi-actions]').textContent = fmtCompact(t.agent_actions || 0);
+      $('[data-kpi-score]').textContent =
+        t.cep_score == null ? '—' : Math.round(t.cep_score * 100) + '/100';
+      var items = Object.keys(buckets).reduce(function (sum, k) {
+        return sum + ((buckets[k] && buckets[k].count) || 0);
+      }, 0) + (buddy && buddy.present ? 1 : 0);
+      $('[data-kpi-items]').textContent = fmtCompact(items);
+      setDelta('[data-kpi-tokens-delta]', windowTrend(series, 'net_saved_tokens', 30));
+      setDelta('[data-kpi-actions-delta]', windowTrend(series, 'total_events', 30));
+    }
+
+    function renderBucketRows(buckets) {
+      var rows = BUCKETS.map(function (b) {
+        var d = (buckets && buckets[b[0]]) || { count: 0, last_synced_at: null };
+        return { label: b[1], unit: b[2], count: d.count || 0, last: d.last_synced_at };
+      });
+      var max = rows.reduce(function (a, r) { return Math.max(a, r.count); }, 0);
+      $('[data-buckets-rows]').innerHTML = rows.map(function (r) {
+        var pct = Math.round(proportion(r.count, max) * 100);
+        var val = r.count
+          ? fmtCompact(r.count) + ' ' + r.unit + ' · ' + ago(r.last)
+          : 'nothing yet';
+        return '<div class="roi-row">'
+          + '<div class="roi-row-top"><span class="roi-name">' + esc(r.label)
+          + '</span><span class="roi-val">' + esc(val) + '</span></div>'
+          + '<div class="roi-bar"><span class="roi-bar-fill" style="width:' + pct + '%"></span></div>'
+          + '</div>';
+      }).join('');
+    }
+
+    function renderBuddyRows(buddy) {
+      var wrap = $('[data-buddy-rows]');
+      if (!buddy || !buddy.present) {
+        wrap.innerHTML = '<p class="roi-empty">No buddy synced yet — it hatches as you work locally.</p>';
+        return;
+      }
+      var species = (buddy.species || '').toLowerCase();
+      var sub = [buddy.species, buddy.rarity, buddy.mood].filter(Boolean).join(' · ')
+        + (buddy.last_synced_at ? ' · synced ' + ago(buddy.last_synced_at) : '');
+      var stat = function (label, value) {
+        return '<div class="roi-row"><div class="roi-row-top"><span class="roi-name">' + esc(label)
+          + '</span><span class="roi-val">' + esc(value) + '</span></div></div>';
+      };
+      wrap.innerHTML =
+        '<div class="cloud-buddy-head"><span class="cloud-buddy-emoji">' + (SPECIES_EMOJI[species] || '🐢') + '</span>'
+        + '<div><span class="cloud-buddy-name">' + esc(buddy.name || 'Buddy') + '</span>'
+        + '<span class="cloud-buddy-sub">' + esc(sub) + '</span></div></div>'
+        + stat('Level', buddy.level || 1)
+        + stat('XP', buddy.xp || 0)
+        + stat('Streak', (buddy.streak || 0) + (buddy.streak === 1 ? ' day' : ' days'));
+    }
+
+    function renderChart() {
+      var wrap = $('[data-usage-chart]');
+      if (!wrap || !state.series.length) return;
+      var series = sliceSeries(state.series, state.range);
+      var m = METRICS[state.metric];
+      var geo = chartGeometry(series, state.metric, 720, 220);
+      var W = geo.width, H = geo.height;
+
+      var grid = geo.ticks.map(function (tk) {
+        return '<line class="roi-grid" x1="8" y1="' + tk.y + '" x2="' + (W - 8) + '" y2="' + tk.y + '"/>'
+          + '<text class="roi-grid-label" x="' + (W - 6) + '" y="' + (tk.y - 3) + '" text-anchor="end">'
+          + esc(m.axis(tk.value)) + '</text>';
+      }).join('');
+
+      var xlabels = '';
+      if (series.length) {
+        var idxs = [0, Math.floor((series.length - 1) / 2), series.length - 1];
+        var seen = {};
+        idxs.forEach(function (i) {
+          if (seen[i]) return; seen[i] = 1;
+          var pt = geo.points[i];
+          var anchor = i === 0 ? 'start' : (i === series.length - 1 ? 'end' : 'middle');
+          xlabels += '<text class="roi-x-label" x="' + pt.x + '" y="' + (H - 6) + '" text-anchor="' + anchor + '">'
+            + esc(fmtDay(pt.date)) + '</text>';
+        });
+      }
+
+      var aria = (state.metric === 'score' ? 'CEP score' : 'Cumulative ' + m.label)
+        + ' over the last ' + series.length + ' days';
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(aria) + '">'
+        + '<defs><linearGradient id="cloudFill" x1="0" y1="0" x2="0" y2="1">'
+        + '<stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.28"/>'
+        + '<stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0"/>'
+        + '</linearGradient></defs>'
+        + grid
+        + (geo.area ? '<path class="roi-area" d="' + geo.area + '" fill="url(#cloudFill)"/>' : '')
+        + (geo.line ? '<path class="roi-line" d="' + geo.line + '"/>' : '')
+        + '<line class="roi-cursor" data-cursor x1="0" y1="14" x2="0" y2="' + (H - 22) + '" style="display:none"/>'
+        + '<circle class="roi-dot" data-dot r="3.5" cx="0" cy="0" style="display:none"/>'
+        + xlabels
+        + '</svg>';
+
+      // Screen-reader data table, wrapped in a div: a bare <table> ignores the
+      // visually-hidden 1px box and would add empty scroll space (see team page).
+      var table = '<div class="roi-visually-hidden"><table><caption>' + esc(aria) + '</caption><tbody>'
+        + series.map(function (p) {
+          return '<tr><th scope="row">' + esc(fmtDay(p.date)) + '</th><td>' + esc(m.fmt(p[state.metric] || 0)) + '</td></tr>';
+        }).join('')
+        + '</tbody></table></div>';
+      var tip = '<figcaption class="cloud-chart-tip" data-tip aria-live="polite"></figcaption>';
+
+      wrap.innerHTML = svg + table + tip;
+      var last = series[series.length - 1];
+      if (last) setTip(fmtDay(last.date), m.fmt(last[state.metric] || 0));
+      wireHover(wrap, geo, series, m);
+    }
+
+    function setTip(dateStr, valStr) {
+      var tip = $('[data-tip]');
+      if (tip) tip.innerHTML = '<strong>' + esc(valStr) + '</strong> · ' + esc(dateStr);
+    }
+
+    function wireHover(wrap, geo, series, m) {
+      var svg = wrap.querySelector('svg');
+      if (!svg || !series.length) return;
+      var cursor = wrap.querySelector('[data-cursor]');
+      var dot = wrap.querySelector('[data-dot]');
+      function move(ev) {
+        var rect = svg.getBoundingClientRect();
+        var clientX = ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX;
+        var ratio = rect.width ? (clientX - rect.left) / rect.width : 0;
+        var i = Math.max(0, Math.min(series.length - 1, Math.round(ratio * (series.length - 1))));
+        var pt = geo.points[i];
+        if (!pt) return;
+        cursor.style.display = ''; cursor.setAttribute('x1', pt.x); cursor.setAttribute('x2', pt.x);
+        dot.style.display = ''; dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
+        setTip(fmtDay(series[i].date), m.fmt(series[i][state.metric] || 0));
+      }
+      function leave() {
+        cursor.style.display = 'none'; dot.style.display = 'none';
+        var last = series[series.length - 1];
+        if (last) setTip(fmtDay(last.date), m.fmt(last[state.metric] || 0));
+      }
+      svg.addEventListener('mousemove', move);
+      svg.addEventListener('touchmove', move, { passive: true });
+      svg.addEventListener('mouseleave', leave);
+    }
+
+    function setOn(sel, active) {
+      document.querySelectorAll(sel).forEach(function (b) { b.classList.toggle('is-on', b === active); });
+    }
+
+    function wireControls() {
+      if (controlsWired) return; controlsWired = true;
+      document.querySelectorAll('[data-metric]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          state.metric = b.getAttribute('data-metric');
+          setOn('[data-metric]', b);
+          renderChart();
+        });
+      });
+      document.querySelectorAll('[data-range]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          state.range = parseInt(b.getAttribute('data-range'), 10) || 90;
+          setOn('[data-range]', b);
+          renderChart();
+        });
+      });
+      var exp = $('[data-usage-export]');
+      if (exp) exp.addEventListener('click', exportCsv);
+    }
+
+    function exportCsv() {
+      if (!state.series.length) return;
+      var lines = ['# LeanCTX Personal Cloud export', 'generated_at,' + new Date().toISOString(), ''];
+      lines.push('date,net_saved_tokens,total_events,cep_score');
+      state.series.forEach(function (p) {
+        lines.push([p.date, p.net_saved_tokens, p.total_events, p.score == null ? '' : p.score].join(','));
+      });
+      var blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'leanctx-personal-cloud-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+
+    function render() {
+      var d = window.__leanctxCloudData || {};
+      var usage = d.usage || {};
+      var buckets = d.buckets || {};
+
+      renderBucketRows(buckets);
+      renderBuddyRows(d.buddy);
+      show('[data-usage-breakdowns]', true);
+
+      if (!usage.available || !(usage.series || []).length) {
+        show('[data-usage-empty]', true);
+        return;
+      }
+
+      state.series = usage.series;
+      renderKpis(usage, buckets, d.buddy);
+      renderChart();
+      wireControls();
+
+      show('[data-usage-kpis]', true);
+      show('[data-usage-chart-wrap]', true);
+      var sessions = $('[data-usage-sessions]');
+      if (sessions && usage.totals) {
+        sessions.textContent = fmtCompact(usage.totals.sessions || 0) + ' sessions synced';
+        sessions.hidden = false;
+      }
+      var exp = $('[data-usage-export]'); if (exp) exp.hidden = false;
+    }
+
+    function start() { if (started) return; started = true; render(); }
+    if (window.__leanctxCloudData) start();
+    window.addEventListener('leanctx:cloud-live', start);
   })();
 </script>

@@ -15,6 +15,8 @@ export interface SeriesPoint {
   net_saved_tokens: number;
   saved_usd: number;
   total_events: number;
+  /** Personal Cloud only: the day's mean CEP score (0..1), carried forward. */
+  score?: number;
 }
 
 export interface MemberRow {
@@ -56,7 +58,7 @@ export interface SavingsSummary {
 }
 
 /** A numeric key of `SeriesPoint` the chart / deltas can plot. */
-export type SeriesMetric = 'net_saved_tokens' | 'saved_usd' | 'total_events';
+export type SeriesMetric = 'net_saved_tokens' | 'saved_usd' | 'total_events' | 'score';
 
 /** Compact human count: 1234 → "1.2k", 3.4e6 → "3.4M", 1.1e9 → "1.1B". */
 export function fmtCompact(value: number): string {
