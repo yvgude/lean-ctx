@@ -16,7 +16,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     <div class="content-grid-narrow">
       <header class="acct-head">
         <div>
-          <p class="acct-eyebrow">Account · Pro</p>
+          <p class="acct-eyebrow" data-eyebrow>Account</p>
           <h1 class="acct-title font-display">Personal Cloud</h1>
         </div>
         <div class="acct-id" data-id hidden>
@@ -97,7 +97,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
             gotchas, buddy and feedback thresholds then follow you everywhere.
           </p>
           <ol class="cloud-steps" data-setup-steps></ol>
-          <p class="acct-foot-note">
+          <p class="acct-foot-note" data-setup-foot>
             Already set up on another machine? There, <code>lean-ctx cloud pull</code> restores
             everything from your Personal Cloud.
           </p>
@@ -305,10 +305,14 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     var SPECIES_EMOJI = { turtle: '🐢', cat: '🐱', dog: '🐶', fox: '🦊', owl: '🦉', dragon: '🐉', robot: '🤖', penguin: '🐧' };
 
     function renderSetup(email, synced) {
+      // First run: push this machine's context up. Once something is synced,
+      // the card targets the *next* machine — there the third step is a pull.
       var steps = [
         ['Install lean-ctx', 'curl -fsSL https://leanctx.com/install.sh | sh'],
         ['Sign in on this machine', 'lean-ctx login ' + (email || 'you@example.com')],
-        ['Sync this machine', 'lean-ctx sync']
+        synced
+          ? ['Pull your context onto this machine', 'lean-ctx cloud pull']
+          : ['Sync this machine', 'lean-ctx sync']
       ];
       var ol = $('[data-setup-steps]');
       if (!ol) return;
@@ -325,17 +329,19 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       ol.querySelectorAll('[data-copy-step]').forEach(function (b) {
         b.addEventListener('click', function (e) { copyText(steps[+b.getAttribute('data-copy-step')][1], e.currentTarget); });
       });
-      var card = $('[data-setup-card]'), title = $('[data-setup-title]'), badge = $('[data-setup-badge]'), lead = $('[data-setup-lead]');
+      var card = $('[data-setup-card]'), title = $('[data-setup-title]'), badge = $('[data-setup-badge]'), lead = $('[data-setup-lead]'), foot = $('[data-setup-foot]');
       if (synced) {
         if (card) card.classList.remove('is-firstrun');
         if (title) title.textContent = 'Connect another machine';
         if (badge) badge.hidden = true;
-        if (lead) lead.textContent = 'Bring your Personal Cloud to another machine — run these there to sync it down.';
+        if (lead) lead.textContent = 'Bring your Personal Cloud to another machine — run these there to pull everything down.';
+        if (foot) foot.innerHTML = 'On any machine, <code>lean-ctx sync</code> pushes its latest learned context back up to your Personal Cloud.';
       } else {
         if (card) card.classList.add('is-firstrun');
         if (title) title.textContent = 'Set up your Personal Cloud';
         if (badge) { badge.hidden = false; badge.textContent = '3 steps'; }
         if (lead) lead.textContent = 'Run these once on this machine. Your knowledge, shell patterns, CEP history, gotchas, buddy and feedback thresholds then follow you everywhere.';
+        if (foot) foot.innerHTML = 'Already set up on another machine? There, <code>lean-ctx cloud pull</code> restores everything from your Personal Cloud.';
       }
     }
 
@@ -447,6 +453,8 @@ const lp = (path: string) => getLocalizedPath(path, locale);
 
         var badge = $('[data-plan-badge]');
         if (badge) badge.textContent = d.plan || 'pro';
+        var eyebrow = $('[data-eyebrow]');
+        if (eyebrow && d.plan) eyebrow.textContent = 'Account · ' + d.plan.charAt(0).toUpperCase() + d.plan.slice(1);
         // Every cloud_sync plan (Pro/Team/Enterprise) carries supporter recognition.
         var sup = $('[data-supporter]'); if (sup) sup.hidden = false;
 
