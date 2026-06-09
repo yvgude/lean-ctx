@@ -196,6 +196,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
           </div>
           <div class="team-storage-legend" data-storage-legend hidden></div>
           <p class="team-storage-warn" data-storage-warn hidden></p>
+          <p class="team-storage-cost" data-storage-cost hidden></p>
         </div>
 
         <!-- Managed knowledge connectors (#281) -->
@@ -643,6 +644,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
   .team-meter { margin-top: 1.2rem; height: 8px; border-radius: var(--radius-pill); background: var(--color-border); overflow: hidden; }
   .team-meter-fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--color-accent); transition: width var(--dur) var(--ease-out), background var(--dur) var(--ease-out); }
   .team-meter[data-state='warn'] .team-meter-fill { background: var(--color-warning, #d9a441); }
+  .team-meter[data-state='critical'] .team-meter-fill { background: var(--color-danger); }
   .team-meter[data-state='over'] .team-meter-fill { background: var(--color-danger); }
   .team-storage-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin-top: 0.9rem; }
   .team-storage-legend :global(.team-legend-item) { display: inline-flex; align-items: center; gap: 0.4rem; font-size: var(--text-caption); color: var(--color-muted); font-variant-numeric: tabular-nums; }
@@ -652,6 +654,12 @@ const lp = (path: string) => getLocalizedPath(path, locale);
     color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 9%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
   }
+  .team-storage-cost {
+    margin: 0.8rem 0 0; padding: 0.7rem 0.9rem; border-radius: var(--card-radius); font-size: var(--text-caption);
+    color: var(--color-text-bright); background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+    border: 1px solid var(--color-border); font-variant-numeric: tabular-nums;
+  }
+  .team-storage-cost :global(.team-cost-note) { color: var(--color-muted); font-weight: var(--weight-regular, 400); }
 
   /* Managed connectors (#281) */
   .team-conn-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.25rem; flex-wrap: wrap; }
@@ -992,7 +1000,7 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       try {
         var r = await req('GET', '/api/account/team/storage');
         if (!r.ok || !r.data || !r.data.available || !r.data.storage) return;
-        renderStorage(r.data.storage);
+        renderStorage(r.data.storage, r.data.metering || {});
         $('[data-storage-card]').hidden = false;
       } catch (_) { /* storage is a convenience; never block the page */ }
     }
@@ -1002,21 +1010,26 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       return '<span class="team-legend-item">' + esc(label) + ' <strong>' + esc(fmtBytes(bytes)) + '</strong></span>';
     }
 
-    function renderStorage(s) {
+    function renderStorage(s, m) {
+      m = m || {};
       var used = Number(s.usedBytes) || 0;
       var quota = Number(s.quotaBytes) || 0;
-      var pct = quota > 0 ? Math.min(100, Number(s.percent) || (used / quota) * 100) : 0;
+      var unlimited = !!m.unlimited;
+      var pct = (quota > 0 && !unlimited) ? Math.min(100, Number(s.percent) || (used / quota) * 100) : 0;
       $('[data-storage-used]').textContent = fmtBytes(used);
-      $('[data-storage-quota]').textContent = quota > 0
-        ? 'of ' + fmtBytes(quota) + ' · ' + (Math.round(pct * 10) / 10) + '%'
-        : 'used · unmetered';
+      $('[data-storage-quota]').textContent = unlimited
+        ? 'used · unlimited'
+        : (quota > 0
+          ? 'of ' + fmtBytes(quota) + ' · ' + (Math.round(pct * 10) / 10) + '%'
+          : 'used · unmetered');
 
       var meter = $('[data-storage-meter]');
       var fill = $('[data-storage-fill]');
-      fill.style.width = (quota > 0 ? pct : 0) + '%';
+      fill.style.width = ((quota > 0 && !unlimited) ? pct : 0) + '%';
       meter.setAttribute('aria-valuenow', String(Math.round(pct)));
-      var st = s.overQuota ? 'over' : (pct >= 80 ? 'warn' : 'ok');
-      meter.setAttribute('data-state', st);
+      // Prefer the control-plane threshold state; fall back to a local estimate.
+      var state = m.state || (s.overQuota ? 'over' : (pct >= 80 ? 'critical' : (pct >= 50 ? 'warn' : 'ok')));
+      meter.setAttribute('data-state', (state === 'unlimited' || state === 'none') ? 'ok' : state);
 
       var oh = s.overhead || {};
       var wsTotal = (s.workspaces || []).reduce(function (a, w) { return a + (Number(w.usedBytes) || 0); }, 0);
@@ -1029,14 +1042,32 @@ const lp = (path: string) => getLocalizedPath(path, locale);
       if (legend) { legendEl.innerHTML = legend; legendEl.hidden = false; } else { legendEl.hidden = true; }
 
       var warn = $('[data-storage-warn]');
-      if (s.overQuota) {
-        warn.textContent = 'Quota reached — hosted connector sync is paused until usage drops. '
-          + 'Existing data and search keep working. Upgrade for more headroom.';
+      if (state === 'over' || s.overQuota) {
+        warn.textContent = 'Quota reached — hosted index growth and connector sync pause until usage drops. '
+          + 'Your existing data and search keep working, and nothing local is affected. Upgrade for more headroom.';
         warn.hidden = false;
-      } else if (pct >= 80) {
-        warn.textContent = 'You are approaching your hosted index quota (' + (Math.round(pct)) + '%).';
+      } else if (state === 'critical') {
+        warn.textContent = 'You are near your hosted index quota (' + Math.round(pct) + '%). Consider clearing data or upgrading for more headroom.';
+        warn.hidden = false;
+      } else if (state === 'warn') {
+        warn.textContent = 'Hosted index usage is at ' + Math.round(pct) + '% of your included quota.';
         warn.hidden = false;
       } else { warn.hidden = true; }
+
+      // Display-first metered cost: only ever an estimate, never a charge here.
+      var costEl = $('[data-storage-cost]');
+      var overage = Number(m.overageBytes) || 0;
+      if (overage > 0 && m.billingActive && Number(m.projectedCostCents) > 0) {
+        var perGb = (Number(m.rateCentsPerGb) || 0) / 100;
+        costEl.innerHTML = 'Overage: <strong>' + esc(fmtBytes(overage)) + '</strong> above your included '
+          + esc(fmtBytes(quota)) + ' · est. <strong>$' + (Number(m.projectedCostCents) / 100).toFixed(2) + '/mo</strong> '
+          + '<span class="team-cost-note">(estimated at $' + perGb.toFixed(2) + '/GB — not yet billed)</span>';
+        costEl.hidden = false;
+      } else if (overage > 0) {
+        costEl.innerHTML = '<strong>' + esc(fmtBytes(overage)) + '</strong> above your included ' + esc(fmtBytes(quota))
+          + ' <span class="team-cost-note">(usage shown only — metered billing is not enabled)</span>';
+        costEl.hidden = false;
+      } else { costEl.hidden = true; }
     }
 
     // ── Managed connectors (#281) ────────────────────────────────────────────
