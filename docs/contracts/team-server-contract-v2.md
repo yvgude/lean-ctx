@@ -1,8 +1,12 @@
-# Team Server Contract v1
+# Team Server Contract v2
 
-GitLab: `#2331`  
+GitLab: `#2331`, `#387`, `#388`  
 Pillar: Context Delivery  
-Scope: workspaces, scopes, audit log, dot-path rewrite
+Scope: workspaces, scopes, audit log, dot-path rewrite, hosted-storage quota, ROI webhook
+
+> v2 is **additive** over [v1](team-server-contract-v1.md): every v1 guarantee
+> holds unchanged. v2 adds the optional `storageQuotaBytes` and `roiWebhookUrl`
+> config keys (the v1 file is frozen; this file is the live, stable surface).
 
 ## Config (`TeamServerConfig`)
 
@@ -28,6 +32,13 @@ File is JSON.
 - `requestTimeoutMs` (number, default 30000)
 - `statefulMode` (bool, default false)
 - `jsonResponse` (bool, default true)
+- `storageQuotaBytes` (number, optional, v2 / GL #387) — hosted-storage quota;
+  omitted ⇒ Team-tier 5 GiB default, `LEANCTX_TEAM_STORAGE_QUOTA_BYTES`
+  overrides both
+- `roiWebhookUrl` (string, optional, v2 / GL #388) — https-only
+  Slack/Discord/generic webhook; when set, the server posts a weekly team-ROI
+  summary (once per ISO week, real reported numbers only; state in
+  `savings/roi_webhook_state.json`). A non-https URL is a startup error.
 
 ## Workspace selection
 
@@ -105,4 +116,3 @@ Raw arguments are never stored in the audit log.
 
 - `rust/src/http_server/team.rs`
 - CLI dispatch: `rust/src/cli/dispatch.rs` (`lean-ctx team ...`)
-

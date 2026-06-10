@@ -138,10 +138,25 @@ mod tests {
         let root = tmp.to_string_lossy().to_string();
 
         let out = resolve_tool_path(Some(&root), None, "Cargo.toml").unwrap();
+        // Canonicalize BOTH sides before comparing: on macOS temp_dir() is a
+        // symlink (/var → /private/var) and on Windows it may carry 8.3 short
+        // names (RUNNER~1), so comparing raw strings is platform-flaky. The
+        // resolved file itself does not exist, but its parent does — compare
+        // the canonicalized parents.
         let canonical_root = crate::core::pathjail::canonicalize_or_self(&tmp);
-        assert!(
-            Path::new(&out).starts_with(&canonical_root),
+        let out_parent = crate::core::pathjail::canonicalize_or_self(
+            Path::new(&out)
+                .parent()
+                .expect("resolved path has a parent"),
+        );
+        assert_eq!(
+            out_parent, canonical_root,
             "resolved {out} must live under the project root, not the process CWD"
+        );
+        let canonical_cwd = crate::core::pathjail::canonicalize_or_self(&cwd);
+        assert_ne!(
+            out_parent, canonical_cwd,
+            "resolved {out} must not resolve against the process CWD"
         );
 
         let _ = fs::remove_dir_all(&tmp);

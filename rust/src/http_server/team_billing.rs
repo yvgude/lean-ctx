@@ -17,7 +17,7 @@
 //! Sizing uses allocated disk blocks (`st_blocks * 512`) on Unix so sparse and
 //! partially-written files bill what they actually occupy; on other platforms
 //! it falls back to logical file length. Reports are cached for
-//! [`STORAGE_CACHE_TTL`] per process — the walk is `O(files)` and the metering
+//! `STORAGE_CACHE_TTL` per process — the walk is `O(files)` and the metering
 //! job polls hourly, so 60 s keeps repeated dashboard hits cheap without
 //! letting bills go stale.
 //!

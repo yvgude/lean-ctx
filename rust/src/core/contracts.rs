@@ -117,6 +117,8 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // freezing the file would contradict its own contract.
         doc("capabilities", "capabilities-contract-v1.md", 1, Stable),
         doc("billing-plane-v2", "billing-plane-v2.md", 2, Stable),
+        // v2 = v1 + storageQuotaBytes/roiWebhookUrl (GL #387/#388); v1 stays frozen.
+        doc("team-server-v2", "team-server-contract-v2.md", 2, Stable),
         doc("a2a", "a2a-contract-v1.md", 1, Stable),
         doc(
             "attention-layout-driver",
@@ -191,6 +193,24 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc(
             "personal-cloud-encryption",
             "personal-cloud-encryption-v1.md",
+            1,
+            Experimental,
+        ),
+        // 2026-06 org/cloud-plane wave — fresh surfaces, not yet consumed by
+        // external integrations; promote to Stable deliberately, not by default.
+        doc(
+            "context-policy-packs",
+            "context-policy-packs-v1.md",
+            1,
+            Experimental,
+        ),
+        doc("device-overview", "device-overview-v1.md", 1, Experimental),
+        doc("email-digest", "email-digest-v1.md", 1, Experimental),
+        doc("org-audit-log", "org-audit-log-v1.md", 1, Experimental),
+        doc("org-sso-oidc", "org-sso-oidc-v1.md", 1, Experimental),
+        doc(
+            "team-invite-links",
+            "team-invite-links-v1.md",
             1,
             Experimental,
         ),

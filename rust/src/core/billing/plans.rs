@@ -389,7 +389,11 @@ mod tests {
     fn catalog_matches_golden_fixture() {
         let catalog: Vec<Entitlements> = Plan::all().iter().map(|p| p.entitlements()).collect();
         let rendered = serde_json::to_string_pretty(&catalog).expect("catalog serializes") + "\n";
-        let golden = include_str!("../../../../docs/contracts/billing-plane-v1-catalog.json");
+        // Normalize CRLF: Windows checkouts (autocrlf) hand include_str! a
+        // CRLF fixture while serde renders LF — same convention as the
+        // frozen-hashes gate in tests/contracts_frozen.rs.
+        let golden = include_str!("../../../../docs/contracts/billing-plane-v1-catalog.json")
+            .replace("\r\n", "\n");
         assert_eq!(
             rendered, golden,
             "billing-plane-v1 catalog drifted from docs/contracts/billing-plane-v1-catalog.json \
