@@ -31,11 +31,12 @@ pub fn handle(
     examples: Option<Vec<String>>,
     confidence: Option<f32>,
     mode: Option<&str>,
+    as_of: Option<&str>,
 ) -> String {
     match action {
         "policy" => handle_policy(value),
         "remember" => handle_remember(project_root, category, key, value, session_id, confidence),
-        "recall" => handle_recall(project_root, category, query, session_id, mode),
+        "recall" => handle_recall(project_root, category, query, session_id, mode, as_of),
         "pattern" => handle_pattern(project_root, pattern_type, value, examples, session_id),
         "feedback" => handle_feedback(project_root, category, key, value, session_id),
         "relate" => crate::tools::ctx_knowledge_relations::handle_relate(

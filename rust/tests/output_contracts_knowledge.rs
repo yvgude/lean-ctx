@@ -42,6 +42,7 @@ fn ctx_knowledge_recall_is_budgeted_and_deterministic() {
         None,
         None,
         None,
+        None,
     );
     let out2 = lean_ctx::tools::ctx_knowledge::handle(
         &project_root_str,
@@ -51,6 +52,7 @@ fn ctx_knowledge_recall_is_budgeted_and_deterministic() {
         None,
         None,
         "s1",
+        None,
         None,
         None,
         None,
@@ -98,6 +100,7 @@ fn ctx_knowledge_export_is_file_backed_not_json_stdout() {
         None,
         None,
         "s1",
+        None,
         None,
         None,
         None,
@@ -160,6 +163,7 @@ fn ctx_knowledge_feedback_persists_and_affects_quality_score() {
         None,
         None,
         None,
+        None,
     );
     assert!(
         out.contains("Feedback recorded"),
@@ -215,6 +219,7 @@ fn ctx_knowledge_relations_persist_and_render() {
         None,
         None,
         None,
+        None,
     );
     assert!(out.contains("Relation"), "relate must confirm: {out}");
 
@@ -245,6 +250,7 @@ fn ctx_knowledge_relations_persist_and_render() {
         None,
         None,
         None,
+        None,
     );
     assert!(
         list.contains("depends_on") && list.contains("arch/cache"),
@@ -263,6 +269,7 @@ fn ctx_knowledge_relations_persist_and_render() {
         None,
         None,
         None,
+        None,
     );
     assert!(
         diagram.contains("graph TD") && diagram.contains("depends_on"),
@@ -277,6 +284,7 @@ fn ctx_knowledge_relations_persist_and_render() {
         Some("depends_on"),
         Some("arch/cache"),
         "s2",
+        None,
         None,
         None,
         None,

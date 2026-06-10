@@ -41,6 +41,7 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
                 None,
                 None,
                 None,
+                None,
             );
             println!("{out}");
         }
@@ -67,6 +68,7 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
                 None,
                 None,
                 &cli_session_id(),
+                None,
                 None,
                 None,
                 None,
@@ -129,6 +131,7 @@ fn cmd_remember(args: &[String], project_root: &str) {
         None,
         confidence,
         None,
+        None,
     );
     println!("{out}");
 }
@@ -136,6 +139,7 @@ fn cmd_remember(args: &[String], project_root: &str) {
 fn cmd_recall(args: &[String], project_root: &str) {
     let category = value_arg(args, "--category").or_else(|| value_arg(args, "-c"));
     let mode = value_arg(args, "--mode").or_else(|| value_arg(args, "-m"));
+    let as_of = value_arg(args, "--as-of");
     let query = positional_after(args, "recall");
 
     // Machine-readable path (editor extensions): a bare `recall --json` lists the
@@ -147,8 +151,9 @@ fn cmd_recall(args: &[String], project_root: &str) {
     }
 
     if category.is_none() && query.is_none() {
-        eprintln!("Usage: lean-ctx knowledge recall [query] [--category <cat>] [--mode auto|semantic|hybrid]");
+        eprintln!("Usage: lean-ctx knowledge recall [query] [--category <cat>] [--mode auto|semantic|hybrid] [--as-of <YYYY-MM-DD|RFC3339>]");
         eprintln!("Example: lean-ctx knowledge recall \"auth\" --category security");
+        eprintln!("Example: lean-ctx knowledge recall \"auth\" --as-of 2026-05-01   (time travel)");
         std::process::exit(1);
     }
 
@@ -163,6 +168,7 @@ fn cmd_recall(args: &[String], project_root: &str) {
                 "category": category,
                 "query": query,
                 "mode": mode,
+                "as_of": as_of,
             })),
         ) {
             println!("{out}");
@@ -182,6 +188,7 @@ fn cmd_recall(args: &[String], project_root: &str) {
         None,
         None,
         mode.as_deref(),
+        as_of.as_deref(),
     );
     println!("{out}");
 }
@@ -218,6 +225,7 @@ fn cmd_search(args: &[String]) {
         None,
         query.as_deref(),
         &cli_session_id(),
+        None,
         None,
         None,
         None,
@@ -321,6 +329,7 @@ fn cmd_remove(args: &[String], project_root: &str) {
         None,
         None,
         &cli_session_id(),
+        None,
         None,
         None,
         None,

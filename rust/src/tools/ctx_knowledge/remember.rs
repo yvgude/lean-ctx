@@ -137,6 +137,7 @@ pub(crate) fn handle_recall(
     query: Option<&str>,
     session_id: &str,
     mode: Option<&str>,
+    as_of: Option<&str>,
 ) -> String {
     let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
         return "No knowledge stored for this project yet.".to_string();
@@ -145,6 +146,14 @@ pub(crate) fn handle_recall(
         Ok(p) => p,
         Err(e) => return e,
     };
+
+    if let Some(raw) = as_of {
+        let at = match parse_as_of(raw) {
+            Ok(t) => t,
+            Err(e) => return e,
+        };
+        return recall_as_of(&knowledge, category, query, at, &policy);
+    }
 
     if let Some(cat) = category {
         let limit = policy.knowledge.recall_facts_limit;
@@ -271,6 +280,90 @@ pub(crate) fn handle_recall(
     }
 
     "Error: provide query or category for recall".to_string()
+}
+
+/// Parse an `as_of` timestamp: RFC 3339 (`2026-06-01T12:00:00Z`) or a bare
+/// date (`2026-06-01`, interpreted as end-of-day UTC so "as of June 1st"
+/// includes everything recorded during that day).
+pub(crate) fn parse_as_of(raw: &str) -> Result<chrono::DateTime<Utc>, String> {
+    let raw = raw.trim();
+    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return Ok(t.with_timezone(&Utc));
+    }
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+        let eod = d.and_hms_opt(23, 59, 59).expect("valid time");
+        return Ok(chrono::DateTime::from_naive_utc_and_offset(eod, Utc));
+    }
+    Err(format!(
+        "Error: invalid as_of '{raw}'. Use RFC 3339 (2026-06-01T12:00:00Z) or YYYY-MM-DD."
+    ))
+}
+
+/// Temporal recall: facts valid at time `at`, read-only (no retrieval-signal
+/// mutation — time travel must not change present-day salience). Superseded
+/// facts are shown with their validity window so the history is explicit.
+fn recall_as_of(
+    knowledge: &ProjectKnowledge,
+    category: Option<&str>,
+    query: Option<&str>,
+    at: chrono::DateTime<Utc>,
+    policy: &MemoryPolicy,
+) -> String {
+    let limit = policy.knowledge.recall_facts_limit;
+
+    let mut facts: Vec<&crate::core::knowledge::KnowledgeFact> = match (query, category) {
+        (Some(q), _) => {
+            let mut hits = knowledge.recall_at_time(q, at);
+            if let Some(cat) = category {
+                hits.retain(|f| f.category == cat);
+            }
+            hits
+        }
+        (None, Some(cat)) => {
+            let mut hits: Vec<&crate::core::knowledge::KnowledgeFact> = knowledge
+                .facts
+                .iter()
+                .filter(|f| f.category == cat && f.was_valid_at(at))
+                .collect();
+            hits.sort_by(|a, b| sort_fact_for_output(a, b));
+            hits
+        }
+        (None, None) => return "Error: provide query or category for recall".to_string(),
+    };
+
+    let total = facts.len();
+    facts.truncate(limit);
+
+    if facts.is_empty() {
+        return format!("No facts valid at {}.", at.format("%Y-%m-%d %H:%M UTC"));
+    }
+
+    let mut out = format!(
+        "Facts as of {} (showing {}/{total}):\n",
+        at.format("%Y-%m-%d %H:%M UTC"),
+        facts.len()
+    );
+    for f in facts {
+        let window = match (f.valid_from, f.valid_until) {
+            (Some(from), Some(until)) => format!(
+                " [valid {} → {}]",
+                from.format("%Y-%m-%d"),
+                until.format("%Y-%m-%d")
+            ),
+            (Some(from), None) => format!(" [valid since {}]", from.format("%Y-%m-%d")),
+            (None, Some(until)) => format!(" [valid until {}]", until.format("%Y-%m-%d")),
+            (None, None) => String::new(),
+        };
+        let superseded = if f.is_current() { "" } else { " [superseded]" };
+        out.push_str(&format!(
+            "  [{}/{}]: {} (confidence: {:.0}%){window}{superseded}\n",
+            f.category,
+            f.key,
+            f.value,
+            f.confidence * 100.0
+        ));
+    }
+    out
 }
 
 /// Persist recall state to disk on a background thread so recall returns
@@ -427,4 +520,71 @@ pub(crate) fn rehydrate_from_archives(
         let _ = knowledge.run_memory_lifecycle(policy);
     }
     any
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_as_of_accepts_rfc3339() {
+        let t = parse_as_of("2026-06-01T12:30:00Z").unwrap();
+        assert_eq!(t.to_rfc3339(), "2026-06-01T12:30:00+00:00");
+    }
+
+    #[test]
+    fn parse_as_of_accepts_bare_date_as_end_of_day() {
+        let t = parse_as_of("2026-06-01").unwrap();
+        assert_eq!(t.format("%H:%M:%S").to_string(), "23:59:59");
+    }
+
+    #[test]
+    fn parse_as_of_rejects_garbage() {
+        assert!(parse_as_of("yesterday").is_err());
+        assert!(parse_as_of("").is_err());
+    }
+
+    #[test]
+    fn recall_as_of_returns_superseded_value_at_past_time() {
+        let policy = MemoryPolicy::default();
+        let mut k = ProjectKnowledge::new("/tmp/test-as-of");
+        k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
+        k.facts[0].confirmation_count = 3;
+
+        let before_change = Utc::now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        k.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
+
+        let past = recall_as_of(&k, None, Some("db"), before_change, &policy);
+        assert!(past.contains("PostgreSQL"), "past view: {past}");
+        assert!(!past.contains("MySQL"), "past view must hide newer: {past}");
+        assert!(past.contains("[superseded]"), "marks history: {past}");
+
+        let now = recall_as_of(&k, None, Some("db"), Utc::now(), &policy);
+        assert!(now.contains("MySQL"), "present view: {now}");
+        assert!(!now.contains("PostgreSQL"), "present hides old: {now}");
+    }
+
+    #[test]
+    fn recall_as_of_category_filter() {
+        let policy = MemoryPolicy::default();
+        let mut k = ProjectKnowledge::new("/tmp/test-as-of-cat");
+        k.remember("arch", "db", "PostgreSQL", "s1", 0.9, &policy);
+        k.remember("deploy", "host", "AWS", "s1", 0.8, &policy);
+
+        let out = recall_as_of(&k, Some("deploy"), None, Utc::now(), &policy);
+        assert!(out.contains("AWS"));
+        assert!(!out.contains("PostgreSQL"));
+    }
+
+    #[test]
+    fn recall_as_of_before_any_fact_is_empty() {
+        let policy = MemoryPolicy::default();
+        let mut k = ProjectKnowledge::new("/tmp/test-as-of-empty");
+        k.remember("arch", "db", "PostgreSQL", "s1", 0.9, &policy);
+
+        let ancient = parse_as_of("2000-01-01").unwrap();
+        let out = recall_as_of(&k, None, Some("db"), ancient, &policy);
+        assert!(out.contains("No facts valid at"), "got: {out}");
+    }
 }

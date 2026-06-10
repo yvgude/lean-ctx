@@ -58,6 +58,10 @@ impl McpTool for CtxKnowledgeTool {
                         "enum": ["auto", "exact", "semantic", "hybrid"],
                         "description": "Recall mode (default: auto)."
                     },
+                    "as_of": {
+                        "type": "string",
+                        "description": "Temporal recall: only facts valid at this time (RFC 3339 or YYYY-MM-DD). Shows superseded facts with validity windows."
+                    },
                     "pattern_type": {
                         "type": "string",
                         "description": "Pattern type for pattern action"
@@ -89,6 +93,7 @@ impl McpTool for CtxKnowledgeTool {
         let value = get_str(args, "value");
         let query = get_str(args, "query");
         let mode = get_str(args, "mode");
+        let as_of = get_str(args, "as_of");
         let pattern_type = get_str(args, "pattern_type");
         let examples = get_str_array(args, "examples");
         let confidence: Option<f32> = args
@@ -173,6 +178,7 @@ impl McpTool for CtxKnowledgeTool {
             examples,
             confidence,
             mode.as_deref(),
+            as_of.as_deref(),
         );
 
         Ok(ToolOutput {
