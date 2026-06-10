@@ -185,6 +185,9 @@ pub async fn start(port: Option<u16>, host: Option<String>, base_path: Option<St
 
 /// Name of the env var that pins the dashboard Bearer token (#377).
 const HTTP_TOKEN_ENV: &str = "LEAN_CTX_HTTP_TOKEN";
+/// Read-only token accepted **only** for `GET /metrics` (GL #401) so
+/// monitoring agents never hold the full dashboard credential.
+const SCRAPE_TOKEN_ENV: &str = "LEAN_CTX_SCRAPE_TOKEN";
 
 /// Resolve the dashboard Bearer token.
 ///
@@ -524,7 +527,20 @@ async fn handle_request(
     let requires_auth = is_api || path == "/metrics";
 
     if let Some(ref expected) = token {
-        let has_header_auth = check_auth(&header_text, expected);
+        let mut has_header_auth = check_auth(&header_text, expected);
+
+        // Read-only scrape token (GL #401): lets a Prometheus/Datadog agent
+        // scrape `/metrics` without holding the full dashboard token. Valid
+        // for the metrics endpoint only — every other API stays gated on the
+        // dashboard token.
+        if !has_header_auth && path == "/metrics" {
+            if let Ok(scrape) = std::env::var(SCRAPE_TOKEN_ENV) {
+                let scrape = scrape.trim();
+                if !scrape.is_empty() && check_auth(&header_text, scrape) {
+                    has_header_auth = true;
+                }
+            }
+        }
 
         if requires_auth && !has_header_auth {
             let body = r#"{"error":"unauthorized"}"#;

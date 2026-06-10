@@ -1,0 +1,72 @@
+{
+  "lean_ctx_anomalies_total": {
+    "type": "gauge"
+  },
+  "lean_ctx_cache_hit_rate": {
+    "type": "gauge"
+  },
+  "lean_ctx_compression_ratio": {
+    "type": "gauge"
+  },
+  "lean_ctx_cost_saved_usd_total": {
+    "type": "counter"
+  },
+  "lean_ctx_info": {
+    "type": "gauge",
+    "labels": [
+      "agent_role",
+      "model",
+      "profile",
+      "project",
+      "version"
+    ]
+  },
+  "lean_ctx_info_loss_score": {
+    "type": "gauge"
+  },
+  "lean_ctx_ledger_tokens_saved_total": {
+    "type": "counter"
+  },
+  "lean_ctx_session_context_tokens": {
+    "type": "gauge"
+  },
+  "lean_ctx_session_cost_usd": {
+    "type": "gauge"
+  },
+  "lean_ctx_session_uptime_seconds": {
+    "type": "gauge"
+  },
+  "lean_ctx_shell_invocations_total": {
+    "type": "counter"
+  },
+  "lean_ctx_slo_violations_total": {
+    "type": "gauge"
+  },
+  "lean_ctx_tokens_input_total": {
+    "type": "counter"
+  },
+  "lean_ctx_tokens_output_total": {
+    "type": "counter"
+  },
+  "lean_ctx_tokens_saved_total": {
+    "type": "counter"
+  },
+  "lean_ctx_tool_calls_error_total": {
+    "type": "counter"
+  },
+  "lean_ctx_tool_calls_total": {
+    "type": "counter"
+  },
+  "lean_ctx_verification_pass_rate": {
+    "type": "gauge"
+  },
+  "lean_ctx_verification_pass_total": {
+    "type": "counter"
+  },
+  "lean_ctx_verification_warn_runs_total": {
+    "type": "counter"
+  },
+  "lean_ctx_verification_warn_total": {
+    "type": "counter"
+  }
+}

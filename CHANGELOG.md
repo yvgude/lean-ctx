@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Datadog/Prometheus FinOps export — metrics contract + scrape token**
+  (GL #401): `/metrics` now exposes verified ledger savings
+  (`lean_ctx_ledger_tokens_saved_total`, `lean_ctx_cost_saved_usd_total`,
+  30 s cache over the hash-chained ledger) and a `lean_ctx_info` series
+  carrying `project`/`profile`/`agent_role`/`model`/`version` tags
+  (kube-state-metrics `_info` idiom — one series per process, no
+  cardinality explosion). New `LEAN_CTX_SCRAPE_TOKEN` env: a read-only
+  Bearer token valid **only** for `GET /metrics`, so monitoring agents
+  never hold the dashboard credential. The exposition surface is frozen in
+  `docs/reference/metrics-contract.json`, enforced by
+  `rust/tests/metrics_contract.rs` (update via
+  `LEANCTX_UPDATE_METRICS_CONTRACT=1`). Ready-to-import Datadog assets:
+  `integrations/datadog/` (OpenMetrics `conf.yaml`, Token-Economy
+  dashboard, savings-drop + SLO-violation monitors), guide:
+  `docs/integrations/datadog.md`.
 - **Quality loop v1 — edit failures teach mode selection** (GL #494):
   `ctx_edit` outcomes are now correlated with the last read mode of the
   file. An `old_string` miss after a compressed read (a) escalates the

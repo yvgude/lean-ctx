@@ -391,6 +391,9 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
         println!(
             "  LEAN_CTX_HTTP_TOKEN=<token>   Pin the dashboard Bearer token (stable across restarts — ideal behind a reverse proxy). Unset → a random token is generated each start."
         );
+        println!(
+            "  LEAN_CTX_SCRAPE_TOKEN=<token> Read-only token accepted ONLY for GET /metrics — hand this to Prometheus/Datadog agents instead of the dashboard token (docs/integrations/datadog.md)."
+        );
         return;
     }
     if rest.iter().any(|a| a == "--export") {

@@ -458,8 +458,86 @@ impl Metrics {
             snap.session_uptime_secs
         ));
 
+        // Verified savings from the hash-chained ledger (GL #401): the honest
+        // FinOps numbers — measured baselines only, no counterfactual factors.
+        let (ledger_tokens, ledger_usd) = ledger_totals_cached();
+        lines.push(
+            "# HELP lean_ctx_ledger_tokens_saved_total Verified tokens saved (signed ledger)"
+                .into(),
+        );
+        lines.push("# TYPE lean_ctx_ledger_tokens_saved_total counter".into());
+        lines.push(format!(
+            "lean_ctx_ledger_tokens_saved_total {ledger_tokens}"
+        ));
+
+        lines.push(
+            "# HELP lean_ctx_cost_saved_usd_total Verified cost saved in USD (signed ledger)"
+                .into(),
+        );
+        lines.push("# TYPE lean_ctx_cost_saved_usd_total counter".into());
+        lines.push(format!("lean_ctx_cost_saved_usd_total {ledger_usd:.4}"));
+
+        // Resource info metric (GL #401): one constant series carrying the
+        // drill-down tags (project, profile, role, model, version) in the
+        // kube-state-metrics `_info` idiom. Deliberately a single series per
+        // process — per-metric label combinations would explode Datadog
+        // custom-metric cardinality (and the customer's bill).
+        lines.push("# HELP lean_ctx_info Deployment metadata for tag joins".into());
+        lines.push("# TYPE lean_ctx_info gauge".into());
+        lines.push(format!("lean_ctx_info{{{}}} 1", info_labels()));
+
         lines.join("\n") + "\n"
     }
+}
+
+/// Escape a Prometheus label value (backslash, double quote, newline).
+fn escape_label(v: &str) -> String {
+    v.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
+/// The `lean_ctx_info` label set. Values are bounded: project is the cwd
+/// basename (never the full path), model/profile/role come from bounded
+/// registries — cardinality stays at one series per running process.
+fn info_labels() -> String {
+    let project = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "unknown".to_string());
+    let profile = crate::core::profiles::active_profile_name();
+    let role = crate::core::roles::active_role_name();
+    let model = crate::hook_handlers::load_detected_model()
+        .map_or_else(|| "unknown".to_string(), |(name, _)| name);
+    format!(
+        "project=\"{}\",profile=\"{}\",agent_role=\"{}\",model=\"{}\",version=\"{}\"",
+        escape_label(&project),
+        escape_label(&profile),
+        escape_label(&role),
+        escape_label(&model),
+        env!("CARGO_PKG_VERSION"),
+    )
+}
+
+/// Ledger totals with a 30 s cache: `summarize()` streams the whole JSONL —
+/// fine once, wasteful for per-minute scrapes hitting `/metrics`.
+fn ledger_totals_cached() -> (u64, f64) {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, (u64, f64))>> = Mutex::new(None);
+
+    let Ok(mut guard) = CACHE.lock() else {
+        return (0, 0.0);
+    };
+    if let Some((at, totals)) = *guard {
+        if at.elapsed() < Duration::from_secs(30) {
+            return totals;
+        }
+    }
+    let summary = crate::core::savings_ledger::summary();
+    let totals = (summary.net_saved_tokens(), summary.saved_usd);
+    *guard = Some((Instant::now(), totals));
+    totals
 }
 
 #[cfg(test)]

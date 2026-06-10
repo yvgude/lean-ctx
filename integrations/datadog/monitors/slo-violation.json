@@ -1,0 +1,14 @@
+{
+  "name": "lean-ctx — SLO violation active",
+  "type": "query alert",
+  "query": "max(last_5m):max:leanctx.slo.violations{*} > 0",
+  "message": "lean-ctx reports {{value}} active SLO violation(s) on {{host.name}}.\n\nTriage:\n1. `lean-ctx slo` on the affected host shows which objective fired (availability / p95 / index lag)\n2. Hosted team servers: follow docs/runbooks/hosted-index-slo.md (incident 1-3)\n3. Local installs: check `lean-ctx doctor` and the dashboard Guards view\n\n@ops-team",
+  "tags": ["service:lean-ctx", "managed-by:lean-ctx-repo"],
+  "options": {
+    "thresholds": { "critical": 0 },
+    "notify_no_data": false,
+    "renotify_interval": 60,
+    "include_tags": true,
+    "new_group_delay": 60
+  }
+}

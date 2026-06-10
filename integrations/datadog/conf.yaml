@@ -1,0 +1,42 @@
+# Datadog Agent — OpenMetrics check for lean-ctx (GL #401, setup path A).
+#
+# Install: copy this file to the Datadog Agent conf dir, e.g.
+#   /etc/datadog-agent/conf.d/openmetrics.d/leanctx.yaml
+# then `datadog-agent restart`. Metrics appear under the `leanctx.` namespace
+# within one scrape interval (15 s default).
+#
+# Auth: set LEAN_CTX_SCRAPE_TOKEN on the lean-ctx dashboard/server process and
+# mirror it here — the token is valid for GET /metrics only (read-only,
+# never grants dashboard or API access).
+
+instances:
+  - openmetrics_endpoint: http://localhost:3333/metrics
+    namespace: leanctx
+    # Read-only scrape token (matches LEAN_CTX_SCRAPE_TOKEN on the server).
+    headers:
+      Authorization: "Bearer <YOUR_SCRAPE_TOKEN>"
+    # Stable metric semantics (docs/reference/metrics-contract.json is the
+    # contract — renames there break CI on the lean-ctx side).
+    metrics:
+      - lean_ctx_tokens_input_total: tokens.in
+      - lean_ctx_tokens_output_total: tokens.out
+      - lean_ctx_tokens_saved_total: tokens.saved
+      - lean_ctx_ledger_tokens_saved_total: tokens.saved_verified
+      - lean_ctx_cost_saved_usd_total: cost.saved_usd
+      - lean_ctx_cache_hit_rate: cache.hit_ratio
+      - lean_ctx_compression_ratio: compression.ratio
+      - lean_ctx_session_cost_usd: session.cost_usd
+      - lean_ctx_session_context_tokens: session.context_tokens
+      - lean_ctx_session_uptime_seconds: session.uptime_seconds
+      - lean_ctx_tool_calls_total: tools.calls
+      - lean_ctx_tool_calls_error_total: tools.errors
+      - lean_ctx_slo_violations_total: slo.violations
+      - lean_ctx_verification_pass_rate: verification.pass_ratio
+      - lean_ctx_anomalies_total: anomalies
+      - lean_ctx_info: info
+    # The `leanctx.info` series carries project / profile / agent_role /
+    # model / version as tags — join it in dashboards for drill-downs
+    # instead of asking lean-ctx to label every metric (cardinality and
+    # custom-metrics cost stay flat).
+    tags:
+      - "service:lean-ctx"

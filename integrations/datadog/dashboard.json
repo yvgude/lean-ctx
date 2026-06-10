@@ -1,0 +1,209 @@
+{
+  "title": "lean-ctx — Token Economy",
+  "description": "Context-layer FinOps: what your agents would have spent vs. what they did spend. Metrics contract: docs/reference/metrics-contract.json in the lean-ctx repo (GL #401). Import via Dashboards → New Dashboard → Import dashboard JSON.",
+  "layout_type": "ordered",
+  "reflow_type": "auto",
+  "template_variables": [
+    { "name": "project", "prefix": "project", "available_values": [], "default": "*" },
+    { "name": "agent_role", "prefix": "agent_role", "available_values": [], "default": "*" },
+    { "name": "model", "prefix": "model", "available_values": [], "default": "*" }
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "title": "Savings overview",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Tokens saved (24h, estimated)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "name": "q1",
+                      "data_source": "metrics",
+                      "query": "sum:leanctx.tokens.saved.count{$project,$agent_role,$model}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "formulas": [ { "formula": "q1" } ],
+                  "response_format": "scalar"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Tokens saved (24h, verified ledger)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "name": "q1",
+                      "data_source": "metrics",
+                      "query": "sum:leanctx.tokens.saved_verified.count{$project,$agent_role,$model}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "formulas": [ { "formula": "q1" } ],
+                  "response_format": "scalar"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Cost saved USD (24h, verified)",
+              "type": "query_value",
+              "precision": 2,
+              "custom_unit": "$",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "name": "q1",
+                      "data_source": "metrics",
+                      "query": "sum:leanctx.cost.saved_usd.count{$project,$agent_role,$model}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "formulas": [ { "formula": "q1" } ],
+                  "response_format": "scalar"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Token flow — in vs. out vs. saved",
+        "type": "timeseries",
+        "show_legend": true,
+        "requests": [
+          {
+            "display_type": "bars",
+            "queries": [
+              {
+                "name": "tin",
+                "data_source": "metrics",
+                "query": "sum:leanctx.tokens.in.count{$project,$agent_role,$model}.as_count()"
+              },
+              {
+                "name": "tout",
+                "data_source": "metrics",
+                "query": "sum:leanctx.tokens.out.count{$project,$agent_role,$model}.as_count()"
+              },
+              {
+                "name": "tsave",
+                "data_source": "metrics",
+                "query": "sum:leanctx.tokens.saved.count{$project,$agent_role,$model}.as_count()"
+              }
+            ],
+            "formulas": [
+              { "formula": "tin", "alias": "tokens in" },
+              { "formula": "tout", "alias": "tokens out" },
+              { "formula": "tsave", "alias": "tokens saved" }
+            ],
+            "response_format": "timeseries"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Cache hit ratio",
+        "type": "timeseries",
+        "show_legend": false,
+        "yaxis": { "min": "0", "max": "1" },
+        "requests": [
+          {
+            "display_type": "line",
+            "queries": [
+              {
+                "name": "q1",
+                "data_source": "metrics",
+                "query": "avg:leanctx.cache.hit_ratio{$project,$agent_role,$model}"
+              }
+            ],
+            "formulas": [ { "formula": "q1", "alias": "hit ratio" } ],
+            "response_format": "timeseries"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "SLO status — active violations",
+        "type": "timeseries",
+        "show_legend": false,
+        "requests": [
+          {
+            "display_type": "bars",
+            "queries": [
+              {
+                "name": "q1",
+                "data_source": "metrics",
+                "query": "max:leanctx.slo.violations{$project}"
+              }
+            ],
+            "formulas": [ { "formula": "q1", "alias": "active SLO violations" } ],
+            "response_format": "timeseries"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Cost trend — saved USD per day",
+        "type": "timeseries",
+        "show_legend": false,
+        "requests": [
+          {
+            "display_type": "bars",
+            "queries": [
+              {
+                "name": "q1",
+                "data_source": "metrics",
+                "query": "sum:leanctx.cost.saved_usd.count{$project}.as_count().rollup(sum, 86400)"
+              }
+            ],
+            "formulas": [ { "formula": "q1", "alias": "USD saved / day" } ],
+            "response_format": "timeseries"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Compression ratio by deployment",
+        "type": "timeseries",
+        "show_legend": true,
+        "yaxis": { "min": "0", "max": "1" },
+        "requests": [
+          {
+            "display_type": "line",
+            "queries": [
+              {
+                "name": "q1",
+                "data_source": "metrics",
+                "query": "avg:leanctx.compression.ratio{$project} by {project}"
+              }
+            ],
+            "formulas": [ { "formula": "q1" } ],
+            "response_format": "timeseries"
+          }
+        ]
+      }
+    }
+  ]
+}
