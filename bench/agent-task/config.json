@@ -1,0 +1,18 @@
+{
+  "n_tasks": 15,
+  "max_turns": 40,
+  "agent": {
+    "binary": "claude",
+    "output_format": "stream-json",
+    "extra_args": ["--verbose", "--dangerously-skip-permissions"]
+  },
+  "leanctx": {
+    "binary": "lean-ctx",
+    "init_args": ["init", "--agent", "claude"]
+  },
+  "dataset": "princeton-nlp/SWE-bench_Verified",
+  "split": "test",
+  "runs_dir": "runs",
+  "repo_cache_dir": ".cache/repos",
+  "timeout_seconds": 2400
+}

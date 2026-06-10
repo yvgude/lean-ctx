@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Agent-task benchmark v1 harness** (GL #493): outcome evidence instead of
+  token arithmetic — does lean-ctx change task success rate and cost per
+  solved task? `bench/agent-task/` runs two identical Claude-Code-headless
+  arms (native vs. lean-ctx MCP, fresh HOME per run, hard-pinned MCP surface
+  via `--strict-mcp-config`) over a deterministic SWE-bench-Verified subset
+  (sorted round-robin by repo, frozen as `tasks.lock.json`), judged by the
+  official SWE-bench evaluation; usage/cost come from the runtime's own final
+  report — nothing is estimated. Pre-registered protocol with numbered
+  amendments (`PROTOCOL.md`), self-hashing result artifact ready for
+  `ssh-keygen -Y sign`; negative results publish unchanged.
+
 ### Changed
 - **Four-jobs cockpit navigation + slim Home** (GL #470/#486, phase 1): the
   sidebar now tells the same story as the website — Context *(decides what

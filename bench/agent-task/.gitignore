@@ -1,0 +1,6 @@
+# Run artifacts stay local until a result is published deliberately.
+runs/
+.cache/
+# Generated once, committed deliberately with the frozen protocol.
+# (tasks.lock.json is tracked — do NOT ignore it.)
+logs/

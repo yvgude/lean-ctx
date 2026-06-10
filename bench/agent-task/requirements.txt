@@ -1,0 +1,5 @@
+# Agent-Task-Benchmark v1 (GL #493) — Python >= 3.9
+# Selection (one-time): pulls the public SWE-bench Verified dataset.
+datasets>=2.19
+# Official evaluation harness (docker required at evaluation time).
+swebench>=2.1
