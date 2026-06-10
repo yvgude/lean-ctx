@@ -759,6 +759,27 @@ mod tests {
     }
 
     #[test]
+    fn api_billing_badge_returns_cosmetic_shape() {
+        let (status, ct, body) =
+            routes::route_response("/api/billing-badge", "", None, None, false, "GET", "");
+        assert_eq!(status, "200 OK");
+        assert_eq!(ct, "application/json");
+        let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+        assert!(v.get("plan").and_then(|p| p.as_str()).is_some());
+        assert!(v
+            .get("supporter")
+            .and_then(serde_json::Value::as_bool)
+            .is_some());
+        assert!(
+            matches!(
+                v.get("source").and_then(|s| s.as_str()),
+                Some("live" | "cached" | "expired" | "none")
+            ),
+            "unexpected source: {body}"
+        );
+    }
+
+    #[test]
     fn api_episodes_returns_json() {
         let (_status, _ct, body) =
             routes::route_response("/api/episodes", "", None, None, false, "GET", "");

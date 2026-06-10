@@ -192,6 +192,22 @@
   x.addEventListener('click',function(){
     document.documentElement.classList.add('support-bar-off');
   });
+  /* Supporter badge (GL #393): if this machine is linked to a paying/supporting
+     account, swap the ask for a thank-you. Cosmetic only — errors keep the CTA. */
+  try{
+    var h={};
+    if(window.__LEAN_CTX_TOKEN__)h['Authorization']='Bearer '+window.__LEAN_CTX_TOKEN__;
+    fetch('/api/billing-badge',{headers:h}).then(function(r){return r.ok?r.json():null;}).then(function(b){
+      if(!b||!b.supporter)return;
+      var bar=document.getElementById('supportBar');
+      if(!bar)return;
+      bar.classList.add('support-bar-thanks');
+      var msg=bar.querySelector('.support-bar-msg');
+      if(msg)msg.innerHTML='<b>You are a supporter — thank you.</b> <span class="support-bar-sub">Your backing keeps lean-ctx free &amp; independent.</span>';
+      var cta=bar.querySelector('.support-bar-cta');
+      if(cta){cta.textContent='Supporter \u2665';cta.setAttribute('aria-label','You are a supporter');}
+    }).catch(function(){});
+  }catch(e){}
 })();
 </script>
 <cockpit-palette></cockpit-palette>

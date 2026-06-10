@@ -118,6 +118,12 @@ body{
 html.support-bar-off{--support-bar-h:0px}
 html.support-bar-off .support-bar{display:none}
 @media(max-width:640px){.support-bar-sub{display:none}}
+/* Supporter thank-you state (GL #393): calm, no hover-lift, heart accent. */
+.support-bar-thanks .support-bar-cta{
+  pointer-events:none;background:transparent;
+  color:var(--accent);border-color:var(--accent-dim);
+}
+.support-bar-thanks .support-bar-heart{color:var(--accent)}
 
 .sidebar{
   position:fixed;top:var(--support-bar-h,0px);left:0;bottom:0;width:var(--sidebar-w);

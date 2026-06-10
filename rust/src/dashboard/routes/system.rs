@@ -39,6 +39,25 @@ pub(super) fn handle(
             let json = crate::core::version_check::version_info_json();
             Some(("200 OK", "application/json", json))
         }
+        // Purely cosmetic supporter badge (GL #393): resolved from the local
+        // plan cache only — no network on this hot path, never gates anything.
+        "/api/billing-badge" => {
+            let eff = crate::cloud_client::resolve_effective_plan_cached();
+            let supporter = !matches!(eff.plan, crate::core::billing::Plan::Free);
+            let source = match eff.source {
+                crate::cloud_client::PlanSource::Live => "live",
+                crate::cloud_client::PlanSource::Cached => "cached",
+                crate::cloud_client::PlanSource::Expired => "expired",
+                crate::cloud_client::PlanSource::None => "none",
+            };
+            let payload = serde_json::json!({
+                "plan": eff.plan.as_str(),
+                "supporter": supporter,
+                "source": source,
+            });
+            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+            Some(("200 OK", "application/json", json))
+        }
         "/metrics" => {
             let prom = crate::core::telemetry::global_metrics().to_prometheus();
             Some(("200 OK", "text/plain; version=0.0.4; charset=utf-8", prom))
