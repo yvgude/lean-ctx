@@ -94,12 +94,31 @@ class CockpitPalette extends HTMLElement {
     this._overlay.classList.remove('visible');
   }
 
-  /** Builds the command list from the live router state. */
+  /** Builds the command list from the live area model (falls back to router). */
   _buildItems() {
     const router = window.LctxRouter;
+    const areas = window.LctxAreas;
     const items = [];
     const seen = new Set();
-    if (router && Array.isArray(router.KNOWN_ROUTES)) {
+    let simpleMode = false;
+    try { simpleMode = localStorage.getItem('lctx_nav_mode') !== 'pro'; } catch (_) {}
+    if (areas && Array.isArray(areas.AREAS) && router) {
+      areas.AREAS.forEach((area) => {
+        // Simple mode lists only what the sidebar shows — no backdoors.
+        if (simpleMode && area.tier === 'pro') return;
+        area.views.forEach((v) => {
+          if (seen.has(v.id)) return;
+          seen.add(v.id);
+          items.push({
+            kind: 'view',
+            id: v.id,
+            label: area.views.length > 1 ? area.label + ' · ' + v.label : v.label,
+            hint: area.label,
+            run: () => router.navigateTo(v.id),
+          });
+        });
+      });
+    } else if (router && Array.isArray(router.KNOWN_ROUTES)) {
       const labels = router.ROUTE_LABELS || {};
       const normalize = router.normalizeViewId || ((x) => x);
       router.KNOWN_ROUTES.forEach((route) => {

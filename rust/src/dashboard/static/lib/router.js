@@ -5,6 +5,13 @@
 const ROUTE_ALIASES = {
   graph: 'callgraph',
   bugs: 'memory',
+  // Area ids resolve to the area's first view so #proof, #map etc. deep-link.
+  home: 'overview',
+  ctx: 'commander',
+  mem: 'knowledge',
+  protection: 'health',
+  proof: 'roi',
+  map: 'deps',
 };
 
 /** @type {string[]} */
@@ -30,32 +37,34 @@ const KNOWN_ROUTES = [
   'explorer',
 ];
 
+// Fallback labels; at runtime the area model (window.LctxAreas, defined by
+// cockpit-nav.js) is the source of truth for labels and descriptions.
 const ROUTE_LABELS = {
   overview: 'Home',
-  roi: 'ROI & Plan',
-  commander: 'Context Health',
-  context: 'Context Manager',
-  live: 'Live Activity',
+  roi: 'Verified savings',
+  commander: 'Health & Triage',
+  context: 'What\u2019s loaded',
+  live: 'Live feed',
   knowledge: 'Knowledge',
   deps: 'Dependencies',
-  compression: 'Savings',
+  compression: 'Savings detail',
   agents: 'Agents',
-  memory: 'Memory',
+  memory: 'Episodes',
   search: 'Search',
   learning: 'Trends',
   symbols: 'Symbols',
   callgraph: 'Call Graph',
   graph: 'Call Graph',
-  routes: 'Routes',
+  routes: 'API Routes',
   architecture: 'Architecture',
   explorer: 'Explorer',
-  health: 'Health',
+  health: 'Protection',
 };
 
-// One-line, plain-language explanation shown as a hint banner under the top bar.
+// One-line, plain-language explanation per view (fallback; see LctxAreas).
 const ROUTE_DESCRIPTIONS = {
-  overview: 'Your savings at a glance.',
-  roi: 'Verified savings, your plan and entitlements.',
+  overview: 'Status, savings and the one action that matters.',
+  roi: 'Signed savings ledger, your plan and entitlements.',
   commander: 'Context-window pressure and what to trim.',
   context: 'Everything currently loaded into the model context.',
   live: 'What lean-ctx is doing right now.',
@@ -72,7 +81,7 @@ const ROUTE_DESCRIPTIONS = {
   routes: 'API routes detected in your project.',
   architecture: 'A generated report on your project structure.',
   explorer: 'Browse files and symbols as a tree.',
-  health: 'System health and reliability.',
+  health: 'Reliability objectives, anomalies and verified checks.',
 };
 
 /** @type {Record<string, () => void | Promise<void>>} */
@@ -111,9 +120,17 @@ function showViewSection(viewId) {
 }
 
 async function runLoader(viewId) {
-  const label = ROUTE_LABELS[viewId] || viewId;
-  const desc = ROUTE_DESCRIPTIONS[viewId] || '';
-  document.dispatchEvent(new CustomEvent('lctx:view', { detail: { viewId, label, desc } }));
+  // Prefer the live area model (single source of truth in cockpit-nav.js).
+  const meta = window.LctxAreas && window.LctxAreas.VIEW_META
+    ? window.LctxAreas.VIEW_META[viewId]
+    : null;
+  const label = (meta && meta.label) || ROUTE_LABELS[viewId] || viewId;
+  const desc = (meta && meta.desc) || ROUTE_DESCRIPTIONS[viewId] || '';
+  const areaId = meta ? meta.areaId : null;
+  const areaLabel = meta ? meta.areaLabel : null;
+  document.dispatchEvent(new CustomEvent('lctx:view', {
+    detail: { viewId, label, desc, areaId, areaLabel },
+  }));
   const fn = viewLoaders[viewId];
   if (typeof fn === 'function') {
     try {

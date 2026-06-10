@@ -1,5 +1,6 @@
 /**
- * Health dashboard — SLOs, Anomalies, Verification, Bug Memory.
+ * Protection — guards what agents touch.
+ * Guard line (live risk state) + SLOs, Anomalies, Verification, Bug Memory.
  */
 var CKH_TABS = [
   { id: 'slos', label: 'SLOs' },
@@ -93,12 +94,16 @@ class CockpitHealth extends HTMLElement {
       fetchJson('/api/gotchas', { timeoutMs: 10000 }).catch(function (e) {
         return { __error: e && e.error ? e.error : String(e || 'error') };
       }),
+      fetchJson('/api/context-risk', { timeoutMs: 10000 }).catch(function (e) {
+        return { __error: e && e.error ? e.error : String(e || 'error') };
+      }),
     ]);
 
     this._sloData = results[0] && !results[0].__error ? results[0] : null;
     this._anomalyData = results[1] && !results[1].__error ? results[1] : null;
     this._verificationData = results[2] && !results[2].__error ? results[2] : null;
     this._gotchaData = results[3] && !results[3].__error ? results[3] : null;
+    this._riskData = results[4] && !results[4].__error ? results[4] : null;
 
     if (!this._sloData && !this._anomalyData &&
         !this._verificationData && !this._gotchaData) {
@@ -129,10 +134,50 @@ class CockpitHealth extends HTMLElement {
       return;
     }
 
-    var body = this._renderTabs(esc);
+    var body = this._renderGuardLine(esc);
+    body += this._renderTabs(esc);
     body += this._renderTabContent(esc);
     this.innerHTML = body;
     this._bindTabs();
+  }
+
+  /* ---- guard line: what lean-ctx is protecting right now ---- */
+
+  _renderGuardLine(esc) {
+    var r = this._riskData;
+    if (!r) return '';
+    var ch = r.compression_health || {};
+    var ov = r.overlay_summary || {};
+    var warnings = Array.isArray(r.warnings) ? r.warnings : [];
+    var riskFiles = Array.isArray(ch.potential_risk_files) ? ch.potential_risk_files : [];
+    var staleEdits = Number(ch.files_edited_after_compressed || 0);
+
+    var ok = warnings.length === 0 && riskFiles.length === 0 && staleEdits === 0;
+    var col = ok ? 'var(--green)' : 'var(--yellow)';
+    var headline = ok
+      ? 'No active risks — compressed reads are consistent with what agents edited.'
+      : (warnings[0] || (staleEdits + ' file(s) were edited after being read compressed — re-read recommended.'));
+
+    var cells =
+      '<span class="guard-cell"><b>' + Number(ov.pinned || 0) + '</b> pinned</span>' +
+      '<span class="guard-cell"><b>' + Number(ov.excluded || 0) + '</b> excluded</span>' +
+      '<span class="guard-cell"><b>' + Number(ch.files_read_compressed || 0) + '</b> compressed reads</span>' +
+      '<span class="guard-cell"><b style="color:' + (staleEdits > 0 ? 'var(--yellow)' : 'inherit') + '">' +
+      staleEdits + '</b> stale after edit</span>';
+
+    return (
+      '<div class="card ctx-line" style="margin-bottom:16px;cursor:default">' +
+      '<div class="ctx-line-body">' +
+      '<div class="ctx-line-top">' +
+      '<span class="ctx-line-band" style="color:' + col + '">' +
+      '<span class="hc-health-dot" style="background:' + col + '"></span>' +
+      (ok ? 'Guarding' : 'Attention') + '</span>' +
+      '<span class="hs" style="margin:0">' + cells + '</span>' +
+      '</div>' +
+      '<div class="hs" style="margin:4px 0 0">' + esc(headline) + '</div>' +
+      '</div>' +
+      '</div>'
+    );
   }
 
   _renderTabs(esc) {

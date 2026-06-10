@@ -273,6 +273,52 @@ html.support-bar-off .support-bar{display:none}
 .hc--link{cursor:pointer}
 .hc--link:hover{border-color:var(--accent)}
 .hc--link:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+
+/* ── Home: receipt hero ─────────────────────────────── */
+.receipt-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.receipt-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+  background:var(--border);border-radius:var(--r);overflow:hidden;
+}
+.receipt-cell{background:var(--surface);padding:16px 18px}
+.receipt-cell--main{background:var(--green-dim)}
+.receipt-label{
+  font-family:var(--mono);font-size:9px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.15em;font-weight:600;margin-bottom:8px;
+}
+.receipt-big{
+  font-family:var(--mono);font-size:clamp(22px,3vw,30px);font-weight:600;
+  letter-spacing:-0.03em;line-height:1;color:var(--text-bright);
+}
+.receipt-cell--main .receipt-big{color:var(--green)}
+.receipt-small{font-size:11px;color:var(--muted);margin-top:6px;font-family:var(--mono)}
+
+/* ── Home: context line ─────────────────────────────── */
+.ctx-line{display:flex;align-items:center;gap:18px;cursor:pointer;transition:border-color .2s}
+.ctx-line:hover{border-color:var(--accent)}
+.ctx-line:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+.ctx-line-gauge{flex-shrink:0}
+.ctx-line-body{flex:1;min-width:0}
+.ctx-line-top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.ctx-line-band{font-weight:600;font-size:15px;display:inline-flex;align-items:center;gap:7px}
+.ctx-line .hc-health-go{flex-shrink:0}
+
+/* ── Home: trend + top wins ─────────────────────────── */
+.trend-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.trend-controls{display:flex;gap:10px;flex-wrap:wrap}
+.topwin-row{
+  display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;align-items:baseline;
+  padding:9px 0;border-bottom:1px solid var(--border);
+}
+.topwin-row:last-of-type{border-bottom:none}
+.topwin-row .bar-bg{grid-column:1 / -1}
+.topwin-name{font-family:var(--mono);font-size:12.5px;color:var(--text-bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topwin-meta{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.topwin-saved{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--green)}
+
+/* ── Protection: guard line cells ───────────────────── */
+.guard-cell{margin-right:14px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.guard-cell b{color:var(--text-bright);font-weight:600}
 .hc .hv.hc-health-v{display:flex;align-items:center;gap:8px;font-size:20px}
 .hc-health-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 .hc-health-go{color:var(--accent);opacity:.55;margin-left:7px;transition:opacity .15s;white-space:nowrap}
@@ -1433,16 +1479,6 @@ tr:hover td{background:var(--surface-2)}
 .seg[aria-pressed="true"]{background:var(--accent-dim);color:var(--accent)}
 .seg[aria-pressed="true"] svg{opacity:1}
 .seg:focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent-dim)}
-
-.view-hint{
-  display:flex;align-items:center;gap:9px;
-  margin:-8px 0 22px;padding:10px 14px;
-  background:var(--surface);border:1px solid var(--border);
-  border-left:2px solid var(--accent);border-radius:var(--rs);
-  color:var(--muted);font-size:12.5px;line-height:1.4;
-}
-.view-hint svg{color:var(--accent);flex-shrink:0;opacity:.8}
-.view-hint[hidden]{display:none}
 
 .onboard-overlay{
   position:fixed;inset:0;z-index:var(--z-modal,1000);
