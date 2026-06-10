@@ -61,11 +61,16 @@ pub fn format_imported(
     imported_knowledge: u32,
     contradictions: u32,
     warning: Option<&str>,
+    signature_line: &str,
 ) -> String {
     let mut out = format!(
         "ctx_handoff import\n path: {path}\n schema_version: {schema_version}\n imported_knowledge: {imported_knowledge}\n contradictions: {contradictions}",
         path = path.display(),
     );
+    if !signature_line.is_empty() {
+        out.push('\n');
+        out.push_str(signature_line);
+    }
     if let Some(w) = warning {
         out.push_str(&format!("\n {w}"));
     }

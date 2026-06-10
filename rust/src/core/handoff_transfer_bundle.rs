@@ -112,7 +112,11 @@ pub fn build_bundle_v1(
         .map(build_artifacts_excerpt_v1)
         .unwrap_or_default();
 
-    let mut bundle = HandoffTransferBundleV1 {
+    // Built unsigned by design: signing is the exporter's responsibility
+    // (`ctx_handoff export` signs with the real agent identity, GL #465).
+    // The old implicit role-name signing here conflated role with identity
+    // and silently swallowed failures.
+    HandoffTransferBundleV1 {
         schema_version: crate::core::contracts::HANDOFF_TRANSFER_BUNDLE_V1_SCHEMA_VERSION,
         exported_at: Utc::now(),
         privacy: effective_privacy.as_str().to_string(),
@@ -125,12 +129,7 @@ pub fn build_bundle_v1(
         signature: None,
         signer_public_key: None,
         signer_agent_id: None,
-    };
-
-    let agent_id = role_name;
-    sign_bundle(&mut bundle, &agent_id).ok();
-
-    bundle
+    }
 }
 
 pub fn sign_bundle(bundle: &mut HandoffTransferBundleV1, agent_id: &str) -> Result<(), String> {
@@ -148,6 +147,37 @@ pub fn sign_bundle(bundle: &mut HandoffTransferBundleV1, agent_id: &str) -> Resu
     bundle.signer_public_key = Some(crate::core::agent_identity::hex_encode(&pub_key.to_bytes()));
     bundle.signer_agent_id = Some(agent_id.to_string());
     Ok(())
+}
+
+/// Outcome of checking a bundle's embedded Ed25519 signature on import
+/// (GL #465). Fail-closed semantics: any *present-but-broken* signature
+/// material is [`Invalid`](BundleSignatureStatus::Invalid) and must block the
+/// import; only the complete absence of all three signature fields counts as
+/// a legacy [`Unsigned`](BundleSignatureStatus::Unsigned) bundle (allowed
+/// with a warning, for bundles produced before exports were signed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BundleSignatureStatus {
+    /// Valid signature; carries the verified signer agent id.
+    Verified(String),
+    /// No signature fields at all (legacy bundle).
+    Unsigned,
+    /// Signature material present but not verifiable — reject the bundle.
+    Invalid(String),
+}
+
+/// Classify a bundle's signature for import-time enforcement (GL #465).
+#[must_use]
+pub fn check_bundle_signature(bundle: &HandoffTransferBundleV1) -> BundleSignatureStatus {
+    if bundle.signature.is_none()
+        && bundle.signer_public_key.is_none()
+        && bundle.signer_agent_id.is_none()
+    {
+        return BundleSignatureStatus::Unsigned;
+    }
+    match verify_bundle_signature(bundle) {
+        Ok(signer) => BundleSignatureStatus::Verified(signer),
+        Err(e) => BundleSignatureStatus::Invalid(e),
+    }
 }
 
 pub fn verify_bundle_signature(bundle: &HandoffTransferBundleV1) -> Result<String, String> {
@@ -437,5 +467,42 @@ mod tests {
         let parsed = parse_bundle_v1(&json).expect("parse");
         assert_eq!(parsed.schema_version, b.schema_version);
         assert_eq!(parsed.privacy, "redacted");
+    }
+
+    /// GL #465: signed bundles verify; any tampering after signing flips the
+    /// status to `Invalid` (fail-closed); bundles without signature fields are
+    /// `Unsigned` (legacy, allowed with warning).
+    #[test]
+    fn import_signature_check_verified_unsigned_invalid() {
+        let unsigned = build_bundle_v1(sample_ledger(), None, BundlePrivacyV1::Redacted);
+        assert_eq!(
+            check_bundle_signature(&unsigned),
+            BundleSignatureStatus::Unsigned
+        );
+
+        let mut signed = build_bundle_v1(sample_ledger(), None, BundlePrivacyV1::Redacted);
+        sign_bundle(&mut signed, "handoff-sig-test-agent").expect("sign");
+        match check_bundle_signature(&signed) {
+            BundleSignatureStatus::Verified(signer) => {
+                assert_eq!(signer, "handoff-sig-test-agent");
+            }
+            other => panic!("expected Verified, got {other:?}"),
+        }
+
+        // Tamper with the payload after signing → must be Invalid, not Unsigned.
+        let mut tampered = signed.clone();
+        tampered.ledger.session.task = Some("tampered task".to_string());
+        assert!(matches!(
+            check_bundle_signature(&tampered),
+            BundleSignatureStatus::Invalid(_)
+        ));
+
+        // Partial signature material (e.g. stripped pubkey) is Invalid too.
+        let mut partial = signed;
+        partial.signer_public_key = None;
+        assert!(matches!(
+            check_bundle_signature(&partial),
+            BundleSignatureStatus::Invalid(_)
+        ));
     }
 }

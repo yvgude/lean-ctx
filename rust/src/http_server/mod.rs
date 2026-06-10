@@ -673,6 +673,50 @@ async fn v1_a2a_handoff(
             )
         }
         crate::core::a2a_transport::TransportContentType::HandoffBundle => {
+            // Signature enforcement at the network boundary (GL #465): a
+            // payload that is not a parseable bundle, or whose signature
+            // material does not verify, is rejected fail-closed before it
+            // ever touches disk. Legacy unsigned bundles are stored with the
+            // status surfaced so the importer can warn.
+            let bundle =
+                match crate::core::handoff_transfer_bundle::parse_bundle_v1(&envelope.payload_json)
+                {
+                    Ok(b) => b,
+                    Err(e) => {
+                        tracing::warn!("a2a handoff rejected: not a valid bundle: {e}");
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(serde_json::json!({"error": "invalid_bundle"})),
+                        );
+                    }
+                };
+            let signature = match crate::core::handoff_transfer_bundle::check_bundle_signature(
+                &bundle,
+            ) {
+                crate::core::handoff_transfer_bundle::BundleSignatureStatus::Invalid(reason) => {
+                    tracing::warn!("a2a handoff rejected: signature invalid: {reason}");
+                    crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
+                        agent_id: envelope.sender.agent_id.clone(),
+                        tool: "http:/v1/a2a/handoff".to_string(),
+                        action: Some("import_signature_invalid".to_string()),
+                        input_hash: String::new(),
+                        output_tokens: 0,
+                        role: crate::core::roles::active_role_name(),
+                        event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
+                    });
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({"error": "invalid_signature"})),
+                    );
+                }
+                crate::core::handoff_transfer_bundle::BundleSignatureStatus::Verified(signer) => {
+                    serde_json::json!({"status": "verified", "signer": signer})
+                }
+                crate::core::handoff_transfer_bundle::BundleSignatureStatus::Unsigned => {
+                    serde_json::json!({"status": "unsigned"})
+                }
+            };
+
             let dir = std::path::Path::new(&state.project_root)
                 .join(".lean-ctx")
                 .join("handoffs");
@@ -694,6 +738,7 @@ async fn v1_a2a_handoff(
                 Json(serde_json::json!({
                     "status": "received",
                     "content_type": "handoff_bundle",
+                    "signature": signature,
                 })),
             )
         }

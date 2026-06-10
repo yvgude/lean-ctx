@@ -258,11 +258,23 @@ fn handle_export(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
         return Ok("ERROR: privacy=full requires role 'admin'.".to_string());
     }
 
-    let bundle = crate::core::handoff_transfer_bundle::build_bundle_v1(
+    let mut bundle = crate::core::handoff_transfer_bundle::build_bundle_v1(
         ledger,
         project_root.as_deref(),
         privacy,
     );
+    // Sign every export (GL #465) so receivers can verify origin + integrity.
+    // Signing failure (e.g. unwritable key dir) degrades to an unsigned bundle
+    // with a warning — export stays local-first, import-side policy decides.
+    let signer_id = ctx
+        .agent_id
+        .as_ref()
+        .and_then(|a| a.blocking_read().clone())
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or_else(|| crate::core::agent_identity::current_agent_id().to_string());
+    let sign_warning = crate::core::handoff_transfer_bundle::sign_bundle(&mut bundle, &signer_id)
+        .err()
+        .map(|e| format!("WARNING: bundle not signed: {e}"));
     let json = crate::core::handoff_transfer_bundle::serialize_bundle_v1_pretty(&bundle)
         .map_err(|e| ErrorData::internal_error(e, None))?;
 
@@ -326,12 +338,27 @@ fn handle_export(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
     }
 
     let out = match format.as_str() {
-        "summary" => crate::tools::ctx_handoff::format_exported(
-            written.as_deref(),
-            bundle.schema_version,
-            json.len(),
-            &bundle.privacy,
-        ),
+        // The structured formats (json/a2a) stay machine-parseable: signature
+        // state is visible in the payload itself. Only the human summary
+        // carries the explicit signing line.
+        "summary" => {
+            let mut s = crate::tools::ctx_handoff::format_exported(
+                written.as_deref(),
+                bundle.schema_version,
+                json.len(),
+                &bundle.privacy,
+            );
+            match sign_warning.as_deref() {
+                Some(w) => {
+                    s.push('\n');
+                    s.push_str(w);
+                }
+                None => {
+                    s.push_str(&format!("\n signed_by: {signer_id}"));
+                }
+            }
+            s
+        }
         // A2A envelope (GL#449): spec-shaped Task object a foreign agent can
         // parse without knowing the lean-ctx bundle format.
         "a2a" => {
@@ -446,6 +473,38 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
         Err(e) => return Ok(format!("Import failed: {e}")),
     };
 
+    // Signature enforcement (GL #465): a bundle with broken/tampered signature
+    // material is rejected fail-closed; legacy unsigned bundles import with a
+    // warning; valid signatures surface the verified signer.
+    let signature_line = match crate::core::handoff_transfer_bundle::check_bundle_signature(&bundle)
+    {
+        crate::core::handoff_transfer_bundle::BundleSignatureStatus::Invalid(reason) => {
+            crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
+                agent_id: bundle
+                    .signer_agent_id
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
+                tool: "ctx_handoff".to_string(),
+                action: Some("import_signature_invalid".to_string()),
+                input_hash: crate::core::audit_trail::hash_input(args),
+                output_tokens: 0,
+                role: crate::core::roles::active_role_name(),
+                event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
+            });
+            return Ok(format!(
+                "IMPORT BLOCKED: bundle signature verification failed ({reason}).\n\
+                 The bundle was modified after signing or carries broken signature material.\n\
+                 Re-export it on the source agent (ctx_handoff export signs automatically)."
+            ));
+        }
+        crate::core::handoff_transfer_bundle::BundleSignatureStatus::Verified(signer) => {
+            format!(" signature: verified (signer={signer})")
+        }
+        crate::core::handoff_transfer_bundle::BundleSignatureStatus::Unsigned => {
+            " signature: WARNING unsigned legacy bundle (re-export to sign)".to_string()
+        }
+    };
+
     let warning =
         crate::core::handoff_transfer_bundle::project_identity_warning(&bundle, &project_root);
 
@@ -530,6 +589,7 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
         knowledge_imported,
         contradictions,
         warning.as_deref(),
+        &signature_line,
     ))
 }
 
