@@ -1339,10 +1339,14 @@ class CockpitGraph extends HTMLElement {
       .alphaDecay(0.03);
     this._simulation = simulation;
 
+    // Dense graphs (150 nodes, hundreds of edges) become an opaque hairball at
+    // full link opacity — fade links with density (GL #455).
+    var linkOpacity = links.length > 400 ? 0.12 : links.length > 150 ? 0.25 : 0.5;
     var linkSel = g.append('g').selectAll('line')
       .data(links).join('line')
       .attr('class', 'cg-edge-line')
       .attr('stroke-width', 1)
+      .style('opacity', linkOpacity)
       .attr('marker-end', 'url(#ckg-arrow)');
 
     var nodeG = g.append('g').selectAll('circle')
@@ -1415,6 +1419,33 @@ class CockpitGraph extends HTMLElement {
           .attr('y', function (d) { return d.y; });
       }
     });
+
+    // Initial zoom-to-fit (GL #455): once the force layout has roughly settled,
+    // frame the whole graph instead of the over-zoomed default close-up. Runs
+    // once; manual pan/zoom afterwards is never overridden.
+    var fitted = false;
+    var fit = function () {
+      if (fitted || !nodes.length) return;
+      fitted = true;
+      var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      nodes.forEach(function (d) {
+        if (d.x == null) return;
+        if (d.x < minX) minX = d.x;
+        if (d.x > maxX) maxX = d.x;
+        if (d.y < minY) minY = d.y;
+        if (d.y > maxY) maxY = d.y;
+      });
+      if (minX === Infinity) return;
+      var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      var spanX = Math.max(maxX - minX, 60), spanY = Math.max(maxY - minY, 60);
+      var scale = Math.max(0.1, Math.min(2, 0.85 * Math.min(width / spanX, height / spanY)));
+      var t = d3.zoomIdentity.translate(width / 2 - cx * scale, height / 2 - cy * scale).scale(scale);
+      svg.transition().duration(500).call(zoom.transform, t);
+    };
+    // Fit when the simulation cools down, with a fallback timer so a
+    // long-running simulation still frames the layout promptly.
+    simulation.on('end', fit);
+    setTimeout(fit, 1800);
   }
 
   /* ============ Symbols table ============ */

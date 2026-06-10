@@ -146,6 +146,53 @@
     }
     return _origFetch.call(this, url, opts);
   };
+  /* Token gate (GL #456): when auth is on and this browser has no (valid)
+     token, every card would surface a raw "unauthorized". Instead, the first
+     401 raises lctx:unauthorized and we swap the page for one centered token
+     prompt. Stored in sessionStorage only; reload re-runs all loaders. */
+  window.addEventListener('lctx:unauthorized', function () {
+    if (document.getElementById('lctxTokenGate')) return;
+    var wrap = document.createElement('div');
+    wrap.id = 'lctxTokenGate';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.setAttribute('aria-label', 'Dashboard token required');
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:var(--bg,#0d0d12)';
+    wrap.innerHTML =
+      '<div style="max-width:380px;width:90%;padding:28px;border:1px solid var(--border,#2a2a35);border-radius:12px;background:var(--surface,#16161d);font-family:inherit">' +
+      '<h2 style="margin:0 0 8px;font-size:16px;color:var(--text-bright,#fff)">Token required</h2>' +
+      '<p style="margin:0 0 16px;font-size:12.5px;line-height:1.55;color:var(--muted,#9a9aa5)">' +
+      'This dashboard runs with <code>LEAN_CTX_HTTP_TOKEN</code> auth. Paste the token ' +
+      '(or reopen via the <code>?token=\u2026</code> URL printed by <code>lean-ctx dashboard</code>).</p>' +
+      '<form id="lctxTokenForm" style="display:flex;gap:8px">' +
+      '<input id="lctxTokenInput" type="password" autocomplete="off" spellcheck="false" aria-label="Dashboard token" ' +
+      'style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border,#2a2a35);background:var(--bg,#0d0d12);color:var(--text,#ddd);font-family:monospace;font-size:12px">' +
+      '<button type="submit" style="padding:8px 14px;border-radius:8px;border:0;background:var(--accent,#4ade80);color:#08080c;font-weight:600;cursor:pointer">Unlock</button>' +
+      '</form>' +
+      '<p id="lctxTokenErr" style="margin:10px 0 0;font-size:11.5px;color:var(--red,#f87171);display:none">Token rejected \u2014 please check and try again.</p>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    var input = document.getElementById('lctxTokenInput');
+    input.focus();
+    document.getElementById('lctxTokenForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var tok = input.value.trim();
+      if (!tok) return;
+      /* Validate before reloading so a wrong token shows feedback instead of looping. */
+      _origFetch('/api/health', { headers: { Authorization: 'Bearer ' + tok }, cache: 'no-store' })
+        .then(function (r) {
+          if (r.status === 401) {
+            document.getElementById('lctxTokenErr').style.display = 'block';
+            return;
+          }
+          try { sessionStorage.setItem('lctx_token', tok); } catch (e) {}
+          location.reload();
+        })
+        .catch(function () {
+          document.getElementById('lctxTokenErr').style.display = 'block';
+        });
+    });
+  });
 })();
 </script>
 <script src="/static/lib/format.js" defer></script>

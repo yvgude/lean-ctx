@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- **Cockpit backlog triple** (GL #454, #455, #456): the Routes view now
+  understands axum — `.route("/path", get(handler))` incl. chained methods
+  (`get(a).post(b)`), qualified forms (`axum::routing::post`) and module-path
+  handlers — plus hand-rolled `"/api/…" =>` match routers, taking this
+  codebase from 0 to 136 detected routes. The Call Graph starts framed: an
+  initial zoom-to-fit runs once the force layout settles (manual pan/zoom is
+  never overridden) and link opacity now fades with edge density, so 150-node
+  graphs stop rendering as an over-zoomed hairball. And when token auth is on
+  but the browser has none, the first 401 swaps the page for a single
+  centered token prompt (validates against `/api/health`, stores in
+  sessionStorage, reloads) instead of two dozen raw `unauthorized` cards.
 - **Dashboard polish from the function audit** (GL #478): the Explorer tree is
   now a real WAI-ARIA tree — `role=tree/treeitem/group`, `aria-expanded`,
   roving tabindex and full keyboard support (arrows expand/collapse/navigate,

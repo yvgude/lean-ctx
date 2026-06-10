@@ -31,6 +31,8 @@ pub fn extract_routes_from_file(file_path: &str, content: &str) -> Vec<RouteEntr
     routes.extend(extract_express(file_path, content, ext));
     routes.extend(extract_flask(file_path, content, ext));
     routes.extend(extract_actix(file_path, content, ext));
+    routes.extend(extract_axum(file_path, content, ext));
+    routes.extend(extract_match_routes(file_path, content, ext));
     routes.extend(extract_spring(file_path, content, ext));
     routes.extend(extract_rails(file_path, content, ext));
     routes.extend(extract_fastapi(file_path, content, ext));
@@ -228,6 +230,70 @@ fn extract_actix(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
     }
 
     routes
+}
+
+/// axum: `.route("/path", get(handler))`, incl. chained methods
+/// (`get(a).post(b)`) and qualified paths (`axum::routing::post(h)`).
+/// GL #454: this very codebase (http_server, lean-ctx-cloud) is axum and the
+/// Routes view showed nothing.
+fn extract_axum(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
+    if ext != "rs" {
+        return Vec::new();
+    }
+
+    let route_re = static_regex!(r#"\.route\s*\(\s*"([^"]+)"\s*,\s*(.+)$"#);
+    // Matches each `get(handler)` / `axum::routing::post(handler)` segment in
+    // the second argument, capturing method + handler name.
+    let method_re = static_regex!(
+        r"(?:axum::routing::|routing::)?\b(get|post|put|patch|delete|head|options|any)\s*\(\s*([A-Za-z0-9_:]+)"
+    );
+
+    let mut routes = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        let Some(caps) = route_re.captures(line) else {
+            continue;
+        };
+        let path = caps[1].to_string();
+        let rest = &caps[2];
+        for m in method_re.captures_iter(rest) {
+            let handler = m[2].rsplit("::").next().unwrap_or(&m[2]).to_string();
+            routes.push(RouteEntry {
+                method: m[1].to_uppercase(),
+                path: path.clone(),
+                handler,
+                file: file.to_string(),
+                line: i + 1,
+            });
+        }
+    }
+    routes
+}
+
+/// Hand-rolled `match` routers (the lean-ctx dashboard pattern):
+/// `"/api/stats" => { ... }`. Only arms whose string looks like an HTTP path
+/// (`/api/…`, `/v1/…`, `/public/…`) are reported, to avoid false positives on
+/// arbitrary string matches. Method is unknown at the match site, so it is
+/// reported as `*`.
+fn extract_match_routes(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
+    if ext != "rs" {
+        return Vec::new();
+    }
+
+    let re = static_regex!(r#"^\s*"((?:/api|/v1|/public)/[^"]*)"\s*(?:\|\s*"[^"]+"\s*)*=>"#);
+
+    content
+        .lines()
+        .enumerate()
+        .filter_map(|(i, line)| {
+            re.captures(line).map(|caps| RouteEntry {
+                method: "*".to_string(),
+                path: caps[1].to_string(),
+                handler: String::new(),
+                file: file.to_string(),
+                line: i + 1,
+            })
+        })
+        .collect()
 }
 
 fn extract_spring(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
@@ -447,6 +513,55 @@ mod tests {
         assert_eq!(routes[0].method, "GET");
         assert_eq!(routes[0].path, "/health");
         assert_eq!(routes[0].handler, "health_check");
+    }
+
+    #[test]
+    fn axum_simple_route() {
+        let code = r#"        .route("/health", get(health))"#;
+        let routes = extract_axum("http_server/mod.rs", code, "rs");
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].method, "GET");
+        assert_eq!(routes[0].path, "/health");
+        assert_eq!(routes[0].handler, "health");
+    }
+
+    #[test]
+    fn axum_qualified_and_chained_methods() {
+        let code = concat!(
+            "        .route(\"/v1/shutdown\", axum::routing::post(v1_shutdown))\n",
+            "        .route(\"/api/items\", get(list_items).post(create_item))\n",
+        );
+        let routes = extract_axum("server.rs", code, "rs");
+        assert_eq!(routes.len(), 3);
+        assert_eq!(routes[0].method, "POST");
+        assert_eq!(routes[0].handler, "v1_shutdown");
+        assert_eq!(routes[1].method, "GET");
+        assert_eq!(routes[1].handler, "list_items");
+        assert_eq!(routes[2].method, "POST");
+        assert_eq!(routes[2].handler, "create_item");
+    }
+
+    #[test]
+    fn axum_module_path_handler_uses_last_segment() {
+        let code = r#"        .route("/api/billing/supporters", get(supporters::list_supporters))"#;
+        let routes = extract_axum("routes/mod.rs", code, "rs");
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].handler, "list_supporters");
+    }
+
+    #[test]
+    fn match_router_arms_detected_with_path_prefix_only() {
+        let code = concat!(
+            "            \"/api/stats\" => {\n",
+            "            \"/api/tree\" | \"/api/symbols\" => {\n",
+            "            \"unrelated-string\" => {\n",
+            "            \"/not/an/api\" => {\n",
+        );
+        let routes = extract_match_routes("dashboard/routes/mod.rs", code, "rs");
+        assert_eq!(routes.len(), 2);
+        assert_eq!(routes[0].path, "/api/stats");
+        assert_eq!(routes[0].method, "*");
+        assert_eq!(routes[1].path, "/api/tree");
     }
 
     #[test]

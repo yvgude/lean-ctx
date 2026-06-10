@@ -76,6 +76,13 @@ async function apiFetch(path, opts) {
     const res = await fetch(path, reqInit);
     const body = await parseJsonBody(res);
     if (!res.ok) {
+      // Auth gate (GL #456): a 401 means the dashboard requires a token this
+      // browser doesn't have. Announce once so the shell can show a single
+      // token-entry screen instead of every card erroring individually.
+      if (res.status === 401 && typeof window !== 'undefined' && !window.__lctxAuthGate) {
+        window.__lctxAuthGate = true;
+        try { window.dispatchEvent(new CustomEvent('lctx:unauthorized')); } catch (_) {}
+      }
       const msg =
         body && typeof body === 'object' && body.error != null
           ? String(body.error)
