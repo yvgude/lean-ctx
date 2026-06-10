@@ -87,9 +87,14 @@ pub fn record_file_read(
         maybe_consolidate(project_root.as_deref(), calls);
     }
 
-    let mut ledger = ContextLedger::load();
-    ledger.record(path, mode, original_tokens, output_tokens);
-    ledger.save();
+    // Only real files belong in the context ledger (GL #512): directory
+    // overviews and synthetic paths would show up as "files" in the pressure
+    // table with eviction/pin semantics that make no sense for them.
+    if std::path::Path::new(path).is_file() {
+        let mut ledger = ContextLedger::load();
+        ledger.record(path, mode, original_tokens, output_tokens);
+        ledger.save();
+    }
 }
 
 /// Record a search/grep operation with full Context OS side effects.

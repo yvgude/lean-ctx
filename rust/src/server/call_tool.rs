@@ -503,69 +503,76 @@ impl LeanCtxServer {
                     );
                 }
 
-                // Ledger update — fire-and-forget to avoid blocking concurrent reads
-                let ledger_clone = self.ledger.clone();
-                let session_clone = self.session.clone();
-                let peer_clone = self.peer.clone();
-                let read_path_owned = read_path.clone();
-                let project_root_owned = project_root.clone();
-                let mode_used =
-                    helpers::get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
-                let out_tok = output_tokens as usize;
-                let sent_tok = crate::core::tokens::count_tokens(&result_text);
-                let wants_eviction = true;
-                let wants_elicitation = profile_hints.elicitation_hint();
-                tokio::spawn(async move {
-                    let result = std::panic::AssertUnwindSafe(async {
-                        let active_task = {
-                            let session = session_clone.read().await;
-                            session.task.as_ref().map(|t| t.description.clone())
-                        };
-                        let mut ledger = ledger_clone.write().await;
-                        let overlay = crate::core::context_overlay::OverlayStore::load_project(
-                            &std::path::PathBuf::from(project_root_owned.as_deref().unwrap_or(".")),
-                        );
-                        let gate_result = context_gate::post_dispatch_record_with_task(
-                            &read_path_owned,
-                            &mode_used,
-                            out_tok,
-                            sent_tok,
-                            &mut ledger,
-                            &overlay,
-                            active_task.as_deref(),
-                        );
-                        drop(ledger);
-                        if wants_eviction {
-                            if let Some(hint) = &gate_result.eviction_hint {
-                                tracing::debug!("deferred eviction hint: {hint}");
+                // Ledger update — fire-and-forget to avoid blocking concurrent reads.
+                // Only real files belong in the context ledger (GL #512): a
+                // ctx_read on "." or a directory returns an overview, not file
+                // content, and must not appear in the pressure table as a file.
+                if std::path::Path::new(&read_path).is_file() {
+                    let ledger_clone = self.ledger.clone();
+                    let session_clone = self.session.clone();
+                    let peer_clone = self.peer.clone();
+                    let read_path_owned = read_path.clone();
+                    let project_root_owned = project_root.clone();
+                    let mode_used =
+                        helpers::get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
+                    let out_tok = output_tokens as usize;
+                    let sent_tok = crate::core::tokens::count_tokens(&result_text);
+                    let wants_eviction = true;
+                    let wants_elicitation = profile_hints.elicitation_hint();
+                    tokio::spawn(async move {
+                        let result = std::panic::AssertUnwindSafe(async {
+                            let active_task = {
+                                let session = session_clone.read().await;
+                                session.task.as_ref().map(|t| t.description.clone())
+                            };
+                            let mut ledger = ledger_clone.write().await;
+                            let overlay = crate::core::context_overlay::OverlayStore::load_project(
+                                &std::path::PathBuf::from(
+                                    project_root_owned.as_deref().unwrap_or("."),
+                                ),
+                            );
+                            let gate_result = context_gate::post_dispatch_record_with_task(
+                                &read_path_owned,
+                                &mode_used,
+                                out_tok,
+                                sent_tok,
+                                &mut ledger,
+                                &overlay,
+                                active_task.as_deref(),
+                            );
+                            drop(ledger);
+                            if wants_eviction {
+                                if let Some(hint) = &gate_result.eviction_hint {
+                                    tracing::debug!("deferred eviction hint: {hint}");
+                                }
                             }
-                        }
-                        if wants_elicitation {
-                            if let Some(hint) = &gate_result.elicitation_hint {
-                                tracing::debug!("deferred elicitation hint: {hint}");
+                            if wants_elicitation {
+                                if let Some(hint) = &gate_result.elicitation_hint {
+                                    tracing::debug!("deferred elicitation hint: {hint}");
+                                }
                             }
-                        }
-                        if gate_result.resource_changed {
-                            if let Some(peer) = peer_clone.read().await.as_ref() {
-                                notifications::send_resource_updated(
-                                    peer,
-                                    notifications::RESOURCE_URI_SUMMARY,
-                                )
-                                .await;
+                            if gate_result.resource_changed {
+                                if let Some(peer) = peer_clone.read().await.as_ref() {
+                                    notifications::send_resource_updated(
+                                        peer,
+                                        notifications::RESOURCE_URI_SUMMARY,
+                                    )
+                                    .await;
+                                }
                             }
+                        })
+                        .catch_unwind()
+                        .await;
+                        if let Err(e) = result {
+                            let msg = e
+                                .downcast_ref::<String>()
+                                .map(String::as_str)
+                                .or_else(|| e.downcast_ref::<&str>().copied())
+                                .unwrap_or("unknown");
+                            tracing::error!("background post_dispatch panicked: {msg}");
                         }
-                    })
-                    .catch_unwind()
-                    .await;
-                    if let Err(e) = result {
-                        let msg = e
-                            .downcast_ref::<String>()
-                            .map(String::as_str)
-                            .or_else(|| e.downcast_ref::<&str>().copied())
-                            .unwrap_or("unknown");
-                        tracing::error!("background post_dispatch panicked: {msg}");
-                    }
-                });
+                    });
+                }
             }
         }
 

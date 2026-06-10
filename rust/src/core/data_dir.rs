@@ -21,6 +21,32 @@ pub fn lean_ctx_data_dir() -> Result<PathBuf, String> {
         }
     }
 
+    // Test sandbox (GL #512): without this, any unit test that triggers a
+    // store write (stats, savings ledger, context ledger, heatmap, ...)
+    // silently pollutes the developer's real ~/.lean-ctx — bounce events from
+    // test fixtures showed up as "today 61%" on the user dashboard. Tests that
+    // set LEAN_CTX_DATA_DIR keep full control (handled above); everyone else
+    // lands in a per-process temp dir and physically cannot touch real data.
+    #[cfg(test)]
+    {
+        static TEST_SANDBOX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        let dir = TEST_SANDBOX.get_or_init(|| {
+            let d = std::env::temp_dir().join(format!("lean-ctx-testdata-{}", std::process::id()));
+            let _ = std::fs::create_dir_all(&d);
+            d
+        });
+        Ok(dir.clone())
+    }
+
+    #[cfg(not(test))]
+    {
+        resolve_home_data_dir()
+    }
+}
+
+/// Home-based resolution (legacy `~/.lean-ctx` vs XDG). Split out so the
+/// priority rules stay unit-testable despite the test sandbox above.
+fn resolve_home_data_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     let legacy = home.join(".lean-ctx");
@@ -207,7 +233,9 @@ mod tests {
         std::env::set_var("LEAN_CTX_DATA_DIR", "");
         std::env::set_var("XDG_CONFIG_HOME", xdg_base.to_str().unwrap());
 
-        let result = lean_ctx_data_dir().unwrap();
+        // Calls the home resolver directly: lean_ctx_data_dir() is sandboxed
+        // under cfg(test) (GL #512) and would short-circuit before XDG logic.
+        let result = resolve_home_data_dir().unwrap();
 
         std::env::remove_var("LEAN_CTX_DATA_DIR");
         std::env::remove_var("XDG_CONFIG_HOME");
