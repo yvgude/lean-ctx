@@ -126,7 +126,9 @@ pub async fn v1_savings_summary(State(state): State<TeamAppState>) -> impl IntoR
 
 /// Aggregate the savings store: latest batch per signer (totals/breakdowns) plus
 /// a carry-forward daily series replayed from every signer's full snapshot history.
-fn aggregate(dir: &Path) -> TeamSavingsSummary {
+/// Shared with `/v1/usage` ([`super::team_usage`]), which embeds the same
+/// roll-up as its `savings` block.
+pub(crate) fn aggregate(dir: &Path) -> TeamSavingsSummary {
     let mut members: Vec<MemberSavings> = Vec::new();
     let mut model_totals: HashMap<String, (u64, f64)> = HashMap::new();
     let mut tool_totals: HashMap<String, u64> = HashMap::new();

@@ -65,6 +65,7 @@ fn cfg_two(tmp: &tempfile::TempDir) -> TeamServerConfig {
         request_timeout_ms: 30_000,
         stateful_mode: false,
         json_response: true,
+        storage_quota_bytes: None,
     }
 }
 
@@ -85,16 +86,24 @@ async fn build_app(cfg: TeamServerConfig) -> Router {
         .open(&cfg.audit_log_path)
         .await
         .unwrap();
+    let savings_dir = cfg
+        .audit_log_path
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("savings");
+    let storage = super::super::team_usage::StorageMeter::new(
+        cfg.workspaces.iter().map(|w| w.root.clone()).collect(),
+        cfg.audit_log_path.clone(),
+        savings_dir.clone(),
+        cfg.storage_quota_bytes
+            .unwrap_or(super::super::team_usage::DEFAULT_TEAM_STORAGE_QUOTA_BYTES),
+    );
     let team = Arc::new(TeamState {
         auth: Arc::new(cfg.tokens.clone()),
         engine,
         audit: Arc::new(tokio::sync::Mutex::new(audit_file)),
-        savings_store_dir: Arc::new(tokio::sync::Mutex::new(
-            cfg.audit_log_path
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-                .join("savings"),
-        )),
+        savings_store_dir: Arc::new(tokio::sync::Mutex::new(savings_dir)),
+        storage,
     });
     let state = TeamAppState {
         concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
@@ -111,6 +120,8 @@ async fn build_app(cfg: TeamServerConfig) -> Router {
             "/v1/savings/summary",
             get(super::super::savings_summary::v1_savings_summary),
         )
+        .route("/v1/storage", get(super::super::team_usage::v1_storage))
+        .route("/v1/usage", get(super::super::team_usage::v1_usage))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             team_auth_middleware,
@@ -156,7 +167,86 @@ fn cfg_savings(tmp: &tempfile::TempDir) -> TeamServerConfig {
         request_timeout_ms: 30_000,
         stateful_mode: false,
         json_response: true,
+        storage_quota_bytes: None,
     }
+}
+
+/// `GET /v1/storage` is audit-scoped: the owner token (audit) receives the
+/// camelCase server-measured report, a member token (search) is denied
+/// (`billing-plane-v2`, GL #463).
+#[tokio::test]
+async fn storage_endpoint_is_audit_scoped_and_camelcase() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = cfg_savings(&tmp);
+    let app = build_app(cfg).await;
+
+    let ok = Request::builder()
+        .method("GET")
+        .uri("/v1/storage")
+        .header("Host", "localhost")
+        .header("Authorization", "Bearer owner-secret")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(ok).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let v: Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(v["usedBytes"].as_u64().is_some());
+    assert_eq!(
+        v["quotaBytes"].as_u64(),
+        Some(super::super::team_usage::DEFAULT_TEAM_STORAGE_QUOTA_BYTES)
+    );
+    assert!(v["breakdown"]["workspacesBytes"].as_u64().is_some());
+    assert!(v.get("used_bytes").is_none(), "report must be camelCase");
+
+    let denied = Request::builder()
+        .method("GET")
+        .uri("/v1/storage")
+        .header("Host", "localhost")
+        .header("Authorization", "Bearer member-secret")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(denied).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+/// `GET /v1/usage` is audit-scoped and snake_case; its `storage` block is the
+/// spelling the control-plane metering reads via `StorageMetering::from_usage`.
+#[tokio::test]
+async fn usage_endpoint_is_audit_scoped_and_snake_case() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = cfg_savings(&tmp);
+    let app = build_app(cfg).await;
+
+    let ok = Request::builder()
+        .method("GET")
+        .uri("/v1/usage")
+        .header("Host", "localhost")
+        .header("Authorization", "Bearer owner-secret")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(ok).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let v: Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(v["storage"]["used_bytes"].as_u64().is_some());
+    assert!(v["storage"]["quota_bytes"].as_u64().is_some());
+    assert!(v["savings"]["member_count"].as_u64().is_some());
+    assert_eq!(v["workspaces"].as_u64(), Some(1));
+    assert!(
+        v["storage"].get("usedBytes").is_none(),
+        "usage storage block must be snake_case"
+    );
+
+    let denied = Request::builder()
+        .method("GET")
+        .uri("/v1/usage")
+        .header("Host", "localhost")
+        .header("Authorization", "Bearer member-secret")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(denied).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

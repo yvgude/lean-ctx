@@ -29,6 +29,7 @@ pub mod context_views;
 pub mod savings_ingest;
 pub mod savings_summary;
 pub mod team;
+pub mod team_usage;
 
 /// Wrapper stream that calls `record_sse_disconnect` on drop.
 use std::pin::Pin;

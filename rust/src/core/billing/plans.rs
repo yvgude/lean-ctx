@@ -374,4 +374,27 @@ mod tests {
         assert!(Plan::Supporter.entitlements().supporter);
         assert!(team.supporter && ent.supporter);
     }
+
+    /// Cross-repo drift tripwire (GL #462). This catalog is the open SSOT of
+    /// `billing-plane-v1`; it must serialize byte-for-byte to the committed
+    /// golden fixture. The commercial control plane (`lean-ctx-cloud`) vendors
+    /// the identical fixture and pins its mirrored catalog against it, so a
+    /// value drifting on either side (like Pro `hosted_index_mb` 1000 vs 0)
+    /// fails CI loudly instead of silently breaking entitlements.
+    ///
+    /// Legitimate change procedure: update this catalog, regenerate the
+    /// fixture (the assert message prints the expected content on mismatch),
+    /// then copy the file into `lean-ctx-cloud/contracts/`.
+    #[test]
+    fn catalog_matches_golden_fixture() {
+        let catalog: Vec<Entitlements> = Plan::all().iter().map(|p| p.entitlements()).collect();
+        let rendered = serde_json::to_string_pretty(&catalog).expect("catalog serializes") + "\n";
+        let golden = include_str!("../../../../docs/contracts/billing-plane-v1-catalog.json");
+        assert_eq!(
+            rendered, golden,
+            "billing-plane-v1 catalog drifted from docs/contracts/billing-plane-v1-catalog.json \
+             — regenerate the fixture from this catalog and copy it to \
+             lean-ctx-cloud/contracts/billing-plane-v1-catalog.json"
+        );
+    }
 }

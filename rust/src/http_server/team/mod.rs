@@ -72,6 +72,12 @@ pub struct TeamServerConfig {
     pub stateful_mode: bool,
     #[serde(default = "default_true")]
     pub json_response: bool,
+    /// Hosted-index storage quota in bytes (`storageQuotaBytes`), injected per
+    /// plan by the control plane's provisioning bridge (#282/#463). When
+    /// omitted the server defaults to the Team tier's 5 GiB
+    /// ([`super::team_usage::DEFAULT_TEAM_STORAGE_QUOTA_BYTES`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_quota_bytes: Option<u64>,
 }
 
 fn default_true() -> bool {
@@ -144,6 +150,21 @@ pub enum TeamScope {
 }
 
 impl TeamScope {
+    /// Stable lowercase wire id (matches the serde `lowercase` representation).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TeamScope::Search => "search",
+            TeamScope::Graph => "graph",
+            TeamScope::Artifacts => "artifacts",
+            TeamScope::Index => "index",
+            TeamScope::Events => "events",
+            TeamScope::SessionMutations => "sessionmutations",
+            TeamScope::Knowledge => "knowledge",
+            TeamScope::Audit => "audit",
+        }
+    }
+
     /// Every scope, used by role expansion (EPIC 13.2) to grant full access.
     #[must_use]
     pub fn all() -> &'static [TeamScope] {
@@ -257,6 +278,17 @@ pub struct TeamState {
     engine: Arc<TeamContextEngine>,
     audit: Arc<tokio::sync::Mutex<tokio::fs::File>>,
     pub savings_store_dir: Arc<tokio::sync::Mutex<std::path::PathBuf>>,
+    /// Server-measured hosted-storage meter backing `/v1/storage` + `/v1/usage`
+    /// (`billing-plane-v2`, GL #463).
+    pub storage: super::team_usage::StorageMeter,
+}
+
+impl TeamState {
+    /// Number of configured workspaces (surfaced on the `/v1/usage` snapshot).
+    #[must_use]
+    pub fn workspace_count(&self) -> usize {
+        self.engine.server.roots.len()
+    }
 }
 
 #[derive(Clone)]
@@ -733,16 +765,24 @@ async fn team_auth_middleware(
     req.extensions_mut()
         .insert(TeamRequestContext { workspace_id });
 
-    // Endpoint-level authz (non-tool endpoints).
+    // Endpoint-level authz (non-tool endpoints). Each scoped path is audited
+    // with its own method label; a miss is denied with the scope it lacks.
+    const SCOPED_PATHS: &[(&str, TeamScope, &str)] = &[
+        ("/v1/events", TeamScope::Events, "events"),
+        ("/v1/metrics", TeamScope::Audit, "metrics"),
+        ("/v1/savings/summary", TeamScope::Audit, "savings_summary"),
+        ("/v1/storage", TeamScope::Audit, "storage"),
+        ("/v1/usage", TeamScope::Audit, "usage"),
+    ];
     let path0 = req.uri().path();
-    if path0 == "/v1/events" {
-        let allow = tok_scopes.contains(&TeamScope::Events);
+    if let Some((_, scope, label)) = SCOPED_PATHS.iter().find(|(p, _, _)| *p == path0) {
+        let allow = tok_scopes.contains(scope);
         let _ = audit_write(
             &state.team.audit,
             &tok.id,
             &workspace_id_for_audit,
             None,
-            Some("events"),
+            Some(label),
             allow,
             if allow { None } else { Some("scope_denied") },
             None,
@@ -752,51 +792,7 @@ async fn team_auth_middleware(
             return super::json_error(
                 StatusCode::FORBIDDEN,
                 "scope_denied",
-                "token lacks required scope: events",
-            );
-        }
-    }
-
-    if path0 == "/v1/metrics" {
-        let allow = tok_scopes.contains(&TeamScope::Audit);
-        let _ = audit_write(
-            &state.team.audit,
-            &tok.id,
-            &workspace_id_for_audit,
-            None,
-            Some("metrics"),
-            allow,
-            if allow { None } else { Some("scope_denied") },
-            None,
-        )
-        .await;
-        if !allow {
-            return super::json_error(
-                StatusCode::FORBIDDEN,
-                "scope_denied",
-                "token lacks required scope: audit",
-            );
-        }
-    }
-
-    if path0 == "/v1/savings/summary" {
-        let allow = tok_scopes.contains(&TeamScope::Audit);
-        let _ = audit_write(
-            &state.team.audit,
-            &tok.id,
-            &workspace_id_for_audit,
-            None,
-            Some("savings_summary"),
-            allow,
-            if allow { None } else { Some("scope_denied") },
-            None,
-        )
-        .await;
-        if !allow {
-            return super::json_error(
-                StatusCode::FORBIDDEN,
-                "scope_denied",
-                "token lacks required scope: audit",
+                &format!("token lacks required scope: {}", scope.as_str()),
             );
         }
     }
@@ -1346,11 +1342,19 @@ pub async fn serve_team(cfg: TeamServerConfig) -> Result<()> {
         .parent()
         .unwrap_or(std::path::Path::new("."))
         .join("savings");
+    let storage = super::team_usage::StorageMeter::new(
+        cfg.workspaces.iter().map(|w| w.root.clone()).collect(),
+        cfg.audit_log_path.clone(),
+        savings_dir.clone(),
+        cfg.storage_quota_bytes
+            .unwrap_or(super::team_usage::DEFAULT_TEAM_STORAGE_QUOTA_BYTES),
+    );
     let team = Arc::new(TeamState {
         auth: Arc::new(cfg.tokens.clone()),
         engine,
         audit: Arc::new(tokio::sync::Mutex::new(audit_file)),
         savings_store_dir: Arc::new(tokio::sync::Mutex::new(savings_dir)),
+        storage,
     });
 
     let state = TeamAppState {
@@ -1390,6 +1394,8 @@ pub async fn serve_team(cfg: TeamServerConfig) -> Result<()> {
             get(super::context_views::v1_event_lineage),
         )
         .route("/v1/metrics", get(v1_team_metrics))
+        .route("/v1/storage", get(super::team_usage::v1_storage))
+        .route("/v1/usage", get(super::team_usage::v1_usage))
         .route(
             "/v1/savings/summary",
             get(super::savings_summary::v1_savings_summary),

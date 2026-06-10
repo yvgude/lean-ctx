@@ -78,6 +78,49 @@ All of `billing-plane-v1`'s invariants, plus
    server-measured and additive.
 6. Nothing in the metering path gates a local feature (Local-Free preserved).
 
+## Team-server endpoints (GL #463)
+
+Both surfaces are served by the open team server, gated by the `audit` scope
+(the control plane reads them with its audit-only `control-plane` token), and
+measured **server-side** — no client signature is involved.
+
+### `GET /v1/storage` (camelCase)
+
+The dedicated storage report the hourly metering job consumes:
+
+```json
+{
+  "schemaVersion": 1,
+  "usedBytes": 123456,
+  "quotaBytes": 5368709120,
+  "breakdown": { "workspacesBytes": 123000, "auditBytes": 400, "savingsBytes": 56 },
+  "measuredAt": "2026-06-10T08:00:00Z"
+}
+```
+
+- `usedBytes` = logical bytes of workspace trees + audit log + savings store
+  (symlinks not followed; unreadable entries degrade to `0`, never an error).
+- `quotaBytes` comes from `storageQuotaBytes` in `team.json` (injected per plan
+  by provisioning, #282); when omitted the server defaults to the Team tier's
+  5 GiB.
+- The walk is cached for 60 s — polls and the metering job share one measurement.
+
+### `GET /v1/usage` (snake_case)
+
+The combined usage snapshot: the same storage figures (snake_case spelling, as
+`StorageMetering::from_usage` expects) plus the signed-savings roll-up (latest
+batch per signer — never double-counted):
+
+```json
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T08:00:00Z",
+  "storage": { "used_bytes": 123456, "quota_bytes": 5368709120, "measured_at": "…" },
+  "savings": { "member_count": 3, "saved_tokens": 9, "net_saved_tokens": 8, "saved_usd": 0.1, "total_events": 42 },
+  "workspaces": 1
+}
+```
+
 ## Meter Events (Stripe Billing Meters API)
 
 Usage is pushed via the Stripe Billing Meters API (`POST /v1/billing/meter_events`),
