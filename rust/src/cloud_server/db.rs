@@ -129,6 +129,27 @@ CREATE TABLE IF NOT EXISTS magic_links (
   consumed_at TIMESTAMPTZ
 );
 
+-- Email digest preferences (GL #386). One row per user, created lazily on the
+-- first digest. The opt-out token authorizes the one-click unsubscribe link in
+-- every digest (no login required); only its SHA-256 is stored.
+CREATE TABLE IF NOT EXISTS email_prefs (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  digest_opt_out BOOLEAN NOT NULL DEFAULT FALSE,
+  opt_out_token_sha256 TEXT UNIQUE NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Digest idempotency ledger (GL #386): one row per (user, kind, period) ever
+-- sent. INSERT … ON CONFLICT DO NOTHING is the send gate, so a digest goes out
+-- at most once per period even across restarts and concurrent ticks.
+CREATE TABLE IF NOT EXISTS digest_log (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  period_key TEXT NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, kind, period_key)
+);
+
 CREATE TABLE IF NOT EXISTS email_verifications (
   token_sha256 TEXT PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

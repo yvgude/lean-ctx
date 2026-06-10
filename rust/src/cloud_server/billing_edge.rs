@@ -399,6 +399,16 @@ pub(super) async fn get_account_team_savings_member(
     finish(status, json)
 }
 
+/// Internal GET against the billing plane for the digest job (GL #386) —
+/// no user session involved, the job acts on the server's own behalf.
+/// `None` when billing is unconfigured or unreachable.
+pub(super) async fn forward_for_digest(cfg: &Config, path: String) -> Option<(u16, Value)> {
+    match billing_forward(cfg, "GET", path, None).await {
+        Ok((status, json)) => Some((status.as_u16(), json)),
+        Err(_) => None,
+    }
+}
+
 /// Request body for team settings (GL #388).
 #[derive(Deserialize)]
 pub(super) struct TeamSettingsBody {

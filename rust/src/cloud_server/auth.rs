@@ -72,6 +72,24 @@ impl Mailer {
         Ok(())
     }
 
+    /// Generic plain-text mail — used by the digest job (GL #386), which
+    /// renders subject and body itself.
+    pub(super) async fn send_digest(
+        &self,
+        to_email: &str,
+        subject: &str,
+        body: &str,
+    ) -> anyhow::Result<()> {
+        let to: Mailbox = to_email.parse()?;
+        let email = Message::builder()
+            .from(self.from.clone())
+            .to(to)
+            .subject(subject)
+            .body(body.to_string())?;
+        self.transport.send(email).await?;
+        Ok(())
+    }
+
     pub(super) async fn send_password_reset(
         &self,
         to_email: &str,

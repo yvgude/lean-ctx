@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod contribute;
 mod db;
+mod digest;
 mod feedback;
 mod gain;
 mod global_stats;
@@ -37,6 +38,10 @@ pub async fn run() -> anyhow::Result<()> {
 
     let state = auth::AppState::new(pool, cfg.clone(), mailer);
 
+    // Email digests (GL #386): monthly Pro / weekly Team summaries with
+    // one-click opt-out. No-op while SMTP is unconfigured.
+    digest::spawn_digest_job(state.clone());
+
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list([
             "https://leanctx.com"
@@ -52,6 +57,8 @@ pub async fn run() -> anyhow::Result<()> {
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
             axum::http::Method::DELETE,
             axum::http::Method::OPTIONS,
         ])
@@ -161,6 +168,13 @@ pub async fn run() -> anyhow::Result<()> {
         // Hosted Team server dashboard: proxy status + token management to the
         // private plane on behalf of the logged-in owner. 503 when billing is
         // unset; 404 (from the plane) until a Team subscription provisions one.
+        // Email digests (GL #386): one-click unsubscribe (from the email link,
+        // no login) + the authenticated dashboard toggle.
+        .route("/api/digest/opt-out", get(digest::opt_out))
+        .route(
+            "/api/account/digest",
+            get(digest::get_digest_pref).put(digest::put_digest_pref),
+        )
         .route("/api/account/team", get(billing_edge::get_account_team))
         .route(
             "/api/account/team/savings",

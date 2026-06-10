@@ -18,6 +18,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   for a thank-you when the machine is linked to a supporting account — served
   by the new `/api/billing-badge` endpoint from the cached plan only (no
   network, purely cosmetic, never gates a local capability).
+- **Email digests** (GL #386): the cloud server now sends a monthly Pro digest
+  (tokens saved, agent actions, sessions, CEP score — from synced snapshots)
+  and a weekly Team digest (net tokens, USD, actions, top model/tool — from
+  the hosted server's savings summary). Idempotent per period with automatic
+  catch-up and SMTP retry; silent when a period has no real data. Every email
+  carries a one-click, login-free unsubscribe (hashed, rotating tokens);
+  `GET/PUT /api/account/digest` exposes the preference to the dashboard.
+  Contract: `docs/contracts/email-digest-v1.md`. Cloud-server CORS now allows
+  `PUT`/`PATCH` (digest toggle + team settings).
 - **Weekly team-ROI webhook** (GL #388): team servers post a weekly savings
   summary (net tokens, USD, measured actions, 7-day window, top mover, top
   model/tool) to Slack, Discord, or any JSON webhook. Configured via
