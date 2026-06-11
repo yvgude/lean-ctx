@@ -61,6 +61,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   diverge. Not legal advice; aligned ≠ certified.
 
 ### Fixed
+- **Claude Code: instruction footprint cut from ~12k to <500 tokens**
+  (GL #555): the `~/.claude/CLAUDE.md` block imported the full ruleset via
+  `@rules/lean-ctx.md` and the project `AGENTS.md` block via `@LEAN-CTX.md`.
+  Claude Code expands `@`-imports inline at launch and loads every rules
+  file without `paths:` frontmatter unconditionally — stacking the same
+  ruleset up to three times per session (field reports: 12.3k tokens of
+  memory files before the first message). The CLAUDE.md block is now
+  self-contained (v3, no imports), the AGENTS.md block carries a 3-line
+  inline mapping with a plain-text pointer, and the always-loaded
+  lean-ctx-owned rules files (`~/.claude/rules/lean-ctx.md`, project
+  `.claude/rules/lean-ctx.md`) are removed on update (marker-checked) —
+  deep documentation lives in the on-demand lean-ctx skill.
+- **Claude Code: compactions now actually reset the re-read cache**
+  (GL #555): every Claude hook payload carries `session_id`, so the generic
+  session catch-all matched before the compaction check —
+  `hook_event_name: "PreCompact"` was never recorded and
+  `sync_if_compacted()` never reset `full_content_delivered` flags. After a
+  host compaction, `ctx_read` kept answering `[unchanged]` stubs that
+  pointed at evicted context, and agents recovered by switching to native
+  `Read` for the rest of the session. PreCompact is now detected ahead of
+  the catch-all (regression-tested with the real payload shape), so the
+  first re-read after compaction delivers full content again.
 - **Tool schemas hardened for strict validators** (GL #545): 20 tool
   schemas (incl. `ctx_expand`) declared `type: object` + `properties`
   without an explicit `required` array — valid JSON Schema, but strict

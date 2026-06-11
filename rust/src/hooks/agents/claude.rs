@@ -18,7 +18,7 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
 
     let scope = crate::core::config::Config::load().rules_scope_effective();
     if scope != crate::core::config::RulesScope::Project {
-        install_claude_rules_file_for_mode(&home, mode);
+        remove_claude_rules_file(&home);
         install_claude_global_claude_md_for_mode(&home, mode);
         install_claude_skill(&home);
     }
@@ -70,11 +70,16 @@ fn install_claude_mcp_server(home: &std::path::Path) {
 
 const CLAUDE_MD_BLOCK_START: &str = "<!-- lean-ctx -->";
 const CLAUDE_MD_BLOCK_END: &str = "<!-- /lean-ctx -->";
-const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v2";
+const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v3";
 
+// v3 (GL #555): self-contained, no `@rules/lean-ctx.md` import. Claude Code
+// expands `@` imports inline at launch ("imports do not reduce context usage"
+// — code.claude.com/docs/en/memory), so the old pointer silently tripled the
+// per-session footprint. Detail docs now live in the lean-ctx skill, which
+// loads on demand only.
 const CLAUDE_MD_BLOCK_CONTENT_MCP: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v2 -->
+<!-- lean-ctx-claude-v3 -->
 ## lean-ctx — Context Runtime
 
 Always prefer lean-ctx MCP tools over native equivalents:
@@ -85,9 +90,8 @@ Always prefer lean-ctx MCP tools over native equivalents:
 - Native Edit/StrReplace stay unchanged. If Edit requires Read and Read is unavailable, use `ctx_edit(path, old_string, new_string)` instead.
 - Write, Delete, Glob — use normally.
 
-Full rules: @rules/lean-ctx.md
-
-Verify setup: run `/mcp` to check lean-ctx is connected, `/memory` to confirm this file loaded.
+Read modes: full (edit), map (overview), signatures (API), diff (post-edit), lines:N-M (range), auto.
+Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 <!-- /lean-ctx -->";
 
 fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMode) {
@@ -191,25 +195,27 @@ fn install_claude_skill(home: &std::path::Path) {
     }
 }
 
-fn install_claude_rules_file_for_mode(home: &std::path::Path, mode: HookMode) {
-    let rules_dir = crate::core::editor_registry::claude_rules_dir(home);
-    let _ = std::fs::create_dir_all(&rules_dir);
-    let rules_path = rules_dir.join("lean-ctx.md");
-
-    let desired = match mode {
-        HookMode::Hybrid | HookMode::Mcp => crate::rules_inject::rules_dedicated_markdown(),
+/// Remove the lean-ctx-owned `~/.claude/rules/lean-ctx.md` (GL #555).
+///
+/// Claude Code loads every rules file without `paths:` frontmatter
+/// unconditionally at session start (code.claude.com/docs/en/memory), so this
+/// file duplicated the CLAUDE.md block in *every* session — users reported
+/// 12k+ tokens of memory files from stacked lean-ctx instructions. The
+/// CLAUDE.md block is self-contained and detail docs live in the on-demand
+/// skill; only files carrying our rules marker are touched.
+fn remove_claude_rules_file(home: &std::path::Path) {
+    let rules_path = crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md");
+    let Ok(existing) = std::fs::read_to_string(&rules_path) else {
+        return;
     };
-    let existing = std::fs::read_to_string(&rules_path).unwrap_or_default();
-
-    if existing.is_empty() {
-        write_file(&rules_path, desired);
-        return;
-    }
-    if existing.contains(crate::rules_inject::RULES_VERSION_STR) {
-        return;
-    }
-    if existing.contains("<!-- lean-ctx-rules-") {
-        write_file(&rules_path, desired);
+    if existing.contains("<!-- lean-ctx-rules-")
+        && std::fs::remove_file(&rules_path).is_ok()
+        && !super::super::mcp_server_quiet_mode()
+    {
+        eprintln!(
+            "Removed {} (always-loaded duplicate; the CLAUDE.md block + on-demand skill replace it)",
+            rules_path.display()
+        );
     }
 }
 

@@ -260,7 +260,24 @@ fn detect_event_type(v: &serde_json::Value, ts: u64) -> Option<ObserveEvent> {
         });
     }
 
-    if v.get("session_id").is_some() {
+    // Claude Code emits `hook_event_name: "PreCompact"` (code.claude.com/docs/
+    // en/hooks); the generic `event`/`compaction` shapes cover other hosts.
+    // This check must run BEFORE the `session_id` catch-all below: every
+    // Claude hook payload carries `session_id` as a common field, so the
+    // compaction branch was unreachable for Claude — compactions were never
+    // recorded, `sync_if_compacted` never reset delivery flags, and
+    // post-compaction re-reads kept answering with "[unchanged]" stubs that
+    // pointed at context the host had already evicted (GL #555). Agents then
+    // fell back to native Read to recover the content.
+    let is_compaction = v.get("compaction").is_some()
+        || v.get("messages_count").is_some()
+        || v.get("hook_event_name")
+            .and_then(|e| e.as_str())
+            .is_some_and(|e| e == "PreCompact")
+        || v.get("event")
+            .and_then(|e| e.as_str())
+            .is_some_and(|e| e == "compaction" || e == "compact");
+    if !is_compaction && v.get("session_id").is_some() {
         return Some(ObserveEvent {
             ts,
             event_type: "session",
@@ -276,11 +293,6 @@ fn detect_event_type(v: &serde_json::Value, ts: u64) -> Option<ObserveEvent> {
         });
     }
 
-    let is_compaction = v.get("compaction").is_some()
-        || v.get("messages_count").is_some()
-        || v.get("event")
-            .and_then(|e| e.as_str())
-            .is_some_and(|e| e == "compaction" || e == "compact");
     if is_compaction {
         return Some(ObserveEvent {
             ts,
@@ -532,5 +544,32 @@ mod tests {
         });
         let event = detect_event_type(&v, 1000).unwrap();
         assert_eq!(event.event_type, "mcp_call");
+    }
+
+    /// Real Claude Code PreCompact payload (code.claude.com/docs/en/hooks):
+    /// carries `session_id` like every Claude hook, so the compaction check
+    /// must win over the generic session catch-all (GL #555).
+    #[test]
+    fn detect_event_type_claude_precompact_is_compaction() {
+        let v = serde_json::json!({
+            "session_id": "abc123",
+            "transcript_path": "/Users/u/.claude/projects/x/abc123.jsonl",
+            "cwd": "/Users/u/project",
+            "hook_event_name": "PreCompact",
+            "trigger": "auto",
+            "custom_instructions": ""
+        });
+        let event = detect_event_type(&v, 1000).unwrap();
+        assert_eq!(event.event_type, "compaction");
+    }
+
+    #[test]
+    fn detect_event_type_plain_session_event_still_session() {
+        let v = serde_json::json!({
+            "session_id": "abc123",
+            "hook_event_name": "SessionStart"
+        });
+        let event = detect_event_type(&v, 1000).unwrap();
+        assert_eq!(event.event_type, "session");
     }
 }

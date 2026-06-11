@@ -424,20 +424,20 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
     }
 
     if wants("claude") {
-        let claude_rules_dir = cwd.join(".claude").join("rules");
-        let claude_rules_file = claude_rules_dir.join("lean-ctx.md");
-        if !claude_rules_file.exists()
-            || !std::fs::read_to_string(&claude_rules_file)
-                .unwrap_or_default()
-                .contains(crate::rules_inject::RULES_VERSION_STR)
-        {
-            let _ = std::fs::create_dir_all(&claude_rules_dir);
-            write_file(
-                &claude_rules_file,
-                crate::rules_inject::rules_dedicated_markdown(),
-            );
-            if !mcp_server_quiet_mode() {
-                eprintln!("Created .claude/rules/lean-ctx.md (Claude Code project rules).");
+        // GL #555: project rules files without `paths:` frontmatter load
+        // unconditionally every session and stacked on top of the global
+        // CLAUDE.md block (12k+ token memory footprints in the field). The
+        // AGENTS.md block + on-demand skill carry the same guidance, so the
+        // lean-ctx-owned copy is removed instead of refreshed.
+        let claude_rules_file = cwd.join(".claude").join("rules").join("lean-ctx.md");
+        if let Ok(existing) = std::fs::read_to_string(&claude_rules_file) {
+            if existing.contains("<!-- lean-ctx-rules-")
+                && std::fs::remove_file(&claude_rules_file).is_ok()
+                && !mcp_server_quiet_mode()
+            {
+                eprintln!(
+                    "Removed .claude/rules/lean-ctx.md (always-loaded duplicate; AGENTS.md block + skill replace it)."
+                );
             }
         }
 
@@ -489,11 +489,17 @@ fn ensure_project_agents_integration(cwd: &std::path::Path) {
         }
     }
 
+    // No `@` import: Claude Code expands `@file` references inline at session
+    // start, so pointing at LEAN-CTX.md re-loaded the full ruleset into every
+    // session on top of this block (GL #555). The block is self-contained;
+    // the full ruleset stays in LEAN-CTX.md for on-demand reading.
     let block = format!(
         "{AGENTS_BLOCK_START}\n\
 ## lean-ctx\n\n\
-Prefer lean-ctx MCP tools over native equivalents for token savings.\n\
-Full rules: @{PROJECT_LEAN_CTX_MD}\n\
+Prefer lean-ctx MCP tools over native equivalents for token savings:\n\
+`ctx_read` > Read/cat, `ctx_search` > Grep/rg, `ctx_shell` > bash, `ctx_tree` > ls/find.\n\
+Native Edit/Write/Glob stay as-is; use `ctx_edit` only when Edit needs an unavailable Read.\n\
+Full rules: {PROJECT_LEAN_CTX_MD} (open on demand — do not auto-load).\n\
 {AGENTS_BLOCK_END}\n"
     );
 
