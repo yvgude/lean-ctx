@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencontextprotocol.org/schemas/v0.1/event.schema.json",
+  "title": "OCP Part 5 — Governance event",
+  "type": "object",
+  "required": ["id", "timestamp", "kind"],
+  "properties": {
+    "id": { "type": "integer", "minimum": 0 },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$"
+    },
+    "kind": { "$ref": "#/$defs/kind" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "kind": {
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        { "$ref": "#/$defs/toolCall" },
+        { "$ref": "#/$defs/agentAction" },
+        { "$ref": "#/$defs/knowledgeUpdate" },
+        { "$ref": "#/$defs/budgetWarning" },
+        { "$ref": "#/$defs/budgetExhausted" },
+        { "$ref": "#/$defs/policyViolation" },
+        { "$ref": "#/$defs/roleChanged" },
+        { "$ref": "#/$defs/extension" }
+      ]
+    },
+    "toolCall": {
+      "type": "object",
+      "required": ["type", "tool", "tokens_original", "tokens_saved", "duration_ms"],
+      "properties": {
+        "type": { "const": "tool_call" },
+        "tool": { "type": "string", "minLength": 1 },
+        "tokens_original": { "type": "integer", "minimum": 0 },
+        "tokens_saved": { "type": "integer", "minimum": 0 },
+        "mode": { "type": ["string", "null"] },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "path": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "agentAction": {
+      "type": "object",
+      "required": ["type", "agent_id", "action"],
+      "properties": {
+        "type": { "const": "agent_action" },
+        "agent_id": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "tool": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "knowledgeUpdate": {
+      "type": "object",
+      "required": ["type", "category", "key", "action"],
+      "properties": {
+        "type": { "const": "knowledge_update" },
+        "category": { "type": "string", "minLength": 1 },
+        "key": { "type": "string" },
+        "action": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "budgetWarning": {
+      "type": "object",
+      "required": ["type", "role", "dimension", "used", "limit", "percent"],
+      "properties": {
+        "type": { "const": "budget_warning" },
+        "role": { "type": "string", "minLength": 1 },
+        "dimension": { "type": "string", "minLength": 1 },
+        "used": { "type": "string" },
+        "limit": { "type": "string" },
+        "percent": { "type": "integer", "minimum": 0, "maximum": 255 }
+      },
+      "additionalProperties": false
+    },
+    "budgetExhausted": {
+      "type": "object",
+      "required": ["type", "role", "dimension", "used", "limit"],
+      "properties": {
+        "type": { "const": "budget_exhausted" },
+        "role": { "type": "string", "minLength": 1 },
+        "dimension": { "type": "string", "minLength": 1 },
+        "used": { "type": "string" },
+        "limit": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "policyViolation": {
+      "type": "object",
+      "required": ["type", "role", "tool", "reason"],
+      "properties": {
+        "type": { "const": "policy_violation" },
+        "role": { "type": "string", "minLength": 1 },
+        "tool": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "roleChanged": {
+      "type": "object",
+      "required": ["type", "from", "to"],
+      "properties": {
+        "type": { "const": "role_changed" },
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "extension": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "pattern": "^x-[a-z][a-z0-9_]*$" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

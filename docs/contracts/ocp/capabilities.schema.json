@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencontextprotocol.org/schemas/v0.1/capabilities.schema.json",
+  "title": "OCP Part 2 — Capability grant set and check result",
+  "oneOf": [
+    { "$ref": "#/$defs/grantSet" },
+    { "$ref": "#/$defs/checkResult" }
+  ],
+  "$defs": {
+    "capability": {
+      "type": "string",
+      "oneOf": [
+        {
+          "enum": [
+            "fs:read", "fs:write", "fs:delete",
+            "net:outbound",
+            "exec:sandbox", "exec:unrestricted",
+            "knowledge:read", "knowledge:write",
+            "cross_project",
+            "config:write",
+            "agent:manage"
+          ]
+        },
+        { "pattern": "^x-[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?$" }
+      ]
+    },
+    "grantSet": {
+      "type": "object",
+      "required": ["subject", "capabilities"],
+      "properties": {
+        "subject": { "type": "string", "minLength": 1 },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "checkResult": {
+      "type": "object",
+      "required": ["allowed", "missing"],
+      "properties": {
+        "allowed": { "type": "boolean" },
+        "missing": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" }
+        }
+      },
+      "additionalProperties": false,
+      "if": { "properties": { "allowed": { "const": true } } },
+      "then": { "properties": { "missing": { "maxItems": 0 } } }
+    }
+  }
+}

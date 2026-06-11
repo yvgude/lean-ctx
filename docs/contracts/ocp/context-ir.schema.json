@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencontextprotocol.org/schemas/v0.1/context-ir.schema.json",
+  "title": "OCP Part 1 — Context-IR document",
+  "type": "object",
+  "required": ["schema_version", "created_at", "updated_at", "next_seq", "totals", "items"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "created_at": { "$ref": "#/$defs/timestamp" },
+    "updated_at": { "$ref": "#/$defs/timestamp" },
+    "next_seq": { "type": "integer", "minimum": 1 },
+    "totals": {
+      "type": "object",
+      "required": ["items_recorded", "input_tokens", "output_tokens", "tokens_saved"],
+      "properties": {
+        "items_recorded": { "type": "integer", "minimum": 0 },
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "tokens_saved": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/item" }
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$"
+    },
+    "sourceKind": {
+      "type": "string",
+      "enum": ["read", "shell", "search", "provider", "other"]
+    },
+    "item": {
+      "type": "object",
+      "required": [
+        "seq", "created_at", "source", "input_tokens", "output_tokens",
+        "duration_us", "compression_ratio", "content_excerpt", "truncated",
+        "safety", "verification"
+      ],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "source": {
+          "type": "object",
+          "required": ["kind", "tool"],
+          "properties": {
+            "kind": { "$ref": "#/$defs/sourceKind" },
+            "tool": { "type": "string", "minLength": 1 },
+            "client_name": { "type": ["string", "null"] },
+            "agent_id": { "type": ["string", "null"] },
+            "path": { "type": ["string", "null"] },
+            "command": { "type": ["string", "null"] },
+            "pattern": { "type": ["string", "null"] }
+          }
+        },
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "duration_us": { "type": "integer", "minimum": 0 },
+        "compression_ratio": { "type": "number", "minimum": 0 },
+        "content_excerpt": { "type": "string", "maxLength": 4096 },
+        "truncated": { "type": "boolean" },
+        "safety": {
+          "type": "object",
+          "required": ["redacted"],
+          "properties": {
+            "redacted": { "type": "boolean" },
+            "boundary_mode": { "type": ["string", "null"] }
+          }
+        },
+        "verification": {
+          "type": "object",
+          "properties": {
+            "content_md5": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  }
+}

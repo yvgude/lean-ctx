@@ -273,6 +273,7 @@ tikv-jemalloc-ctl = { version = "0.6", optional = true }
 criterion = { version = "0.5", features = ["html_reports"] }
 filetime = "0.2.29"
 insta = "1"
+jsonschema = { version = "0.46.5", default-features = false }
 proptest = "1"
 serial_test = "3.4.0"
 tempfile = "3.27.0"

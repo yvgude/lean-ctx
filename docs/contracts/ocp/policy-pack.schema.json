@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencontextprotocol.org/schemas/v0.1/policy-pack.schema.json",
+  "title": "OCP Part 3 — Policy pack (JSON projection of the declarative pack)",
+  "type": "object",
+  "required": ["name", "version", "description"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "description": { "type": "string", "minLength": 1 },
+    "extends": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "context": { "$ref": "#/$defs/contextRules" },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "contextRules": {
+      "type": "object",
+      "properties": {
+        "default_read_mode": { "type": "string" },
+        "allow_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "deny_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "max_context_tokens": { "type": "integer", "minimum": 1 },
+        "audit_retention_days": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
