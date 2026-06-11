@@ -1,4 +1,4 @@
-//! Account self-service: data export and account deletion (GL #518).
+//! Account self-service: data export and account deletion (GL #535).
 //!
 //! - `GET /api/account/export` — one JSON file with everything the account has
 //!   synced (GDPR Art. 20 portability, and the honest half of a premium

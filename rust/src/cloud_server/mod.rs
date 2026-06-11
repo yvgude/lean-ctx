@@ -173,7 +173,7 @@ pub async fn run() -> anyhow::Result<()> {
         // privacy-preserving footprint of what the account has synced. Drives
         // the dashboard-vs-upsell split on /account/cloud for every plan.
         .route("/api/account/cloud", get(account_cloud::get_account_cloud))
-        // Account self-service (GL #518): full data export (GDPR Art. 20) and
+        // Account self-service (GL #535): full data export (GDPR Art. 20) and
         // irreversible deletion (Art. 17) — billing dies first, then the
         // users row cascades through every synced table.
         .route("/api/account/export", get(account_admin::export_account))

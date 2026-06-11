@@ -58,7 +58,7 @@ async fn resolve_entitlements_raw(cfg: &Config, user_id: Uuid) -> Option<Value> 
     serde_json::from_str::<Value>(&body).ok()
 }
 
-/// Billing-side account deletion (GL #518): cancels any live subscription
+/// Billing-side account deletion (GL #535): cancels any live subscription
 /// immediately and purges the user's billing rows.
 ///
 /// Tri-state by design:
@@ -191,7 +191,7 @@ pub(super) async fn get_account_entitlements(
         .as_ref()
         .and_then(|v| v.get("org").cloned())
         .unwrap_or(Value::Null);
-    // Subscription lifecycle (GL #518): lets the dashboard show a scheduled
+    // Subscription lifecycle (GL #535): lets the dashboard show a scheduled
     // cancellation ("ends on July 10 — resume anytime") instead of silence.
     let subscription = raw
         .as_ref()
