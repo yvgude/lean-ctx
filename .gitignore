@@ -66,3 +66,6 @@ website/generated/
 worktrees/website/generated/
 AGENTS.md.lean-ctx.*.bak
 docs/gpt/
+
+# ── Internal strategy (never public) ──
+/THINKERY-VISION.md
