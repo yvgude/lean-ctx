@@ -800,8 +800,12 @@ fn bench_thinking_reduction_cues_present() {
     let compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
     let tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
 
+    // #579 condensed the instruction skeleton: efficiency cues now live in the
+    // one-line `CRP MODE:` suffix (lowercase), not a standalone block.
+    let compact_lc = compact.to_lowercase();
+    let tdd_lc = tdd.to_lowercase();
     assert!(
-        compact.contains("OUTPUT EFFICIENCY") || compact.contains("Trust them directly"),
+        compact_lc.contains("trust tool outputs") || compact_lc.contains("output efficiency"),
         "Compact mode must contain output efficiency cue"
     );
     assert!(
@@ -811,7 +815,7 @@ fn bench_thinking_reduction_cues_present() {
         "Compact mode must contain token budget"
     );
     assert!(
-        tdd.contains("OUTPUT EFFICIENCY") || tdd.contains("Trust tool outputs"),
+        tdd_lc.contains("max density") || tdd_lc.contains("output efficiency"),
         "TDD mode must contain output efficiency cue"
     );
     assert!(
@@ -819,7 +823,7 @@ fn bench_thinking_reduction_cues_present() {
         "TDD mode must contain strict token budget"
     );
     assert!(
-        tdd.contains("ZERO NARRATION"),
+        tdd_lc.contains("zero narration"),
         "TDD mode must contain zero-narration rule"
     );
 
@@ -971,6 +975,9 @@ fn guard_tool_descriptions_not_empty() {
 fn guard_essential_instructions_present() {
     let instr = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
 
+    // #579: the static skeleton is capped at ≤400 tokens — workflow tools
+    // (ctx_overview, ctx_compress) moved to the on-demand LEAN-CTX.md doc.
+    // The skeleton must still anchor the mandatory mapping + CEP protocol.
     let required = vec![
         "ALWAYS use lean-ctx MCP tools",
         "ctx_read",
@@ -980,9 +987,8 @@ fn guard_essential_instructions_present() {
         "CEP v1",
         "ACT FIRST",
         "DELTA ONLY",
-        "ctx_overview",
-        "ctx_compress",
         "ctx_session",
+        "LEAN-CTX.md",
     ];
 
     for keyword in &required {
