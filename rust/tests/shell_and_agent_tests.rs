@@ -280,8 +280,15 @@ fn codex_pretooluse_rewrites_rewritable_bash_with_updated_input() {
     let command = parsed["hookSpecificOutput"]["updatedInput"]["command"]
         .as_str()
         .expect("updated command should be a string");
+    let expected_binary = if cfg!(windows) {
+        "lean-ctx.exe"
+    } else {
+        "lean-ctx"
+    };
     assert!(
-        command.ends_with("lean-ctx -c 'git status'"),
+        command.contains(expected_binary)
+            && command.contains("-c")
+            && command.contains("git status"),
         "updated command should wrap git status with lean-ctx: {command}"
     );
 }
