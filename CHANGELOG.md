@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- **OpenCode × ChatGPT-OAuth broke behind the proxy (#366)**: `proxy enable`
+  exported `OPENAI_BASE_URL` without the `/v1` suffix the OpenAI SDK convention
+  expects (default is `https://api.openai.com/v1`). OpenCode therefore sent
+  Responses-API calls to `…:4444/responses` — a path its ChatGPT-OAuth plugin
+  does not recognize (it matches `/v1/responses`), so subscription traffic
+  leaked through the proxy to the platform API with the wrong credential:
+  *"Missing scopes: api.responses.write"*. The shell exports and the Codex CLI
+  config now advertise `http://127.0.0.1:<port>/v1`; with that base, OpenCode's
+  OAuth plugin correctly routes ChatGPT-subscription requests directly to
+  `chatgpt.com` (analogous to the Claude Pro/Max guard), while API-key traffic
+  keeps flowing through the proxy. Stale `/v1`-less entries in Codex
+  `config.toml` are migrated on the next `proxy enable`; the proxy also
+  collapses accidental `/v1/v1/…` double prefixes from clients that append
+  `/v1` themselves. Verified end-to-end against OpenCode 1.2.15.
 - **Dashboard token race**: `lean-ctx dashboard` persisted its fresh auth token
   *before* binding the port. Two racing starts both wrote `dashboard.token`;
   the bind loser exited, leaving a token on disk the surviving server never

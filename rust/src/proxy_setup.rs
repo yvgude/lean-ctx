@@ -272,6 +272,14 @@ fn install_shell_exports(home: &Path, port: u16, quiet: bool) {
     }
 
     let base = format!("http://127.0.0.1:{port}");
+    // OpenAI SDK convention: the base URL INCLUDES the `/v1` prefix (default is
+    // `https://api.openai.com/v1`); clients append bare endpoints like `/responses`.
+    // Without `/v1`, OpenCode's ChatGPT-OAuth plugin fails to recognize Responses-API
+    // requests (it matches on `/v1/responses`) and OAuth traffic leaks to the platform
+    // API with the wrong credential ("Missing scopes: api.responses.write", #366).
+    // Anthropic and Gemini SDKs expect a bare origin instead — they append `/v1/...`
+    // / `/v1beta/...` themselves.
+    let openai_base = format!("{base}/v1");
 
     // Only route Claude through the proxy when an API key is available; a Pro/Max
     // subscription must keep talking to api.anthropic.com directly (see
@@ -286,7 +294,7 @@ fn install_shell_exports(home: &Path, port: u16, quiet: bool) {
     let posix_block = format!(
         r#"{PROXY_ENV_START}
 {posix_anthropic}
-export OPENAI_BASE_URL="{base}"
+export OPENAI_BASE_URL="{openai_base}"
 export GEMINI_API_BASE_URL="{base}"
 {PROXY_ENV_END}"#
     );
@@ -318,7 +326,7 @@ export GEMINI_API_BASE_URL="{base}"
         let fish_block = format!(
             r#"{PROXY_ENV_START}
 {fish_anthropic}
-set -gx OPENAI_BASE_URL "{base}"
+set -gx OPENAI_BASE_URL "{openai_base}"
 set -gx GEMINI_API_BASE_URL "{base}"
 {PROXY_ENV_END}"#
         );
@@ -343,7 +351,7 @@ set -gx GEMINI_API_BASE_URL "{base}"
             let ps_block = format!(
                 r#"{PROXY_ENV_START}
 {ps_anthropic}
-$env:OPENAI_BASE_URL = "{base}"
+$env:OPENAI_BASE_URL = "{openai_base}"
 $env:GEMINI_API_BASE_URL = "{base}"
 {PROXY_ENV_END}"#
             );
@@ -576,7 +584,16 @@ fn is_proxy_reachable(port: u16) -> bool {
 }
 
 fn install_codex_env(home: &Path, port: u16, quiet: bool) {
+    let config_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
+    install_codex_env_at(&config_dir, port, quiet);
+}
+
+/// Testable core of `install_codex_env`: operates on an explicit Codex config
+/// directory instead of resolving it from `CODEX_HOME` / the real home.
+fn install_codex_env_at(config_dir: &Path, port: u16, quiet: bool) {
+    // Codex CLI follows the OpenAI convention: base URL includes `/v1` (#366).
     let base = format!("http://127.0.0.1:{port}");
+    let value = format!("{base}/v1");
 
     if !is_proxy_reachable(port) {
         if !quiet {
@@ -585,12 +602,11 @@ fn install_codex_env(home: &Path, port: u16, quiet: bool) {
         return;
     }
 
-    let config_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
     let config_path = config_dir.join("config.toml");
 
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
 
-    if existing.contains("OPENAI_BASE_URL") && existing.contains(&base) {
+    if existing.contains("OPENAI_BASE_URL") && existing.contains(&value) {
         if !quiet {
             println!("  Codex CLI proxy env already configured");
         }
@@ -603,15 +619,32 @@ fn install_codex_env(home: &Path, port: u16, quiet: bool) {
 
     let mut content = existing;
 
-    if content.contains("[env]") {
-        if !content.contains("OPENAI_BASE_URL") {
-            content = content.replace("[env]", &format!("[env]\nOPENAI_BASE_URL = \"{base}\""));
+    if content.contains("OPENAI_BASE_URL") {
+        // Migrate stale local entries written without `/v1` by older versions.
+        content = content
+            .lines()
+            .map(|line| {
+                let trimmed = line.trim();
+                if trimmed.starts_with("OPENAI_BASE_URL")
+                    && (trimmed.contains("127.0.0.1") || trimmed.contains("localhost"))
+                {
+                    format!("OPENAI_BASE_URL = \"{value}\"")
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !content.ends_with('\n') {
+            content.push('\n');
         }
+    } else if content.contains("[env]") {
+        content = content.replace("[env]", &format!("[env]\nOPENAI_BASE_URL = \"{value}\""));
     } else {
         if !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
         }
-        content.push_str(&format!("\n[env]\nOPENAI_BASE_URL = \"{base}\"\n"));
+        content.push_str(&format!("\n[env]\nOPENAI_BASE_URL = \"{value}\"\n"));
     }
 
     let _ = std::fs::write(&config_path, &content);
@@ -703,7 +736,7 @@ mod tests {
         let block = format!(
             r#"{PROXY_ENV_START}
 export ANTHROPIC_BASE_URL="{base}"
-export OPENAI_BASE_URL="{base}"
+export OPENAI_BASE_URL="{base}/v1"
 export GEMINI_API_BASE_URL="{base}"
 {PROXY_ENV_END}"#
         );
@@ -727,7 +760,7 @@ export GEMINI_API_BASE_URL="{base}"
         let block = format!(
             r#"{PROXY_ENV_START}
 set -gx ANTHROPIC_BASE_URL "{base}"
-set -gx OPENAI_BASE_URL "{base}"
+set -gx OPENAI_BASE_URL "{base}/v1"
 set -gx GEMINI_API_BASE_URL "{base}"
 {PROXY_ENV_END}"#
         );
@@ -742,7 +775,7 @@ set -gx GEMINI_API_BASE_URL "{base}"
         let block = format!(
             r#"{PROXY_ENV_START}
 $env:ANTHROPIC_BASE_URL = "{base}"
-$env:OPENAI_BASE_URL = "{base}"
+$env:OPENAI_BASE_URL = "{base}/v1"
 $env:GEMINI_API_BASE_URL = "{base}"
 {PROXY_ENV_END}"#
         );
@@ -896,10 +929,17 @@ $env:GEMINI_API_BASE_URL = "{base}"
         install_shell_exports(home.path(), port, true);
 
         let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
-        assert!(rc.contains("OPENAI_BASE_URL"), "OpenAI export must remain");
         assert!(
-            rc.contains("GEMINI_API_BASE_URL"),
-            "Gemini export must remain"
+            rc.contains(&format!(
+                "export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\""
+            )),
+            "OpenAI export must remain and carry the /v1 suffix (#366)"
+        );
+        assert!(
+            rc.contains(&format!(
+                "export GEMINI_API_BASE_URL=\"http://127.0.0.1:{port}\""
+            )),
+            "Gemini export must remain WITHOUT /v1 (SDK appends /v1beta itself)"
         );
         assert!(
             !rc.contains("export ANTHROPIC_BASE_URL="),
@@ -908,6 +948,78 @@ $env:GEMINI_API_BASE_URL = "{base}"
         assert!(
             rc.contains(ANTHROPIC_OMITTED_NOTE),
             "omission must be explained in the RC block"
+        );
+    }
+
+    /// Codex CLI config: a fresh install writes the `/v1`-suffixed proxy URL (#366).
+    #[test]
+    fn codex_env_writes_v1_suffixed_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex_dir = dir.path().join(".codex");
+        std::fs::create_dir_all(&codex_dir).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        install_codex_env_at(&codex_dir, port, true);
+
+        let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
+        assert!(
+            cfg.contains(&format!("OPENAI_BASE_URL = \"http://127.0.0.1:{port}/v1\"")),
+            "Codex config must carry the /v1 suffix, got:\n{cfg}"
+        );
+    }
+
+    /// Codex CLI config: a stale local entry without `/v1` (written by older
+    /// versions) is migrated in place instead of being treated as configured.
+    #[test]
+    fn codex_env_migrates_stale_entry_without_v1() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex_dir = dir.path().join(".codex");
+        std::fs::create_dir_all(&codex_dir).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::fs::write(
+            codex_dir.join("config.toml"),
+            format!(
+                "model = \"gpt-5.2\"\n\n[env]\nOPENAI_BASE_URL = \"http://127.0.0.1:{port}\"\n"
+            ),
+        )
+        .unwrap();
+
+        install_codex_env_at(&codex_dir, port, true);
+
+        let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
+        assert!(
+            cfg.contains(&format!("OPENAI_BASE_URL = \"http://127.0.0.1:{port}/v1\"")),
+            "stale entry must be migrated to the /v1 form, got:\n{cfg}"
+        );
+        assert!(
+            cfg.contains("model = \"gpt-5.2\""),
+            "unrelated config must be preserved"
+        );
+    }
+
+    /// Codex CLI config: a custom non-local endpoint is never rewritten.
+    #[test]
+    fn codex_env_preserves_custom_remote_endpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex_dir = dir.path().join(".codex");
+        std::fs::create_dir_all(&codex_dir).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let original = "[env]\nOPENAI_BASE_URL = \"https://my-gateway.example.com/v1\"\n";
+        std::fs::write(codex_dir.join("config.toml"), original).unwrap();
+
+        install_codex_env_at(&codex_dir, port, true);
+
+        let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
+        assert!(
+            cfg.contains("https://my-gateway.example.com/v1"),
+            "custom remote endpoint must be preserved, got:\n{cfg}"
+        );
+        assert!(
+            !cfg.contains("127.0.0.1"),
+            "proxy URL must not be injected over a custom endpoint"
         );
     }
 

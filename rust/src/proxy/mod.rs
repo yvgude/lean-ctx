@@ -380,6 +380,12 @@ fn is_provider_route(path: &str) -> bool {
 /// and every upstream only know the `/v1/...` paths, so an un-prefixed request
 /// would 401 (not a provider route) and then 404 (no handler). (#353)
 fn canonical_provider_path(path: &str) -> Option<String> {
+    // Inverse case of the bare-endpoint rewrite below: the advertised
+    // OPENAI_BASE_URL includes `/v1` (#366), so a client that treats the base URL
+    // as an origin and appends `/v1/...` itself produces `/v1/v1/...`.
+    if let Some(rest) = path.strip_prefix("/v1/v1/") {
+        return Some(format!("/v1/{rest}"));
+    }
     const BARE_TO_CANONICAL: &[(&str, &str)] = &[
         ("/responses", "/v1/responses"),
         ("/chat/completions", "/v1/chat/completions"),
@@ -646,6 +652,20 @@ mod auth_tests {
         assert_eq!(canonical_provider_path("/health"), None);
         assert_eq!(canonical_provider_path("/responsesx"), None);
         assert_eq!(canonical_provider_path("/"), None);
+    }
+
+    #[test]
+    fn canonical_provider_path_collapses_double_v1_prefix() {
+        // OPENAI_BASE_URL now advertises `/v1` (#366); a client treating it as an
+        // origin and appending `/v1/...` itself produces a double prefix.
+        assert_eq!(
+            canonical_provider_path("/v1/v1/responses").as_deref(),
+            Some("/v1/responses")
+        );
+        assert_eq!(
+            canonical_provider_path("/v1/v1/chat/completions").as_deref(),
+            Some("/v1/chat/completions")
+        );
     }
 
     #[test]
