@@ -261,12 +261,16 @@ fn rewrite_candidate_passes_through_heredoc_compound() {
 }
 
 #[test]
-fn codex_reroute_message_includes_exact_rewritten_command() {
-    let message = codex_reroute_message("lean-ctx -c 'git status'");
+fn codex_rewrite_output_uses_native_updated_input_contract() {
+    let output = codex_rewrite_output("lean-ctx -c 'git status'");
+    let parsed: serde_json::Value = serde_json::from_str(&output).expect("valid hook JSON");
+
+    assert_eq!(parsed["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+    assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
     assert_eq!(
-            message,
-            "Command should run via lean-ctx for compact output. Do not retry the original command. Re-run with: lean-ctx -c 'git status'"
-        );
+        parsed["hookSpecificOutput"]["updatedInput"]["command"],
+        "lean-ctx -c 'git status'"
+    );
 }
 
 #[test]

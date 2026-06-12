@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [3.8.2] — 2026-06-12
 
 ### Fixed
+- **Codex PreToolUse shell compression no longer blocks with a manual re-run
+  prompt**: Codex now supports native `updatedInput` rewrites for `PreToolUse`
+  hooks, so `hook codex-pretooluse` emits the documented allow+rewrite JSON on
+  stdout instead of exiting 2 with "Re-run with ..." feedback. Rewritable Bash
+  commands are transparently replaced with the `lean-ctx -c ...` command while
+  preserving normal tool execution.
 - **Linux: `ctx_*` tools broke for projects under `/c/…` and other
   single-letter roots (#397)**: the MSYS2/Git-Bash drive mapping
   (`/c/Users/…` → `C:/Users/…`) in the MCP path normalizer ran

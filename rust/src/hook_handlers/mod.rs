@@ -684,10 +684,17 @@ fn should_passthrough(path: &str) -> bool {
         })
 }
 
-fn codex_reroute_message(rewritten: &str) -> String {
-    format!(
-        "Command should run via lean-ctx for compact output. Do not retry the original command. Re-run with: {rewritten}"
-    )
+fn codex_rewrite_output(rewritten: &str) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "updatedInput": {
+                "command": rewritten
+            }
+        }
+    })
+    .to_string()
 }
 
 pub fn handle_codex_pretooluse() {
@@ -709,12 +716,7 @@ pub fn handle_codex_pretooluse() {
     };
 
     if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
-        if is_quiet() {
-            eprintln!("Re-run: {rewritten}");
-        } else {
-            eprintln!("{}", codex_reroute_message(&rewritten));
-        }
-        std::process::exit(2);
+        print!("{}", codex_rewrite_output(&rewritten));
     }
 }
 

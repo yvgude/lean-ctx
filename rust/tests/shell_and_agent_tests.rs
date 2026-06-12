@@ -265,21 +265,24 @@ fn agent_init_unknown_agent_fails() {
 }
 
 #[test]
-fn codex_pretooluse_blocks_rewritable_bash_with_reroute_message() {
+fn codex_pretooluse_rewrites_rewritable_bash_with_updated_input() {
     let input =
         r#"{"tool_name":"Bash","tool_input":{"command":"git status"},"command":"git status"}"#;
     let (stdout, stderr, code) = run_hook_test(&["hook", "codex-pretooluse"], &[], Some(input));
-    assert_eq!(code, 2, "hook should block and reroute: {stderr}");
+    assert_eq!(code, 0, "hook should rewrite without blocking: {stderr}");
     assert!(
-        stdout.trim().is_empty(),
-        "stdout should stay empty: {stdout}"
+        stderr.trim().is_empty(),
+        "stderr should stay empty for non-blocking rewrites: {stderr}"
     );
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout should contain hook JSON");
+    assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
+    let command = parsed["hookSpecificOutput"]["updatedInput"]["command"]
+        .as_str()
+        .expect("updated command should be a string");
     assert!(
-        stderr.contains("Re-run with:")
-            && stderr.contains("lean-ctx")
-            && stderr.contains("-c")
-            && stderr.contains("git status"),
-        "stderr should contain reroute command: {stderr}"
+        command.ends_with("lean-ctx -c 'git status'"),
+        "updated command should wrap git status with lean-ctx: {command}"
     );
 }
 
