@@ -9,6 +9,7 @@
 mod calls;
 mod imports;
 mod type_defs;
+mod type_uses;
 mod types;
 
 pub use types::*;
@@ -47,12 +48,14 @@ fn analyze_with_tree_sitter(content: &str, ext: &str) -> Option<DeepAnalysis> {
     let calls = calls::extract_calls(root, content, ext);
     let types = type_defs::extract_types(root, content, ext);
     let exports = type_defs::extract_exports(root, content, ext);
+    let type_uses = type_uses::extract_type_uses(root, content, ext);
 
     Some(DeepAnalysis {
         imports,
         calls,
         types,
         exports,
+        type_uses,
     })
 }
 
@@ -648,6 +651,78 @@ namespace MyApp.Services {
             sources.contains(&"MyApp.Data.Repositories"),
             "using nested inside a namespace block must be found, got {sources:?}"
         );
+    }
+
+    /// GH #398: types consumed without any `using` (same-namespace visibility)
+    /// must surface as `type_uses` so the property graph can build TypeRef
+    /// edges. Covers fields, ctor parameters, return types, base list,
+    /// generic arguments, casts and `typeof`.
+    #[test]
+    fn csharp_type_uses_without_using_directive() {
+        let src = r"
+namespace App.Core;
+
+public class Motor : VehiclePart, IStartable
+{
+    private readonly Engine _engine;
+    public List<Sensor> Sensors { get; set; }
+
+    public Motor(Engine engine) { _engine = engine; }
+
+    public Gearbox BuildGearbox(Clutch clutch)
+    {
+        var t = typeof(Telemetry);
+        var d = (Dashboard)GetPart();
+        return null;
+    }
+}
+";
+        let analysis = analyze(src, "cs");
+        let names: Vec<&str> = analysis.type_uses.iter().map(|u| u.name.as_str()).collect();
+        for expected in [
+            "Engine",
+            "VehiclePart",
+            "IStartable",
+            "List",
+            "Sensor",
+            "Gearbox",
+            "Clutch",
+            "Telemetry",
+            "Dashboard",
+        ] {
+            assert!(names.contains(&expected), "missing {expected}: {names:?}");
+        }
+        // Predefined types carry no identifier node and must not appear.
+        assert!(!names.contains(&"var"), "var is not a type use: {names:?}");
+    }
+
+    /// GH #398 (Java flavour): same-package types are visible without import;
+    /// `type_identifier` nodes cover fields, params, returns and extends.
+    #[test]
+    fn java_type_uses_without_import() {
+        let src = r"
+package app.core;
+
+public class Motor extends VehiclePart {
+    private Engine engine;
+    public Gearbox build(Clutch clutch) { return null; }
+}
+";
+        let analysis = analyze(src, "java");
+        let names: Vec<&str> = analysis.type_uses.iter().map(|u| u.name.as_str()).collect();
+        for expected in ["VehiclePart", "Engine", "Gearbox", "Clutch"] {
+            assert!(names.contains(&expected), "missing {expected}: {names:?}");
+        }
+    }
+
+    /// Languages with mandatory explicit imports skip type-use extraction —
+    /// their dependencies are fully covered by the import resolver.
+    #[test]
+    fn type_uses_empty_for_import_based_languages() {
+        let rs = analyze("struct Foo { e: Engine }", "rs");
+        assert!(rs.type_uses.is_empty(), "rust: {:?}", rs.type_uses);
+        let ts = analyze("const e: Engine = make();", "ts");
+        assert!(ts.type_uses.is_empty(), "ts: {:?}", ts.type_uses);
     }
 
     #[test]

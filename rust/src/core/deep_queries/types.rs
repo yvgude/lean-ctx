@@ -52,12 +52,24 @@ pub enum TypeDefKind {
     Union,
 }
 
+/// A *usage* of a named type (field/parameter/property/return type, base
+/// class, generic argument, cast, `typeof`). Languages with implicit
+/// same-namespace/package visibility (C#, Java) consume types without any
+/// import statement, so type usages are the only reliable file-dependency
+/// signal there (GH #398).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeUse {
+    pub name: String,
+    pub line: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct DeepAnalysis {
     pub imports: Vec<ImportInfo>,
     pub calls: Vec<CallSite>,
     pub types: Vec<TypeDef>,
     pub exports: Vec<String>,
+    pub type_uses: Vec<TypeUse>,
 }
 
 impl DeepAnalysis {
@@ -67,6 +79,7 @@ impl DeepAnalysis {
             calls: Vec::new(),
             types: Vec::new(),
             exports: Vec::new(),
+            type_uses: Vec::new(),
         }
     }
 }
