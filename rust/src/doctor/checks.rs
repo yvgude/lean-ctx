@@ -914,33 +914,60 @@ pub(super) fn claude_truncation_outcome() -> Option<Outcome> {
         return None;
     }
 
-    let rules_path = crate::core::editor_registry::claude_rules_dir(&home).join("lean-ctx.md");
-    let skill_path = home.join(".claude/skills/lean-ctx/SKILL.md");
+    let cfg = crate::core::config::Config::load();
+    Some(claude_instructions_check(
+        &home,
+        cfg.rules_scope_effective(),
+        cfg.rules_injection_effective(),
+    ))
+}
 
-    let has_rules = rules_path.exists();
-    let has_skill = skill_path.exists();
+/// Verify Claude Code receives the full lean-ctx instructions despite the
+/// 2048-char MCP instructions cap.
+///
+/// The v3 layout (GL #555) replaced the always-loaded `~/.claude/rules/lean-ctx.md`
+/// with a CLAUDE.md block + on-demand skill — `setup` actively *removes* the rules
+/// file. The check therefore accepts every layout `setup` can produce (GH #396:
+/// the old check demanded the retired rules file right after setup deleted it,
+/// and its suggested fix could not recreate one). Layout detection lives in
+/// `common::claude_instructions_state`, shared with `doctor integrations`.
+fn claude_instructions_check(
+    home: &std::path::Path,
+    scope: crate::core::config::RulesScope,
+    injection: crate::core::config::RulesInjection,
+) -> Outcome {
+    use super::common::ClaudeInstructionsState as S;
 
-    if has_rules && has_skill {
-        Some(Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Claude Code instructions{RST}  {GREEN}rules + skill installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via rules file){RST}"
-            ),
-        })
-    } else if has_rules {
-        Some(Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Claude Code instructions{RST}  {GREEN}rules file installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via rules file){RST}"
-            ),
-        })
-    } else {
-        Some(Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Claude Code instructions{RST}  {YELLOW}MCP instructions truncated at 2048 chars, no rules file found{RST}  {DIM}(run: lean-ctx init --agent claude){RST}"
-            ),
-        })
+    let state = super::common::claude_instructions_state(home, scope, injection);
+    let line = match state {
+        S::ProjectScope => format!(
+            "{BOLD}Claude Code instructions{RST}  {GREEN}project scope{RST}  {DIM}(global instructions intentionally absent; project files carry them){RST}"
+        ),
+        S::InjectionOff => format!(
+            "{BOLD}Claude Code instructions{RST}  {GREEN}rules injection off{RST}  {DIM}(instructions intentionally not installed — config rules_injection=off){RST}"
+        ),
+        S::DedicatedWithSkill => format!(
+            "{BOLD}Claude Code instructions{RST}  {GREEN}dedicated injection + skill installed{RST}  {DIM}(SessionStart hook injects instructions){RST}"
+        ),
+        S::DedicatedMissingSkill => format!(
+            "{BOLD}Claude Code instructions{RST}  {YELLOW}lean-ctx skill missing{RST}  {DIM}(run: lean-ctx setup){RST}"
+        ),
+        S::BlockAndSkill => format!(
+            "{BOLD}Claude Code instructions{RST}  {GREEN}CLAUDE.md block + skill installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CLAUDE.md){RST}"
+        ),
+        S::BlockOnly => format!(
+            "{BOLD}Claude Code instructions{RST}  {GREEN}CLAUDE.md block installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CLAUDE.md){RST}"
+        ),
+        S::LegacyRules => format!(
+            "{BOLD}Claude Code instructions{RST}  {GREEN}legacy rules file installed{RST}  {DIM}(next `lean-ctx setup` migrates it to the CLAUDE.md block + skill){RST}"
+        ),
+        S::Missing => format!(
+            "{BOLD}Claude Code instructions{RST}  {YELLOW}no CLAUDE.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx setup){RST}"
+        ),
+    };
+    Outcome {
+        ok: state.ok(),
+        line,
     }
 }
 
@@ -1504,4 +1531,99 @@ pub(super) fn lsp_server_outcomes() -> Vec<Outcome> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::config::{RulesInjection, RulesScope};
+    use std::path::Path;
+
+    fn write(home: &Path, rel: &str, content: &str) {
+        let p = home.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, content).unwrap();
+    }
+
+    fn check(home: &Path, scope: RulesScope, injection: RulesInjection) -> Outcome {
+        claude_instructions_check(home, scope, injection)
+    }
+
+    // GH #396: the exact post-`setup` state — CLAUDE.md block + skill, rules
+    // file removed by setup. Must pass, not demand the retired rules file.
+    #[test]
+    fn v3_layout_block_and_skill_passes() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            ".claude/CLAUDE.md",
+            "<!-- lean-ctx -->\ncontent\n<!-- /lean-ctx -->",
+        );
+        write(tmp.path(), ".claude/skills/lean-ctx/SKILL.md", "skill");
+        let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
+        assert!(out.ok, "post-setup layout must pass: {}", out.line);
+        assert!(out.line.contains("CLAUDE.md block + skill"));
+    }
+
+    #[test]
+    fn block_without_skill_still_passes() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), ".claude/CLAUDE.md", "<!-- lean-ctx -->\nx");
+        let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
+        assert!(out.ok, "{}", out.line);
+    }
+
+    #[test]
+    fn legacy_rules_file_passes() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), ".claude/rules/lean-ctx.md", "rules");
+        let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
+        assert!(out.ok, "{}", out.line);
+        assert!(out.line.contains("legacy rules file"));
+    }
+
+    #[test]
+    fn nothing_installed_fails_and_suggests_setup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
+        assert!(!out.ok);
+        assert!(
+            out.line.contains("lean-ctx setup"),
+            "must suggest a command that actually fixes it: {}",
+            out.line
+        );
+        assert!(
+            !out.line.contains("init --agent claude"),
+            "init --agent claude no longer creates a Claude rules target"
+        );
+    }
+
+    #[test]
+    fn dedicated_injection_with_skill_passes_without_block() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), ".claude/skills/lean-ctx/SKILL.md", "skill");
+        let out = check(tmp.path(), RulesScope::Global, RulesInjection::Dedicated);
+        assert!(out.ok, "{}", out.line);
+    }
+
+    #[test]
+    fn dedicated_injection_without_skill_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = check(tmp.path(), RulesScope::Global, RulesInjection::Dedicated);
+        assert!(!out.ok);
+    }
+
+    #[test]
+    fn project_scope_passes_without_global_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = check(tmp.path(), RulesScope::Project, RulesInjection::Shared);
+        assert!(out.ok, "{}", out.line);
+    }
+
+    #[test]
+    fn injection_off_passes_without_any_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = check(tmp.path(), RulesScope::Global, RulesInjection::Off);
+        assert!(out.ok, "{}", out.line);
+    }
 }

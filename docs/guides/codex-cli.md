@@ -8,7 +8,7 @@ Complete guide to setting up and optimally using lean-ctx with Codex CLI (OpenAI
 |----------|-------|
 | Integration mode | **Hybrid** (MCP reads + shell hooks) |
 | Config file | `~/.codex/config.toml` |
-| Rules file | `~/.claude/rules/lean-ctx.md` (shared with Claude Code) |
+| Rules file | `~/.codex/instructions.md` (shared block) |
 | Setup command | `lean-ctx init --agent codex` |
 
 ## Quick Setup

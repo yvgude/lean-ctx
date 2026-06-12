@@ -249,17 +249,34 @@ fn integration_claude(home: &std::path::Path, binary: &str, data_dir: &str) -> I
     let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
     checks.push(check_claude_hooks(&settings_path, binary));
 
-    let rules_path = crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md");
-    let has_rules = rules_path.exists();
-    checks.push(NamedCheck {
-        name: "Rules file".to_string(),
-        ok: has_rules,
-        detail: if has_rules {
-            rules_path.display().to_string()
-        } else {
-            format!("missing ({})", rules_path.display())
-        },
-    });
+    // v3 layout (GL #555, GH #396): instructions live in the CLAUDE.md block +
+    // on-demand skill; `setup` removes the legacy rules file. Same detector as
+    // the main doctor check, so the two views can never disagree again.
+    {
+        use super::common::ClaudeInstructionsState as S;
+        let cfg = crate::core::config::Config::load();
+        let state = super::common::claude_instructions_state(
+            home,
+            cfg.rules_scope_effective(),
+            cfg.rules_injection_effective(),
+        );
+        let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
+        let detail = match state {
+            S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
+            S::InjectionOff => "rules injection off (intentionally not installed)".into(),
+            S::DedicatedWithSkill => "dedicated injection + skill".into(),
+            S::DedicatedMissingSkill => "skill missing (run: lean-ctx setup)".into(),
+            S::BlockAndSkill => format!("{} block + skill", claude_md.display()),
+            S::BlockOnly => format!("{} block", claude_md.display()),
+            S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
+            S::Missing => "missing (run: lean-ctx setup)".into(),
+        };
+        checks.push(NamedCheck {
+            name: "Instructions".to_string(),
+            ok: state.ok(),
+            detail,
+        });
+    }
 
     let ok = checks.iter().all(|c| c.ok);
     IntegrationStatus {

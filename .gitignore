@@ -60,6 +60,9 @@ rust/lean-ctx-report.html
 .vscode/mcp.json
 .github/mcp.json
 *.mcp.json.bak
+# Claude Code per-machine config (absolute binary paths, session-local)
+**/.claude/settings.local.json*
+**/.claude/rules/
 
 # ── Generated / worktrees (local) ──
 website/generated/

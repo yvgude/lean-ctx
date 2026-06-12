@@ -1,8 +1,9 @@
 use crate::tools::CrpMode;
 
 /// Claude Code truncates MCP server instructions at 2048 characters.
-/// Full instructions are installed as `$CLAUDE_CONFIG_DIR/rules/lean-ctx.md`
-/// (defaulting to `~/.claude/rules/lean-ctx.md`) instead.
+/// Full instructions live in the `<!-- lean-ctx -->` block in `~/.claude/CLAUDE.md`
+/// plus the on-demand skill (`~/.claude/skills/lean-ctx/SKILL.md`); the legacy
+/// always-loaded `~/.claude/rules/lean-ctx.md` was retired in 3.8 (GL #555).
 /// Session state is dynamically appended to the MCP instructions for continuity.
 ///
 /// Universal instruction cap for all MCP clients (in tokens, not bytes).

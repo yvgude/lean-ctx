@@ -40,12 +40,12 @@ lean-ctx init --agent claude       # or: lean-ctx setup
 **Wires:**
 - MCP server → `~/.claude.json` (MCP enabled)
 - Hooks → `~/.claude/settings.json` (Bash rewrite + Read redirect)
-- Rules → `~/.claude/rules/lean-ctx.md` + `~/.claude/CLAUDE.md`
+- Instructions → `<!-- lean-ctx -->` block in `~/.claude/CLAUDE.md` (no rules file since 3.8)
 - Skill → `~/.claude/skills/lean-ctx/SKILL.md`
 
 **Verify:**
 ```bash
-lean-ctx doctor integrations       # expect Claude Code: MCP config ✓, Hooks ✓, Rules file ✓
+lean-ctx doctor integrations       # expect Claude Code: MCP config ✓, Hooks ✓, Instructions ✓
 ```
 Restart Claude Code. Optional: `lean-ctx harden` forces the compressed `ctx_*`
 path (see [Journey 13](13-security-and-governance.md)).

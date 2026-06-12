@@ -209,7 +209,7 @@ shown as an **MCP snippet** because it has no auto-wiring (you paste it once):
   ✓  Claude Code
        ✓  MCP config  ok (~/.claude.json)
        ✓  Hooks  ok (~/.claude/settings.json)
-       ✓  Rules file  ~/.claude/rules/lean-ctx.md
+       ✓  Instructions  ~/.claude/CLAUDE.md block + skill
   ✓  Codex CLI
        ✓  Codex MCP  ok (~/.codex/config.toml)
        ✓  Codex hooks  enabled (~/.codex/config.toml)

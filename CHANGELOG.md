@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- **`lean-ctx doctor` reported "no rules file found" right after `lean-ctx setup`
+  (#396)**: the 3.8 layout (GL #555) intentionally replaced the always-loaded
+  `~/.claude/rules/lean-ctx.md` with a CLAUDE.md block + on-demand skill — setup
+  even *removes* the legacy file — but the doctor check still demanded it, so a
+  clean install could never reach a full pass and the suggested fix
+  (`init --agent claude`) couldn't recreate the file either. Both doctor views
+  (`doctor` and `doctor integrations`) now share one layout detector
+  (`claude_instructions_state`) that accepts every state setup can produce:
+  CLAUDE.md block (+ skill), dedicated injection (SessionStart hook + skill),
+  legacy rules file, project scope, and `rules_injection=off`. Docs that still
+  described the retired rules file were updated as well.
 - **macOS still prompted "lean-ctx would like to access files in your Documents
   folder" on every upgrade (#356, reopened)**: the first fix (3.8.0) removed the
   *scan-heuristic* probes, but the prompt actually came from the **launchd

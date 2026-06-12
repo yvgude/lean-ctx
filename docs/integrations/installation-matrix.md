@@ -39,7 +39,7 @@ Legend:
 | Agent | MCP config path | Rules path | Hooks/scripts | Skill |
 |------|------------------|-----------|--------------|-------|
 | Cursor (`cursor`) | `~/.cursor/mcp.json` (MCP enabled — Hybrid) | `~/.cursor/rules/lean-ctx.mdc` | `~/.cursor/hooks.json` + `~/.cursor/hooks/lean-ctx-*.sh` | `~/.cursor/skills/lean-ctx/SKILL.md` |
-| Claude Code (`claude`) | `~/.claude.json` (MCP enabled — Hybrid) | `~/.claude/rules/lean-ctx.md` + `~/.claude/CLAUDE.md` | `~/.claude/settings.json` hook wiring (Bash rewrite + Read redirect) | `~/.claude/skills/lean-ctx/SKILL.md` |
+| Claude Code (`claude`) | `~/.claude.json` (MCP enabled — Hybrid) | `~/.claude/CLAUDE.md` block (no rules file since 3.8) | `~/.claude/settings.json` hook wiring (Bash rewrite + Read redirect) | `~/.claude/skills/lean-ctx/SKILL.md` |
 | Codex (`codex`) | `~/.codex/config.toml` (MCP enabled — Hybrid) | `~/.codex/LEAN-CTX.md` + `~/.codex/AGENTS.md` | `~/.codex/hooks.json` (SessionStart/PreToolUse) | `~/.codex/skills/lean-ctx/SKILL.md` |
 | OpenCode (`opencode`) | `~/.config/opencode/opencode.json` (MCP enabled — Hybrid) | `~/.config/opencode/rules/lean-ctx.md` | `~/.config/opencode/plugins/lean-ctx.ts` | — |
 | Windsurf (`windsurf`) | `~/.codeium/windsurf/mcp_config.json` | `~/.codeium/windsurf/rules/lean-ctx.md` | project `.windsurfrules` (when not global) | — |
