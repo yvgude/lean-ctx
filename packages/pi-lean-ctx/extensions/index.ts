@@ -745,6 +745,10 @@ export default async function (pi: ExtensionAPI) {
     : null;
 
   if (mcpBridge) {
+    pi.on("session_shutdown", async () => {
+      await mcpBridge?.shutdown();
+    });
+
     try {
       await mcpBridge.start(pi);
     } catch (err) {
