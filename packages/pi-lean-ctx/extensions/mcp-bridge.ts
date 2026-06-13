@@ -78,6 +78,8 @@ export class McpBridge {
   private extraEnv: Record<string, string>;
   private policy: BridgeToolPolicy;
   private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private shuttingDown = false;
   private lastError: string | undefined;
   private lastHungTool: string | undefined;
   private lastRetry: McpBridgeRetryState | undefined;
@@ -104,6 +106,8 @@ export class McpBridge {
   }
 
   private async connect(): Promise<void> {
+    if (this.shuttingDown) return;
+
     this.transport = new StdioClientTransport({
       command: this.binary,
       args: [],
@@ -120,7 +124,7 @@ export class McpBridge {
     this.transport.onclose = () => {
       this.connected = false;
       this.lastError = "MCP transport closed";
-      this.scheduleReconnect();
+      if (!this.shuttingDown) this.scheduleReconnect();
     };
 
     this.transport.onerror = (err) => {
@@ -135,6 +139,8 @@ export class McpBridge {
   }
 
   private scheduleReconnect(): void {
+    if (this.shuttingDown) return;
+    if (this.reconnectTimer) return;
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       this.lastError = `Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached.`;
       console.error(
@@ -146,18 +152,22 @@ export class McpBridge {
     this.reconnectAttempts++;
     const delay = RECONNECT_DELAY_MS * this.reconnectAttempts;
 
-    setTimeout(async () => {
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = undefined;
+      if (this.shuttingDown) return;
       try {
         await this.connect();
-        console.error("[lean-ctx MCP bridge] Reconnected successfully");
+        if (!this.shuttingDown) console.error("[lean-ctx MCP bridge] Reconnected successfully");
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : String(error);
         this.scheduleReconnect();
       }
     }, delay);
+    (this.reconnectTimer as { unref?: () => void }).unref?.();
   }
 
   private async forceReconnect(): Promise<void> {
+    if (this.shuttingDown) return;
     this.connected = false;
     try {
       await this.client?.close();
@@ -405,7 +415,12 @@ export class McpBridge {
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     this.reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
     try {
       await this.client?.close();
     } catch {
