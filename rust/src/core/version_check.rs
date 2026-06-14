@@ -13,7 +13,7 @@ struct VersionCache {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::paths::cache_dir()
         .ok()
         .map(|d| d.join("latest-version.json"))
 }

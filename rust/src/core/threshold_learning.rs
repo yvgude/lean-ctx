@@ -72,7 +72,7 @@ pub struct ThresholdLearner {
 static BUFFER: Mutex<Option<(ThresholdLearner, Instant)>> = Mutex::new(None);
 
 fn store_path() -> std::path::PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::paths::cache_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("thresholds_learned.json")
 }

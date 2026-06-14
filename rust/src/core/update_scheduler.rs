@@ -471,7 +471,7 @@ fn windows_status() -> ScheduleInfo {
 // ─── Shared ──────────────────────────────────────────────
 
 fn read_last_check_time() -> Option<String> {
-    let path = crate::core::data_dir::lean_ctx_data_dir()
+    let path = crate::core::paths::cache_dir()
         .ok()?
         .join("latest-version.json");
     let content = std::fs::read_to_string(path).ok()?;

@@ -188,7 +188,7 @@ impl AnomalyDetector {
     }
 
     pub fn save(&self) {
-        if let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() {
+        if let Ok(dir) = crate::core::paths::cache_dir() {
             let path = dir.join("anomaly_detector.json");
             if let Ok(json) = serde_json::to_string(self) {
                 let _ = std::fs::write(path, json);
@@ -197,7 +197,7 @@ impl AnomalyDetector {
     }
 
     pub fn load() -> Self {
-        crate::core::data_dir::lean_ctx_data_dir()
+        crate::core::paths::cache_dir()
             .ok()
             .map(|d| d.join("anomaly_detector.json"))
             .and_then(|p| std::fs::read_to_string(p).ok())
@@ -276,6 +276,35 @@ pub fn save_debounced() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GH #408 (XDG-3): `anomaly_detector.json` is a learned-pattern CACHE and
+    /// must persist to `cache_dir()`, never the data dir. Distinct category
+    /// overrides catch a write/read mismatch the shared sandbox would hide.
+    #[test]
+    fn anomaly_detector_persists_to_cache_dir_not_data_dir() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let cache = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        std::env::set_var("LEAN_CTX_CACHE_DIR", cache.path());
+        std::env::set_var("LEAN_CTX_DATA_DIR", data.path());
+
+        AnomalyDetector::default().save();
+
+        let in_cache = cache.path().join("anomaly_detector.json").exists();
+        let in_data = data.path().join("anomaly_detector.json").exists();
+
+        std::env::remove_var("LEAN_CTX_CACHE_DIR");
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+
+        assert!(
+            in_cache,
+            "anomaly_detector.json must be written to cache_dir"
+        );
+        assert!(
+            !in_data,
+            "anomaly_detector.json must NOT land in the data dir"
+        );
+    }
 
     #[test]
     fn welford_basic_stats() {

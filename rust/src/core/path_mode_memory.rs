@@ -122,7 +122,7 @@ impl PathModeMemory {
 }
 
 fn store_path() -> PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::paths::cache_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join(STORE_FILE)
 }

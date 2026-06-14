@@ -52,7 +52,9 @@ fn card_target(args: &[String]) -> Option<String> {
 
 /// Path of the marker recording that the first-run "aha" was already shown.
 fn first_run_marker() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx").join(".first_run_wow_done"))
+    crate::core::paths::cache_dir()
+        .ok()
+        .map(|d| d.join(".first_run_wow_done"))
 }
 
 /// Shows the discover "you're leaving X tokens on the table" moment exactly once, right

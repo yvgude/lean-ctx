@@ -49,7 +49,7 @@ pub struct EfficacyStore {
 }
 
 fn store_path() -> std::path::PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::paths::cache_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("efficacy_snapshots.json")
 }

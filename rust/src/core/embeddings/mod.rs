@@ -232,7 +232,7 @@ impl EmbeddingEngine {
         if let Ok(dir) = std::env::var("LEAN_CTX_MODELS_DIR") {
             return PathBuf::from(dir);
         }
-        if let Ok(d) = crate::core::data_dir::lean_ctx_data_dir() {
+        if let Ok(d) = crate::core::paths::cache_dir() {
             return d.join("models");
         }
         PathBuf::from("models")

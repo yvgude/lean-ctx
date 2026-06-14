@@ -186,7 +186,7 @@ impl ContextIrV1 {
     }
 
     pub fn save(&self) {
-        if let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() {
+        if let Ok(dir) = crate::core::paths::cache_dir() {
             let path = dir.join(STORE_FILENAME);
             if let Ok(json) = serde_json::to_string_pretty(self) {
                 let json = crate::core::redaction::redact_text(&json);
@@ -196,7 +196,7 @@ impl ContextIrV1 {
     }
 
     pub fn load() -> Self {
-        crate::core::data_dir::lean_ctx_data_dir()
+        crate::core::paths::cache_dir()
             .ok()
             .map(|d| d.join(STORE_FILENAME))
             .and_then(|p| std::fs::read_to_string(p).ok())

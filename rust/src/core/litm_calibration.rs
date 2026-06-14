@@ -82,7 +82,7 @@ pub struct LitmCalibration {
 static BUFFER: Mutex<Option<(LitmCalibration, Instant)>> = Mutex::new(None);
 
 fn store_path() -> std::path::PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::paths::cache_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("litm_calibration.json")
 }

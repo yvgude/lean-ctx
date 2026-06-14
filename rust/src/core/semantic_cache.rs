@@ -286,7 +286,7 @@ fn cosine_similarity(a: &HashMap<String, f64>, b: &HashMap<String, f64>) -> f64 
 
 fn index_path(project_root: &str) -> PathBuf {
     let hash = crate::core::project_hash::hash_project_root(project_root);
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::paths::cache_dir()
         .unwrap_or_default()
         .join("semantic_cache")
         .join(format!("{hash}.json"))
@@ -297,7 +297,7 @@ fn legacy_index_path(project_root: &str) -> PathBuf {
     let mut hasher = Md5::new();
     hasher.update(project_root.as_bytes());
     let hash = format!("{:x}", hasher.finalize());
-    crate::core::data_dir::lean_ctx_data_dir()
+    crate::core::paths::cache_dir()
         .unwrap_or_default()
         .join("semantic_cache")
         .join(format!("{hash}.json"))

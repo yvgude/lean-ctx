@@ -85,8 +85,8 @@ impl NeuralEngine {
             return PathBuf::from(dir);
         }
 
-        if let Some(data_dir) = dirs::data_dir() {
-            return data_dir.join("lean-ctx").join("models");
+        if let Ok(d) = crate::core::paths::cache_dir() {
+            return d.join("models");
         }
 
         PathBuf::from("models")
