@@ -222,6 +222,7 @@ fn resolve_one(
         // `.tscn` ext_resource paths are `res://` references — identical shape to
         // a GDScript `preload`, so the GDScript resolver handles them. (#316)
         "gd" | "tscn" => resolve_gd(imp, file_path, ctx),
+        "lua" | "luau" => resolve_lua(imp, file_path, ctx),
         _ => (None, true),
     }
 }

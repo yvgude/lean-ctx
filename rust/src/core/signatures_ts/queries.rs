@@ -163,6 +163,40 @@ const QUERY_GDSCRIPT: &str = r"
 (class_body (variable_statement name: (name) @name) @def)
 ";
 
+/// Queries [tree-sitter-lua](https://crates.io/crates/tree-sitter-lua).
+/// Lua has no `class`/`type` constructs; symbols are functions: `function f()`,
+/// `local function f()`, table functions `function T.f()` / methods
+/// `function T:m()`, and functions assigned to a (table) variable
+/// (`M.f = function() … end`). The `@name` capture is always the simple
+/// trailing identifier so it lines up with call-graph callees.
+const QUERY_LUA: &str = r"
+(function_declaration name: (identifier) @name) @def
+(function_declaration name: (dot_index_expression field: (identifier) @name)) @def
+(function_declaration name: (method_index_expression method: (identifier) @name)) @def
+(assignment_statement
+  (variable_list name: (identifier) @name)
+  (expression_list value: (function_definition))) @def
+(assignment_statement
+  (variable_list name: (dot_index_expression field: (identifier) @name))
+  (expression_list value: (function_definition))) @def
+";
+
+/// Queries [tree-sitter-luau](https://crates.io/crates/tree-sitter-luau).
+/// Same function forms as Lua, plus Luau's `type X = …` / `export type X = …`
+/// aliases (`type_definition`).
+const QUERY_LUAU: &str = r"
+(function_declaration name: (identifier) @name) @def
+(function_declaration name: (dot_index_expression field: (identifier) @name)) @def
+(function_declaration name: (method_index_expression method: (identifier) @name)) @def
+(assignment_statement
+  (variable_list name: (identifier) @name)
+  (expression_list value: (function_definition))) @def
+(assignment_statement
+  (variable_list name: (dot_index_expression field: (identifier) @name))
+  (expression_list value: (function_definition))) @def
+(type_definition name: (identifier) @name) @def
+";
+
 pub(super) fn get_language(ext: &str) -> Option<Language> {
     Some(match ext {
         "rs" => tree_sitter_rust::LANGUAGE.into(),
@@ -185,6 +219,8 @@ pub(super) fn get_language(ext: &str) -> Option<Language> {
         "ex" | "exs" => tree_sitter_elixir::LANGUAGE.into(),
         "zig" => tree_sitter_zig::LANGUAGE.into(),
         "gd" => tree_sitter_gdscript::LANGUAGE.into(),
+        "lua" => tree_sitter_lua::LANGUAGE.into(),
+        "luau" => tree_sitter_luau::LANGUAGE.into(),
         _ => return None,
     })
 }
@@ -210,6 +246,8 @@ pub(super) fn get_query(ext: &str) -> Option<&'static str> {
         "ex" | "exs" => QUERY_ELIXIR,
         "zig" => QUERY_ZIG,
         "gd" => QUERY_GDSCRIPT,
+        "lua" => QUERY_LUA,
+        "luau" => QUERY_LUAU,
         _ => return None,
     })
 }

@@ -699,4 +699,83 @@ func _process(delta):
         let internal = sigs.iter().find(|s| s.name == "_internal_state").unwrap();
         assert!(!internal.is_exported);
     }
+
+    #[test]
+    fn test_lua_signatures() {
+        let src = r"
+local function helper(a, b)
+    return a + b
+end
+
+function PublicApi(x)
+    return x
+end
+
+function Account.new(balance)
+    return setmetatable({ balance = balance }, Account)
+end
+
+function Account:deposit(amount)
+    self.balance = self.balance + amount
+end
+
+Account.reset = function()
+end
+";
+        let sigs = extract_signatures_ts(src, "lua").unwrap();
+        let names: Vec<&str> = sigs.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"helper"), "got {names:?}");
+        assert!(names.contains(&"PublicApi"), "got {names:?}");
+        assert!(names.contains(&"new"), "table function, got {names:?}");
+        assert!(names.contains(&"deposit"), "method, got {names:?}");
+        assert!(names.contains(&"reset"), "assigned function, got {names:?}");
+
+        // `local function` is module-private; everything else is public.
+        let helper = sigs.iter().find(|s| s.name == "helper").unwrap();
+        assert_eq!(helper.kind, "fn");
+        assert!(!helper.is_exported, "local function must be private");
+        assert_eq!(helper.params, "a, b");
+
+        let public = sigs.iter().find(|s| s.name == "PublicApi").unwrap();
+        assert!(public.is_exported, "global function is public");
+
+        let deposit = sigs.iter().find(|s| s.name == "deposit").unwrap();
+        assert_eq!(deposit.kind, "method", "`:` defines a method");
+        assert!(deposit.is_exported);
+
+        let new = sigs.iter().find(|s| s.name == "new").unwrap();
+        assert_eq!(new.kind, "fn", "`.` defines a plain function");
+    }
+
+    #[test]
+    fn test_luau_signatures() {
+        let src = r"
+local function helper(a: number): number
+    return a
+end
+
+export type Vec = { x: number, y: number }
+type Internal = { id: string }
+
+function M.run(self, count: number): ()
+end
+";
+        let sigs = extract_signatures_ts(src, "luau").unwrap();
+        let names: Vec<&str> = sigs.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"helper"), "got {names:?}");
+        assert!(names.contains(&"Vec"), "exported type, got {names:?}");
+        assert!(names.contains(&"Internal"), "local type, got {names:?}");
+        assert!(names.contains(&"run"), "table function, got {names:?}");
+
+        let vec = sigs.iter().find(|s| s.name == "Vec").unwrap();
+        assert_eq!(vec.kind, "type");
+        assert!(vec.is_exported, "`export type` is public");
+
+        let internal = sigs.iter().find(|s| s.name == "Internal").unwrap();
+        assert!(!internal.is_exported, "plain `type` is module-local");
+
+        let helper = sigs.iter().find(|s| s.name == "helper").unwrap();
+        assert!(!helper.is_exported);
+        assert_eq!(helper.return_type, "number", "Luau return type captured");
+    }
 }

@@ -816,6 +816,88 @@ pub(super) fn resolve_gd(
 }
 
 // ---------------------------------------------------------------------------
+// Lua / Luau
+// ---------------------------------------------------------------------------
+
+/// Resolves Lua `require("a.b.c")` (dotted module path, package.path style) and
+/// Luau `require("a/b")` / `require("./a")` (slash/relative paths) to a project
+/// file. Dotted specifiers map `.` -> `/`; pathy specifiers are used verbatim.
+/// Candidates: `<rel>.lua`, `<rel>/init.lua` (and `.luau`), probed relative to
+/// the importer first, then the project root and common source roots.
+pub(super) fn resolve_lua(
+    imp: &ImportInfo,
+    file_path: &str,
+    ctx: &ResolverContext,
+) -> (Option<String>, bool) {
+    let source = imp.source.trim();
+    if source.is_empty() {
+        return (None, true);
+    }
+
+    // Pathy specifiers (Luau relative/slash form) are used as-is; pure dotted
+    // module names (`a.b.c`) map dots to directory separators (package.path).
+    let is_pathy = source.contains('/') || source.starts_with('.');
+    let rel = if is_pathy {
+        source
+            .trim_start_matches("./")
+            .trim_start_matches('/')
+            .to_string()
+    } else {
+        source.replace('.', "/")
+    };
+    if rel.is_empty() {
+        return (None, true);
+    }
+
+    let try_paths = |base: &str| -> Option<String> {
+        let base = base.trim_start_matches('/');
+        if ctx.file_exists(base) {
+            return Some(base.to_string());
+        }
+        for ext in ["lua", "luau"] {
+            let file = format!("{base}.{ext}");
+            if ctx.file_exists(&file) {
+                return Some(file);
+            }
+            let init = format!("{base}/init.{ext}");
+            if ctx.file_exists(&init) {
+                return Some(init);
+            }
+        }
+        None
+    };
+
+    let dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+    let relative_to_importer = || -> Option<String> {
+        if dir.as_os_str().is_empty() {
+            return None;
+        }
+        try_paths(&format!("{}/{rel}", dir.to_string_lossy()))
+    };
+    // Project root + common Lua source roots (package.path style).
+    let from_roots = || -> Option<String> {
+        try_paths(&rel).or_else(|| {
+            ["src/", "lua/", "lib/"]
+                .iter()
+                .find_map(|prefix| try_paths(&format!("{prefix}{rel}")))
+        })
+    };
+
+    // Luau slash/relative requires are importer-relative first; standard Lua
+    // dotted module names resolve from the project/source roots first.
+    let found = if is_pathy {
+        relative_to_importer().or_else(from_roots)
+    } else {
+        from_roots().or_else(relative_to_importer)
+    };
+
+    match found {
+        Some(path) => (Some(path), false),
+        None => (None, true),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Zig
 // ---------------------------------------------------------------------------
 

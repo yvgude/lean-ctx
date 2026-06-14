@@ -21,6 +21,8 @@ pub enum LanguageId {
     Elixir,
     Zig,
     Gdscript,
+    Lua,
+    Luau,
     Vue,
     Svelte,
     /// Godot `PackedScene` text format (`.tscn`): not source code, but carries
@@ -57,6 +59,8 @@ impl LanguageId {
             LanguageId::Elixir => "elixir",
             LanguageId::Zig => "zig",
             LanguageId::Gdscript => "gdscript",
+            LanguageId::Lua => "lua",
+            LanguageId::Luau => "luau",
             LanguageId::Vue => "vue",
             LanguageId::Svelte => "svelte",
             LanguageId::Tscn => "tscn",
@@ -85,7 +89,9 @@ pub fn capabilities(lang: LanguageId) -> LanguageCapabilities {
         | LanguageId::Scala
         | LanguageId::Elixir
         | LanguageId::Zig
-        | LanguageId::Gdscript => LanguageCapabilities {
+        | LanguageId::Gdscript
+        | LanguageId::Lua
+        | LanguageId::Luau => LanguageCapabilities {
             deps_edges: true,
             deep_queries: true,
             import_resolver: true,
@@ -128,6 +134,8 @@ pub fn language_for_ext(ext: &str) -> Option<LanguageId> {
         "ex" | "exs" => Some(LanguageId::Elixir),
         "zig" => Some(LanguageId::Zig),
         "gd" => Some(LanguageId::Gdscript),
+        "lua" => Some(LanguageId::Lua),
+        "luau" => Some(LanguageId::Luau),
         "vue" => Some(LanguageId::Vue),
         "svelte" => Some(LanguageId::Svelte),
         "tscn" => Some(LanguageId::Tscn),
@@ -168,6 +176,8 @@ pub const ALL_LANGUAGES: &[LanguageId] = &[
     LanguageId::Elixir,
     LanguageId::Zig,
     LanguageId::Gdscript,
+    LanguageId::Lua,
+    LanguageId::Luau,
     LanguageId::Vue,
     LanguageId::Svelte,
     LanguageId::Tscn,
@@ -193,6 +203,8 @@ pub fn supports_call_graph(lang: LanguageId) -> bool {
             | LanguageId::Java
             | LanguageId::Kotlin
             | LanguageId::Gdscript
+            | LanguageId::Lua
+            | LanguageId::Luau
             | LanguageId::CSharp
     )
 }
@@ -330,11 +342,10 @@ pub fn language_capability_matrix_realized(
 /// Maps a file extension to a human-readable *programming language* name that
 /// lean-ctx recognizes but does **not** graph-index. Returns `None` for
 /// graph-indexed languages and for non-code files (docs, data, config). Used
-/// only to explain an empty graph — e.g. a Lua/Luau project (#360).
+/// only to explain an empty graph — e.g. an R or Julia project. (Lua/Luau are
+/// now first-class graph-indexed languages, see #360.)
 fn unsupported_source_language_name(ext: &str) -> Option<&'static str> {
     match ext.trim().trim_start_matches('.').to_lowercase().as_str() {
-        "lua" => Some("Lua"),
-        "luau" => Some("Luau"),
         "r" => Some("R"),
         "jl" => Some("Julia"),
         "nim" => Some("Nim"),
@@ -513,27 +524,45 @@ mod tests {
     }
 
     #[test]
+    fn lua_luau_are_first_class_indexed() {
+        // Lua/Luau (issue #360) are now graph-indexed, not "unsupported code".
+        assert_eq!(language_for_ext("lua"), Some(LanguageId::Lua));
+        assert_eq!(language_for_ext(".luau"), Some(LanguageId::Luau));
+        assert!(is_indexable_ext("lua"));
+        assert!(is_indexable_ext("luau"));
+        assert!(unsupported_source_language_name("lua").is_none());
+        assert!(unsupported_source_language_name("luau").is_none());
+        // They participate in symbols, import edges and the call graph.
+        assert!(supports_call_graph(LanguageId::Lua));
+        assert!(supports_call_graph(LanguageId::Luau));
+        let names = graph_supported_language_names();
+        assert!(names.contains(&"lua"));
+        assert!(names.contains(&"luau"));
+    }
+
+    #[test]
     fn unsupported_source_languages_named_but_not_indexed() {
-        // Lua/Luau (issue #360) are recognized as code yet never graph-indexed.
-        assert_eq!(unsupported_source_language_name("lua"), Some("Lua"));
-        assert_eq!(unsupported_source_language_name(".luau"), Some("Luau"));
-        assert!(!is_indexable_ext("lua"));
-        assert!(!is_indexable_ext("luau"));
+        // Languages still recognized as code yet never graph-indexed.
+        assert_eq!(unsupported_source_language_name("r"), Some("R"));
+        assert_eq!(unsupported_source_language_name(".jl"), Some("Julia"));
+        assert!(!is_indexable_ext("r"));
+        assert!(!is_indexable_ext("jl"));
         // Graph-indexed languages and plain data/docs are not reported as "unsupported code".
         assert_eq!(unsupported_source_language_name("rs"), None);
+        assert_eq!(unsupported_source_language_name("lua"), None);
         assert_eq!(unsupported_source_language_name("md"), None);
         assert_eq!(unsupported_source_language_name("json"), None);
     }
 
     #[test]
-    fn scan_reports_lua_project() {
+    fn scan_reports_unsupported_project() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("init.lua"), "local x = 1").unwrap();
-        std::fs::write(dir.path().join("mod.luau"), "return {}").unwrap();
+        std::fs::write(dir.path().join("analysis.r"), "x <- 1").unwrap();
+        std::fs::write(dir.path().join("model.jl"), "x = 1").unwrap();
         std::fs::write(dir.path().join("README.md"), "# docs").unwrap();
         let found = scan_unsupported_source_languages(&dir.path().to_string_lossy(), 1000);
         let names: Vec<&str> = found.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"Lua"));
-        assert!(names.contains(&"Luau"));
+        assert!(names.contains(&"R"));
+        assert!(names.contains(&"Julia"));
     }
 }

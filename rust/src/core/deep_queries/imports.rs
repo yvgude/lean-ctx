@@ -30,8 +30,44 @@ pub(super) fn extract_imports(root: Node, src: &str, ext: &str) -> Vec<ImportInf
         "ex" | "exs" => extract_imports_elixir(root, src),
         "zig" => extract_imports_zig(root, src),
         "gd" => extract_imports_gd(root, src),
+        "lua" | "luau" => extract_imports_lua(root, src),
         _ => Vec::new(),
     }
+}
+
+/// Lua / Luau dependencies: `require("a.b")`, `require "a.b"` and
+/// `require('a/b')`. `require` is a plain function call (parens optional for a
+/// single string literal), so the whole tree is scanned for it.
+#[cfg(feature = "tree-sitter")]
+fn extract_imports_lua(root: Node, src: &str) -> Vec<ImportInfo> {
+    let mut imports = Vec::new();
+    crate::core::ast_walk::for_each_descendant(root, |node| {
+        if node.kind() != "function_call" {
+            return;
+        }
+        let Some(callee) = node.child_by_field_name("name") else {
+            return;
+        };
+        if callee.kind() != "identifier" || node_text(callee, src) != "require" {
+            return;
+        }
+        let Some(args) = node.child_by_field_name("arguments") else {
+            return;
+        };
+        if let Some(s) = find_descendant_by_kind(args, "string") {
+            let source_text = unquote(node_text(s, src));
+            if !source_text.is_empty() {
+                imports.push(ImportInfo {
+                    source: source_text,
+                    names: Vec::new(),
+                    kind: ImportKind::Named,
+                    line: node.start_position().row + 1,
+                    is_type_only: false,
+                });
+            }
+        }
+    });
+    imports
 }
 
 /// GDScript dependencies: `extends "res://base.gd"` plus `preload(...)` /

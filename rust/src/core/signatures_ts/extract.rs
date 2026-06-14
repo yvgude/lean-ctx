@@ -4,10 +4,10 @@ use crate::core::signatures::Signature;
 
 use super::handlers::{
     csharp_has_modifier_text, elixir_call, gdscript_function, gdscript_signal, gdscript_variable,
-    go_or_java_method, go_type_spec, java_constructor, kotlin_function, py_or_c_function,
-    ruby_method, rust_const, rust_function, rust_impl, rust_struct_like, scala_function,
-    swift_class_declaration, swift_function, swift_protocol_function, ts_arrow_function, ts_method,
-    ts_or_go_function, zig_function,
+    go_or_java_method, go_type_spec, java_constructor, kotlin_function, lua_assigned_function,
+    lua_function, luau_type, py_or_c_function, ruby_method, rust_const, rust_function, rust_impl,
+    rust_struct_like, scala_function, swift_class_declaration, swift_function,
+    swift_protocol_function, ts_arrow_function, ts_method, ts_or_go_function, zig_function,
 };
 use super::helpers::{class_like, has_modifier, is_in_export, simple_def};
 use super::queries::get_language;
@@ -91,8 +91,12 @@ fn node_to_signature(node: &Node, name: &str, ext: &str, source: &[u8]) -> Optio
             "kt" | "kts" => kotlin_function(node, name, source),
             "swift" => swift_function(node, name, source),
             "zig" => zig_function(node, name, source),
+            "lua" | "luau" => lua_function(node, name, source),
             _ => ts_or_go_function(node, name, ext, source),
         }),
+        "assignment_statement" if ext == "lua" || ext == "luau" => {
+            Some(lua_assigned_function(node, name, source))
+        }
         "protocol_function_declaration" => Some(swift_protocol_function(node, name, source)),
         "function_definition" => Some(match ext {
             "sh" | "bash" => simple_def(name, "fn"),
@@ -166,7 +170,10 @@ fn node_to_signature(node: &Node, name: &str, ext: &str, source: &[u8]) -> Optio
             indent: 0,
             ..Signature::no_span()
         }),
-        "type_definition" | "type_alias" => Some(simple_def(name, "type")),
+        "type_definition" | "type_alias" => Some(match ext {
+            "luau" => luau_type(node, name, source),
+            _ => simple_def(name, "type"),
+        }),
 
         "enum_declaration" | "enum_specifier" | "enum_definition" => {
             let exported = match ext {

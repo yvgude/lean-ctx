@@ -558,3 +558,58 @@ fn tscn_ext_resolves_script_via_gd_resolver() {
     );
     assert!(!results[0].is_external);
 }
+
+// --- Lua / Luau (#360) ---
+
+#[test]
+fn lua_dotted_require_resolves_from_root() {
+    // `require("foo.bar")` maps dots to dirs and resolves from the project root.
+    let ctx = make_ctx(&["foo/bar.lua", "main.lua"]);
+    let imp = make_import("foo.bar");
+    let results = resolve_imports(&[imp], "main.lua", "lua", &ctx);
+    assert_eq!(results[0].resolved_path.as_deref(), Some("foo/bar.lua"));
+    assert!(!results[0].is_external);
+}
+
+#[test]
+fn lua_dotted_require_resolves_init_module() {
+    // `require("pkg")` falls back to `pkg/init.lua` (package directory).
+    let ctx = make_ctx(&["pkg/init.lua", "main.lua"]);
+    let imp = make_import("pkg");
+    let results = resolve_imports(&[imp], "main.lua", "lua", &ctx);
+    assert_eq!(results[0].resolved_path.as_deref(), Some("pkg/init.lua"));
+    assert!(!results[0].is_external);
+}
+
+#[test]
+fn lua_require_resolves_under_src_root() {
+    // package.path-style: `require("util")` probes common source roots (src/).
+    let ctx = make_ctx(&["src/util.lua", "src/app.lua"]);
+    let imp = make_import("util");
+    let results = resolve_imports(&[imp], "src/app.lua", "lua", &ctx);
+    assert_eq!(results[0].resolved_path.as_deref(), Some("src/util.lua"));
+    assert!(!results[0].is_external);
+}
+
+#[test]
+fn luau_slash_require_is_importer_relative() {
+    // Luau `require("./sibling")` / `require("a/b")` resolves next to the importer.
+    let ctx = make_ctx(&["game/systems/combat.luau", "game/systems/main.luau"]);
+    let imp = make_import("./combat");
+    let results = resolve_imports(&[imp], "game/systems/main.luau", "luau", &ctx);
+    assert_eq!(
+        results[0].resolved_path.as_deref(),
+        Some("game/systems/combat.luau")
+    );
+    assert!(!results[0].is_external);
+}
+
+#[test]
+fn lua_unresolved_require_is_external() {
+    // A module with no project file (stdlib/3rd-party, e.g. `socket`) is external.
+    let ctx = make_ctx(&["main.lua"]);
+    let imp = make_import("socket");
+    let results = resolve_imports(&[imp], "main.lua", "lua", &ctx);
+    assert!(results[0].resolved_path.is_none());
+    assert!(results[0].is_external);
+}

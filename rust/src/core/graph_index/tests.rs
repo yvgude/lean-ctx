@@ -638,6 +638,61 @@ func _ready():\n\tvar level = load(\"res://scenes/Main.tscn\")\n";
 }
 
 #[test]
+fn lua_require_edges_end_to_end() {
+    // #360: a Lua project is no longer an empty graph — `require("a.b")` produces
+    // an import edge to `a/b.lua`, `require("pkg")` resolves to `pkg/init.lua`,
+    // and `graph related` surfaces the importer.
+    const MAIN: &str = "local util = require(\"lib.util\")\n\
+local pkg = require(\"pkg\")\n\n\
+local function run()\n\treturn util.add(1, 2)\nend\n";
+    const UTIL: &str = "local M = {}\n\nfunction M.add(a, b)\n\treturn a + b\nend\n\nreturn M\n";
+    const PKG: &str = "return { version = 1 }\n";
+
+    let files = [
+        ("main.lua", MAIN, "lua"),
+        ("lib/util.lua", UTIL, "lua"),
+        ("pkg/init.lua", PKG, "lua"),
+    ];
+
+    let mut index = ProjectIndex::new("/lua-proj");
+    let mut cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for (path, content, lang) in files {
+        index
+            .files
+            .insert(path.to_string(), fe(path, content, lang));
+        cache.insert(path.to_string(), content.to_string());
+    }
+
+    build_edges_cached(&mut index, &cache);
+
+    // Dotted `require` maps to a project file.
+    assert!(
+        index
+            .edges
+            .iter()
+            .any(|e| e.kind == "import" && e.from == "main.lua" && e.to == "lib/util.lua"),
+        "expected require('lib.util') edge, got {:?}",
+        index.edges
+    );
+    // Package `require` falls back to `pkg/init.lua`.
+    assert!(
+        index
+            .edges
+            .iter()
+            .any(|e| e.kind == "import" && e.from == "main.lua" && e.to == "pkg/init.lua"),
+        "expected require('pkg') -> init.lua edge, got {:?}",
+        index.edges
+    );
+
+    // `graph related lib/util.lua` surfaces the importer.
+    let related = index.get_related("lib/util.lua", 2);
+    assert!(
+        related.contains(&"main.lua".to_string()),
+        "graph related should surface the importer, got {related:?}"
+    );
+}
+
+#[test]
 fn tscn_scene_indexed_with_script_edges() {
     // #316: a real on-disk Godot project. The `.tscn` scene is indexed as a
     // graph node, its `[ext_resource]` script becomes a Scene→Script import

@@ -41,6 +41,8 @@ fn is_call_node(kind: &str) -> bool {
             | "invocation_expression"
             // GDScript method calls and `X.new()` instantiation are `attribute_call`.
             | "attribute_call"
+            // Lua / Luau calls (direct, `t.f(...)` and `t:m(...)`) are `function_call`.
+            | "function_call"
     )
 }
 
@@ -55,6 +57,54 @@ fn parse_call(node: Node, src: &str, ext: &str) -> Option<CallSite> {
         "kt" | "kts" => parse_call_kotlin(node, src),
         "gd" => parse_call_gd(node, src),
         "cs" => parse_call_csharp(node, src),
+        "lua" | "luau" => parse_call_lua(node, src),
+        _ => None,
+    }
+}
+
+/// Lua / Luau call sites. The `function_call`'s `name` field is the callee:
+/// - `f(...)`        -> callee `f`, no receiver
+/// - `t.f(...)`      -> callee `f`, receiver `t` (dot access)
+/// - `t:m(...)`      -> callee `m`, receiver `t`, method call
+#[cfg(feature = "tree-sitter")]
+fn parse_call_lua(node: Node, src: &str) -> Option<CallSite> {
+    let line = node.start_position().row + 1;
+    let col = node.start_position().column;
+    let name = node.child_by_field_name("name")?;
+    match name.kind() {
+        "identifier" => Some(CallSite {
+            callee: node_text(name, src).to_string(),
+            line,
+            col,
+            receiver: None,
+            is_method: false,
+        }),
+        "dot_index_expression" => {
+            let field = name.child_by_field_name("field")?;
+            let receiver = name
+                .child_by_field_name("table")
+                .map(|t| node_text(t, src).to_string());
+            Some(CallSite {
+                callee: node_text(field, src).to_string(),
+                line,
+                col,
+                receiver,
+                is_method: false,
+            })
+        }
+        "method_index_expression" => {
+            let method = name.child_by_field_name("method")?;
+            let receiver = name
+                .child_by_field_name("table")
+                .map(|t| node_text(t, src).to_string());
+            Some(CallSite {
+                callee: node_text(method, src).to_string(),
+                line,
+                col,
+                receiver,
+                is_method: true,
+            })
+        }
         _ => None,
     }
 }

@@ -81,6 +81,8 @@ fn get_language(ext: &str) -> Option<Language> {
         "ex" | "exs" => Some(tree_sitter_elixir::LANGUAGE.into()),
         "zig" => Some(tree_sitter_zig::LANGUAGE.into()),
         "gd" => Some(tree_sitter_gdscript::LANGUAGE.into()),
+        "lua" => Some(tree_sitter_lua::LANGUAGE.into()),
+        "luau" => Some(tree_sitter_luau::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -839,5 +841,89 @@ func _ready():
             callees.contains(&"update_state"),
             "expected direct call, got {callees:?}"
         );
+    }
+
+    #[test]
+    fn lua_require_imports() {
+        let src = r#"
+local mod = require("foo.bar")
+local helper = require "baz"
+local rel = require('a/b')
+"#;
+        let analysis = analyze(src, "lua");
+        let sources: Vec<&str> = analysis.imports.iter().map(|i| i.source.as_str()).collect();
+        assert!(
+            sources.contains(&"foo.bar"),
+            "dotted require, got {sources:?}"
+        );
+        assert!(
+            sources.contains(&"baz"),
+            "paren-less require, got {sources:?}"
+        );
+        assert!(sources.contains(&"a/b"), "slash require, got {sources:?}");
+    }
+
+    #[test]
+    fn lua_call_sites() {
+        let src = r"
+local function run()
+    helper()
+    obj.method(1)
+    obj:method2(2)
+end
+";
+        let analysis = analyze(src, "lua");
+        let callees: Vec<&str> = analysis.calls.iter().map(|c| c.callee.as_str()).collect();
+        assert!(callees.contains(&"helper"), "direct call, got {callees:?}");
+        assert!(callees.contains(&"method"), "dot call, got {callees:?}");
+        assert!(callees.contains(&"method2"), "method call, got {callees:?}");
+        let m = analysis
+            .calls
+            .iter()
+            .find(|c| c.callee == "method2")
+            .unwrap();
+        assert_eq!(m.receiver.as_deref(), Some("obj"));
+        assert!(m.is_method);
+    }
+
+    #[test]
+    fn luau_require_and_calls() {
+        let src = r#"
+local mod = require("shared/util")
+local function go()
+    mod.run()
+end
+"#;
+        let analysis = analyze(src, "luau");
+        assert!(
+            analysis.imports.iter().any(|i| i.source == "shared/util"),
+            "got {:?}",
+            analysis.imports
+        );
+        let callees: Vec<&str> = analysis.calls.iter().map(|c| c.callee.as_str()).collect();
+        assert!(callees.contains(&"run"), "got {callees:?}");
+    }
+
+    #[test]
+    fn luau_type_aliases() {
+        let src = r"
+type Account = { balance: number }
+export type Vec = { x: number, y: number }
+";
+        let analysis = analyze(src, "luau");
+        let names: Vec<&str> = analysis.types.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"Account"), "plain type, got {names:?}");
+        assert!(names.contains(&"Vec"), "export type, got {names:?}");
+        let vec = analysis.types.iter().find(|t| t.name == "Vec").unwrap();
+        assert!(vec.is_exported, "`export type` must be exported");
+        let acc = analysis.types.iter().find(|t| t.name == "Account").unwrap();
+        assert!(!acc.is_exported, "plain `type` is module-local");
+    }
+
+    #[test]
+    fn lua_has_no_types() {
+        // Lua (unlike Luau) has no type system — only functions/calls/imports.
+        let analysis = analyze("type Account = {}", "lua");
+        assert!(analysis.types.is_empty());
     }
 }

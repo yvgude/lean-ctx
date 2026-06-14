@@ -47,6 +47,7 @@ fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Op
         "kt" | "kts" => match_type_def_kotlin(node, src)?,
         "gd" => match_type_def_gdscript(node, src)?,
         "cs" => match_type_def_csharp(node, src)?,
+        "luau" => match_type_def_luau(node, src)?,
         _ => return None,
     };
 
@@ -230,6 +231,25 @@ fn match_type_def_csharp(node: Node, src: &str) -> Option<(String, TypeDefKind)>
     Some((node_text(name, src).to_string(), kind))
 }
 
+/// Luau type aliases: `type X = …` and `export type X = …`. A `|` in the body
+/// marks a union; everything else is a plain alias.
+#[cfg(feature = "tree-sitter")]
+fn match_type_def_luau(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
+    if node.kind() == "type_definition" {
+        let name = node
+            .child_by_field_name("name")
+            .or_else(|| find_child_by_kind(node, "identifier"))?;
+        let kind = if node_text(node, src).contains('|') {
+            TypeDefKind::Union
+        } else {
+            TypeDefKind::TypeAlias
+        };
+        Some((node_text(name, src).to_string(), kind))
+    } else {
+        None
+    }
+}
+
 #[cfg(feature = "tree-sitter")]
 fn match_type_def_gdscript(node: Node, src: &str) -> Option<(String, TypeDefKind)> {
     match node.kind() {
@@ -288,6 +308,16 @@ fn is_exported_node(node: Node, src: &str, ext: &str) -> bool {
         // GDScript has no visibility keyword; the `_name` convention marks privates.
         "gd" => find_child_by_kind(node, "name")
             .is_some_and(|name| !node_text(name, src).starts_with('_')),
+        // Luau type aliases are module-local unless declared `export type`. The
+        // `export` keyword may sit inside the node or as a preceding token.
+        "luau" => {
+            node_text(node, src).trim_start().starts_with("export")
+                || src[..node.start_byte()]
+                    .trim_end()
+                    .rsplit(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .next()
+                    .is_some_and(|w| w == "export")
+        }
         "py" => {
             if let Some(name) = get_declaration_name(node, src) {
                 !name.starts_with('_')

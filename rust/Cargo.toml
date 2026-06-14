@@ -103,6 +103,8 @@ tree-sitter = [
   "dep:tree-sitter-elixir",
   "dep:tree-sitter-zig",
   "dep:tree-sitter-gdscript",
+  "dep:tree-sitter-lua",
+  "dep:tree-sitter-luau",
 ]
 wasm = ["dep:wasmi"]
 
@@ -158,6 +160,8 @@ tree-sitter-elixir = { version = "0.3", optional = true }
 tree-sitter-zig = { version = "1.1", optional = true }
 tree-sitter-dart = { version = "0.1", optional = true }
 tree-sitter-gdscript = { version = "6.1", optional = true }
+tree-sitter-lua = { version = "0.5", optional = true }
+tree-sitter-luau = { version = "1.2", optional = true }
 rten = { version = "0.24", optional = true }
 rten-tensor = { version = "0.24", optional = true }
 axum = { version = "0.8", optional = true }
