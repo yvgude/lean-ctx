@@ -93,6 +93,29 @@ const grepSchema = Type.Object({
   limit: Type.Optional(Type.Number({ description: "Maximum number of matches (default: 100)" })),
 });
 
+const multiReadSchema = Type.Object({
+  paths: Type.Array(Type.String({ description: "Absolute file paths to read, in order" })),
+  mode: Type.Optional(Type.String({ description: "Compression mode (auto, full, raw, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M). Use 'raw' for zero-overhead output." })),
+  fresh: Type.Optional(Type.Boolean({ description: "Bypass cache and force a full re-read for all paths. Use when running as a subagent that may not have the parent's context." })),
+});
+
+const searchSchema = Type.Object({
+  pattern: Type.String({ description: "Regex pattern" }),
+  path: Type.Optional(Type.String({ description: "Directory to search" })),
+  paths: Type.Optional(Type.Array(Type.String({ description: "Multiple roots (alternative to path)" }))),
+  include: Type.Optional(Type.String({ description: "Glob filter, e.g. *.ts, src/**/*.rs" })),
+  max_results: Type.Optional(Type.Number({ description: "Default 20" })),
+  ignore_gitignore: Type.Optional(Type.Boolean({ description: "Also scan gitignored files (needs role)" })),
+});
+
+const treeSchema = Type.Object({
+  path: Type.Optional(Type.String({ description: "Directory (default: .)" })),
+  paths: Type.Optional(Type.Array(Type.String({ description: "Multiple roots (alternative to path)" }))),
+  depth: Type.Optional(Type.Number({ description: "Max depth (default 3)" })),
+  show_hidden: Type.Optional(Type.Boolean({ description: "Show hidden files" })),
+  respect_gitignore: Type.Optional(Type.Boolean({ description: "Default true" })),
+});
+
 const leanCtxSchema = Type.Object({
   args: Type.Array(
     Type.String({
@@ -397,11 +420,11 @@ export default async function (pi: ExtensionAPI) {
     name: "ctx_shell",
     label: "ctx_shell",
     description:
-      "Run shell commands. Prefer over native Bash/shell (auto-compressed output). "
-      + "IMPORTANT: Do NOT use ctx_shell to read files (cat/head/tail) — use ctx_read instead. "
-      + "Do NOT use ctx_shell for grep/find/ls — use ctx_grep, ctx_find, ctx_ls. "
-      + "Set raw=true to skip compression when exact output matters. "
-      + "Use timeout (seconds) to prevent hanging commands.",
+      "Run shell commands. Prefer over native Bash/shell (auto-compressed output). " +
+      "IMPORTANT: Do NOT use ctx_shell to read files (cat/head/tail) — use ctx_read instead. " +
+      "Do NOT use ctx_shell for grep/find/ls — use ctx_grep, ctx_find, ctx_ls. " +
+      "Set raw=true to skip compression when exact output matters. " +
+      "Use timeout (seconds) to prevent hanging commands.",
     promptSnippet: "Run shell commands (not for file reading — use ctx_read)",
     promptGuidelines: [
       "Use ctx_shell only for commands with side effects: build, test, install, git, run scripts.",
@@ -458,12 +481,12 @@ export default async function (pi: ExtensionAPI) {
     name: "ctx_read",
     label: "ctx_read",
     description:
-      "Read a file. Prefer over native Read/cat/head/tail (cached, compressed). "
-      + "Unchanged re-reads cost ~13 tokens. "
-      + "Auto-selects mode: configs (.yaml/.json/.toml/.env) are always full-read. "
-      + "Code files: full (<8KB), map (8-96KB), signatures (>96KB). "
-      + "Add mode=full to get complete file content. "
-      + "Use offset and limit to read specific line ranges.",
+      "Read a file. Prefer over native Read/cat/head/tail (cached, compressed). " +
+      "Unchanged re-reads cost ~13 tokens. " +
+      "Auto-selects mode: configs (.yaml/.json/.toml/.env) are always full-read. " +
+      "Code files: full (<8KB), map (8-96KB), signatures (>96KB). " +
+      "Add mode=full to get complete file content. " +
+      "Use offset and limit to read specific line ranges.",
     promptSnippet: "Read file contents (always use instead of cat)",
     promptGuidelines: [
       "Use ctx_read to inspect file contents instead of cat or less.",
@@ -712,13 +735,184 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
+  // ── ctx_multi_read (batch read) ─────────────────────────────────────────
+  registerTool({
+    name: "ctx_multi_read",
+    label: "ctx_multi_read",
+    description:
+      "Batch read multiple files in one call. Prefer over multiple ctx_read calls (single session cache hit). " +
+      "Same modes as ctx_read. Use fresh=true to bypass cache when running as a subagent.",
+    promptSnippet: "Read multiple files at once",
+    promptGuidelines: [
+      "Use ctx_multi_read when you need to read several files at once — it's more token-efficient than multiple ctx_read calls.",
+      "Use fresh=true if you're a subagent that may not have the parent session's cache.",
+    ],
+    parameters: multiReadSchema,
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const paths = params.paths?.map((p: string) => normalizePathArg(p)) ?? [];
+      if (paths.length === 0) {
+        throw new Error("ctx_multi_read: paths array is required and must not be empty");
+      }
+      const absolutePaths = paths.map((p: string) => resolve(ctx.cwd, p));
+
+      const mode = params.mode ?? "auto";
+      const isFresh = !!params.fresh;
+
+      // When the embedded MCP bridge is connected, route through it so the
+      // persistent session cache engages: unchanged re-reads cost ~13 tokens
+      // and register as real CEP sessions (counted by `lean-ctx gain`).
+      if (mcpBridge?.isConnected()) {
+        try {
+          const bridged = await mcpBridge.callTool(
+            "ctx_multi_read",
+            { paths: absolutePaths, mode, ...(isFresh ? { fresh: true } : {}) },
+            signal,
+          );
+          const bridgedText = bridged.content.map((block) => block.text).join("");
+          // Estimate original tokens from the raw files for the footer
+          let originalText = "";
+          for (const ap of absolutePaths) {
+            try {
+              originalText += await readFile(ap, "utf8");
+            } catch {
+              // ignore unreadable files
+            }
+          }
+          const decorated = withFooter(bridgedText, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
+          return {
+            content: [{ type: "text", text: decorated.text }],
+            details: { paths: absolutePaths, source: "lean-ctx-bridge", mode, compression: decorated.stats },
+          };
+        } catch (err) {
+          console.error(`[pi-lean-ctx] ctx_multi_read bridge call failed, falling back to CLI: ${err}`);
+        }
+      }
+
+      const args = ["read", ...absolutePaths, "-m", mode, ...(isFresh ? ["--fresh"] : [])];
+      const output = await execLeanCtx(pi, args);
+      let originalText = "";
+      for (const ap of absolutePaths) {
+        try {
+          originalText += await readFile(ap, "utf8");
+        } catch {
+          // ignore unreadable files
+        }
+      }
+      const decorated = withFooter(output, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
+      return {
+        content: [{ type: "text", text: decorated.text }],
+        details: { paths: absolutePaths, source: "lean-ctx", mode, compression: decorated.stats },
+      };
+    },
+  });
+
+  // ── ctx_search (regex code search) ──────────────────────────────────────
+  registerTool({
+    name: "ctx_search",
+    label: "ctx_search",
+    description:
+      "Regex code search. Prefer over native Grep/rg/find (compact, .gitignore-aware). " +
+      "Use include for glob filtering (e.g. '*.ts'). Use max_results to cap output.",
+    promptSnippet: "Search code with regex",
+    promptGuidelines: [
+      "Use ctx_search for code search instead of grep/ripgrep — it respects .gitignore and returns compressed results.",
+      "Use include to filter by glob (e.g., '*.rs', 'src/**/*.ts').",
+      "Use max_results to limit output size for large codebases.",
+    ],
+    parameters: searchSchema,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      // Resolve search roots: path (single) or paths (multiple); fallback to cwd
+      const roots: string[] = [];
+      if (params.paths && params.paths.length > 0) {
+        roots.push(...params.paths);
+      } else if (params.path) {
+        roots.push(params.path);
+      } else {
+        roots.push(ctx.cwd);
+      }
+      const absoluteRoots = roots.map((p: string) => resolve(ctx.cwd, normalizePathArg(p)));
+
+      const searchArgs = ["rg", "--line-number", "--color=never"];
+      if (params.ignore_gitignore) {
+        // --no-ignore tells rg to also search gitignored files
+        searchArgs.push("--no-ignore");
+      }
+      if (params.include) {
+        searchArgs.push("--glob", params.include);
+      }
+      if (params.max_results && params.max_results > 0) {
+        searchArgs.push("-m", String(params.max_results));
+      }
+      searchArgs.push(params.pattern, ...absoluteRoots);
+
+      const bin = resolveBinary();
+      const result = await pi.exec(bin, ["-c", ...searchArgs]);
+      if (result.code >= 2) {
+        const msg = (result.stderr || result.stdout || `lean-ctx search failed: ${params.pattern}`).trim();
+        throw new Error(msg);
+      }
+      const output = result.code === 1 ? "(no matches)" : result.stdout;
+      const decorated = withFooter(output, { always: true });
+      return {
+        content: [{ type: "text", text: decorated.text }],
+        details: { paths: absoluteRoots, pattern: params.pattern, source: "lean-ctx", compression: decorated.stats },
+      };
+    },
+  });
+
+  // ── ctx_tree (directory tree) ───────────────────────────────────────────
+  registerTool({
+    name: "ctx_tree",
+    label: "ctx_tree",
+    description:
+      "List a directory as a compact tree. Prefer over native ls/find (counts, compact tree). " +
+      "`path` is required — pass the directory you are working in. " +
+      "Use depth to control tree depth, show_hidden to include dotfiles, respect_gitignore to honor .gitignore.",
+    promptSnippet: "List directory tree",
+    promptGuidelines: [
+      "Use ctx_tree for a visual directory tree instead of ls/find.",
+      "Depth defaults to 3; increase for deeper trees, decrease for overview.",
+      "Set respect_gitignore=false to include ignored files in the tree.",
+    ],
+    parameters: treeSchema,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      // Resolve roots: path (single) or paths (multiple); fallback to cwd
+      const roots: string[] = [];
+      if (params.paths && params.paths.length > 0) {
+        roots.push(...params.paths);
+      } else if (params.path) {
+        roots.push(params.path);
+      } else {
+        roots.push(ctx.cwd);
+      }
+      const absoluteRoots = roots.map((p: string) => resolve(ctx.cwd, normalizePathArg(p)));
+
+      // lean-ctx ls supports --depth, --hidden, --no-ignore
+      const outputs: string[] = [];
+      for (const root of absoluteRoots) {
+        const lsArgs = ["ls", root];
+        if (params.depth) lsArgs.push("--depth", String(params.depth));
+        if (params.show_hidden) lsArgs.push("--hidden");
+        if (params.respect_gitignore === false) lsArgs.push("--no-ignore");
+        const output = await execLeanCtx(pi, lsArgs);
+        outputs.push(output);
+      }
+      const combined = outputs.join("\n\n");
+      const decorated = withFooter(combined, { always: true });
+      return {
+        content: [{ type: "text", text: decorated.text }],
+        details: { paths: absoluteRoots, source: "lean-ctx", depth: params.depth ?? 3, compression: decorated.stats },
+      };
+    },
+  });
+
   // ── lean_ctx (CLI passthrough) ────────────────────────────────────────
   registerTool({
     name: "lean_ctx",
     label: "lean_ctx",
     description:
-      "Run lean-ctx CLI directly (CLI-first; no MCP required). "
-      + "Use this for advanced commands like session/knowledge/overview/gain/stats/index/pack.",
+      "Run lean-ctx CLI directly (CLI-first; no MCP required). " +
+      "Use this for advanced commands like session/knowledge/overview/gain/stats/index/pack.",
     promptSnippet: "Run lean-ctx CLI directly",
     parameters: leanCtxSchema,
     async execute(_toolCallId, params) {
