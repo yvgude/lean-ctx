@@ -163,6 +163,34 @@ pub struct ToolContext {
     pub progress_sender: Option<crate::server::progress::SharedProgressSender>,
 }
 
+impl Default for ToolContext {
+    /// Minimal context: `project_root` empty, all shared-state handles `None`.
+    /// Single source for the one-shot CLI ctx (`cli::call_cmd::oneshot_ctx`) and
+    /// the `empty_ctx` test helper — adding a field no longer breaks either.
+    fn default() -> Self {
+        Self {
+            project_root: String::new(),
+            minimal: false,
+            resolved_paths: std::collections::HashMap::new(),
+            crp_mode: crate::tools::CrpMode::Off,
+            cache: None,
+            session: None,
+            tool_calls: None,
+            agent_id: None,
+            workflow: None,
+            ledger: None,
+            client_name: None,
+            pipeline_stats: None,
+            call_count: None,
+            autonomy: None,
+            pressure_snapshot: None,
+            path_errors: std::collections::HashMap::new(),
+            bm25_cache: None,
+            progress_sender: None,
+        }
+    }
+}
+
 impl ToolContext {
     pub fn resolved_path(&self, arg: &str) -> Option<&str> {
         self.resolved_paths.get(arg).map(String::as_str)
@@ -253,26 +281,7 @@ mod tests {
     use serde_json::json;
 
     fn empty_ctx() -> ToolContext {
-        ToolContext {
-            project_root: String::new(),
-            minimal: false,
-            resolved_paths: std::collections::HashMap::new(),
-            crp_mode: crate::tools::CrpMode::Off,
-            cache: None,
-            session: None,
-            tool_calls: None,
-            agent_id: None,
-            workflow: None,
-            ledger: None,
-            client_name: None,
-            pipeline_stats: None,
-            call_count: None,
-            autonomy: None,
-            pressure_snapshot: None,
-            path_errors: std::collections::HashMap::new(),
-            bm25_cache: None,
-            progress_sender: None,
-        }
+        ToolContext::default()
     }
 
     #[test]

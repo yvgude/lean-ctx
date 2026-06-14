@@ -1,11 +1,15 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.9.25"
-    id("org.jetbrains.intellij.platform") version "2.14.0"
+    id("org.jetbrains.kotlin.jvm")
+    id("org.jetbrains.intellij.platform")
 }
 
 group = "com.leanctx"
-version = "1.0.0"
+version = "3.8.3"
 
 repositories {
     mavenCentral()
@@ -15,8 +19,13 @@ repositories {
 }
 
 dependencies {
+    compileOnly("com.google.code.gson:gson:2.11.0")
+    testImplementation("com.google.code.gson:gson:2.11.0")
+    testImplementation("junit:junit:4.13.2")
     intellijPlatform {
-        create("IC", "2024.1")
+        intellijIdea("2026.1.3")
+        bundledPlugin("org.jetbrains.kotlin")
+        testFramework(TestFrameworkType.Platform)
     }
 }
 
@@ -25,8 +34,8 @@ intellijPlatform {
         name = "lean-ctx"
         version = project.version.toString()
         ideaVersion {
-            sinceBuild = "241"
-            untilBuild = "261.*"
+            sinceBuild = "261"
+            // untilBuild intentionally left open (private plugin, no Marketplace).
         }
         vendor {
             name = "lean-ctx"
@@ -35,8 +44,22 @@ intellijPlatform {
     }
 }
 
-tasks {
-    withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-        kotlinOptions.jvmTarget = "17"
+kotlin {
+    jvmToolchain(21)
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_21
+    }
+}
+
+intellijPlatformTesting {
+    runIde {
+        register("runRustRover") {
+            type = IntelliJPlatformType.RustRover
+            version = "2026.1"
+        }
+        register("runPyCharm") {
+            type = IntelliJPlatformType.PyCharmCommunity
+            version = "2026.1"
+        }
     }
 }

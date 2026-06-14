@@ -189,6 +189,31 @@ fn test_reverse_deps() {
 }
 
 #[test]
+fn get_forward_deps_follows_import_edges_outward() {
+    let mut idx = ProjectIndex::new("/tmp/fwd");
+    idx.edges.push(IndexEdge {
+        from: "a.rs".into(),
+        to: "b.rs".into(),
+        kind: "import".into(),
+        weight: 1.0,
+    });
+    idx.edges.push(IndexEdge {
+        from: "b.rs".into(),
+        to: "c.rs".into(),
+        kind: "import".into(),
+        weight: 1.0,
+    });
+    let deps = idx.get_forward_deps("a.rs", 2);
+    assert!(deps.contains(&"b.rs".to_string()), "got: {deps:?}");
+    assert!(deps.contains(&"c.rs".to_string()), "got: {deps:?}");
+    // reverse direction must NOT appear
+    assert!(
+        idx.get_forward_deps("c.rs", 2).is_empty(),
+        "leaf has no forward deps"
+    );
+}
+
+#[test]
 fn test_find_symbol_range_kotlin_function() {
     let content = r#"
 package com.example

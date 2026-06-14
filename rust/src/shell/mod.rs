@@ -6,6 +6,7 @@ pub(crate) mod platform;
 mod redact;
 
 pub use compress::compress_if_beneficial_pub;
+pub(crate) use exec::heavy_timeout;
 pub use exec::{exec, exec_argv};
 pub use interactive::interactive;
 pub use output_policy::{classify as classify_output, OutputPolicy};

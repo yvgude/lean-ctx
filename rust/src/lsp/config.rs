@@ -85,6 +85,7 @@ pub fn language_for_extension(ext: &str) -> Option<&'static str> {
         "py" | "pyi" => Some("python"),
         "go" => Some("go"),
         "java" => Some("java"),
+        "kt" | "kts" => Some("kotlin"),
         "rb" => Some("ruby"),
         "c" | "h" => Some("c"),
         "cpp" | "cxx" | "cc" | "hpp" => Some("cpp"),

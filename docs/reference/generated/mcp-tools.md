@@ -335,9 +335,9 @@ Parameters: `fresh`, `mode`, `path`*, `start_line`
 
 ## `ctx_refactor`
 
-LSP-powered refactoring. Actions: rename, references, definition, implementations. Requires a running language server (rust-analyzer, typescript-language-server, pylsp, gopls).
+LSP/IDE refactoring. action=one pipe-delimited value below. Reads (references/definition/implementations/declaration/type_hierarchy/symbols_overview/inspections) need a language server or the JetBrains backend. Symbol edits (replace/insert_before/insert_after_symbol) are name_path-addressed, IDE-first with a lossless headless fallback. Two-Phase ops (rename/move/safe_delete/inline _preview+_apply) need a JetBrains IDE (else BACKEND_REQUIRED) with a stateless plan_hash TOCTOU guard. rename/move/safe_delete block conflicts unless force=true; inline cannot be forced (→ UNSUPPORTED). reformat is Single-Phase, by name_path | path | path+line.
 
-Parameters: `action`*, `column`, `line`*, `new_name`, `path`*
+Parameters: `action`*, `column`, `direction`, `end_line`, `expected_hash`, `force`, `keep_definition`, `line`, `mode`, `name_path`, `new_body`, `new_name`, `optimize_imports`, `path`, `plan_hash`, `propagate`, `scope`, `search_comments`, `search_text_occurrences`, `target_parent`, `target_path`, `text`
 
 ## `ctx_repomap`
 

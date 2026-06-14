@@ -72,3 +72,12 @@ docs/gpt/
 
 # ── Internal strategy (never public) ──
 /THINKERY-VISION.md
+/packages/jetbrains-lean-ctx/build/
+
+# ── Local AI-tooling / scratch dirs (not for OSS) ──
+/tmp/
+tmp/
+markdownai/
+.idea/
+.serena/
+.claude/

@@ -318,31 +318,6 @@ fn whoami() -> String {
         .unwrap_or_else(|_| "$(whoami)".to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    // GH #394: the service file path must be discoverable programmatically so
-    // enable/disable/status/doctor can print it.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn service_file_path_matches_platform_conventions() {
-        let path = super::service_file_path().expect("supported platform");
-        let name = super::service_name().expect("supported platform");
-        let s = path.to_string_lossy();
-        #[cfg(target_os = "macos")]
-        {
-            assert!(s.contains("Library/LaunchAgents"), "got: {s}");
-            assert!(s.ends_with("com.leanctx.daemon.plist"), "got: {s}");
-            assert_eq!(name, "com.leanctx.daemon");
-        }
-        #[cfg(target_os = "linux")]
-        {
-            assert!(s.contains(".config/systemd/user"), "got: {s}");
-            assert!(s.ends_with("lean-ctx-daemon.service"), "got: {s}");
-            assert_eq!(name, "lean-ctx-daemon");
-        }
-    }
-}
-
 #[cfg(target_os = "linux")]
 fn uninstall_systemd(quiet: bool) {
     let service_path = systemd_path();
@@ -367,5 +342,30 @@ fn uninstall_systemd(quiet: bool) {
     if !quiet {
         println!("  Removed daemon systemd service: {SYSTEMD_SERVICE}");
         println!("  Service file: {}", service_path.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // GH #394: the service file path must be discoverable programmatically so
+    // enable/disable/status/doctor can print it.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn service_file_path_matches_platform_conventions() {
+        let path = super::service_file_path().expect("supported platform");
+        let name = super::service_name().expect("supported platform");
+        let s = path.to_string_lossy();
+        #[cfg(target_os = "macos")]
+        {
+            assert!(s.contains("Library/LaunchAgents"), "got: {s}");
+            assert!(s.ends_with("com.leanctx.daemon.plist"), "got: {s}");
+            assert_eq!(name, "com.leanctx.daemon");
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert!(s.contains(".config/systemd/user"), "got: {s}");
+            assert!(s.ends_with("lean-ctx-daemon.service"), "got: {s}");
+            assert_eq!(name, "lean-ctx-daemon");
+        }
     }
 }

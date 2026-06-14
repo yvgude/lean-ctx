@@ -1,0 +1,25 @@
+{
+  "bridge": { "active": true },
+  "summary": {
+    "model": { "model_key": "fallback-blended" },
+    "tokens_saved": 7608645,
+    "gain_rate_pct": 68.57,
+    "avoided_usd": 19.02,
+    "tool_spend_usd": 43.92,
+    "score": {
+      "total": 68,
+      "compression": 69,
+      "cost_efficiency": 3,
+      "quality": 76,
+      "consistency": 29,
+      "trend": "Rising"
+    }
+  },
+  "tasks": [
+    { "category": "Exploration", "commands": 2281, "tokens_saved": 6337663, "tool_calls": 4352, "tool_spend_usd": 43.92 },
+    { "category": "BuildDeploy", "commands": 12, "tokens_saved": 1000, "tool_calls": 3, "tool_spend_usd": 0.0 }
+  ],
+  "heatmap": [
+    { "path": "/x/backend.rs", "access_count": 3, "tokens_saved": 518625, "compression_pct": 99.84 }
+  ]
+}

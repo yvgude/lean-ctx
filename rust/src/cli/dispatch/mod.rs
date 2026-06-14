@@ -360,6 +360,10 @@ pub fn run() {
                 core::stats::flush();
                 return;
             }
+            "call" => {
+                super::cmd_call(&rest);
+                return;
+            }
             "diff" => {
                 super::cmd_diff(&rest);
                 core::stats::flush();

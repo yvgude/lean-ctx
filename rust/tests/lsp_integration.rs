@@ -44,7 +44,11 @@ fn has_rust_analyzer() -> bool {
 }
 
 fn call_refactor(args: &serde_json::Value, root: &str) -> String {
-    lean_ctx::tools::ctx_refactor::handle(args, root)
+    let abs_path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    lean_ctx::tools::ctx_refactor::handle(args, root, abs_path)
 }
 
 fn wait_for_lsp_ready(dir: &std::path::Path, root: &str) {
@@ -109,14 +113,19 @@ fn test_lsp_references() {
 
 #[test]
 fn test_lsp_missing_path() {
+    // §4.5: the inner handle no longer guards `path` presence — that check now
+    // lives in the wrapper (require_resolved_path, unit-tested in tool_trait).
+    // Here `path` is absent, so call_refactor forwards an empty abs_path; the
+    // inner handle must still degrade gracefully to an ERROR (never panic) when
+    // open_file cannot resolve a language/file for it.
     let result = call_refactor(
         &json!({"action": "definition", "line": 1}),
         "/tmp/nonexistent",
     );
 
     assert!(
-        result.contains("ERROR") && result.contains("path"),
-        "expected path error, got: {result}"
+        result.starts_with("ERROR"),
+        "expected graceful error for empty path, got: {result}"
     );
 }
 

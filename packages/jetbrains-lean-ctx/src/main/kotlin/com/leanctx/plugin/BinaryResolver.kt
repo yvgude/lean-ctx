@@ -38,7 +38,10 @@ object BinaryResolver {
         return null
     }
 
-    fun runCommand(vararg args: String): CommandResult {
+    fun runCommand(vararg args: String): CommandResult =
+        runCommand(30, *args)
+
+    fun runCommand(timeoutSeconds: Long, vararg args: String): CommandResult {
         val binary = resolve() ?: return CommandResult("", "lean-ctx binary not found", 1)
         return try {
             val process = ProcessBuilder(binary, *args)
@@ -50,7 +53,7 @@ object BinaryResolver {
                 .start()
             val stdout = process.inputStream.bufferedReader().readText()
             val stderr = process.errorStream.bufferedReader().readText()
-            val exited = process.waitFor(30, TimeUnit.SECONDS)
+            val exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             CommandResult(stdout, stderr, if (exited) process.exitValue() else -1)
         } catch (e: Exception) {
             CommandResult("", e.message ?: "unknown error", 1)

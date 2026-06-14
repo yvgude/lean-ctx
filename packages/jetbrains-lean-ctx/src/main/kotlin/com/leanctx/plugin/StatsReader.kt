@@ -6,17 +6,20 @@ import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.nio.file.StandardWatchEventKinds
 import java.nio.file.WatchService
+import java.util.Locale
 
 data class LeanCtxStats(
     val totalInputTokens: Long,
     val totalOutputTokens: Long,
     val totalCommands: Long
 ) {
-    val tokensSaved: Long get() = totalInputTokens
+    // Mirrors the Rust source of truth `input.saturating_sub(output)` (cli/cloud.rs):
+    // tokens saved = input tokens lean-ctx compressed away, not the raw input total.
+    val tokensSaved: Long get() = (totalInputTokens - totalOutputTokens).coerceAtLeast(0)
 
     fun formattedSavings(): String = when {
-        tokensSaved >= 1_000_000 -> "${String.format("%.1f", tokensSaved / 1_000_000.0)}M"
-        tokensSaved >= 1_000 -> "${String.format("%.1f", tokensSaved / 1_000.0)}K"
+        tokensSaved >= 1_000_000 -> "${String.format(Locale.US, "%.1f", tokensSaved / 1_000_000.0)}M"
+        tokensSaved >= 1_000 -> "${String.format(Locale.US, "%.1f", tokensSaved / 1_000.0)}K"
         else -> "$tokensSaved"
     }
 }

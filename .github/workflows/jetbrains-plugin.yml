@@ -1,0 +1,139 @@
+name: JetBrains Plugin
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'packages/jetbrains-lean-ctx/**'
+      - '.github/workflows/jetbrains-plugin.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'packages/jetbrains-lean-ctx/**'
+      - '.github/workflows/jetbrains-plugin.yml'
+  release:
+    types: [ prereleased, released ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: packages/jetbrains-lean-ctx
+
+jobs:
+  actionlint:
+    name: Actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run actionlint
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color .github/workflows/jetbrains-plugin.yml
+
+  validation:
+    name: Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: gradle/actions/wrapper-validation@v6
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build plugin
+        run: ./gradlew buildPlugin --console=plain
+
+  test:
+    name: Test
+    needs: [ build ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-home-cache-cleanup: true
+
+      - name: Run Tests
+        run: ./gradlew check --console=plain
+
+      - name: Collect Tests Result
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: jetbrains-tests-result
+          path: packages/jetbrains-lean-ctx/build/reports/tests
+
+  # Attaches the built plugin ZIP to the GitHub Release as a downloadable asset.
+  # No JetBrains Marketplace publish — download-only, version mirrors lean-ctx (gradle.properties).
+  release:
+    name: Release Asset
+    needs: [ build, test ]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build plugin distribution
+        run: ./gradlew buildPlugin --console=plain
+
+      - name: Upload Release Asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ./build/distributions/*.zip

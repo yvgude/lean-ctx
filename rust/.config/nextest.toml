@@ -1,0 +1,34 @@
+experimental = ["setup-scripts"]
+
+[profile.default]
+test-threads = -4
+# Some integration tests share global state (fixed /tmp paths, shared server
+# state) and are flaky under high parallelism — they pass in isolation. Retry
+# them up to twice so a transient race doesn't fail the whole run. This masks,
+# not fixes, the underlying non-hermeticity (tracked separately).
+retries = 2
+
+# Integration-test binaries that each use a FIXED temp path (e.g.
+# temp_dir()/lean_ctx_bazsi_test, …/lean_ctx_workflow_test) and remove_dir_all +
+# recreate it in setup. Their #[serial] marker only serializes within one process
+# — but nextest runs each test in its own process, so tests in the same binary
+# race on that shared path. Pinning them to a max-threads=1 group serializes them
+# for real, fixing the race at the source (retries below stays as a net for
+# load-induced flakiness like the in-memory http_server tests).
+[test-groups]
+serial-state = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(bazsi_reported_scenarios) | binary(workflow_done_scenarios) | test(/^http_server::tests::/)'
+test-group = 'serial-state'
+
+[scripts.setup.tmpdir]
+command = ['bash', '.config/nextest-tmpdir.sh']
+
+# Apply config isolation to every test: pointing LEAN_CTX_DATA_DIR at an empty
+# dir is harmless for non-jail tests (it just isolates them from the host config
+# and keeps the real ~/.lean-ctx clean) and covers all jail-dependent tests
+# (core::pathjail, core::workspace_config, …) without enumerating them.
+[[profile.default.scripts]]
+filter = 'all()'
+setup = 'tmpdir'

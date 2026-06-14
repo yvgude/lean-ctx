@@ -118,7 +118,7 @@ pub(crate) fn execute_command_with_env(
         let _ = err_tx.send(result);
     });
 
-    let timeout = command_timeout();
+    let timeout = command_timeout(command);
     let start = Instant::now();
     let (code, timed_out) = loop {
         match child.try_wait() {
@@ -183,17 +183,49 @@ fn ensure_utf8_locale(
     crate::shell::platform::apply_utf8_locale(cmd);
 }
 
-fn command_timeout() -> Duration {
-    std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS")
+fn command_timeout(command: &str) -> Duration {
+    // Explicit env override always wins (operators can pin any value).
+    if let Some(ms) = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|millis| *millis > 0)
-        .map_or(DEFAULT_COMMAND_TIMEOUT, Duration::from_millis)
+    {
+        return Duration::from_millis(ms);
+    }
+    // Otherwise mirror the interactive shell-hook path: heavy builds/tests
+    // (cargo install/nextest/build, npm ci, …) get the long timeout instead of
+    // being killed at the 2-minute default. Keeps `ctx_shell` and the hook
+    // consistent — previously only the hook consulted `is_heavy_command`.
+    crate::shell::heavy_timeout(command).unwrap_or(DEFAULT_COMMAND_TIMEOUT)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_utf8_locale, execute_command_in};
+    use super::{command_timeout, ensure_utf8_locale, execute_command_in, DEFAULT_COMMAND_TIMEOUT};
+
+    #[test]
+    fn command_timeout_uses_heavy_for_heavy_commands() {
+        let saved = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
+        std::env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+
+        // Heavy build/test commands get the long timeout, not the 2-min default.
+        assert!(command_timeout("cargo install --path .") > DEFAULT_COMMAND_TIMEOUT);
+        assert!(command_timeout("cargo nextest run") > DEFAULT_COMMAND_TIMEOUT);
+        // Ordinary commands keep the default.
+        assert_eq!(command_timeout("git status"), DEFAULT_COMMAND_TIMEOUT);
+
+        // Explicit env override wins over heavy detection.
+        std::env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
+        assert_eq!(
+            command_timeout("cargo install --path ."),
+            std::time::Duration::from_secs(5)
+        );
+
+        std::env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        if let Some(v) = saved {
+            std::env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
+        }
+    }
 
     #[test]
     fn ensure_utf8_locale_sets_fallback_when_none_inherited() {

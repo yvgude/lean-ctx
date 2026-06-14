@@ -5,6 +5,7 @@ import com.intellij.openapi.wm.StatusBar
 import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.openapi.util.Disposer
+import com.leanctx.plugin.toolwindow.GAIN_TOOL_WINDOW_ID
 import java.util.Timer
 import java.util.TimerTask
 
@@ -12,12 +13,13 @@ class LeanCtxStatusBarFactory : StatusBarWidgetFactory {
     override fun getId(): String = "com.leanctx.statusBar"
     override fun getDisplayName(): String = "lean-ctx"
     override fun isAvailable(project: Project): Boolean = true
-    override fun createWidget(project: Project): StatusBarWidget = LeanCtxStatusBarWidget()
+    override fun createWidget(project: Project): StatusBarWidget = LeanCtxStatusBarWidget(project)
     override fun disposeWidget(widget: StatusBarWidget) = Disposer.dispose(widget)
     override fun canBeEnabledOn(statusBar: StatusBar): Boolean = true
 }
 
-class LeanCtxStatusBarWidget : StatusBarWidget, StatusBarWidget.TextPresentation {
+class LeanCtxStatusBarWidget(private val project: Project) :
+    StatusBarWidget, StatusBarWidget.TextPresentation {
     private var statusBar: StatusBar? = null
     private var timer: Timer? = null
     private var currentText: String = "\u26A1 lean-ctx"
@@ -50,14 +52,15 @@ class LeanCtxStatusBarWidget : StatusBarWidget, StatusBarWidget.TextPresentation
     override fun getText(): String = currentText
     override fun getTooltipText(): String {
         val stats = StatsReader.read() ?: return "lean-ctx: No stats yet"
-        return buildString {
-            appendLine("lean-ctx Token Savings")
-            appendLine("────────────────────────")
-            appendLine("Tokens saved: ${stats.tokensSaved}")
-            appendLine("Commands: ${stats.totalCommands}")
-        }
+        return "lean-ctx: ${stats.formattedSavings()} tokens saved · ${stats.totalCommands} commands"
     }
     override fun getAlignment(): Float = 0f
+
+    override fun getClickConsumer(): com.intellij.util.Consumer<java.awt.event.MouseEvent> =
+        com.intellij.util.Consumer {
+            com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+                .getToolWindow(GAIN_TOOL_WINDOW_ID)?.activate(null)
+        }
 
     override fun dispose() {
         timer?.cancel()

@@ -1172,7 +1172,14 @@ impl Config {
         if local.memory_cleanup != MemoryCleanup::default() {
             self.memory_cleanup = local.memory_cleanup;
         }
-        if !local.shell_allowlist.is_empty() {
+        // Only override when the local file actually defines `shell_allowlist`.
+        // The field carries `#[serde(default = "default_shell_allowlist")]`, so a
+        // local `.lean-ctx.toml` that omits the key still deserializes to the full
+        // 201-entry built-in list — an `is_empty()` guard would then silently clobber
+        // a deliberately shorter global allowlist with the defaults. Comparing against
+        // the default (the same pattern used for every other merged field) treats
+        // "omitted" as "no override".
+        if local.shell_allowlist != default_shell_allowlist() {
             self.shell_allowlist = local.shell_allowlist;
         }
         if !local.shell_allowlist_extra.is_empty() {

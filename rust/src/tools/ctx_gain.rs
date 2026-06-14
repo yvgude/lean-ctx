@@ -627,4 +627,68 @@ mod tests {
         let p = shorten_path("/very/long/path/to/some/file.rs", 20);
         assert!(p.contains('…') && p.ends_with("file.rs"), "got: {p}");
     }
+
+    #[test]
+    fn gain_json_schema_keys_are_stable_for_jetbrains_dtos() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        // Contract with packages/jetbrains-lean-ctx dto/GainData.kt (@SerializedName).
+        // A Rust rename that drops any of these keys must fail HERE, not silently
+        // in the plugin. Keep in sync with GainDataTest.kt.
+        let out = handle("json", None, None, Some(5));
+        let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+
+        let summary = v.get("summary").expect("summary");
+        for k in [
+            "tokens_saved",
+            "gain_rate_pct",
+            "avoided_usd",
+            "model",
+            "score",
+        ] {
+            assert!(summary.get(k).is_some(), "summary.{k} missing");
+        }
+        assert!(
+            summary["model"].get("model_key").is_some(),
+            "summary.model.model_key missing"
+        );
+
+        let score = summary.get("score").expect("score");
+        for k in [
+            "total",
+            "compression",
+            "cost_efficiency",
+            "quality",
+            "consistency",
+            "trend",
+        ] {
+            assert!(score.get(k).is_some(), "score.{k} missing");
+        }
+
+        let tasks = v
+            .get("tasks")
+            .expect("tasks")
+            .as_array()
+            .expect("tasks array");
+        if let Some(t) = tasks.first() {
+            for k in [
+                "category",
+                "commands",
+                "tokens_saved",
+                "tool_calls",
+                "tool_spend_usd",
+            ] {
+                assert!(t.get(k).is_some(), "task.{k} missing");
+            }
+        }
+        let heatmap = v
+            .get("heatmap")
+            .expect("heatmap")
+            .as_array()
+            .expect("heatmap array");
+        if let Some(h) = heatmap.first() {
+            for k in ["path", "access_count", "tokens_saved", "compression_pct"] {
+                assert!(h.get(k).is_some(), "heatmap.{k} missing");
+            }
+        }
+    }
 }

@@ -119,6 +119,7 @@ fn is_heavy_command(command: &str) -> bool {
     static HEAVY_PREFIXES: &[&str] = &[
         "cargo build",
         "cargo test",
+        "cargo nextest",
         "cargo clippy",
         "cargo check",
         "cargo install",
@@ -156,6 +157,16 @@ fn is_heavy_command(command: &str) -> bool {
         "mix compile",
     ];
     HEAVY_PREFIXES.iter().any(|p| lower.starts_with(p))
+}
+
+/// Timeout the MCP `ctx_shell` tool should grant a command, mirroring the
+/// interactive hook's heavy-command detection. Returns `None` for ordinary
+/// commands (caller applies its own default), `Some(HEAVY_TIMEOUT)` for heavy
+/// builds/tests so long-running `cargo install`/`nextest`/etc. aren't killed at
+/// the 2-minute default. Keeps the MCP path and the shell-hook path consistent.
+#[must_use]
+pub(crate) fn heavy_timeout(command: &str) -> Option<std::time::Duration> {
+    is_heavy_command(command).then_some(HEAVY_TIMEOUT)
 }
 
 /// Execute a command from pre-split argv without going through `sh -c`.
@@ -636,6 +647,10 @@ mod exec_tests {
         assert_eq!(bytes, super::HEAVY_MAX_BYTES);
         assert_eq!(timeout, super::HEAVY_TIMEOUT);
 
+        let (bytes, timeout) = super::exec_limits("cargo nextest run");
+        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
+        assert_eq!(timeout, super::HEAVY_TIMEOUT);
+
         let (bytes, timeout) = super::exec_limits("npm run build");
         assert_eq!(bytes, super::HEAVY_MAX_BYTES);
         assert_eq!(timeout, super::HEAVY_TIMEOUT);
@@ -654,6 +669,20 @@ mod exec_tests {
         let (bytes, timeout) = super::exec_limits("git status");
         assert_eq!(bytes, super::DEFAULT_MAX_BYTES);
         assert_eq!(timeout, super::DEFAULT_TIMEOUT);
+    }
+
+    #[test]
+    fn heavy_timeout_some_for_heavy_none_otherwise() {
+        assert_eq!(
+            super::heavy_timeout("cargo install --path ."),
+            Some(super::HEAVY_TIMEOUT)
+        );
+        assert_eq!(
+            super::heavy_timeout("cargo nextest run"),
+            Some(super::HEAVY_TIMEOUT)
+        );
+        assert_eq!(super::heavy_timeout("git status"), None);
+        assert_eq!(super::heavy_timeout("ls -la"), None);
     }
 
     // P0-1 (#413): the CLI allowlist must enforce for agents, warn for humans.

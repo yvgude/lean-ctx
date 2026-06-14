@@ -15,33 +15,35 @@ Each journey document answers three questions for every feature:
 
 ## The journeys
 
-| # | Journey | You are… | Covers |
-|---|---------|----------|--------|
-| 1 | [Setup & Onboarding](01-setup-and-onboarding.md) | installing for the first time | `onboard`, `setup`, `install`, `bootstrap`, `init`, `doctor`, `status` |
-| 2 | [Daily Use](02-daily-use.md) | coding with your AI every day | `read`, `grep`, `find`, `ls`, `-c`/`exec`, `gain`, `tools` |
-| 3 | [Memory & Knowledge](03-memory-and-knowledge.md) | wanting continuity across sessions | `session`, `sessions`, `knowledge`, `overview`, CCP |
-| 4 | [Code Intelligence](04-code-intelligence.md) | exploring or refactoring a codebase | `graph`, `impact`, `repomap`, `smells`, `visualize`, `index` |
-| 5 | [Advanced & Integrations](05-advanced.md) | wiring up proxy, providers, plugins | `proxy`, `provider`, `serve`, `plugin`, `rules`, `pack`, multi-repo |
-| 6 | [Lifecycle & Troubleshooting](06-lifecycle.md) | updating, fixing, or removing | `update`, `uninstall`, `stop`, `restart`, `cache`, `doctor --fix` |
-| 7 | [Context Engineering & Observability](07-context-engineering.md) | actively managing the context window | `radar`, `control`, `plan`, `compile`, `ledger`, `preload`, `compose`, `verify` |
-| 8 | [Multi-Agent Collaboration](08-multi-agent.md) | running several agents on one project | `ctx_agent`, `ctx_task`, `ctx_handoff`, `ctx_share`, diaries, shared knowledge |
-| 9 | [Team, Cloud & CI](09-team-cloud-ci.md) | sharing across a team or running headless | `team serve`/`token`/`sync`, `login`, `sync`, `contribute`, `bootstrap`, `serve` |
-| 10 | [Customization & Governance](10-customization-and-governance.md) | tuning behavior & enforcing rules | `compression`, `tools`, `profile`, `config`, `theme`, `filter`, `rules`, `harden` |
-| 11 | [Analytics, Insights & Reporting](11-analytics-and-insights.md) | measuring savings & finding waste | `gain`, `wrapped`, `token-report`, `discover`, `ghost`, `dashboard`, `watch`, `cep`, `stats` |
-| 12 | [Troubleshooting Playbook](12-troubleshooting.md) | something's not working | symptom → diagnosis → fix; `status`, `doctor`, `doctor integrations`, `sessions doctor`, `report-issue` |
-| 13 | [Security & Governance](13-security-and-governance.md) | putting lean-ctx in front of real code | PathJail, `shell_allowlist`, `secret_detection`, sandbox, `harden`, role policies |
-| 14 | [Performance Tuning](14-performance-tuning.md) | huge repo / constrained machine | `memory_profile`, `bm25_max_cache_mb`, `graph_index_max_files`, `LEAN_CTX_MAX_*`, `slow-log` |
-| 18 | [Adaptive Learning](18-adaptive-learning.md) | understanding how lean-ctx tunes itself | learned thresholds, LITM calibration, scent field, playbook, `learning export/import`, efficacy |
+| #  | Journey                                                          | You are…                                             | Covers                                                                                                    |
+|----|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| 1  | [Setup & Onboarding](01-setup-and-onboarding.md)                 | installing for the first time                        | `onboard`, `setup`, `install`, `bootstrap`, `init`, `doctor`, `status`                                    |
+| 2  | [Daily Use](02-daily-use.md)                                     | coding with your AI every day                        | `read`, `grep`, `find`, `ls`, `-c`/`exec`, `gain`, `tools`                                                |
+| 3  | [Memory & Knowledge](03-memory-and-knowledge.md)                 | wanting continuity across sessions                   | `session`, `sessions`, `knowledge`, `overview`, CCP                                                       |
+| 4  | [Code Intelligence](04-code-intelligence.md)                     | exploring or refactoring a codebase                  | `graph`, `impact`, `repomap`, `smells`, `visualize`, `index`                                              |
+| 5  | [Advanced & Integrations](05-advanced.md)                        | wiring up proxy, providers, plugins                  | `proxy`, `provider`, `serve`, `plugin`, `rules`, `pack`, multi-repo                                       |
+| 6  | [Lifecycle & Troubleshooting](06-lifecycle.md)                   | updating, fixing, or removing                        | `update`, `uninstall`, `stop`, `restart`, `cache`, `doctor --fix`                                         |
+| 7  | [Context Engineering & Observability](07-context-engineering.md) | actively managing the context window                 | `radar`, `control`, `plan`, `compile`, `ledger`, `preload`, `compose`, `verify`                           |
+| 8  | [Multi-Agent Collaboration](08-multi-agent.md)                   | running several agents on one project                | `ctx_agent`, `ctx_task`, `ctx_handoff`, `ctx_share`, diaries, shared knowledge                            |
+| 9  | [Team, Cloud & CI](09-team-cloud-ci.md)                          | sharing across a team or running headless            | `team serve`/`token`/`sync`, `login`, `sync`, `contribute`, `bootstrap`, `serve`                          |
+| 10 | [Customization & Governance](10-customization-and-governance.md) | tuning behavior & enforcing rules                    | `compression`, `tools`, `profile`, `config`, `theme`, `filter`, `rules`, `harden`                         |
+| 11 | [Analytics, Insights & Reporting](11-analytics-and-insights.md)  | measuring savings & finding waste                    | `gain`, `wrapped`, `token-report`, `discover`, `ghost`, `dashboard`, `watch`, `cep`, `stats`              |
+| 12 | [Troubleshooting Playbook](12-troubleshooting.md)                | something's not working                              | symptom → diagnosis → fix; `status`, `doctor`, `doctor integrations`, `sessions doctor`, `report-issue`   |
+| 13 | [Security & Governance](13-security-and-governance.md)           | putting lean-ctx in front of real code               | PathJail, `shell_allowlist`, `secret_detection`, sandbox, `harden`, role policies                         |
+| 14 | [Performance Tuning](14-performance-tuning.md)                   | huge repo / constrained machine                      | `memory_profile`, `bm25_max_cache_mb`, `graph_index_max_files`, `LEAN_CTX_MAX_*`, `slow-log`              |
+| 18 | [Adaptive Learning](18-adaptive-learning.md)                     | understanding how lean-ctx tunes itself              | learned thresholds, LITM calibration, scent field, playbook, `learning export/import`, efficacy           |
+| 19 | [JetBrains-Plugin](19-jetbrains-plugin.md)                      | using code intelligence from a running JetBrains IDE | `ctx_refactor`: navigation, structure, inspections, symbol-edits, rename/reformat/move/safe_delete/inline |
 
 ## Cross-cutting references
 
-| Reference | What's in it |
-|-----------|--------------|
-| [Per-IDE quickstarts](appendix-ide-quickstarts.md) | Copy-paste setup + verify for Cursor, Claude, Codex, VS Code, JetBrains |
-| [CLI command map](appendix-cli-map.md) | Every CLI command + alias, one line each |
-| [MCP tool map](appendix-mcp-tools.md) | Every MCP tool, params, and which profile exposes it |
-| [Paths, env vars & config](appendix-paths-and-config.md) | Data dir layout, every `LEAN_CTX_*` var, every config key |
-| [Glossary](appendix-glossary.md) | MCP, CCP, hooks, modes, profiles, proxy — in one place |
+| Reference                                                | What's in it                                                                                                                                             |
+|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [Per-IDE quickstarts](appendix-ide-quickstarts.md)       | Copy-paste setup + verify for Cursor, Claude, Codex, VS Code, JetBrains                                                                                  |
+| [CLI command map](appendix-cli-map.md)                   | Every CLI command + alias, one line each                                                                                                                 |
+| [MCP tool map](appendix-mcp-tools.md)                    | Every MCP tool, params, and which profile exposes it                                                                                                     |
+| [Paths, env vars & config](appendix-paths-and-config.md) | Data dir layout, every `LEAN_CTX_*` var, every config key                                                                                                |
+| [Glossary](appendix-glossary.md)                         | MCP, CCP, hooks, modes, profiles, proxy — in one place                                                                                                   |
+| [JetBrains-Plugin](appendix-jetbrains-plugin.md)        | Compact agent lookup for the JetBrains plugin — every `ctx_refactor` action, endpoint, guard, error. Full guide: [Journey 19](19-jetbrains-plugin.md)   |
 
 > **Generated, always-current appendices** (rendered directly from the code, so
 > they can never drift): [MCP tools](generated/mcp-tools.md) (every registered

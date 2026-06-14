@@ -419,6 +419,31 @@ impl ProjectIndex {
         result
     }
 
+    /// Forward import dependencies: files that `path` (transitively) imports.
+    /// Mirror of `get_reverse_deps` with the edge direction flipped.
+    pub fn get_forward_deps(&self, path: &str, depth: usize) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+        let mut queue: Vec<(String, usize)> = vec![(path.to_string(), 0)];
+
+        while let Some((current, d)) = queue.pop() {
+            if d > depth || visited.contains(&current) {
+                continue;
+            }
+            visited.insert(current.clone());
+            if current != path {
+                result.push(current.clone());
+            }
+
+            for edge in &self.edges {
+                if edge.from == current && edge.kind == "import" && !visited.contains(&edge.to) {
+                    queue.push((edge.to.clone(), d + 1));
+                }
+            }
+        }
+        result
+    }
+
     pub fn get_related(&self, path: &str, depth: usize) -> Vec<String> {
         let mut result = Vec::new();
         let mut visited = std::collections::HashSet::new();

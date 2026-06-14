@@ -1,6 +1,7 @@
 mod agent_cmd;
 mod allow_cmd;
 pub mod audit_report;
+mod call_cmd;
 mod cheatsheet_cmd;
 pub mod cloud;
 mod common;
@@ -44,6 +45,7 @@ pub(crate) mod wrapped_publish;
 
 pub(crate) use agent_cmd::cmd_agent;
 pub use allow_cmd::cmd_allow;
+pub(crate) use call_cmd::cmd_call;
 pub use cheatsheet_cmd::*;
 pub use common::load_shell_history_pub;
 pub(crate) use compress_cmd::cmd_compress;

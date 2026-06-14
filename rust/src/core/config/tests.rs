@@ -583,6 +583,40 @@ mod extra_roots_tests {
         base.merge_local(r#"extra_roots = ["/local"]"#);
         assert_eq!(base.extra_roots, vec!["/base", "/local"]);
     }
+
+    #[test]
+    fn merge_local_omitting_shell_allowlist_keeps_global() {
+        // Regression: the field defaults (via serde) to the full built-in list, so a
+        // local override that never mentions `shell_allowlist` must NOT clobber a
+        // deliberately shorter global allowlist.
+        let mut base = Config {
+            shell_allowlist: vec!["git".to_string(), "cargo".to_string()],
+            ..Config::default()
+        };
+        base.merge_local(r"minimal_overhead = true");
+        assert_eq!(base.shell_allowlist, vec!["git", "cargo"]);
+    }
+
+    #[test]
+    fn merge_local_defining_shell_allowlist_overrides() {
+        let mut base = Config {
+            shell_allowlist: vec!["git".to_string(), "cargo".to_string()],
+            ..Config::default()
+        };
+        base.merge_local(r#"shell_allowlist = ["npm"]"#);
+        assert_eq!(base.shell_allowlist, vec!["npm"]);
+    }
+
+    #[test]
+    fn merge_local_empty_shell_allowlist_disables_restriction() {
+        // Explicit empty list = intentional blocklist-only mode; must be honored.
+        let mut base = Config {
+            shell_allowlist: vec!["git".to_string()],
+            ..Config::default()
+        };
+        base.merge_local(r"shell_allowlist = []");
+        assert!(base.shell_allowlist.is_empty());
+    }
 }
 
 #[cfg(test)]

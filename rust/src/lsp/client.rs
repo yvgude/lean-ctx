@@ -414,3 +414,46 @@ impl Drop for LspClient {
         }
     }
 }
+
+impl crate::lsp::backend::LspBackend for LspClient {
+    fn open_file(
+        &mut self,
+        uri: &lsp_types::Uri,
+        language_id: &str,
+        text: &str,
+    ) -> Result<(), String> {
+        LspClient::did_open(self, uri, language_id, text)
+    }
+    fn references(
+        &mut self,
+        uri: &lsp_types::Uri,
+        position: lsp_types::Position,
+        _scope: &str,
+    ) -> Result<Vec<lsp_types::Location>, String> {
+        LspClient::references(self, uri, position)
+    }
+    fn definition(
+        &mut self,
+        uri: &lsp_types::Uri,
+        position: lsp_types::Position,
+    ) -> Result<lsp_types::GotoDefinitionResponse, String> {
+        LspClient::definition(self, uri, position)
+    }
+    fn implementations(
+        &mut self,
+        uri: &lsp_types::Uri,
+        position: lsp_types::Position,
+        _scope: &str,
+    ) -> Result<Vec<lsp_types::Location>, String> {
+        LspClient::implementations(self, uri, position)
+    }
+    fn rename(
+        &mut self,
+        uri: &lsp_types::Uri,
+        position: lsp_types::Position,
+        new_name: &str,
+    ) -> Result<Option<lsp_types::WorkspaceEdit>, String> {
+        LspClient::rename(self, uri, position, new_name)
+    }
+    // declaration/type_hierarchy/symbols_overview/format/inspections: Default-Err (Backing A).
+}
