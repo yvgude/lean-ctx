@@ -171,6 +171,28 @@ jobs:
         working-directory: cookbook
         run: npm run build
 
+  pi-extension:
+    name: Pi Extension (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/pi-lean-ctx/package-lock.json
+      - name: Install
+        working-directory: packages/pi-lean-ctx
+        run: npm ci
+      - name: Typecheck
+        working-directory: packages/pi-lean-ctx
+        run: npm run typecheck
+      - name: Test
+        working-directory: packages/pi-lean-ctx
+        run: npm test
+
   rust-sdk:
     name: Rust SDK (lean-ctx-client)
     runs-on: ubuntu-latest
