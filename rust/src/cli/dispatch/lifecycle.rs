@@ -171,6 +171,9 @@ pub(super) fn cmd_dev_install() {
     }
     eprintln!("  ✓ Binary installed.");
 
+    // Kill binary drift: repoint any stale Homebrew shim at the fresh binary (#559).
+    reconcile_binary_drift(&install_path);
+
     // Verify under a hard timeout — a broken/hanging binary must never wedge
     // the install (which previously left users having to reboot).
     let mut verify = std::process::Command::new(&install_path);
@@ -270,6 +273,86 @@ pub(super) fn resolve_install_path() -> std::path::PathBuf {
     std::path::PathBuf::from("/usr/local/bin/lean-ctx")
 }
 
+/// Returns true if a symlink target points into a Homebrew Cellar / linuxbrew
+/// store — i.e. a `brew`-managed shim that can go stale and shadow the
+/// dev-installed binary on PATH (#559).
+fn is_homebrew_cellar_link(target: &std::path::Path) -> bool {
+    let s = target.to_string_lossy();
+    s.contains("/Cellar/") || s.contains("/linuxbrew/")
+}
+
+/// Eliminate binary drift after a dev-install (#559).
+///
+/// A stale Homebrew shim (e.g. `/opt/homebrew/bin/lean-ctx ->
+/// ../Cellar/lean-ctx/<old>/bin/lean-ctx`) silently shadows the freshly built
+/// `~/.local/bin/lean-ctx` on PATH, so the daemon and the CLI can end up running
+/// *different* builds (observed md5 drift in #559). Repoint any such shim at the
+/// just-installed binary, and warn about any other PATH entry that still
+/// resolves before it.
+fn reconcile_binary_drift(install_path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        let install_canon =
+            std::fs::canonicalize(install_path).unwrap_or_else(|_| install_path.to_path_buf());
+
+        for shim in [
+            "/opt/homebrew/bin/lean-ctx",
+            "/usr/local/bin/lean-ctx",
+            "/home/linuxbrew/.linuxbrew/bin/lean-ctx",
+        ] {
+            let shim_path = std::path::Path::new(shim);
+            // Only act on symlinks; a real file here is the install target itself.
+            let Ok(target) = std::fs::read_link(shim_path) else {
+                continue;
+            };
+            if !is_homebrew_cellar_link(&target) {
+                continue;
+            }
+            // Already resolves to the fresh binary? Nothing to do.
+            if std::fs::canonicalize(shim_path).is_ok_and(|c| c == install_canon) {
+                continue;
+            }
+            // Atomically repoint: drop the stale link, recreate it at the fresh binary.
+            let _ = std::fs::remove_file(shim_path);
+            match std::os::unix::fs::symlink(install_path, shim_path) {
+                Ok(()) => eprintln!(
+                    "  ✓ Repointed stale Homebrew shim {shim} → {} (#559 drift fix)",
+                    install_path.display()
+                ),
+                Err(e) => eprintln!(
+                    "  ⚠ Stale Homebrew shim {shim} → {} couldn't be repointed ({e}). \
+                     Run: brew unlink lean-ctx",
+                    target.display()
+                ),
+            }
+        }
+
+        // Warn if a *different* lean-ctx still resolves before our install dir on PATH.
+        if let Ok(path_var) = std::env::var("PATH") {
+            for dir in std::env::split_paths(&path_var) {
+                let cand = dir.join("lean-ctx");
+                if !cand.exists() {
+                    continue;
+                }
+                let cand_canon = std::fs::canonicalize(&cand).unwrap_or_else(|_| cand.clone());
+                if cand_canon == install_canon {
+                    break; // our binary wins on PATH — good
+                }
+                eprintln!(
+                    "  ⚠ PATH shadow: {} resolves before {} — plain `lean-ctx` may run an older build.",
+                    cand.display(),
+                    install_path.display()
+                );
+                break;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = install_path;
+    }
+}
+
 pub(super) fn spawn_proxy_if_needed() {
     use std::net::TcpStream;
 
@@ -302,5 +385,35 @@ pub(super) fn spawn_proxy_if_needed() {
     match crate::ipc::process::spawn_detached(&mut cmd) {
         Ok(_) => tracing::info!("auto-started proxy on port {port}"),
         Err(e) => tracing::debug!("could not auto-start proxy: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_homebrew_cellar_link;
+    use std::path::Path;
+
+    #[test]
+    fn cellar_and_linuxbrew_links_are_detected() {
+        // macOS Apple Silicon + Intel relative/absolute Cellar targets.
+        assert!(is_homebrew_cellar_link(Path::new(
+            "../Cellar/lean-ctx/3.7.1/bin/lean-ctx"
+        )));
+        assert!(is_homebrew_cellar_link(Path::new(
+            "/opt/homebrew/Cellar/lean-ctx/3.8.0/bin/lean-ctx"
+        )));
+        // Linuxbrew.
+        assert!(is_homebrew_cellar_link(Path::new(
+            "/home/linuxbrew/.linuxbrew/Cellar/lean-ctx/1.0/bin/lean-ctx"
+        )));
+    }
+
+    #[test]
+    fn non_brew_targets_are_left_alone() {
+        assert!(!is_homebrew_cellar_link(Path::new(
+            "/Users/me/.local/bin/lean-ctx"
+        )));
+        assert!(!is_homebrew_cellar_link(Path::new("/usr/local/bin/other")));
+        assert!(!is_homebrew_cellar_link(Path::new("lean-ctx")));
     }
 }
