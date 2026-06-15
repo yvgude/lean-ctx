@@ -53,6 +53,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   one-time prompt there is legitimate, while #356's self-initiated boot prompts
   stay suppressed (verified by the `sandbox-exec` boot test plus a new
   `canonicalize_secure_bypasses_tcc_guard_for_pathjail` unit test).
+- **Cookbook dev-dependency upgrade — Vite 6 → 8 (#595)** — the example apps now
+  build on Vite `^8.0.16` with `@vitejs/plugin-react` `^6` (peer `vite ^8`),
+  pulling a patched esbuild and clearing the esbuild dev-server advisory
+  (GHSA-67mh-4wv8-2f99). `npm audit` reports 0 vulnerabilities; the
+  knowledge-graph-explorer example builds and typechecks unchanged. Node engine
+  floor raised to `>=20.19.0` to match Vite 8's requirement.
 
 ## [3.8.6] — 2026-06-15
 

@@ -17,7 +17,7 @@
     "graph-explorer": "npm --workspace @leanctx/sdk run build && npm --workspace @leanctx/example-knowledge-graph-explorer dev"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.19.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.13",
@@ -28,7 +28,7 @@
   },
   "overrides": {
     "uuid": "^14.0.0",
-    "vite": "^6.4.2",
+    "vite": "^8.0.16",
     "esbuild": "^0.28.1"
   }
 }
