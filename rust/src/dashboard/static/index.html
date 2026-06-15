@@ -750,8 +750,18 @@ function bootCockpit() {
       if (!res.ok) throw new Error('pulse http');
       var data = await res.json();
       setDaemonConnected(true);
-      if (pulseHash !== null && data.hash !== pulseHash && refreshBtn) {
-        refreshBtn.classList.add('has-update');
+      if (pulseHash !== null && data.hash !== pulseHash) {
+        // Content changed since the last pulse. When the tab is visible, refresh
+        // the active view's data in place (#425) so live stats update on their
+        // own — previously the poll only flagged the manual button, so panels
+        // stayed static until a reload. When hidden, just flag the button; the
+        // visibilitychange handler catches up the moment the tab is focused.
+        if (document.visibilityState === 'visible') {
+          document.dispatchEvent(new CustomEvent('lctx:refresh'));
+          if (refreshBtn) refreshBtn.classList.remove('has-update');
+        } else if (refreshBtn) {
+          refreshBtn.classList.add('has-update');
+        }
       }
       pulseHash = data.hash;
     } catch (e) {
@@ -826,6 +836,17 @@ function bootCockpit() {
 
   pollCockpit();
   setInterval(pollCockpit, 10000);
+
+  // Auto-refresh the active view the moment the tab regains focus, so returning
+  // to the dashboard never shows stale data (#425). Browsers throttle the 10s
+  // poll while hidden; this guarantees an immediate catch-up on return.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    var rb = document.getElementById('refreshBtn');
+    if (rb) rb.classList.remove('has-update');
+    document.dispatchEvent(new CustomEvent('lctx:refresh'));
+    pollCockpit();
+  });
 
   if (window.LctxRouter && window.LctxRouter.init) window.LctxRouter.init();
 
