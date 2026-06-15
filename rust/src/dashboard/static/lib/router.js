@@ -20,7 +20,7 @@ const COCKPIT_AREAS = [
       { tab: 'contents', view: 'context', label: 'Contents' },
       { tab: 'live', view: 'live', label: 'Live Activity' },
       { tab: 'lab', view: 'compression', label: 'Compression Lab' },
-      { tab: 'settings', view: 'settings', label: 'Settings' },
+      { tab: 'settings', view: 'settings', label: 'Quick Settings' },
     ],
   },
   {

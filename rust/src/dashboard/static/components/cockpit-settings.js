@@ -199,11 +199,20 @@ class CockpitSettings extends HTMLElement {
         'unset it for this toggle to take effect.</p>'
       : '';
 
+    // A pinned custom tool set (`lean-ctx tools <list>`) has no matching button,
+    // so none renders active — say so explicitly instead of leaving it blank.
+    var customNote = (key === 'tool_profile' && ch.current === 'custom')
+      ? '<p class="hs" style="margin:8px 0 0;color:var(--cyan,#7dd3fc);font-size:11px">' +
+        'A <strong>custom</strong> tool set is active (pinned via ' +
+        '<code>lean-ctx tools &lt;list&gt;</code>). Pick a named profile above to replace it.</p>'
+      : '';
+
     return (
       '<div class="card">' +
       '<div class="card-header"><h3>' + esc(meta.label) + '</h3></div>' +
       '<p class="hs" style="margin:0 0 10px;font-size:12px;opacity:.8">' + esc(meta.desc) + '</p>' +
       '<div class="filter-row" style="display:flex;gap:6px;flex-wrap:wrap">' + btns + '</div>' +
+      customNote +
       envNote +
       '</div>'
     );

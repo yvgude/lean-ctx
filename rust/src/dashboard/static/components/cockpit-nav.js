@@ -59,7 +59,7 @@ const COCKPIT_NAV_SECTIONS = [
       { id: 'context', label: 'Context Contents', desc: 'Everything currently loaded into the model context.' },
       { id: 'live', label: 'Live Activity', desc: 'What lean-ctx is doing right now.' },
       { id: 'compression', label: 'Compression Lab', desc: 'Which files and read modes saved the most tokens.' },
-      { id: 'settings', label: 'Settings', desc: 'Flip compression, tool profile, structure-first and terse from the UI.' },
+      { id: 'settings', label: 'Quick Settings', desc: 'Flip compression, tool profile, structure-first and terse from the UI.' },
     ],
   },
   {

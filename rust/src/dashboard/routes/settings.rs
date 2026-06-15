@@ -97,10 +97,22 @@ fn apply_setting(key: &str, value: &str) -> Result<(), String> {
         "structure_first" => {
             crate::core::config::setter::set_by_key("structure_first", value).map(|_| ())
         }
-        "terse_agent" => crate::core::config::setter::set_by_key("terse_agent", value).map(|_| ()),
+        "terse_agent" => apply_terse_agent(value),
         // validate_setting already rejected anything else.
         _ => Err(format!("unknown or non-editable setting: '{key}'")),
     }
+}
+
+/// Mirror a `terse_agent` change: persist it *and* re-inject the agent rules.
+/// `terse_agent` is a legacy input to `CompressionLevel::effective`, and the
+/// injected rules are derived from that effective level — so without a re-inject
+/// the change would not reach the agent (and the UI footer's "terse changes
+/// re-inject the agent rules" claim would be false).
+fn apply_terse_agent(value: &str) -> Result<(), String> {
+    crate::core::config::setter::set_by_key("terse_agent", value)?;
+    let cfg = Config::load();
+    let _ = crate::core::terse::rules_inject::inject(&CompressionLevel::effective(&cfg));
+    Ok(())
 }
 
 /// Mirror `lean-ctx compression <level>`: persist the level *and* re-inject the
