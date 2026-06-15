@@ -19,10 +19,10 @@ pub fn handle_observe() {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };
-    // Dedicated rules-injection mode (#343): a Claude/Codex `SessionStart` hook
+    // Dedicated rules-injection mode (#343): a Claude/Codex/CodeBuddy `SessionStart` hook
     // injects the compact lean-ctx summary as `additionalContext` — the
-    // non-polluting stand-in for the (skipped) CLAUDE.md/AGENTS.md block. Both
-    // agents register `hook observe` on SessionStart, so this is the single
+    // non-polluting stand-in for the (skipped) CLAUDE.md/CODEBUDDY.md/AGENTS.md block. All
+    // three agents register `hook observe` on SessionStart, so this is the single
     // emit point (the Codex-specific handler stays silent in dedicated mode).
     emit_dedicated_session_context(&input);
     let Some(event) = parse_observe_event(&input) else {

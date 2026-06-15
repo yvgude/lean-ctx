@@ -73,7 +73,7 @@ pub fn compile(
     }
 
     let mut rules_files = Vec::new();
-    if opts.include_rules_files && client_id == "claude-code" {
+    if opts.include_rules_files && (client_id == "claude-code" || client_id == "codebuddy") {
         let config_dir = crate::instructions::claude_config_dir_display();
         rules_files.push(CompiledRuleFile {
             path: format!("{config_dir}/rules/lean-ctx.md"),

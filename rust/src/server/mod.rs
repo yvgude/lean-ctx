@@ -52,8 +52,10 @@ fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {
     }
     let dir_str = dir.to_string_lossy();
     dir_str.ends_with("/.claude")
+        || dir_str.ends_with("/.codebuddy")
         || dir_str.ends_with("/.codex")
         || dir_str.contains("/.claude/")
+        || dir_str.contains("/.codebuddy/")
         || dir_str.contains("/.codex/")
 }
 

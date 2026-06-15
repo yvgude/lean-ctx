@@ -23,6 +23,12 @@ pub const ALL_CLIENTS: &[ClientConstraints] = &[
         supports_auto_approve: false,
     },
     ClientConstraints {
+        id: "codebuddy",
+        display_name: "CodeBuddy",
+        mcp_instructions_max_chars: Some(2048),
+        supports_auto_approve: false,
+    },
+    ClientConstraints {
         id: "vscode-copilot",
         display_name: "VS Code / GitHub Copilot",
         mcp_instructions_max_chars: None,

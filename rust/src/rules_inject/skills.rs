@@ -24,6 +24,12 @@ pub(super) fn build_skill_targets(home: &std::path::Path) -> Vec<SkillTarget> {
             skill_dir: crate::setup::claude_config_dir(home).join("skills/lean-ctx"),
         },
         SkillTarget {
+            agent_key: "codebuddy",
+            display_name: "CodeBuddy",
+            skill_dir: crate::core::editor_registry::codebuddy_state_dir(home)
+                .join("skills/lean-ctx"),
+        },
+        SkillTarget {
             agent_key: "cursor",
             display_name: "Cursor",
             skill_dir: home.join(".cursor/skills/lean-ctx"),
@@ -54,6 +60,11 @@ fn is_skill_agent_detected(agent_key: &str, home: &std::path::Path) -> bool {
             command_exists("claude")
                 || crate::core::editor_registry::claude_mcp_json_path(home).exists()
                 || crate::core::editor_registry::claude_state_dir(home).exists()
+        }
+        "codebuddy" => {
+            command_exists("codebuddy")
+                || crate::core::editor_registry::codebuddy_mcp_json_path(home).exists()
+                || crate::core::editor_registry::codebuddy_state_dir(home).exists()
         }
         "cursor" => home.join(".cursor").exists(),
         "codex" => {

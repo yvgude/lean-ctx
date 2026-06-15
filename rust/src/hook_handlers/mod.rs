@@ -108,7 +108,7 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
         // Cursor hook output format
         "permission": "allow",
         "updated_input": updated_input,
-        // Claude Code hook output format (extra fields are ignored by other hosts)
+        // Claude Code / CodeBuddy hook output format (extra fields are ignored by other hosts)
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",

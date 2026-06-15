@@ -208,7 +208,7 @@ if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LE
   switch ($_leanCtxActivation) {{
     {{ $_ -in 'off','none','manual' }} {{ $_leanCtxShouldActivate = $false }}
     {{ $_ -in 'agents-only','agents_only','agentsonly' }} {{
-      $_leanCtxShouldActivate = $env:LEAN_CTX_AGENT -or $env:CLAUDECODE -or $env:CODEX_CLI_SESSION -or $env:GEMINI_SESSION
+      $_leanCtxShouldActivate = $env:LEAN_CTX_AGENT -or $env:CLAUDECODE -or $env:CODEBUDDY -or $env:CODEX_CLI_SESSION -or $env:GEMINI_SESSION
     }}
     default {{ $_leanCtxShouldActivate = $true }}
   }}
@@ -315,7 +315,7 @@ pub fn generate_hook_fish(binary: &str) -> String {
         set -g _lean_ctx_cmds {alias_list}\n\
         \n\
         function _lc_is_agent\n\
-        \tset -q LEAN_CTX_AGENT; or set -q CODEX_CLI_SESSION; or set -q CLAUDECODE; or set -q GEMINI_SESSION\n\
+        \tset -q LEAN_CTX_AGENT; or set -q CODEX_CLI_SESSION; or set -q CLAUDECODE; or set -q CODEBUDDY; or set -q GEMINI_SESSION\n\
         end\n\
         \n\
         function _lc\n\
@@ -417,7 +417,7 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \t\tcase off none manual\n\
         \t\t\treturn 1\n\
         \t\tcase 'agents-only' agents_only agentsonly\n\
-        \t\t\tif set -q LEAN_CTX_AGENT; or set -q CLAUDECODE; or set -q CODEX_CLI_SESSION; or set -q GEMINI_SESSION\n\
+        \t\t\tif set -q LEAN_CTX_AGENT; or set -q CLAUDECODE; or set -q CODEBUDDY; or set -q CODEX_CLI_SESSION; or set -q GEMINI_SESSION\n\
         \t\t\t\treturn 0\n\
         \t\t\tend\n\
         \t\t\treturn 1\n\
@@ -461,7 +461,7 @@ pub fn generate_hook_posix(binary: &str) -> String {
 _lean_ctx_cmds=({alias_list})
 
 _lc_is_agent() {{
-    [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ]
+    [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{CODEBUDDY:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ]
 }}
 
 _lc() {{
@@ -574,7 +574,7 @@ _lean_ctx_should_activate() {{
     case "${{LEAN_CTX_SHELL_ACTIVATION:-{baked_default}}}" in
         off|none|manual) return 1 ;;
         agents-only|agents_only|agentsonly)
-            [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ] ;;
+            [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{CODEBUDDY:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ] ;;
         *) return 0 ;;
     esac
 }}

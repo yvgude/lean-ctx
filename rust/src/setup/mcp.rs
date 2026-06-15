@@ -94,6 +94,13 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
             eprintln!("\x1b[33m⚠\x1b[0m  Claude Code plan mode: {e}");
         }
     }
+    if agent == "codebuddy" {
+        if let Err(e) =
+            crate::core::editor_registry::plan_mode::write_claude_code_plan_permissions()
+        {
+            eprintln!("\x1b[33m⚠\x1b[0m  CodeBuddy plan mode: {e}");
+        }
+    }
 
     if errors.is_empty() {
         Ok(())
@@ -135,6 +142,12 @@ pub(crate) fn agent_mcp_targets(
             &mut targets,
             "Claude Code",
             crate::core::editor_registry::claude_mcp_json_path(home),
+            ConfigType::McpJson,
+        ),
+        "codebuddy" => push(
+            &mut targets,
+            "CodeBuddy",
+            crate::core::editor_registry::codebuddy_mcp_json_path(home),
             ConfigType::McpJson,
         ),
         "augment" => {
@@ -378,6 +391,12 @@ pub fn disable_agent_mcp(agent: &str, overwrite_invalid: bool) -> Result<(), Str
             &mut targets,
             "Claude Code",
             crate::core::editor_registry::claude_mcp_json_path(&home),
+            ConfigType::McpJson,
+        ),
+        "codebuddy" => push(
+            &mut targets,
+            "CodeBuddy",
+            crate::core::editor_registry::codebuddy_mcp_json_path(&home),
             ConfigType::McpJson,
         ),
         "augment" => {

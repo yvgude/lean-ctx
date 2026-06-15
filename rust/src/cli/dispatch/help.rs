@@ -204,7 +204,7 @@ COMMANDS:
     dev-install                    Build release + atomic install + restart (for development)
     gotchas [list|clear|export|stats] Bug Memory: view/manage auto-detected error patterns
     buddy [show|stats|ascii|json]  Token Guardian: your data-driven coding companion
-    doctor integrations [--json]   Integration health checks (Cursor/Claude Code)
+    doctor integrations [--json]   Integration health checks (Cursor/Claude Code/CodeBuddy)
     doctor [--fix] [--json]        Run diagnostics (and optionally repair)
     doctor --migrate-check         v1.0 migration readiness audit (config, deprecations, data)
     smells [scan|summary|rules|file] [--rule=<r>] [--path=<p>] [--json]
@@ -304,7 +304,7 @@ EXAMPLES:
     lean-ctx-status                Show whether compression is active
     lean-ctx init --agent pi       Install Pi Coding Agent extension
     lean-ctx doctor                Check PATH, config, MCP, and dashboard port
-    lean-ctx doctor integrations   Premium integration checks (Cursor/Claude Code)
+    lean-ctx doctor integrations   Premium integration checks (Cursor/Claude Code/CodeBuddy)
     lean-ctx doctor --fix --json   Repair + machine-readable report
     lean-ctx status --json         Machine-readable current status
     lean-ctx session task \"implement auth\"

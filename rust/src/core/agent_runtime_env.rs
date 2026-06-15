@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 /// Env var name prefixes identifying agent runtime/session state worth forwarding
 /// to `ctx_shell` child processes.
-pub const FORWARD_PREFIXES: &[&str] = &["CODEX_", "CLAUDE_", "OPENCODE_", "HERMES_", "GEMINI_"];
+pub const FORWARD_PREFIXES: &[&str] = &["CODEX_", "CLAUDE_", "CODEBUDDY_", "OPENCODE_", "HERMES_", "GEMINI_"];
 
 const FILE_NAME: &str = "agent_runtime_env.json";
 

@@ -38,8 +38,9 @@ pub(crate) fn configure_plan_mode_settings(newly_configured: &[&str], already_co
 
     let has_vscode = all_configured.contains(&"VS Code");
     let has_claude = all_configured.contains(&"Claude Code");
+    let has_codebuddy = all_configured.contains(&"CodeBuddy");
 
-    if !has_vscode && !has_claude {
+    if !has_vscode && !has_claude && !has_codebuddy {
         return;
     }
 
@@ -75,6 +76,24 @@ pub(crate) fn configure_plan_mode_settings(newly_configured: &[&str], already_co
             }
             Err(e) => {
                 terminal_ui::print_status_warn(&format!("Claude Code plan mode: {e}"));
+            }
+        }
+    }
+
+    if has_codebuddy {
+        match crate::core::editor_registry::plan_mode::write_claude_code_plan_permissions() {
+            Ok(r) if r.action == WriteAction::Already => {
+                terminal_ui::print_status_ok(
+                    "CodeBuddy          \x1b[2mplan mode permissions present\x1b[0m",
+                );
+            }
+            Ok(_) => {
+                terminal_ui::print_status_new(
+                    "CodeBuddy          \x1b[2mplan mode permissions added\x1b[0m",
+                );
+            }
+            Err(e) => {
+                terminal_ui::print_status_warn(&format!("CodeBuddy plan mode: {e}"));
             }
         }
     }

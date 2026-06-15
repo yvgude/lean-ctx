@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use super::paths::{
     augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path, cline_mcp_path,
-    qoder_all_mcp_paths, qoderwork_mcp_path, roo_mcp_path, vscode_mcp_path, zed_config_dir,
-    zed_settings_path,
+    codebuddy_mcp_json_path, qoder_all_mcp_paths, qoderwork_mcp_path, roo_mcp_path,
+    vscode_mcp_path, zed_config_dir, zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -40,6 +40,13 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             agent_key: "claude".to_string(),
             config_path: claude_mcp_json_path(home),
             detect_path: detect_claude_path(),
+            config_type: ConfigType::McpJson,
+        },
+        EditorTarget {
+            name: "CodeBuddy",
+            agent_key: "codebuddy".to_string(),
+            config_path: codebuddy_mcp_json_path(home),
+            detect_path: detect_codebuddy_path(),
             config_type: ConfigType::McpJson,
         },
         EditorTarget {
@@ -369,6 +376,31 @@ pub fn detect_claude_path() -> PathBuf {
         let claude_json = claude_mcp_json_path(&home);
         if claude_json.exists() {
             return claude_json;
+        }
+    }
+    PathBuf::from("/nonexistent")
+}
+
+pub fn detect_codebuddy_path() -> PathBuf {
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    if let Ok(output) = std::process::Command::new(which_cmd).arg("codebuddy").output() {
+        if output.status.success() {
+            return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        }
+    }
+    if let Ok(dir) = std::env::var("CODEBUDDY_CONFIG_DIR") {
+        let dir = dir.trim();
+        if !dir.is_empty() {
+            let p = PathBuf::from(dir);
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        let codebuddy_json = codebuddy_mcp_json_path(&home);
+        if codebuddy_json.exists() {
+            return codebuddy_json;
         }
     }
     PathBuf::from("/nonexistent")

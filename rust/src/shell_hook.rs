@@ -16,12 +16,14 @@ const DROPIN_SH: &str = "00-lean-ctx.sh";
 const KNOWN_AGENT_ENV_VARS: &[&str] = &[
     "LEAN_CTX_AGENT",
     "CLAUDECODE",
+    "CODEBUDDY",
     "CODEX_CLI_SESSION",
     "GEMINI_SESSION",
 ];
 
 const AGENT_ALIASES: &[(&str, &str)] = &[
     ("claude", "claude"),
+    ("codebuddy", "codebuddy"),
     ("codex", "codex"),
     ("gemini", "gemini"),
 ];
@@ -521,6 +523,7 @@ mod tests {
         let check = build_env_check();
         assert!(check.contains("LEAN_CTX_AGENT"));
         assert!(check.contains("CLAUDECODE"));
+        assert!(check.contains("CODEBUDDY"));
         assert!(check.contains("||"));
     }
 

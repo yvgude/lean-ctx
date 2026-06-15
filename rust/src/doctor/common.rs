@@ -193,6 +193,14 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             path: crate::core::editor_registry::claude_mcp_json_path(home),
         },
         McpLocation {
+            name: "CodeBuddy",
+            display: format!(
+                "{}",
+                crate::core::editor_registry::codebuddy_mcp_json_path(home).display()
+            ),
+            path: crate::core::editor_registry::codebuddy_mcp_json_path(home),
+        },
+        McpLocation {
             name: "Windsurf",
             display: "~/.codeium/windsurf/mcp_config.json".into(),
             path: home
@@ -529,6 +537,54 @@ pub(super) fn claude_instructions_state(
     S::Missing
 }
 
+/// CodeBuddy instructions state — mirrors `claude_instructions_state` since
+/// CodeBuddy uses the same CODEBUDDY.md block + skill pattern as Claude Code.
+pub(super) fn codebuddy_instructions_state(
+    home: &std::path::Path,
+    scope: crate::core::config::RulesScope,
+    injection: crate::core::config::RulesInjection,
+) -> ClaudeInstructionsState {
+    use ClaudeInstructionsState as S;
+
+    if scope == crate::core::config::RulesScope::Project {
+        return S::ProjectScope;
+    }
+    if injection == crate::core::config::RulesInjection::Off {
+        return S::InjectionOff;
+    }
+
+    let has_skill = home.join(".codebuddy/skills/lean-ctx/SKILL.md").exists();
+
+    if injection == crate::core::config::RulesInjection::Dedicated {
+        return if has_skill {
+            S::DedicatedWithSkill
+        } else {
+            S::DedicatedMissingSkill
+        };
+    }
+
+    let codebuddy_md =
+        crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
+    let has_block = std::fs::read_to_string(&codebuddy_md)
+        .is_ok_and(|c| c.contains(crate::hooks::agents::CODEBUDDY_MD_BLOCK_START));
+    if has_block {
+        return if has_skill {
+            S::BlockAndSkill
+        } else {
+            S::BlockOnly
+        };
+    }
+
+    let has_rules = crate::core::editor_registry::codebuddy_rules_dir(home)
+        .join("lean-ctx.md")
+        .exists();
+    if has_rules {
+        return S::LegacyRules;
+    }
+
+    S::Missing
+}
+
 pub(super) fn claude_binary_exists() -> bool {
     #[cfg(unix)]
     {
@@ -541,6 +597,23 @@ pub(super) fn claude_binary_exists() -> bool {
     {
         std::process::Command::new("where")
             .arg("claude")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+}
+
+pub(super) fn codebuddy_binary_exists() -> bool {
+    #[cfg(unix)]
+    {
+        std::process::Command::new("which")
+            .arg("codebuddy")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("where")
+            .arg("codebuddy")
             .output()
             .is_ok_and(|o| o.status.success())
     }

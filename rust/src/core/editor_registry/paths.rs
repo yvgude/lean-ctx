@@ -197,6 +197,30 @@ pub fn claude_rules_dir(home: &Path) -> PathBuf {
     claude_state_dir(home).join("rules")
 }
 
+pub fn codebuddy_mcp_json_path(home: &Path) -> PathBuf {
+    if let Ok(dir) = std::env::var("CODEBUDDY_CONFIG_DIR") {
+        let dir = dir.trim();
+        if !dir.is_empty() {
+            return PathBuf::from(dir).join(".codebuddy.json");
+        }
+    }
+    home.join(".codebuddy.json")
+}
+
+pub fn codebuddy_state_dir(home: &Path) -> PathBuf {
+    if let Ok(dir) = std::env::var("CODEBUDDY_CONFIG_DIR") {
+        let dir = dir.trim();
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    home.join(".codebuddy")
+}
+
+pub fn codebuddy_rules_dir(home: &Path) -> PathBuf {
+    codebuddy_state_dir(home).join("rules")
+}
+
 pub fn augment_cli_settings_path(home: &Path) -> PathBuf {
     home.join(".augment/settings.json")
 }

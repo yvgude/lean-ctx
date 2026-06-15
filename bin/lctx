@@ -41,6 +41,8 @@ detect_agent() {
 
   if command -v claude &>/dev/null && [[ -d "$HOME/.claude" ]]; then
     AGENT="claude"
+  elif command -v codebuddy &>/dev/null || [[ -d "$HOME/.codebuddy" ]]; then
+    AGENT="codebuddy"
   elif [[ -d "$HOME/.cursor" ]]; then
     AGENT="cursor"
   elif command -v gemini &>/dev/null || [[ -d "$HOME/.gemini" ]]; then
@@ -80,7 +82,7 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: lctx [options] [project_dir] [prompt]"
       echo ""
       echo "Options:"
-      echo "  --agent, -a NAME    Agent to use: claude|cursor|gemini|codex|windsurf|cline"
+      echo "  --agent, -a NAME    Agent to use: claude|codebuddy|cursor|gemini|codex|windsurf|cline"
       echo "  --agents LIST       Launch multiple agents in parallel (comma-separated)"
       echo "  --resume, -r ID     Resume Claude Code session"
       echo "  --scan-only         Build project graph only, don't launch agent"
@@ -162,6 +164,22 @@ case "$AGENT" in
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     cd "$PROJECT_DIR"
     exec claude ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"} ;;
+
+  codebuddy)
+    echo "Setting up lean-ctx for CodeBuddy..."
+    "$LEAN_CTX" init --agent codebuddy --global 2>/dev/null || true
+
+    CODEBUDDY_ARGS=()
+    if [[ -n "$RESUME_ID" ]]; then
+      CODEBUDDY_ARGS+=("--resume" "$RESUME_ID")
+    elif [[ -n "$PROMPT" ]]; then
+      CODEBUDDY_ARGS+=("-p" "$PROMPT")
+    fi
+
+    echo "Launching CodeBuddy..."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    cd "$PROJECT_DIR"
+    exec codebuddy ${CODEBUDDY_ARGS[@]+"${CODEBUDDY_ARGS[@]}"} ;;
 
   cursor)
     echo "Setting up lean-ctx for Cursor..."

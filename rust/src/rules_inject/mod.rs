@@ -195,6 +195,7 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
         || tn.contains(&needle)
         || (needle.contains("cursor") && tn.contains("cursor"))
         || (needle.contains("claude") && tn.contains("claude"))
+        || (needle.contains("codebuddy") && tn.contains("codebuddy"))
         || (needle.contains("windsurf") && tn.contains("windsurf"))
         || (needle.contains("codex") && tn.contains("claude"))
         || (needle.contains("zed") && tn.contains("zed"))

@@ -84,10 +84,12 @@ fn resolve_for_match(path: &std::path::Path) -> std::path::PathBuf {
 fn is_agent_or_temp_dir(dir: &std::path::Path) -> bool {
     let s = dir.to_string_lossy();
     s.contains("/.claude")
+        || s.contains("/.codebuddy")
         || s.contains("/.codex")
         || s.contains("/var/folders/")
         || s.contains("/tmp/")
         || s.contains("\\.claude")
+        || s.contains("\\.codebuddy")
         || s.contains("\\.codex")
         || s.contains("\\AppData\\Local\\Temp")
         || s.contains("\\Temp\\")

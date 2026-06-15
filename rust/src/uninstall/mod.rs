@@ -224,8 +224,10 @@ pub(super) fn remove_marked_block(content: &str, start: &str, end: &str) -> Stri
 
 fn remove_skill_dirs(home: &Path, dry_run: bool) -> bool {
     let claude_state = crate::core::editor_registry::claude_state_dir(home);
+    let codebuddy_state = crate::core::editor_registry::codebuddy_state_dir(home);
     let mut skill_dirs: Vec<(&str, PathBuf)> = vec![
         ("Claude Code", claude_state.join("skills/lean-ctx")),
+        ("CodeBuddy", codebuddy_state.join("skills/lean-ctx")),
         ("Cursor", home.join(".cursor/skills/lean-ctx")),
         (
             "Codex CLI",
@@ -241,6 +243,12 @@ fn remove_skill_dirs(home: &Path, dry_run: bool) -> bool {
     let default_claude_skill = home.join(".claude/skills/lean-ctx");
     if !skill_dirs.iter().any(|(_, p)| *p == default_claude_skill) {
         skill_dirs.push(("Claude Code (default)", default_claude_skill));
+    }
+
+    // If CODEBUDDY_CONFIG_DIR differs from ~/.codebuddy, also clean default path
+    let default_codebuddy_skill = home.join(".codebuddy/skills/lean-ctx");
+    if !skill_dirs.iter().any(|(_, p)| *p == default_codebuddy_skill) {
+        skill_dirs.push(("CodeBuddy (default)", default_codebuddy_skill));
     }
 
     let mut removed = false;
@@ -354,6 +362,8 @@ fn scan_dirs(home: &Path) -> Vec<PathBuf> {
         home.join(".cursor"),
         home.join(".claude"),
         crate::core::editor_registry::claude_state_dir(home),
+        home.join(".codebuddy"),
+        crate::core::editor_registry::codebuddy_state_dir(home),
         crate::core::editor_registry::zed_config_dir(home),
         home.join(".gemini"),
         home.join(".gemini/antigravity"),
@@ -414,6 +424,9 @@ fn scan_dirs(home: &Path) -> Vec<PathBuf> {
             ".claude",
             ".claude/rules",
             ".claude/hooks",
+            ".codebuddy",
+            ".codebuddy/rules",
+            ".codebuddy/hooks",
             ".kiro/steering",
             ".github",
             ".github/hooks",

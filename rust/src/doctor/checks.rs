@@ -583,6 +583,7 @@ pub(super) fn skill_files_outcome() -> Outcome {
 
     let candidates = [
         ("Claude Code", home.join(".claude/skills/lean-ctx/SKILL.md")),
+        ("CodeBuddy", home.join(".codebuddy/skills/lean-ctx/SKILL.md")),
         ("Cursor", home.join(".cursor/skills/lean-ctx/SKILL.md")),
         (
             "Codex CLI",
@@ -922,6 +923,25 @@ pub(super) fn claude_truncation_outcome() -> Option<Outcome> {
     ))
 }
 
+pub(super) fn codebuddy_truncation_outcome() -> Option<Outcome> {
+    let home = dirs::home_dir()?;
+    let codebuddy_detected =
+        crate::core::editor_registry::codebuddy_mcp_json_path(&home).exists()
+            || crate::core::editor_registry::codebuddy_state_dir(&home).exists()
+            || codebuddy_binary_exists();
+
+    if !codebuddy_detected {
+        return None;
+    }
+
+    let cfg = crate::core::config::Config::load();
+    Some(codebuddy_instructions_check(
+        &home,
+        cfg.rules_scope_effective(),
+        cfg.rules_injection_effective(),
+    ))
+}
+
 /// Verify Claude Code receives the full lean-ctx instructions despite the
 /// 2048-char MCP instructions cap.
 ///
@@ -963,6 +983,48 @@ fn claude_instructions_check(
         ),
         S::Missing => format!(
             "{BOLD}Claude Code instructions{RST}  {YELLOW}no CLAUDE.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx setup){RST}"
+        ),
+    };
+    Outcome {
+        ok: state.ok(),
+        line,
+    }
+}
+
+/// CodeBuddy instructions check — mirrors `claude_instructions_check` since
+/// CodeBuddy uses the same CODEBUDDY.md block + skill pattern as Claude Code.
+fn codebuddy_instructions_check(
+    home: &std::path::Path,
+    scope: crate::core::config::RulesScope,
+    injection: crate::core::config::RulesInjection,
+) -> Outcome {
+    use super::common::ClaudeInstructionsState as S;
+
+    let state = super::common::codebuddy_instructions_state(home, scope, injection);
+    let line = match state {
+        S::ProjectScope => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {GREEN}project scope{RST}  {DIM}(global instructions intentionally absent; project files carry them){RST}"
+        ),
+        S::InjectionOff => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {GREEN}rules injection off{RST}  {DIM}(instructions intentionally not installed — config rules_injection=off){RST}"
+        ),
+        S::DedicatedWithSkill => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {GREEN}dedicated injection + skill installed{RST}  {DIM}(SessionStart hook injects instructions){RST}"
+        ),
+        S::DedicatedMissingSkill => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {YELLOW}lean-ctx skill missing{RST}  {DIM}(run: lean-ctx setup){RST}"
+        ),
+        S::BlockAndSkill => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {GREEN}CODEBUDDY.md block + skill installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CODEBUDDY.md){RST}"
+        ),
+        S::BlockOnly => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {GREEN}CODEBUDDY.md block installed{RST}  {DIM}(MCP instructions capped at 2048 chars — full content via CODEBUDDY.md){RST}"
+        ),
+        S::LegacyRules => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {GREEN}legacy rules file installed{RST}  {DIM}(next `lean-ctx setup` migrates it to the CODEBUDDY.md block + skill){RST}"
+        ),
+        S::Missing => format!(
+            "{BOLD}CodeBuddy instructions{RST}  {YELLOW}no CODEBUDDY.md block or rules file found — MCP instructions truncated at 2048 chars{RST}  {DIM}(run: lean-ctx setup){RST}"
         ),
     };
     Outcome {

@@ -115,6 +115,7 @@ impl ContextRadar {
             cwd.join(".cursorrules"),
             cwd.join("AGENTS.md"),
             cwd.join("CLAUDE.md"),
+            cwd.join("CODEBUDDY.md"),
             cwd.join("LEAN-CTX.md"),
             home.join(".cursor").join("rules"),
             home.join(".cursorrules"),
@@ -165,6 +166,7 @@ impl ContextRadar {
         if name == ".cursorrules"
             || name == "AGENTS.md"
             || name == "CLAUDE.md"
+            || name == "CODEBUDDY.md"
             || name == "LEAN-CTX.md"
         {
             return true;

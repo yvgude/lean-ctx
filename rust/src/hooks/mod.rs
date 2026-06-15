@@ -88,7 +88,10 @@ pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
 use agents::{
     install_amp_hook, install_antigravity_cli_hook, install_antigravity_hook,
     install_claude_hook_config, install_claude_hook_scripts, install_claude_hook_with_mode,
-    install_claude_project_hooks, install_cline_rules, install_codex_hook, install_copilot_hook,
+    install_claude_project_hooks, install_cline_rules,
+    install_codebuddy_hook_config, install_codebuddy_hook_scripts,
+    install_codebuddy_hook_with_mode, install_codebuddy_project_hooks,
+    install_codex_hook, install_copilot_hook,
     install_crush_hook_with_mode, install_cursor_hook_config, install_cursor_hook_scripts,
     install_cursor_hook_with_mode, install_gemini_hook, install_gemini_hook_config,
     install_gemini_hook_scripts, install_hermes_hook_with_mode, install_jetbrains_hook,
@@ -170,6 +173,11 @@ fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
             dir.join("hooks/lean-ctx-rewrite.sh").exists()
                 || file_contains_lean_ctx(&dir.join("settings.json"))
         }
+        "codebuddy" => {
+            let dir = crate::core::editor_registry::codebuddy_state_dir(home);
+            dir.join("hooks/lean-ctx-rewrite.sh").exists()
+                || file_contains_lean_ctx(&dir.join("settings.json"))
+        }
         "cursor" => {
             home.join(".cursor/hooks/lean-ctx-rewrite.sh").exists()
                 || file_contains_lean_ctx(&home.join(".cursor/hooks.json"))
@@ -203,6 +211,10 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
         "claude" => {
             install_claude_hook_scripts(home);
             install_claude_hook_config(home);
+        }
+        "codebuddy" => {
+            install_codebuddy_hook_scripts(home);
+            install_codebuddy_hook_config(home);
         }
         "cursor" => {
             install_cursor_hook_scripts(home);
@@ -444,6 +456,22 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
         install_claude_project_hooks(&cwd);
     }
 
+    if wants("codebuddy") {
+        let codebuddy_rules_file = cwd.join(".codebuddy").join("rules").join("lean-ctx.md");
+        if let Ok(existing) = std::fs::read_to_string(&codebuddy_rules_file) {
+            if existing.contains("<!-- lean-ctx-rules-")
+                && std::fs::remove_file(&codebuddy_rules_file).is_ok()
+                && !mcp_server_quiet_mode()
+            {
+                eprintln!(
+                    "Removed .codebuddy/rules/lean-ctx.md (always-loaded duplicate; CODEBUDDY.md block + skill replace it)."
+                );
+            }
+        }
+
+        install_codebuddy_project_hooks(&cwd);
+    }
+
     if wants("kiro") {
         let kiro_dir = cwd.join(".kiro");
         if kiro_dir.exists() {
@@ -614,6 +642,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
     match agent {
         "claude" | "claude-code" => install_claude_hook_with_mode(global, mode),
+        "codebuddy" => install_codebuddy_hook_with_mode(global, mode),
         "cursor" => install_cursor_hook_with_mode(global, mode),
         "gemini" => {
             install_gemini_hook();
@@ -697,7 +726,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
         _ => {
             eprintln!("Unknown agent: {agent}");
             eprintln!("  Supported: aider, amazonq, amp, antigravity, antigravity-cli, augment,");
-            eprintln!("    claude, cline, codex, continue, copilot, crush, cursor, emacs, gemini,");
+            eprintln!("    claude, cline, codebuddy, codex, continue, copilot, crush, cursor, emacs, gemini,");
             eprintln!("    hermes, jetbrains, kiro, neovim, openclaw, opencode, pi, qoder,");
             eprintln!("    qoderwork, qwen, roo, sublime, trae, verdent, vscode, windsurf, zed");
             std::process::exit(1);
@@ -708,6 +737,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
 pub fn install_agent_project_hooks(agent: &str, cwd: &std::path::Path) {
     match agent {
         "claude" | "claude-code" => agents::install_claude_project_hooks(cwd),
+        "codebuddy" => agents::install_codebuddy_project_hooks(cwd),
         _ => {}
     }
 }

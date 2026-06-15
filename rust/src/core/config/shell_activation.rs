@@ -47,7 +47,7 @@ impl ShellActivation {
                 r#"if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${LEAN_CTX_DISABLED:-}" ] && [ "${LEAN_CTX_ENABLED:-1}" != "0" ]; then"#
             }
             Self::AgentsOnly => {
-                r#"if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${LEAN_CTX_DISABLED:-}" ] && [ "${LEAN_CTX_ENABLED:-1}" != "0" ] && { [ -n "${LEAN_CTX_AGENT:-}" ] || [ -n "${CLAUDECODE:-}" ] || [ -n "${CODEX_CLI_SESSION:-}" ] || [ -n "${GEMINI_SESSION:-}" ]; }; then"#
+                r#"if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${LEAN_CTX_DISABLED:-}" ] && [ "${LEAN_CTX_ENABLED:-1}" != "0" ] && { [ -n "${LEAN_CTX_AGENT:-}" ] || [ -n "${CLAUDECODE:-}" ] || [ -n "${CODEBUDDY:-}" ] || [ -n "${CODEX_CLI_SESSION:-}" ] || [ -n "${GEMINI_SESSION:-}" ]; }; then"#
             }
             Self::Off => "",
         }
@@ -59,7 +59,7 @@ impl ShellActivation {
                 "if not set -q LEAN_CTX_ACTIVE; and not set -q LEAN_CTX_DISABLED; and test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) != '0'"
             }
             Self::AgentsOnly => {
-                "if not set -q LEAN_CTX_ACTIVE; and not set -q LEAN_CTX_DISABLED; and test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) != '0'; and begin; set -q LEAN_CTX_AGENT; or set -q CLAUDECODE; or set -q CODEX_CLI_SESSION; or set -q GEMINI_SESSION; end"
+                "if not set -q LEAN_CTX_ACTIVE; and not set -q LEAN_CTX_DISABLED; and test (set -q LEAN_CTX_ENABLED; and echo $LEAN_CTX_ENABLED; or echo 1) != '0'; and begin; set -q LEAN_CTX_AGENT; or set -q CLAUDECODE; or set -q CODEBUDDY; or set -q CODEX_CLI_SESSION; or set -q GEMINI_SESSION; end"
             }
             Self::Off => "",
         }
@@ -71,7 +71,7 @@ impl ShellActivation {
                 "if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LEAN_CTX_NO_HOOK)"
             }
             Self::AgentsOnly => {
-                "if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LEAN_CTX_NO_HOOK -and ($env:LEAN_CTX_AGENT -or $env:CLAUDECODE -or $env:CODEX_CLI_SESSION -or $env:GEMINI_SESSION))"
+                "if (-not $env:LEAN_CTX_ACTIVE -and -not $env:LEAN_CTX_DISABLED -and -not $env:LEAN_CTX_NO_HOOK -and ($env:LEAN_CTX_AGENT -or $env:CLAUDECODE -or $env:CODEBUDDY -or $env:CODEX_CLI_SESSION -or $env:GEMINI_SESSION))"
             }
             Self::Off => "",
         }
@@ -108,6 +108,7 @@ mod tests {
         let guard = ShellActivation::AgentsOnly.posix_guard();
         assert!(guard.contains("LEAN_CTX_AGENT"));
         assert!(guard.contains("CLAUDECODE"));
+        assert!(guard.contains("CODEBUDDY"));
         assert!(guard.contains("CODEX_CLI_SESSION"));
         assert!(guard.contains("GEMINI_SESSION"));
     }

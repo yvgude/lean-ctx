@@ -145,7 +145,7 @@ pub struct Config {
     #[serde(default)]
     pub rules_scope: Option<String>,
     /// Controls how rules are injected for shared-instruction-file agents.
-    /// Values: "shared" (default, marker block in CLAUDE.md/AGENTS.md/GEMINI.md),
+    /// Values: "shared" (default, marker block in CLAUDE.md/CODEBUDDY.md/AGENTS.md/GEMINI.md),
     /// "dedicated" (never touch those files; use each agent's config-driven
     /// auto-load: SessionStart hook / instructions[] / context.fileName, #343), or
     /// "off" (write no rules file at all — for hosts that supply their own
@@ -187,7 +187,7 @@ pub struct Config {
     #[serde(default)]
     pub allow_paths: Vec<String>,
     /// Allow jailed tool access to home-level IDE config dirs (~/.cursor,
-    /// ~/.claude, …). Default false: those dirs expose other projects'
+    /// ~/.claude, ~/.codebuddy, …). Default false: those dirs expose other projects'
     /// sessions, MCP configs and credentials. `~/.lean-ctx` (own data dir)
     /// is always allowed. Override via LEAN_CTX_ALLOW_IDE_DIRS=1.
     #[serde(default)]
@@ -541,7 +541,7 @@ impl Config {
     }
 
     /// Returns the effective rules injection mode, preferring env var over config.
-    /// Default is `Shared` (zero-config discovery via a CLAUDE.md/AGENTS.md block).
+    /// Default is `Shared` (zero-config discovery via a CLAUDE.md/CODEBUDDY.md/AGENTS.md block).
     pub fn rules_injection_effective(&self) -> RulesInjection {
         let raw = std::env::var("LEAN_CTX_RULES_INJECTION")
             .ok()
@@ -573,7 +573,7 @@ impl Config {
     /// non-polluting auto-load path *and* global rules are in scope.
     ///
     /// Gates the Claude/Codex `SessionStart` `additionalContext` summary: it
-    /// stands in for the (now-skipped) shared CLAUDE.md/AGENTS.md block, so it
+    /// stands in for the (now-skipped) shared CLAUDE.md/CODEBUDDY.md/AGENTS.md block, so it
     /// only fires when injection is `Dedicated` and the scope isn't project-only.
     #[must_use]
     pub fn dedicated_session_context_active(&self) -> bool {

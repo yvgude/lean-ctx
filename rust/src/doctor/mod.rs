@@ -461,6 +461,15 @@ pub fn run() {
         print_check(ct);
     }
 
+    // 14a) CodeBuddy instruction truncation guard
+    let codebuddy_truncation = codebuddy_truncation_outcome();
+    if let Some(ref cbt) = codebuddy_truncation {
+        if cbt.ok {
+            passed += 1;
+        }
+        print_check(cbt);
+    }
+
     // 15) BM25 cache health
     let bm25_health = bm25_cache_health_outcome();
     if bm25_health.ok {

@@ -13,6 +13,13 @@ pub(super) fn is_tool_detected(target: &RulesTarget, home: &std::path::Path) -> 
             let state_dir = crate::core::editor_registry::claude_state_dir(home);
             crate::core::editor_registry::claude_mcp_json_path(home).exists() || state_dir.exists()
         }
+        "CodeBuddy" => {
+            if command_exists("codebuddy") {
+                return true;
+            }
+            let state_dir = crate::core::editor_registry::codebuddy_state_dir(home);
+            crate::core::editor_registry::codebuddy_mcp_json_path(home).exists() || state_dir.exists()
+        }
         "Codex CLI" => {
             let codex_dir =
                 crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));

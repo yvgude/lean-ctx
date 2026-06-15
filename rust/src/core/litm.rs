@@ -45,7 +45,7 @@ impl LitmProfile {
 
     pub fn from_name(name: &str) -> Self {
         match name.to_lowercase().as_str() {
-            "claude" | "cursor" => Self::CLAUDE,
+            "claude" | "codebuddy" | "cursor" => Self::CLAUDE,
             "gemini" => Self::GEMINI,
             "gpt" | "openai" | "codex" => Self::GPT,
             _ => Self::DEFAULT,

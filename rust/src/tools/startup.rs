@@ -18,8 +18,10 @@ pub(super) fn has_project_marker(dir: &std::path::Path) -> bool {
 pub(super) fn is_suspicious_root(dir: &std::path::Path) -> bool {
     let s = dir.to_string_lossy();
     s.contains("/.claude")
+        || s.contains("/.codebuddy")
         || s.contains("/.codex")
         || s.contains("\\.claude")
+        || s.contains("\\.codebuddy")
         || s.contains("\\.codex")
 }
 

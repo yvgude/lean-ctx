@@ -83,6 +83,7 @@ impl SetupConfig {
         let check_paths = [
             home.join(".cursor/rules/lean-ctx.mdc"),
             crate::core::editor_registry::claude_rules_dir(&home).join("lean-ctx.md"),
+            crate::core::editor_registry::codebuddy_rules_dir(&home).join("lean-ctx.md"),
             home.join(".gemini/GEMINI.md"),
             home.join(".codeium/windsurf/rules/lean-ctx.md"),
         ];

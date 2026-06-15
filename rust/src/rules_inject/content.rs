@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use super::RulesFormat;
 
 /// The canonical shared rules block lean-ctx injects into a host instruction file
-/// (`CLAUDE.md` / `AGENTS.md`). Exposed for honest per-turn overhead accounting
+/// (`CLAUDE.md` / `CODEBUDDY.md` / `AGENTS.md`). Exposed for honest per-turn overhead accounting
 /// (see `core::context_overhead`, GitHub #361).
 #[must_use]
 pub fn canonical_rules_block() -> &'static str {
@@ -62,7 +62,7 @@ pub const GEMINI_DEDICATED_CONTEXT_FILENAME: &str = "LEANCTX.md";
 // ---------------------------------------------------------------------------
 // Rules content for SHARED config files (appended to user's existing config).
 // LITM-optimized: critical instruction at START and END of block.
-// Used for: CLAUDE.md, instructions.md, GEMINI.md, copilot-instructions.md
+// Used for: CLAUDE.md, CODEBUDDY.md, instructions.md, GEMINI.md, copilot-instructions.md
 // ---------------------------------------------------------------------------
 pub(super) const RULES_SHARED: &str = r#"# lean-ctx — Context Engineering Layer
 <!-- lean-ctx-rules-v11 -->

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use serde::Serialize;
 
-use super::{claude_binary_exists, resolve_lean_ctx_binary, BOLD, DIM, GREEN, RST, WHITE, YELLOW};
+use super::{claude_binary_exists, codebuddy_binary_exists, resolve_lean_ctx_binary, BOLD, DIM, GREEN, RST, WHITE, YELLOW};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct IntegrationsOptions {
@@ -49,9 +49,10 @@ pub(super) fn run_integrations(opts: &IntegrationsOptions) -> i32 {
     let mut integrations = vec![
         integration_cursor(&home, &binary, &data_dir),
         integration_claude(&home, &binary, &data_dir),
+        integration_codebuddy(&home, &binary, &data_dir),
     ];
     for t in crate::core::editor_registry::build_targets(&home) {
-        if matches!(t.name, "Cursor" | "Claude Code") {
+        if matches!(t.name, "Cursor" | "Claude Code" | "CodeBuddy") {
             continue;
         }
         integrations.push(integration_generic(&home, &binary, &data_dir, &t));
@@ -281,6 +282,72 @@ fn integration_claude(home: &std::path::Path, binary: &str, data_dir: &str) -> I
     let ok = checks.iter().all(|c| c.ok);
     IntegrationStatus {
         name: "Claude Code".to_string(),
+        detected: true,
+        checks,
+        ok,
+    }
+}
+
+fn integration_codebuddy(
+    home: &std::path::Path,
+    binary: &str,
+    data_dir: &str,
+) -> IntegrationStatus {
+    let target = crate::core::editor_registry::build_targets(home)
+        .into_iter()
+        .find(|t| t.agent_key == "codebuddy");
+    let detected = target.as_ref().is_some_and(|t| t.detect_path.exists())
+        || crate::core::editor_registry::codebuddy_state_dir(home).exists()
+        || codebuddy_binary_exists();
+
+    if !detected {
+        return IntegrationStatus {
+            name: "CodeBuddy".to_string(),
+            detected: false,
+            checks: Vec::new(),
+            ok: true,
+        };
+    }
+
+    let mut checks = Vec::new();
+    let mcp_path = crate::core::editor_registry::codebuddy_mcp_json_path(home);
+    checks.push(check_mcp_json(&mcp_path, binary, data_dir));
+
+    let settings_path =
+        crate::core::editor_registry::codebuddy_state_dir(home).join("settings.json");
+    checks.push(check_claude_hooks(&settings_path, binary));
+
+    // CodeBuddy uses the same block + skill pattern as Claude Code.
+    {
+        use super::common::ClaudeInstructionsState as S;
+        let cfg = crate::core::config::Config::load();
+        let state = super::common::codebuddy_instructions_state(
+            home,
+            cfg.rules_scope_effective(),
+            cfg.rules_injection_effective(),
+        );
+        let codebuddy_md =
+            crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
+        let detail = match state {
+            S::ProjectScope => "project scope (global instructions intentionally absent)".into(),
+            S::InjectionOff => "rules injection off (intentionally not installed)".into(),
+            S::DedicatedWithSkill => "dedicated injection + skill".into(),
+            S::DedicatedMissingSkill => "skill missing (run: lean-ctx setup)".into(),
+            S::BlockAndSkill => format!("{} block + skill", codebuddy_md.display()),
+            S::BlockOnly => format!("{} block", codebuddy_md.display()),
+            S::LegacyRules => "legacy rules file (migrates on next setup)".into(),
+            S::Missing => "missing (run: lean-ctx setup)".into(),
+        };
+        checks.push(NamedCheck {
+            name: "Instructions".to_string(),
+            ok: state.ok(),
+            detail,
+        });
+    }
+
+    let ok = checks.iter().all(|c| c.ok);
+    IntegrationStatus {
+        name: "CodeBuddy".to_string(),
         detected: true,
         checks,
         ok,

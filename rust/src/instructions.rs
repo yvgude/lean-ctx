@@ -35,7 +35,7 @@ pub fn build_instructions(crp_mode: CrpMode) -> String {
 }
 
 pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> String {
-    if is_claude_code_client(client_name) {
+    if is_claude_code_client(client_name) || is_codebuddy_client(client_name) {
         return build_claude_code_instructions();
     }
     build_full_instructions(crp_mode, client_name)
@@ -48,7 +48,7 @@ pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
 }
 
 pub fn build_instructions_with_client_for_test(crp_mode: CrpMode, client_name: &str) -> String {
-    if is_claude_code_client(client_name) {
+    if is_claude_code_client(client_name) || is_codebuddy_client(client_name) {
         return build_claude_code_instructions();
     }
     build_full_instructions_for_test(crp_mode, client_name)
@@ -63,7 +63,7 @@ pub fn build_instructions_with_client_for_compiler(
     client_name: &str,
     unified_tool_mode: bool,
 ) -> String {
-    if is_claude_code_client(client_name) {
+    if is_claude_code_client(client_name) || is_codebuddy_client(client_name) {
         return build_claude_code_instructions();
     }
     build_full_instructions_for_compiler(crp_mode, client_name, unified_tool_mode)
@@ -72,6 +72,11 @@ pub fn build_instructions_with_client_for_compiler(
 fn is_claude_code_client(client_name: &str) -> bool {
     let lower = client_name.to_lowercase();
     lower.contains("claude") && !lower.contains("cursor")
+}
+
+fn is_codebuddy_client(client_name: &str) -> bool {
+    let lower = client_name.to_lowercase();
+    lower.contains("codebuddy")
 }
 
 /// LITM calibration manifest rotation (#539).

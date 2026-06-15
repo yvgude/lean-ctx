@@ -176,12 +176,17 @@ fn target_count() {
     // 24, not 25: Claude Code intentionally has no rules target — its rules
     // file loaded unconditionally every session and duplicated the CLAUDE.md
     // block (GL #555/#558). Guidance lives in CLAUDE.md + the on-demand skill.
+    // CodeBuddy also has no rules target (same pattern as Claude Code).
     let home = std::path::PathBuf::from("/tmp/fake_home");
     let targets = build_rules_targets(&home, crate::core::config::RulesInjection::Shared);
     assert_eq!(targets.len(), 24);
     assert!(
         !targets.iter().any(|t| t.name == "Claude Code"),
         "Claude Code must not get a rules target (always-loaded duplicate)"
+    );
+    assert!(
+        !targets.iter().any(|t| t.name == "CodeBuddy"),
+        "CodeBuddy must not get a rules target (always-loaded duplicate, same as Claude Code)"
     );
     // Dedicated mode swaps paths/formats but never changes the target count.
     let dedicated = build_rules_targets(&home, crate::core::config::RulesInjection::Dedicated);
@@ -237,7 +242,7 @@ fn skill_template_not_empty() {
 fn skill_targets_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
     let targets = build_skill_targets(&home);
-    assert_eq!(targets.len(), 5);
+    assert_eq!(targets.len(), 6);
 }
 
 #[test]
@@ -301,6 +306,7 @@ fn match_agent_name_basic() {
     assert!(match_agent_name("verdent", "Verdent"));
     assert!(match_agent_name("continue", "Continue"));
     assert!(match_agent_name("antigravity", "Antigravity"));
+    assert!(match_agent_name("codebuddy", "CodeBuddy"));
     assert!(match_agent_name("gemini", "Gemini CLI"));
     assert!(match_agent_name("augment", "Augment"));
     assert!(match_agent_name("openclaw", "OpenClaw"));

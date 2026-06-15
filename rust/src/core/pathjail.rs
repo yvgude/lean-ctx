@@ -15,6 +15,7 @@ const IDE_CONFIG_DIRS: &[&str] = &[
     ".amp",
     ".aider",
     ".continue",
+    ".codebuddy",
 ];
 
 /// Expands `~`, `$VAR` and `${VAR}` in a config-supplied path entry.

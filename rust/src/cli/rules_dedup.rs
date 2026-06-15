@@ -85,6 +85,7 @@ fn project_owned_candidates(dir: &Path) -> Vec<PathBuf> {
     vec![
         dir.join(".cursor/rules/lean-ctx.mdc"),
         dir.join(".claude/rules/lean-ctx.md"),
+        dir.join(".codebuddy/rules/lean-ctx.md"),
         dir.join(".windsurf/rules/lean-ctx.md"),
         dir.join(".cline/rules/lean-ctx.md"),
         dir.join(".roo/rules/lean-ctx.md"),

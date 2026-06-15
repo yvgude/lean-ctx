@@ -154,6 +154,7 @@ impl ServerHandler for LeanCtxServer {
                 let heuristic_role = match agent_name.to_lowercase().as_str() {
                     n if n.contains("cursor") => Some("coder"),
                     n if n.contains("claude") => Some("coder"),
+                    n if n.contains("codebuddy") => Some("coder"),
                     n if n.contains("codex") => Some("coder"),
                     n if n.contains("antigravity") || n.contains("gemini") => Some("coder"),
                     n if n.contains("review") => Some("reviewer"),

@@ -177,8 +177,10 @@ pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     }
     s.ends_with("/.claude")
         || s.ends_with("/.codex")
+        || s.ends_with("/.codebuddy")
         || s.contains("/.claude/")
         || s.contains("/.codex/")
+        || s.contains("/.codebuddy/")
 }
 
 /// Well-known project markers used to identify project roots.

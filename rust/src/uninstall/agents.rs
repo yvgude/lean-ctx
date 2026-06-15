@@ -60,6 +60,7 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
         ".kiro/steering/lean-ctx.md",
         ".cursor/rules/lean-ctx.mdc",
         ".claude/rules/lean-ctx.md",
+        ".codebuddy/rules/lean-ctx.md",
     ];
     for rel in &dedicated_project_files {
         let path = cwd.join(rel);
@@ -137,6 +138,22 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
                 removed |= apply_hook_cleanup(
                     &claude_settings,
                     "Project .claude/settings.local.json",
+                    &content,
+                    dry_run,
+                );
+            }
+        }
+    }
+
+    // Project-level .codebuddy/settings.local.json: surgically remove lean-ctx hooks
+    let codebuddy_settings = cwd.join(".codebuddy/settings.local.json");
+    if codebuddy_settings.exists() {
+        if let Ok(content) = fs::read_to_string(&codebuddy_settings) {
+            if content.contains("lean-ctx") {
+                backup_before_modify(&codebuddy_settings, dry_run);
+                removed |= apply_hook_cleanup(
+                    &codebuddy_settings,
+                    "Project .codebuddy/settings.local.json",
                     &content,
                     dry_run,
                 );
@@ -295,10 +312,16 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         || PathBuf::from("/nonexistent"),
         |d| PathBuf::from(d).join(".claude.json"),
     );
+    let codebuddy_cfg_dir_json = std::env::var("CODEBUDDY_CONFIG_DIR").ok().map_or_else(
+        || PathBuf::from("/nonexistent"),
+        |d| PathBuf::from(d).join(".codebuddy.json"),
+    );
     let mut configs: Vec<(&str, PathBuf)> = vec![
         ("Cursor", home.join(".cursor/mcp.json")),
         ("Claude Code (config dir)", claude_cfg_dir_json),
         ("Claude Code (home)", home.join(".claude.json")),
+        ("CodeBuddy (config dir)", codebuddy_cfg_dir_json),
+        ("CodeBuddy (home)", home.join(".codebuddy.json")),
         ("Windsurf", home.join(".codeium/windsurf/mcp_config.json")),
         ("Gemini CLI", home.join(".gemini/settings.json")),
         (
@@ -504,6 +527,10 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             "Claude Code",
             crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md"),
         ),
+        (
+            "CodeBuddy",
+            crate::core::editor_registry::codebuddy_rules_dir(home).join("lean-ctx.md"),
+        ),
         ("Cursor", home.join(".cursor/rules/lean-ctx.mdc")),
         (
             "Gemini CLI (legacy)",
@@ -565,6 +592,11 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
             crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"),
         ),
         ("Claude Code (legacy home)", home.join(".claude/CLAUDE.md")),
+        (
+            "CodeBuddy",
+            crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md"),
+        ),
+        ("CodeBuddy (legacy home)", home.join(".codebuddy/CODEBUDDY.md")),
         ("Gemini CLI", home.join(".gemini/GEMINI.md")),
         (
             "Codex CLI",
@@ -780,11 +812,16 @@ fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) ->
 
 pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
     let claude_hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
+    let codebuddy_hooks_dir = crate::core::editor_registry::codebuddy_state_dir(home).join("hooks");
     let hook_files: Vec<PathBuf> = vec![
         claude_hooks_dir.join("lean-ctx-rewrite.sh"),
         claude_hooks_dir.join("lean-ctx-redirect.sh"),
         claude_hooks_dir.join("lean-ctx-rewrite-native"),
         claude_hooks_dir.join("lean-ctx-redirect-native"),
+        codebuddy_hooks_dir.join("lean-ctx-rewrite.sh"),
+        codebuddy_hooks_dir.join("lean-ctx-redirect.sh"),
+        codebuddy_hooks_dir.join("lean-ctx-rewrite-native"),
+        codebuddy_hooks_dir.join("lean-ctx-redirect-native"),
         home.join(".cursor/hooks/lean-ctx-rewrite.sh"),
         home.join(".cursor/hooks/lean-ctx-redirect.sh"),
         home.join(".cursor/hooks/lean-ctx-rewrite-native"),
@@ -837,6 +874,28 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
         removed |= apply_hook_cleanup(
             &claude_settings,
             &format!("Claude Code {claude_settings_name}"),
+            &content,
+            dry_run,
+        );
+    }
+
+    // CodeBuddy global settings: surgically remove lean-ctx hook entries
+    for codebuddy_settings_name in ["settings.json", "settings.local.json"] {
+        let codebuddy_settings =
+            crate::core::editor_registry::codebuddy_state_dir(home).join(codebuddy_settings_name);
+        if !codebuddy_settings.exists() {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&codebuddy_settings) else {
+            continue;
+        };
+        if !content.contains("lean-ctx") {
+            continue;
+        }
+        backup_before_modify(&codebuddy_settings, dry_run);
+        removed |= apply_hook_cleanup(
+            &codebuddy_settings,
+            &format!("CodeBuddy {codebuddy_settings_name}"),
             &content,
             dry_run,
         );
