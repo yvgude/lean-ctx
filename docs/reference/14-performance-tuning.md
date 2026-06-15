@@ -47,16 +47,16 @@ config + env + defaults into one view and tags the **source** of each value:
 individually.
 
 ```toml
-memory_profile = "balanced"     # balanced | performance | conservative
+memory_profile = "balanced"     # low | balanced | performance
 ```
 
 ```bash
 # or per-process, no config edit:
-LEAN_CTX_MEMORY_PROFILE=conservative lean-ctx serve --daemon
+LEAN_CTX_MEMORY_PROFILE="low" lean-ctx serve --daemon
 ```
 
-Reach for `conservative` on small CI runners or low-RAM machines; `performance`
-trades disk for speed on a workstation.
+Reach for `low` on small CI runners or low-RAM machines; `performance`
+trades disk for speed on a workstation. `balanced` is in between.
 
 ---
 
