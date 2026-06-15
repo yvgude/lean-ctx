@@ -198,13 +198,7 @@ pub fn claude_rules_dir(home: &Path) -> PathBuf {
 }
 
 pub fn codebuddy_mcp_json_path(home: &Path) -> PathBuf {
-    if let Ok(dir) = std::env::var("CODEBUDDY_CONFIG_DIR") {
-        let dir = dir.trim();
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join(".codebuddy.json");
-        }
-    }
-    home.join(".codebuddy.json")
+    codebuddy_state_dir(home).join("mcp.json")
 }
 
 pub fn codebuddy_state_dir(home: &Path) -> PathBuf {

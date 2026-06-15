@@ -18,7 +18,6 @@ pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
 
     let scope = crate::core::config::Config::load().rules_scope_effective();
     if scope != crate::core::config::RulesScope::Project {
-        remove_codebuddy_rules_file(&home);
         install_codebuddy_global_codebuddy_md_for_mode(&home, mode);
         install_codebuddy_skill(&home);
     }
@@ -184,22 +183,6 @@ fn install_codebuddy_skill(home: &std::path::Path) {
             perms.set_mode(0o755);
             let _ = std::fs::set_permissions(&script_path, perms);
         }
-    }
-}
-
-fn remove_codebuddy_rules_file(home: &std::path::Path) {
-    let rules_path = crate::core::editor_registry::codebuddy_rules_dir(home).join("lean-ctx.md");
-    let Ok(existing) = std::fs::read_to_string(&rules_path) else {
-        return;
-    };
-    if existing.contains("<!-- lean-ctx-rules-")
-        && std::fs::remove_file(&rules_path).is_ok()
-        && !super::super::mcp_server_quiet_mode()
-    {
-        eprintln!(
-            "Removed {} (always-loaded duplicate; the CODEBUDDY.md block + on-demand skill replace it)",
-            rules_path.display()
-        );
     }
 }
 

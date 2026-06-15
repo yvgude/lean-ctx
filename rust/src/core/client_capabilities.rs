@@ -161,7 +161,7 @@ fn identify_client(lower: &str) -> String {
     if lower.contains("cursor") {
         "cursor".to_string()
     } else if lower.contains("codebuddy") {
-        "claude-code".to_string()
+        "codebuddy".to_string()
     } else if lower.contains("claude") {
         "claude-code".to_string()
     } else if lower.contains("windsurf") || lower.contains("codeium") {

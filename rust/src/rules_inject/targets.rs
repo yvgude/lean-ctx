@@ -44,8 +44,17 @@ pub(super) fn build_rules_targets(
     // footprints, GL #555). Claude guidance lives in the CLAUDE.md block
     // (hooks/agents/claude.rs) + the on-demand skill; uninstall still removes
     // legacy ~/.claude/rules/lean-ctx.md files from older installs.
-    // CodeBuddy follows the same pattern (CODEBUDDY.md block + skill).
+    //
+    // CodeBuddy uses ~/.codebuddy/rules/lean-ctx.md (user-level rules, auto-loaded
+    // for all projects). The CODEBUDDY.md block is the primary delivery path;
+    // the rules file is a reliable fallback because CodeBuddy auto-discovers all
+    // ~/.codebuddy/rules/*.md files without requiring explicit imports.
     vec![
+        RulesTarget {
+            name: "CodeBuddy",
+            path: crate::core::editor_registry::codebuddy_rules_dir(home).join("lean-ctx.md"),
+            format: RulesFormat::DedicatedMarkdown,
+        },
         // --- Shared config files (append-only) ---
         RulesTarget {
             name: "Gemini CLI",
