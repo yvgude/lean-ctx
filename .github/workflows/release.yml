@@ -256,7 +256,21 @@ jobs:
       - name: Attach plugin ZIP to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" packages/jetbrains-lean-ctx/build/distributions/*.zip --clobber
+        # Gradle's rootProject.name is "lean-ctx", so buildPlugin emits
+        # build/distributions/lean-ctx-<version>.zip — indistinguishable from a
+        # source archive in the release asset list, which is why the plugin
+        # looked "missing" (#418). Re-name it to a discoverable, unambiguous
+        # asset before upload so users can actually find the JetBrains plugin.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SRC="$(ls packages/jetbrains-lean-ctx/build/distributions/*.zip | head -1)"
+          if [ -z "$SRC" ]; then
+            echo "::error::No plugin distribution zip produced by buildPlugin" >&2
+            exit 1
+          fi
+          DEST="lean-ctx-jetbrains-plugin-${VERSION}.zip"
+          cp "$SRC" "$DEST"
+          gh release upload "${GITHUB_REF_NAME}" "$DEST" --clobber
 
   publish-crates:
     name: Publish to crates.io
