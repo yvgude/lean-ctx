@@ -18,6 +18,7 @@ pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
 
     let scope = crate::core::config::Config::load().rules_scope_effective();
     if scope != crate::core::config::RulesScope::Project {
+        remove_codebuddy_rules_file(&home);
         install_codebuddy_global_codebuddy_md_for_mode(&home, mode);
         install_codebuddy_skill(&home);
     }
@@ -160,6 +161,29 @@ fn remove_block(content: &str, start: &str, end: &str) -> String {
             out
         }
         _ => content.to_string(),
+    }
+}
+
+/// Remove the lean-ctx-owned `~/.codebuddy/rules/lean-ctx.md` (GL #555/#558).
+///
+/// CodeBuddy auto-loads every `~/.codebuddy/rules/*.md` file unconditionally at
+/// session start, so this file duplicated the CODEBUDDY.md block in every session.
+/// The CODEBUDDY.md block is self-contained and detail docs live in the on-demand
+/// skill; only files carrying our rules marker are touched.
+fn remove_codebuddy_rules_file(home: &std::path::Path) {
+    let rules_path =
+        crate::core::editor_registry::codebuddy_rules_dir(home).join("lean-ctx.md");
+    let Ok(existing) = std::fs::read_to_string(&rules_path) else {
+        return;
+    };
+    if existing.contains("<!-- lean-ctx-rules-")
+        && std::fs::remove_file(&rules_path).is_ok()
+        && !super::super::mcp_server_quiet_mode()
+    {
+        eprintln!(
+            "Removed {} (always-loaded duplicate; CODEBUDDY.md block + skill replace it)",
+            rules_path.display()
+        );
     }
 }
 
