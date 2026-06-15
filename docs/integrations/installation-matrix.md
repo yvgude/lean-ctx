@@ -24,6 +24,7 @@ The default per agent comes from `recommend_hook_mode`: agents in the `HYBRID_AG
 | `codex` | **Hybrid** | `hooks.json` (SessionStart/PreToolUse) for Bash; MCP for reads (Desktop/Cloud variants have no hooks) |
 | `gemini` | **Hybrid** | BeforeTool hooks for shell; MCP for reads/search |
 | `claude` / `claude-code` | **Hybrid** | PreToolUse Bash hooks + MCP (hooks don't fire in headless `-p` mode → MCP guarantees reads) |
+| `codebuddy` | **Hybrid** | Same architecture as Claude Code — PreToolUse Bash hooks + MCP |
 | `windsurf` | **Hybrid** | `~/.codeium/windsurf/hooks.json` for shell + MCP for full Context OS |
 | `copilot` | **Hybrid** | `.github/hooks/hooks.json` for shell + MCP |
 | `qoder` | **Hybrid** | Bash hook in `settings.json` + MCP for reads |
@@ -40,6 +41,7 @@ Legend:
 |------|------------------|-----------|--------------|-------|
 | Cursor (`cursor`) | `~/.cursor/mcp.json` (MCP enabled — Hybrid) | `~/.cursor/rules/lean-ctx.mdc` | `~/.cursor/hooks.json` + `~/.cursor/hooks/lean-ctx-*.sh` | `~/.cursor/skills/lean-ctx/SKILL.md` |
 | Claude Code (`claude`) | `~/.claude.json` (MCP enabled — Hybrid) | `~/.claude/CLAUDE.md` block (no rules file since 3.8) | `~/.claude/settings.json` hook wiring (Bash rewrite + Read redirect) | `~/.claude/skills/lean-ctx/SKILL.md` |
+| CodeBuddy (`codebuddy`) | `~/.codebuddy.json` (MCP enabled — Hybrid) | `~/.codebuddy/CODEBUDDY.md` block | `~/.codebuddy/settings.json` hook wiring (Bash rewrite + Read redirect) | `~/.codebuddy/skills/lean-ctx/SKILL.md` |
 | Codex (`codex`) | `~/.codex/config.toml` (MCP enabled — Hybrid) | `~/.codex/LEAN-CTX.md` + `~/.codex/AGENTS.md` | `~/.codex/hooks.json` (SessionStart/PreToolUse) | `~/.codex/skills/lean-ctx/SKILL.md` |
 | OpenCode (`opencode`) | `~/.config/opencode/opencode.json` (MCP enabled — Hybrid) | `~/.config/opencode/rules/lean-ctx.md` | `~/.config/opencode/plugins/lean-ctx.ts` | — |
 | Windsurf (`windsurf`) | `~/.codeium/windsurf/mcp_config.json` | `~/.codeium/windsurf/rules/lean-ctx.md` | project `.windsurfrules` (when not global) | — |

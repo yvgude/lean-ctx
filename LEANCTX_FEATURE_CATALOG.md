@@ -205,7 +205,7 @@ Tracks wasted tokens from compressed→full re-reads:
 
 Runtime detection of 9 IDE clients:
 
-- Cursor, Claude Code, Windsurf, Zed, VS Code Copilot, Kiro, Codex, Antigravity, Gemini CLI
+- Cursor, Claude Code, CodeBuddy, Windsurf, Zed, VS Code Copilot, Kiro, Codex, Antigravity, Gemini CLI
 
 Tier 1–4 classification determines feature gating for resources, prompts, elicitation, and dynamic tools.
 
@@ -243,7 +243,7 @@ Previously deprecated aliases have been removed. Use the canonical tools:
 
 ### SKILL.md Auto-Installation
 - `lean-ctx init` writes `SKILL.md` to agent-specific skill directories
-- Auto-detects Cursor, Claude Code, Codex, Gemini CLI, Kiro skill paths
+- Auto-detects Cursor, Claude Code, CodeBuddy, Codex, Gemini CLI, Kiro skill paths
 
 ### Compressed Output Cache
 - `map` and `signatures` read modes cache compressed output

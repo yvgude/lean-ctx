@@ -298,6 +298,7 @@ Define how LeanCTX communicates with the outside world.
 |---|---|---|---|
 | Cursor | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas + shell patterns | `lean-ctx setup` |
 | Claude Code | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas + shell patterns | `lean-ctx init --agent claude` |
+| CodeBuddy | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas + shell patterns | `lean-ctx init --agent codebuddy` |
 | GitHub Copilot | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas | `lean-ctx init --agent copilot` |
 | Remote agents | HTTP | HTTP MCP v1 + typed errors | `lean-ctx serve` |
 | Teams | HTTP | Team Server v1 + audit log | `lean-ctx team serve` |

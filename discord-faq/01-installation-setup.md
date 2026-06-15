@@ -18,7 +18,7 @@ Then run `lean-ctx setup` and `lean-ctx doctor` to verify.
 No. Since v3.2.3 the install script auto-detects if `cargo` is missing and downloads a pre-built binary. Rust is only needed if you want to build from source.
 
 **Q: Which editors/AI tools are supported?**
-lean-ctx auto-configures for: **Cursor, Claude Code, GitHub Copilot, Windsurf, VS Code, Zed, Codex CLI, Gemini CLI, OpenCode, Pi, Qwen Code, Trae, Amazon Q, JetBrains, Antigravity, Cline/Roo Code, Aider, Amp, Kiro, Continue, Crush** — run `lean-ctx setup` and it detects everything.
+lean-ctx auto-configures for: **Cursor, Claude Code, CodeBuddy, GitHub Copilot, Windsurf, VS Code, Zed, Codex CLI, Gemini CLI, OpenCode, Pi, Qwen Code, Trae, Amazon Q, JetBrains, Antigravity, Cline/Roo Code, Aider, Amp, Kiro, Continue, Crush** — run `lean-ctx setup` and it detects everything.
 
 **Q: How do I update?**
 ```bash

@@ -119,7 +119,7 @@ Changes to these files receive extra scrutiny:
 |------|------|-----|
 | `rust/src/shell/` | Shell execution | Wraps your shell, executes commands |
 | `rust/src/server/` | MCP protocol | Handles all tool calls from AI editors/agents |
-| `rust/src/hooks/` | Editor integration | Installs hooks/config into Claude Code, Cursor, etc. |
+| `rust/src/hooks/` | Editor integration | Installs hooks/config into Claude Code, CodeBuddy, Cursor, etc. |
 | `rust/src/core/cache.rs` | File caching | Reads and stores file contents |
 | `rust/Cargo.toml` | Supply chain | Dependency manifest |
 | `.github/workflows/*.yml` | CI/CD | Release pipeline integrity |

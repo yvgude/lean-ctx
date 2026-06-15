@@ -43,7 +43,7 @@ Technical depth: [`docs/cognition-interface.md`](docs/cognition-interface.md) ·
 - **Evidence over claims.** Policy decides what an agent may see; signed
   evidence proves what it saw. Compliance reports (EU AI Act, ISO/IEC 42001,
   SOC 2) are generated from real session data, offline-verifiable.
-- **One binary, 30+ tools.** Cursor, Claude Code, Windsurf, Copilot, Codex,
+- **One binary, 30+ tools.** Cursor, Claude Code, CodeBuddy, Windsurf, Copilot, Codex,
   Gemini, JetBrains and more — the same engine everywhere.
 
 ## Direction

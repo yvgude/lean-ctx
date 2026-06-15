@@ -410,6 +410,7 @@ LeanCTX is a standard **MCP server**, so it works with any MCP-compatible client
 |---|:---:|:---:|---|
 | Cursor | ● | | `lean-ctx init --agent cursor` |
 | Claude Code | ● | | `lean-ctx init --agent claude` |
+| CodeBuddy | ● | | `lean-ctx init --agent codebuddy` |
 | Augment CLI / VS Code | ● | | `lean-ctx init --agent augment` |
 | Codex CLI | ● | | `lean-ctx init --agent codex` |
 | Gemini CLI | ● | | `lean-ctx init --agent gemini` |

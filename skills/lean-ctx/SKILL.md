@@ -79,6 +79,7 @@ Use `full` mode only when you will edit the file.
 lean-ctx init --global                # Install shell aliases
 lean-ctx init --agent cursor          # Hybrid (MCP reads/search + shell hooks)
 lean-ctx init --agent claude          # Hybrid (Claude Code)
+lean-ctx init --agent codebuddy       # Hybrid (CodeBuddy)
 lean-ctx init --agent codex           # Hybrid (Codex CLI)
 lean-ctx init --agent opencode        # Hybrid (OpenCode)
 

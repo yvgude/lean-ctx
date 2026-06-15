@@ -981,6 +981,7 @@ Runtime client identification (`core/client_capabilities.rs`) detects the connec
 |:-------|:-----|:-----------------|
 | Cursor | 1 | All features — resources, prompts, elicitation, sampling, dynamic tools |
 | Claude Code | 1 | All features |
+| CodeBuddy | 1 | All features (same architecture as Claude Code) |
 | Windsurf | 2 | Resources, prompts, dynamic tools (100-tool limit) |
 | Zed | 2 | Resources, prompts |
 | VS Code Copilot | 2 | Resources, dynamic tools |

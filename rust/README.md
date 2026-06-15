@@ -17,8 +17,8 @@
 lean-ctx reduces LLM token consumption by **up to 99%** through two complementary strategies in a single binary:
 
 1. **Shell Hook** — Transparently compresses CLI output (95+ patterns) before it reaches the LLM. Works without LLM cooperation.
-2. **MCP Server** — 76 tools for cached file reads, adaptive mode selection, incremental deltas, dependency maps, intent detection, cross-file dedup, project graph, cross-session memory (CCP), multi-agent coordination, semantic caching, and session metrics. Works with Cursor, GitHub Copilot, Claude Code, Windsurf, OpenAI Codex, Google Antigravity, OpenCode, and any MCP-compatible editor.
-3. **AI Tool Hooks** — One-command integration for Claude Code, Cursor, Gemini CLI, Codex, Crush, Windsurf, and Cline via `lean-ctx init --agent <tool>`.
+2. **MCP Server** — 76 tools for cached file reads, adaptive mode selection, incremental deltas, dependency maps, intent detection, cross-file dedup, project graph, cross-session memory (CCP), multi-agent coordination, semantic caching, and session metrics. Works with Cursor, GitHub Copilot, Claude Code, CodeBuddy, Windsurf, OpenAI Codex, Google Antigravity, OpenCode, and any MCP-compatible editor.
+3. **AI Tool Hooks** — One-command integration for Claude Code, CodeBuddy, Cursor, Gemini CLI, Codex, Crush, Windsurf, and Cline via `lean-ctx init --agent <tool>`.
 
 ## Token Savings (Typical Cursor/Claude Code Session)
 
@@ -193,7 +193,8 @@ lean-ctx pack --pr                          # PR context pack (unchanged)
 
 ```bash
 lean-ctx init --global         # Install 23 shell aliases (.zshrc/.bashrc/.config/fish)
-lean-ctx init --agent claude   # Install Claude Code PreToolUse hook
+lean-ctx init --agent claude    # Install Claude Code PreToolUse hook
+lean-ctx init --agent codebuddy # Install CodeBuddy PreToolUse hook
 lean-ctx init --agent cursor   # Install Cursor hooks.json
 lean-ctx init --agent gemini   # Install Gemini CLI BeforeTool hook
 lean-ctx init --agent codex    # Install Codex AGENTS.md + compatible hooks
