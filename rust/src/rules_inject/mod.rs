@@ -192,7 +192,7 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
 /// agent's rules file (checking both the shared and dedicated layouts).
 ///
 /// Drift-proof by construction: the path catalog is derived from
-/// [`build_rules_targets`], the same source the injector writes to, so a newly
+/// `build_rules_targets`, the same source the injector writes to, so a newly
 /// supported agent is covered automatically. This replaces a hand-maintained
 /// list that silently omitted OpenCode and ~18 other agents (#442) — that gap
 /// made `SetupConfig::should_inject_rules()` report "no rules present" for
