@@ -705,13 +705,13 @@ mod tests {
     #[test]
     fn display_user_path_respects_component_boundary() {
         // `/home/foo` must never turn `/home/foo-sibling/...` into `~-sibling/...`.
-        if let Some(home) = dirs::home_dir() {
-            if let (Some(parent), Some(name)) = (home.parent(), home.file_name()) {
-                let sibling = parent
-                    .join(format!("{}-sibling", name.to_string_lossy()))
-                    .join("x");
-                assert!(!display_user_path(&sibling).starts_with('~'));
-            }
+        if let Some(home) = dirs::home_dir()
+            && let (Some(parent), Some(name)) = (home.parent(), home.file_name())
+        {
+            let sibling = parent
+                .join(format!("{}-sibling", name.to_string_lossy()))
+                .join("x");
+            assert!(!display_user_path(&sibling).starts_with('~'));
         }
     }
 

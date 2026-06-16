@@ -431,22 +431,22 @@ pub fn collect_cep_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_
 pub fn collect_gotcha_entries() -> Vec<serde_json::Value> {
     let mut all_gotchas = crate::core::gotcha_tracker::load_universal_gotchas();
 
-    if let Ok(knowledge_dir) = crate::core::paths::data_dir().map(|d| d.join("knowledge")) {
-        if let Ok(entries) = std::fs::read_dir(&knowledge_dir) {
-            for entry in entries.flatten() {
-                let gotcha_path = entry.path().join("gotchas.json");
-                if gotcha_path.exists()
-                    && let Ok(content) = std::fs::read_to_string(&gotcha_path)
-                    && let Ok(store) =
-                        serde_json::from_str::<crate::core::gotcha_tracker::GotchaStore>(&content)
-                {
-                    for g in store.gotchas {
-                        if !all_gotchas
-                            .iter()
-                            .any(|existing| existing.trigger == g.trigger)
-                        {
-                            all_gotchas.push(g);
-                        }
+    if let Ok(knowledge_dir) = crate::core::paths::data_dir().map(|d| d.join("knowledge"))
+        && let Ok(entries) = std::fs::read_dir(&knowledge_dir)
+    {
+        for entry in entries.flatten() {
+            let gotcha_path = entry.path().join("gotchas.json");
+            if gotcha_path.exists()
+                && let Ok(content) = std::fs::read_to_string(&gotcha_path)
+                && let Ok(store) =
+                    serde_json::from_str::<crate::core::gotcha_tracker::GotchaStore>(&content)
+            {
+                for g in store.gotchas {
+                    if !all_gotchas
+                        .iter()
+                        .any(|existing| existing.trigger == g.trigger)
+                    {
+                        all_gotchas.push(g);
                     }
                 }
             }
@@ -489,10 +489,8 @@ pub fn collect_feedback_entries() -> Vec<serde_json::Value> {
 pub fn collect_contribute_entries() -> Vec<serde_json::Value> {
     let mut entries = Vec::new();
 
-    if let Some(home) = dirs::home_dir() {
-        let mode_stats_path = crate::core::data_dir::lean_ctx_data_dir()
-            .unwrap_or_else(|_| home.join(".lean-ctx"))
-            .join("mode_stats.json");
+    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+        let mode_stats_path = data_dir.join("mode_stats.json");
         if let Ok(data) = std::fs::read_to_string(&mode_stats_path)
             && let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data)
             && let Some(history) = predictor["history"].as_object()

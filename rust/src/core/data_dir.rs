@@ -349,9 +349,12 @@ mod tests {
 
     #[cfg(unix)]
     fn restore_env(key: &str, val: Option<std::ffi::OsString>) {
-        match val {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
+        unsafe {
+            match val {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
         }
     }
 
@@ -374,10 +377,13 @@ mod tests {
         let saved_home = std::env::var_os("HOME");
         let saved_config = std::env::var_os("XDG_CONFIG_HOME");
         let saved_data = std::env::var_os("XDG_DATA_HOME");
-        std::env::set_var("HOME", &home);
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::set_var("XDG_DATA_HOME", &xdg_data);
-        std::env::set_var("LEAN_CTX_DATA_DIR", "");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::set_var("XDG_DATA_HOME", &xdg_data);
+            std::env::set_var("LEAN_CTX_DATA_DIR", "");
+        }
 
         let result = resolve_home_data_dir().unwrap();
 
@@ -385,7 +391,8 @@ mod tests {
         restore_env("HOME", saved_home);
         restore_env("XDG_CONFIG_HOME", saved_config);
         restore_env("XDG_DATA_HOME", saved_data);
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         assert_eq!(
             result,

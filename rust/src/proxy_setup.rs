@@ -500,13 +500,12 @@ fn install_pi_env_at(agent_dir: &Path, port: u16, quiet: bool, force: bool) {
             continue;
         }
         // Never silently clobber a user's custom remote gateway; --force overrides.
-        if !force {
-            if let Some(custom) = normalize_url_opt(&current) {
-                if !is_local_proxy_url(&custom) {
-                    kept_custom.push(format!("{provider} → {custom}"));
-                    continue;
-                }
-            }
+        if !force
+            && let Some(custom) = normalize_url_opt(&current)
+            && !is_local_proxy_url(&custom)
+        {
+            kept_custom.push(format!("{provider} → {custom}"));
+            continue;
         }
         set_pi_provider_base_url(&mut doc, provider, &proxy_url);
         changed = true;
