@@ -377,8 +377,12 @@ fn raw_shell_skips_all_postprocessing() {
             && src.contains("skip_terse"),
         "skip_terse must include is_raw_shell and double-compression guard"
     );
+    // The verify_output guard may AND extra predicates after !is_raw_shell
+    // (e.g. !firewalled, verify_footer()), so accept both the bare guard and
+    // the extended form rather than pinning a brittle exact literal.
     assert!(
-        src.contains("if !is_raw_shell {") && src.contains("verify_output"),
+        (src.contains("if !is_raw_shell {") || src.contains("if !is_raw_shell &&"))
+            && src.contains("verify_output"),
         "output verification must be skipped for raw shell"
     );
     assert!(
