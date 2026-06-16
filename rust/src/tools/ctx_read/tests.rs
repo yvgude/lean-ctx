@@ -7,18 +7,21 @@ use std::time::Duration;
 #[test]
 fn test_header_toon_format_no_brackets() {
     let _lock = crate::core::data_dir::test_env_lock();
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_META", "1") };
     let content = "use std::io;\nfn main() {}\n";
     let header = build_header("F1", "main.rs", "rs", content, 2, false);
     assert!(!header.contains('['));
     assert!(!header.contains(']'));
     assert!(header.contains("F1=main.rs 2L"));
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_META") };
 }
 
 #[test]
 fn test_header_toon_deps_indented() {
     let _lock = crate::core::data_dir::test_env_lock();
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_META", "1") };
     let content = "use crate::core::cache;\nuse crate::tools;\npub fn main() {}\n";
     let header = build_header("F1", "main.rs", "rs", content, 3, true);
@@ -32,12 +35,14 @@ fn test_header_toon_deps_indented() {
             "deps should not use bracket format"
         );
     }
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_META") };
 }
 
 #[test]
 fn test_header_toon_saves_tokens() {
     let _lock = crate::core::data_dir::test_env_lock();
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_META", "1") };
     let content = "use crate::foo;\nuse crate::bar;\npub fn baz() {}\npub fn qux() {}\n";
     let old_header = "F1=main.rs [4L +] deps:[foo,bar] exports:[baz,qux]".to_string();
@@ -48,6 +53,7 @@ fn test_header_toon_saves_tokens() {
         new_tokens <= old_tokens,
         "TOON header ({new_tokens} tok) should be <= old format ({old_tokens} tok)"
     );
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_META") };
 }
 
@@ -514,8 +520,11 @@ fn process_mode_output_is_byte_stable_across_calls() {
     // `session: N saved` line every 10th call across ALL tests. Other tests
     // leaked `LEAN_CTX_SAVINGS_FOOTER=always` here in the past — neutralize
     // defensively while we hold the env lock.
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_SAVINGS_FOOTER") };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_SHOW_SAVINGS") };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_QUIET") };
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))

@@ -82,6 +82,7 @@ mod tests {
 
     fn isolated() -> (tempfile::TempDir, String) {
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path().join("data")) };
         let root = tmp.path().join("proj").to_string_lossy().to_string();
         (tmp, root)
@@ -110,6 +111,7 @@ mod tests {
         assert!(maybe_record_periodic(&root, c).is_some());
         assert_eq!(list(&root).len(), 1);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -125,6 +127,7 @@ mod tests {
         assert!(!hits.is_empty(), "should recall the summary lexically");
         assert!(hits[0].record.title.contains("traversal"));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

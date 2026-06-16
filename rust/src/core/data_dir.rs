@@ -203,6 +203,7 @@ impl Drop for IsolatedDataDir {
         // Struct Drop runs before field drops, so the env is restored while
         // the lock is still held.
         for var in ISOLATED_ENV_VARS {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::remove_var(var) };
         }
     }
@@ -213,6 +214,7 @@ pub fn isolated_data_dir() -> IsolatedDataDir {
     let guard = test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir for isolated data dir");
     for var in ISOLATED_ENV_VARS {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var(var, tmp.path()) };
     }
     IsolatedDataDir { tmp, _guard: guard }
@@ -262,14 +264,20 @@ mod tests {
         let _lock = test_env_lock();
         let xdg_config = tempfile::tempdir().unwrap();
         let xdg_data = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", "") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg_config.path()) };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("XDG_DATA_HOME", xdg_data.path()) };
 
         let result = resolve_home_data_dir().unwrap();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("XDG_DATA_HOME") };
 
         // A real `~/.lean-ctx` (legacy) would correctly take precedence; only
@@ -296,9 +304,11 @@ mod tests {
         let dir = std::env::temp_dir().join("test_data_dir_env");
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::create_dir_all(&dir);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
         let result = lean_ctx_data_dir().unwrap();
         assert_eq!(result, dir);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -323,14 +333,18 @@ mod tests {
         let _ = std::fs::create_dir_all(&xdg_dir);
         std::fs::write(xdg_dir.join("stats.json"), r#"{"total_commands":1}"#).unwrap();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", "") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg_base.to_str().unwrap()) };
 
         // Calls the home resolver directly: lean_ctx_data_dir() is sandboxed
         // under cfg(test) (GL #512) and would short-circuit before XDG logic.
         let result = resolve_home_data_dir().unwrap();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
 
         let home = dirs::home_dir().unwrap();

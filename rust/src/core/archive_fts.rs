@@ -269,6 +269,7 @@ mod tests {
     fn fts_roundtrip() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         // Force re-open by directly testing open_db
@@ -297,6 +298,7 @@ mod tests {
     fn open_db_bounds_the_wal() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let conn = open_db().expect("should open");

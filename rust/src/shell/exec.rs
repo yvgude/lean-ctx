@@ -572,8 +572,10 @@ mod exec_tests {
 
     #[test]
     fn exec_argv_passes_through_when_disabled() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DISABLED", "1") };
         let code = super::exec_argv(&["true".to_string()]);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DISABLED") };
         assert_eq!(code, 0);
     }

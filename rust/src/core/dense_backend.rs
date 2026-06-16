@@ -430,7 +430,9 @@ mod tests {
     fn set_env(key: &str, value: Option<&str>) -> Option<String> {
         let old = std::env::var(key).ok();
         match value {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             Some(v) => unsafe { std::env::set_var(key, v) },
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             None => unsafe { std::env::remove_var(key) },
         }
         old
@@ -438,7 +440,9 @@ mod tests {
 
     fn restore_env(key: &str, old: Option<String>) {
         match old {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             Some(v) => unsafe { std::env::set_var(key, v) },
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             None => unsafe { std::env::remove_var(key) },
         }
     }

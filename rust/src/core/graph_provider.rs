@@ -420,6 +420,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).expect("mkdir data");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string()) };
 
         let project_root = tmp.path().join("proj");
@@ -444,6 +445,7 @@ mod tests {
         let open = open_best_effort(&root).expect("open");
         assert_eq!(open.source, GraphProviderSource::GraphIndex);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -453,6 +455,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).expect("mkdir data");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string()) };
 
         let project_root = tmp.path().join("proj");
@@ -462,6 +465,7 @@ mod tests {
         let open = open_best_effort(&root);
         assert!(open.is_none());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 

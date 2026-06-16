@@ -285,7 +285,9 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let cache = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_CACHE_DIR", cache.path()) };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.path()) };
 
         AnomalyDetector::default().save();
@@ -293,7 +295,9 @@ mod tests {
         let in_cache = cache.path().join("anomaly_detector.json").exists();
         let in_data = data.path().join("anomaly_detector.json").exists();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_CACHE_DIR") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         assert!(

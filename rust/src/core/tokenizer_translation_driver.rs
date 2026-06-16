@@ -254,6 +254,7 @@ mod tests {
     #[test]
     fn ruleset_disabled_is_legacy() {
         let _lock = env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_MODEL") };
         let cfg = TranslationConfig {
             enabled: Some(false),
@@ -299,6 +300,7 @@ mod tests {
     #[test]
     fn translation_skips_json_outputs() {
         let _lock = env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_MODEL", "gpt-5.4") };
         let cfg = TranslationConfig {
             enabled: Some(true),

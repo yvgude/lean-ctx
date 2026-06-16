@@ -192,6 +192,7 @@ mod tests {
     impl EnvVarGuard {
         fn set(key: &'static str, value: &std::path::Path) -> Self {
             let prev = std::env::var(key).ok();
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var(key, value) };
             Self { key, prev }
         }
@@ -200,7 +201,9 @@ mod tests {
     impl Drop for EnvVarGuard {
         fn drop(&mut self) {
             match self.prev.as_deref() {
+                // SAFETY: single-threaded context (test/startup); no concurrent env access.
                 Some(v) => unsafe { std::env::set_var(self.key, v) },
+                // SAFETY: single-threaded context (test/startup); no concurrent env access.
                 None => unsafe { std::env::remove_var(self.key) },
             }
         }

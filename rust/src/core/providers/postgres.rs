@@ -172,7 +172,9 @@ mod tests {
 
     #[test]
     fn postgres_provider_unavailable_without_env() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("DATABASE_URL") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("PGDATABASE") };
 
         let provider = PostgresProvider::new();

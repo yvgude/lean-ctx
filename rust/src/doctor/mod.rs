@@ -860,6 +860,7 @@ mod tests {
     fn bashrc_not_active_on_windows_even_with_bash_in_shell_env() {
         // Issue #214: On Windows, Git Bash sets $SHELL globally to bash.exe.
         // .bashrc should NOT be flagged on Windows unless actually inside bash.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("BASH_VERSION") };
         assert!(!is_active_shell_impl(
             "~/.bashrc",
@@ -894,6 +895,7 @@ mod tests {
     fn bashrc_not_active_on_windows_without_powershell_detection() {
         // Windows + $SHELL=bash but NOT in actual bash session (no BASH_VERSION).
         // This is the exact scenario from issue #214: Git Bash sets $SHELL globally.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("BASH_VERSION") };
         assert!(!is_active_shell_impl(
             "~/.bashrc",

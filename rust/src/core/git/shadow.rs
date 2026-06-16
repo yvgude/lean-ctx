@@ -318,6 +318,7 @@ mod tests {
         }
         let _lock = crate::core::data_dir::test_env_lock();
         let data = temp_project("data");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data) };
         let project = temp_project("proj");
 
@@ -350,6 +351,7 @@ mod tests {
             "shadow history must not touch the user's project .git"
         );
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&project);

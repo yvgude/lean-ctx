@@ -117,6 +117,7 @@ mod tests {
     fn reminders_budgeted() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe {
             std::env::set_var(
                 "LEAN_CTX_DATA_DIR",
@@ -160,6 +161,7 @@ mod tests {
         let reminders = reminders_for_task(&project_root_str, "fix cargo build error E0502 borrow");
         assert!(reminders.len() <= crate::core::budgets::PROSPECTIVE_REMINDERS_LIMIT);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

@@ -495,6 +495,7 @@ mod tests {
         };
         let doc_proj = home.join("Documents/some-project");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
         assert!(process_is_tcc_standalone());
         assert!(!may_probe_path(&doc_proj));
@@ -503,9 +504,11 @@ mod tests {
         // has_project_marker must refuse without touching the filesystem.
         assert!(!has_project_marker(&doc_proj));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "0") };
         assert!(!process_is_tcc_standalone());
         assert!(may_probe_path(&doc_proj));
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
     }
 
@@ -523,6 +526,7 @@ mod tests {
         // every heuristic canonicalize funnels through here.
         let missing = home.join("Documents/lean-ctx-tcc-test-does-not-exist-xyzzy");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
         let guarded = safe_canonicalize(&missing);
         assert!(
@@ -538,9 +542,11 @@ mod tests {
 
         // Without standalone the guard is inactive: a missing ~/Documents path
         // Errs from the real `std::fs::canonicalize` as before.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "0") };
         assert!(safe_canonicalize(&missing).is_err());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
     }
 
@@ -559,6 +565,7 @@ mod tests {
         };
         let missing = home.join("Documents/lean-ctx-secure-canon-does-not-exist-xyzzy");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
         // Guarded sink short-circuits (no fs access).
         assert_eq!(safe_canonicalize(&missing).unwrap(), missing);
@@ -570,6 +577,7 @@ mod tests {
             "canonicalize_secure must bypass the TCC guard and touch the filesystem"
         );
         assert_eq!(canonicalize_secure_or_self(&missing), missing);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
     }
 

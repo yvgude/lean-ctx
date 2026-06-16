@@ -1056,6 +1056,7 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
         let root = tmp.to_string_lossy().to_string();
         // Write a port file at the discovery path for `root`.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &tmp) };
         let pf_path = crate::lsp::port_discovery::port_file_path(&root).unwrap();
         let pid = std::process::id();
@@ -1083,6 +1084,7 @@ mod tests {
         // Different cached pid → stale even though the file is live.
         let other = JetBrainsHttpBackend::new(4567, "tok".to_string(), root.clone(), pid + 1);
         assert!(other.is_stale(&root), "pid mismatch must be stale");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&tmp);
     }

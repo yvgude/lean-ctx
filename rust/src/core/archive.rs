@@ -503,6 +503,7 @@ mod tests {
     fn cleanup_removes_expired_keeps_fresh() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let now = Utc::now();
@@ -516,6 +517,7 @@ mod tests {
         assert!(!meta_path("aa_old").exists());
         assert!(content_path("bb_new").exists());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -523,6 +525,7 @@ mod tests {
     fn cleanup_enforces_disk_budget_oldest_first() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let now = Utc::now();
@@ -538,6 +541,7 @@ mod tests {
         assert!(content_path("c2_middle").exists());
         assert!(content_path("c3_newest").exists());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

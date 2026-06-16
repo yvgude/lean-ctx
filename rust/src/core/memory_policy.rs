@@ -486,7 +486,9 @@ mod tests {
 
     fn restore_env(key: &str, prev: Option<String>) {
         match prev {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             Some(v) => unsafe { std::env::set_var(key, v) },
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             None => unsafe { std::env::remove_var(key) },
         }
     }
@@ -505,8 +507,11 @@ mod tests {
         let prev_stale = std::env::var("LEAN_CTX_LIFECYCLE_STALE_DAYS").ok();
         let prev_rep = std::env::var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS").ok();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS", "123") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_LIFECYCLE_STALE_DAYS", "7") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS", "4") };
 
         let mut p = MemoryPolicy::default();

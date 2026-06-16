@@ -1024,6 +1024,7 @@ mod tests {
         let _g = SHELL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") };
         assert!(!shell_available("fish"));
         assert!(!shell_available("nushell"));
@@ -1036,6 +1037,7 @@ mod tests {
         let _g = SHELL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") };
         // On any Unix CI/dev machine at least one of bash/zsh should exist.
         let has_bash = Path::new("/bin/bash").exists() || Path::new("/usr/bin/bash").exists();
@@ -1058,16 +1060,19 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // `all` forces every shell, even ones not on disk.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "all") };
         assert!(shell_available("zsh"));
         assert!(shell_available("bash"));
 
         // A comma list forces only the named shells.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "zsh") };
         assert!(shell_available("zsh"));
         // `bash` falls back to filesystem detection here; assert only the
         // forced-on guarantee to stay host-independent.
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") };
     }
 }

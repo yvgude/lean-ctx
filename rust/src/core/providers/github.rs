@@ -399,8 +399,11 @@ mod tests {
 
     #[test]
     fn provider_unavailable_without_token() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("GITHUB_TOKEN") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("GH_TOKEN") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_GITHUB_TOKEN") };
         let provider = GitHubProvider::new();
         assert!(!provider.is_available());

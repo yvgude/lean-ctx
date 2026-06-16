@@ -608,6 +608,7 @@ mod tests {
     fn cognition_loop_runs_all_steps() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe {
             std::env::set_var(
                 "LEAN_CTX_DATA_DIR",
@@ -629,6 +630,7 @@ mod tests {
         let report = run_cognition_loop(&project_root_str, 8);
         assert_eq!(report.steps_run, 8);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

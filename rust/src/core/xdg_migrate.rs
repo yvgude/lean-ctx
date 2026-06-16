@@ -620,7 +620,9 @@ mod tests {
                 .collect();
             for (k, v) in pairs {
                 match v {
+                    // SAFETY: single-threaded context (test/startup); no concurrent env access.
                     Some(p) => unsafe { std::env::set_var(k, p) },
+                    // SAFETY: single-threaded context (test/startup); no concurrent env access.
                     None => unsafe { std::env::remove_var(k) },
                 }
             }
@@ -633,7 +635,9 @@ mod tests {
         fn drop(&mut self) {
             for (k, v) in &self.0 {
                 match v {
+                    // SAFETY: single-threaded context (test/startup); no concurrent env access.
                     Some(val) => unsafe { std::env::set_var(k, val) },
+                    // SAFETY: single-threaded context (test/startup); no concurrent env access.
                     None => unsafe { std::env::remove_var(k) },
                 }
             }

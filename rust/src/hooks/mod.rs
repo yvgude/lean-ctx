@@ -912,7 +912,9 @@ mod tests {
         // server entry, otherwise the long-lived server rejects explicit paths
         // under sibling worktrees as jail escapes.
         let _iso = crate::core::data_dir::isolated_data_dir();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_PROJECT_ROOT", "/work/main") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_EXTRA_ROOTS", "/work/wt-a:/work/wt-b") };
 
         let pairs = mcp_server_env_pairs();
@@ -928,7 +930,9 @@ mod tests {
         let json = mcp_server_env_json();
         assert_eq!(json["LEAN_CTX_PROJECT_ROOT"].as_str(), Some("/work/main"));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_PROJECT_ROOT") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_EXTRA_ROOTS") };
     }
 
@@ -937,7 +941,9 @@ mod tests {
         // No project context configured anywhere ⇒ only the data dir is emitted,
         // so we never write empty/placeholder root keys into agent configs.
         let _iso = crate::core::data_dir::isolated_data_dir();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_PROJECT_ROOT") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_EXTRA_ROOTS") };
 
         let pairs = mcp_server_env_pairs();

@@ -470,8 +470,10 @@ mod tests {
             "JIRA_DEPLOYMENT",
             "JIRA_AUTH",
         ] {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::remove_var(var) };
         }
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("JIRA_DATA_SOURCE", "lean-ctx-test-no-such-source") };
     }
 
@@ -486,6 +488,7 @@ mod tests {
         assert!(!provider.is_available());
         assert_eq!(provider.id(), "jira");
         assert!(provider.requires_auth());
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 
@@ -502,13 +505,17 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_jira_env();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("JIRA_URL", "https://test.atlassian.net") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("JIRA_EMAIL", "test@test.com") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("JIRA_TOKEN", "token") };
         let cfg = JiraConfig::from_env().unwrap();
         assert_eq!(cfg.deployment, JiraDeployment::Cloud);
         assert!(matches!(cfg.auth, JiraAuth::Basic { .. }));
         reset_jira_env();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 
@@ -519,14 +526,19 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for val in &["server", "dc", "datacenter", "SERVER", "DC"] {
             reset_jira_env();
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("JIRA_URL", "https://jira.internal") };
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("JIRA_EMAIL", "u@e.com") };
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("JIRA_TOKEN", "t") };
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("JIRA_DEPLOYMENT", val) };
             let cfg = JiraConfig::from_env().unwrap();
             assert_eq!(cfg.deployment, JiraDeployment::Server, "failed for {val}");
         }
         reset_jira_env();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 
@@ -536,11 +548,13 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_jira_env();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("JIRA_AUTH", "oauth") };
         let cfg = JiraConfig::from_env().unwrap();
         assert!(matches!(cfg.auth, JiraAuth::OAuth { .. }));
         assert_eq!(cfg.deployment, JiraDeployment::Cloud);
         reset_jira_env();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 

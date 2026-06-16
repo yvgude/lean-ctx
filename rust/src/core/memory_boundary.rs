@@ -210,6 +210,7 @@ mod tests {
     fn audit_event_roundtrip() {
         let _guard = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let event = CrossProjectAuditEvent {
@@ -236,6 +237,7 @@ mod tests {
         let limited = load_audit_events(1);
         assert_eq!(limited.len(), 1);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

@@ -1840,6 +1840,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string()) };
 
         let proj = tmp.path().join("proj");
@@ -1860,6 +1861,7 @@ mod tests {
         assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
         assert!(r.end_line >= r.start_line && r.start_line > 0);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -1869,6 +1871,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string()) };
 
         let proj = tmp.path().join("proj");
@@ -1888,6 +1891,7 @@ mod tests {
         let err = super::resolve_name_path("ZzzNoSuchSymbol123", &root).unwrap_err();
         assert!(err.starts_with("NO_SYMBOL"), "got: {err}");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 

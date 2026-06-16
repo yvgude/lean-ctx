@@ -137,7 +137,9 @@ mod tests {
         cfg.archive.ephemeral = true;
         cfg.archive.ephemeral_min_tokens = 2000;
         // Env can override ephemeral; clear it for a deterministic test.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_EPHEMERAL") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_EPHEMERAL_MIN_TOKENS") };
 
         assert!(should_firewall("ctx_shell", 5000, &cfg));

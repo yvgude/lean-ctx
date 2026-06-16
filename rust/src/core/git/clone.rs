@@ -160,8 +160,10 @@ mod tests {
     fn cache_dir_nests_host_owner_repo_ref() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join("lc_clone_cache_test");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &tmp) };
         let dir = repo_cache_dir(&rr("https://github.com/o/r/blob/main/x.rs")).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         // Normalize separators so the assertion holds on Windows (`\`) too.
@@ -173,8 +175,10 @@ mod tests {
     fn cache_dir_uses_head_marker_without_ref() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join("lc_clone_cache_test2");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &tmp) };
         let dir = repo_cache_dir(&rr("https://github.com/o/r")).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         // Component-wise check is separator-agnostic (Windows uses `\`).
         assert!(dir.ends_with("_HEAD"), "got {}", dir.display());

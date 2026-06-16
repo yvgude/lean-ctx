@@ -232,12 +232,14 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lctx-ledger-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
 
         record_tool_event("cli_shell", 5000, 800);
 
         let ledger = dir.join("savings").join("ledger.jsonl");
         let content = std::fs::read_to_string(&ledger).expect("ledger written");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
 

@@ -1075,6 +1075,7 @@ mod tests {
     fn cached_resolve_grants_within_grace_then_expires_to_free() {
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         // A fresh save is served from cache, within grace, at full plan.
@@ -1093,6 +1094,7 @@ mod tests {
         assert_eq!(eff.plan, Plan::Free);
         assert_eq!(eff.source, PlanSource::Expired);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -1100,10 +1102,12 @@ mod tests {
     fn no_cache_resolves_to_free_none() {
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
         let eff = resolve_effective_plan_cached();
         assert_eq!(eff.plan, Plan::Free);
         assert_eq!(eff.source, PlanSource::None);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -1114,6 +1118,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         save_credentials("sk-test-key", "user-1", "a@b.c").unwrap();
@@ -1140,6 +1145,7 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty(), "atomic write must not leak tmp files");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -1150,6 +1156,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         std::fs::create_dir_all(config_dir()).unwrap();
@@ -1166,6 +1173,7 @@ mod tests {
             "legacy file must be tightened to 0o600"
         );
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -1173,6 +1181,7 @@ mod tests {
     fn legacy_plan_txt_is_migrated_but_treated_as_stale() {
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
         // Only the legacy flat file exists (no timestamp) → past grace until refresh.
         std::fs::create_dir_all(config_dir()).unwrap();
@@ -1181,6 +1190,7 @@ mod tests {
         assert_eq!(cache.plan, "team");
         assert_eq!(cache.verified_at, 0);
         assert_eq!(resolve_effective_plan_cached().source, PlanSource::Expired);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

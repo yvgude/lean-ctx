@@ -485,6 +485,7 @@ mod auth_tests {
     fn effective_auth_token_never_yields_empty() {
         let _env = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         assert_eq!(effective_auth_token(Some("tok".into())), "tok");
@@ -493,6 +494,7 @@ mod auth_tests {
         let blank = effective_auth_token(Some("   ".into()));
         assert!(!blank.trim().is_empty(), "blank tokens must be replaced");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 

@@ -694,6 +694,7 @@ mod tests {
     #[test]
     fn symbol_substitution_is_off_by_default() {
         let _lock = crate::core::data_dir::test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SYMBOL_MAP") };
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("a.rs");
@@ -801,10 +802,13 @@ mod tests {
     #[test]
     fn search_deadline_env_override_is_respected() {
         let _lock = crate::core::data_dir::test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "0") };
         assert!(search_deadline().is_none(), "0 must disable the deadline");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "250") };
         assert_eq!(search_deadline(), Some(Duration::from_millis(250)));
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SEARCH_DEADLINE_MS") };
         assert_eq!(
             search_deadline(),

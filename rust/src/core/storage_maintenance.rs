@@ -87,6 +87,7 @@ mod tests {
     fn prune_removes_quarantined_files() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let idx_dir = tmp.path().join("vectors").join("proj_abc");
@@ -103,6 +104,7 @@ mod tests {
             "live index must be preserved"
         );
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

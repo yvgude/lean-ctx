@@ -184,7 +184,9 @@ pub fn cmd_init(args: &[String]) {
 }
 
 pub fn cmd_init_quiet(args: &[String]) {
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_QUIET", "1") };
     cmd_init(args);
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_QUIET") };
 }

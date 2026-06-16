@@ -196,11 +196,13 @@ mod tests {
     #[test]
     fn capture_then_load_roundtrips() {
         let _iso = crate::core::data_dir::isolated_data_dir();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("CODEX_THREAD_ID", "thread-roundtrip") };
 
         capture();
         let loaded = load();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("CODEX_THREAD_ID") };
 
         assert_eq!(
@@ -214,6 +216,7 @@ mod tests {
         let _iso = crate::core::data_dir::isolated_data_dir();
         // Ensure no forwardable vars leak in from the host test environment.
         for (key, _) in collect_from_process() {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::remove_var(key) };
         }
 
@@ -245,12 +248,15 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _iso = crate::core::data_dir::isolated_data_dir();
         for (key, _) in collect_from_process() {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::remove_var(key) };
         }
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("GEMINI_API_KEY", "secret-token") };
 
         capture();
         let path = store_path().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("GEMINI_API_KEY") };
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
@@ -262,12 +268,16 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let state = tempfile::tempdir().unwrap();
         let config = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_STATE_DIR", state.path()) };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_CONFIG_DIR", config.path()) };
 
         let path = store_path().unwrap();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_STATE_DIR") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_CONFIG_DIR") };
 
         assert!(
@@ -286,7 +296,9 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let data = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.path()) };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_STATE_DIR", state.path()) };
 
         let legacy = data.path().join(FILE_NAME);
@@ -301,7 +313,9 @@ mod tests {
         let migrated = state_path.exists();
         let parent_ok = state_path.parent() == Some(state.path());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_STATE_DIR") };
 
         assert!(migrated, "key file must be moved into the state dir");
@@ -317,7 +331,9 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let data = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.path()) };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_STATE_DIR", state.path()) };
 
         let legacy = data.path().join(FILE_NAME);
@@ -328,7 +344,9 @@ mod tests {
         migrate_legacy_key_file(&state_path);
 
         let legacy_exists = legacy.exists();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_STATE_DIR") };
 
         assert!(

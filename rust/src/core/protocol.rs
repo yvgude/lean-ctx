@@ -555,8 +555,11 @@ mod tests {
 
         // Test: always mode shows box-drawing format
         super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "always") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "1") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_QUIET") };
 
         let s = super::format_savings(100, 50);
@@ -573,7 +576,9 @@ mod tests {
         assert!(s.contains("\u{2193}80%"), "expected 80%: {s}");
 
         // Test: never mode suppresses
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "0") };
         let s = super::format_savings(100, 50);
         assert!(s.is_empty(), "expected empty with never: {s}");
@@ -583,22 +588,29 @@ mod tests {
 
         // Test: MCP auto mode suppresses
         super::MCP_CONTEXT.store(true, std::sync::atomic::Ordering::Relaxed);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "auto") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SHOW_SAVINGS") };
         let s = super::format_savings(100, 50);
         assert!(s.is_empty(), "expected empty in MCP+auto: {s}");
         super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
 
         // Test: SHOW_SAVINGS overrides config
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "1") };
         assert!(super::savings_footer_visible());
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "0") };
         assert!(!super::savings_footer_visible());
 
         // Restore ALL touched env — leaking LEAN_CTX_SAVINGS_FOOTER made
         // footers visible in unrelated tests (GL #556 flakiness).
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SHOW_SAVINGS") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SAVINGS_FOOTER") };
     }
 }

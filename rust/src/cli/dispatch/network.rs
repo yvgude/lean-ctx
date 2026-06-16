@@ -439,6 +439,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
         .find_map(|p| p.strip_prefix("--project="))
         .map(String::from);
     if let Some(ref p) = project {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DASHBOARD_PROJECT", p) };
     }
     // `--base-path` / `--prefix`: mount the dashboard behind a reverse-proxy

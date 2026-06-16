@@ -166,8 +166,10 @@ mod tests {
     #[test]
     fn savings_footer_from_env_accepts_auto() {
         let _guard = crate::core::data_dir::test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "auto") };
         assert_eq!(SavingsFooter::from_env(), Some(SavingsFooter::Auto));
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SAVINGS_FOOTER") };
     }
 }

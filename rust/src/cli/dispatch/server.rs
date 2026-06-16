@@ -8,6 +8,7 @@ use anyhow::Result;
 pub(super) fn run_mcp_server() -> Result<()> {
     use rmcp::ServiceExt;
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_MCP_SERVER", "1") };
 
     crate::core::startup_guard::crash_loop_backoff(crate::core::startup_guard::MCP_PROCESS_NAME);

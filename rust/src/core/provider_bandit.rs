@@ -299,6 +299,7 @@ mod tests {
     fn persistence_roundtrip_preserves_learning() {
         let _env = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
         let project = "/tmp/provider-bandit-roundtrip";
 
@@ -317,6 +318,7 @@ mod tests {
         let fresh = ProviderBandit::load("/tmp/provider-bandit-unseen");
         assert!((fresh.estimated_probability("bugfix", "github") - 0.5).abs() < f64::EPSILON);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

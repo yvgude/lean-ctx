@@ -780,20 +780,24 @@ mod tests {
 
     #[test]
     fn border_line_width() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("NO_COLOR", "1") };
         let theme = preset_default();
         let line = theme.border_line(10);
         assert_eq!(line.chars().count(), 10);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("NO_COLOR") };
     }
 
     #[test]
     fn box_top_bottom_symmetric() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("NO_COLOR", "1") };
         let theme = preset_default();
         let top = theme.box_top(20);
         let bot = theme.box_bottom(20);
         assert_eq!(top.chars().count(), bot.chars().count());
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("NO_COLOR") };
     }
 

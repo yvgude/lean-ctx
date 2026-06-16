@@ -273,7 +273,9 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
 fn shrink_resident_is_not_persisted_to_disk() {
     let _env = crate::core::data_dir::test_env_lock();
     let data_dir = tempdir().expect("data_dir");
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512") };
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -311,7 +313,9 @@ fn shrink_resident_is_not_persisted_to_disk() {
         .unwrap();
     assert_eq!(max_lines, full_lines, "reload restores full content");
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
@@ -324,6 +328,7 @@ fn load_quarantines_oversized_index() {
     std::fs::create_dir_all(&dir).expect("create vectors dir");
 
     let index_path = dir.join("bm25_index.json");
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0") };
     std::fs::write(&index_path, r#"{"chunks":[]}"#).expect("write index");
 
@@ -338,6 +343,7 @@ fn load_quarantines_oversized_index() {
         "quarantined file should exist"
     );
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
 }
 
@@ -345,7 +351,9 @@ fn load_quarantines_oversized_index() {
 fn save_refuses_oversized_output() {
     let _env = crate::core::data_dir::test_env_lock();
     let data_dir = tempdir().expect("data_dir");
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0") };
 
     let td = tempdir().expect("tempdir");
@@ -377,6 +385,7 @@ fn save_refuses_oversized_output() {
         "save should refuse to persist oversized index"
     );
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
 }
 
@@ -384,7 +393,9 @@ fn save_refuses_oversized_output() {
 fn save_reports_persisted_outcome() {
     let _env = crate::core::data_dir::test_env_lock();
     let data_dir = tempdir().expect("data_dir");
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512") };
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -401,7 +412,9 @@ fn save_reports_persisted_outcome() {
         }
     }
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
@@ -410,8 +423,10 @@ fn persist_ceiling_honors_env_override() {
     // The public ceiling accessor (shared with doctor) must honor an explicit
     // override exactly, so operators can size it to their monorepo.
     let _env = crate::core::data_dir::test_env_lock();
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "777") };
     assert_eq!(persist_ceiling_bytes(), 777 * 1024 * 1024);
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
 }
 
@@ -422,6 +437,7 @@ fn save_writes_project_root_marker() {
     let root = td.path();
     std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write");
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
     let index = BM25Index::build_from_directory(root);
     index.save(root).expect("save");
@@ -437,7 +453,9 @@ fn save_writes_project_root_marker() {
 fn save_load_roundtrip_uses_zstd() {
     let _env = crate::core::data_dir::test_env_lock();
     let data_dir = tempdir().expect("data_dir");
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512") };
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -469,7 +487,9 @@ fn save_load_roundtrip_uses_zstd() {
     assert_eq!(loaded.doc_count, index.doc_count);
     assert_eq!(loaded.chunks.len(), index.chunks.len());
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
@@ -477,7 +497,9 @@ fn save_load_roundtrip_uses_zstd() {
 fn auto_migrate_bin_to_zst() {
     let _env = crate::core::data_dir::test_env_lock();
     let data_dir = tempdir().expect("data_dir");
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512") };
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -501,7 +523,9 @@ fn auto_migrate_bin_to_zst() {
         ".bin should be removed"
     );
 
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
@@ -577,8 +601,10 @@ fn list_code_files_respects_max_files_cap() {
 #[test]
 fn max_bm25_cache_bytes_reads_env() {
     let _env = crate::core::data_dir::test_env_lock();
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "64") };
     let bytes = max_bm25_cache_bytes();
     assert_eq!(bytes, 64 * 1024 * 1024);
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
 }

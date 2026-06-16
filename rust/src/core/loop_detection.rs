@@ -567,6 +567,7 @@ mod tests {
     #[test]
     fn repeated_calls_trigger_reduced() {
         let _lock = crate::core::data_dir::test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_META", "1") };
         let cfg = LoopDetectionConfig::default();
         let mut detector = LoopDetector::with_config(&cfg);
@@ -576,6 +577,7 @@ mod tests {
         let result = detector.record_call("ctx_read", "same_fp");
         assert_eq!(result.level, ThrottleLevel::Reduced);
         assert!(result.message.is_some());
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_META") };
     }
 

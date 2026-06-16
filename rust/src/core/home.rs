@@ -50,25 +50,30 @@ mod tests {
     #[test]
     fn resolve_codex_dir_respects_env_var() {
         let _guard = env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("CODEX_HOME", "/tmp/custom-codex") };
         let result = resolve_codex_dir();
         assert_eq!(result, Some(PathBuf::from("/tmp/custom-codex")));
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("CODEX_HOME") };
     }
 
     #[test]
     fn resolve_codex_dir_ignores_empty_env() {
         let _guard = env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("CODEX_HOME", "  ") };
         let result = resolve_codex_dir();
         assert!(result.is_some());
         assert!(result.unwrap().ends_with(".codex"));
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("CODEX_HOME") };
     }
 
     #[test]
     fn resolve_codex_dir_falls_back_to_home() {
         let _guard = env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("CODEX_HOME") };
         let result = resolve_codex_dir();
         assert!(result.is_some());

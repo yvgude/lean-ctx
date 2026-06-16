@@ -60,8 +60,10 @@ pub fn run() {
                     passthrough(&command);
                 }
                 if raw {
+                    // SAFETY: single-threaded context (test/startup); no concurrent env access.
                     unsafe { std::env::set_var("LEAN_CTX_RAW", "1") };
                 } else {
+                    // SAFETY: single-threaded context (test/startup); no concurrent env access.
                     unsafe { std::env::set_var("LEAN_CTX_COMPRESS", "1") };
                 }
                 let code = shell::exec(&command);
@@ -629,6 +631,7 @@ pub fn run() {
                 } else {
                     shell::join_command(&args[2..])
                 };
+                // SAFETY: single-threaded context (test/startup); no concurrent env access.
                 unsafe { std::env::set_var("LEAN_CTX_RAW", "1") };
                 let code = shell::exec(&command);
                 std::process::exit(code);
@@ -857,6 +860,7 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_clamps_low() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
         assert_eq!(resolve_worker_threads(1), 1);
     }
@@ -864,6 +868,7 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_clamps_high() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
         assert_eq!(resolve_worker_threads(32), 4);
     }
@@ -871,6 +876,7 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_passthrough() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
         assert_eq!(resolve_worker_threads(3), 3);
     }
@@ -878,16 +884,20 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_env_override() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_WORKER_THREADS", "12") };
         assert_eq!(resolve_worker_threads(2), 12);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
     }
 
     #[test]
     #[serial]
     fn worker_threads_env_invalid_falls_back() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_WORKER_THREADS", "not_a_number") };
         assert_eq!(resolve_worker_threads(3), 3);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
     }
 }

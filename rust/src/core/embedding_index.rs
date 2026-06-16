@@ -537,6 +537,7 @@ mod tests {
     fn save_and_load_roundtrip() {
         let _lock = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
         let project_dir = tempfile::tempdir().unwrap();
@@ -555,6 +556,7 @@ mod tests {
         assert!((recon[1] - 2.0).abs() < 0.02);
         assert!((recon[2] - 3.0).abs() < 0.02);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -598,6 +600,7 @@ mod tests {
     fn v1_index_migration() {
         let _lock = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
         let project_dir = tempfile::tempdir().unwrap();
 
@@ -617,6 +620,7 @@ mod tests {
         assert_eq!(loaded.dimensions, 384);
         assert!(loaded.model_id.is_none());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -624,6 +628,7 @@ mod tests {
     fn v2_index_quantizes_on_migration() {
         let _lock = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
         let project_dir = tempfile::tempdir().unwrap();
 
@@ -664,6 +669,7 @@ mod tests {
         assert_eq!(reloaded.version, CURRENT_VERSION);
         assert!(reloaded.entries[0].quant.is_some());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

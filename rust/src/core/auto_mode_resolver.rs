@@ -505,6 +505,7 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-flush-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
         let _ = std::fs::remove_file(dir.join("auto_mode_sources.json"));
 
@@ -532,6 +533,7 @@ mod tests {
         );
         assert_eq!(get("test_flush_beta"), 1);
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -605,6 +607,7 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-suspect-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
 
         // An explore-style task that would otherwise map (cf.
@@ -620,6 +623,7 @@ mod tests {
         assert_eq!(result.mode, "full");
         assert_eq!(result.source, "task_suspect_file");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -664,7 +668,9 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-sf-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_STRUCTURE_FIRST", "1") };
 
         let suspect = AutoModeContext {
@@ -685,7 +691,9 @@ mod tests {
         };
         assert_eq!(resolve(&tiny).mode, "full");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_STRUCTURE_FIRST") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -695,7 +703,9 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-sfoff-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_STRUCTURE_FIRST", "0") };
 
         let ctx = AutoModeContext {
@@ -708,7 +718,9 @@ mod tests {
         assert_eq!(result.mode, "full");
         assert_eq!(result.source, "heuristic");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_STRUCTURE_FIRST") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }

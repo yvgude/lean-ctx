@@ -1039,6 +1039,7 @@ pub fn set_active_profile(name: &str) -> Result<Profile, String> {
     }
     let prev = active_profile_name();
     let profile = load_profile(name).ok_or_else(|| format!("profile '{name}' not found"))?;
+    // SAFETY: single-threaded context (test/startup); no concurrent env access.
     unsafe { std::env::set_var("LEAN_CTX_PROFILE", name) };
     if prev != name {
         crate::core::events::emit_profile_changed(&prev, name);
@@ -1279,6 +1280,7 @@ mod tests {
     #[test]
     fn active_profile_defaults_to_coder() {
         let _lock = crate::core::data_dir::test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_PROFILE") };
         let p = active_profile();
         assert_eq!(p.profile.name, "coder");
@@ -1287,9 +1289,11 @@ mod tests {
     #[test]
     fn active_profile_from_env() {
         let _lock = crate::core::data_dir::test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_PROFILE", "hotfix") };
         let name = active_profile_name();
         assert_eq!(name, "hotfix");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_PROFILE") };
     }
 

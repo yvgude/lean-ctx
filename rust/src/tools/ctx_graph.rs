@@ -749,6 +749,7 @@ mod gdscript_p0_tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string()) };
 
         let proj = tmp.path().join("game");
@@ -793,6 +794,7 @@ mod gdscript_p0_tests {
             "context should surface _ready symbols: {out}"
         );
         assert!(!out.contains("No matching nodes found"), "got: {out}");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -810,6 +812,7 @@ mod gdscript_p0_tests {
             out.contains("Enemy.gd"),
             "Base.gd dependents should include Enemy: {out}"
         );
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -830,6 +833,7 @@ mod gdscript_p0_tests {
         assert!(out.contains("_ready"), "bare symbol should resolve: {out}");
         assert!(!out.contains("Invalid symbol spec"), "got: {out}");
         assert!(!out.to_lowercase().contains("not found"), "got: {out}");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

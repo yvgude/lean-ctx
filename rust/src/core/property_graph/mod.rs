@@ -431,12 +431,14 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let dir = graph_dir(project.to_str().unwrap());
         assert!(dir.starts_with(&data_dir));
         assert!(dir.to_string_lossy().contains("graphs"));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -450,6 +452,7 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let dir1 = graph_dir(project.to_str().unwrap());
@@ -457,6 +460,7 @@ mod tests {
         assert_eq!(dir1, dir2, "graph_dir should be deterministic");
         assert!(dir1.to_string_lossy().contains("graphs"));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -515,12 +519,14 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let g = CodeGraph::open(project.to_str().unwrap()).unwrap();
         assert!(g.db_path().starts_with(&data_dir));
         assert!(g.db_path().to_string_lossy().contains("graph.db"));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
@@ -534,12 +540,14 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let mp = meta::meta_path(project.to_str().unwrap());
         assert!(mp.starts_with(&data_dir));
         assert!(mp.to_string_lossy().contains("graph.meta.json"));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

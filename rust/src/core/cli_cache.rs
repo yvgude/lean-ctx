@@ -273,6 +273,7 @@ mod tests {
             timestamp: now_secs(),
             read_count: 3,
         };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never") };
         let output = format_hit(&entry, "F1", "test.rs");
         assert!(output.contains("cached test.rs"));
@@ -280,6 +281,7 @@ mod tests {
         assert!(!output.contains("F1"));
         assert!(!output.contains("500t"));
         assert!(!output.contains("read #3"));
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SAVINGS_FOOTER") };
     }
 
@@ -301,6 +303,7 @@ mod tests {
             .as_nanos();
         let test_data_dir = std::env::temp_dir().join(format!("lean_ctx_cache_iso_{nanos}"));
         std::fs::create_dir_all(&test_data_dir).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &test_data_dir) };
 
         let tmp = test_data_dir.join("test_file.txt");
@@ -323,6 +326,7 @@ mod tests {
         let result3 = check_and_read(path_str);
         assert!(matches!(result3, CacheResult::Miss { .. }));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&test_data_dir);
     }

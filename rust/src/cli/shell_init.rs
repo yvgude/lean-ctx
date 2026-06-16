@@ -1022,6 +1022,7 @@ export EDITOR=vim
         // env.sh is a config artifact (#408) → written under config_dir().
         let config_dir = tmp.path().join("config");
         std::fs::create_dir_all(&config_dir).expect("mkdir config");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_CONFIG_DIR", &config_dir) };
 
         write_env_sh_for_containers("alias git='lean-ctx -c git'\n");
@@ -1061,6 +1062,7 @@ export EDITOR=vim
             "env.sh self-heal must be gated to container environments"
         );
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_CONFIG_DIR") };
     }
 
@@ -1071,6 +1073,7 @@ export EDITOR=vim
         let tmp = tempfile::tempdir().expect("tempdir");
         let home = tmp.path();
         let prev = std::env::var_os("HOME");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("HOME", home) };
 
         std::fs::write(home.join(".bashrc"), "# bashrc\n").expect("write .bashrc");
@@ -1095,7 +1098,9 @@ export EDITOR=vim
         );
 
         match prev {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             Some(v) => unsafe { std::env::set_var("HOME", v) },
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             None => unsafe { std::env::remove_var("HOME") },
         }
     }

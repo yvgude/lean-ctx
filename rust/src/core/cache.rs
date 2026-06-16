@@ -975,6 +975,7 @@ mod tests {
 
     #[test]
     fn evict_if_needed_removes_lowest_score() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_CACHE_MAX_TOKENS", "50") };
         let mut cache = SessionCache::new();
         let big_content = "a]".repeat(30); // ~30 tokens
@@ -991,6 +992,7 @@ mod tests {
             cache.total_cached_tokens() <= 60,
             "eviction should have kicked in"
         );
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_CACHE_MAX_TOKENS") };
     }
 

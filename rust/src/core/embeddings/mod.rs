@@ -499,10 +499,12 @@ mod tests {
     #[test]
     fn model_directory_env_override_and_availability() {
         let unique = "/tmp/lean_ctx_test_embed_42xyz";
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_MODELS_DIR", unique) };
         let dir = EmbeddingEngine::model_directory();
         assert_eq!(dir.to_string_lossy(), unique);
         assert!(!EmbeddingEngine::is_available());
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_MODELS_DIR") };
     }
 

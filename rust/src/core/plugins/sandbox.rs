@@ -226,6 +226,7 @@ mod tests {
     fn scrubbed_env_hides_host_secret_but_keeps_path() {
         use std::time::Duration;
         // A secret in the host env must NOT reach a scrubbed child.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_TEST_SECRET", "top-secret") };
         let out = crate::core::plugins::executor::run_subprocess(
             "env",
@@ -237,6 +238,7 @@ mod tests {
         )
         .unwrap();
         let env_dump = String::from_utf8_lossy(&out.stdout);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_TEST_SECRET") };
         assert!(
             !env_dump.contains("top-secret"),
@@ -250,6 +252,7 @@ mod tests {
     #[test]
     fn passthrough_env_exposes_host_var() {
         use std::time::Duration;
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_TEST_PASSTHRU", "visible") };
         let out = crate::core::plugins::executor::run_subprocess(
             "env",
@@ -261,6 +264,7 @@ mod tests {
         )
         .unwrap();
         let env_dump = String::from_utf8_lossy(&out.stdout);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_TEST_PASSTHRU") };
         assert!(env_dump.contains("visible"));
     }

@@ -206,6 +206,7 @@ mod tests {
     #[test]
     fn command_timeout_uses_heavy_for_heavy_commands() {
         let saved = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS") };
 
         // Heavy build/test commands get the long timeout, not the 2-min default.
@@ -215,14 +216,17 @@ mod tests {
         assert_eq!(command_timeout("git status"), DEFAULT_COMMAND_TIMEOUT);
 
         // Explicit env override wins over heavy detection.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000") };
         assert_eq!(
             command_timeout("cargo install --path ."),
             std::time::Duration::from_secs(5)
         );
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS") };
         if let Some(v) = saved {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v) };
         }
     }
@@ -238,20 +242,26 @@ mod tests {
             std::env::var("LC_CTYPE").ok(),
             std::env::var("LANG").ok(),
         );
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LC_ALL") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LC_CTYPE") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LANG") };
 
         ensure_utf8_locale(&mut cmd, &empty);
 
         // Restore
         if let Some(v) = saved.0 {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("LC_ALL", v) };
         }
         if let Some(v) = saved.1 {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("LC_CTYPE", v) };
         }
         if let Some(v) = saved.2 {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("LANG", v) };
         }
 
@@ -300,17 +310,22 @@ mod tests {
         let dir = std::env::temp_dir().join("lean_ctx_exec_runtime_env");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &dir) };
 
         // Simulate a hook capturing the var from the native agent environment.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("CODEX_THREAD_ID") };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("CODEX_THREAD_ID", "thread-from-hook") };
         crate::core::agent_runtime_env::capture();
         // The MCP server process itself does not carry the var.
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("CODEX_THREAD_ID") };
 
         let (output, code) = execute_command_in("printf 'TID=%s' \"$CODEX_THREAD_ID\"", ".");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
 

@@ -145,6 +145,7 @@ fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
         } else {
             format!("{existing}{sep}{}", child_projects.join(sep))
         };
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_ALLOW_PATH", &merged) };
         tracing::info!(
             "Multi-root workspace detected at {}: auto-allowing {} child projects",
@@ -339,6 +340,7 @@ mod tests {
             "should detect workspace with 2 child projects"
         );
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_ALLOW_PATH") };
     }
 

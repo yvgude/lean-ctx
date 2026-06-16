@@ -27,6 +27,7 @@ pub(crate) struct EnvVarGuard {
 impl EnvVarGuard {
     pub(crate) fn set(key: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(key);
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var(key, value) };
         Self { key, previous }
     }
@@ -35,8 +36,10 @@ impl EnvVarGuard {
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         if let Some(previous) = &self.previous {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var(self.key, previous) };
         } else {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::remove_var(self.key) };
         }
     }

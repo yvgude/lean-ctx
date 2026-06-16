@@ -121,6 +121,7 @@ mod tests {
 
         write_linked_config(root.path(), other.path());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_ALLOW_PATH") };
         let res = load_linked_projects(root.path());
         assert!(res.roots.is_empty());
@@ -141,6 +142,7 @@ mod tests {
 
         write_linked_config(root.path(), other.path());
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe {
             std::env::set_var(
                 "LEAN_CTX_ALLOW_PATH",
@@ -151,6 +153,7 @@ mod tests {
         assert_eq!(res.roots.len(), 1);
         assert_eq!(res.roots[0], other.path().canonicalize().expect("canon"));
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_ALLOW_PATH") };
     }
 }

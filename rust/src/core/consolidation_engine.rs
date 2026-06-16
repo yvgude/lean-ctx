@@ -174,6 +174,7 @@ mod tests {
     fn consolidate_promotes_decisions_and_salient_findings_only() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe {
             std::env::set_var(
                 "LEAN_CTX_DATA_DIR",
@@ -207,6 +208,7 @@ mod tests {
         let active = k.facts.iter().filter(|f| f.is_current()).count();
         assert!(active >= 2, "expected promoted facts");
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

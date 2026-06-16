@@ -296,6 +296,7 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let root = data_dir.path().join("proj");
         std::fs::create_dir_all(root.join(".git")).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
         let vectors = crate::core::index_namespace::vectors_dir(&root);
@@ -338,6 +339,7 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let root = data_dir.path().join("empty");
         std::fs::create_dir_all(root.join(".git")).unwrap();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
         match pack(&root) {

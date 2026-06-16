@@ -96,7 +96,9 @@ mod tests {
     impl Drop for EnvRestore {
         fn drop(&mut self) {
             match &self.0 {
+                // SAFETY: single-threaded context (test/startup); no concurrent env access.
                 Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
+                // SAFETY: single-threaded context (test/startup); no concurrent env access.
                 None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
             }
         }
@@ -115,6 +117,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         // Restore runs before `tmp` is removed and while the lock is still held.
         let _restore = EnvRestore(std::env::var("LEAN_CTX_DATA_DIR").ok());
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
         body();
     }

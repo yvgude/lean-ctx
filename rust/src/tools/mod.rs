@@ -95,6 +95,7 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     async fn resolve_path_can_reroot_to_trusted_startup_root_when_session_root_is_stale() {
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_ALLOW_REROOT", "1") };
         let tmp = tempfile::tempdir().unwrap();
         let stale = tmp.path().join("stale");
@@ -177,6 +178,7 @@ mod resolve_path_tests {
         let _data = tempfile::tempdir().unwrap();
         let _tmp = tempfile::tempdir().unwrap();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", _data.path()) };
 
         let repo_a = _tmp.path().join("repo-a");
@@ -205,6 +207,7 @@ mod resolve_path_tests {
             "default",
             "default",
         );
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         let session = server.session.read().await;
@@ -223,6 +226,7 @@ mod resolve_path_tests {
         let _data = tempfile::tempdir().unwrap();
         let _tmp = tempfile::tempdir().unwrap();
 
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", _data.path()) };
 
         let repo_a = _tmp.path().join("repo-a");
@@ -247,6 +251,7 @@ mod resolve_path_tests {
             "default",
             "default",
         );
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         let session = server.session.read().await;

@@ -120,6 +120,7 @@ mod tests {
     fn enabled_when_fully_configured() {
         // Guard against a CI env that sets the token override.
         let prior = std::env::var("LEAN_CTX_TEAM_TOKEN").ok();
+        // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_TEAM_TOKEN") };
         let resolved = resolve(base());
         assert!(resolved.is_some());
@@ -127,6 +128,7 @@ mod tests {
         assert_eq!(cfg.url, "https://team.example.com");
         assert_eq!(cfg.token, "tok");
         if let Some(v) = prior {
+            // SAFETY: single-threaded context (test/startup); no concurrent env access.
             unsafe { std::env::set_var("LEAN_CTX_TEAM_TOKEN", v) };
         }
     }
