@@ -3,7 +3,7 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.8.8] — 2026-06-16
 
 ### Added
 - **R2 benchmark faithful-arm preflight (#361)** — `bench/agent-task/r2/preflight.mjs`
@@ -13,8 +13,135 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `102 native bash / 0 ctx_shell`. The shell-suppression decision is now the
   single, unit-tested invariant `resolveSuppressedBuiltins`
   (`packages/pi-lean-ctx`), so the routing fix can never silently regress.
+- **Proxy accepts a trusted non-loopback HTTP upstream behind an opt-in (#440)** —
+  Codex and other clients that sit in front of the proxy need to point it at an
+  upstream like `http://host.docker.internal:2455`, but `validate_upstream_url`
+  rejected every non-loopback `http://` URL with a misleading "must use HTTPS"
+  error and no escape hatch. A trusted plaintext upstream is now allowed via
+  `LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM=1` or
+  `[proxy] allow_insecure_http_upstream = true`; the startup banner and `doctor`
+  flag the plaintext hop so it stays a conscious choice. Documented end-to-end in
+  `docs/reference/05-advanced.md`, including the `supports_websockets = false`
+  Codex HTTP/SSE setup as an alternative to the native WebSocket transport below.
+- **Native WebSocket `/responses` transport for Codex (#440)** — Codex CLI and the
+  OpenAI SDK default to a persistent WebSocket connection (`ws://…/responses`,
+  one `response.create` event per turn), so the HTTP-only proxy forced clients to
+  set `supports_websockets = false`. The proxy now speaks the Responses WebSocket
+  protocol natively: `GET /responses` (and `/v1/responses`) upgrades to a
+  WebSocket, each `response.create` turn is bridged to the configured HTTP/SSE
+  upstream with lean-ctx's tool-output compression applied, and every upstream
+  SSE event is relayed back verbatim as a WebSocket frame. Method routing keeps
+  `POST` on the HTTP/SSE forwarder, so both transports share one upstream, auth
+  path and compression logic (`proxy::openai_responses_ws`). Codex works as a
+  drop-in now without disabling WebSockets.
+
+### Changed
+- **OpenCode plugin no longer double-registers the built-in overrides (#441)** —
+  the plugin exposed `ctx_read`/`ctx_search`/`ctx_glob`/`ctx_edit`/`ctx_shell`
+  both as static replacements of the native `read`/`grep`/`glob`/`edit`/`bash`
+  tools and again under their `ctx_*` names via dynamic MCP registration, so the
+  model saw two copies of each and paid for the duplicate schemas. The five
+  already-overridden tools are now filtered out of the dynamic set; every other
+  `ctx_*` tool is still registered dynamically. Thanks @omar-mohamed-khallaf.
+- **Default shell allowlist now includes the C/C++ compilers (#361)** — under
+  `mode=replace`, `ctx_shell` enforces the allowlist, but `gcc`/`cc`/`clang`/
+  `g++`/`c++`/`clang++` were missing even though `rustc`/`go`/`javac` were, so a
+  coding agent could not compile an ad-hoc reproducer (`gcc repro.c`) without an
+  explicit opt-in (reported by the tokbench review, which set
+  `LEAN_CTX_ALLOWLIST_WARN_ONLY=1` to work around it). They are compile-only —
+  executing the produced binary stays gated like any other path — so the security
+  boundary is unchanged.
 
 ### Fixed
+- **`proxy enable` now also routes Pi / forge through the proxy (#361)** — Pi and
+  forge resolve their endpoint from `~/.pi/agent/models.json`
+  (`providers.<name>.baseUrl`) + OAuth, not from `ANTHROPIC_BASE_URL` /
+  `OPENAI_BASE_URL`, so the shell and Claude/Codex env wiring silently bypassed
+  them (the tokbench review had to hand-edit `models.json`). `proxy enable` /
+  `disable` now wire Pi's `anthropic` (bare origin) and `openai` (`/v1`-suffixed)
+  providers when `~/.pi/agent` exists, preserving any custom remote endpoint
+  unless `--force` and reverting only the endpoints it set. Pi's OAuth keeps
+  working because the proxy forwards the credential verbatim to the real upstream.
+- **`config init --full` no longer resets the existing config to defaults (#443)** —
+  the command rebuilt the file from `Config::default()` and saved that over the
+  user's `config.toml`. Because the TOML merge writes every default value, this
+  silently reverted custom settings (proxy port, compression level, provider
+  setup, …) on every `init --full`. The command now loads the existing config and
+  re-serializes *that* (falling back to defaults only when no file exists),
+  preserving user values while still materializing the fully-commented template;
+  an unparseable file aborts with a clear message instead of being overwritten.
+- **OpenCode (and 18 other agents) now get the `ctx_*` usage rules injected (#442)** —
+  rule injection was gated on `rules_already_present()`, a hand-maintained list
+  that only knew about five agents. For everyone else it returned `false`, so with
+  `auto_inject_rules` unset the setup skipped injection and the model never saw
+  the "prefer `ctx_*` tools" guidance — defeating the whole point of MCP-only
+  mode. Detection is now derived from the single `build_rules_targets` catalog
+  (`rules_inject::any_rules_marker_present`), so every supported agent is covered
+  and can never drift from the writer again. The OpenCode hook additionally
+  injects the rules into `AGENTS.md` when running MCP-only (shadow mode off) and
+  MCP is registered, so the guidance lands even without the interception plugin.
+- **Impact graph self-heals after an upgrade so C# same-namespace edges apply (#398)** —
+  the v3.8.3 fix added `type_ref` edges for C#/Java types consumed without a
+  `using`/import (same-namespace/package visibility), but those edges only exist
+  in a freshly built graph. `ctx_impact` rebuilt the property graph only when it
+  was *completely empty*, so after upgrading, an existing graph (built before the
+  edges existed) was served unchanged — leaving the consumed class a
+  false-negative leaf that reported "no impact". The property graph now records
+  the engine generation that produced it (`engine_version` + `built_with` in
+  `graph.meta.json`), and `ctx_impact analyze`/`diff`/`chain` detect a graph
+  built by an older engine and transparently rebuild it once before querying.
+  Combined with the XDG resolver fixes (#436/#439) — which keep the graph and
+  `config.toml` in a single stable location — a stale or misplaced graph can no
+  longer mask the real blast radius. Thanks @nigeldun.
+- **Direct writers stop re-creating `~/.lean-ctx` after migration (#439)** — the
+  resolver fix (#436) flips the *data tree* to XDG, but several feature-specific
+  writers still hard-coded `~/.lean-ctx` and re-created it post-split regardless
+  of where the resolver pointed: multi-agent `shared_knowledge.json`
+  (`core::agents`), Jira OAuth credentials (`core::providers::jira_oauth`), the
+  personal-cloud cache/knowledge readers (`cloud_client` / `cloud_sync`), the
+  LaunchAgent proxy logs and scheduled-update logs (`proxy_autostart` /
+  `update_scheduler`), the A2A task store (`core::a2a::task`) and the cloud
+  `mode_stats` reader (`cli::cloud`). All now route through the typed
+  `data_dir()` / `state_dir()` resolvers — the same categories `doctor --fix`
+  migrates them to — so a post-migration session reads and writes the XDG dirs,
+  while legacy single-dir installs still resolve in place. The source-level
+  legacy-path firewall (`rust/tests`) was tightened to catch both the multi-line
+  `dirs::home_dir()…join(".lean-ctx")` chains and the `join(".lean-ctx/…")`
+  subpath form it previously missed, so the tracked-debt allowlist can only shrink.
+- **`doctor` shows `~` instead of the absolute home path (#437)** — dozens of
+  checks printed the full `/Users/<name>/…` (or `/home/<name>/…`) path, leaking
+  the username and adding noise. Two chokepoint helpers in `doctor/common.rs`
+  (`tildify_home` for formatted lines, `display_user_path` for raw paths, with
+  component-boundary safety so a sibling like `…/<name>-backup` is never mangled)
+  collapse the home dir back to `~` at the central output sinks, so `doctor` and
+  `doctor integrations` no longer print an absolute home path.
+- **Data dir no longer re-adopts a marker-free `~/.lean-ctx` (#436)** — the data
+  resolver returned the legacy `~/.lean-ctx` whenever that directory merely
+  *existed*, even after `doctor --fix` had moved every data marker to the XDG
+  dirs. Config/state/cache had already flipped to `$XDG_*` in that case, so data
+  silently diverged from its siblings and editor sessions kept writing
+  `active_transcript.json` / `context_radar.jsonl` back into `~/.lean-ctx`. The
+  legacy/mixed decision now lives in a single source of truth
+  (`paths::single_dir_override`): a legacy dir wins only while it still holds data
+  markers, so once split, data flips to `$XDG_DATA_HOME/lean-ctx` like the rest.
+  A cross-category contract test plus a source-level legacy-path firewall
+  (`rust/tests`) lock the invariant in so it can never silently regress.
+- **`doctor --fix` now empties a residual `~/.lean-ctx` (#434)** — after the data
+  moved to XDG, leftover reports (`doctor/`, `setup/`, `status/`) and the empty
+  directory lingered, so the next run re-detected the old location and the fix
+  report itself was written back into the legacy dir. `--fix` now drains any
+  remaining non-runtime entries into the typed XDG dirs and removes the empty
+  directory (`xdg_migrate::reclaim_legacy`), and the report lands in XDG.
+- **`doctor` reports the real `config.toml` location after a split (#435)** — the
+  `config.toml` check and the path-jail hint were hardcoded to `~/.lean-ctx`, so
+  after the XDG split `doctor` pointed users at a stale path. Both now resolve
+  through `Config::path()` / `config_dir()` and show where the file actually lives.
+- **`doctor` score matches the checks it prints (#433)** — `passed`/`total` were
+  two hand-maintained counters that drifted: rendered ✗ checks ("XDG layout",
+  "data dir split") were shown but never counted, so the summary overstated
+  health. Every check now flows through one accumulator that counts exactly what
+  it renders; advisory lines (LSP, providers, MCP bridges) are rendered but
+  explicitly excluded from the score, so display and tally can no longer diverge.
 - **Secret redaction no longer mangles source files read via `ctx_read` (#430)** —
   the key/value secret pattern matched TypeScript type annotations and language
   literals such as `password: undefined`, `secret: string` and `token: null`,
@@ -46,6 +173,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   alias for `start_line` and `limit` bounds the window (`lines:N-M`); the aliases
   are advertised in the tool schema and the generated manifest/reference docs,
   with `PI_AGENTS.md` aligned.
+- **macOS "access your Documents" prompt eliminated structurally (#356)** — the
+  daemon, proxy and auto-updater run as LaunchAgents (their own TCC identity,
+  `ppid 1`), so any access they make under `~/Documents`, `~/Desktop` or
+  `~/Downloads` pops the privacy prompt in lean-ctx's name — and because every
+  release re-signs the binary, the grant is voided on each update, re-prompting
+  forever. The earlier opt-out path guards (v3.8.0–v3.8.7) were per-call-site
+  and fragile, and the stable code-signing identity only made *one* "Allow"
+  stick — neither satisfied users who refuse Documents access outright. The
+  three LaunchAgents are now wrapped in `sandbox-exec` with a minimal Seatbelt
+  profile (`allow default`; `deny file-read*/file-write*` under the three
+  protected home dirs — `rust/src/core/tcc_guard_sandbox.rs`), so the kernel
+  refuses any such access silently with `EPERM`: TCC is never consulted and the
+  prompt can no longer appear, with no "Allow" required. Everything else stays
+  permitted, so functionality is intact; the path guards and stable signing
+  remain as defense-in-depth. The profile is smoke-tested before use (no
+  `KeepAlive` crash-loop on a malformed profile), existing installs adopt the
+  wrapper automatically on the next `lean-ctx update`, and a new regression
+  (`rust/tests/tcc_sandbox.sh`) boots the daemon under the production wrapper.
 
 ## [3.8.7] — 2026-06-15
 

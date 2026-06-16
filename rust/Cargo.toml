@@ -1,6 +1,6 @@
 [package]
 name = "lean-ctx"
-version = "3.8.7"
+version = "3.8.8"
 edition = "2024"
 autobins = false
 description = "Context Runtime for AI Agents with CCP. 71 MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24+ AI tools. Reduces LLM token consumption by up to 99%."
@@ -164,7 +164,7 @@ tree-sitter-lua = { version = "0.5", optional = true }
 tree-sitter-luau = { version = "1.2", optional = true }
 rten = { version = "0.24", optional = true }
 rten-tensor = { version = "0.24", optional = true }
-axum = { version = "0.8", optional = true }
+axum = { version = "0.8", optional = true, features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors", "auth"], optional = true }
 deadpool-postgres = { version = "0.14", optional = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }

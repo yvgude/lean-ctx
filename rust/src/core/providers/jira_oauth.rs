@@ -135,10 +135,9 @@ impl StoredCredential {
 type Store = HashMap<String, StoredCredential>;
 
 fn credentials_path() -> Result<PathBuf, String> {
-    let home = crate::core::home::resolve_home_dir()
-        .ok_or_else(|| "cannot resolve home directory for credential storage".to_string())?;
-    Ok(home
-        .join(".lean-ctx")
+    // GH #439: store under the typed data resolver (doctor --fix categorizes
+    // `credentials/` as data) so a split install doesn't re-create ~/.lean-ctx.
+    Ok(crate::core::paths::data_dir()?
         .join("credentials")
         .join("jira-oauth.json"))
 }

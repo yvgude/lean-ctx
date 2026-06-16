@@ -37,6 +37,15 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
         "rustc",
         "deno",
         "bazel",
+        // C/C++ compilers (compile-only; running the produced binary stays gated,
+        // exactly like rustc/go above). A coding agent that compiles an ad-hoc
+        // reproducer with `gcc repro.c` should not need an explicit opt-in (#361).
+        "gcc",
+        "cc",
+        "clang",
+        "g++",
+        "c++",
+        "clang++",
         // Package managers
         "pipenv",
         "conda",
@@ -271,6 +280,19 @@ mod tests {
             assert!(
                 defaults.contains(&tool.to_string()),
                 "{tool} must stay in the default allowlist"
+            );
+        }
+    }
+
+    // #361: a coding agent must be able to compile an ad-hoc C/C++ reproducer
+    // (`gcc repro.c`) without an explicit opt-in, like the other compilers.
+    #[test]
+    fn c_and_cpp_compilers_are_in_the_default_allowlist() {
+        let defaults = default_shell_allowlist();
+        for tool in ["gcc", "cc", "clang", "g++", "c++", "clang++"] {
+            assert!(
+                defaults.contains(&tool.to_string()),
+                "{tool} must be in the default allowlist"
             );
         }
     }

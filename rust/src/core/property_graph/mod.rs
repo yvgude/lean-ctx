@@ -59,6 +59,23 @@ fn migrate_if_needed(project_root: &str, new_dir: &Path) {
     }
 }
 
+/// Property-graph engine generation. Bump whenever edge extraction changes
+/// (e.g. the `type_ref` edges that connect C#/Java same-namespace consumers to
+/// their definers, GH #398) so an existing graph built by an older engine is
+/// transparently rebuilt on the next query instead of being served without the
+/// new edges. Graphs whose `graph.meta.json` predates this stamp deserialize to
+/// engine version `0`, so the first query after an upgrade rebuilds once.
+pub const GRAPH_ENGINE_VERSION: u32 = 2;
+
+/// `true` when the persisted graph was built by an engine older than
+/// [`GRAPH_ENGINE_VERSION`] — or predates the version stamp entirely (missing or
+/// unreadable meta) — and must therefore be rebuilt before its edges can be
+/// trusted. Callers pair this with a node-count check: an empty graph is rebuilt
+/// regardless; a non-empty-but-outdated graph is rebuilt by this gate.
+pub fn engine_outdated(project_root: &str) -> bool {
+    load_meta(project_root).is_none_or(|m| m.engine_version < GRAPH_ENGINE_VERSION)
+}
+
 pub struct CodeGraph {
     conn: Connection,
     db_path: PathBuf,
@@ -549,5 +566,35 @@ mod tests {
 
         // SAFETY: single-threaded context (test/startup); no concurrent env access.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    }
+
+    #[test]
+    fn engine_outdated_flags_old_and_missing_meta() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let proj = tempfile::tempdir().unwrap();
+        let root = proj.path().to_str().unwrap();
+
+        // No meta on disk yet -> outdated (an unbuilt graph forces a build).
+        assert!(engine_outdated(root), "missing meta must read as outdated");
+
+        // Meta from an engine generation before the version stamp -> outdated.
+        let mut meta = PropertyGraphMetaV1 {
+            built_at: "2026-01-01T00:00:00Z".to_string(),
+            engine_version: 0,
+            ..Default::default()
+        };
+        write_meta(root, &meta).unwrap();
+        assert!(
+            engine_outdated(root),
+            "engine_version 0 must read as outdated"
+        );
+
+        // Meta stamped with the current engine -> up to date.
+        meta.engine_version = GRAPH_ENGINE_VERSION;
+        write_meta(root, &meta).unwrap();
+        assert!(
+            !engine_outdated(root),
+            "current engine_version must read as up to date"
+        );
     }
 }

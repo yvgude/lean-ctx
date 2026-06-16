@@ -3,12 +3,17 @@
 # tcc_sandbox.sh — #356 regression guard (macOS only).
 #
 # Boots the lean-ctx foreground daemon as a *TCC-standalone* process (the
-# end-user LaunchAgent condition, forced via LEAN_CTX_TCC_STANDALONE=1) under a
-# macOS sandbox profile that SIGKILLs the process on ANY access under
-# ~/Documents. The daemon is told about a project living under ~/Documents (via
+# end-user LaunchAgent condition, forced via LEAN_CTX_TCC_STANDALONE=1) in three
+# runs:
+#   1. control    — no sandbox, proves the throwaway HOME is sane.
+#   2. detection  — deny ~/Documents + ~/Desktop + ~/Downloads with SIGKILL, so
+#                   any stray access kills the daemon and fails the test.
+#   3. production — the exact `sandbox-exec -p` wrapper lean-ctx bakes into the
+#                   LaunchAgent (silent EPERM deny), proving it boots + survives.
+# The daemon is told about a project living under ~/Documents (via
 # LEAN_CTX_PROJECT_ROOT and a stored .lean-ctx.toml there) — exactly the setup
-# that made #356 recur. If any boot path stats / reads / canonicalizes
-# ~/Documents, the kernel kills the daemon and this test fails.
+# that made #356 recur. If any boot path stats / reads / canonicalizes those
+# dirs, the kernel kills the daemon and this test fails.
 #
 # This codifies the empirical method used to root-cause #356. It is the only
 # check that reproduces the real end-user condition: running `lean-ctx update`
@@ -75,26 +80,39 @@ seed_home() {
 }
 
 # Boot the foreground daemon and report whether it survives the soak.
-# Args: <home> <soak> <sandbox: 0|1>. Returns 0 if alive after soak, 1 if it died.
+# Args: <home> <soak> <mode: off|kill|prod>. Returns 0 if alive, 1 if it died.
 boot_and_soak() {
-  local home="$1" soak="$2" sandboxed="$3"
+  local home="$1" soak="$2" mode="$3"
   local proj="$home/Documents/proj"
   local log="$home/daemon.log"
 
+  # Production-equivalent deny set: read+write under all three TCC-protected
+  # home dirs — mirrors src/core/tcc_guard_sandbox.rs. `file-read*` covers
+  # stat / open-read / read_dir / realpath; `file-write*` covers writes — both
+  # trip the TCC prompt (#356). `(allow default)` then a later `(deny ...)`:
+  # last match wins in SBPL.
+  local denies='(subpath "'"$home"'/Documents") (subpath "'"$home"'/Desktop") (subpath "'"$home"'/Downloads")'
+
   local -a cmd=()
-  if [[ "$sandboxed" == "1" ]]; then
-    local profile="$home/deny-documents.sb"
-    # `(allow default)` then a later `(deny ...)` — last match wins in SBPL.
-    # `file-read*` covers stat / open-read / read_dir / realpath — every TCC
-    # trigger (#356). `(with send-signal SIGKILL)` turns any such access into
-    # instant death of the violating process.
-    cat >"$profile" <<SB
+  case "$mode" in
+    kill)
+      # SIGKILL on any access makes a stray ~/Documents touch *detectable*.
+      local profile="$home/deny-tcc.sb"
+      cat >"$profile" <<SB
 (version 1)
 (allow default)
-(deny file-read* (subpath "$home/Documents") (with send-signal SIGKILL))
+(deny file-read* file-write* $denies (with send-signal SIGKILL))
 SB
-    cmd+=(sandbox-exec -f "$profile")
-  fi
+      cmd+=(sandbox-exec -f "$profile")
+      ;;
+    prod)
+      # The exact form lean-ctx bakes into the LaunchAgent ProgramArguments:
+      # a silent deny (EPERM, no SIGKILL) passed inline via `-p`.
+      local prof="(version 1) (allow default) (deny file-read* file-write* $denies)"
+      cmd+=(sandbox-exec -p "$prof")
+      ;;
+    off) ;;
+  esac
   cmd+=("$BIN" serve --_foreground-daemon)
 
   # cwd=/ mimics a real LaunchAgent; env -i isolates from the caller's XDG/LEAN_CTX.
@@ -124,7 +142,7 @@ SB
 # --- Control run: prove the daemon boots in this throwaway HOME (no sandbox). ---
 CTRL_HOME="$ROOT_TMP/ctrl"
 seed_home "$CTRL_HOME"
-if ! boot_and_soak "$CTRL_HOME" 4 0; then
+if ! boot_and_soak "$CTRL_HOME" 4 off; then
   echo "FAIL(inconclusive): daemon did not stay up even WITHOUT the sandbox."
   echo "  The environment, not #356, is the problem. Daemon log:"
   echo "----- control daemon log -----"
@@ -133,17 +151,29 @@ if ! boot_and_soak "$CTRL_HOME" 4 0; then
 fi
 echo "ok: control daemon booted and survived (env is sane)"
 
-# --- Sandbox run: SIGKILL on any ~/Documents access. -------------------------
+# --- Detection run: SIGKILL on any access under the three TCC-protected dirs. -
 SB_HOME="$ROOT_TMP/sandbox"
 seed_home "$SB_HOME"
-if boot_and_soak "$SB_HOME" "$SOAK" 1; then
-  echo "PASS: TCC-standalone daemon survived ${SOAK}s under deny-~/Documents sandbox"
-  echo "      -> no boot path stats/reads/canonicalizes ~/Documents (#356 fixed)"
-  exit 0
+if ! boot_and_soak "$SB_HOME" "$SOAK" kill; then
+  echo "FAIL: daemon was killed under the deny-TCC sandbox."
+  echo "      A TCC-standalone boot path accessed ~/Documents — #356 has regressed."
+  echo "----- sandbox daemon log -----"
+  cat "$SB_HOME/daemon.log" 2>/dev/null || true
+  exit 1
+fi
+echo "ok: no boot path stats/reads/canonicalizes ~/Documents/~Desktop/~Downloads"
+
+# --- Production run: the exact LaunchAgent wrapper (silent deny via `-p`). -----
+# Proves the real production invocation form boots and survives (EPERM, no kill),
+# i.e. the seatbelt wrapper does not break normal daemon operation.
+PROD_HOME="$ROOT_TMP/prod"
+seed_home "$PROD_HOME"
+if ! boot_and_soak "$PROD_HOME" 4 prod; then
+  echo "FAIL: daemon did not survive under the production 'sandbox-exec -p' wrapper."
+  echo "----- production daemon log -----"
+  cat "$PROD_HOME/daemon.log" 2>/dev/null || true
+  exit 1
 fi
 
-echo "FAIL: daemon was killed under the deny-~/Documents sandbox."
-echo "      A TCC-standalone boot path accessed ~/Documents — #356 has regressed."
-echo "----- sandbox daemon log -----"
-cat "$SB_HOME/daemon.log" 2>/dev/null || true
-exit 1
+echo "PASS: production seatbelt wrapper boots clean; no ~/Documents access (#356 fixed)"
+exit 0

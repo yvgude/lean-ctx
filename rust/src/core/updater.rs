@@ -431,6 +431,14 @@ fn hex_lower(bytes: &[u8]) -> String {
 }
 
 fn post_update_rewire(skip_rules: bool) {
+    // #356: regenerate installed LaunchAgent plists so they adopt the new
+    // deny-~/Documents seatbelt wrapper. A plist is only (re)written on install,
+    // so without this an upgrade keeps the old unwrapped plist — and the TCC
+    // prompt — until the next manual enable. Idempotent: install rewrites the
+    // plist and re-bootstraps it.
+    #[cfg(target_os = "macos")]
+    rewrap_launchagents_for_tcc();
+
     let mut cfg = crate::core::config::Config::load();
 
     if cfg.proxy_enabled.is_none() && crate::proxy_autostart::is_installed() {
@@ -467,6 +475,29 @@ fn post_update_rewire(skip_rules: bool) {
     };
     if let Err(e) = crate::setup::run_setup_with_options(opts) {
         tracing::error!("Setup refresh error: {e}");
+    }
+}
+
+/// #356: rewrite every installed LaunchAgent plist (daemon, proxy, auto-updater)
+/// so an upgrade re-emits them with the deny-~/Documents seatbelt wrapper.
+/// plists are only generated on install, so an existing install would otherwise
+/// keep the pre-wrapper plist — and the prompt — until the next manual `enable`.
+/// Each `install` / `install_schedule` rewrites the plist and re-bootstraps it.
+#[cfg(target_os = "macos")]
+fn rewrap_launchagents_for_tcc() {
+    if crate::proxy_autostart::is_installed() {
+        crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
+    }
+    if crate::daemon_autostart::is_installed() {
+        crate::daemon_autostart::install(true);
+    }
+    if crate::core::update_scheduler::schedule_status().enabled {
+        let hours = crate::core::config::Config::load()
+            .updates
+            .check_interval_hours;
+        if let Err(e) = crate::core::update_scheduler::install_schedule(hours) {
+            tracing::warn!("#356 re-wrap of auto-update LaunchAgent failed: {e}");
+        }
     }
 }
 

@@ -170,9 +170,12 @@ function checkFaithfulLevers(cfg) {
 function checkCompression(bin) {
   // Real proof that shell output is compressed (and therefore metered), without
   // depending on a footer string: run a log-like command raw vs through
-  // lean-ctx and assert the lean-ctx output is strictly smaller. `seq -f` avoids
-  // shell command-substitution so the probe also runs under shell_strict_mode.
-  const cmd = 'seq -f "[INFO] building module %g of 80 ... ok" 1 80';
+  // lean-ctx and assert the lean-ctx output is strictly smaller. The generator is
+  // a single `awk` BEGIN loop: it avoids shell command-substitution (so the probe
+  // runs under shell_strict_mode) and `awk` is in the default shell_allowlist —
+  // unlike `seq`, which mode=replace blocks, making the probe false-fail (#361).
+  const cmd =
+    'awk \'BEGIN { for (i = 1; i <= 80; i++) printf "[INFO] building module %d of 80 ... ok\\n", i }\'';
   try {
     const raw = execFileSync("/bin/sh", ["-c", cmd], { encoding: "utf8" });
     const compressed = execFileSync(bin, ["-c", cmd], {

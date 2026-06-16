@@ -24,6 +24,7 @@ pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     install_shell_exports(home, port, quiet);
     install_claude_env(home, port, quiet);
     install_codex_env(home, port, quiet);
+    install_pi_env(home, port, quiet, false);
 }
 
 /// Install proxy env without config guard (used by `lean-ctx proxy enable` which has already set the flag).
@@ -36,6 +37,7 @@ pub fn install_proxy_env_unchecked(home: &Path, port: u16, quiet: bool, force_en
         install_claude_env(home, port, quiet);
     }
     install_codex_env(home, port, quiet);
+    install_pi_env(home, port, quiet, force_endpoint);
 }
 
 pub fn preview_proxy_cleanup(home: &Path) {
@@ -251,6 +253,7 @@ pub fn uninstall_proxy_env(home: &Path, quiet: bool) {
 
     uninstall_claude_env(home, quiet);
     uninstall_codex_env(home, quiet);
+    uninstall_pi_env(home, quiet);
 }
 
 fn install_shell_exports(home: &Path, port: u16, quiet: bool) {
@@ -436,6 +439,183 @@ fn uninstall_codex_env(home: &Path, quiet: bool) {
     if !quiet {
         println!("  ✓ Removed OPENAI_BASE_URL from Codex CLI config");
     }
+}
+
+/// Pi / forge resolve their provider endpoint from `~/.pi/agent/models.json`
+/// (`providers.<name>.baseUrl`) + OAuth, *not* from `ANTHROPIC_BASE_URL` /
+/// `OPENAI_BASE_URL`, so the shell and Claude/Codex wiring never reaches them
+/// (an independent benchmark found `proxy enable` silently bypassed for forge,
+/// #361). Point Pi's providers at the proxy directly instead. Unlike a Claude
+/// Code Pro/Max subscription — which a custom base URL breaks — Pi's OAuth works
+/// through the proxy, because the proxy forwards the credential verbatim to the
+/// real upstream (verified field-for-field in #361), so no API-key guard applies.
+fn install_pi_env(home: &Path, port: u16, quiet: bool, force: bool) {
+    install_pi_env_at(&home.join(".pi/agent"), port, quiet, force);
+}
+
+fn uninstall_pi_env(home: &Path, quiet: bool) {
+    uninstall_pi_env_at(&home.join(".pi/agent"), quiet);
+}
+
+/// Testable core of [`install_pi_env`]: operates on an explicit `~/.pi/agent`
+/// directory. Wires both providers using the same per-SDK conventions as the
+/// shell exports — Anthropic gets the bare origin (it appends `/v1` itself),
+/// OpenAI gets the `/v1`-suffixed URL (#366). A custom *remote* endpoint is
+/// preserved unless `force`, and only the providers we actually rewrite are
+/// touched, so the file round-trips cleanly on `disable`.
+fn install_pi_env_at(agent_dir: &Path, port: u16, quiet: bool, force: bool) {
+    use crate::core::config::{is_local_proxy_url, normalize_url_opt};
+
+    // Only wire Pi when it is actually configured on this machine.
+    if !agent_dir.exists() {
+        return;
+    }
+    if !is_proxy_reachable(port) {
+        if !quiet {
+            println!("  Skipping Pi proxy env (proxy not running on port {port})");
+        }
+        return;
+    }
+
+    let base = format!("http://127.0.0.1:{port}");
+    let models_path = agent_dir.join("models.json");
+    let existing = std::fs::read_to_string(&models_path).unwrap_or_default();
+    let mut doc: serde_json::Value = if existing.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        match crate::core::jsonc::parse_jsonc(&existing) {
+            Ok(v) => v,
+            Err(_) => return,
+        }
+    };
+
+    let mut changed = false;
+    let mut kept_custom: Vec<String> = Vec::new();
+    for (provider, proxy_url) in [
+        ("anthropic", base.clone()),
+        ("openai", format!("{base}/v1")),
+    ] {
+        let current = pi_provider_base_url(&doc, provider).to_string();
+        if current == proxy_url {
+            continue;
+        }
+        // Never silently clobber a user's custom remote gateway; --force overrides.
+        if !force {
+            if let Some(custom) = normalize_url_opt(&current) {
+                if !is_local_proxy_url(&custom) {
+                    kept_custom.push(format!("{provider} → {custom}"));
+                    continue;
+                }
+            }
+        }
+        set_pi_provider_base_url(&mut doc, provider, &proxy_url);
+        changed = true;
+    }
+
+    if changed {
+        let out = serde_json::to_string_pretty(&doc).unwrap_or_default();
+        let _ = std::fs::write(&models_path, out + "\n");
+        if !quiet {
+            println!(
+                "  Configured Pi providers (anthropic/openai) → proxy in ~/.pi/agent/models.json"
+            );
+        }
+    }
+    if !quiet && !kept_custom.is_empty() {
+        eprintln!(
+            "  \u{26a0} Pi: kept custom endpoint(s) {}; use `lean-ctx proxy enable --force` to override.",
+            kept_custom.join(", ")
+        );
+    }
+}
+
+/// Testable core of [`uninstall_pi_env`]. Reverts only the providers whose
+/// `baseUrl` still points at the local proxy (i.e. the ones we set), so a custom
+/// remote endpoint the user configured themselves is never removed.
+fn uninstall_pi_env_at(agent_dir: &Path, quiet: bool) {
+    use crate::core::config::is_local_proxy_url;
+
+    let models_path = agent_dir.join("models.json");
+    let existing = match std::fs::read_to_string(&models_path) {
+        Ok(s) if !s.trim().is_empty() => s,
+        _ => return,
+    };
+    let mut doc: serde_json::Value = match crate::core::jsonc::parse_jsonc(&existing) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let mut changed = false;
+    for provider in ["anthropic", "openai"] {
+        if is_local_proxy_url(pi_provider_base_url(&doc, provider))
+            && remove_pi_provider_base_url(&mut doc, provider)
+        {
+            changed = true;
+        }
+    }
+
+    if changed {
+        let out = serde_json::to_string_pretty(&doc).unwrap_or_default();
+        let _ = std::fs::write(&models_path, out + "\n");
+        if !quiet {
+            println!("  \u{2713} Removed Pi proxy endpoints from ~/.pi/agent/models.json");
+        }
+    }
+}
+
+/// `providers.<name>.baseUrl` from a Pi `models.json` document (`""` if absent).
+fn pi_provider_base_url<'a>(doc: &'a serde_json::Value, provider: &str) -> &'a str {
+    doc.get("providers")
+        .and_then(|p| p.get(provider))
+        .and_then(|p| p.get("baseUrl"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+}
+
+/// Sets `providers.<name>.baseUrl`, creating the nested objects as needed.
+fn set_pi_provider_base_url(doc: &mut serde_json::Value, provider: &str, url: &str) {
+    let Some(root) = doc.as_object_mut() else {
+        return;
+    };
+    let providers = root
+        .entry("providers")
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(providers) = providers.as_object_mut() else {
+        return;
+    };
+    let entry = providers
+        .entry(provider.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(entry) = entry.as_object_mut() {
+        entry.insert(
+            "baseUrl".to_string(),
+            serde_json::Value::String(url.to_string()),
+        );
+    }
+}
+
+/// Removes `providers.<name>.baseUrl` and prunes now-empty parent objects.
+/// Returns whether anything was removed.
+fn remove_pi_provider_base_url(doc: &mut serde_json::Value, provider: &str) -> bool {
+    let Some(root) = doc.as_object_mut() else {
+        return false;
+    };
+    let Some(providers) = root.get_mut("providers").and_then(|p| p.as_object_mut()) else {
+        return false;
+    };
+    let Some(entry) = providers.get_mut(provider).and_then(|p| p.as_object_mut()) else {
+        return false;
+    };
+    if entry.remove("baseUrl").is_none() {
+        return false;
+    }
+    if entry.is_empty() {
+        providers.remove(provider);
+    }
+    if providers.is_empty() {
+        root.remove("providers");
+    }
+    true
 }
 
 fn install_claude_env(home: &Path, port: u16, quiet: bool) {
@@ -1033,6 +1213,133 @@ $env:GEMINI_API_BASE_URL = "{base}"
                 "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:{port}\""
             )),
             "API-key mode must export ANTHROPIC_BASE_URL"
+        );
+    }
+
+    fn read_pi_models(agent_dir: &Path) -> serde_json::Value {
+        let raw = std::fs::read_to_string(agent_dir.join("models.json")).unwrap();
+        crate::core::jsonc::parse_jsonc(&raw).unwrap()
+    }
+
+    /// #361: `proxy enable` must reach Pi/forge, which read `providers.*.baseUrl`
+    /// from models.json (not ANTHROPIC_BASE_URL). Fresh install wires both
+    /// providers with the per-SDK URL convention (anthropic bare, openai `/v1`).
+    #[test]
+    fn pi_env_fresh_install_writes_both_providers() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join(".pi/agent");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        install_pi_env_at(&agent_dir, port, true, false);
+
+        let doc = read_pi_models(&agent_dir);
+        assert_eq!(
+            pi_provider_base_url(&doc, "anthropic"),
+            format!("http://127.0.0.1:{port}"),
+            "Anthropic gets the bare origin (SDK appends /v1 itself)"
+        );
+        assert_eq!(
+            pi_provider_base_url(&doc, "openai"),
+            format!("http://127.0.0.1:{port}/v1"),
+            "OpenAI gets the /v1-suffixed URL (#366)"
+        );
+    }
+
+    /// A user's custom remote gateway must survive `proxy enable` (no --force):
+    /// only the untouched provider is pointed at the proxy.
+    #[test]
+    fn pi_env_preserves_custom_remote_endpoint_without_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join(".pi/agent");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(
+            agent_dir.join("models.json"),
+            r#"{"providers":{"anthropic":{"baseUrl":"https://gw.example.com"}}}"#,
+        )
+        .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        install_pi_env_at(&agent_dir, port, true, false);
+
+        let doc = read_pi_models(&agent_dir);
+        assert_eq!(
+            pi_provider_base_url(&doc, "anthropic"),
+            "https://gw.example.com",
+            "custom remote endpoint must be preserved without --force"
+        );
+        assert_eq!(
+            pi_provider_base_url(&doc, "openai"),
+            format!("http://127.0.0.1:{port}/v1"),
+            "the untouched provider still gets the proxy"
+        );
+    }
+
+    /// `--force` (the `proxy enable --force` path) overrides a custom endpoint.
+    #[test]
+    fn pi_env_force_overrides_custom_endpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join(".pi/agent");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(
+            agent_dir.join("models.json"),
+            r#"{"providers":{"anthropic":{"baseUrl":"https://gw.example.com"}}}"#,
+        )
+        .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        install_pi_env_at(&agent_dir, port, true, true);
+
+        let doc = read_pi_models(&agent_dir);
+        assert_eq!(
+            pi_provider_base_url(&doc, "anthropic"),
+            format!("http://127.0.0.1:{port}"),
+            "--force must override the custom endpoint"
+        );
+    }
+
+    /// A user without Pi installed must not get a Pi config materialized.
+    #[test]
+    fn pi_env_skips_when_agent_dir_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join(".pi/agent");
+
+        install_pi_env_at(&agent_dir, 19999, true, false);
+
+        assert!(
+            !agent_dir.join("models.json").exists(),
+            "no Pi config must be created when Pi is not configured"
+        );
+    }
+
+    /// `disable` reverts only the providers pointing at the local proxy; a
+    /// user-owned custom endpoint is left untouched.
+    #[test]
+    fn pi_uninstall_removes_only_local_endpoints() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join(".pi/agent");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(
+            agent_dir.join("models.json"),
+            r#"{"providers":{"anthropic":{"baseUrl":"http://127.0.0.1:4444"},"openai":{"baseUrl":"https://api.openai.com/v1"}}}"#,
+        )
+        .unwrap();
+
+        uninstall_pi_env_at(&agent_dir, true);
+
+        let doc = read_pi_models(&agent_dir);
+        assert_eq!(
+            pi_provider_base_url(&doc, "anthropic"),
+            "",
+            "the local proxy endpoint we set must be removed"
+        );
+        assert_eq!(
+            pi_provider_base_url(&doc, "openai"),
+            "https://api.openai.com/v1",
+            "a custom endpoint must be preserved on disable"
         );
     }
 }

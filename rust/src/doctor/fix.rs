@@ -1,6 +1,8 @@
 use chrono::Utc;
 
-use super::{DIM, RST, compact_score, print_compact_status, shell_aliases_outcome};
+use super::{
+    DIM, RST, compact_score, display_user_path, print_compact_status, shell_aliases_outcome,
+};
 
 pub(super) struct DoctorFixOptions {
     pub json: bool,
@@ -401,6 +403,49 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     }
     steps.push(xdg_step);
 
+    // Reclaim a residual legacy `~/.lean-ctx` that lingered after the data moved
+    // to XDG (older --fix runs, the GH #408 default flip): drain leftover reports
+    // and remove the empty dir so it stops being silently re-adopted as the data
+    // dir, and so the doctor report below lands in XDG, not legacy (#434, #436).
+    let mut reclaim_step = SetupStepReport {
+        name: "legacy_reclaim".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    match crate::core::xdg_migrate::reclaim_legacy() {
+        Some(report) => {
+            let moved = report.moved.len();
+            reclaim_step.items.push(SetupItem {
+                name: "reclaim".to_string(),
+                status: if moved > 0 {
+                    format!("reclaimed {moved}")
+                } else {
+                    "removed".to_string()
+                },
+                path: Some(report.source.to_string_lossy().to_string()),
+                note: Some(format!(
+                    "drained {moved} leftover entr{} from ~/.lean-ctx into XDG and removed the empty dir",
+                    if moved == 1 { "y" } else { "ies" }
+                )),
+            });
+            if !report.errors.is_empty() {
+                reclaim_step.ok = false;
+                reclaim_step.errors.extend(report.errors.clone());
+            }
+        }
+        None => {
+            reclaim_step.items.push(SetupItem {
+                name: "reclaim".to_string(),
+                status: "clean".to_string(),
+                path: None,
+                note: Some("no residual ~/.lean-ctx to reclaim".to_string()),
+            });
+        }
+    }
+    steps.push(reclaim_step);
+
     // Prune knowledge stores whose project_root was deleted (removed git
     // worktrees, thrown-away projects). They can never be written again, so
     // their per-store eviction cap can never self-heal — pure accumulated bloat
@@ -481,7 +526,7 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     } else {
         let (passed, total) = compact_score();
         print_compact_status(passed, total);
-        println!("  {DIM}report saved:{RST} {}", path.display());
+        println!("  {DIM}report saved:{RST} {}", display_user_path(&path));
     }
 
     Ok(i32::from(!report.success))

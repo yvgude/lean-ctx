@@ -396,6 +396,45 @@ pub fn migrate() -> Option<MigrationReport> {
     Some(report)
 }
 
+/// Reclaim a residual legacy `~/.lean-ctx` directory after its data has already
+/// moved to XDG (an earlier `--fix`, or the GH #408 default flip). Unlike
+/// [`migrate`] — which only fires while the source still `has_data_files` — this
+/// drains whatever non-runtime entries linger (old `doctor/`, `setup/`,
+/// `status/` reports, stray catch-all files) into their typed XDG dirs and then
+/// removes the now-empty legacy dir, so `~/.lean-ctx` actually disappears
+/// instead of being silently re-adopted as the data dir (GH #434, #436).
+///
+/// Safety:
+/// - Operates ONLY on `~/.lean-ctx` (never a mixed `$XDG_CONFIG_HOME` source).
+/// - Skips when `LEAN_CTX_DATA_DIR` pins a single dir, or when the legacy dir is
+///   still the active data dir (unmigrated data present) — `migrate` performs the
+///   split first, and this guard prevents ever draining a live data dir.
+/// - Reuses the copy-before-remove / reconcile logic, so no data is ever lost.
+/// - Removes the dir only when it ends up empty; a surviving runtime file
+///   (e.g. a live socket) keeps it — fine, it is no longer the data dir.
+pub fn reclaim_legacy() -> Option<MigrationReport> {
+    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
+        return None;
+    }
+    let legacy = dirs::home_dir()?.join(".lean-ctx");
+    if !legacy.is_dir() {
+        return None;
+    }
+    // Never drain the directory that is still the active data dir (an unmigrated
+    // legacy install, or a migration that left markers behind).
+    if crate::core::data_dir::lean_ctx_data_dir().ok().as_deref() == Some(legacy.as_path()) {
+        return None;
+    }
+    let targets = Targets::resolve().ok()?;
+    let report = migrate_from(&legacy, &targets);
+    // Best-effort: drop the dir once it is empty.
+    let _ = std::fs::remove_dir(&legacy);
+    if report.is_empty() {
+        return None;
+    }
+    Some(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -723,5 +762,47 @@ mod tests {
             "explicit LEAN_CTX_DATA_DIR must not be split"
         );
         assert!(single.join("events.jsonl").exists(), "nothing moved");
+    }
+
+    // #434/#436: a residual `~/.lean-ctx` left behind after the data already
+    // moved to XDG (only a stale `doctor/` report, no data markers) must be
+    // drained into the typed XDG dirs and the empty dir removed, so it stops
+    // being re-adopted as the data dir.
+    #[cfg(unix)]
+    #[test]
+    fn reclaim_legacy_drains_and_removes_residual_dir() {
+        let _g = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let home = root.join("home");
+        let xc = root.join("xc");
+        let xd = root.join("xd");
+        let xs = root.join("xs");
+        let xk = root.join("xk");
+        std::fs::create_dir_all(&home).unwrap();
+        let legacy = home.join(".lean-ctx");
+        // Residual leftover: a doctor report (catch-all → data), NO data markers.
+        touch(&legacy.join("doctor"), "latest.json");
+
+        let _env = EnvVars::apply(&[
+            ("HOME", Some(home.as_path())),
+            ("XDG_CONFIG_HOME", Some(xc.as_path())),
+            ("XDG_DATA_HOME", Some(xd.as_path())),
+            ("XDG_STATE_HOME", Some(xs.as_path())),
+            ("XDG_CACHE_HOME", Some(xk.as_path())),
+            ("LEAN_CTX_DATA_DIR", None),
+            ("LEAN_CTX_CONFIG_DIR", None),
+            ("LEAN_CTX_STATE_DIR", None),
+            ("LEAN_CTX_CACHE_DIR", None),
+        ]);
+
+        let report = reclaim_legacy().expect("residual legacy must be reclaimed");
+        assert!(report.errors.is_empty(), "errors: {:?}", report.errors);
+        assert!(
+            xd.join("lean-ctx/doctor/latest.json").exists(),
+            "report drained into XDG data"
+        );
+        assert!(!legacy.exists(), "empty legacy dir removed");
+        assert!(reclaim_legacy().is_none(), "second run is a no-op");
     }
 }

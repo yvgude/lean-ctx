@@ -278,6 +278,7 @@ External context providers (GitHub, GitLab, Jira, MCP bridges, etc.). Set tokens
 
 Proxy upstream configuration for API routing
 
+- `allow_insecure_http_upstream` (bool, default `false` — env `LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM`) — Allow a non-loopback plaintext http:// upstream (trusted local network only, e.g. http://host.docker.internal:2455 in front of codex-lb). Opt-in; default false
 - `anthropic_upstream` (string?, default `null`) — Custom upstream URL for Anthropic API proxy
 - `gemini_upstream` (string?, default `null`) — Custom upstream URL for Gemini API proxy
 - `history_mode` (enum: cache-aware | rolling | off, default `cache-aware` — env `LEAN_CTX_PROXY_HISTORY_MODE`) — History pruning strategy. cache-aware: frozen boundaries that keep provider prompt caches valid (default). rolling: legacy moving window (max raw savings, breaks prompt caching). off: never prune

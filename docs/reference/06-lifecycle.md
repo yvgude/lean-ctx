@@ -138,6 +138,13 @@ lean-ctx dev-install   # build release + atomic install + restart (dev only)
 > first, then terminates everything. Always `lean-ctx stop` before manually
 > replacing the binary.
 
+> macOS privacy (#356): the daemon, proxy and auto-updater LaunchAgents are
+> launched through `sandbox-exec` with a Seatbelt profile that denies
+> `~/Documents`, `~/Desktop` and `~/Downloads`. As their own TCC identity these
+> processes would otherwise trigger the "access your Documents folder" prompt on
+> every update; the kernel-level deny makes that prompt structurally impossible,
+> with no "Allow" ever required. See Journey 13 §3.1.
+
 ---
 
 ## 5. Emergency / "my shell is broken"

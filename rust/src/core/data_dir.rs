@@ -65,41 +65,29 @@ pub(crate) fn test_sandbox_dir() -> PathBuf {
         .clone()
 }
 
-/// Home-based resolution (legacy `~/.lean-ctx` vs XDG). Split out so the
+/// Home-based resolution (legacy `~/.lean-ctx` / mixed vs XDG). Split out so the
 /// priority rules stay unit-testable despite the test sandbox above.
+///
+/// The legacy/mixed back-compat decision lives in exactly ONE place,
+/// [`crate::core::paths::single_dir_override`], so the data dir can never
+/// disagree with config/state/cache (which all resolve through it): a legacy
+/// `~/.lean-ctx` or mixed `$XDG_CONFIG_HOME/lean-ctx` install wins only while it
+/// still holds data markers. Once `doctor --fix` has split it out, every
+/// category — data included — flips to its typed XDG dir, and a leftover
+/// (marker-free) `~/.lean-ctx` is no longer silently re-adopted (GH #436).
 fn resolve_home_data_dir() -> Result<PathBuf, String> {
+    // 1./2. Legacy or mixed single-dir install that still holds data → keep it
+    //       in place (back-compat). `LEAN_CTX_DATA_DIR` is handled by the caller,
+    //       and `single_dir_override` honors it too.
+    if let Some(dir) = crate::core::paths::single_dir_override() {
+        ensure_dir_permissions(&dir);
+        return Ok(dir);
+    }
+
+    // 3. Fresh / fully-split install: default DATA to `$XDG_DATA_HOME/lean-ctx`
+    //    (GH #408) so the config dir (`$XDG_CONFIG_HOME`) holds only config and
+    //    stays read-only-sandbox-safe.
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    // 1. Legacy `~/.lean-ctx` holding real data → keep it (back-compat).
-    let legacy = home.join(".lean-ctx");
-    if legacy.exists() && has_data_files(&legacy) {
-        ensure_dir_permissions(&legacy);
-        return Ok(legacy);
-    }
-
-    // 2. Pre-split install that mixed data into `$XDG_CONFIG_HOME/lean-ctx` →
-    //    keep it there. Existing users never get their data silently relocated;
-    //    `lean-ctx doctor --fix` performs the per-category split on demand.
-    let xdg_config = std::env::var("XDG_CONFIG_HOME")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .map_or_else(|| home.join(".config"), PathBuf::from);
-    let mixed_config = xdg_config.join("lean-ctx");
-    if mixed_config.exists() && has_data_files(&mixed_config) {
-        ensure_dir_permissions(&mixed_config);
-        return Ok(mixed_config);
-    }
-
-    // 3. A non-empty legacy dir without data markers (e.g. user-created) keeps
-    //    winning so we don't surprise such setups.
-    if legacy.exists() {
-        ensure_dir_permissions(&legacy);
-        return Ok(legacy);
-    }
-
-    // 4. Fresh install: default DATA to `$XDG_DATA_HOME/lean-ctx` (GH #408) so
-    //    the config dir (`$XDG_CONFIG_HOME`) holds only config and stays
-    //    read-only-sandbox-safe.
     let xdg_data = std::env::var("XDG_DATA_HOME")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -357,5 +345,52 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&xdg_base);
+    }
+
+    #[cfg(unix)]
+    fn restore_env(key: &str, val: Option<std::ffi::OsString>) {
+        match val {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn markerless_legacy_dir_does_not_win() {
+        // GH #436: after `doctor --fix` moves data to XDG, `~/.lean-ctx` lingers
+        // (runtime leftovers) but holds no data markers. It must NOT keep being
+        // re-adopted as the data dir — data must flip to $XDG_DATA_HOME/lean-ctx,
+        // exactly like config/state/cache already do via single_dir_override.
+        let _lock = test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let xdg_data = tmp.path().join("xdg-data");
+        let legacy = home.join(".lean-ctx");
+        std::fs::create_dir_all(&legacy).unwrap();
+        // A runtime leftover (daemon.pid) is not a data marker.
+        std::fs::write(legacy.join("daemon.pid"), "123").unwrap();
+
+        let saved_home = std::env::var_os("HOME");
+        let saved_config = std::env::var_os("XDG_CONFIG_HOME");
+        let saved_data = std::env::var_os("XDG_DATA_HOME");
+        std::env::set_var("HOME", &home);
+        std::env::remove_var("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_DATA_HOME", &xdg_data);
+        std::env::set_var("LEAN_CTX_DATA_DIR", "");
+
+        let result = resolve_home_data_dir().unwrap();
+
+        // Restore before asserting so a failure can't leak env into other tests.
+        restore_env("HOME", saved_home);
+        restore_env("XDG_CONFIG_HOME", saved_config);
+        restore_env("XDG_DATA_HOME", saved_data);
+        std::env::remove_var("LEAN_CTX_DATA_DIR");
+
+        assert_eq!(
+            result,
+            xdg_data.join("lean-ctx"),
+            "marker-free legacy dir must not be re-adopted as the data dir"
+        );
     }
 }

@@ -16,17 +16,7 @@ pub fn cmd_config(args: &[String]) {
         "init" | "create" => {
             let full = args.iter().any(|a| a == "--full");
             if full {
-                let default = config::Config::default();
-                match default.save() {
-                    Ok(()) => {
-                        let path = config::Config::path().map_or_else(
-                            || "~/.lean-ctx/config.toml".to_string(),
-                            |p| p.to_string_lossy().to_string(),
-                        );
-                        println!("Created full config at {path}");
-                    }
-                    Err(e) => eprintln!("Error: {e}"),
-                }
+                init_full_config();
             } else {
                 match write_simplified_config() {
                     Ok(path) => println!("Created simplified config at {path}"),
@@ -131,6 +121,54 @@ pub fn cmd_config(args: &[String]) {
             eprintln!("Usage: lean-ctx config [init|set|show|schema|validate|apply]");
             std::process::exit(1);
         }
+    }
+}
+
+/// Resolves the [`config::Config`] that `config init --full` should persist.
+///
+/// `existing_raw` is the verbatim content of the current GLOBAL `config.toml`
+/// (never the project-local `.lean-ctx.toml` — those overrides must not leak
+/// into the global file). When it holds a non-empty, parseable document we
+/// return its deserialized form so every user value is retained; an empty/absent
+/// file yields defaults, and an unparseable one is surfaced as an error so the
+/// caller can refuse to clobber it.
+///
+/// This is the regression guard for #443: `config init --full` previously wrote
+/// `Config::default()`, and `Config::save()` overwrites any key present in both
+/// the incoming document and the file (see `config_io::merge_table`), which
+/// silently reset customized values like `max_ram_percent` or `compression_level`.
+fn config_for_full_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
+    match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
+        Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),
+        None => Ok(config::Config::default()),
+    }
+}
+
+/// Implements `config init --full`: (re)writes the global config while
+/// preserving the user's existing values (#443).
+fn init_full_config() {
+    let existing_raw = config::Config::path().and_then(|p| std::fs::read_to_string(&p).ok());
+
+    let cfg = match config_for_full_init(existing_raw.as_deref()) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!(
+                "Error: refusing to overwrite an unparseable config.toml ({e}).\n  \
+                 Fix it manually or run `lean-ctx doctor --fix`, then retry."
+            );
+            return;
+        }
+    };
+
+    match cfg.save() {
+        Ok(()) => {
+            let path = config::Config::path().map_or_else(
+                || "~/.lean-ctx/config.toml".to_string(),
+                |p| p.to_string_lossy().to_string(),
+            );
+            println!("Created full config at {path}");
+        }
+        Err(e) => eprintln!("Error: {e}"),
     }
 }
 
@@ -1024,4 +1062,78 @@ fn dir_size(path: &std::path::Path) -> u64 {
         }
     }
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Reproduces `Config::save()`'s on-disk merge without touching the real
+    // config path: serialize `cfg`, then merge it onto `existing` exactly as
+    // save() does, and return the value that `max_ram_percent` ends up with.
+    fn merged_max_ram(cfg: &config::Config, existing: &str) -> u8 {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, existing).unwrap();
+        let new_content = toml::to_string_pretty(cfg).unwrap();
+        let baseline = toml::from_str::<config::Config>("").unwrap();
+        let defaults = toml::to_string_pretty(&baseline).unwrap();
+        crate::config_io::write_toml_preserving_minimal(&path, &new_content, &defaults).unwrap();
+        let written = std::fs::read_to_string(&path).unwrap();
+        toml::from_str::<config::Config>(&written)
+            .unwrap()
+            .max_ram_percent
+    }
+
+    #[test]
+    fn full_init_uses_existing_values_not_defaults() {
+        let existing = "max_ram_percent = 30\ncompression_level = \"standard\"\n";
+        let cfg = config_for_full_init(Some(existing)).expect("parse existing");
+        assert_eq!(cfg.max_ram_percent, 30, "must keep the user's value, not 5");
+        assert_eq!(cfg.compression_level, config::CompressionLevel::Standard);
+    }
+
+    #[test]
+    fn full_init_falls_back_to_defaults_on_fresh_install() {
+        let cfg = config_for_full_init(None).expect("default");
+        assert_eq!(
+            cfg.max_ram_percent,
+            config::Config::default().max_ram_percent
+        );
+        let cfg_empty = config_for_full_init(Some("   \n")).expect("blank -> default");
+        assert_eq!(
+            cfg_empty.max_ram_percent,
+            config::Config::default().max_ram_percent
+        );
+    }
+
+    #[test]
+    fn full_init_refuses_unparseable_config() {
+        assert!(config_for_full_init(Some("max_ram_percent = = =")).is_err());
+    }
+
+    // #443 end-to-end: `config init --full` must not reset a customized value.
+    #[test]
+    fn full_init_preserves_value_through_save_merge() {
+        let existing = "max_ram_percent = 30\n";
+        let cfg = config_for_full_init(Some(existing)).unwrap();
+        assert_eq!(
+            merged_max_ram(&cfg, existing),
+            30,
+            "user value must survive `config init --full`"
+        );
+    }
+
+    // Guards the root cause: seeding the write from `Config::default()` (the old
+    // behavior) DOES reset the value — proving why `config_for_full_init` must
+    // load the existing config instead.
+    #[test]
+    fn default_seed_resets_value_root_cause_marker() {
+        let existing = "max_ram_percent = 30\n";
+        assert_eq!(
+            merged_max_ram(&config::Config::default(), existing),
+            5,
+            "default seed resets to 5 — the #443 regression we fixed"
+        );
+    }
 }

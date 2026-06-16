@@ -22,6 +22,8 @@ use super::tool_kind::{self, ToolResultKind, should_protect};
 /// Retrieve / cancel / delete / input_items sub-paths
 /// (`/v1/responses/{id}/...`) are routed here as well and pass through untouched:
 /// they carry no `input` array, so `compress_request_body` is a no-op for them.
+///
+/// Handles `POST /v1/responses` (and the bare `/responses`) over HTTP/SSE.
 pub async fn handler(
     State(state): State<ProxyState>,
     req: Request<Body>,
@@ -39,19 +41,41 @@ pub async fn handler(
     .await
 }
 
+/// Handles the WebSocket Responses transport on `GET /v1/responses`.
+///
+/// Codex (and the OpenAI SDK) default to `ws://…/responses` with one
+/// `response.create` event per turn. Bridging the upgrade here lets the proxy be
+/// a drop-in for Codex without forcing `supports_websockets = false` (#440); the
+/// actual WS↔HTTP/SSE bridging lives in `openai_responses_ws`.
+pub async fn ws_handler(
+    State(state): State<ProxyState>,
+    headers: axum::http::HeaderMap,
+    ws: axum::extract::ws::WebSocketUpgrade,
+) -> Response {
+    super::openai_responses_ws::upgrade(state, ws, &headers)
+}
+
 fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
-    let mut modified = false;
+    let modified = compress_responses_input(&mut doc);
+    let out = serde_json::to_vec(&doc).unwrap_or_default();
+    let compressed_size = if modified { out.len() } else { original_size };
+    (out, original_size, compressed_size)
+}
 
-    // The token sink we can shrink safely is each `function_call_output.output` —
-    // the Responses-API analogue of a Chat Completions role:"tool" message.
-    //
-    // We deliberately do NOT prune or reorder the `input` array: the Responses
-    // API rejects a `function_call` whose matching `function_call_output` is
-    // absent (and reasoning items must keep their originating call), so the
-    // structural history-pruning the Chat Completions handler performs would
-    // risk 400s here. Compressing only the tool outputs captures the bulk of the
-    // savings without touching the conversation structure.
+/// Compresses the `function_call_output.output` entries of a Responses-API body
+/// in place, returning whether anything changed. Shared by the HTTP handler and
+/// the WebSocket bridge (#440) so both paths get identical, safe savings.
+///
+/// The only token sink we shrink is each `function_call_output.output` — the
+/// Responses-API analogue of a Chat Completions `role:"tool"` message. We
+/// deliberately do NOT prune or reorder the `input` array: the Responses API
+/// rejects a `function_call` whose matching `function_call_output` is absent
+/// (and reasoning items must keep their originating call), so structural
+/// history-pruning would risk 400s here. Compressing only the tool outputs
+/// captures the bulk of the savings without touching the conversation structure.
+pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
+    let mut modified = false;
     if let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) {
         let tool_names = tool_kind::responses_tool_names(input);
         for item in input.iter_mut() {
@@ -69,10 +93,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
             }
         }
     }
-
-    let out = serde_json::to_vec(&doc).unwrap_or_default();
-    let compressed_size = if modified { out.len() } else { original_size };
-    (out, original_size, compressed_size)
+    modified
 }
 
 /// Compress a `function_call_output.output`. OpenAI sends this as a JSON string,

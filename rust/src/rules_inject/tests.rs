@@ -378,6 +378,50 @@ fn inject_rules_for_unknown_agent_is_empty() {
 }
 
 #[test]
+fn rules_catalog_includes_previously_missing_agents_for_detection() {
+    // #442: presence detection drifted behind the injector — OpenCode (and many
+    // others) were written by build_rules_targets but absent from the hand-kept
+    // presence list, so OpenCode-only users were reported as having no rules.
+    // Guard that the catalog (now the single source of truth for detection)
+    // covers them, so detection can never silently drop an agent again.
+    let home = std::path::Path::new("/home/tester");
+    let names: std::collections::HashSet<&str> = [
+        crate::core::config::RulesInjection::Shared,
+        crate::core::config::RulesInjection::Dedicated,
+    ]
+    .iter()
+    .flat_map(|inj| build_rules_targets(home, *inj))
+    .map(|t| t.name)
+    .collect();
+    for agent in ["OpenCode", "Zed", "Cline", "Roo Code", "Continue", "Crush"] {
+        assert!(
+            names.contains(agent),
+            "{agent} must be in the rules catalog used for presence detection (#442)"
+        );
+    }
+}
+
+#[test]
+fn any_rules_marker_present_detects_opencode() {
+    // #442 regression guard: an OpenCode AGENTS.md carrying the lean-ctx marker
+    // must count as "rules present" (the old hand-list never checked OpenCode).
+    let home = std::env::temp_dir().join("lc_test_marker_opencode_442");
+    let _ = std::fs::remove_dir_all(&home);
+    let opencode_dir = home.join(".config/opencode");
+    std::fs::create_dir_all(&opencode_dir).unwrap();
+    std::fs::write(
+        opencode_dir.join("AGENTS.md"),
+        format!("# preamble\n\n{RULES_SHARED}\n"),
+    )
+    .unwrap();
+    assert!(
+        any_rules_marker_present(&home),
+        "OpenCode AGENTS.md with the lean-ctx marker must be detected (#442)"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn write_dedicated_preserves_user_content_before_marker() {
     ensure_temp_dir();
     let path = std::env::temp_dir().join("test_dedicated_preserve_before.md");

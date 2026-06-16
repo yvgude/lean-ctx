@@ -664,9 +664,10 @@ impl AgentRegistry {
     }
 
     fn shared_knowledge_path() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".lean-ctx")
+        // GH #439: route through the typed data resolver so a post-migration
+        // split install writes to $XDG_DATA_HOME, not a re-created ~/.lean-ctx.
+        crate::core::paths::data_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
             .join("shared_knowledge.json")
     }
 }

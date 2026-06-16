@@ -41,6 +41,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "LEAN_CTX_PROXY_HISTORY_MODE",
         ),
     );
+    proxy.insert(
+        "allow_insecure_http_upstream".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(cfg.proxy.allow_insecure_http_upstream.unwrap_or(false)),
+            "Allow a non-loopback plaintext http:// upstream (trusted local network only, e.g. http://host.docker.internal:2455 in front of codex-lb). Opt-in; default false",
+            "LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM",
+        ),
+    );
     sections.insert(
         "proxy".into(),
         SectionSchema {

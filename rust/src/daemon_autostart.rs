@@ -156,6 +156,16 @@ fn install_launchagent(binary: &str, quiet: bool) {
 
     let _ = std::fs::create_dir_all(&data_dir);
 
+    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
+    // so the daemon (a TCC-standalone process) can never trip the privacy prompt.
+    let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
+        &crate::core::tcc_guard_sandbox::wrap_launchd_args(
+            binary,
+            &["serve", "--_foreground-daemon"],
+        ),
+        "        ",
+    );
+
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -165,9 +175,7 @@ fn install_launchagent(binary: &str, quiet: bool) {
     <string>{PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{binary}</string>
-        <string>serve</string>
-        <string>--_foreground-daemon</string>
+{program_args}
     </array>
     <key>RunAtLoad</key>
     <true/>

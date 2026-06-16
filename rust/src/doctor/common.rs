@@ -14,13 +14,57 @@ pub(super) fn human_bytes(bytes: u64) -> String {
     }
 }
 
+/// Abbreviate the user's `$HOME` to `~` wherever it appears in `text` (#437).
+/// Doctor output otherwise mixes `/home/<user>/…` and `~/…`, which is noisy and
+/// forces users to redact their username before pasting a report. Matches both
+/// the native and the forward-slash spelling of the home prefix; non-home
+/// absolute paths (e.g. `/usr/local/bin`) are left untouched.
+pub(super) fn tildify_home(text: &str) -> String {
+    let Some(home) = dirs::home_dir() else {
+        return text.to_string();
+    };
+    let home_str = home.to_string_lossy();
+    let home_trimmed = home_str.trim_end_matches(['/', '\\']);
+    if home_trimmed.is_empty() {
+        return text.to_string();
+    }
+    let mut out = text.replace(home_trimmed, "~");
+    let home_fwd = crate::core::protocol::display_path(home_trimmed);
+    if home_fwd != home_trimmed {
+        out = out.replace(&home_fwd, "~");
+    }
+    out
+}
+
+/// Render a single path for doctor output: `~` for `$HOME`, forward slashes, and
+/// the home prefix matched only on a component boundary (so `/home/foo` never
+/// turns `/home/foobar` into `~bar`). (#437)
+pub(super) fn display_user_path(path: &std::path::Path) -> String {
+    let normalized = crate::core::protocol::display_path(&path.to_string_lossy());
+    let Some(home) = dirs::home_dir() else {
+        return normalized;
+    };
+    let home_norm = crate::core::protocol::display_path(&home.to_string_lossy());
+    let home_trimmed = home_norm.trim_end_matches('/');
+    if home_trimmed.is_empty() {
+        return normalized;
+    }
+    if normalized == home_trimmed {
+        return "~".to_string();
+    }
+    match normalized.strip_prefix(home_trimmed) {
+        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
+        _ => normalized,
+    }
+}
+
 pub(super) fn print_check(outcome: &Outcome) {
     let mark = if outcome.ok {
         format!("{GREEN}✓{RST}")
     } else {
         format!("{RED}✗{RST}")
     };
-    println!("  {mark}  {}", outcome.line);
+    println!("  {mark}  {}", tildify_home(&outcome.line));
 }
 
 pub(super) fn path_in_path_env() -> bool {
@@ -625,5 +669,62 @@ pub(super) fn codebuddy_binary_exists() -> bool {
             .arg("codebuddy")
             .output()
             .is_ok_and(|o| o.status.success())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{display_user_path, tildify_home};
+    use std::path::Path;
+
+    #[test]
+    fn display_user_path_abbreviates_home() {
+        if let Some(home) = dirs::home_dir() {
+            let shown = display_user_path(&home.join(".cursor").join("mcp.json"));
+            assert_eq!(shown, "~/.cursor/mcp.json");
+            assert_eq!(display_user_path(&home), "~");
+        }
+    }
+
+    #[test]
+    fn display_user_path_leaves_non_home_paths() {
+        assert_eq!(
+            display_user_path(Path::new("/opt/leanctx/bin")),
+            "/opt/leanctx/bin"
+        );
+    }
+
+    #[test]
+    fn display_user_path_normalizes_separators() {
+        assert_eq!(
+            display_user_path(Path::new("rel\\sub\\file")),
+            "rel/sub/file"
+        );
+    }
+
+    #[test]
+    fn display_user_path_respects_component_boundary() {
+        // `/home/foo` must never turn `/home/foo-sibling/...` into `~-sibling/...`.
+        if let Some(home) = dirs::home_dir() {
+            if let (Some(parent), Some(name)) = (home.parent(), home.file_name()) {
+                let sibling = parent
+                    .join(format!("{}-sibling", name.to_string_lossy()))
+                    .join("x");
+                assert!(!display_user_path(&sibling).starts_with('~'));
+            }
+        }
+    }
+
+    #[test]
+    fn tildify_home_replaces_home_in_formatted_text() {
+        if let Some(home) = dirs::home_dir() {
+            let line = format!("ok ({}/.config/x)", home.display());
+            let shown = tildify_home(&line);
+            assert!(shown.contains("~/.config/x"), "got: {shown}");
+            assert!(
+                !shown.contains(&home.display().to_string()),
+                "home leaked: {shown}"
+            );
+        }
     }
 }

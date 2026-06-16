@@ -33,10 +33,44 @@ pub(super) struct Outcome {
     pub line: String,
 }
 
+/// Accumulates doctor checks so the rendered ✓/✗ list and the summary tally can
+/// never diverge (#433): every scored check is counted exactly once via
+/// [`Scoreboard::check`]; only explicitly-optional advisories (LSP, "not
+/// configured" notes) use [`Scoreboard::info`], which renders without counting.
+/// The old hand-maintained `passed`/`effective_total` pair drifted whenever a
+/// check was added without bumping the total — routing every render through the
+/// board makes that class of bug structurally impossible.
+#[derive(Default)]
+struct Scoreboard {
+    passed: u32,
+    total: u32,
+}
+
+impl Scoreboard {
+    /// A scored health check: render it and count it (pass iff `ok`).
+    fn check(&mut self, outcome: &Outcome) {
+        self.total += 1;
+        if outcome.ok {
+            self.passed += 1;
+        }
+        print_check(outcome);
+    }
+
+    /// An optional/advisory line: render it but never count it toward the score
+    /// (LSP servers, "no providers configured", MCP bridges, plan-mode presence).
+    ///
+    /// Deliberately a method (not a free function) so every rendered line flows
+    /// through the board and each call site has to choose `check` vs `info` — the
+    /// `&self` is unused by design, which is the whole point.
+    #[allow(clippy::unused_self)]
+    fn info(&self, outcome: &Outcome) {
+        print_check(outcome);
+    }
+}
+
 /// Run diagnostic checks and print colored results to stdout.
 pub fn run() {
-    let mut passed = 0u32;
-    let total = 10u32;
+    let mut board = Scoreboard::default();
 
     println!("{BOLD}{WHITE}lean-ctx doctor{RST}  {DIM}diagnostics{RST}\n");
 
@@ -44,9 +78,6 @@ pub fn run() {
     let path_bin = resolve_lean_ctx_binary();
     let also_in_path_dirs = path_in_path_env();
     let bin_ok = path_bin.is_some() || also_in_path_dirs;
-    if bin_ok {
-        passed += 1;
-    }
     let bin_line = if let Some(p) = path_bin {
         format!("{BOLD}lean-ctx in PATH{RST}  {WHITE}{}{RST}", p.display())
     } else if also_in_path_dirs {
@@ -56,7 +87,7 @@ pub fn run() {
     } else {
         format!("{BOLD}lean-ctx in PATH{RST}  {RED}not found{RST}")
     };
-    print_check(&Outcome {
+    board.check(&Outcome {
         ok: bin_ok,
         line: bin_line,
     });
@@ -70,24 +101,18 @@ pub fn run() {
             line: format!("{BOLD}lean-ctx version{RST}  {RED}skipped (binary not in PATH){RST}"),
         }
     };
-    if ver.ok {
-        passed += 1;
-    }
-    print_check(&ver);
+    board.check(&ver);
 
     // 3) data directory (respects LEAN_CTX_DATA_DIR)
     let lean_dir = crate::core::data_dir::lean_ctx_data_dir().ok();
     let dir_outcome = match &lean_dir {
-        Some(p) if p.is_dir() => {
-            passed += 1;
-            Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}data dir{RST}  {GREEN}exists{RST}  {DIM}{}{RST}",
-                    p.display()
-                ),
-            }
-        }
+        Some(p) if p.is_dir() => Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}data dir{RST}  {GREEN}exists{RST}  {DIM}{}{RST}",
+                p.display()
+            ),
+        },
         Some(p) => Outcome {
             ok: false,
             line: format!(
@@ -100,13 +125,12 @@ pub fn run() {
             line: format!("{BOLD}data dir{RST}  {RED}could not resolve data directory{RST}"),
         },
     };
-    print_check(&dir_outcome);
+    board.check(&dir_outcome);
 
     // 4) stats.json + size
     let stats_path = lean_dir.as_ref().map(|d| d.join("stats.json"));
     let stats_outcome = match stats_path.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
         Some(m) if m.is_file() => {
-            passed += 1;
             let size = m.len();
             let path_display = if let Some(p) = stats_path.as_ref() {
                 p.display().to_string()
@@ -133,21 +157,18 @@ pub fn run() {
                 ),
             }
         }
-        None => {
-            passed += 1;
-            Outcome {
-                ok: true,
-                line: match &stats_path {
-                    Some(p) => format!(
-                        "{BOLD}stats.json{RST}  {YELLOW}not yet created{RST}  {DIM}(will appear after first use) {}{RST}",
-                        p.display()
-                    ),
-                    None => format!("{BOLD}stats.json{RST}  {RED}could not resolve path{RST}"),
-                },
-            }
-        }
+        None => Outcome {
+            ok: true,
+            line: match &stats_path {
+                Some(p) => format!(
+                    "{BOLD}stats.json{RST}  {YELLOW}not yet created{RST}  {DIM}(will appear after first use) {}{RST}",
+                    p.display()
+                ),
+                None => format!("{BOLD}stats.json{RST}  {RED}could not resolve path{RST}"),
+            },
+        },
     };
-    print_check(&stats_outcome);
+    board.check(&stats_outcome);
 
     let split_dirs = crate::core::data_dir::all_data_dirs_with_stats();
     if split_dirs.len() >= 2 {
@@ -156,7 +177,7 @@ pub fn run() {
             .map(|d| d.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        print_check(&Outcome {
+        board.check(&Outcome {
             ok: false,
             line: format!(
                 "{BOLD}data dir split{RST}  {RED}stats.json found in {count} locations{RST}: {dirs_str}  {DIM}(run: lean-ctx doctor --fix to merge){RST}",
@@ -166,10 +187,11 @@ pub fn run() {
     }
 
     // XDG layout (GH #408): a legacy/mixed single-dir install mixes config with
-    // data/state/cache, which blocks a read-only config sandbox. Informational
-    // (not scored) — `doctor --fix` splits it into the four typed XDG dirs.
+    // data/state/cache, which blocks a read-only config sandbox. Scored as a
+    // failure while present (#433) — `doctor --fix` splits it into the four typed
+    // XDG dirs, after which this check disappears.
     if let Some((src, n)) = crate::core::xdg_migrate::pending() {
-        print_check(&Outcome {
+        board.check(&Outcome {
             ok: false,
             line: format!(
                 "{BOLD}XDG layout{RST}  {YELLOW}{n} item(s) in single dir{RST}  {DIM}{}{RST}  {DIM}(run: lean-ctx doctor --fix to split into config/data/state/cache){RST}",
@@ -178,20 +200,20 @@ pub fn run() {
         });
     }
 
-    // 5) config.toml (missing is OK)
-    let config_path = lean_dir.as_ref().map(|d| d.join("config.toml"));
+    // 5) config.toml (missing is OK). It lives in the CONFIG dir
+    // ($XDG_CONFIG_HOME/lean-ctx after a split), not the data dir — resolve it
+    // through the same path as the loader so the report matches reality
+    // post-migration instead of pointing at the old location (#435).
+    let config_path = crate::core::config::Config::path();
     let config_outcome = match &config_path {
         Some(p) => match std::fs::metadata(p) {
-            Ok(m) if m.is_file() => {
-                passed += 1;
-                Outcome {
-                    ok: true,
-                    line: format!(
-                        "{BOLD}config.toml{RST}  {GREEN}exists{RST}  {DIM}{}{RST}",
-                        p.display()
-                    ),
-                }
-            }
+            Ok(m) if m.is_file() => Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}config.toml{RST}  {GREEN}exists{RST}  {DIM}{}{RST}",
+                    p.display()
+                ),
+            },
             Ok(_) => Outcome {
                 ok: false,
                 line: format!(
@@ -199,95 +221,62 @@ pub fn run() {
                     p.display()
                 ),
             },
-            Err(_) => {
-                passed += 1;
-                Outcome {
-                    ok: true,
-                    line: format!(
-                        "{BOLD}config.toml{RST}  {YELLOW}not found, using defaults{RST}  {DIM}(expected at {}){RST}",
-                        p.display()
-                    ),
-                }
-            }
+            Err(_) => Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}config.toml{RST}  {YELLOW}not found, using defaults{RST}  {DIM}(expected at {}){RST}",
+                    p.display()
+                ),
+            },
         },
         None => Outcome {
             ok: false,
             line: format!("{BOLD}config.toml{RST}  {RED}could not resolve path{RST}"),
         },
     };
-    print_check(&config_outcome);
+    board.check(&config_outcome);
 
     // 5b) Shell allowlist (effective runtime view + silent-parse-error trap, #341)
     let allowlist_outcome = shell_allowlist_outcome();
-    if allowlist_outcome.ok {
-        passed += 1;
-    }
-    print_check(&allowlist_outcome);
+    board.check(&allowlist_outcome);
 
     // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)
     let path_jail = path_jail_outcome();
-    if path_jail.ok {
-        passed += 1;
-    }
-    print_check(&path_jail);
+    board.check(&path_jail);
 
     // 5c) Compact-format passthrough (preserve already-compact TOON output, #342)
     let passthrough_outcome = compact_format_passthrough_outcome();
-    if passthrough_outcome.ok {
-        passed += 1;
-    }
-    print_check(&passthrough_outcome);
+    board.check(&passthrough_outcome);
 
     // 5d) IDE permission inheritance (mirror host IDE bash/rm rules onto ctx_*)
     let perm_inherit_outcome = permission_inheritance_outcome();
-    if perm_inherit_outcome.ok {
-        passed += 1;
-    }
-    print_check(&perm_inherit_outcome);
+    board.check(&perm_inherit_outcome);
 
     // 6) Proxy upstreams
     let proxy_outcome = proxy_upstream_outcome();
-    if proxy_outcome.ok {
-        passed += 1;
-    }
-    print_check(&proxy_outcome);
+    board.check(&proxy_outcome);
 
     // 7) Shell aliases
     let aliases = shell_aliases_outcome();
-    if aliases.ok {
-        passed += 1;
-    }
-    print_check(&aliases);
+    board.check(&aliases);
 
     // 7) MCP
     let mcp = mcp_config_outcome();
-    if mcp.ok {
-        passed += 1;
-    }
-    print_check(&mcp);
+    board.check(&mcp);
 
     // 8) Workspace-scope MCP (optional; only when a project-local config exists)
     let workspace_scope = workspace_scope::workspace_scope_outcome(mcp.ok);
     if let Some(ref ws) = workspace_scope {
-        if ws.ok {
-            passed += 1;
-        }
-        print_check(ws);
+        board.check(ws);
     }
 
     // 9) SKILL.md
     let skill = skill_files_outcome();
-    if skill.ok {
-        passed += 1;
-    }
-    print_check(&skill);
+    board.check(&skill);
 
     // 10) Port
     let port = port_3333_outcome();
-    if port.ok {
-        passed += 1;
-    }
-    print_check(&port);
+    board.check(&port);
 
     // Daemon status
     #[cfg(unix)]
@@ -330,10 +319,7 @@ pub fn run() {
         ok: true,
         line: format!("{BOLD}Daemon{RST}  {DIM}not supported on this platform{RST}"),
     };
-    if daemon_outcome.ok {
-        passed += 1;
-    }
-    print_check(&daemon_outcome);
+    board.check(&daemon_outcome);
 
     // Daemon diagnostics: systemctl is-active, linger, crash-loop log
     #[cfg(target_os = "linux")]
@@ -375,58 +361,46 @@ pub fn run() {
             println!(
                 "  {YELLOW}⚠{RST}  Crash-loop log: {} recent restarts  {DIM}({}){RST}",
                 lines.len(),
-                log_path.display()
+                display_user_path(&log_path)
             );
         }
     }
 
-    // Providers
+    // Providers (advisory — presence/health varies per environment, not scored)
     let provider_outcome = provider_outcome();
-    print_check(&provider_outcome);
+    board.info(&provider_outcome);
 
-    // MCP Bridges
+    // MCP Bridges (advisory)
     let bridge_outcomes = mcp_bridge_outcomes();
     for bridge_check in &bridge_outcomes {
-        print_check(bridge_check);
+        board.info(bridge_check);
     }
 
-    // Plan mode
+    // Plan mode (advisory)
     let plan_outcomes = plan_mode_outcomes();
     for plan_check in &plan_outcomes {
-        print_check(plan_check);
+        board.info(plan_check);
     }
 
     // 9) Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
-    if session_outcome.ok {
-        passed += 1;
-    }
-    print_check(&session_outcome);
+    board.check(&session_outcome);
 
     // 10) Docker env vars (optional, only in containers)
     let docker_outcomes = docker_env_outcomes();
     for docker_check in &docker_outcomes {
-        if docker_check.ok {
-            passed += 1;
-        }
-        print_check(docker_check);
+        board.check(docker_check);
     }
 
     // 11) Pi Coding Agent (optional)
     let pi = pi_outcome();
     if let Some(ref pi_check) = pi {
-        if pi_check.ok {
-            passed += 1;
-        }
-        print_check(pi_check);
+        board.check(pi_check);
     }
 
     // 12) Build integrity (canary / origin check)
     let integrity = crate::core::integrity::check();
     let integrity_ok = integrity.seed_ok && integrity.origin_ok;
-    if integrity_ok {
-        passed += 1;
-    }
     let integrity_line = if integrity_ok {
         format!(
             "{BOLD}Build origin{RST}  {GREEN}official{RST}  {DIM}{}{RST}",
@@ -438,160 +412,92 @@ pub fn run() {
             integrity.pkg_name, integrity.repo
         )
     };
-    print_check(&Outcome {
+    board.check(&Outcome {
         ok: integrity_ok,
         line: integrity_line,
     });
 
     // 13) Cache safety
     let cache_safety = cache_safety_outcome();
-    if cache_safety.ok {
-        passed += 1;
-    }
-    print_check(&cache_safety);
+    board.check(&cache_safety);
 
     // 14) Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
-        if ct.ok {
-            passed += 1;
-        }
-        print_check(ct);
+        board.check(ct);
     }
 
     // 14a) CodeBuddy instruction truncation guard
     let codebuddy_truncation = codebuddy_truncation_outcome();
     if let Some(ref cbt) = codebuddy_truncation {
-        if cbt.ok {
-            passed += 1;
-        }
-        print_check(cbt);
+        board.check(cbt);
     }
 
     // 15) BM25 cache health
     let bm25_health = bm25_cache_health_outcome();
-    if bm25_health.ok {
-        passed += 1;
-    }
-    print_check(&bm25_health);
+    board.check(&bm25_health);
 
     // 15a) Semantic index runtime status (state/timing/persistence) for the
     // active project — surfaces a stuck "warming" index (issue #249).
     let semantic_index = semantic_index_outcome();
     if let Some(ref check) = semantic_index {
-        if check.ok {
-            passed += 1;
-        }
-        print_check(check);
+        board.check(check);
     }
 
     // 15b) Archive FTS footprint
     let archive_footprint = archive_footprint_outcome();
-    if archive_footprint.ok {
-        passed += 1;
-    }
-    print_check(&archive_footprint);
+    board.check(&archive_footprint);
 
     // 16) Memory profile
     let mem_profile = memory_profile_outcome();
-    passed += 1;
-    print_check(&mem_profile);
+    board.check(&mem_profile);
 
     // 17) Memory cleanup
     let mem_cleanup = memory_cleanup_outcome();
-    passed += 1;
-    print_check(&mem_cleanup);
+    board.check(&mem_cleanup);
 
     // 18) RAM Guardian
     let ram_outcome = ram_guardian_outcome();
-    if ram_outcome.ok {
-        passed += 1;
-    }
-    print_check(&ram_outcome);
+    board.check(&ram_outcome);
 
     // 19) Capacity warnings (memory stores near limits)
     let cap_warnings = capacity_warnings();
     for cw in &cap_warnings {
-        if cw.ok {
-            passed += 1;
-        }
-        print_check(cw);
+        board.check(cw);
     }
 
     // 19b) Orphaned knowledge stores (deleted projects — reclaimable bloat, #615)
     let orphan_outcome = orphaned_knowledge_outcome();
-    if orphan_outcome.ok {
-        passed += 1;
-    }
-    print_check(&orphan_outcome);
+    board.check(&orphan_outcome);
 
     // 20) Proxy health
     let proxy_health = proxy_health_outcome();
-    if proxy_health.ok {
-        passed += 1;
-    }
-    print_check(&proxy_health);
+    board.check(&proxy_health);
 
     // 20) Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
     let stale_env = stale_proxy_env_outcome();
     if let Some(ref check) = stale_env {
-        if check.ok {
-            passed += 1;
-        }
-        print_check(check);
+        board.check(check);
     }
 
     // 21) Claude Pro/Max subscription routed through the proxy without an API key
     let subscription_conflict = proxy_subscription_conflict_outcome();
     if let Some(ref check) = subscription_conflict {
-        if check.ok {
-            passed += 1;
-        }
-        print_check(check);
+        board.check(check);
     }
 
     // 22) Deprecation register (CONTRACTS.md policy, GL #394): warn about
     // every surface this build deprecates, with replacement and removal floor.
     let deprecation_check = deprecations::deprecations_outcome();
-    if deprecation_check.ok {
-        passed += 1;
-    }
-    print_check(&deprecation_check);
+    board.check(&deprecation_check);
 
     // LSP servers (optional, informational)
     println!("\n  {BOLD}{WHITE}LSP (optional — for ctx_refactor):{RST}");
     let lsp_outcomes = lsp_server_outcomes();
     for lsp_check in &lsp_outcomes {
-        print_check(lsp_check);
+        board.info(lsp_check);
     }
 
-    let mut effective_total = total + 10; // session_state + integrity + cache_safety + bm25_health + archive_footprint + daemon + mem_profile + mem_cleanup + ram_guardian + proxy_health
-    effective_total += 1; // shell_allowlist (#341)
-    effective_total += 1; // path_jail (GH #392)
-    effective_total += 1; // compact_format_passthrough (#342)
-    effective_total += 1; // permission_inheritance
-    effective_total += 1; // deprecations (#394)
-    effective_total += 1; // orphaned_knowledge (#615)
-    effective_total += cap_warnings.len() as u32;
-    effective_total += docker_outcomes.len() as u32;
-    if pi.is_some() {
-        effective_total += 1;
-    }
-    if claude_truncation.is_some() {
-        effective_total += 1;
-    }
-    if stale_env.is_some() {
-        effective_total += 1;
-    }
-    if subscription_conflict.is_some() {
-        effective_total += 1;
-    }
-    if workspace_scope.is_some() {
-        effective_total += 1;
-    }
-    if semantic_index.is_some() {
-        effective_total += 1;
-    }
     // Shadow mode status
     let cfg = crate::core::config::Config::load();
     let shadow_line = if cfg.shadow_mode {
@@ -638,11 +544,13 @@ pub fn run() {
         cep.sessions, cep.total_cache_hits, cep.total_cache_reads
     );
 
-    let needs_attention = effective_total.saturating_sub(passed);
+    // The board counted exactly what it rendered — the displayed ✓/✗ list and
+    // this tally can no longer drift apart (#433).
+    let passed = board.passed;
+    let total = board.total;
+    let needs_attention = total.saturating_sub(passed);
     println!();
-    println!(
-        "  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{effective_total}{RST} checks passed"
-    );
+    println!("  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed");
     if needs_attention > 0 {
         println!(
             "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}lean-ctx doctor --fix{RST}"

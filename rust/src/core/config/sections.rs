@@ -75,26 +75,27 @@ impl SetupConfig {
     }
 
     /// Check if lean-ctx rules markers exist in any known agent config location.
+    ///
+    /// Delegates the per-agent path catalog to `rules_inject::any_rules_marker_present`
+    /// (derived from the injector's own target list) so this never drifts behind
+    /// newly supported agents again (#442). Claude Code and CodeBuddy have no
+    /// rules *target* (they auto-load an inline block instead), so their legacy
+    /// rule files are checked separately to keep honoring older installs.
     fn rules_already_present() -> bool {
         let Some(home) = dirs::home_dir() else {
             return false;
         };
+        if crate::rules_inject::any_rules_marker_present(&home) {
+            return true;
+        }
         let marker = crate::rules_inject::RULES_MARKER;
-        let check_paths = [
-            home.join(".cursor/rules/lean-ctx.mdc"),
+        let legacy_paths = [
             crate::core::editor_registry::claude_rules_dir(&home).join("lean-ctx.md"),
             crate::core::editor_registry::codebuddy_rules_dir(&home).join("lean-ctx.md"),
-            home.join(".gemini/GEMINI.md"),
-            home.join(".codeium/windsurf/rules/lean-ctx.md"),
         ];
-        for p in &check_paths {
-            if let Ok(content) = std::fs::read_to_string(p)
-                && content.contains(marker)
-            {
-                return true;
-            }
-        }
-        false
+        legacy_paths
+            .iter()
+            .any(|p| std::fs::read_to_string(p).is_ok_and(|c| c.contains(marker)))
     }
 }
 

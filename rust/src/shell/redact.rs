@@ -67,6 +67,9 @@ mod tests {
     /// stay byte-identical for provider prompt caching.
     #[test]
     fn tee_path_is_content_addressed() {
+        // Serialize against tests that repoint LEAN_CTX_DATA_DIR (isolated_data_dir);
+        // without the lock the resolved tee base races and the paths diverge.
+        let _lock = crate::core::data_dir::test_env_lock();
         let first = save_tee("cargo test --lib", "output run 1").expect("tee saved");
         let second = save_tee("cargo test --lib", "output run 2").expect("tee saved");
         assert_eq!(first, second, "same command must map to the same tee path");

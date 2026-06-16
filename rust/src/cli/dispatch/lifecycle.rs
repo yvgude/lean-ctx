@@ -198,10 +198,15 @@ pub(super) fn cmd_dev_install() {
     eprintln!("  ✓ dev-install complete: {version}");
 
     eprintln!("  Re-enabling autostart…");
-    crate::proxy_autostart::start();
+    // #356: re-install (not just bootstrap) so the LaunchAgent plists are
+    // regenerated with the current deny-~/Documents seatbelt wrapper — a plain
+    // restart would keep the previous, unwrapped plist.
+    if crate::proxy_autostart::is_installed() {
+        crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
+    }
 
     if crate::daemon_autostart::is_installed() {
-        crate::daemon_autostart::start();
+        crate::daemon_autostart::install(true);
         eprintln!("  ✓ Daemon restarted via autostart.");
     } else {
         eprintln!("  Starting daemon…");

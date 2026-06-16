@@ -255,7 +255,12 @@ impl TaskStore {
 }
 
 fn task_store_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".lean-ctx/agents/tasks.json"))
+    // GH #439: the A2A task store is agent DATA — resolve through the typed dir
+    // so a post-split install writes to $XDG_DATA_HOME/lean-ctx/agents instead
+    // of a re-created ~/.lean-ctx. Legacy single-dir installs resolve in place.
+    crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|d| d.join("agents").join("tasks.json"))
 }
 
 fn generate_task_id() -> String {

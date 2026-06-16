@@ -10,6 +10,7 @@ Source files:
 - `rust/src/core/shell_allowlist.rs` — command allowlist
 - `rust/src/core/secret_detection.rs` — secret scanning & redaction
 - `rust/src/core/sandbox.rs`, `sandbox_seatbelt.rs`, `sandbox_landlock.rs` — OS sandbox
+- `rust/src/core/tcc_guard_sandbox.rs` — macOS launchd seatbelt wrapper (deny `~/Documents`, #356)
 - `rust/src/cli/harden.rs` — `harden` (soft/hard/undo)
 - `rust/src/core/context_policies.rs` — role policies
 - `rust/src/core/owasp_alignment.rs`, `audit_trail.rs` — alignment & audit
@@ -87,6 +88,26 @@ than run unconfined.
 
 This is separate from PathJail (which guards lean-ctx's *own* reads); the sandbox
 guards *child processes* lean-ctx spawns on your behalf.
+
+### 3.1 launchd seatbelt — no macOS "Documents" prompt (#356)
+
+On macOS the daemon, proxy and auto-updater run as LaunchAgents — i.e. as their
+own TCC identity (`ppid 1`), which does **not** inherit your terminal's or
+editor's privacy grants. Any access they make under `~/Documents`, `~/Desktop`
+or `~/Downloads` would pop the "lean-ctx would like to access files in your
+Documents folder" prompt, and because every release re-signs the binary a
+granted permission is voided on the next update — so the prompt returns forever.
+
+lean-ctx therefore bakes a **deny-`~/Documents` Seatbelt profile** into the
+LaunchAgent invocation itself (`rust/src/core/tcc_guard_sandbox.rs`): the plist
+runs `sandbox-exec -p '(allow default) (deny file-read* file-write* …)' lean-ctx
+…`. The kernel refuses any access to the three protected directories *silently*
+with `EPERM` — the TCC subsystem is never consulted, so the prompt can never
+appear and no "Allow" is ever required. Everything outside those directories
+stays permitted, so the processes keep full functionality. The path guards
+(`pathutil::may_probe_path`) and the optional stable code-signing identity
+(`lean-ctx codesign-setup`) remain underneath as defense-in-depth. Verified by
+`rust/tests/tcc_sandbox.sh`, which boots the daemon under the production wrapper.
 
 ---
 

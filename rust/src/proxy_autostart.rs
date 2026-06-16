@@ -152,10 +152,21 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) {
     let _ = std::fs::create_dir_all(&plist_dir);
 
     let plist_path = plist_dir.join(format!("{PLIST_LABEL}.plist"));
-    let log_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".lean-ctx/logs");
+    // GH #439: proxy logs are STATE — resolve through the typed dir so a
+    // post-split install writes to $XDG_STATE_HOME/lean-ctx/logs instead of a
+    // re-created ~/.lean-ctx. Legacy single-dir installs still resolve here.
+    let log_dir = crate::core::paths::state_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("lean-ctx"))
+        .join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
+
+    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
+    // so the proxy (a TCC-standalone process) can never trip the privacy prompt.
+    let port_arg = format!("--port={port}");
+    let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
+        &crate::core::tcc_guard_sandbox::wrap_launchd_args(binary, &["proxy", "start", &port_arg]),
+        "        ",
+    );
 
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -166,10 +177,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) {
     <string>{PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{binary}</string>
-        <string>proxy</string>
-        <string>start</string>
-        <string>--port={port}</string>
+{program_args}
     </array>
     <key>RunAtLoad</key>
     <true/>

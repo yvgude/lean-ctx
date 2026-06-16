@@ -110,13 +110,27 @@ fn install_macos_launchagent(
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
 
-    let home = dirs::home_dir().unwrap_or_default();
-    let log_dir = home.join(".lean-ctx");
+    // GH #439: auto-update logs are STATE — route through the typed resolver so a
+    // post-split install writes to $XDG_STATE_HOME/lean-ctx, not a re-created
+    // ~/.lean-ctx. Legacy single-dir installs keep resolving to ~/.lean-ctx.
+    let log_dir =
+        crate::core::paths::state_dir().unwrap_or_else(|_| std::env::temp_dir().join("lean-ctx"));
     let _ = std::fs::create_dir_all(&log_dir);
 
     let binary_str = binary.to_string_lossy();
     let stdout_log = log_dir.join("autoupdate-stdout.log");
     let stderr_log = log_dir.join("autoupdate-stderr.log");
+
+    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
+    // so the scheduled updater (a TCC-standalone process) can never trip the
+    // privacy prompt.
+    let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
+        &crate::core::tcc_guard_sandbox::wrap_launchd_args(
+            &binary_str,
+            &["update", "--quiet", "--scheduled"],
+        ),
+        "    ",
+    );
 
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -127,10 +141,7 @@ fn install_macos_launchagent(
   <string>{LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{binary_str}</string>
-    <string>update</string>
-    <string>--quiet</string>
-    <string>--scheduled</string>
+{program_args}
   </array>
   <key>StartInterval</key>
   <integer>{interval_secs}</integer>

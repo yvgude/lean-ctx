@@ -418,8 +418,10 @@ fn collect_feedback_entries() -> Vec<serde_json::Value> {
 pub fn cmd_contribute() {
     let mut entries = Vec::new();
 
-    if let Some(home) = dirs::home_dir() {
-        let mode_stats_path = home.join(".lean-ctx").join("mode_stats.json");
+    // GH #439: mode_stats.json lives in the data dir — read it through the typed
+    // resolver (matching cloud_sync) instead of a stale ~/.lean-ctx path.
+    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+        let mode_stats_path = data_dir.join("mode_stats.json");
         if let Ok(data) = std::fs::read_to_string(&mode_stats_path)
             && let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data)
             && let Some(history) = predictor["history"].as_object()

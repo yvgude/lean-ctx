@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 fn config_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("LEAN_CTX_DATA_DIR") {
-        return PathBuf::from(dir).join("cloud");
-    }
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".lean-ctx").join("cloud")
+    // GH #439: data_dir() already honors LEAN_CTX_DATA_DIR + legacy/XDG, so the
+    // cloud cache follows the migration instead of pinning ~/.lean-ctx.
+    crate::core::paths::data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("cloud")
 }
 
 fn credentials_path() -> PathBuf {

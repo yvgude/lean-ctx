@@ -131,8 +131,10 @@ async function buildDynamicTools(): Promise<Record<string, ReturnType<typeof too
   const client = await getClient()
   const { tools: mcpTools } = await client.listTools()
   const dynamic: Record<string, ReturnType<typeof tool>> = {}
+  const excludedTools = new Set(["ctx_read", "ctx_edit", "ctx_search", "ctx_glob", "ctx_shell"])
+  const allowedTools = mcpTools.filter(mcpTool => !excludedTools.has(mcpTool.name))
 
-  for (const mcpTool of mcpTools) {
+  for (const mcpTool of allowedTools) {
     const args = mcpSchemaToArgs(mcpTool.inputSchema)
     dynamic[mcpTool.name] = tool({
       description: mcpTool.description ?? mcpTool.name,

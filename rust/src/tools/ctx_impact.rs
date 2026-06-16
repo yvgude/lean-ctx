@@ -60,38 +60,43 @@ fn open_graph(root: &str) -> Result<CodeGraph, String> {
     CodeGraph::open(root).map_err(|e| format!("Failed to open graph: {e}"))
 }
 
+/// Open the property graph for a *query*, rebuilding first when it cannot be
+/// trusted: either empty (never built) or produced by an engine older than
+/// [`crate::core::property_graph::GRAPH_ENGINE_VERSION`] — e.g. an upgraded
+/// install whose graph predates the C#/Java `type_ref` edges (GH #398). The
+/// rebuild is one-shot and idempotent: a fresh build stamps the current engine
+/// version, so a healthy graph is returned without rebuilding.
+fn open_graph_fresh(root: &str) -> Result<CodeGraph, String> {
+    let graph = open_graph(root)?;
+    let empty = graph.node_count().unwrap_or(0) == 0;
+    let outdated = !empty && crate::core::property_graph::engine_outdated(root);
+    if empty || outdated {
+        drop(graph);
+        let build_result = handle_build(root, OutputFormat::Text);
+        tracing::info!(
+            "Rebuilt property graph before impact query ({}): {}",
+            if empty { "empty" } else { "engine outdated" },
+            &build_result[..build_result.len().min(100)]
+        );
+        return open_graph(root);
+    }
+    Ok(graph)
+}
+
 fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputFormat) -> String {
     let Some(target) = path else {
         return "path is required for 'analyze' action".to_string();
     };
 
-    let graph = match open_graph(root) {
+    let graph = match open_graph_fresh(root) {
         Ok(g) => g,
         Err(e) => return e,
     };
 
     let rel_target = graph_target_key(target, root);
 
-    let node_count = graph.node_count().unwrap_or(0);
-    if node_count == 0 {
-        drop(graph);
-        let build_result = handle_build(root, OutputFormat::Text);
-        tracing::info!(
-            "Auto-built graph for impact analysis: {}",
-            &build_result[..build_result.len().min(100)]
-        );
-        let graph = match open_graph(root) {
-            Ok(g) => g,
-            Err(e) => return e,
-        };
-        if graph.node_count().unwrap_or(0) == 0 {
-            return "Graph is empty after auto-build. No supported source files found.".to_string();
-        }
-        let impact = match graph.impact_analysis(&rel_target, max_depth) {
-            Ok(r) => r,
-            Err(e) => return format!("Impact analysis failed: {e}"),
-        };
-        return format_impact(&impact, &rel_target, root, fmt);
+    if graph.node_count().unwrap_or(0) == 0 {
+        return "Graph is empty after auto-build. No supported source files found.".to_string();
     }
 
     let impact = match graph.impact_analysis(&rel_target, max_depth) {
@@ -175,20 +180,10 @@ fn handle_diff(root: &str, max_depth: usize, fmt: OutputFormat) -> String {
         };
     }
 
-    let graph = match open_graph(root) {
+    let graph = match open_graph_fresh(root) {
         Ok(g) => g,
         Err(e) => return e,
     };
-
-    if graph.node_count().unwrap_or(0) == 0 {
-        drop(graph);
-        handle_build(root, OutputFormat::Text);
-        let graph = match open_graph(root) {
-            Ok(g) => g,
-            Err(e) => return e,
-        };
-        return compute_diff_impact(&graph, &changed, root, max_depth, fmt);
-    }
 
     compute_diff_impact(&graph, &changed, root, max_depth, fmt)
 }
@@ -347,7 +342,7 @@ fn handle_chain(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
         }
     };
 
-    let graph = match open_graph(root) {
+    let graph = match open_graph_fresh(root) {
         Ok(g) => g,
         Err(e) => return e,
     };
@@ -961,6 +956,8 @@ fn handle_build(root: &str, fmt: OutputFormat) -> String {
         root,
         &crate::core::property_graph::PropertyGraphMetaV1 {
             schema_version: 1,
+            engine_version: crate::core::property_graph::GRAPH_ENGINE_VERSION,
+            built_with: env!("CARGO_PKG_VERSION").to_string(),
             built_at: chrono::Utc::now().to_rfc3339(),
             git_head: git_out(root_path, &["rev-parse", "--short", "HEAD"]),
             git_dirty: Some(git_dirty(root_path)),
@@ -1103,6 +1100,8 @@ fn handle_update(root: &str, fmt: OutputFormat) -> String {
         root,
         &crate::core::property_graph::PropertyGraphMetaV1 {
             schema_version: 1,
+            engine_version: crate::core::property_graph::GRAPH_ENGINE_VERSION,
+            built_with: env!("CARGO_PKG_VERSION").to_string(),
             built_at: chrono::Utc::now().to_rfc3339(),
             git_head: git_out(root_path, &["rev-parse", "--short", "HEAD"]),
             git_dirty: Some(git_dirty(root_path)),
@@ -1560,6 +1559,78 @@ mod tests {
             dead.iter().any(|s| s == "Logger"),
             "never-referenced class `Logger` should still be flagged (non-vacuous); \
              findings: {dead:?}"
+        );
+    }
+
+    /// Regression for GH #398's upgrade path: the v3.8.3 `type_ref` fix only
+    /// helps if an *existing* graph is rebuilt after upgrading. A graph built by
+    /// an older engine keeps `node_count > 0`, so without an engine-version gate
+    /// `analyze` silently serves it — leaving the C# same-namespace consumer a
+    /// false-negative leaf. We build a correct graph, stamp its meta back to
+    /// engine version 0 (simulating a pre-`type_ref` build), and assert the next
+    /// query self-heals: it rebuilds, surfaces the consumer, and re-stamps the
+    /// current engine version.
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn stale_engine_graph_is_rebuilt_before_query() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("Models")).unwrap();
+        std::fs::create_dir_all(root.join("Services")).unwrap();
+
+        std::fs::write(
+            root.join("Models/Engine.cs"),
+            "namespace App.Core;\n\n\
+             public class Engine\n{\n    public int Power { get; set; }\n}\n",
+        )
+        .unwrap();
+        // DI-style consumer: field + constructor parameter, no `using`, no `new`.
+        std::fs::write(
+            root.join("Services/Motor.cs"),
+            "namespace App.Core;\n\n\
+             public class Motor\n{\n    private readonly Engine _engine;\n\n\
+             \x20   public Motor(Engine engine)\n    {\n        _engine = engine;\n    }\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+
+        // Build a correct graph, then simulate a graph produced by an engine
+        // that predates `type_ref` by stamping its meta back to version 0.
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+        let mut meta = crate::core::property_graph::load_meta(&root_str).expect("meta after build");
+        assert_eq!(
+            meta.engine_version,
+            crate::core::property_graph::GRAPH_ENGINE_VERSION,
+            "a fresh build must stamp the current engine version"
+        );
+        meta.engine_version = 0;
+        crate::core::property_graph::write_meta(&root_str, &meta).expect("downgrade meta");
+        assert!(
+            crate::core::property_graph::engine_outdated(&root_str),
+            "downgraded graph must read as outdated"
+        );
+
+        // The query path must transparently rebuild the stale graph.
+        let analysis = handle(
+            "analyze",
+            Some("Models/Engine.cs"),
+            &root_str,
+            None,
+            Some("text"),
+        );
+        assert!(
+            analysis.contains("Services/Motor.cs"),
+            "stale graph must be rebuilt so the DI consumer surfaces; got: {analysis}"
+        );
+        let healed =
+            crate::core::property_graph::load_meta(&root_str).expect("meta after self-heal");
+        assert_eq!(
+            healed.engine_version,
+            crate::core::property_graph::GRAPH_ENGINE_VERSION,
+            "self-heal must re-stamp the current engine version"
         );
     }
 }

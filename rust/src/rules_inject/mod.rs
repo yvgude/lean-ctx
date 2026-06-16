@@ -188,6 +188,33 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
     result
 }
 
+/// Returns `true` if a lean-ctx rules marker is present in *any* supported
+/// agent's rules file (checking both the shared and dedicated layouts).
+///
+/// Drift-proof by construction: the path catalog is derived from
+/// [`build_rules_targets`], the same source the injector writes to, so a newly
+/// supported agent is covered automatically. This replaces a hand-maintained
+/// list that silently omitted OpenCode and ~18 other agents (#442) — that gap
+/// made `SetupConfig::should_inject_rules()` report "no rules present" for
+/// OpenCode-only users, so their MCP got registered without the `ctx_*`
+/// guidance that makes the model actually call the tools.
+#[must_use]
+pub fn any_rules_marker_present(home: &std::path::Path) -> bool {
+    use crate::core::config::RulesInjection;
+    let mut seen = std::collections::HashSet::new();
+    for injection in [RulesInjection::Shared, RulesInjection::Dedicated] {
+        for target in build_rules_targets(home, injection) {
+            if !seen.insert(target.path.clone()) {
+                continue;
+            }
+            if std::fs::read_to_string(&target.path).is_ok_and(|content| content.contains(MARKER)) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
     let needle = cli_key.to_lowercase();
     let tn = target_name.to_lowercase();

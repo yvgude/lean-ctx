@@ -89,6 +89,46 @@ on the smaller history. Tune via `[proxy].history_mode` (or
 >   `lean-ctx proxy enable` (or `--force` to override detection). Claude traffic is
 >   then compressed by the proxy.
 
+### Codex in front of the proxy (HTTP/SSE + local HTTP upstreams)
+
+The proxy serves the OpenAI Responses API over **HTTP/SSE** on both `/v1/responses`
+and the bare `/responses` path. Codex, however, defaults to a **WebSocket** transport
+(`ws://…/responses`), which the proxy does not serve yet ([#440](https://github.com/yvgude/lean-ctx/issues/440)).
+Until WebSocket support lands, force Codex onto HTTP/SSE explicitly so it does not
+fail over to WS and report reconnect errors:
+
+```toml
+# ~/.codex/config.toml — point Codex at the proxy and disable WebSockets
+[model_providers.lean-ctx]
+name = "lean-ctx"
+base_url = "http://127.0.0.1:4444/v1"
+supports_websockets = false
+```
+
+**Non-loopback HTTP upstreams (e.g. `codex-lb`).** By default an upstream must be
+HTTPS unless it is loopback (`127.0.0.1` / `localhost` / `[::1]`). To put the proxy
+in front of a *trusted local-network* plaintext service such as
+`http://host.docker.internal:2455`, opt in deliberately — otherwise the upstream is
+rejected:
+
+```bash
+# env (any value) — wins over config.toml
+export LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM=1
+export LEAN_CTX_OPENAI_UPSTREAM="http://host.docker.internal:2455"
+```
+
+```toml
+# or persist it in config.toml
+[proxy]
+openai_upstream = "http://host.docker.internal:2455"
+allow_insecure_http_upstream = true
+```
+
+> ⚠ This downgrades the upstream hop to plaintext HTTP. Use it **only** on a trusted
+> local network (loopback, a container host, a private LAN service you control) —
+> never for traffic that crosses an untrusted network. The proxy prints a warning at
+> startup whenever a non-loopback HTTP upstream is active.
+
 ---
 
 ## 2. HTTP MCP & multi-repo — `lean-ctx serve`

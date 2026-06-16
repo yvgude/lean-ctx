@@ -5,6 +5,16 @@ use std::path::PathBuf;
 #[serde(default)]
 pub struct PropertyGraphMetaV1 {
     pub schema_version: u32,
+    /// Property-graph engine generation that produced this graph (see
+    /// [`super::GRAPH_ENGINE_VERSION`]). Bumped whenever edge extraction
+    /// changes, so a graph built by an older engine — e.g. before the C#/Java
+    /// `type_ref` edges existed (GH #398) — is rebuilt instead of silently
+    /// served without the new edges. Graphs written before this field existed
+    /// deserialize to `0`.
+    pub engine_version: u32,
+    /// lean-ctx version (`CARGO_PKG_VERSION`) that built this graph, recorded
+    /// for diagnostics. Empty for graphs written before the stamp existed.
+    pub built_with: String,
     /// RFC3339 timestamp (UTC) of the last successful build.
     pub built_at: String,
     /// Git HEAD (short) at build time, if available.
@@ -25,6 +35,8 @@ impl Default for PropertyGraphMetaV1 {
     fn default() -> Self {
         Self {
             schema_version: 1,
+            engine_version: 0,
+            built_with: String::new(),
             built_at: String::new(),
             git_head: None,
             git_dirty: None,

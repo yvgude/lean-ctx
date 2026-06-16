@@ -88,6 +88,17 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
         install_opencode_plugin(&home);
     } else {
         remove_opencode_plugin(&home);
+        // #442: in MCP-only mode `ctx_*` are opt-in tools the model must choose.
+        // OpenCode auto-loads ~/.config/opencode/AGENTS.md, so without the
+        // "prefer ctx_*" rules block the model never calls the freshly registered
+        // tools. Inject it alongside the MCP (the two complete one setup) unless
+        // the user opted out of MCP management or explicitly disabled rule
+        // injection. `inject_rules_for_agent` already honors rules_injection=off
+        // and project-only scope, and dovetails with the dedicated-mode wiring
+        // below (it writes the dedicated rules file that gets registered there).
+        if super::super::should_register_mcp() && cfg.setup.auto_inject_rules != Some(false) {
+            let _ = crate::rules_inject::inject_rules_for_agent(&home, "OpenCode");
+        }
     }
 
     // Dedicated rules-injection mode (#343): register the lean-ctx-owned rules
