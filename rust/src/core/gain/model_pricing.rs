@@ -192,22 +192,24 @@ impl ModelPricing {
     pub fn quote(&self, model: Option<&str>) -> ModelQuote {
         let raw = model.unwrap_or_default();
         if let Some(k) = Self::infer_model_key(raw)
-            && let Some(cost) = self.models.get(&k).copied() {
-                return ModelQuote {
-                    model_key: k,
-                    cost,
-                    match_kind: PricingMatchKind::Exact,
-                };
-            }
+            && let Some(cost) = self.models.get(&k).copied()
+        {
+            return ModelQuote {
+                model_key: k,
+                cost,
+                match_kind: PricingMatchKind::Exact,
+            };
+        }
 
         if let Some((k, kind)) = Self::heuristic_key(raw)
-            && let Some(cost) = self.models.get(&k).copied() {
-                return ModelQuote {
-                    model_key: k,
-                    cost,
-                    match_kind: kind,
-                };
-            }
+            && let Some(cost) = self.models.get(&k).copied()
+        {
+            return ModelQuote {
+                model_key: k,
+                cost,
+                match_kind: kind,
+            };
+        }
 
         let cost = self
             .models

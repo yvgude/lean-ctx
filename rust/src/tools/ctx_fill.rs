@@ -73,36 +73,36 @@ pub fn handle(
         && let Some(root) = paths
             .first()
             .and_then(|p| crate::core::protocol::detect_project_root(p))
-        {
-            let rs: Vec<crate::core::task_relevance::RelevanceScore> = candidates
+    {
+        let rs: Vec<crate::core::task_relevance::RelevanceScore> = candidates
+            .iter()
+            .map(|c| crate::core::task_relevance::RelevanceScore {
+                path: c.path.clone(),
+                score: c.score,
+                recommended_mode: "signatures",
+            })
+            .collect();
+        let refs: Vec<&crate::core::task_relevance::RelevanceScore> = rs.iter().collect();
+        let pop = crate::core::pop_pruning::decide_for_candidates(t, &root, &refs);
+        if !pop.excluded_modules.is_empty() {
+            let excluded: std::collections::BTreeSet<&str> = pop
+                .excluded_modules
                 .iter()
-                .map(|c| crate::core::task_relevance::RelevanceScore {
-                    path: c.path.clone(),
-                    score: c.score,
-                    recommended_mode: "signatures",
-                })
+                .map(|e| e.module.as_str())
                 .collect();
-            let refs: Vec<&crate::core::task_relevance::RelevanceScore> = rs.iter().collect();
-            let pop = crate::core::pop_pruning::decide_for_candidates(t, &root, &refs);
-            if !pop.excluded_modules.is_empty() {
-                let excluded: std::collections::BTreeSet<&str> = pop
-                    .excluded_modules
-                    .iter()
-                    .map(|e| e.module.as_str())
-                    .collect();
-                candidates.retain(|c| {
-                    let m = crate::core::pop_pruning::module_for_path(&c.path, &root);
-                    !excluded.contains(m.as_str())
-                });
-                pop_lines.push("POP:".to_string());
-                for ex in &pop.excluded_modules {
-                    pop_lines.push(format!(
-                        "  - exclude {}/ ({} candidates) — {}",
-                        ex.module, ex.candidate_files, ex.reason
-                    ));
-                }
+            candidates.retain(|c| {
+                let m = crate::core::pop_pruning::module_for_path(&c.path, &root);
+                !excluded.contains(m.as_str())
+            });
+            pop_lines.push("POP:".to_string());
+            for ex in &pop.excluded_modules {
+                pop_lines.push(format!(
+                    "  - exclude {}/ ({} candidates) — {}",
+                    ex.module, ex.candidate_files, ex.reason
+                ));
             }
         }
+    }
 
     let mut used_tokens = 0usize;
     let mut selections: Vec<(String, String)> = Vec::new();

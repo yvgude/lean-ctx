@@ -1436,46 +1436,46 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
         if let Ok(content) = std::fs::read_to_string(hash_dir.join("knowledge.json"))
             && let Ok(k) =
                 serde_json::from_str::<crate::core::knowledge::ProjectKnowledge>(&content)
-            {
-                checks.push((
-                    "facts".to_string(),
-                    k.facts.len(),
-                    policy.knowledge.max_facts,
-                ));
-                checks.push((
-                    "patterns".to_string(),
-                    k.patterns.len(),
-                    policy.knowledge.max_patterns,
-                ));
-                checks.push((
-                    "history".to_string(),
-                    k.history.len(),
-                    policy.knowledge.max_history,
-                ));
-            }
+        {
+            checks.push((
+                "facts".to_string(),
+                k.facts.len(),
+                policy.knowledge.max_facts,
+            ));
+            checks.push((
+                "patterns".to_string(),
+                k.patterns.len(),
+                policy.knowledge.max_patterns,
+            ));
+            checks.push((
+                "history".to_string(),
+                k.history.len(),
+                policy.knowledge.max_history,
+            ));
+        }
 
         if let Ok(content) = std::fs::read_to_string(hash_dir.join("embeddings.json"))
             && let Ok(idx) = serde_json::from_str::<
                 crate::core::knowledge_embedding::KnowledgeEmbeddingIndex,
             >(&content)
-            {
-                checks.push((
-                    "embeddings".to_string(),
-                    idx.entries.len(),
-                    policy.embeddings.max_facts,
-                ));
-            }
+        {
+            checks.push((
+                "embeddings".to_string(),
+                idx.entries.len(),
+                policy.embeddings.max_facts,
+            ));
+        }
 
         if let Ok(content) = std::fs::read_to_string(hash_dir.join("gotchas.json"))
             && let Ok(g) =
                 serde_json::from_str::<crate::core::gotcha_tracker::GotchaStore>(&content)
-            {
-                checks.push((
-                    "gotchas".to_string(),
-                    g.gotchas.len(),
-                    policy.gotcha.max_gotchas_per_project,
-                ));
-            }
+        {
+            checks.push((
+                "gotchas".to_string(),
+                g.gotchas.len(),
+                policy.gotcha.max_gotchas_per_project,
+            ));
+        }
 
         let episodes_path = data_dir
             .join("memory")
@@ -1484,13 +1484,13 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
         if let Ok(content) = std::fs::read_to_string(&episodes_path)
             && let Ok(e) =
                 serde_json::from_str::<crate::core::episodic_memory::EpisodicStore>(&content)
-            {
-                checks.push((
-                    "episodes".to_string(),
-                    e.episodes.len(),
-                    policy.episodic.max_episodes,
-                ));
-            }
+        {
+            checks.push((
+                "episodes".to_string(),
+                e.episodes.len(),
+                policy.episodic.max_episodes,
+            ));
+        }
 
         let procedures_path = data_dir
             .join("memory")
@@ -1499,13 +1499,13 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
         if let Ok(content) = std::fs::read_to_string(&procedures_path)
             && let Ok(p) =
                 serde_json::from_str::<crate::core::procedural_memory::ProceduralStore>(&content)
-            {
-                checks.push((
-                    "procedures".to_string(),
-                    p.procedures.len(),
-                    policy.procedural.max_procedures,
-                ));
-            }
+        {
+            checks.push((
+                "procedures".to_string(),
+                p.procedures.len(),
+                policy.procedural.max_procedures,
+            ));
+        }
 
         let mut warnings: Vec<String> = Vec::new();
         let mut critical = false;
@@ -1571,27 +1571,28 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
     let graph_max_files = cfg.graph_index_max_files;
     if graph_max_files > 0
         && let Some(session) = crate::core::session::SessionState::load_latest()
-            && let Some(ref project_root) = session.project_root {
-                let disk_status = crate::core::index_orchestrator::disk_status(project_root);
-                if let Some(graph_files) = disk_status.graph_index.file_count {
-                    let pct = (graph_files as f64 / graph_max_files as f64 * 100.0) as u32;
-                    if pct >= 95 {
-                        results.push(Outcome {
+        && let Some(ref project_root) = session.project_root
+    {
+        let disk_status = crate::core::index_orchestrator::disk_status(project_root);
+        if let Some(graph_files) = disk_status.graph_index.file_count {
+            let pct = (graph_files as f64 / graph_max_files as f64 * 100.0) as u32;
+            if pct >= 95 {
+                results.push(Outcome {
                             ok: false,
                             line: format!(
                                 "{BOLD}Capacity [graph]{RST} {RED}CRIT: files {graph_files}/{graph_max_files} ({pct}%){RST}"
                             ),
                         });
-                    } else if pct >= 80 {
-                        results.push(Outcome {
+            } else if pct >= 80 {
+                results.push(Outcome {
                             ok: true,
                             line: format!(
                                 "{BOLD}Capacity [graph]{RST} {YELLOW}WARN: files {graph_files}/{graph_max_files} ({pct}%){RST}"
                             ),
                         });
-                    }
-                }
             }
+        }
+    }
 
     if results.is_empty() {
         results.push(Outcome {

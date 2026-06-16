@@ -46,13 +46,15 @@ fn lock_is_reclaimable(path: &std::path::Path, stale_after: Duration) -> bool {
             .lines()
             .next()
             .and_then(|l| l.trim().parse::<u32>().ok())
-            && !crate::ipc::process::is_alive(pid) {
-                return true;
-            }
+        && !crate::ipc::process::is_alive(pid)
+    {
+        return true;
+    }
     if let Ok(meta) = std::fs::metadata(path)
-        && let Ok(modified) = meta.modified() {
-            return modified.elapsed().unwrap_or_default() > stale_after;
-        }
+        && let Ok(modified) = meta.modified()
+    {
+        return modified.elapsed().unwrap_or_default() > stale_after;
+    }
     false
 }
 

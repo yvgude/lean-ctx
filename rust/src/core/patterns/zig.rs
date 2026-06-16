@@ -28,14 +28,15 @@ fn compress_test(output: &str) -> String {
             failed += 1;
             failures.push(trimmed.to_string());
         }
-        if trimmed.contains("All") && trimmed.contains("passed")
+        if trimmed.contains("All")
+            && trimmed.contains("passed")
             && let Some(n) = trimmed
                 .split_whitespace()
                 .nth(1)
                 .and_then(|w| w.parse().ok())
-            {
-                passed = n;
-            }
+        {
+            passed = n;
+        }
     }
 
     if passed == 0 && failed == 0 {

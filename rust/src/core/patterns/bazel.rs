@@ -64,9 +64,9 @@ fn compress_build(output: &str) -> String {
             && let Some(n) = trimmed
                 .split_whitespace()
                 .find_map(|w| w.parse::<u32>().ok())
-            {
-                targets = n;
-            }
+        {
+            targets = n;
+        }
         if trimmed.starts_with("ERROR:") || trimmed.starts_with("error:") {
             errors.push(trimmed.to_string());
         }

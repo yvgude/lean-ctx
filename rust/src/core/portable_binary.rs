@@ -47,9 +47,11 @@ fn choose_binary_path(current_exe: Option<&str>, which_raw: Option<&str>) -> Str
 
     // 1. Prefer the running binary when it lives in a stable install location.
     if let Some(exe) = current_exe
-        && std::path::Path::new(exe).is_absolute() && !is_build_artifact(exe) {
-            return sanitize_exe_path(exe);
-        }
+        && std::path::Path::new(exe).is_absolute()
+        && !is_build_artifact(exe)
+    {
+        return sanitize_exe_path(exe);
+    }
 
     // 2. Otherwise fall back to the installed copy on PATH.
     if let Some(raw) = which_raw {
@@ -61,9 +63,10 @@ fn choose_binary_path(current_exe: Option<&str>, which_raw: Option<&str>) -> Str
 
     // 3. An absolute build-artifact path still beats a bare name.
     if let Some(exe) = current_exe
-        && std::path::Path::new(exe).is_absolute() {
-            return sanitize_exe_path(exe);
-        }
+        && std::path::Path::new(exe).is_absolute()
+    {
+        return sanitize_exe_path(exe);
+    }
 
     // 4. Last resort.
     "lean-ctx".to_string()
@@ -86,9 +89,10 @@ fn pick_best_binary_line(raw: &str) -> String {
             std::path::Path::new(*l).extension().is_some_and(|ext| {
                 ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("exe")
             })
-        }) {
-            return cmd.to_string();
-        }
+        })
+    {
+        return cmd.to_string();
+    }
     lines[0].to_string()
 }
 

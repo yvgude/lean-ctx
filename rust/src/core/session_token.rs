@@ -33,9 +33,10 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 /// 3. Generate new + write to file
 pub fn resolve_proxy_token(env_var: &str) -> String {
     if let Ok(val) = std::env::var(env_var)
-        && !val.trim().is_empty() {
-            return val.trim().to_string();
-        }
+        && !val.trim().is_empty()
+    {
+        return val.trim().to_string();
+    }
 
     let token_path = token_file_path();
     if let Ok(existing) = std::fs::read_to_string(&token_path) {
@@ -53,10 +54,11 @@ pub fn resolve_proxy_token(env_var: &str) -> String {
 /// Write token to file with restrictive permissions (0600 on Unix).
 fn write_token_file(path: &PathBuf, token: &str) {
     if let Some(parent) = path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent) {
-            tracing::error!("Failed to create token directory {}: {e}", parent.display());
-            return;
-        }
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::error!("Failed to create token directory {}: {e}", parent.display());
+        return;
+    }
     if let Err(e) = std::fs::write(path, token) {
         tracing::error!("Failed to write session token to {}: {e}", path.display());
         return;

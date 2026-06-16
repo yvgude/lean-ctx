@@ -41,9 +41,10 @@ pub fn video_id(url: &str) -> Option<String> {
     }
     if host == "youtube.com" || host.ends_with(".youtube.com") {
         if path.starts_with("/watch")
-            && let Some(v) = query_param(query, "v") {
-                return clean_id(&v);
-            }
+            && let Some(v) = query_param(query, "v")
+        {
+            return clean_id(&v);
+        }
         for prefix in ["/shorts/", "/embed/", "/v/", "/live/"] {
             if let Some(rest) = path.strip_prefix(prefix) {
                 return clean_id(rest);

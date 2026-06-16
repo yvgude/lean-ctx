@@ -41,9 +41,10 @@ pub(super) fn spawn_digest_job(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             if state.mailer.is_some()
-                && let Err(e) = tick(&state).await {
-                    tracing::warn!("digest tick failed: {e}");
-                }
+                && let Err(e) = tick(&state).await
+            {
+                tracing::warn!("digest tick failed: {e}");
+            }
             tokio::time::sleep(TICK).await;
         }
     })

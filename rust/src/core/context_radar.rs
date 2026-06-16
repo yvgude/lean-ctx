@@ -125,25 +125,29 @@ impl ContextRadar {
         for path in &paths_to_scan {
             if path.is_file() {
                 if Self::is_rules_file(path)
-                    && let Ok(content) = std::fs::read_to_string(path) {
-                        let tokens = content.len() / 4;
-                        if tokens > 0 {
-                            files.push((path.display().to_string(), tokens));
-                        }
-                    }
-            } else if path.is_dir()
-                && let Ok(entries) = std::fs::read_dir(path) {
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        if p.is_file() && Self::is_rules_file(&p)
-                            && let Ok(content) = std::fs::read_to_string(&p) {
-                                let tokens = content.len() / 4;
-                                if tokens > 0 {
-                                    files.push((p.display().to_string(), tokens));
-                                }
-                            }
+                    && let Ok(content) = std::fs::read_to_string(path)
+                {
+                    let tokens = content.len() / 4;
+                    if tokens > 0 {
+                        files.push((path.display().to_string(), tokens));
                     }
                 }
+            } else if path.is_dir()
+                && let Ok(entries) = std::fs::read_dir(path)
+            {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_file()
+                        && Self::is_rules_file(&p)
+                        && let Ok(content) = std::fs::read_to_string(&p)
+                    {
+                        let tokens = content.len() / 4;
+                        if tokens > 0 {
+                            files.push((p.display().to_string(), tokens));
+                        }
+                    }
+                }
+            }
         }
 
         let total = files.iter().map(|(_, t)| *t).sum();

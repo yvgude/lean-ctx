@@ -104,9 +104,10 @@ fn restrict_dir_permissions(_dir: &std::path::Path) {}
 fn tighten_secret_permissions(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
     if let Ok(meta) = std::fs::metadata(path)
-        && meta.permissions().mode() & 0o077 != 0 {
-            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-        }
+        && meta.permissions().mode() & 0o077 != 0
+    {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
 }
 
 #[cfg(not(unix))]
@@ -166,10 +167,10 @@ fn auth_bearer_token() -> Result<String, String> {
         if let (Some(token), Some(exp)) = (
             creds.oauth_access_token.clone(),
             creds.oauth_expires_at_unix,
-        )
-            && exp > now + 10 {
-                return Ok(token);
-            }
+        ) && exp > now + 10
+        {
+            return Ok(token);
+        }
 
         let url = format!("{}/oauth/token", api_url());
         let resp = ureq::post(&url)
@@ -564,9 +565,10 @@ pub fn save_plan(plan: &str) -> std::io::Result<()> {
 /// grace until the next successful refresh re-stamps it).
 pub fn cached_plan() -> Option<PlanCache> {
     if let Ok(data) = std::fs::read_to_string(plan_cache_path())
-        && let Ok(cache) = serde_json::from_str::<PlanCache>(&data) {
-            return Some(cache);
-        }
+        && let Ok(cache) = serde_json::from_str::<PlanCache>(&data)
+    {
+        return Some(cache);
+    }
     let legacy = std::fs::read_to_string(config_dir().join("plan.txt")).ok()?;
     Some(PlanCache {
         plan: legacy.trim().to_string(),
@@ -647,15 +649,16 @@ pub fn resolve_effective_plan_cached() -> EffectivePlan {
 #[must_use]
 pub fn refresh_effective_plan() -> EffectivePlan {
     if is_logged_in()
-        && let Ok(plan_str) = fetch_plan() {
-            let _ = save_plan(&plan_str);
-            return EffectivePlan {
-                plan: crate::core::billing::Plan::parse(&plan_str),
-                source: PlanSource::Live,
-                verified_at: Some(now_unix()),
-                grace_days: PLAN_GRACE_DAYS,
-            };
-        }
+        && let Ok(plan_str) = fetch_plan()
+    {
+        let _ = save_plan(&plan_str);
+        return EffectivePlan {
+            plan: crate::core::billing::Plan::parse(&plan_str),
+            source: PlanSource::Live,
+            verified_at: Some(now_unix()),
+            grace_days: PLAN_GRACE_DAYS,
+        };
+    }
     resolve_effective_plan_cached()
 }
 

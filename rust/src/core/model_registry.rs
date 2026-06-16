@@ -114,9 +114,10 @@ pub fn context_window_for_model(model: &str) -> usize {
 
     // Layer 2: Local registry (auto-updated via lean-ctx update)
     if let Some(local) = local_registry()
-        && let Some(w) = registry_lookup(model, local) {
-            return w;
-        }
+        && let Some(w) = registry_lookup(model, local)
+    {
+        return w;
+    }
 
     // Layer 3: Bundled registry (compiled into binary)
     if let Some(w) = registry_lookup(model, bundled()) {

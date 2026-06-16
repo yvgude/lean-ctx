@@ -84,10 +84,11 @@ pub fn compress(output: &str) -> Option<String> {
         }
 
         if let Some(last) = current.entries.last_mut()
-            && last.0 == stripped {
-                last.1 += 1;
-                continue;
-            }
+            && last.0 == stripped
+        {
+            last.1 += 1;
+            continue;
+        }
         current.entries.push((stripped, 1));
     }
     if !current.entries.is_empty() || current.separator.is_some() {

@@ -121,12 +121,13 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
                 session.stats.total_tokens_input = g_input;
             }
             if let Some(lu) = &global.last_use
-                && let Ok(ts) = chrono::DateTime::parse_from_rfc3339(lu) {
-                    let utc = ts.with_timezone(&chrono::Utc);
-                    if utc > session.updated_at {
-                        session.updated_at = utc;
-                    }
+                && let Ok(ts) = chrono::DateTime::parse_from_rfc3339(lu)
+            {
+                let utc = ts.with_timezone(&chrono::Utc);
+                if utc > session.updated_at {
+                    session.updated_at = utc;
                 }
+            }
             let json = serde_json::to_string(&session)
                 .unwrap_or_else(|_| "{\"error\":\"failed to serialize session\"}".to_string());
             Some(("200 OK", "application/json", json))
@@ -169,29 +170,32 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
                 .map(|d| d.join("sessions"));
             let mut intent_data = serde_json::json!({"active": false});
             if let Some(dir) = session_path
-                && let Ok(entries) = std::fs::read_dir(&dir) {
-                    let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
-                    for e in entries.flatten() {
-                        if e.path().extension().is_some_and(|ext| ext == "json")
-                            && let Ok(meta) = e.metadata() {
-                                let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-                                if newest.as_ref().is_none_or(|(t, _)| mtime > *t) {
-                                    newest = Some((mtime, e.path()));
-                                }
-                            }
+                && let Ok(entries) = std::fs::read_dir(&dir)
+            {
+                let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
+                for e in entries.flatten() {
+                    if e.path().extension().is_some_and(|ext| ext == "json")
+                        && let Ok(meta) = e.metadata()
+                    {
+                        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+                        if newest.as_ref().is_none_or(|(t, _)| mtime > *t) {
+                            newest = Some((mtime, e.path()));
+                        }
                     }
-                    if let Some((_, path)) = newest
-                        && let Ok(content) = std::fs::read_to_string(&path)
-                            && let Ok(session) = serde_json::from_str::<serde_json::Value>(&content)
-                                && let Some(intent) = session.get("active_structured_intent")
-                                    && !intent.is_null() {
-                                        intent_data = serde_json::json!({
-                                            "active": true,
-                                            "intent": intent,
-                                            "session_file": path.file_name().unwrap_or_default().to_string_lossy(),
-                                        });
-                                    }
                 }
+                if let Some((_, path)) = newest
+                    && let Ok(content) = std::fs::read_to_string(&path)
+                    && let Ok(session) = serde_json::from_str::<serde_json::Value>(&content)
+                    && let Some(intent) = session.get("active_structured_intent")
+                    && !intent.is_null()
+                {
+                    intent_data = serde_json::json!({
+                        "active": true,
+                        "intent": intent,
+                        "session_file": path.file_name().unwrap_or_default().to_string_lossy(),
+                    });
+                }
+            }
             let json = serde_json::to_string(&intent_data).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
         }

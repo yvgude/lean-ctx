@@ -121,9 +121,10 @@ fn analyze(
     hardening::split_oversized_and_incohesive(graph, &mut assignment);
     let mut assignment = stable_ids::canonicalize(graph, &assignment);
     if let Some(prev) = previous
-        && !prev.is_empty() {
-            assignment = stable_ids::remap_to_previous(graph, &assignment, prev);
-        }
+        && !prev.is_empty()
+    {
+        assignment = stable_ids::remap_to_previous(graph, &assignment, prev);
+    }
 
     let result = build_result(graph, &assignment);
     (assignment, result)

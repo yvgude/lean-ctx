@@ -121,9 +121,10 @@ fn compress_run(output: &str) -> String {
         ));
     }
     if let Some(err) = last_error
-        && !result.contains(&err) {
-            result.push_str(&format!("\nlast error: {err}"));
-        }
+        && !result.contains(&err)
+    {
+        result.push_str(&format!("\nlast error: {err}"));
+    }
     result
 }
 

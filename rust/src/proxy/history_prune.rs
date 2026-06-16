@@ -87,11 +87,12 @@ pub fn prune_history(
                     .and_then(|id| tool_names.get(id))
                     .map_or(ToolResultKind::Other, |n| classify_tool_name(n));
                 if let Some(content) = msg.get("content").and_then(|c| c.as_str())
-                    && content.len() > 200 {
-                        let summary = summarize_or_stub(content, kind);
-                        msg["content"] = Value::String(summary);
-                        modified = true;
-                    }
+                    && content.len() > 200
+                {
+                    let summary = summarize_or_stub(content, kind);
+                    msg["content"] = Value::String(summary);
+                    modified = true;
+                }
             }
             _ => {}
         }
@@ -115,10 +116,11 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
                 for item in arr.iter_mut() {
                     if item.get("type").and_then(|t| t.as_str()) == Some("text")
                         && let Some(Value::String(s)) = item.get_mut("text")
-                            && s.len() > 200 {
-                                *s = summarize_or_stub(s, kind);
-                                modified = true;
-                            }
+                        && s.len() > 200
+                    {
+                        *s = summarize_or_stub(s, kind);
+                        modified = true;
+                    }
                 }
             }
             _ => {}

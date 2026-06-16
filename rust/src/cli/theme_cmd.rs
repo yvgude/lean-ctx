@@ -30,23 +30,24 @@ pub fn cmd_theme(args: &[String]) {
                 println!("  {preview}  {b}{name:<12}{r}{d}{marker}{r}");
             }
             if let Some(path) = theme::theme_file_path()
-                && path.exists() {
-                    let custom = theme::load_theme("_custom_");
-                    let preview = format!(
-                        "{p}██{r}{s}██{r}{a}██{r}{sc}██{r}{w}██{r}",
-                        p = custom.primary.fg(),
-                        s = custom.secondary.fg(),
-                        a = custom.accent.fg(),
-                        sc = custom.success.fg(),
-                        w = custom.warning.fg(),
-                    );
-                    let marker = if active == "custom" {
-                        " ◀ active"
-                    } else {
-                        ""
-                    };
-                    println!("  {preview}  {b}{:<12}{r}{d}{marker}{r}", custom.name);
-                }
+                && path.exists()
+            {
+                let custom = theme::load_theme("_custom_");
+                let preview = format!(
+                    "{p}██{r}{s}██{r}{a}██{r}{sc}██{r}{w}██{r}",
+                    p = custom.primary.fg(),
+                    s = custom.secondary.fg(),
+                    a = custom.accent.fg(),
+                    sc = custom.success.fg(),
+                    w = custom.warning.fg(),
+                );
+                let marker = if active == "custom" {
+                    " ◀ active"
+                } else {
+                    ""
+                };
+                println!("  {preview}  {b}{:<12}{r}{d}{marker}{r}", custom.name);
+            }
             println!();
             println!("  {d}Set theme: lean-ctx theme set <name>{r}");
             println!();

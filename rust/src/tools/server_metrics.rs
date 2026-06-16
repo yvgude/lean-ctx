@@ -148,13 +148,12 @@ impl LeanCtxServer {
         let summary_candidate = crate::core::session_summary::build_candidate(&session);
         drop(session);
 
-        if has_insights
-            && let Some(ref root) = project_root {
-                let root = root.clone();
-                std::thread::spawn(move || {
-                    auto_consolidate_knowledge(&root);
-                });
-            }
+        if has_insights && let Some(ref root) = project_root {
+            let root = root.clone();
+            std::thread::spawn(move || {
+                auto_consolidate_knowledge(&root);
+            });
+        }
 
         // Periodically record a recallable AI session summary (#292), off-thread.
         if let Some(ref root) = project_root {

@@ -172,9 +172,10 @@ pub(super) fn compress_fetch(output: &str) -> String {
     for line in trimmed.lines() {
         let l = line.trim();
         if (l.contains("[new branch]") || l.contains("[new tag]"))
-            && let Some(name) = l.split("->").last() {
-                new_branches.push(name.trim().to_string());
-            }
+            && let Some(name) = l.split("->").last()
+        {
+            new_branches.push(name.trim().to_string());
+        }
     }
 
     if new_branches.is_empty() {

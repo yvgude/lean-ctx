@@ -237,9 +237,10 @@ fn tool_profile_value(cfg: &Config) -> &'static str {
     // (`lean`/`lazy`/`reset`) and unknown literals fail to parse and fall
     // through to the same default resolution `from_config` uses.
     if let Some(name) = cfg.tool_profile.as_deref()
-        && let Some(profile) = ToolProfile::parse(name) {
-            return tool_profile_canon(&profile);
-        }
+        && let Some(profile) = ToolProfile::parse(name)
+    {
+        return tool_profile_canon(&profile);
+    }
     if !cfg.tools_enabled.is_empty() {
         return "custom";
     }

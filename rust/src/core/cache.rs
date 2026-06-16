@@ -175,9 +175,10 @@ impl CacheEntry {
         const MAX_COMPRESSED_VARIANTS: usize = 3;
         if self.compressed_outputs.len() >= MAX_COMPRESSED_VARIANTS
             && !self.compressed_outputs.contains_key(mode_key)
-            && let Some(oldest_key) = self.compressed_outputs.keys().next().cloned() {
-                self.compressed_outputs.remove(&oldest_key);
-            }
+            && let Some(oldest_key) = self.compressed_outputs.keys().next().cloned()
+        {
+            self.compressed_outputs.remove(&oldest_key);
+        }
         self.compressed_outputs.insert(mode_key.to_string(), output);
     }
 

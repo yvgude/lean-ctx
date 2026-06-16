@@ -48,22 +48,23 @@ fn derived_supersedes_edges(
     for f in knowledge.facts.iter().filter(|f| f.is_current()) {
         if f.category == focus.category && f.key == focus.key {
             if let Some(s) = &f.supersedes
-                && let Some(to) = parse_node_ref(s) {
-                    if to == *focus {
-                        continue;
-                    }
-                    out.push(KnowledgeEdge {
-                        from: focus.clone(),
-                        to,
-                        kind: KnowledgeEdgeKind::Supersedes,
-                        created_at: f.created_at,
-                        last_seen: None,
-                        count: 0,
-                        source_session: f.source_session.clone(),
-                        strength: 0.5,
-                        decay_rate: 0.02,
-                    });
+                && let Some(to) = parse_node_ref(s)
+            {
+                if to == *focus {
+                    continue;
                 }
+                out.push(KnowledgeEdge {
+                    from: focus.clone(),
+                    to,
+                    kind: KnowledgeEdgeKind::Supersedes,
+                    created_at: f.created_at,
+                    last_seen: None,
+                    count: 0,
+                    source_session: f.source_session.clone(),
+                    strength: 0.5,
+                    decay_rate: 0.02,
+                });
+            }
         } else if f.supersedes.as_deref() == Some(&focus_id) {
             out.push(KnowledgeEdge {
                 from: KnowledgeNodeRef::new(&f.category, &f.key),

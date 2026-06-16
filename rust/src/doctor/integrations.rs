@@ -443,9 +443,10 @@ fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
         return true;
     }
     if let Some(resolved) = resolve_lean_ctx_binary()
-        && cmd == resolved.to_string_lossy().trim() {
-            return true;
-        }
+        && cmd == resolved.to_string_lossy().trim()
+    {
+        return true;
+    }
     false
 }
 

@@ -25,19 +25,20 @@ pub fn handle(
     let mut candidates: BTreeMap<String, f64> = BTreeMap::new();
 
     if let Some(t) = task
-        && let Some(gp) = gp {
-            let (task_files, task_keywords) = parse_task_hints(t);
-            let mut relevance = compute_relevance(gp, &task_files, &task_keywords);
-            crate::core::git_signals::apply_boost(&mut relevance, project_root);
-            crate::core::diagnostics_store::apply_boost(&mut relevance);
-            crate::core::editor_signal::apply_boost(&mut relevance);
-            for r in relevance.iter().take(50) {
-                if r.score < 0.1 {
-                    break;
-                }
-                candidates.insert(r.path.clone(), r.score);
+        && let Some(gp) = gp
+    {
+        let (task_files, task_keywords) = parse_task_hints(t);
+        let mut relevance = compute_relevance(gp, &task_files, &task_keywords);
+        crate::core::git_signals::apply_boost(&mut relevance, project_root);
+        crate::core::diagnostics_store::apply_boost(&mut relevance);
+        crate::core::editor_signal::apply_boost(&mut relevance);
+        for r in relevance.iter().take(50) {
+            if r.score < 0.1 {
+                break;
             }
+            candidates.insert(r.path.clone(), r.score);
         }
+    }
 
     if let Some(changed) = changed_files {
         for p in changed {
@@ -94,9 +95,10 @@ pub fn handle(
         }
         let cap = crate::core::limits::max_read_bytes() as u64;
         if let Ok(meta) = std::fs::metadata(&jailed)
-            && meta.len() > cap {
-                continue;
-            }
+            && meta.len() > cap
+        {
+            continue;
+        }
 
         let Ok(content) = std::fs::read_to_string(&jailed) else {
             continue;
@@ -176,12 +178,13 @@ fn blast_radius(gp: &GraphProvider, start_rel: &str, max_depth: usize) -> Vec<(S
 fn normalize_rel_path(path: &str, project_root: &str) -> String {
     let p = Path::new(path);
     if p.is_absolute()
-        && let Ok(stripped) = p.strip_prefix(project_root) {
-            return stripped
-                .to_string_lossy()
-                .trim_start_matches('/')
-                .to_string();
-        }
+        && let Ok(stripped) = p.strip_prefix(project_root)
+    {
+        return stripped
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+    }
     path.trim_start_matches('/').to_string()
 }
 

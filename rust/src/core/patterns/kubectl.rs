@@ -78,21 +78,22 @@ fn compress_get(output: &str) -> String {
 
     // If STATUS column exists and we have many rows, produce aggregation summary
     if let Some(si) = status_col
-        && total > 5 {
-            let mut status_counts: std::collections::HashMap<&str, usize> =
-                std::collections::HashMap::new();
-            for row in &data_lines {
-                if let Some(status) = row.get(si) {
-                    *status_counts.entry(status).or_default() += 1;
-                }
+        && total > 5
+    {
+        let mut status_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for row in &data_lines {
+            if let Some(status) = row.get(si) {
+                *status_counts.entry(status).or_default() += 1;
             }
-            let mut summary_parts: Vec<String> = status_counts
-                .iter()
-                .map(|(k, v)| format!("{v} {k}"))
-                .collect();
-            summary_parts.sort_by(|a, b| b.cmp(a));
-            return format!("{total} resources ({})", summary_parts.join(", "));
         }
+        let mut summary_parts: Vec<String> = status_counts
+            .iter()
+            .map(|(k, v)| format!("{v} {k}"))
+            .collect();
+        summary_parts.sort_by(|a, b| b.cmp(a));
+        return format!("{total} resources ({})", summary_parts.join(", "));
+    }
 
     // For small result sets, show compact table
     let mut rows = Vec::new();
@@ -126,10 +127,11 @@ fn compress_logs(output: &str) -> String {
         }
 
         if let Some(last) = deduped.last_mut()
-            && last.0 == stripped {
-                last.1 += 1;
-                continue;
-            }
+            && last.0 == stripped
+        {
+            last.1 += 1;
+            continue;
+        }
         deduped.push((stripped, 1));
     }
 

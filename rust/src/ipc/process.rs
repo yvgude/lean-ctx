@@ -254,9 +254,10 @@ fn collect_pids(stdout: &[u8], exclude_pid: u32, out: &mut Vec<u32>) {
     let text = String::from_utf8_lossy(stdout);
     for line in text.lines() {
         if let Ok(pid) = line.trim().parse::<u32>()
-            && pid != exclude_pid {
-                out.push(pid);
-            }
+            && pid != exclude_pid
+        {
+            out.push(pid);
+        }
     }
 }
 
@@ -296,18 +297,15 @@ fn is_mcp_stdio_process(pid: u32) -> bool {
         let parts: Vec<&str> = t.split_whitespace().collect();
         if let Some(ppid_str) = parts.first()
             && let Ok(ppid) = ppid_str.parse::<u32>()
-                && let Ok(pp_out) = std::process::Command::new("ps")
-                    .args(["-o", "command=", "-p", &ppid.to_string()])
-                    .output()
-                {
-                    let pp_cmd = String::from_utf8_lossy(&pp_out.stdout);
-                    if pp_cmd.contains("Cursor")
-                        || pp_cmd.contains("cursor")
-                        || pp_cmd.contains("code")
-                    {
-                        return true;
-                    }
-                }
+            && let Ok(pp_out) = std::process::Command::new("ps")
+                .args(["-o", "command=", "-p", &ppid.to_string()])
+                .output()
+        {
+            let pp_cmd = String::from_utf8_lossy(&pp_out.stdout);
+            if pp_cmd.contains("Cursor") || pp_cmd.contains("cursor") || pp_cmd.contains("code") {
+                return true;
+            }
+        }
         let cmd_part = parts.get(1..).map(|p| p.join(" ")).unwrap_or_default();
         // MCP stdio servers: bare `lean-ctx` with no subcommand (or just `mcp`)
         if (cmd_part.ends_with("/lean-ctx") || cmd_part == "lean-ctx")

@@ -356,12 +356,13 @@ fn collision_detects_when_project_lean_ctx_equals_data_dir() {
     // collision, so asserting there (as CI runners do) is wrong.
     if let Ok(data_dir) = lean_ctx::core::data_dir::lean_ctx_data_dir()
         && data_dir.file_name().is_some_and(|n| n == ".lean-ctx")
-            && let Some(parent) = data_dir.parent() {
-                assert!(
-                    is_data_dir_collision(parent),
-                    "parent of legacy data dir should be detected as collision"
-                );
-            }
+        && let Some(parent) = data_dir.parent()
+    {
+        assert!(
+            is_data_dir_collision(parent),
+            "parent of legacy data dir should be detected as collision"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

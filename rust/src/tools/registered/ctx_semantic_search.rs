@@ -84,13 +84,13 @@ impl McpTool for CtxSemanticSearchTool {
                     crate::core::dense_backend::DenseBackendKind::try_from_env(),
                     Ok(crate::core::dense_backend::DenseBackendKind::Qdrant)
                 )
-                && let Some(ref session_lock) = ctx.session {
-                    let value = format!(
-                        "tool=ctx_semantic_search mode={mode_effective} workspace={workspace}"
-                    );
-                    let mut session = tokio::task::block_in_place(|| session_lock.blocking_write());
-                    session.record_manual_evidence("remote:qdrant_query", Some(&value));
-                }
+                && let Some(ref session_lock) = ctx.session
+            {
+                let value =
+                    format!("tool=ctx_semantic_search mode={mode_effective} workspace={workspace}");
+                let mut session = tokio::task::block_in_place(|| session_lock.blocking_write());
+                session.record_manual_evidence("remote:qdrant_query", Some(&value));
+            }
         }
 
         let file_path_param = get_str(args, "file_path");
@@ -105,9 +105,9 @@ impl McpTool for CtxSemanticSearchTool {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ref()
-            {
-                sender.send(0.0, Some(1.0), Some("Starting search...".to_string()));
-            }
+        {
+            sender.send(0.0, Some(1.0), Some("Starting search...".to_string()));
+        }
 
         let result = if action == "reindex" {
             if let Some(ref ps) = ctx.progress_sender
@@ -115,9 +115,9 @@ impl McpTool for CtxSemanticSearchTool {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .as_ref()
-                {
-                    sender.send(0.0, Some(1.0), Some("Rebuilding BM25 index...".to_string()));
-                }
+            {
+                sender.send(0.0, Some(1.0), Some("Rebuilding BM25 index...".to_string()));
+            }
             if artifacts {
                 crate::tools::ctx_semantic_search::handle_reindex_artifacts(&path, workspace)
             } else {
@@ -158,9 +158,9 @@ impl McpTool for CtxSemanticSearchTool {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ref()
-            {
-                sender.send(1.0, Some(1.0), Some("Search complete".to_string()));
-            }
+        {
+            sender.send(1.0, Some(1.0), Some("Search complete".to_string()));
+        }
 
         let repeat_hint = if action == "reindex" {
             String::new()

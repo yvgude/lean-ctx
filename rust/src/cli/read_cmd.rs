@@ -14,9 +14,10 @@ fn resolve_cli_path(raw: &str) -> String {
         return abs.to_string_lossy().to_string();
     }
     if Path::new(raw).is_relative()
-        && let Ok(cwd) = std::env::current_dir() {
-            return cwd.join(raw).to_string_lossy().into_owned();
-        }
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        return cwd.join(raw).to_string_lossy().into_owned();
+    }
     raw.to_string()
 }
 use crate::core::tokens::count_tokens;

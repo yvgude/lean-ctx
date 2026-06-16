@@ -42,9 +42,10 @@ fn config() -> crate::core::config::SkillifyConfig {
 /// Resolve the output root from the configured scope.
 fn output_root(project_root: &str, scope: &str) -> PathBuf {
     if scope.eq_ignore_ascii_case("global")
-        && let Some(home) = dirs::home_dir() {
-            return home;
-        }
+        && let Some(home) = dirs::home_dir()
+    {
+        return home;
+    }
     PathBuf::from(project_root)
 }
 

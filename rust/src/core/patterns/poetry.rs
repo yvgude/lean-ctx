@@ -91,20 +91,18 @@ fn compress_poetry(output: &str, prefer_update: bool) -> String {
         let trim = t.trim();
         let tl = trim.to_ascii_lowercase();
 
-        if prefer_update
-            && let Some(caps) = poetry_updating_re().captures(trim) {
-                packages.push(format!("{} {}", &caps[1], &caps[2]));
-                continue;
-            }
+        if prefer_update && let Some(caps) = poetry_updating_re().captures(trim) {
+            packages.push(format!("{} {}", &caps[1], &caps[2]));
+            continue;
+        }
         if let Some(caps) = poetry_installing_re().captures(trim) {
             packages.push(format!("{} {}", &caps[1], &caps[2]));
             continue;
         }
-        if !prefer_update
-            && let Some(caps) = poetry_updating_re().captures(trim) {
-                packages.push(format!("{} {}", &caps[1], &caps[2]));
-                continue;
-            }
+        if !prefer_update && let Some(caps) = poetry_updating_re().captures(trim) {
+            packages.push(format!("{} {}", &caps[1], &caps[2]));
+            continue;
+        }
 
         if tl.contains("error")
             && (tl.contains("because") || tl.contains("could not") || tl.contains("failed"))

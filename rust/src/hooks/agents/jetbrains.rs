@@ -28,20 +28,21 @@ pub(crate) fn install_jetbrains_hook() {
         }
 
         if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
-            && let Some(obj) = json.as_object_mut() {
-                let servers = obj
-                    .entry("mcpServers")
-                    .or_insert_with(|| serde_json::json!({}));
-                if let Some(servers_obj) = servers.as_object_mut() {
-                    servers_obj.insert("lean-ctx".to_string(), entry.clone());
-                }
-                if let Ok(formatted) = serde_json::to_string_pretty(&json) {
-                    let _ = std::fs::write(&config_path, formatted);
-                    eprintln!("  \x1b[32m✓\x1b[0m JetBrains MCP snippet written to {display_path}");
-                    print_jetbrains_manual_step(display_path);
-                    return;
-                }
+            && let Some(obj) = json.as_object_mut()
+        {
+            let servers = obj
+                .entry("mcpServers")
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(servers_obj) = servers.as_object_mut() {
+                servers_obj.insert("lean-ctx".to_string(), entry.clone());
             }
+            if let Ok(formatted) = serde_json::to_string_pretty(&json) {
+                let _ = std::fs::write(&config_path, formatted);
+                eprintln!("  \x1b[32m✓\x1b[0m JetBrains MCP snippet written to {display_path}");
+                print_jetbrains_manual_step(display_path);
+                return;
+            }
+        }
     }
 
     let config = serde_json::json!({ "mcpServers": { "lean-ctx": entry } });

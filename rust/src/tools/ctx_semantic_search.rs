@@ -36,10 +36,11 @@ pub fn handle(
     // fallback relevance signal for subsequent compressed reads.
     if !query.trim().is_empty()
         && let Some(mut session) = crate::core::session::SessionState::load_latest()
-            && session.last_semantic_query.as_deref() != Some(query) {
-                session.last_semantic_query = Some(query.to_string());
-                let _ = session.save();
-            }
+        && session.last_semantic_query.as_deref() != Some(query)
+    {
+        session.last_semantic_query = Some(query.to_string());
+        let _ = session.save();
+    }
 
     let filter = match SearchFilter::new(languages, path_glob) {
         Ok(f) => f,
@@ -1322,9 +1323,10 @@ impl SearchFilter {
     fn matches(&self, rel_path: &str) -> bool {
         let rel_path = rel_path.replace('\\', "/");
         if let Some(p) = &self.path_glob
-            && !p.matches(&rel_path) {
-                return false;
-            }
+            && !p.matches(&rel_path)
+        {
+            return false;
+        }
         if let Some(exts) = &self.allowed_exts {
             let ext = Path::new(&rel_path)
                 .extension()

@@ -81,9 +81,10 @@ pub(super) fn cached_or_compute(
     compute: impl FnOnce() -> String,
 ) -> String {
     if let Ok(s) = store().lock()
-        && let Some(json) = s.get(key, fingerprint) {
-            return json;
-        }
+        && let Some(json) = s.get(key, fingerprint)
+    {
+        return json;
+    }
     let json = compute();
     if let Ok(mut s) = store().lock() {
         s.put(key, fingerprint, json.clone());

@@ -28,9 +28,10 @@ pub(super) fn write_mcp_json(
     // spawning `claude mcp add-json` which can stall in non-interactive CI.
     if (target.agent_key == "claude" || target.name == "Claude Code")
         && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
-        && let Ok(result) = try_claude_mcp_add(&desired) {
-            return Ok(result);
-        }
+        && let Ok(result) = try_claude_mcp_add(&desired)
+    {
+        return Ok(result);
+    }
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;

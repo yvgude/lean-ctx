@@ -443,13 +443,15 @@ fn extract_search_pattern(lines: &[&str]) -> String {
     // Try to infer from search summary line (e.g. "[4 matches for `foo` in 2 files]")
     for line in lines.iter().rev().take(3) {
         if let Some(start) = line.find('`')
-            && let Some(end) = line[start + 1..].find('`') {
-                return line[start + 1..start + 1 + end].to_string();
-            }
+            && let Some(end) = line[start + 1..].find('`')
+        {
+            return line[start + 1..start + 1 + end].to_string();
+        }
         if let Some(start) = line.find("for \"")
-            && let Some(end) = line[start + 5..].find('"') {
-                return line[start + 5..start + 5 + end].to_string();
-            }
+            && let Some(end) = line[start + 5..].find('"')
+        {
+            return line[start + 5..start + 5 + end].to_string();
+        }
     }
 
     "?".to_string()

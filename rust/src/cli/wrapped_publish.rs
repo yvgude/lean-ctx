@@ -247,12 +247,13 @@ pub(crate) fn publish(period: &str, name: Option<&str>, leaderboard: bool) {
     // fall back to a previously saved name when no `--name` flag is given.
     let mut cfg = crate::core::config::Config::load();
     if let Some(n) = name.map(str::trim).filter(|n| !n.is_empty())
-        && cfg.gain.display_name.as_deref() != Some(n) {
-            cfg.gain.display_name = Some(n.to_string());
-            if let Err(e) = cfg.save() {
-                tracing::warn!("Could not save display name: {e}");
-            }
+        && cfg.gain.display_name.as_deref() != Some(n)
+    {
+        cfg.gain.display_name = Some(n.to_string());
+        if let Err(e) = cfg.save() {
+            tracing::warn!("Could not save display name: {e}");
         }
+    }
     let effective_name = name
         .map(str::to_string)
         .or_else(|| cfg.gain.display_name.clone());

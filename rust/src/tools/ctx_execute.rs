@@ -124,9 +124,10 @@ fn format_result(result: &SandboxResult, intent: Option<&str>) -> String {
             parts.push(stdout.to_string());
 
             if let Some(intent_desc) = intent
-                && raw_tokens > 50 {
-                    parts.push(format!("[intent: {intent_desc}]"));
-                }
+                && raw_tokens > 50
+            {
+                parts.push(format!("[intent: {intent_desc}]"));
+            }
         }
     } else {
         if !result.stdout.is_empty() {

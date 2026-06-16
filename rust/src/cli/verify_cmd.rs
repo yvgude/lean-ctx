@@ -9,10 +9,11 @@ pub(crate) fn cmd_verify(args: &[String]) {
         }
         if a == "--format" {
             if let Some(v) = it.peek()
-                && !v.starts_with("--") {
-                    format = Some((*v).clone());
-                    it.next();
-                }
+                && !v.starts_with("--")
+            {
+                format = Some((*v).clone());
+                it.next();
+            }
             continue;
         }
         if a == "--json" {

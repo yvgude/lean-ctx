@@ -6,11 +6,12 @@ impl GotchaStore {
         let hash = crate::core::project_hash::hash_project_root(project_root);
         let path = gotcha_path(&hash);
         if let Ok(content) = std::fs::read_to_string(&path)
-            && let Ok(mut store) = serde_json::from_str::<GotchaStore>(&content) {
-                store.apply_decay();
-                store.pending_errors = Vec::new();
-                return store;
-            }
+            && let Ok(mut store) = serde_json::from_str::<GotchaStore>(&content)
+        {
+            store.apply_decay();
+            store.pending_errors = Vec::new();
+            return store;
+        }
         Self::new(&hash)
     }
 

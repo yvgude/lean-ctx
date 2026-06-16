@@ -186,9 +186,10 @@ fn enforce_cap_locked(conn: &Connection) {
 /// idle maintenance or `doctor`). Returns the resulting size in bytes.
 pub fn enforce_cap() -> u64 {
     if let Ok(guard) = DB.lock()
-        && let Some(conn) = guard.as_ref() {
-            enforce_cap_locked(conn);
-        }
+        && let Some(conn) = guard.as_ref()
+    {
+        enforce_cap_locked(conn);
+    }
     db_size_bytes()
 }
 
@@ -232,21 +233,18 @@ pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
         return Vec::new();
     };
 
-    
-
-    stmt
-        .query_map(params![query, limit as i64], |row| {
-            Ok(FtsResult {
-                archive_id: row.get(0)?,
-                tool: row.get(1)?,
-                command: row.get(2)?,
-                snippet: row.get(3)?,
-                rank: row.get(4)?,
-            })
+    stmt.query_map(params![query, limit as i64], |row| {
+        Ok(FtsResult {
+            archive_id: row.get(0)?,
+            tool: row.get(1)?,
+            command: row.get(2)?,
+            snippet: row.get(3)?,
+            rank: row.get(4)?,
         })
-        .ok()
-        .map(|rows| rows.flatten().collect::<Vec<_>>())
-        .unwrap_or_default()
+    })
+    .ok()
+    .map(|rows| rows.flatten().collect::<Vec<_>>())
+    .unwrap_or_default()
 }
 
 pub fn entry_count() -> usize {

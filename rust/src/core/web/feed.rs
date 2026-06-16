@@ -281,13 +281,14 @@ fn attr(open_tag: &str, key: &str) -> Option<String> {
             let val = rest[1..].trim_start();
             let bytes = val.as_bytes();
             if let Some(&q) = bytes.first()
-                && (q == b'"' || q == b'\'') {
-                    let quote = q as char;
-                    return val[1..]
-                        .find(quote)
-                        .map(|end| val[1..=end].to_string())
-                        .or_else(|| Some(val[1..].to_string()));
-                }
+                && (q == b'"' || q == b'\'')
+            {
+                let quote = q as char;
+                return val[1..]
+                    .find(quote)
+                    .map(|end| val[1..=end].to_string())
+                    .or_else(|| Some(val[1..].to_string()));
+            }
             return val
                 .split_whitespace()
                 .next()

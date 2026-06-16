@@ -149,15 +149,15 @@ fn handle_pull(agent_id: Option<&str>, project_root: &str) -> String {
     if let Ok(readdir) = std::fs::read_dir(&dir) {
         for entry in readdir.flatten() {
             if let Ok(content) = std::fs::read_to_string(entry.path())
-                && let Ok(ctx) = serde_json::from_str::<SharedContext>(&content) {
-                    let is_for_me =
-                        ctx.to_agent.is_none() || ctx.to_agent.as_deref() == Some(my_id);
-                    let is_not_from_me = ctx.from_agent != my_id;
+                && let Ok(ctx) = serde_json::from_str::<SharedContext>(&content)
+            {
+                let is_for_me = ctx.to_agent.is_none() || ctx.to_agent.as_deref() == Some(my_id);
+                let is_not_from_me = ctx.from_agent != my_id;
 
-                    if is_for_me && is_not_from_me {
-                        entries.push(ctx);
-                    }
+                if is_for_me && is_not_from_me {
+                    entries.push(ctx);
                 }
+            }
         }
     }
 
@@ -207,18 +207,19 @@ fn handle_list(project_root: &str) -> String {
     if let Ok(readdir) = std::fs::read_dir(&dir) {
         for entry in readdir.flatten() {
             if let Ok(content) = std::fs::read_to_string(entry.path())
-                && let Ok(ctx) = serde_json::from_str::<SharedContext>(&content) {
-                    count += 1;
-                    total_files += ctx.files.len();
-                    let target = ctx.to_agent.as_deref().unwrap_or("broadcast");
-                    out.push_str(&format!(
-                        "  {} → {} ({} files, {})\n",
-                        ctx.from_agent,
-                        target,
-                        ctx.files.len(),
-                        &ctx.timestamp[..19]
-                    ));
-                }
+                && let Ok(ctx) = serde_json::from_str::<SharedContext>(&content)
+            {
+                count += 1;
+                total_files += ctx.files.len();
+                let target = ctx.to_agent.as_deref().unwrap_or("broadcast");
+                out.push_str(&format!(
+                    "  {} → {} ({} files, {})\n",
+                    ctx.from_agent,
+                    target,
+                    ctx.files.len(),
+                    &ctx.timestamp[..19]
+                ));
+            }
         }
     }
 
@@ -243,10 +244,11 @@ fn handle_clear(agent_id: Option<&str>, project_root: &str) -> String {
         for entry in readdir.flatten() {
             if let Ok(content) = std::fs::read_to_string(entry.path())
                 && let Ok(ctx) = serde_json::from_str::<SharedContext>(&content)
-                    && ctx.from_agent == my_id {
-                        let _ = std::fs::remove_file(entry.path());
-                        removed += 1;
-                    }
+                && ctx.from_agent == my_id
+            {
+                let _ = std::fs::remove_file(entry.path());
+                removed += 1;
+            }
         }
     }
 

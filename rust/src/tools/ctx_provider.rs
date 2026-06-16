@@ -512,11 +512,12 @@ fn consolidate_to_session(chunks: &[crate::core::content_chunk::ContentChunk], c
 
     // Phase 1: Session cache (synchronous, fast)
     if let Some(cache_lock) = ctx.cache.as_ref()
-        && let Ok(mut cache) = cache_lock.try_write() {
-            for entry in &artifacts.cache_entries {
-                cache.store(&entry.uri, &entry.content);
-            }
+        && let Ok(mut cache) = cache_lock.try_write()
+    {
+        for entry in &artifacts.cache_entries {
+            cache.store(&entry.uri, &entry.content);
         }
+    }
 
     let external_count = artifacts
         .bm25_chunks

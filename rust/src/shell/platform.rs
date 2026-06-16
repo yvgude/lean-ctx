@@ -110,13 +110,15 @@ pub fn is_container() -> bool {
             return true;
         }
         if let Ok(cgroup) = std::fs::read_to_string("/proc/1/cgroup")
-            && (cgroup.contains("/docker/") || cgroup.contains("/lxc/")) {
-                return true;
-            }
+            && (cgroup.contains("/docker/") || cgroup.contains("/lxc/"))
+        {
+            return true;
+        }
         if let Ok(mounts) = std::fs::read_to_string("/proc/self/mountinfo")
-            && mounts.contains("/docker/containers/") {
-                return true;
-            }
+            && mounts.contains("/docker/containers/")
+        {
+            return true;
+        }
         false
     }
     #[cfg(not(unix))]

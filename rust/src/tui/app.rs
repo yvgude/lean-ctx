@@ -249,34 +249,35 @@ pub fn run() -> anyhow::Result<()> {
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)?
             && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press {
-                    if state.search_active {
-                        match key.code {
-                            KeyCode::Esc | KeyCode::Enter => state.search_active = false,
-                            KeyCode::Backspace => {
-                                state.search_query.pop();
-                            }
-                            KeyCode::Char(c) => state.search_query.push(c),
-                            _ => {}
-                        }
-                    } else {
-                        match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => state.quit = true,
-                            KeyCode::Tab => state.focus = (state.focus + 1) % 5,
-                            KeyCode::Char('1') => state.focus = 0,
-                            KeyCode::Char('2') => state.focus = 1,
-                            KeyCode::Char('3') => state.focus = 2,
-                            KeyCode::Char('4') => state.focus = 3,
-                            KeyCode::Char('5') => state.focus = 4,
-                            KeyCode::Char('f') => state.filter = state.filter.next(),
-                            KeyCode::Char('/') => {
-                                state.search_active = true;
-                                state.search_query.clear();
-                            }
-                            _ => {}
-                        }
+            && key.kind == KeyEventKind::Press
+        {
+            if state.search_active {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => state.search_active = false,
+                    KeyCode::Backspace => {
+                        state.search_query.pop();
                     }
+                    KeyCode::Char(c) => state.search_query.push(c),
+                    _ => {}
                 }
+            } else {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => state.quit = true,
+                    KeyCode::Tab => state.focus = (state.focus + 1) % 5,
+                    KeyCode::Char('1') => state.focus = 0,
+                    KeyCode::Char('2') => state.focus = 1,
+                    KeyCode::Char('3') => state.focus = 2,
+                    KeyCode::Char('4') => state.focus = 3,
+                    KeyCode::Char('5') => state.focus = 4,
+                    KeyCode::Char('f') => state.filter = state.filter.next(),
+                    KeyCode::Char('/') => {
+                        state.search_active = true;
+                        state.search_query.clear();
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         if last_tick.elapsed() >= tick_rate {
             let new = tail.poll();

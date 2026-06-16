@@ -9,9 +9,10 @@ use super::types::BuddyState;
 /// back to the static base sprite.
 pub(super) fn sprite_lines_for_tick(state: &BuddyState, tick: Option<u64>) -> &[String] {
     if let Some(t) = tick
-        && !state.ascii_frames.is_empty() {
-            let idx = (t as usize) % state.ascii_frames.len();
-            return &state.ascii_frames[idx];
-        }
+        && !state.ascii_frames.is_empty()
+    {
+        let idx = (t as usize) % state.ascii_frames.len();
+        return &state.ascii_frames[idx];
+    }
     &state.ascii_art
 }

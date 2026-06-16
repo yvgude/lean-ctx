@@ -48,9 +48,10 @@ fn build_edges_with_cache(index: &mut ProjectIndex, content_cache: &HashMap<Stri
         } else {
             let abs_path = root_path.join(rel_path.trim_start_matches(['/', '\\']));
             if let Ok(meta) = abs_path.metadata()
-                && meta.len() > MAX_FILE_SIZE_FOR_EDGES {
-                    continue;
-                }
+                && meta.len() > MAX_FILE_SIZE_FOR_EDGES
+            {
+                continue;
+            }
             match std::fs::read_to_string(&abs_path) {
                 Ok(c) => std::borrow::Cow::Owned(c),
                 Err(_) => continue,

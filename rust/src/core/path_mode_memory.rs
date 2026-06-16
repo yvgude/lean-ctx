@@ -164,9 +164,10 @@ pub fn should_force_full(path: &str) -> bool {
 
 pub fn flush() {
     if let Ok(store) = global().lock()
-        && store.dirty {
-            let _ = store.save();
-        }
+        && store.dirty
+    {
+        let _ = store.save();
+    }
 }
 
 /// Dashboard summary: `(tracked_paths, forced_full_paths)`. Reads straight

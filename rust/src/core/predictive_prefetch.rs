@@ -135,9 +135,10 @@ impl PrefetchModel {
             // Strengthen the transition that led to this prediction
             if let Some(&last) = self.recent_accesses.last()
                 && let Some(transitions) = self.transitions.get_mut(&last)
-                    && let Some(pair) = transitions.iter_mut().find(|(h, _)| *h == predicted_hash) {
-                        pair.1 *= 1.2; // Reward correct prediction
-                    }
+                && let Some(pair) = transitions.iter_mut().find(|(h, _)| *h == predicted_hash)
+            {
+                pair.1 *= 1.2; // Reward correct prediction
+            }
         }
     }
 

@@ -140,12 +140,13 @@ fn run_watcher(project_root: &Path) {
         }
 
         if let Some(t) = pending
-            && t.elapsed() >= debounce {
-                crate::core::index_orchestrator::ensure_all_background(
-                    project_root.to_string_lossy().as_ref(),
-                );
-                pending = None;
-            }
+            && t.elapsed() >= debounce
+        {
+            crate::core::index_orchestrator::ensure_all_background(
+                project_root.to_string_lossy().as_ref(),
+            );
+            pending = None;
+        }
     }
 }
 

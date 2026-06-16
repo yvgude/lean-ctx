@@ -60,10 +60,12 @@ fn lookup(map: &HashMap<String, f64>, path: &str, root: &str) -> f64 {
 
 fn relativize<'a>(path: &'a str, root: &str) -> std::borrow::Cow<'a, str> {
     let trimmed = root.trim_end_matches('/');
-    if !trimmed.is_empty() && trimmed != "."
-        && let Some(rest) = path.strip_prefix(trimmed) {
-            return std::borrow::Cow::Owned(rest.trim_start_matches('/').to_string());
-        }
+    if !trimmed.is_empty()
+        && trimmed != "."
+        && let Some(rest) = path.strip_prefix(trimmed)
+    {
+        return std::borrow::Cow::Owned(rest.trim_start_matches('/').to_string());
+    }
     std::borrow::Cow::Borrowed(path.trim_start_matches("./"))
 }
 
@@ -174,13 +176,15 @@ fn collect_churn_and_commit_recency(root: &str, signals: &mut GitSignals) {
             .insert(path.clone(), f64::from(count) / f64::from(max_count));
 
         if let Some(&ts) = newest_ts.get(&path)
-            && ts > 0 && now >= ts {
-                let age_hours = (now - ts) as f64 / 3600.0;
-                let decay = 0.5_f64.powf(age_hours / RECENCY_HALF_LIFE_HOURS);
-                if decay > 0.01 {
-                    signals.recency.insert(path, decay);
-                }
+            && ts > 0
+            && now >= ts
+        {
+            let age_hours = (now - ts) as f64 / 3600.0;
+            let decay = 0.5_f64.powf(age_hours / RECENCY_HALF_LIFE_HOURS);
+            if decay > 0.01 {
+                signals.recency.insert(path, decay);
             }
+        }
     }
 }
 

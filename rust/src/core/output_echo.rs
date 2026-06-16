@@ -246,9 +246,10 @@ fn radar_tail_sources() -> (Vec<String>, u64) {
         }
         if matches!(event_type, "file_read" | "mcp_call" | "shell")
             && let Some(content) = v.get("content").and_then(|c| c.as_str())
-                && !content.is_empty() {
-                    sources.push(content.to_string());
-                }
+            && !content.is_empty()
+        {
+            sources.push(content.to_string());
+        }
     }
     if sources.len() > MAX_SOURCES {
         let excess = sources.len() - MAX_SOURCES;

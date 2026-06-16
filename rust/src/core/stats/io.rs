@@ -87,10 +87,11 @@ fn acquire_file_lock(lock_path: &std::path::Path) -> Option<FileLockGuard> {
         }
         if let Ok(meta) = std::fs::metadata(lock_path)
             && let Ok(modified) = meta.modified()
-                && modified.elapsed().unwrap_or_default().as_secs() > 5 {
-                    let _ = std::fs::remove_file(lock_path);
-                    continue;
-                }
+            && modified.elapsed().unwrap_or_default().as_secs() > 5
+        {
+            let _ = std::fs::remove_file(lock_path);
+            continue;
+        }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     None
@@ -146,9 +147,10 @@ pub(super) fn apply_deltas(
         merged.first_use.clone_from(&current.first_use);
     } else if let Some(ref cur_first) = current.first_use
         && let Some(ref merged_first) = merged.first_use
-            && cur_first < merged_first {
-                merged.first_use = Some(cur_first.clone());
-            }
+        && cur_first < merged_first
+    {
+        merged.first_use = Some(cur_first.clone());
+    }
 
     merge_cep(&mut merged.cep, &current.cep, &baseline.cep);
 

@@ -305,9 +305,10 @@ fn tool_profile_is_explicit(cfg: &super::config::Config) -> bool {
 #[must_use]
 pub fn personas_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("LEAN_CTX_PERSONAS_DIR")
-        && !dir.is_empty() {
-            return PathBuf::from(dir);
-        }
+        && !dir.is_empty()
+    {
+        return PathBuf::from(dir);
+    }
     if let Some(config_dir) = dirs::config_dir() {
         config_dir.join("lean-ctx").join("personas")
     } else {
@@ -337,9 +338,10 @@ pub fn list_personas() -> Vec<String> {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("toml")
                 && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                    && !names.iter().any(|n| n == stem) {
-                        names.push(stem.to_string());
-                    }
+                && !names.iter().any(|n| n == stem)
+            {
+                names.push(stem.to_string());
+            }
         }
     }
     names.sort();

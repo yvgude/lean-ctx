@@ -13,9 +13,10 @@ pub(super) fn extract_calls(root: Node, src: &str, ext: &str) -> Vec<CallSite> {
     let mut calls = Vec::new();
     crate::core::ast_walk::for_each_descendant(root, |node| {
         if is_call_node(node.kind())
-            && let Some(call) = parse_call(node, src, ext) {
-                calls.push(call);
-            }
+            && let Some(call) = parse_call(node, src, ext)
+        {
+            calls.push(call);
+        }
     });
     calls
 }
@@ -235,15 +236,16 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
             // `X.new()` instantiates class `X`; attribute the reference to the
             // class so it registers in the call graph / dead-code analysis (#365).
             if method == "new"
-                && let Some(class) = receiver {
-                    return Some(CallSite {
-                        callee: class,
-                        line,
-                        col,
-                        receiver: None,
-                        is_method: false,
-                    });
-                }
+                && let Some(class) = receiver
+            {
+                return Some(CallSite {
+                    callee: class,
+                    line,
+                    col,
+                    receiver: None,
+                    is_method: false,
+                });
+            }
             Some(CallSite {
                 callee: method,
                 line,

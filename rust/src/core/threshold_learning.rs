@@ -91,9 +91,10 @@ impl ThresholdLearner {
     fn load_from_disk() -> Self {
         let path = store_path();
         if let Ok(content) = std::fs::read_to_string(&path)
-            && let Ok(learner) = serde_json::from_str::<ThresholdLearner>(&content) {
-                return learner;
-            }
+            && let Ok(learner) = serde_json::from_str::<ThresholdLearner>(&content)
+        {
+            return learner;
+        }
         ThresholdLearner {
             schema_version: 1,
             ..Default::default()

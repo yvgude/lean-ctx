@@ -443,13 +443,13 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
         let claude_rules_file = cwd.join(".claude").join("rules").join("lean-ctx.md");
         if let Ok(existing) = std::fs::read_to_string(&claude_rules_file)
             && existing.contains("<!-- lean-ctx-rules-")
-                && std::fs::remove_file(&claude_rules_file).is_ok()
-                && !mcp_server_quiet_mode()
-            {
-                eprintln!(
-                    "Removed .claude/rules/lean-ctx.md (always-loaded duplicate; AGENTS.md block + skill replace it)."
-                );
-            }
+            && std::fs::remove_file(&claude_rules_file).is_ok()
+            && !mcp_server_quiet_mode()
+        {
+            eprintln!(
+                "Removed .claude/rules/lean-ctx.md (always-loaded duplicate; AGENTS.md block + skill replace it)."
+            );
+        }
 
         install_claude_project_hooks(&cwd);
     }
@@ -458,13 +458,13 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
         let codebuddy_rules_file = cwd.join(".codebuddy").join("rules").join("lean-ctx.md");
         if let Ok(existing) = std::fs::read_to_string(&codebuddy_rules_file)
             && existing.contains("<!-- lean-ctx-rules-")
-                && std::fs::remove_file(&codebuddy_rules_file).is_ok()
-                && !mcp_server_quiet_mode()
-            {
-                eprintln!(
-                    "Removed .codebuddy/rules/lean-ctx.md (always-loaded duplicate; CODEBUDDY.md block + skill replace it)."
-                );
-            }
+            && std::fs::remove_file(&codebuddy_rules_file).is_ok()
+            && !mcp_server_quiet_mode()
+        {
+            eprintln!(
+                "Removed .codebuddy/rules/lean-ctx.md (always-loaded duplicate; CODEBUDDY.md block + skill replace it)."
+            );
+        }
 
         install_codebuddy_project_hooks(&cwd);
     }

@@ -48,9 +48,10 @@ impl McpTool for CtxGlobTool {
         let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
         if no_gitignore
-            && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_glob") {
-                return Ok(ToolOutput::simple(e));
-            }
+            && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_glob")
+        {
+            return Ok(ToolOutput::simple(e));
+        }
 
         let respect = !no_gitignore;
         let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;

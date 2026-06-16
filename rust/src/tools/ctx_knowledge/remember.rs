@@ -214,16 +214,38 @@ pub(crate) fn handle_recall(
             if let Some(engine) = engine_opt
                 && let Some(idx) = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                     &knowledge.project_hash,
-                ) {
-                    let limit = policy.knowledge.recall_facts_limit;
-                    if mode == "semantic" {
-                        let scored =
-                            crate::core::knowledge_embedding::semantic_recall_semantic_only(
-                                &knowledge, &idx, engine, q, limit,
-                            );
-                        if scored.is_empty() {
-                            return format!("No semantic facts matching '{q}'.");
-                        }
+                )
+            {
+                let limit = policy.knowledge.recall_facts_limit;
+                if mode == "semantic" {
+                    let scored = crate::core::knowledge_embedding::semantic_recall_semantic_only(
+                        &knowledge, &idx, engine, q, limit,
+                    );
+                    if scored.is_empty() {
+                        return format!("No semantic facts matching '{q}'.");
+                    }
+                    let hits: Vec<SemanticHit> = scored
+                        .iter()
+                        .map(|s| SemanticHit {
+                            category: s.fact.category.clone(),
+                            key: s.fact.key.clone(),
+                            value: s.fact.value.clone(),
+                            score: s.score,
+                            semantic_score: s.semantic_score,
+                            confidence_score: s.confidence_score,
+                        })
+                        .collect();
+                    apply_retrieval_signals_from_hits(&mut knowledge, &hits);
+                    let out = format_semantic_facts(&format!("{q} (mode=semantic)"), &hits);
+                    save_knowledge_deferred(knowledge, project_root);
+                    return out;
+                }
+
+                if mode == "hybrid" || mode == "auto" {
+                    let scored = crate::core::knowledge_embedding::semantic_recall(
+                        &knowledge, &idx, engine, q, limit,
+                    );
+                    if !scored.is_empty() {
                         let hits: Vec<SemanticHit> = scored
                             .iter()
                             .map(|s| SemanticHit {
@@ -236,34 +258,12 @@ pub(crate) fn handle_recall(
                             })
                             .collect();
                         apply_retrieval_signals_from_hits(&mut knowledge, &hits);
-                        let out = format_semantic_facts(&format!("{q} (mode=semantic)"), &hits);
+                        let out = format_semantic_facts(&format!("{q} (mode=hybrid)"), &hits);
                         save_knowledge_deferred(knowledge, project_root);
                         return out;
                     }
-
-                    if mode == "hybrid" || mode == "auto" {
-                        let scored = crate::core::knowledge_embedding::semantic_recall(
-                            &knowledge, &idx, engine, q, limit,
-                        );
-                        if !scored.is_empty() {
-                            let hits: Vec<SemanticHit> = scored
-                                .iter()
-                                .map(|s| SemanticHit {
-                                    category: s.fact.category.clone(),
-                                    key: s.fact.key.clone(),
-                                    value: s.fact.value.clone(),
-                                    score: s.score,
-                                    semantic_score: s.semantic_score,
-                                    confidence_score: s.confidence_score,
-                                })
-                                .collect();
-                            apply_retrieval_signals_from_hits(&mut knowledge, &hits);
-                            let out = format_semantic_facts(&format!("{q} (mode=hybrid)"), &hits);
-                            save_knowledge_deferred(knowledge, project_root);
-                            return out;
-                        }
-                    }
                 }
+            }
         }
 
         if mode == "semantic" {
@@ -465,9 +465,10 @@ pub(crate) fn rehydrate_from_archives(
         };
         for f in facts {
             if let Some(cat) = category
-                && f.category != cat {
-                    continue;
-                }
+                && f.category != cat
+            {
+                continue;
+            }
             if terms.is_empty() {
                 cands.push(Cand {
                     category: f.category,

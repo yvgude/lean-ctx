@@ -594,19 +594,20 @@ pub fn list_roles() -> Vec<RoleInfo> {
                 let path = entry.path();
                 if path.extension().is_some_and(|e| e == "toml")
                     && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                        && seen.insert(stem.to_string())
-                            && let Some(r) = load_role(stem) {
-                                result.push(RoleInfo {
-                                    name: stem.to_string(),
-                                    source: if dir == roles_dir_project().unwrap_or_default() {
-                                        RoleSource::Project
-                                    } else {
-                                        RoleSource::Global
-                                    },
-                                    description: r.role.description.clone(),
-                                    is_active: stem == active,
-                                });
-                            }
+                    && seen.insert(stem.to_string())
+                    && let Some(r) = load_role(stem)
+                {
+                    result.push(RoleInfo {
+                        name: stem.to_string(),
+                        source: if dir == roles_dir_project().unwrap_or_default() {
+                            RoleSource::Project
+                        } else {
+                            RoleSource::Global
+                        },
+                        description: r.role.description.clone(),
+                        is_active: stem == active,
+                    });
+                }
             }
         }
     }

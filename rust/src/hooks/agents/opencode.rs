@@ -42,22 +42,23 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
                             eprintln!("OpenCode MCP already configured at {display_path}");
                         }
                     } else if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
-                        && let Some(obj) = json.as_object_mut() {
-                            let mcp = obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
-                            if let Some(mcp_obj) = mcp.as_object_mut() {
-                                mcp_obj.insert("lean-ctx".to_string(), desired.clone());
-                            }
-                            if let Ok(formatted) = serde_json::to_string_pretty(&json) {
-                                let backup = config_path.with_extension("json.bak");
-                                let _ = std::fs::copy(&config_path, &backup);
-                                let _ = std::fs::write(&config_path, formatted);
-                                if !mcp_server_quiet_mode() {
-                                    eprintln!(
-                                        "  \x1b[32m✓\x1b[0m OpenCode MCP configured at {display_path}"
-                                    );
-                                }
+                        && let Some(obj) = json.as_object_mut()
+                    {
+                        let mcp = obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
+                        if let Some(mcp_obj) = mcp.as_object_mut() {
+                            mcp_obj.insert("lean-ctx".to_string(), desired.clone());
+                        }
+                        if let Ok(formatted) = serde_json::to_string_pretty(&json) {
+                            let backup = config_path.with_extension("json.bak");
+                            let _ = std::fs::copy(&config_path, &backup);
+                            let _ = std::fs::write(&config_path, formatted);
+                            if !mcp_server_quiet_mode() {
+                                eprintln!(
+                                    "  \x1b[32m✓\x1b[0m OpenCode MCP configured at {display_path}"
+                                );
                             }
                         }
+                    }
                 } else {
                     let content = serde_json::to_string_pretty(&serde_json::json!({
                         "$schema": "https://opencode.ai/config.json",
@@ -270,10 +271,9 @@ fn ensure_plugin_package_json(plugin_dir: &std::path::Path) {
         }
     }
 
-    if changed
-        && let Ok(formatted) = serde_json::to_string_pretty(&pkg) {
-            let _ = std::fs::write(&package_json_path, formatted);
-        }
+    if changed && let Ok(formatted) = serde_json::to_string_pretty(&pkg) {
+        let _ = std::fs::write(&package_json_path, formatted);
+    }
 }
 
 /// Remove a previously installed OpenCode interception plugin so toggling
@@ -314,11 +314,13 @@ fn remove_opencode_mcp_config(config_path: &std::path::Path, display_path: &str)
         obj.remove("mcp");
     }
     if let Ok(formatted) = serde_json::to_string_pretty(&json)
-        && std::fs::write(config_path, formatted).is_ok() && !mcp_server_quiet_mode() {
-            eprintln!(
-                "  OpenCode mcp.lean-ctx removed (shadow_mode on → interception plugin is the active surface) at {display_path}"
-            );
-        }
+        && std::fs::write(config_path, formatted).is_ok()
+        && !mcp_server_quiet_mode()
+    {
+        eprintln!(
+            "  OpenCode mcp.lean-ctx removed (shadow_mode on → interception plugin is the active surface) at {display_path}"
+        );
+    }
 }
 
 #[cfg(test)]

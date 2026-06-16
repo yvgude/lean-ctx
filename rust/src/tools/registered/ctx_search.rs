@@ -54,9 +54,9 @@ impl McpTool for CtxSearchTool {
 
         if no_gitignore
             && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
-            {
-                return Ok(ToolOutput::simple(e));
-            }
+        {
+            return Ok(ToolOutput::simple(e));
+        }
 
         let crp = ctx.crp_mode;
         let respect = !no_gitignore;

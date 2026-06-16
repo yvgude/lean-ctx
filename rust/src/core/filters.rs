@@ -74,9 +74,10 @@ impl FilterEngine {
 
         for rule in &self.rules {
             if let Some(ref cmd_re) = rule.command_re
-                && !cmd_re.is_match(&cmd_lower) {
-                    continue;
-                }
+                && !cmd_re.is_match(&cmd_lower)
+            {
+                continue;
+            }
 
             if !rule.keep_lines.is_empty() {
                 let filtered: Vec<&str> = output

@@ -120,40 +120,42 @@ fn compress_ec2_instances(output: &str) -> String {
 
 fn compress_lambda_list(output: &str) -> String {
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(output)
-        && let Some(fns) = val.get("Functions").and_then(|f| f.as_array()) {
-            let items: Vec<String> = fns
-                .iter()
-                .map(|f| {
-                    let name = f
-                        .get("FunctionName")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("?");
-                    let runtime = f.get("Runtime").and_then(|v| v.as_str()).unwrap_or("?");
-                    let mem = f
-                        .get("MemorySize")
-                        .and_then(serde_json::Value::as_u64)
-                        .unwrap_or(0);
-                    format!("  {name} ({runtime}, {mem}MB)")
-                })
-                .collect();
-            return format!("{} functions:\n{}", items.len(), items.join("\n"));
-        }
+        && let Some(fns) = val.get("Functions").and_then(|f| f.as_array())
+    {
+        let items: Vec<String> = fns
+            .iter()
+            .map(|f| {
+                let name = f
+                    .get("FunctionName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                let runtime = f.get("Runtime").and_then(|v| v.as_str()).unwrap_or("?");
+                let mem = f
+                    .get("MemorySize")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0);
+                format!("  {name} ({runtime}, {mem}MB)")
+            })
+            .collect();
+        return format!("{} functions:\n{}", items.len(), items.join("\n"));
+    }
     compact_lines(output, 15)
 }
 
 fn compress_cfn(output: &str) -> String {
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(output)
-        && let Some(stacks) = val.get("Stacks").and_then(|s| s.as_array()) {
-            let items: Vec<String> = stacks
-                .iter()
-                .map(|s| {
-                    let name = s.get("StackName").and_then(|v| v.as_str()).unwrap_or("?");
-                    let status = s.get("StackStatus").and_then(|v| v.as_str()).unwrap_or("?");
-                    format!("  {name}: {status}")
-                })
-                .collect();
-            return format!("{} stacks:\n{}", items.len(), items.join("\n"));
-        }
+        && let Some(stacks) = val.get("Stacks").and_then(|s| s.as_array())
+    {
+        let items: Vec<String> = stacks
+            .iter()
+            .map(|s| {
+                let name = s.get("StackName").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = s.get("StackStatus").and_then(|v| v.as_str()).unwrap_or("?");
+                format!("  {name}: {status}")
+            })
+            .collect();
+        return format!("{} stacks:\n{}", items.len(), items.join("\n"));
+    }
     compact_lines(output, 10)
 }
 

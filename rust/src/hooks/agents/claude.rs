@@ -45,28 +45,30 @@ fn install_claude_mcp_server(home: &std::path::Path) {
     };
 
     if let Ok(mut root) = parsed
-        && let Some(obj) = root.as_object_mut() {
-            let servers = obj
-                .entry("mcpServers")
-                .or_insert_with(|| serde_json::json!({}));
-            if let Some(servers_obj) = servers.as_object_mut()
-                && !servers_obj.contains_key("lean-ctx") {
-                    servers_obj.insert(
-                        "lean-ctx".to_string(),
-                        serde_json::json!({
-                            "command": binary,
-                            "args": []
-                        }),
-                    );
-                    write_file(
-                        &config_path,
-                        &serde_json::to_string_pretty(&root).unwrap_or_default(),
-                    );
-                    if !super::super::mcp_server_quiet_mode() {
-                        eprintln!("Added lean-ctx MCP server to {}", config_path.display());
-                    }
-                }
+        && let Some(obj) = root.as_object_mut()
+    {
+        let servers = obj
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        if let Some(servers_obj) = servers.as_object_mut()
+            && !servers_obj.contains_key("lean-ctx")
+        {
+            servers_obj.insert(
+                "lean-ctx".to_string(),
+                serde_json::json!({
+                    "command": binary,
+                    "args": []
+                }),
+            );
+            write_file(
+                &config_path,
+                &serde_json::to_string_pretty(&root).unwrap_or_default(),
+            );
+            if !super::super::mcp_server_quiet_mode() {
+                eprintln!("Added lean-ctx MCP server to {}", config_path.display());
+            }
         }
+    }
 }
 
 /// Shared with `doctor` so the instructions check recognises the same block

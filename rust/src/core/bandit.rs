@@ -164,9 +164,10 @@ impl BanditStore {
         let path = bandit_path(project_root);
         if path.exists()
             && let Ok(content) = std::fs::read_to_string(&path)
-                && let Ok(store) = serde_json::from_str::<BanditStore>(&content) {
-                    return store;
-                }
+            && let Ok(store) = serde_json::from_str::<BanditStore>(&content)
+        {
+            return store;
+        }
         Self::default()
     }
 

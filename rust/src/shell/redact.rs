@@ -50,9 +50,10 @@ fn cleanup_old_tee_logs(tee_dir: &std::path::Path) {
         for entry in entries.flatten() {
             if let Ok(meta) = entry.metadata()
                 && let Ok(modified) = meta.modified()
-                    && modified < cutoff {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
+                && modified < cutoff
+            {
+                let _ = std::fs::remove_file(entry.path());
+            }
         }
     }
 }

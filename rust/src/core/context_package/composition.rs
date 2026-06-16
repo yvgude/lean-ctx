@@ -91,9 +91,10 @@ fn merge_existing_node(base: &mut ContextGraph, incoming: &ContextNode, report: 
     }
 
     if let Some(ref inc_cat) = incoming.category
-        && existing.category.is_none() {
-            existing.category = Some(inc_cat.clone());
-        }
+        && existing.category.is_none()
+    {
+        existing.category = Some(inc_cat.clone());
+    }
 
     if let Some(inc_conf) = incoming.confidence {
         match existing.confidence {

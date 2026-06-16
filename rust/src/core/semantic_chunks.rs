@@ -234,10 +234,11 @@ pub fn render_with_bridges(chunks: &[SemanticChunk]) -> String {
 
     // Tail anchor: reference back to primary chunk
     if chunks.len() > 2
-        && let Some(ref ident) = chunks[0].identifier {
-            output.push(String::new());
-            output.push(format!("[primary: {ident}]"));
-        }
+        && let Some(ref ident) = chunks[0].identifier
+    {
+        output.push(String::new());
+        output.push(format!("[primary: {ident}]"));
+    }
 
     output.join("\n")
 }

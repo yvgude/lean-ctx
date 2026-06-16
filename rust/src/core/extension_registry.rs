@@ -238,13 +238,14 @@ impl Chunker for ParagraphChunker {
 /// Truncate `s` to at most `budget` bytes, never splitting a UTF-8 char.
 pub(crate) fn truncate_to_budget(mut s: String, budget: Option<usize>) -> String {
     if let Some(b) = budget
-        && s.len() > b {
-            let mut end = b;
-            while end > 0 && !s.is_char_boundary(end) {
-                end -= 1;
-            }
-            s.truncate(end);
+        && s.len() > b
+    {
+        let mut end = b;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
         }
+        s.truncate(end);
+    }
     s
 }
 

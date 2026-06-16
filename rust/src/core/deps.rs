@@ -126,9 +126,10 @@ fn extract_ts_deps(content: &str) -> DepInfo {
         }
 
         if trimmed.starts_with("export ")
-            && let Some(name) = extract_export_name(trimmed) {
-                exports.push(name);
-            }
+            && let Some(name) = extract_export_name(trimmed)
+        {
+            exports.push(name);
+        }
     }
 
     DepInfo {
@@ -162,10 +163,11 @@ fn extract_rust_deps(content: &str) -> DepInfo {
         } else if (trimmed.starts_with("pub struct ")
             || trimmed.starts_with("pub enum ")
             || trimmed.starts_with("pub trait "))
-            && let Some(name) = trimmed.split_whitespace().nth(2) {
-                let clean = name.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
-                exports.push(clean.to_string());
-            }
+            && let Some(name) = trimmed.split_whitespace().nth(2)
+        {
+            let clean = name.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
+            exports.push(clean.to_string());
+        }
     }
 
     DepInfo {
@@ -182,15 +184,16 @@ fn extract_python_deps(content: &str) -> DepInfo {
         let trimmed = line.trim();
 
         if let Some(caps) = py_import_re().captures(trimmed)
-            && let Some(m) = caps.get(1).or(caps.get(2)) {
-                let module = m.as_str();
-                if !module.starts_with("os")
-                    && !module.starts_with("sys")
-                    && !module.starts_with("json")
-                {
-                    imports.insert(module.to_string());
-                }
+            && let Some(m) = caps.get(1).or(caps.get(2))
+        {
+            let module = m.as_str();
+            if !module.starts_with("os")
+                && !module.starts_with("sys")
+                && !module.starts_with("json")
+            {
+                imports.insert(module.to_string());
             }
+        }
 
         if trimmed.starts_with("def ") && !trimmed.contains('_') {
             if let Some(name) = trimmed
@@ -203,9 +206,9 @@ fn extract_python_deps(content: &str) -> DepInfo {
             && let Some(name) = trimmed
                 .strip_prefix("class ")
                 .and_then(|s| s.split(['(', ':']).next())
-            {
-                exports.push(name.to_string());
-            }
+        {
+            exports.push(name.to_string());
+        }
     }
 
     DepInfo {

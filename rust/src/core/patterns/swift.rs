@@ -34,10 +34,12 @@ fn compress_test(output: &str) -> String {
         if trimmed.starts_with("Test Suite") && trimmed.contains("Executed") {
             time = trimmed.to_string();
         }
-        if trimmed.contains("Executed") && trimmed.contains("tests")
-            && let Some(pos) = trimmed.find("Executed") {
-                time = trimmed[pos..].to_string();
-            }
+        if trimmed.contains("Executed")
+            && trimmed.contains("tests")
+            && let Some(pos) = trimmed.find("Executed")
+        {
+            time = trimmed[pos..].to_string();
+        }
     }
 
     if passed == 0 && failed == 0 {

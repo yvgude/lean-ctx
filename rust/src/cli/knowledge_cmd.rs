@@ -582,9 +582,10 @@ fn positional_after(args: &[String], subcommand: &str) -> Option<String> {
             .and_then(|i| i.checked_sub(1))
             .map(|i| &args[i]);
         if let Some(p) = prev
-            && (p.starts_with("--") || p == "-c" || p == "-k" || p == "-m") {
-                continue;
-            }
+            && (p.starts_with("--") || p == "-c" || p == "-k" || p == "-m")
+        {
+            continue;
+        }
         return Some(a.clone());
     }
     None

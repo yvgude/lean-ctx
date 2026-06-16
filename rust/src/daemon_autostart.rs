@@ -298,16 +298,16 @@ WantedBy=default.target
         && let Ok(o) = std::process::Command::new("loginctl")
             .args(["show-user", &whoami(), "-p", "Linger", "--value"])
             .output()
-        {
-            let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if val != "yes" {
-                println!(
-                    "  Note: for daemon to start at boot (without login), run:\n    \
+    {
+        let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if val != "yes" {
+            println!(
+                "  Note: for daemon to start at boot (without login), run:\n    \
                      loginctl enable-linger {}",
-                    whoami()
-                );
-            }
+                whoami()
+            );
         }
+    }
 }
 
 #[cfg(target_os = "linux")]

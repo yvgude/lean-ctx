@@ -33,17 +33,20 @@ fn compress_playwright(output: &str) -> String {
     for line in trimmed.lines() {
         let l = line.trim().to_lowercase();
         if l.contains("passed")
-            && let Some(n) = extract_number(&l, "passed") {
-                passed = n;
-            }
+            && let Some(n) = extract_number(&l, "passed")
+        {
+            passed = n;
+        }
         if l.contains("failed")
-            && let Some(n) = extract_number(&l, "failed") {
-                failed = n;
-            }
+            && let Some(n) = extract_number(&l, "failed")
+        {
+            failed = n;
+        }
         if l.contains("skipped")
-            && let Some(n) = extract_number(&l, "skipped") {
-                skipped = n;
-            }
+            && let Some(n) = extract_number(&l, "skipped")
+        {
+            skipped = n;
+        }
         if let Some(caps) = pw_failed_re().captures(line) {
             failed_names.push(caps[1].trim().to_string());
         }

@@ -125,12 +125,14 @@ pub fn extract_yaml_structure(content: &str) -> String {
             let prefix = "  ".repeat(level);
             parts.push(format!("{prefix}{key}"));
             prev_indent = indent;
-        } else if trimmed.starts_with("- ") && indent <= prev_indent + 2
-            && let Some(key) = extract_yaml_key(trimmed.trim_start_matches("- ")) {
-                let level = indent / 2;
-                let prefix = "  ".repeat(level);
-                parts.push(format!("{prefix}- {key}"));
-            }
+        } else if trimmed.starts_with("- ")
+            && indent <= prev_indent + 2
+            && let Some(key) = extract_yaml_key(trimmed.trim_start_matches("- "))
+        {
+            let level = indent / 2;
+            let prefix = "  ".repeat(level);
+            parts.push(format!("{prefix}- {key}"));
+        }
     }
 
     deduplicate_consecutive(&parts)
@@ -251,9 +253,11 @@ fn extract_cargo_lock_summary(content: &str) -> String {
         let t = line.trim();
         if t == "[[package]]" {
             if let Some(name) = current_name
-                && !has_source && !local_crates.contains(&name) {
-                    local_crates.push(name);
-                }
+                && !has_source
+                && !local_crates.contains(&name)
+            {
+                local_crates.push(name);
+            }
             current_name = None;
             has_source = false;
             in_deps = false;
@@ -281,9 +285,11 @@ fn extract_cargo_lock_summary(content: &str) -> String {
         }
     }
     if let Some(name) = current_name
-        && !has_source && !local_crates.contains(&name) {
-            local_crates.push(name);
-        }
+        && !has_source
+        && !local_crates.contains(&name)
+    {
+        local_crates.push(name);
+    }
 
     let mut out = format!("Cargo.lock: {pkg_count} packages");
     if !local_crates.is_empty() {

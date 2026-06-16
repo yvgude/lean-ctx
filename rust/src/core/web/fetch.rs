@@ -60,17 +60,19 @@ pub fn fetch(url: &str, max_bytes: usize, timeout_secs: u64) -> Result<FetchedDo
 
         let status = resp.status().as_u16();
 
-        if (300..400).contains(&status) && hops < MAX_REDIRECTS
-            && let Some(location) = header_value(&resp, "location") {
-                let next = resolve_redirect(&current, &location);
-                let next_url = url_guard::validate(&next).map_err(|e| e.to_string())?;
-                next_url
-                    .ensure_resolves_safely()
-                    .map_err(|e| e.to_string())?;
-                current = next_url;
-                hops += 1;
-                continue;
-            }
+        if (300..400).contains(&status)
+            && hops < MAX_REDIRECTS
+            && let Some(location) = header_value(&resp, "location")
+        {
+            let next = resolve_redirect(&current, &location);
+            let next_url = url_guard::validate(&next).map_err(|e| e.to_string())?;
+            next_url
+                .ensure_resolves_safely()
+                .map_err(|e| e.to_string())?;
+            current = next_url;
+            hops += 1;
+            continue;
+        }
 
         let content_type = header_value(&resp, "content-type")
             .and_then(|v| v.split(';').next().map(|m| m.trim().to_ascii_lowercase()))

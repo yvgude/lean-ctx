@@ -223,26 +223,28 @@ fn install_copilot_pretooluse_hook(global: bool) {
         && let Ok(mut existing) = crate::core::jsonc::parse_jsonc(
             &std::fs::read_to_string(&hook_path).unwrap_or_default(),
         )
-            && let Some(obj) = existing.as_object_mut() {
-                obj.insert("version".to_string(), serde_json::json!(1));
-                let hooks = obj
-                    .entry("hooks".to_string())
-                    .or_insert_with(|| serde_json::json!({}));
-                if let Some(hooks_obj) = hooks.as_object_mut()
-                    && let Some(desired_hooks) = hook_config["hooks"].as_object() {
-                        for (event, entries) in desired_hooks {
-                            hooks_obj.insert(event.clone(), entries.clone());
-                        }
-                    }
-                write_file(
-                    &hook_path,
-                    &serde_json::to_string_pretty(&existing).unwrap_or_default(),
-                );
-                if !mcp_server_quiet_mode() {
-                    eprintln!("Updated Copilot hooks at {}", hook_path.display());
-                }
-                return;
+        && let Some(obj) = existing.as_object_mut()
+    {
+        obj.insert("version".to_string(), serde_json::json!(1));
+        let hooks = obj
+            .entry("hooks".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        if let Some(hooks_obj) = hooks.as_object_mut()
+            && let Some(desired_hooks) = hook_config["hooks"].as_object()
+        {
+            for (event, entries) in desired_hooks {
+                hooks_obj.insert(event.clone(), entries.clone());
             }
+        }
+        write_file(
+            &hook_path,
+            &serde_json::to_string_pretty(&existing).unwrap_or_default(),
+        );
+        if !mcp_server_quiet_mode() {
+            eprintln!("Updated Copilot hooks at {}", hook_path.display());
+        }
+        return;
+    }
 
     write_file(
         &hook_path,

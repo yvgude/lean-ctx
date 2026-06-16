@@ -393,16 +393,18 @@ fn live_jetbrains_backend(
 ) -> Result<Box<dyn crate::lsp::backend::LspBackend>, String> {
     use crate::lsp::port_discovery;
     if let Some(pf) = port_discovery::read_port_file(project_root)
-        && port_discovery::pid_alive(pf.pid) && port_discovery::health_ok(&pf) {
-            return Ok(Box::new(
-                crate::lsp::jetbrains_backend::JetBrainsHttpBackend::new(
-                    pf.port,
-                    pf.token,
-                    project_root.to_string(),
-                    pf.pid,
-                ),
-            ));
-        }
+        && port_discovery::pid_alive(pf.pid)
+        && port_discovery::health_ok(&pf)
+    {
+        return Ok(Box::new(
+            crate::lsp::jetbrains_backend::JetBrainsHttpBackend::new(
+                pf.port,
+                pf.token,
+                project_root.to_string(),
+                pf.pid,
+            ),
+        ));
+    }
     Err("BACKEND_REQUIRED: rename requires a running JetBrains IDE \
          (no live port file / health check failed)"
         .to_string())

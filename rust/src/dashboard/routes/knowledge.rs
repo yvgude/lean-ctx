@@ -425,11 +425,11 @@ fn is_linkable_reference(tok: &str) -> bool {
     // File with an extension: foo.rs, bar.tsx, config.yaml
     if let Some((stem, ext)) = tok.rsplit_once('.')
         && stem.len() >= 2
-            && (1..=5).contains(&ext.len())
-            && ext.chars().all(|c| c.is_ascii_alphanumeric())
-        {
-            return true;
-        }
+        && (1..=5).contains(&ext.len())
+        && ext.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        return true;
+    }
     // CamelCase identifier: a lower->Upper transition (ProjectIndex, CallGraph).
     let bytes = tok.as_bytes();
     let camel = bytes

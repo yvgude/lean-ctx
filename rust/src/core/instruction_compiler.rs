@@ -64,12 +64,13 @@ pub fn compile(
     );
 
     if let Some(cap) = constraints.and_then(|c| c.mcp_instructions_max_chars)
-        && mcp_instructions.len() > cap {
-            return Err(format!(
-                "compiled MCP instructions exceed cap for {client_id}: {} > {cap}",
-                mcp_instructions.len()
-            ));
-        }
+        && mcp_instructions.len() > cap
+    {
+        return Err(format!(
+            "compiled MCP instructions exceed cap for {client_id}: {} > {cap}",
+            mcp_instructions.len()
+        ));
+    }
 
     let mut rules_files = Vec::new();
     if opts.include_rules_files && (client_id == "claude-code" || client_id == "codebuddy") {

@@ -63,9 +63,10 @@ pub fn active_count() -> usize {
     for slot in 0..MAX_CONCURRENT {
         let path = dir.join(format!("slot-{slot}.lock"));
         if let Ok(f) = std::fs::OpenOptions::new().read(true).open(&path)
-            && !try_flock(&f) {
-                count += 1;
-            }
+            && !try_flock(&f)
+        {
+            count += 1;
+        }
     }
     count
 }

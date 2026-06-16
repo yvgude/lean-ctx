@@ -6,7 +6,7 @@ use super::super::helpers::{clean_return_type, field_text, strip_parens};
 
 fn child_by_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
-    
+
     node.children(&mut cursor).find(|c| c.kind() == kind)
 }
 

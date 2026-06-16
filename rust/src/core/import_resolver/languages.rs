@@ -333,15 +333,16 @@ pub(super) fn resolve_go(imp: &ImportInfo, ctx: &ResolverContext) -> (Option<Str
     let source = &imp.source;
 
     if let Some(ref go_mod) = ctx.go_module
-        && source.starts_with(go_mod.as_str()) {
-            let relative = source.strip_prefix(go_mod.as_str()).unwrap_or(source);
-            let relative = relative.trim_start_matches('/');
+        && source.starts_with(go_mod.as_str())
+    {
+        let relative = source.strip_prefix(go_mod.as_str()).unwrap_or(source);
+        let relative = relative.trim_start_matches('/');
 
-            if let Some(found) = try_go_package(relative, ctx) {
-                return (Some(found), false);
-            }
-            return (None, false);
+        if let Some(found) = try_go_package(relative, ctx) {
+            return (Some(found), false);
         }
+        return (None, false);
+    }
 
     if let Some(found) = try_go_package(source, ctx) {
         return (Some(found), false);
@@ -989,9 +990,10 @@ pub(super) fn resolve_csharp(imp: &ImportInfo, ctx: &ResolverContext) -> (Option
     // 3) `using A.B.C` may instead import the *type* `C` from namespace `A.B`:
     //    drop the final segment and probe the parent namespace's folder.
     if segs.len() >= 2
-        && let Some(file) = probe_csharp_namespace(&segs[..segs.len() - 1], ctx) {
-            return (Some(file), false);
-        }
+        && let Some(file) = probe_csharp_namespace(&segs[..segs.len() - 1], ctx)
+    {
+        return (Some(file), false);
+    }
 
     // 4) Unresolved: treat as external so it neither creates a phantom edge nor
     //    is miscounted as a missing local dependency.

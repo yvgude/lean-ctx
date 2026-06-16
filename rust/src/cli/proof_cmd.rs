@@ -15,10 +15,11 @@ pub(crate) fn cmd_proof(args: &[String]) {
         }
         if a == "--format" {
             if let Some(v) = it.peek()
-                && !v.starts_with("--") {
-                    format = Some((*v).clone());
-                    it.next();
-                }
+                && !v.starts_with("--")
+            {
+                format = Some((*v).clone());
+                it.next();
+            }
             continue;
         }
         if a == "--json" {
@@ -39,10 +40,11 @@ pub(crate) fn cmd_proof(args: &[String]) {
         }
         if a == "--filename" {
             if let Some(v) = it.peek()
-                && !v.starts_with("--") {
-                    filename = Some((*v).clone());
-                    it.next();
-                }
+                && !v.starts_with("--")
+            {
+                filename = Some((*v).clone());
+                it.next();
+            }
             continue;
         }
         if let Some(v) = a.strip_prefix("--max-evidence=") {
@@ -51,10 +53,11 @@ pub(crate) fn cmd_proof(args: &[String]) {
         }
         if a == "--max-evidence" {
             if let Some(v) = it.peek()
-                && !v.starts_with("--") {
-                    max_evidence = (*v).parse::<usize>().ok();
-                    it.next();
-                }
+                && !v.starts_with("--")
+            {
+                max_evidence = (*v).parse::<usize>().ok();
+                it.next();
+            }
             continue;
         }
         if let Some(v) = a.strip_prefix("--max-ledger-files=") {
@@ -63,10 +66,11 @@ pub(crate) fn cmd_proof(args: &[String]) {
         }
         if a == "--max-ledger-files"
             && let Some(v) = it.peek()
-                && !v.starts_with("--") {
-                    max_ledger_files = (*v).parse::<usize>().ok();
-                    it.next();
-                }
+            && !v.starts_with("--")
+        {
+            max_ledger_files = (*v).parse::<usize>().ok();
+            it.next();
+        }
     }
 
     let sources = crate::core::context_proof::ProofSources {

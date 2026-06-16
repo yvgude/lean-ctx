@@ -235,20 +235,21 @@ pub fn require_resolved_path(
         return Err(ErrorData::invalid_params(format!("{key}: {err}"), None));
     }
     if let Some(val) = args.get(key)
-        && !val.is_string() {
-            let type_name = match val {
-                Value::Number(_) => "number",
-                Value::Bool(_) => "boolean",
-                Value::Array(_) => "array",
-                Value::Object(_) => "object",
-                Value::Null => "null",
-                Value::String(_) => unreachable!(),
-            };
-            return Err(ErrorData::invalid_params(
-                format!("{key} must be a string, got {type_name}"),
-                None,
-            ));
-        }
+        && !val.is_string()
+    {
+        let type_name = match val {
+            Value::Number(_) => "number",
+            Value::Bool(_) => "boolean",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+            Value::Null => "null",
+            Value::String(_) => unreachable!(),
+        };
+        return Err(ErrorData::invalid_params(
+            format!("{key} must be a string, got {type_name}"),
+            None,
+        ));
+    }
     Err(ErrorData::invalid_params(
         format!("{key} is required"),
         None,

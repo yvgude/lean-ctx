@@ -121,11 +121,10 @@ pub fn cloud_background_tasks() {
             }
         }
 
-        if !already_pulled
-            && let Ok(data) = crate::cloud_client::pull_cloud_models() {
-                let _ = crate::cloud_client::save_cloud_models(&data);
-                config.cloud.last_model_pull = Some(today.clone());
-            }
+        if !already_pulled && let Ok(data) = crate::cloud_client::pull_cloud_models() {
+            let _ = crate::cloud_client::save_cloud_models(&data);
+            config.cloud.last_model_pull = Some(today.clone());
+        }
 
         // Opt-in Personal-Cloud auto-push (GL #384): silent, once per day,
         // offline-tolerant. A network failure leaves the slot open so the
@@ -439,19 +438,18 @@ pub fn collect_gotcha_entries() -> Vec<serde_json::Value> {
                 let gotcha_path = entry.path().join("gotchas.json");
                 if gotcha_path.exists()
                     && let Ok(content) = std::fs::read_to_string(&gotcha_path)
-                        && let Ok(store) = serde_json::from_str::<
-                            crate::core::gotcha_tracker::GotchaStore,
-                        >(&content)
+                    && let Ok(store) =
+                        serde_json::from_str::<crate::core::gotcha_tracker::GotchaStore>(&content)
+                {
+                    for g in store.gotchas {
+                        if !all_gotchas
+                            .iter()
+                            .any(|existing| existing.trigger == g.trigger)
                         {
-                            for g in store.gotchas {
-                                if !all_gotchas
-                                    .iter()
-                                    .any(|existing| existing.trigger == g.trigger)
-                                {
-                                    all_gotchas.push(g);
-                                }
-                            }
+                            all_gotchas.push(g);
                         }
+                    }
+                }
             }
         }
     }
@@ -498,38 +496,39 @@ pub fn collect_contribute_entries() -> Vec<serde_json::Value> {
             .join("mode_stats.json");
         if let Ok(data) = std::fs::read_to_string(&mode_stats_path)
             && let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data)
-                && let Some(history) = predictor["history"].as_object() {
-                    for (_key, outcomes) in history {
-                        if let Some(arr) = outcomes.as_array() {
-                            for outcome in arr.iter().rev().take(3) {
-                                let ext = outcome["ext"].as_str().unwrap_or("unknown");
-                                let mode = outcome["mode"].as_str().unwrap_or("full");
-                                let t_in = outcome["tokens_in"].as_u64().unwrap_or(0);
-                                let t_out = outcome["tokens_out"].as_u64().unwrap_or(0);
-                                let ratio = if t_in > 0 {
-                                    1.0 - t_out as f64 / t_in as f64
-                                } else {
-                                    0.0
-                                };
-                                let bucket = match t_in {
-                                    0..=500 => "0-500",
-                                    501..=2000 => "500-2k",
-                                    2001..=10000 => "2k-10k",
-                                    _ => "10k+",
-                                };
-                                entries.push(serde_json::json!({
-                                    "file_ext": format!(".{ext}"),
-                                    "size_bucket": bucket,
-                                    "best_mode": mode,
-                                    "compression_ratio": (ratio * 100.0).round() / 100.0,
-                                }));
-                                if entries.len() >= 200 {
-                                    return entries;
-                                }
-                            }
+            && let Some(history) = predictor["history"].as_object()
+        {
+            for (_key, outcomes) in history {
+                if let Some(arr) = outcomes.as_array() {
+                    for outcome in arr.iter().rev().take(3) {
+                        let ext = outcome["ext"].as_str().unwrap_or("unknown");
+                        let mode = outcome["mode"].as_str().unwrap_or("full");
+                        let t_in = outcome["tokens_in"].as_u64().unwrap_or(0);
+                        let t_out = outcome["tokens_out"].as_u64().unwrap_or(0);
+                        let ratio = if t_in > 0 {
+                            1.0 - t_out as f64 / t_in as f64
+                        } else {
+                            0.0
+                        };
+                        let bucket = match t_in {
+                            0..=500 => "0-500",
+                            501..=2000 => "500-2k",
+                            2001..=10000 => "2k-10k",
+                            _ => "10k+",
+                        };
+                        entries.push(serde_json::json!({
+                            "file_ext": format!(".{ext}"),
+                            "size_bucket": bucket,
+                            "best_mode": mode,
+                            "compression_ratio": (ratio * 100.0).round() / 100.0,
+                        }));
+                        if entries.len() >= 200 {
+                            return entries;
                         }
                     }
                 }
+            }
+        }
     }
 
     if entries.is_empty() {

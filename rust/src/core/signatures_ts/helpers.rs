@@ -67,15 +67,14 @@ pub(crate) fn clean_return_type(ret: &str) -> String {
 
 pub(crate) fn has_named_child(node: &Node, kind: &str) -> bool {
     let mut cursor = node.walk();
-    
+
     node.children(&mut cursor).any(|c| c.kind() == kind)
 }
 
 pub(crate) fn has_keyword_child(node: &Node, keyword: &str) -> bool {
     let mut cursor = node.walk();
-    
-    node
-        .children(&mut cursor)
+
+    node.children(&mut cursor)
         .any(|c| !c.is_named() && c.kind() == keyword)
 }
 

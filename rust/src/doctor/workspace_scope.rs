@@ -144,13 +144,14 @@ pub(super) fn fix_workspace_dual_scope(user_scope_has_lean_ctx: bool) -> usize {
             let removed = remove_lean_ctx_from_json(&mut json);
             if removed
                 && let Ok(out) = serde_json::to_string_pretty(&json)
-                    && std::fs::write(&path, out.as_bytes()).is_ok() {
-                        tracing::info!(
-                            "Removed lean-ctx from workspace-scope {} (user-scope preferred)",
-                            path.display()
-                        );
-                        fixed += 1;
-                    }
+                && std::fs::write(&path, out.as_bytes()).is_ok()
+            {
+                tracing::info!(
+                    "Removed lean-ctx from workspace-scope {} (user-scope preferred)",
+                    path.display()
+                );
+                fixed += 1;
+            }
         }
     }
     fixed
@@ -162,14 +163,15 @@ fn remove_lean_ctx_from_json(json: &mut serde_json::Value) -> bool {
     let mut removed = false;
     for key in containers {
         if let Some(map) = navigate_mut(json, key)
-            && let Some(obj) = map.as_object_mut() {
-                if obj.remove("lean-ctx").is_some() {
-                    removed = true;
-                }
-                if obj.remove("user-lean-ctx").is_some() {
-                    removed = true;
-                }
+            && let Some(obj) = map.as_object_mut()
+        {
+            if obj.remove("lean-ctx").is_some() {
+                removed = true;
             }
+            if obj.remove("user-lean-ctx").is_some() {
+                removed = true;
+            }
+        }
     }
     removed
 }

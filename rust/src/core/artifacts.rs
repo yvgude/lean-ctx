@@ -89,15 +89,16 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
         // Artifacts tend to be indexed/shared; prefer safety over convenience.
         let role = crate::core::roles::active_role();
         if !role.io.allow_secret_paths
-            && let Some(reason) = crate::core::io_boundary::is_secret_like(&abs) {
-                let role_name = crate::core::roles::active_role_name();
-                let msg = format!(
-                    "artifact rejected ({name}): {rel} (secret-like path: {reason}; role: {role_name})"
-                );
-                crate::core::events::emit_policy_violation(&role_name, "artifacts", &msg);
-                out.warnings.push(msg);
-                continue;
-            }
+            && let Some(reason) = crate::core::io_boundary::is_secret_like(&abs)
+        {
+            let role_name = crate::core::roles::active_role_name();
+            let msg = format!(
+                "artifact rejected ({name}): {rel} (secret-like path: {reason}; role: {role_name})"
+            );
+            crate::core::events::emit_policy_violation(&role_name, "artifacts", &msg);
+            out.warnings.push(msg);
+            continue;
+        }
 
         let (exists, is_dir) = match abs.metadata() {
             Ok(m) => (true, m.is_dir()),

@@ -243,29 +243,30 @@ fn load_tsconfig_paths(root: &Path) -> HashMap<String, String> {
         let tsconfig_path = root.join(name);
         if let Ok(content) = std::fs::read_to_string(&tsconfig_path) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-                && let Some(compiler) = json.get("compilerOptions") {
-                    let base_url = compiler
-                        .get("baseUrl")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(".");
+                && let Some(compiler) = json.get("compilerOptions")
+            {
+                let base_url = compiler
+                    .get("baseUrl")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".");
 
-                    if let Some(path_map) = compiler.get("paths").and_then(|v| v.as_object()) {
-                        for (pattern, targets) in path_map {
-                            if let Some(first_target) = targets
-                                .as_array()
-                                .and_then(|a| a.first())
-                                .and_then(|v| v.as_str())
-                            {
-                                let resolved = if base_url == "." {
-                                    first_target.to_string()
-                                } else {
-                                    format!("{base_url}/{first_target}")
-                                };
-                                paths.insert(pattern.clone(), resolved);
-                            }
+                if let Some(path_map) = compiler.get("paths").and_then(|v| v.as_object()) {
+                    for (pattern, targets) in path_map {
+                        if let Some(first_target) = targets
+                            .as_array()
+                            .and_then(|a| a.first())
+                            .and_then(|v| v.as_str())
+                        {
+                            let resolved = if base_url == "." {
+                                first_target.to_string()
+                            } else {
+                                format!("{base_url}/{first_target}")
+                            };
+                            paths.insert(pattern.clone(), resolved);
                         }
                     }
                 }
+            }
             break;
         }
     }

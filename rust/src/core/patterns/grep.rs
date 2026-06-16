@@ -102,9 +102,10 @@ fn extract_line_num(rest: &str) -> usize {
 
 fn strip_line_num(rest: &str) -> &str {
     if let Some(pos) = rest.find(':')
-        && rest[..pos].chars().all(|c| c.is_ascii_digit()) {
-            return &rest[pos + 1..];
-        }
+        && rest[..pos].chars().all(|c| c.is_ascii_digit())
+    {
+        return &rest[pos + 1..];
+    }
     rest
 }
 

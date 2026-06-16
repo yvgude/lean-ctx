@@ -75,9 +75,10 @@ impl LeanCtxServer {
             tokio::task::spawn_blocking(move || {
                 let _ = prepared.write_to_disk();
                 if let Some(ir) = ir_clone
-                    && let Ok(ir_guard) = ir.try_read() {
-                        ir_guard.save();
-                    }
+                    && let Ok(ir_guard) = ir.try_read()
+                {
+                    ir_guard.save();
+                }
             });
         }
 
@@ -96,15 +97,16 @@ impl LeanCtxServer {
             };
 
             if let Some(root) = project_root
-                && crate::tools::autonomy::should_auto_consolidate(&self.autonomy, calls) {
-                    let root_clone = root.clone();
-                    tokio::task::spawn_blocking(move || {
-                        let _ = crate::core::consolidation_engine::consolidate_latest(
-                            &root_clone,
-                            crate::core::consolidation_engine::ConsolidationBudgets::default(),
-                        );
-                    });
-                }
+                && crate::tools::autonomy::should_auto_consolidate(&self.autonomy, calls)
+            {
+                let root_clone = root.clone();
+                tokio::task::spawn_blocking(move || {
+                    let _ = crate::core::consolidation_engine::consolidate_latest(
+                        &root_clone,
+                        crate::core::consolidation_engine::ConsolidationBudgets::default(),
+                    );
+                });
+            }
         }
 
         let agent_key = agent_id.unwrap_or_else(|| "unknown".to_string());
@@ -206,10 +208,10 @@ impl LeanCtxServer {
                     .bus
                     .append(&ws, &ch, &secondary, agent.as_deref(), base_payload)
                     .is_some()
-                {
-                    rt.metrics.record_event_appended();
-                    rt.metrics.record_event_broadcast();
-                }
+            {
+                rt.metrics.record_event_appended();
+                rt.metrics.record_event_broadcast();
+            }
         });
     }
 }

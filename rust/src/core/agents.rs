@@ -441,9 +441,10 @@ impl AgentDiary {
             for entry in entries.flatten() {
                 if entry.path().extension().and_then(|e| e.to_str()) == Some("json")
                     && let Ok(content) = std::fs::read_to_string(entry.path())
-                        && let Ok(diary) = serde_json::from_str::<AgentDiary>(&content) {
-                            results.push((diary.agent_id, diary.entries.len(), diary.updated_at));
-                        }
+                    && let Ok(diary) = serde_json::from_str::<AgentDiary>(&content)
+                {
+                    results.push((diary.agent_id, diary.entries.len(), diary.updated_at));
+                }
             }
         }
         results.sort_by_key(|x| std::cmp::Reverse(x.2));
@@ -469,9 +470,10 @@ impl AgentDiary {
                 }
                 if let Ok(content) = std::fs::read_to_string(entry.path())
                     && let Ok(diary) = serde_json::from_str::<AgentDiary>(&content)
-                        && diary.project_root.trim_end_matches('/') == want {
-                            diaries.push(diary);
-                        }
+                    && diary.project_root.trim_end_matches('/') == want
+                {
+                    diaries.push(diary);
+                }
             }
         }
         diaries.sort_by_key(|d| std::cmp::Reverse(d.updated_at));
@@ -566,10 +568,11 @@ impl FileLock {
             }
             if let Ok(metadata) = std::fs::metadata(path)
                 && let Ok(modified) = metadata.modified()
-                    && modified.elapsed().unwrap_or_default().as_secs() > 5 {
-                        let _ = std::fs::remove_file(path);
-                        continue;
-                    }
+                && modified.elapsed().unwrap_or_default().as_secs() > 5
+            {
+                let _ = std::fs::remove_file(path);
+                continue;
+            }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         Err("Could not acquire lock after 5 seconds".to_string())
@@ -653,9 +656,10 @@ impl AgentRegistry {
         }
 
         if !new_facts.is_empty()
-            && let Ok(json) = serde_json::to_string_pretty(&all) {
-                let _ = std::fs::write(&shared_path, json);
-            }
+            && let Ok(json) = serde_json::to_string_pretty(&all)
+        {
+            let _ = std::fs::write(&shared_path, json);
+        }
         new_facts
     }
 

@@ -99,7 +99,7 @@ fn node_text<'a>(node: Node, src: &'a str) -> &'a str {
 #[cfg(feature = "tree-sitter")]
 fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
-    
+
     node.children(&mut cursor).find(|c| c.kind() == kind)
 }
 

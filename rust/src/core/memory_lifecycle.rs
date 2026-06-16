@@ -61,11 +61,13 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         }
 
         if let Some(valid_until) = fact.valid_until
-            && valid_until < now && fact.confidence > 0.1 {
-                fact.confidence = 0.1;
-                count += 1;
-                continue;
-            }
+            && valid_until < now
+            && fact.confidence > 0.1
+        {
+            fact.confidence = 0.1;
+            count += 1;
+            continue;
+        }
 
         let days_since_confirmed = now.signed_duration_since(fact.last_confirmed).num_days() as f32;
         let days_since_retrieved = fact

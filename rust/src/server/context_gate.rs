@@ -119,28 +119,31 @@ fn pre_dispatch_inner(
     if let Some(action) = pressure {
         let no_degrade = crate::core::config::Config::load().no_degrade_effective();
         let profile = crate::core::profiles::active_profile();
-        if !no_degrade && profile.degradation.enforce_effective()
-            && let Some(downgraded) = pressure_downgrade(requested_mode, action) {
-                return PreDispatchResult {
-                    overridden_mode: Some(downgraded),
-                    reason: Some("pressure-auto-downgrade"),
-                    pressure_downgraded: true,
-                    budget_blocked: false,
-                    budget_warning: None,
-                };
-            }
-    }
-
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
-        && bt.should_force_full(path) {
+        if !no_degrade
+            && profile.degradation.enforce_effective()
+            && let Some(downgraded) = pressure_downgrade(requested_mode, action)
+        {
             return PreDispatchResult {
-                overridden_mode: Some("full".to_string()),
-                reason: Some("bounce-prevention"),
-                pressure_downgraded: false,
+                overridden_mode: Some(downgraded),
+                reason: Some("pressure-auto-downgrade"),
+                pressure_downgraded: true,
                 budget_blocked: false,
                 budget_warning: None,
             };
         }
+    }
+
+    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
+        && bt.should_force_full(path)
+    {
+        return PreDispatchResult {
+            overridden_mode: Some("full".to_string()),
+            reason: Some("bounce-prevention"),
+            pressure_downgraded: false,
+            budget_blocked: false,
+            budget_warning: None,
+        };
+    }
 
     if let Some(task_str) = task {
         let intent = crate::core::intent_engine::StructuredIntent::from_query(task_str);
@@ -161,34 +164,22 @@ fn pre_dispatch_inner(
     }
 
     if let Some(root) = project_root
-        && let Some(open) = try_load_graph(root) {
-            let gp = &open.provider;
-            let related = gp.related(path, 1);
-            if let Some(task_str) = task {
-                let intent = crate::core::intent_engine::StructuredIntent::from_query(task_str);
-                for target in &intent.targets {
-                    let target_related = gp.related(target, 1);
-                    let norm = crate::core::pathutil::normalize_tool_path(path);
-                    if target_related
-                        .iter()
-                        .any(|r| r.contains(&norm) || norm.contains(r))
-                    {
-                        return PreDispatchResult {
-                            overridden_mode: Some("map".to_string()),
-                            reason: Some("graph-direct-import"),
-                            pressure_downgraded: false,
-                            budget_blocked: false,
-                            budget_warning: None,
-                        };
-                    }
-                }
-            }
-            if !related.is_empty() && requested_mode == "auto" {
-                let reverse_deps = gp.dependents(path);
-                if reverse_deps.len() > 3 {
+        && let Some(open) = try_load_graph(root)
+    {
+        let gp = &open.provider;
+        let related = gp.related(path, 1);
+        if let Some(task_str) = task {
+            let intent = crate::core::intent_engine::StructuredIntent::from_query(task_str);
+            for target in &intent.targets {
+                let target_related = gp.related(target, 1);
+                let norm = crate::core::pathutil::normalize_tool_path(path);
+                if target_related
+                    .iter()
+                    .any(|r| r.contains(&norm) || norm.contains(r))
+                {
                     return PreDispatchResult {
                         overridden_mode: Some("map".to_string()),
-                        reason: Some("graph-hub-file"),
+                        reason: Some("graph-direct-import"),
                         pressure_downgraded: false,
                         budget_blocked: false,
                         budget_warning: None,
@@ -196,25 +187,39 @@ fn pre_dispatch_inner(
                 }
             }
         }
-
-    if let Some(root) = project_root
-        && let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(root) {
-            let norm = crate::core::pathutil::normalize_tool_path(path);
-            let mentions = knowledge
-                .facts
-                .iter()
-                .filter(|f| f.value.contains(&norm) || f.key.contains(&norm))
-                .count();
-            if mentions >= 3 {
+        if !related.is_empty() && requested_mode == "auto" {
+            let reverse_deps = gp.dependents(path);
+            if reverse_deps.len() > 3 {
                 return PreDispatchResult {
                     overridden_mode: Some("map".to_string()),
-                    reason: Some("knowledge-high-relevance"),
+                    reason: Some("graph-hub-file"),
                     pressure_downgraded: false,
                     budget_blocked: false,
                     budget_warning: None,
                 };
             }
         }
+    }
+
+    if let Some(root) = project_root
+        && let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(root)
+    {
+        let norm = crate::core::pathutil::normalize_tool_path(path);
+        let mentions = knowledge
+            .facts
+            .iter()
+            .filter(|f| f.value.contains(&norm) || f.key.contains(&norm))
+            .count();
+        if mentions >= 3 {
+            return PreDispatchResult {
+                overridden_mode: Some("map".to_string()),
+                reason: Some("knowledge-high-relevance"),
+                pressure_downgraded: false,
+                budget_blocked: false,
+                budget_warning: None,
+            };
+        }
+    }
 
     no_change
 }

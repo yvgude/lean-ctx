@@ -186,20 +186,21 @@ pub fn compute_relevance_from_intent(
             _ => None,
         };
         if let Some(ext) = lang_ext
-            && file_seeds.is_empty() {
-                for path in &file_paths {
-                    if path.ends_with(&format!(".{ext}")) {
-                        extra_keywords.push(
-                            std::path::Path::new(path)
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or("")
-                                .to_string(),
-                        );
-                        break;
-                    }
+            && file_seeds.is_empty()
+        {
+            for path in &file_paths {
+                if path.ends_with(&format!(".{ext}")) {
+                    extra_keywords.push(
+                        std::path::Path::new(path)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    );
+                    break;
                 }
             }
+        }
     }
 
     let mut result = compute_relevance(gp, &file_seeds, &extra_keywords);
@@ -241,10 +242,10 @@ fn resolve_symbol_to_files(gp: &GraphProvider, symbol: &str) -> Vec<String> {
                     .exports
                     .iter()
                     .any(|e| e.to_lowercase().contains(&sym_lower))
-                    && !matches.contains(&path)
-                {
-                    matches.push(path);
-                }
+                && !matches.contains(&path)
+            {
+                matches.push(path);
+            }
         }
     }
     matches

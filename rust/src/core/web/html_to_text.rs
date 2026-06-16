@@ -76,15 +76,17 @@ fn replace_links_with_text(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'['
-            && let Some(rel_close) = s[i + 1..].find(']') {
-                let close = i + 1 + rel_close;
-                if s[close + 1..].starts_with('(')
-                    && let Some(rel_paren) = s[close + 2..].find(')') {
-                        out.push_str(&s[i + 1..close]);
-                        i = close + 2 + rel_paren + 1;
-                        continue;
-                    }
+            && let Some(rel_close) = s[i + 1..].find(']')
+        {
+            let close = i + 1 + rel_close;
+            if s[close + 1..].starts_with('(')
+                && let Some(rel_paren) = s[close + 2..].find(')')
+            {
+                out.push_str(&s[i + 1..close]);
+                i = close + 2 + rel_paren + 1;
+                continue;
             }
+        }
         // Copy a whole UTF-8 char starting at i.
         let ch_len = utf8_len(bytes[i]);
         out.push_str(&s[i..i + ch_len]);
@@ -268,13 +270,14 @@ fn get_attr(attrs: &str, key: &str) -> Option<String> {
 fn parse_attr_value(s: &str) -> String {
     let bytes = s.as_bytes();
     if let Some(&q) = bytes.first()
-        && (q == b'"' || q == b'\'') {
-            let quote = q as char;
-            return match s[1..].find(quote) {
-                Some(end) => s[1..=end].to_string(),
-                None => s[1..].to_string(),
-            };
-        }
+        && (q == b'"' || q == b'\'')
+    {
+        let quote = q as char;
+        return match s[1..].find(quote) {
+            Some(end) => s[1..=end].to_string(),
+            None => s[1..].to_string(),
+        };
+    }
     s.split_whitespace()
         .next()
         .unwrap_or("")
@@ -526,9 +529,10 @@ impl Renderer {
             }
             "td" | "th" => {
                 if let Some(tc) = self.table_stack.last_mut()
-                    && let Some(cell) = tc.cell.take() {
-                        tc.cur_row.push(finalize_cell(&cell));
-                    }
+                    && let Some(cell) = tc.cell.take()
+                {
+                    tc.cur_row.push(finalize_cell(&cell));
+                }
             }
             "tr" => {
                 if let Some(tc) = self.table_stack.last_mut() {

@@ -101,37 +101,45 @@ impl Default for KnowledgePolicy {
 impl KnowledgePolicy {
     fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_MAX_FACTS")
-            && let Ok(n) = v.parse() {
-                self.max_facts = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_facts = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_MAX_PATTERNS")
-            && let Ok(n) = v.parse() {
-                self.max_patterns = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_patterns = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_MAX_HISTORY")
-            && let Ok(n) = v.parse() {
-                self.max_history = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_history = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_CONTRADICTION_THRESHOLD")
-            && let Ok(n) = v.parse() {
-                self.contradiction_threshold = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.contradiction_threshold = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_RECALL_FACTS_LIMIT")
-            && let Ok(n) = v.parse() {
-                self.recall_facts_limit = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.recall_facts_limit = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_ROOMS_LIMIT")
-            && let Ok(n) = v.parse() {
-                self.rooms_limit = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.rooms_limit = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_TIMELINE_LIMIT")
-            && let Ok(n) = v.parse() {
-                self.timeline_limit = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.timeline_limit = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_RELATIONS_LIMIT")
-            && let Ok(n) = v.parse() {
-                self.relations_limit = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.relations_limit = n;
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -213,17 +221,20 @@ impl Default for EpisodicPolicy {
 impl EpisodicPolicy {
     fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("LEAN_CTX_EPISODIC_MAX_EPISODES")
-            && let Ok(n) = v.parse() {
-                self.max_episodes = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_episodes = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_EPISODIC_MAX_ACTIONS_PER_EPISODE")
-            && let Ok(n) = v.parse() {
-                self.max_actions_per_episode = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_actions_per_episode = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_EPISODIC_SUMMARY_MAX_CHARS")
-            && let Ok(n) = v.parse() {
-                self.summary_max_chars = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.summary_max_chars = n;
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -263,21 +274,25 @@ impl Default for ProceduralPolicy {
 impl ProceduralPolicy {
     fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS")
-            && let Ok(n) = v.parse() {
-                self.min_repetitions = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.min_repetitions = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MIN_SEQUENCE_LEN")
-            && let Ok(n) = v.parse() {
-                self.min_sequence_len = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.min_sequence_len = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MAX_PROCEDURES")
-            && let Ok(n) = v.parse() {
-                self.max_procedures = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_procedures = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MAX_WINDOW_SIZE")
-            && let Ok(n) = v.parse() {
-                self.max_window_size = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_window_size = n;
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -322,21 +337,25 @@ impl Default for LifecyclePolicy {
 impl LifecyclePolicy {
     fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_DECAY_RATE")
-            && let Ok(n) = v.parse() {
-                self.decay_rate = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.decay_rate = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_LOW_CONFIDENCE_THRESHOLD")
-            && let Ok(n) = v.parse() {
-                self.low_confidence_threshold = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.low_confidence_threshold = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_STALE_DAYS")
-            && let Ok(n) = v.parse() {
-                self.stale_days = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.stale_days = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_SIMILARITY_THRESHOLD")
-            && let Ok(n) = v.parse() {
-                self.similarity_threshold = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.similarity_threshold = n;
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -388,9 +407,10 @@ impl Default for EmbeddingsPolicy {
 impl EmbeddingsPolicy {
     fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_EMBEDDINGS_MAX_FACTS")
-            && let Ok(n) = v.parse() {
-                self.max_facts = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_facts = n;
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -428,13 +448,15 @@ impl Default for GotchaPolicy {
 impl GotchaPolicy {
     fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("LEAN_CTX_GOTCHA_MAX_PER_PROJECT")
-            && let Ok(n) = v.parse() {
-                self.max_gotchas_per_project = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.max_gotchas_per_project = n;
+        }
         if let Ok(v) = std::env::var("LEAN_CTX_GOTCHA_RETRIEVAL_BUDGET")
-            && let Ok(n) = v.parse() {
-                self.retrieval_budget_per_room = n;
-            }
+            && let Ok(n) = v.parse()
+        {
+            self.retrieval_budget_per_room = n;
+        }
     }
 
     fn validate(&self) -> Result<(), String> {

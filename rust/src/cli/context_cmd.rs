@@ -75,9 +75,10 @@ pub(crate) fn cmd_plan(args: &[String]) {
 
     let mut json = serde_json::json!({ "task": task });
     if let Some(b) = &budget
-        && let Ok(n) = b.parse::<u64>() {
-            json["budget"] = serde_json::Value::Number(n.into());
-        }
+        && let Ok(n) = b.parse::<u64>()
+    {
+        json["budget"] = serde_json::Value::Number(n.into());
+    }
 
     #[cfg(unix)]
     {
@@ -105,9 +106,10 @@ pub(crate) fn cmd_compile(args: &[String]) {
 
     let mut json = serde_json::json!({ "mode": mode });
     if let Some(b) = &budget
-        && let Ok(n) = b.parse::<u64>() {
-            json["budget"] = serde_json::Value::Number(n.into());
-        }
+        && let Ok(n) = b.parse::<u64>()
+    {
+        json["budget"] = serde_json::Value::Number(n.into());
+    }
 
     #[cfg(unix)]
     {

@@ -422,41 +422,42 @@ pub fn cmd_contribute() {
         let mode_stats_path = home.join(".lean-ctx").join("mode_stats.json");
         if let Ok(data) = std::fs::read_to_string(&mode_stats_path)
             && let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data)
-                && let Some(history) = predictor["history"].as_object() {
-                    for (_sig_key, outcomes) in history {
-                        if let Some(arr) = outcomes.as_array() {
-                            for outcome in arr.iter().rev().take(5) {
-                                let ext = outcome["ext"].as_str().unwrap_or("unknown");
-                                let mode = outcome["mode"].as_str().unwrap_or("full");
-                                let tokens_in = outcome["tokens_in"].as_u64().unwrap_or(0);
-                                let tokens_out = outcome["tokens_out"].as_u64().unwrap_or(0);
-                                let ratio = if tokens_in > 0 {
-                                    1.0 - tokens_out as f64 / tokens_in as f64
-                                } else {
-                                    0.0
-                                };
-                                let bucket = match tokens_in {
-                                    0..=500 => "0-500",
-                                    501..=2000 => "500-2k",
-                                    2001..=10000 => "2k-10k",
-                                    _ => "10k+",
-                                };
-                                entries.push(serde_json::json!({
-                                    "file_ext": format!(".{ext}"),
-                                    "size_bucket": bucket,
-                                    "best_mode": mode,
-                                    "compression_ratio": (ratio * 100.0).round() / 100.0,
-                                }));
-                                if entries.len() >= 500 {
-                                    break;
-                                }
-                            }
-                        }
+            && let Some(history) = predictor["history"].as_object()
+        {
+            for (_sig_key, outcomes) in history {
+                if let Some(arr) = outcomes.as_array() {
+                    for outcome in arr.iter().rev().take(5) {
+                        let ext = outcome["ext"].as_str().unwrap_or("unknown");
+                        let mode = outcome["mode"].as_str().unwrap_or("full");
+                        let tokens_in = outcome["tokens_in"].as_u64().unwrap_or(0);
+                        let tokens_out = outcome["tokens_out"].as_u64().unwrap_or(0);
+                        let ratio = if tokens_in > 0 {
+                            1.0 - tokens_out as f64 / tokens_in as f64
+                        } else {
+                            0.0
+                        };
+                        let bucket = match tokens_in {
+                            0..=500 => "0-500",
+                            501..=2000 => "500-2k",
+                            2001..=10000 => "2k-10k",
+                            _ => "10k+",
+                        };
+                        entries.push(serde_json::json!({
+                            "file_ext": format!(".{ext}"),
+                            "size_bucket": bucket,
+                            "best_mode": mode,
+                            "compression_ratio": (ratio * 100.0).round() / 100.0,
+                        }));
                         if entries.len() >= 500 {
                             break;
                         }
                     }
                 }
+                if entries.len() >= 500 {
+                    break;
+                }
+            }
+        }
     }
 
     if entries.is_empty() {

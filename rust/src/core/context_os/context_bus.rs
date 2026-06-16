@@ -156,13 +156,15 @@ impl TopicFilter {
             }
         }
         if let Some(min) = self.min_consistency
-            && event.consistency() < min {
-                return false;
-            }
+            && event.consistency() < min
+        {
+            return false;
+        }
         if let Some(ref aid) = self.agent_id
-            && !event.is_visible_to_agent(aid) {
-                return false;
-            }
+            && !event.is_visible_to_agent(aid)
+        {
+            return false;
+        }
         true
     }
 }

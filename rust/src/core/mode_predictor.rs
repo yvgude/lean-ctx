@@ -121,17 +121,20 @@ impl ModePredictor {
         };
 
         if let Some(local) = self.predict_from_local(sig)
-            && allow_override(&local) {
-                return Some(local);
-            }
+            && allow_override(&local)
+        {
+            return Some(local);
+        }
         if let Some(bandit) = self.predict_from_bandit(sig)
-            && allow_override(&bandit) {
-                return Some(bandit);
-            }
+            && allow_override(&bandit)
+        {
+            return Some(bandit);
+        }
         if let Some(cloud) = self.predict_from_cloud(sig)
-            && allow_override(&cloud) {
-                return Some(cloud);
-            }
+            && allow_override(&cloud)
+        {
+            return Some(cloud);
+        }
         default_mode
     }
 
@@ -204,11 +207,14 @@ impl ModePredictor {
             let m_bucket = model["size_bucket"].as_str().unwrap_or("");
             let confidence = model["confidence"].as_f64().unwrap_or(0.0);
 
-            if m_ext == ext_with_dot && m_bucket == bucket_name && confidence > 0.5
+            if m_ext == ext_with_dot
+                && m_bucket == bucket_name
+                && confidence > 0.5
                 && let Some(mode) = model["recommended_mode"].as_str()
-                    && best.is_none_or(|(_, c)| confidence > c) {
-                        best = Some((mode, confidence));
-                    }
+                && best.is_none_or(|(_, c)| confidence > c)
+            {
+                best = Some((mode, confidence));
+            }
         }
 
         if let Some((mode, _)) = best {

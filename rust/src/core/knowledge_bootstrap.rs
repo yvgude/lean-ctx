@@ -151,9 +151,9 @@ fn detect_build_markers(project_root: &str) -> Vec<&'static str> {
         && entries
             .flatten()
             .any(|e| e.path().extension().is_some_and(|ext| ext == "sln"))
-        {
-            out.push("dotnet");
-        }
+    {
+        out.push("dotnet");
+    }
 
     out
 }

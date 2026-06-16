@@ -103,9 +103,10 @@ impl CtxMultiReadTool {
                     continue;
                 }
                 if let Ok(meta) = std::fs::metadata(&resolved)
-                    && meta.len() > cap {
-                        continue;
-                    }
+                    && meta.len() > cap
+                {
+                    continue;
+                }
                 paths.push(resolved);
             }
             let current_task = session.task.as_ref().map(|t| t.description.clone());

@@ -80,9 +80,10 @@ impl HeatMap {
                     / entry.total_original_tokens as f32;
         }
         if let Some(aid) = agent_id
-            && !aid.is_empty() {
-                *entry.agent_accesses.entry(aid.to_string()).or_insert(0) += 1;
-            }
+            && !aid.is_empty()
+        {
+            *entry.agent_accesses.entry(aid.to_string()).or_insert(0) += 1;
+        }
         self.dirty = true;
     }
 
@@ -247,9 +248,10 @@ pub fn flush() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(ref hm) = *guard
-        && hm.dirty {
-            let _ = save_to_disk(hm);
-        }
+        && hm.dirty
+    {
+        let _ = save_to_disk(hm);
+    }
 }
 
 /// Cheap read-only lookup against the in-process heatmap buffer:

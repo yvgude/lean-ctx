@@ -109,24 +109,25 @@ impl LeanCtxServer {
                             *wf = None;
                             let _ = crate::core::workflow::clear_active();
                         } else if let Some(state) = run.spec.state(&run.current)
-                            && let Some(allowed) = &state.allowed_tools {
-                                let ok = allowed.iter().any(|t| t == &inner);
-                                if !ok {
-                                    let mut shown = allowed.clone();
-                                    shown.sort();
-                                    shown.truncate(30);
-                                    return Ok((
-                                        format!(
-                                            "Tool '{inner}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
-                                            run.spec.name,
-                                            run.current,
-                                            shown.join(", ")
-                                        ),
-                                        0,
-                                        None,
-                                    ));
-                                }
+                            && let Some(allowed) = &state.allowed_tools
+                        {
+                            let ok = allowed.iter().any(|t| t == &inner);
+                            if !ok {
+                                let mut shown = allowed.clone();
+                                shown.sort();
+                                shown.truncate(30);
+                                return Ok((
+                                    format!(
+                                        "Tool '{inner}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
+                                        run.spec.name,
+                                        run.current,
+                                        shown.join(", ")
+                                    ),
+                                    0,
+                                    None,
+                                ));
                             }
+                        }
                     }
                 }
 
@@ -251,9 +252,10 @@ impl LeanCtxServer {
             let output = self.run_tool_handler(name, tool, args_map, ctx).await?;
 
             if output.changed
-                && let Some(peer) = self.peer.read().await.as_ref() {
-                    super::notifications::send_tools_list_changed(peer).await;
-                }
+                && let Some(peer) = self.peer.read().await.as_ref()
+            {
+                super::notifications::send_tools_list_changed(peer).await;
+            }
 
             let headers_only =
                 crate::core::config::ResponseVerbosity::effective().is_headers_only();

@@ -16,9 +16,10 @@ static BACKENDS: std::sync::LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>
 
 fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/")
-        && let Some(home) = dirs::home_dir() {
-            return format!("{}/{rest}", home.display());
-        }
+        && let Some(home) = dirs::home_dir()
+    {
+        return format!("{}/{rest}", home.display());
+    }
     path.to_string()
 }
 
@@ -63,14 +64,16 @@ fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBacke
 
     if want_b {
         if let Some(pf) = port_discovery::read_port_file(project_root)
-            && port_discovery::pid_alive(pf.pid) && port_discovery::health_ok(&pf) {
-                return Ok(Box::new(JetBrainsHttpBackend::new(
-                    pf.port,
-                    pf.token,
-                    project_root.to_string(),
-                    pf.pid,
-                )));
-            }
+            && port_discovery::pid_alive(pf.pid)
+            && port_discovery::health_ok(&pf)
+        {
+            return Ok(Box::new(JetBrainsHttpBackend::new(
+                pf.port,
+                pf.token,
+                project_root.to_string(),
+                pf.pid,
+            )));
+        }
         if b_only {
             return Err(format!(
                 "LSP backend 'jetbrains' configured for '{language}' but the IDE is not reachable \

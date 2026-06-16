@@ -123,17 +123,19 @@ fn rewrite_md_links(input: &str) -> String {
     while i < input.len() {
         let rest = &input[i..];
         if let Some(stripped) = rest.strip_prefix("![")
-            && let Some((_, consumed)) = parse_md_link(stripped) {
-                // Skip the whole image: the leading '!' plus the '[..](..)'.
-                i += 1 + consumed;
-                continue;
-            }
+            && let Some((_, consumed)) = parse_md_link(stripped)
+        {
+            // Skip the whole image: the leading '!' plus the '[..](..)'.
+            i += 1 + consumed;
+            continue;
+        }
         if rest.starts_with('[')
-            && let Some((text, consumed)) = parse_md_link(rest) {
-                out.push_str(&text);
-                i += consumed;
-                continue;
-            }
+            && let Some((text, consumed)) = parse_md_link(rest)
+        {
+            out.push_str(&text);
+            i += consumed;
+            continue;
+        }
         let ch = rest.chars().next().unwrap();
         out.push(ch);
         i += ch.len_utf8();

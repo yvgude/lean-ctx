@@ -226,42 +226,44 @@ fn section_performance() -> String {
     if let Some(dir) = lean_ctx_dir() {
         let mcp_live = dir.join("mcp-live.json");
         if let Ok(content) = std::fs::read_to_string(&mcp_live)
-            && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                let fields = [
-                    "cep_score",
-                    "cache_utilization",
-                    "compression_rate",
-                    "tokens_saved",
-                    "tokens_original",
-                    "tool_calls",
-                ];
-                out.push_str("| Metric | Value |\n|---|---|\n");
-                for field in fields {
-                    if let Some(v) = val.get(field) {
-                        out.push_str(&format!("| {field} | {v} |\n"));
-                    }
+            && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
+        {
+            let fields = [
+                "cep_score",
+                "cache_utilization",
+                "compression_rate",
+                "tokens_saved",
+                "tokens_original",
+                "tool_calls",
+            ];
+            out.push_str("| Metric | Value |\n|---|---|\n");
+            for field in fields {
+                if let Some(v) = val.get(field) {
+                    out.push_str(&format!("| {field} | {v} |\n"));
                 }
             }
+        }
 
         let stats_path = dir.join("stats.json");
         if let Ok(content) = std::fs::read_to_string(&stats_path)
             && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
-                && let Some(cmds) = val.get("commands").and_then(|c| c.as_object()) {
-                    let mut top: Vec<_> = cmds
-                        .iter()
-                        .filter_map(|(k, v)| {
-                            v.get("count")
-                                .and_then(serde_json::Value::as_u64)
-                                .map(|c| (k, c))
-                        })
-                        .collect();
-                    top.sort_by_key(|x| std::cmp::Reverse(x.1));
-                    top.truncate(5);
-                    out.push_str("\n**Top 5 tools:**\n");
-                    for (name, count) in top {
-                        out.push_str(&format!("- {name}: {count} calls\n"));
-                    }
-                }
+            && let Some(cmds) = val.get("commands").and_then(|c| c.as_object())
+        {
+            let mut top: Vec<_> = cmds
+                .iter()
+                .filter_map(|(k, v)| {
+                    v.get("count")
+                        .and_then(serde_json::Value::as_u64)
+                        .map(|c| (k, c))
+                })
+                .collect();
+            top.sort_by_key(|x| std::cmp::Reverse(x.1));
+            top.truncate(5);
+            out.push_str("\n**Top 5 tools:**\n");
+            for (name, count) in top {
+                out.push_str(&format!("- {name}: {count} calls\n"));
+            }
+        }
     }
     out
 }
@@ -321,13 +323,14 @@ fn section_tee_logs(include_content: bool) -> String {
                 }
                 if include_content
                     && let Some(latest) = entries.first()
-                        && let Ok(content) = std::fs::read_to_string(latest.path()) {
-                            let truncated: String = content.chars().take(3000).collect();
-                            out.push_str(&format!(
-                                "\n**Latest tee content (`{}`):**\n```\n{truncated}\n```",
-                                latest.file_name().to_string_lossy()
-                            ));
-                        }
+                    && let Ok(content) = std::fs::read_to_string(latest.path())
+                {
+                    let truncated: String = content.chars().take(3000).collect();
+                    out.push_str(&format!(
+                        "\n**Latest tee content (`{}`):**\n```\n{truncated}\n```",
+                        latest.file_name().to_string_lossy()
+                    ));
+                }
             }
         } else {
             out.push_str("No tee directory found.\n");
@@ -410,12 +413,13 @@ fn find_gh_binary() -> Option<std::path::PathBuf> {
         }
     }
     if let Ok(output) = std::process::Command::new("which").arg("gh").output()
-        && output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(std::path::PathBuf::from(path));
-            }
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(std::path::PathBuf::from(path));
         }
+    }
     None
 }
 
@@ -445,32 +449,34 @@ fn try_gh_cli(title: &str, body: &str) -> bool {
         .output();
 
     if let Ok(ref output) = result
-        && !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("not found") && stderr.contains("label") {
-                let _ = std::fs::remove_file(&tmp);
-                let fallback = std::process::Command::new(&gh)
-                    .args([
-                        "issue",
-                        "create",
-                        "--repo",
-                        REPO,
-                        "--title",
-                        title,
-                        "--body-file",
-                        &tmp.to_string_lossy(),
-                    ])
-                    .output();
-                let _ = std::fs::remove_file(&tmp);
-                if let Ok(fb_out) = fallback
-                    && fb_out.status.success() {
-                        let url = String::from_utf8_lossy(&fb_out.stdout);
-                        println!("\n{GREEN}Issue created:{RST} {}", url.trim());
-                        return true;
-                    }
-                return false;
+        && !output.status.success()
+    {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("not found") && stderr.contains("label") {
+            let _ = std::fs::remove_file(&tmp);
+            let fallback = std::process::Command::new(&gh)
+                .args([
+                    "issue",
+                    "create",
+                    "--repo",
+                    REPO,
+                    "--title",
+                    title,
+                    "--body-file",
+                    &tmp.to_string_lossy(),
+                ])
+                .output();
+            let _ = std::fs::remove_file(&tmp);
+            if let Ok(fb_out) = fallback
+                && fb_out.status.success()
+            {
+                let url = String::from_utf8_lossy(&fb_out.stdout);
+                println!("\n{GREEN}Issue created:{RST} {}", url.trim());
+                return true;
             }
+            return false;
         }
+    }
 
     let _ = std::fs::remove_file(&tmp);
 
@@ -529,10 +535,11 @@ fn try_ureq_api(title: &str, body: &str) {
         Ok(resp) => {
             let resp_body = resp.into_body().read_to_string().unwrap_or_default();
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&resp_body)
-                && let Some(html_url) = val.get("html_url").and_then(|u| u.as_str()) {
-                    println!("\n{GREEN}Issue created:{RST} {html_url}");
-                    return;
-                }
+                && let Some(html_url) = val.get("html_url").and_then(|u| u.as_str())
+            {
+                println!("\n{GREEN}Issue created:{RST} {html_url}");
+                return;
+            }
             println!("{GREEN}Issue created successfully.{RST}");
         }
         Err(e) => {
@@ -580,9 +587,10 @@ fn check_shell_hooks() -> String {
     for (file, name) in shells {
         let path = home.join(file);
         if let Ok(content) = std::fs::read_to_string(&path)
-            && content.contains("lean-ctx") {
-                found.push(name);
-            }
+            && content.contains("lean-ctx")
+        {
+            found.push(name);
+        }
     }
 
     if found.is_empty() {
@@ -609,9 +617,10 @@ fn check_mcp_configs() -> String {
 
     for (full, name) in &configs {
         if let Ok(content) = std::fs::read_to_string(full)
-            && content.contains("lean-ctx") {
-                found.push(*name);
-            }
+            && content.contains("lean-ctx")
+        {
+            found.push(*name);
+        }
     }
 
     if found.is_empty() {

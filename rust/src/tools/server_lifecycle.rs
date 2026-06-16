@@ -101,9 +101,10 @@ impl LeanCtxServer {
                 rt.metrics.record_session_loaded();
                 // Ensure shell_cwd is refreshed (best-effort).
                 if let Some(ref cwd) = startup.shell_cwd
-                    && let Ok(mut s) = session.try_write() {
-                        s.shell_cwd = Some(cwd.clone());
-                    }
+                    && let Ok(mut s) = session.try_write()
+                {
+                    s.shell_cwd = Some(cwd.clone());
+                }
                 (session, Some(rt))
             }
         };
@@ -212,10 +213,9 @@ impl LeanCtxServer {
             let root = session.project_root.clone();
             drop(session);
 
-            if has_insights
-                && let Some(ref root) = root {
-                    crate::tools::startup::auto_consolidate_knowledge(root);
-                }
+            if has_insights && let Some(ref root) = root {
+                crate::tools::startup::auto_consolidate_knowledge(root);
+            }
         }
         {
             let mut session = self.session.write().await;

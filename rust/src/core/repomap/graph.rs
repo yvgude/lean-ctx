@@ -65,14 +65,14 @@ impl RepoGraph {
         for call_edge in &call_graph.edges {
             if let Some(target_file) = symbols_by_name.get(&call_edge.callee_name.to_lowercase())
                 && files.contains(&call_edge.caller_file)
-                    && files.contains(target_file)
-                    && call_edge.caller_file != *target_file
-                {
-                    forward
-                        .entry(call_edge.caller_file.clone())
-                        .or_default()
-                        .push(target_file.clone());
-                }
+                && files.contains(target_file)
+                && call_edge.caller_file != *target_file
+            {
+                forward
+                    .entry(call_edge.caller_file.clone())
+                    .or_default()
+                    .push(target_file.clone());
+            }
         }
 
         // Deduplicate edges

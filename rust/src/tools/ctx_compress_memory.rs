@@ -12,9 +12,10 @@ pub fn handle(path: &str) -> String {
 
     let backup_path = build_backup_path(path);
     if !Path::new(&backup_path).exists()
-        && let Err(e) = std::fs::write(&backup_path, &content) {
-            return format!("ERROR: Cannot create backup {backup_path}: {e}");
-        }
+        && let Err(e) = std::fs::write(&backup_path, &content)
+    {
+        return format!("ERROR: Cannot create backup {backup_path}: {e}");
+    }
 
     let compressed = compress_memory_file(&content);
     let compressed_tokens = count_tokens(&compressed);

@@ -359,9 +359,10 @@ fn detect_sublime_mcp_path(home: &Path) -> PathBuf {
 pub fn detect_claude_path() -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd).arg("claude").output()
-        && output.status.success() {
-            return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-        }
+        && output.status.success()
+    {
+        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    }
     if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
         let dir = dir.trim();
         if !dir.is_empty() {
@@ -385,9 +386,10 @@ pub fn detect_codebuddy_path() -> PathBuf {
     if let Ok(output) = std::process::Command::new(which_cmd)
         .arg("codebuddy")
         .output()
-        && output.status.success() {
-            return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-        }
+        && output.status.success()
+    {
+        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    }
     if let Ok(dir) = std::env::var("CODEBUDDY_CONFIG_DIR") {
         let dir = dir.trim();
         if !dir.is_empty() {
@@ -409,9 +411,10 @@ pub fn detect_codebuddy_path() -> PathBuf {
 pub fn detect_augment_path(home: &Path) -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd).arg("auggie").output()
-        && output.status.success() {
-            return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-        }
+        && output.status.success()
+    {
+        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    }
     let augment_dir = home.join(".augment");
     if augment_dir.exists() {
         return augment_dir;
@@ -448,9 +451,10 @@ pub fn detect_augment_vscode_path(home: &Path) -> PathBuf {
         .and_then(|p| p.parent())
         .map(Path::to_path_buf);
     if let Some(path) = extension_state
-        && path.exists() {
-            return path;
-        }
+        && path.exists()
+    {
+        return path;
+    }
     if detect_extension_installed(home, "augment.vscode-augment") {
         return mcp_path;
     }
@@ -516,9 +520,10 @@ pub fn detect_codex_path(home: &Path) -> PathBuf {
     }
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd).arg("codex").output()
-        && output.status.success() {
-            return codex_dir;
-        }
+        && output.status.success()
+    {
+        return codex_dir;
+    }
     PathBuf::from("/nonexistent")
 }
 
@@ -558,9 +563,10 @@ pub fn detect_vscode_path() -> PathBuf {
     }
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd).arg("code").output()
-        && output.status.success() {
-            return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-        }
+        && output.status.success()
+    {
+        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    }
     PathBuf::from("/nonexistent")
 }
 

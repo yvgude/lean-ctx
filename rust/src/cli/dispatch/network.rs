@@ -221,9 +221,10 @@ pub(super) fn cmd_team(rest: &[String]) {
 
             for ws in &cfg.workspaces {
                 if let Some(ref only) = only_ws
-                    && ws.id != *only {
-                        continue;
-                    }
+                    && ws.id != *only
+                {
+                    continue;
+                }
                 let git_dir = ws.root.join(".git");
                 if !git_dir.exists() {
                     eprintln!(
@@ -540,15 +541,16 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                                 .split("pid\":")
                                 .nth(1)
                                 .and_then(|s| s.split([',', '}']).next())
-                                && let Ok(pid) = pid_str.trim().parse::<u32>() {
-                                    let _ = crate::ipc::process::terminate_gracefully(pid);
-                                    std::thread::sleep(std::time::Duration::from_millis(500));
-                                    if crate::ipc::process::is_alive(pid) {
-                                        let _ = crate::ipc::process::force_kill(pid);
-                                    }
-                                    println!("Proxy on port {port} stopped (PID {pid}).");
-                                    return;
-                                }
+                            && let Ok(pid) = pid_str.trim().parse::<u32>()
+                        {
+                            let _ = crate::ipc::process::terminate_gracefully(pid);
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            if crate::ipc::process::is_alive(pid) {
+                                let _ = crate::ipc::process::force_kill(pid);
+                            }
+                            println!("Proxy on port {port} stopped (PID {pid}).");
+                            return;
+                        }
                         println!(
                             "Proxy on port {port} running but could not parse PID. Use `lean-ctx stop` to kill all."
                         );
@@ -763,10 +765,11 @@ pub(super) fn cmd_daemon(rest: &[String]) {
                 && let (Some(name), Some(path)) = (
                     crate::daemon_autostart::service_name(),
                     crate::daemon_autostart::service_file_path(),
-                ) {
-                    println!("  Service:   {name}");
-                    println!("  File:      {}", path.display());
-                }
+                )
+            {
+                println!("  Service:   {name}");
+                println!("  File:      {}", path.display());
+            }
             if !crate::daemon::is_daemon_running() {
                 println!();
                 println!("  Start:     lean-ctx daemon start");
@@ -808,9 +811,10 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 "--port" | "-p" => {
                     i += 1;
                     if i < rest.len()
-                        && let Ok(p) = rest[i].parse::<u16>() {
-                            cfg.port = p;
-                        }
+                        && let Ok(p) = rest[i].parse::<u16>()
+                    {
+                        cfg.port = p;
+                    }
                 }
                 arg if arg.starts_with("--port=") => {
                     if let Ok(p) = arg["--port=".len()..].parse::<u16>() {
@@ -876,9 +880,10 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 "--max-body-bytes" => {
                     i += 1;
                     if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<usize>() {
-                            cfg.max_body_bytes = n;
-                        }
+                        && let Ok(n) = rest[i].parse::<usize>()
+                    {
+                        cfg.max_body_bytes = n;
+                    }
                 }
                 arg if arg.starts_with("--max-body-bytes=") => {
                     if let Ok(n) = arg["--max-body-bytes=".len()..].parse::<usize>() {
@@ -888,9 +893,10 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 "--max-concurrency" => {
                     i += 1;
                     if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<usize>() {
-                            cfg.max_concurrency = n;
-                        }
+                        && let Ok(n) = rest[i].parse::<usize>()
+                    {
+                        cfg.max_concurrency = n;
+                    }
                 }
                 arg if arg.starts_with("--max-concurrency=") => {
                     if let Ok(n) = arg["--max-concurrency=".len()..].parse::<usize>() {
@@ -900,9 +906,10 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 "--max-rps" => {
                     i += 1;
                     if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<u32>() {
-                            cfg.max_rps = n;
-                        }
+                        && let Ok(n) = rest[i].parse::<u32>()
+                    {
+                        cfg.max_rps = n;
+                    }
                 }
                 arg if arg.starts_with("--max-rps=") => {
                     if let Ok(n) = arg["--max-rps=".len()..].parse::<u32>() {
@@ -912,9 +919,10 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 "--rate-burst" => {
                     i += 1;
                     if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<u32>() {
-                            cfg.rate_burst = n;
-                        }
+                        && let Ok(n) = rest[i].parse::<u32>()
+                    {
+                        cfg.rate_burst = n;
+                    }
                 }
                 arg if arg.starts_with("--rate-burst=") => {
                     if let Ok(n) = arg["--rate-burst=".len()..].parse::<u32>() {
@@ -924,9 +932,10 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 "--request-timeout-ms" => {
                     i += 1;
                     if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<u64>() {
-                            cfg.request_timeout_ms = n;
-                        }
+                        && let Ok(n) = rest[i].parse::<u64>()
+                    {
+                        cfg.request_timeout_ms = n;
+                    }
                 }
                 arg if arg.starts_with("--request-timeout-ms=") => {
                     if let Ok(n) = arg["--request-timeout-ms=".len()..].parse::<u64>() {
@@ -1011,9 +1020,10 @@ pub(super) fn cmd_serve(rest: &[String]) {
 
         if cfg.auth_token.is_none()
             && let Ok(v) = std::env::var("LEAN_CTX_HTTP_TOKEN")
-                && !v.trim().is_empty() {
-                    cfg.auth_token = Some(v);
-                }
+            && !v.trim().is_empty()
+        {
+            cfg.auth_token = Some(v);
+        }
 
         if let Err(e) = super::run_async(crate::http_server::serve(cfg)) {
             tracing::error!("HTTP server error: {e}");

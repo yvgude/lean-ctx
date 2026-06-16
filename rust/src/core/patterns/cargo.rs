@@ -118,18 +118,19 @@ fn compress_test(output: &str) -> String {
             let name = line.split_whitespace().nth(1).unwrap_or("?");
             failed_tests.push(name.to_string());
         }
-        if line.starts_with("test ") && line.ends_with(" ... ok")
+        if line.starts_with("test ")
+            && line.ends_with(" ... ok")
             && let Some(name) = line
                 .strip_prefix("test ")
                 .and_then(|s| s.strip_suffix(" ... ok"))
-            {
-                let short_name = if name.len() > 50 {
-                    &name[..name.floor_char_boundary(50)]
-                } else {
-                    name
-                };
-                passed_tests.push(short_name.to_string());
-            }
+        {
+            let short_name = if name.len() > 50 {
+                &name[..name.floor_char_boundary(50)]
+            } else {
+                name
+            };
+            passed_tests.push(short_name.to_string());
+        }
         if let Some(caps) = finished_re().captures(line) {
             time = caps[1].to_string();
         }
@@ -528,21 +529,22 @@ fn compress_metadata(output: &str) -> String {
     }
 
     if let Some(resolve) = json.get("resolve")
-        && let Some(nodes) = resolve.get("nodes").and_then(|v| v.as_array()) {
-            let total_deps: usize = nodes
-                .iter()
-                .map(|n| {
-                    n.get("deps")
-                        .and_then(|v| v.as_array())
-                        .map_or(0, std::vec::Vec::len)
-                })
-                .sum();
-            parts.push(format!(
-                "resolve: {} nodes, {} dep edges",
-                nodes.len(),
-                total_deps
-            ));
-        }
+        && let Some(nodes) = resolve.get("nodes").and_then(|v| v.as_array())
+    {
+        let total_deps: usize = nodes
+            .iter()
+            .map(|n| {
+                n.get("deps")
+                    .and_then(|v| v.as_array())
+                    .map_or(0, std::vec::Vec::len)
+            })
+            .sum();
+        parts.push(format!(
+            "resolve: {} nodes, {} dep edges",
+            nodes.len(),
+            total_deps
+        ));
+    }
 
     if parts.is_empty() {
         "cargo metadata: ok (empty)".to_string()

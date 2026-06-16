@@ -266,10 +266,11 @@ pub fn verbatim_compact(text: &str) -> String {
         let stripped = strip_timestamps_hashes(&normalized);
 
         if let Some(ref prev) = prev_line
-            && *prev == stripped {
-                repeat_count += 1;
-                continue;
-            }
+            && *prev == stripped
+        {
+            repeat_count += 1;
+            continue;
+        }
 
         flush_repeats(&mut lines, &mut prev_line, &mut repeat_count);
         prev_line = Some(stripped.clone());
@@ -329,12 +330,13 @@ pub fn task_aware_compress(
 
 fn flush_repeats(lines: &mut [String], prev_line: &mut Option<String>, count: &mut u32) {
     if *count > 1
-        && let &mut Some(ref prev) = prev_line {
-            let last_idx = lines.len().saturating_sub(1);
-            if last_idx < lines.len() {
-                lines[last_idx] = format!("[{count}x] {prev}");
-            }
+        && let &mut Some(ref prev) = prev_line
+    {
+        let last_idx = lines.len().saturating_sub(1);
+        if last_idx < lines.len() {
+            lines[last_idx] = format!("[{count}x] {prev}");
         }
+    }
     *count = 0;
     *prev_line = None;
 }

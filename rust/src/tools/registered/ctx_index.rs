@@ -66,9 +66,10 @@ impl McpTool for CtxIndexTool {
         // serving pre-rebuild output from the long-lived cache.
         if action == "build-full"
             && let Some(cache) = ctx.cache.as_ref()
-                && let Some(mut guard) = crate::server::bounded_lock::write(cache, "ctx_index") {
-                    guard.clear();
-                }
+            && let Some(mut guard) = crate::server::bounded_lock::write(cache, "ctx_index")
+        {
+            guard.clear();
+        }
 
         Ok(ToolOutput::simple(result))
     }

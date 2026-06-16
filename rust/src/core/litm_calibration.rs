@@ -90,9 +90,10 @@ fn store_path() -> std::path::PathBuf {
 impl LitmCalibration {
     fn load_from_disk() -> Self {
         if let Ok(content) = std::fs::read_to_string(store_path())
-            && let Ok(c) = serde_json::from_str::<LitmCalibration>(&content) {
-                return c;
-            }
+            && let Ok(c) = serde_json::from_str::<LitmCalibration>(&content)
+        {
+            return c;
+        }
         LitmCalibration {
             schema_version: 1,
             ..Default::default()

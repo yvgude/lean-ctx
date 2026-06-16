@@ -286,10 +286,11 @@ fn top_k_by_similarity(
         if heap.len() < k {
             heap.push(MinEntry(sim, i));
         } else if let Some(min) = heap.peek()
-            && sim > min.0 {
-                heap.pop();
-                heap.push(MinEntry(sim, i));
-            }
+            && sim > min.0
+        {
+            heap.pop();
+            heap.push(MinEntry(sim, i));
+        }
     }
 
     let mut result: Vec<(usize, f32)> = heap.into_iter().map(|e| (e.1, e.0)).collect();
@@ -328,9 +329,10 @@ fn dense_results_qdrant(
     let mut out = Vec::with_capacity(hits.len());
     for hit in hits {
         if let Some(pred) = filter
-            && !pred(&hit.file_path) {
-                continue;
-            }
+            && !pred(&hit.file_path)
+        {
+            continue;
+        }
         let snippet = snippet_from_disk(root, &hit.file_path, hit.start_line, hit.end_line, 5);
         out.push(DenseSearchResult {
             chunk_idx: 0,

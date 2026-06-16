@@ -117,10 +117,11 @@ impl McpTool for CtxShellTool {
                 if root_missing {
                     let home = dirs::home_dir().map(|h| h.to_string_lossy().to_string());
                     if let Some(root) = crate::core::protocol::detect_project_root(&effective_cwd)
-                        && home.as_deref() != Some(root.as_str()) {
-                            session.project_root = Some(root.clone());
-                            crate::core::index_orchestrator::ensure_all_background(&root);
-                        }
+                        && home.as_deref() != Some(root.as_str())
+                    {
+                        session.project_root = Some(root.clone());
+                        crate::core::index_orchestrator::ensure_all_background(&root);
+                    }
                 }
             }
 

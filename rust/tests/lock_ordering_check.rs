@@ -87,9 +87,10 @@ fn check_file(path: &Path, results: &mut Vec<(String, String)>) {
 fn extract_lock_name(line: &str) -> String {
     let line = line.trim_start_matches("pub ");
     if let Some(rest) = line.strip_prefix("static ")
-        && let Some(colon) = rest.find(':') {
-            return rest[..colon].trim().to_string();
-        }
+        && let Some(colon) = rest.find(':')
+    {
+        return rest[..colon].trim().to_string();
+    }
     for part in line.split_whitespace() {
         if part.chars().all(|c| c.is_uppercase() || c == '_') && part.len() > 1 {
             return part.trim_end_matches(':').to_string();

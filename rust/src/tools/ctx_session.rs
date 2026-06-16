@@ -182,16 +182,20 @@ bytes: {}\n",
 
             let mut warning: Option<String> = None;
             if let Some(ref exported) = bundle.project.project_root_hash
-                && exported != &current_root_hash {
-                    warning = Some("WARNING: project_root_hash mismatch (importing into different project root).".to_string());
-                }
+                && exported != &current_root_hash
+            {
+                warning = Some(
+                    "WARNING: project_root_hash mismatch (importing into different project root)."
+                        .to_string(),
+                );
+            }
             if let (Some(exported), Some(current)) = (
                 bundle.project.project_identity_hash.as_ref(),
                 current_identity_hash.as_ref(),
-            )
-                && exported != current {
-                    warning = Some("WARNING: project_identity_hash mismatch (importing into different project identity).".to_string());
-                }
+            ) && exported != current
+            {
+                warning = Some("WARNING: project_identity_hash mismatch (importing into different project identity).".to_string());
+            }
 
             let report = crate::core::ccp_session_bundle::import_bundle_v1_into_session(
                 session,
@@ -781,9 +785,10 @@ fn auto_record_episode(
 
     let mut ep = crate::core::episodic_memory::create_episode_from_session(session, tool_calls);
     if let Some(last) = store.recent(1).first()
-        && last.task_description == ep.task_description {
-            return Ok(None);
-        }
+        && last.task_description == ep.task_description
+    {
+        return Ok(None);
+    }
     // Convert cumulative session counters into per-task delta + duration.
     crate::core::episodic_memory::finalize_episode_metrics(&mut ep, &store, session.started_at);
 

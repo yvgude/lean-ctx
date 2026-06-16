@@ -1033,10 +1033,10 @@ export EDITOR=vim
                 .arg("-n")
                 .arg(&env_sh)
                 .spawn()
-            {
-                let ok = bash.wait().is_ok_and(|s| s.success());
-                assert!(ok, "generated env.sh must be valid bash");
-            }
+        {
+            let ok = bash.wait().is_ok_and(|s| s.success());
+            assert!(ok, "generated env.sh must be valid bash");
+        }
         assert!(
             content.contains(r#"_lc()          { command "$@"; }"#),
             "env.sh must contain _lc passthrough stub for non-interactive shells"

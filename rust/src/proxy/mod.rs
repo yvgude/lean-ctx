@@ -294,9 +294,10 @@ async fn proxy_auth_guard(
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         && let Some(token) = auth.strip_prefix("Bearer ")
-            && constant_time_eq(token.as_bytes(), expected_token.as_bytes()) {
-                return Ok(next.run(req).await);
-            }
+        && constant_time_eq(token.as_bytes(), expected_token.as_bytes())
+    {
+        return Ok(next.run(req).await);
+    }
 
     // Accept provider API keys on provider routes (loopback-only, host_guard runs first).
     // AI tools like Claude Code send x-api-key, not Bearer tokens. Since the proxy

@@ -116,21 +116,22 @@ impl LoopDetector {
         let total_count = *total;
 
         if let Some(&limit) = self.tool_total_limits.get(tool)
-            && total_count > limit {
-                let msg = if crate::core::protocol::meta_visible() {
-                    Some(format!(
-                        "Warning: {tool} called {total_count}x total (limit: {limit}). \
+            && total_count > limit
+        {
+            let msg = if crate::core::protocol::meta_visible() {
+                Some(format!(
+                    "Warning: {tool} called {total_count}x total (limit: {limit}). \
                          Consider ctx_compress or narrowing scope."
-                    ))
-                } else {
-                    None
-                };
-                return ThrottleResult {
-                    level: ThrottleLevel::Reduced,
-                    call_count: total_count,
-                    message: msg,
-                };
-            }
+                ))
+            } else {
+                None
+            };
+            return ThrottleResult {
+                level: ThrottleLevel::Reduced,
+                call_count: total_count,
+                message: msg,
+            };
+        }
 
         let key = format!("{tool}:{args_fingerprint}");
         let entries = self.call_history.entry(key.clone()).or_default();
@@ -333,20 +334,22 @@ impl LoopDetector {
 
         if fresh
             && let Some((prev_time, _)) = self.recent_reads.get(path)
-                && now.duration_since(*prev_time) < CORRECTION_WINDOW {
-                    self.correction_signals
-                        .push((now, CorrectionKind::FreshReRead));
-                }
+            && now.duration_since(*prev_time) < CORRECTION_WINDOW
+        {
+            self.correction_signals
+                .push((now, CorrectionKind::FreshReRead));
+        }
 
         if mode == "full"
-            && let Some((prev_time, prev_mode)) = self.recent_reads.get(path) {
-                let is_bounce = (prev_mode == "map" || prev_mode == "signatures")
-                    && now.duration_since(*prev_time) < MODE_BOUNCE_WINDOW;
-                if is_bounce {
-                    self.correction_signals
-                        .push((now, CorrectionKind::ModeBounce));
-                }
+            && let Some((prev_time, prev_mode)) = self.recent_reads.get(path)
+        {
+            let is_bounce = (prev_mode == "map" || prev_mode == "signatures")
+                && now.duration_since(*prev_time) < MODE_BOUNCE_WINDOW;
+            if is_bounce {
+                self.correction_signals
+                    .push((now, CorrectionKind::ModeBounce));
             }
+        }
 
         self.recent_reads
             .insert(path.to_string(), (now, mode.to_string()));
@@ -364,10 +367,11 @@ impl LoopDetector {
 
         let key = normalize_shell_command(command);
         if let Some(prev_time) = self.recent_commands.get(&key)
-            && now.duration_since(*prev_time) < SHELL_RERUN_WINDOW {
-                self.correction_signals
-                    .push((now, CorrectionKind::ShellReRun));
-            }
+            && now.duration_since(*prev_time) < SHELL_RERUN_WINDOW
+        {
+            self.correction_signals
+                .push((now, CorrectionKind::ShellReRun));
+        }
         self.recent_commands.insert(key, now);
     }
 

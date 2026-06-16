@@ -73,13 +73,14 @@ impl AdaptiveModePolicyStore {
         let modes = ev.ctx_read_modes.clone().unwrap_or_default();
         if modes.is_empty() {
             if let Some(m) = ev.ctx_read_last_mode.as_ref()
-                && let Some(key) = normalize_mode_key(m) {
-                    Self::apply_update(&mut self.global, key, badness, ev.timestamp.as_str());
-                    if let Some(k) = normalized_intent_key(ev.intent.as_deref()) {
-                        let table = self.by_intent.entry(k).or_default();
-                        Self::apply_update(table, key, badness, ev.timestamp.as_str());
-                    }
+                && let Some(key) = normalize_mode_key(m)
+            {
+                Self::apply_update(&mut self.global, key, badness, ev.timestamp.as_str());
+                if let Some(k) = normalized_intent_key(ev.intent.as_deref()) {
+                    let table = self.by_intent.entry(k).or_default();
+                    Self::apply_update(table, key, badness, ev.timestamp.as_str());
                 }
+            }
             return;
         }
 
@@ -115,9 +116,10 @@ impl AdaptiveModePolicyStore {
         };
         if let Some(k) = normalized_intent_key(intent)
             && let Some(t) = self.by_intent.get(&k)
-                && let Some(p) = t.modes.get(key) {
-                    return p.ema_badness.clamp(0.0, 1.0);
-                }
+            && let Some(p) = t.modes.get(key)
+        {
+            return p.ema_badness.clamp(0.0, 1.0);
+        }
         self.global
             .modes
             .get(key)

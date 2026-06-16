@@ -131,14 +131,15 @@ fn reindex(project_root: &Path, format: Option<&str>) -> String {
                 res["index_file"].as_str().unwrap_or_default()
             ));
             if let Some(w) = res["warnings"].as_array()
-                && !w.is_empty() {
-                    out.push_str("\n## Warnings\n");
-                    for ww in w {
-                        if let Some(s) = ww.as_str() {
-                            out.push_str(&format!("- {s}\n"));
-                        }
+                && !w.is_empty()
+            {
+                out.push_str("\n## Warnings\n");
+                for ww in w {
+                    if let Some(s) = ww.as_str() {
+                        out.push_str(&format!("- {s}\n"));
                     }
                 }
+            }
             out
         }
         _ => serde_json::to_string_pretty(&res)
@@ -178,15 +179,16 @@ fn search(
                 res["results"].as_array().map_or(0, Vec::len)
             ));
             if let Some(w) = res["warnings"].as_array()
-                && !w.is_empty() {
-                    out.push_str("## Warnings\n");
-                    for ww in w {
-                        if let Some(s) = ww.as_str() {
-                            out.push_str(&format!("- {s}\n"));
-                        }
+                && !w.is_empty()
+            {
+                out.push_str("## Warnings\n");
+                for ww in w {
+                    if let Some(s) = ww.as_str() {
+                        out.push_str(&format!("- {s}\n"));
                     }
-                    out.push('\n');
                 }
+                out.push('\n');
+            }
             out.push_str("## Results\n");
             for r in results {
                 out.push_str(&format!(

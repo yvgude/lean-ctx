@@ -26,30 +26,32 @@ pub fn resolve_tool_paths(
     ctx: &ToolContext,
 ) -> Result<ResolvedPaths, String> {
     if let Some(repo) = get_str(args, "repo")
-        && let Some(root) = crate::core::multi_repo::resolve_repo_root(&repo) {
-            return Ok(ResolvedPaths {
-                roots: vec![root],
-                is_multi: false,
-            });
-        }
+        && let Some(root) = crate::core::multi_repo::resolve_repo_root(&repo)
+    {
+        return Ok(ResolvedPaths {
+            roots: vec![root],
+            is_multi: false,
+        });
+    }
 
     if let Some(paths) = get_str_array(args, "paths")
-        && !paths.is_empty() {
-            let resolved = resolve_paths_sync(ctx, &paths);
-            if !resolved.is_empty() {
-                return Ok(ResolvedPaths {
-                    is_multi: resolved.len() > 1,
-                    roots: resolved,
-                });
-            }
-            // The caller explicitly listed paths but none resolved — surface
-            // the failure instead of scanning the project root (#401).
-            return Err(format!(
-                "none of the requested paths could be resolved — they may not exist or are \
-                 outside the project root: {}",
-                paths.join(", ")
-            ));
+        && !paths.is_empty()
+    {
+        let resolved = resolve_paths_sync(ctx, &paths);
+        if !resolved.is_empty() {
+            return Ok(ResolvedPaths {
+                is_multi: resolved.len() > 1,
+                roots: resolved,
+            });
         }
+        // The caller explicitly listed paths but none resolved — surface
+        // the failure instead of scanning the project root (#401).
+        return Err(format!(
+            "none of the requested paths could be resolved — they may not exist or are \
+                 outside the project root: {}",
+            paths.join(", ")
+        ));
+    }
 
     if let Some(path) = ctx.resolved_path("path") {
         return Ok(ResolvedPaths {

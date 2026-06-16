@@ -319,10 +319,11 @@ pub fn brute_force_topk(vectors: &[Vec<f32>], query: &[f32], top_k: usize) -> Ve
         if heap.len() < top_k {
             heap.push(Candidate { idx: i, sim });
         } else if let Some(worst) = heap.peek()
-            && sim > worst.sim {
-                heap.pop();
-                heap.push(Candidate { idx: i, sim });
-            }
+            && sim > worst.sim
+        {
+            heap.pop();
+            heap.push(Candidate { idx: i, sim });
+        }
     }
 
     let mut results: Vec<(usize, f32)> = heap.into_iter().map(|c| (c.idx, c.sim)).collect();

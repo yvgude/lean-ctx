@@ -316,12 +316,13 @@ pub(super) fn find_cargo_project_root() -> Option<std::path::PathBuf> {
 
 pub(super) fn resolve_install_path() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe()
-        && let Ok(canonical) = exe.canonicalize() {
-            let is_in_cargo_target = canonical.components().any(|c| c.as_os_str() == "target");
-            if !is_in_cargo_target && canonical.exists() {
-                return canonical;
-            }
+        && let Ok(canonical) = exe.canonicalize()
+    {
+        let is_in_cargo_target = canonical.components().any(|c| c.as_os_str() == "target");
+        if !is_in_cargo_target && canonical.exists() {
+            return canonical;
         }
+    }
 
     if let Ok(home) = std::env::var("HOME") {
         let local_bin = std::path::PathBuf::from(&home).join(".local/bin/lean-ctx");

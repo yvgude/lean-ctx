@@ -58,20 +58,21 @@ impl LeanCtxServer {
                     let _ = crate::core::workflow::clear_active();
                 } else if !WORKFLOW_PASSTHROUGH_TOOLS.contains(&name)
                     && let Some(state) = run.spec.state(&run.current)
-                        && let Some(allowed) = &state.allowed_tools {
-                            let allowed_ok = allowed.iter().any(|t| t == name);
-                            if !allowed_ok {
-                                let mut shown = allowed.clone();
-                                shown.sort();
-                                shown.truncate(30);
-                                return Ok(CallToolResult::success(vec![Content::text(format!(
-                                    "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
-                                    run.spec.name,
-                                    run.current,
-                                    shown.join(", ")
-                                ))]));
-                            }
-                        }
+                    && let Some(allowed) = &state.allowed_tools
+                {
+                    let allowed_ok = allowed.iter().any(|t| t == name);
+                    if !allowed_ok {
+                        let mut shown = allowed.clone();
+                        shown.sort();
+                        shown.truncate(30);
+                        return Ok(CallToolResult::success(vec![Content::text(format!(
+                            "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
+                            run.spec.name,
+                            run.current,
+                            shown.join(", ")
+                        ))]));
+                    }
+                }
             }
         }
 
@@ -377,18 +378,19 @@ impl LeanCtxServer {
             }
         }
 
-        if !firewalled && profile_hints.archive_hint()
-            && let Some(hint) = archive_hint {
-                result_text = format!("{result_text}\n{hint}");
-            }
+        if !firewalled
+            && profile_hints.archive_hint()
+            && let Some(hint) = archive_hint
+        {
+            result_text = format!("{result_text}\n{hint}");
+        }
 
-        if !is_raw_shell
-            && let Some(ctx) = auto_context {
-                let ctx_tokens = crate::core::tokens::count_tokens(&ctx);
-                if ctx_tokens <= 400 {
-                    result_text = format!("{ctx}\n\n{result_text}");
-                }
+        if !is_raw_shell && let Some(ctx) = auto_context {
+            let ctx_tokens = crate::core::tokens::count_tokens(&ctx);
+            if ctx_tokens <= 400 {
+                result_text = format!("{ctx}\n\n{result_text}");
             }
+        }
 
         if let Some(warning) = throttle_warning {
             result_text = format!("{result_text}\n\n{warning}");
@@ -488,9 +490,10 @@ impl LeanCtxServer {
                         false,
                     );
                     if profile_hints.related_hint()
-                        && let Some(hint) = enrich.related_hint {
-                            result_text = format!("{result_text}\n{hint}");
-                        }
+                        && let Some(hint) = enrich.related_hint
+                    {
+                        result_text = format!("{result_text}\n{hint}");
+                    }
                     crate::tools::autonomy::maybe_auto_dedup(&self.autonomy, &mut cache, name);
                 } else {
                     tracing::warn!(
@@ -536,22 +539,21 @@ impl LeanCtxServer {
                                 active_task.as_deref(),
                             );
                             drop(ledger);
-                            if wants_eviction
-                                && let Some(hint) = &gate_result.eviction_hint {
-                                    tracing::debug!("deferred eviction hint: {hint}");
-                                }
-                            if wants_elicitation
-                                && let Some(hint) = &gate_result.elicitation_hint {
-                                    tracing::debug!("deferred elicitation hint: {hint}");
-                                }
+                            if wants_eviction && let Some(hint) = &gate_result.eviction_hint {
+                                tracing::debug!("deferred eviction hint: {hint}");
+                            }
+                            if wants_elicitation && let Some(hint) = &gate_result.elicitation_hint {
+                                tracing::debug!("deferred elicitation hint: {hint}");
+                            }
                             if gate_result.resource_changed
-                                && let Some(peer) = peer_clone.read().await.as_ref() {
-                                    notifications::send_resource_updated(
-                                        peer,
-                                        notifications::RESOURCE_URI_SUMMARY,
-                                    )
-                                    .await;
-                                }
+                                && let Some(peer) = peer_clone.read().await.as_ref()
+                            {
+                                notifications::send_resource_updated(
+                                    peer,
+                                    notifications::RESOURCE_URI_SUMMARY,
+                                )
+                                .await;
+                            }
                         })
                         .catch_unwind()
                         .await;
@@ -572,10 +574,11 @@ impl LeanCtxServer {
             let cmd = helpers::get_str(args, "command").unwrap_or_default();
 
             if let Some(file_path) = extract_file_read_from_shell(&cmd)
-                && let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
-                    bt.next_seq();
-                    bt.record_shell_file_access(&file_path);
-                }
+                && let Ok(mut bt) = crate::core::bounce_tracker::global().lock()
+            {
+                bt.next_seq();
+                bt.record_shell_file_access(&file_path);
+            }
 
             if profile_hints.efficiency_hint() {
                 let calls = self.tool_calls.read().await;
@@ -655,21 +658,22 @@ impl LeanCtxServer {
         // K-bounded staleness guard: warn if shared context has diverged.
         const K_STALENESS_BOUND: i64 = 10;
         if self.session_mode == crate::tools::SessionMode::Shared
-            && let Some(ref rt) = self.context_os {
-                let latest = rt.bus.latest_id(&self.workspace_id, &self.channel_id);
-                let cursor = self
-                    .last_seen_event_id
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                if cursor > 0 && latest - cursor > K_STALENESS_BOUND {
-                    let gap = latest - cursor;
-                    result_text = format!(
-                        "[CONTEXT STALE] {gap} events happened since your last read. \
+            && let Some(ref rt) = self.context_os
+        {
+            let latest = rt.bus.latest_id(&self.workspace_id, &self.channel_id);
+            let cursor = self
+                .last_seen_event_id
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if cursor > 0 && latest - cursor > K_STALENESS_BOUND {
+                let gap = latest - cursor;
+                result_text = format!(
+                    "[CONTEXT STALE] {gap} events happened since your last read. \
                          Use ctx_session(action=\"status\") to sync.\n\n{result_text}"
-                    );
-                }
-                self.last_seen_event_id
-                    .store(latest, std::sync::atomic::Ordering::Relaxed);
+                );
             }
+            self.last_seen_event_id
+                .store(latest, std::sync::atomic::Ordering::Relaxed);
+        }
 
         self.record_receipt_and_cost(
             name,
@@ -684,36 +688,37 @@ impl LeanCtxServer {
         if self.session_mode == crate::tools::SessionMode::Shared
             && name == "ctx_knowledge"
             && action.as_deref() == Some("remember")
-            && let Some(ref rt) = self.context_os {
-                let my_agent = self.agent_id.read().await.clone();
-                let category = helpers::get_str(args, "category");
-                let key = helpers::get_str(args, "key");
-                if let (Some(cat), Some(k)) = (&category, &key) {
-                    let recent = rt.bus.recent_by_kind(
-                        &self.workspace_id,
-                        &self.channel_id,
-                        "knowledge_remembered",
-                        20,
-                    );
-                    for ev in &recent {
-                        let p = &ev.payload;
-                        let ev_cat = p.get("category").and_then(|v| v.as_str());
-                        let ev_key = p.get("key").and_then(|v| v.as_str());
-                        let ev_actor = ev.actor.as_deref();
-                        if ev_cat == Some(cat.as_str())
-                            && ev_key == Some(k.as_str())
-                            && ev_actor != my_agent.as_deref()
-                        {
-                            let other = ev_actor.unwrap_or("unknown");
-                            result_text = format!(
-                                "[CONFLICT] Agent '{other}' recently wrote to the same knowledge key \
+            && let Some(ref rt) = self.context_os
+        {
+            let my_agent = self.agent_id.read().await.clone();
+            let category = helpers::get_str(args, "category");
+            let key = helpers::get_str(args, "key");
+            if let (Some(cat), Some(k)) = (&category, &key) {
+                let recent = rt.bus.recent_by_kind(
+                    &self.workspace_id,
+                    &self.channel_id,
+                    "knowledge_remembered",
+                    20,
+                );
+                for ev in &recent {
+                    let p = &ev.payload;
+                    let ev_cat = p.get("category").and_then(|v| v.as_str());
+                    let ev_key = p.get("key").and_then(|v| v.as_str());
+                    let ev_actor = ev.actor.as_deref();
+                    if ev_cat == Some(cat.as_str())
+                        && ev_key == Some(k.as_str())
+                        && ev_actor != my_agent.as_deref()
+                    {
+                        let other = ev_actor.unwrap_or("unknown");
+                        result_text = format!(
+                            "[CONFLICT] Agent '{other}' recently wrote to the same knowledge key \
                                  '{cat}/{k}'. Review before proceeding.\n\n{result_text}"
-                            );
-                            break;
-                        }
+                        );
+                        break;
                     }
                 }
             }
+        }
 
         self.persist_shared_context_os(name, action.as_deref(), args)
             .await;
@@ -746,22 +751,25 @@ impl LeanCtxServer {
 
         // Output-echo nudge (#501): when the agent keeps re-quoting delivered
         // content, tell it once (cooldown-limited, stable text per #498).
-        if !skip_checkpoint && crate::core::protocol::meta_visible()
-            && let Some(nudge) = crate::core::output_echo::take_pending_nudge() {
-                result_text.push_str(&nudge);
-            }
+        if !skip_checkpoint
+            && crate::core::protocol::meta_visible()
+            && let Some(nudge) = crate::core::output_echo::take_pending_nudge()
+        {
+            result_text.push_str(&nudge);
+        }
 
-        if !skip_checkpoint && self.increment_and_check()
-            && let Some(checkpoint) = self.auto_checkpoint().await {
-                let hints = crate::core::profiles::active_profile().output_hints;
-                if hints.checkpoint_in_output() && crate::core::protocol::meta_visible() {
-                    // Stable header (#498): no interval interpolation — dynamic
-                    // text in repeated markers degrades provider prompt caching.
-                    let combined =
-                        format!("{result_text}\n\n--- AUTO CHECKPOINT ---\n{checkpoint}");
-                    return Ok(finalize_call_result(combined, shell_outcome));
-                }
+        if !skip_checkpoint
+            && self.increment_and_check()
+            && let Some(checkpoint) = self.auto_checkpoint().await
+        {
+            let hints = crate::core::profiles::active_profile().output_hints;
+            if hints.checkpoint_in_output() && crate::core::protocol::meta_visible() {
+                // Stable header (#498): no interval interpolation — dynamic
+                // text in repeated markers degrades provider prompt caching.
+                let combined = format!("{result_text}\n\n--- AUTO CHECKPOINT ---\n{checkpoint}");
+                return Ok(finalize_call_result(combined, shell_outcome));
             }
+        }
 
         let tool_duration_ms = tool_start.elapsed().as_millis() as u64;
         if tool_duration_ms > 100 {

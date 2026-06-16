@@ -369,9 +369,10 @@ fn svg_target(rest: &[String]) -> Option<String> {
         } else if a == "--svg" || a == "--card" {
             requested = true;
             if let Some(next) = rest.get(i + 1)
-                && !next.starts_with('-') {
-                    path = Some(next.clone());
-                }
+                && !next.starts_with('-')
+            {
+                path = Some(next.clone());
+            }
         }
     }
     requested.then(|| path.unwrap_or_else(|| "lean-ctx-wrapped.svg".to_string()))
@@ -393,9 +394,10 @@ fn share_target(rest: &[String]) -> Option<String> {
         } else if a == "--share" || a == "--page" {
             requested = true;
             if let Some(next) = rest.get(i + 1)
-                && !next.starts_with('-') {
-                    path = Some(next.clone());
-                }
+                && !next.starts_with('-')
+            {
+                path = Some(next.clone());
+            }
         }
     }
     requested.then(|| path.unwrap_or_else(|| "lean-ctx-wrapped.html".to_string()))
@@ -432,14 +434,13 @@ fn share_side_effects(
             println!("Share text (copy it): {text}");
         }
     }
-    if open
-        && let Some(p) = path {
-            if core::share::open_in_browser(p) {
-                println!("Opened {p}");
-            } else {
-                println!("Could not open {p} automatically — open it manually.");
-            }
+    if open && let Some(p) = path {
+        if core::share::open_in_browser(p) {
+            println!("Opened {p}");
+        } else {
+            println!("Could not open {p} automatically — open it manually.");
         }
+    }
 }
 
 /// `gain --opportunity` — merged discover + ghost (opportunity report).

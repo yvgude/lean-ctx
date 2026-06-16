@@ -102,13 +102,14 @@ fn diff_files(a: &SessionState, b: &SessionState) -> FilesDiff {
     let mut changed_mode = Vec::new();
     for path in &common {
         if let (Some(&ma), Some(&mb)) = (mode_map_a.get(**path), mode_map_b.get(**path))
-            && ma != mb {
-                changed_mode.push(FileModeChange {
-                    path: path.to_string(),
-                    mode_a: ma.to_string(),
-                    mode_b: mb.to_string(),
-                });
-            }
+            && ma != mb
+        {
+            changed_mode.push(FileModeChange {
+                path: path.to_string(),
+                mode_a: ma.to_string(),
+                mode_b: mb.to_string(),
+            });
+        }
     }
 
     FilesDiff {

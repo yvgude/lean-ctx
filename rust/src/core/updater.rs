@@ -916,12 +916,12 @@ fn detect_linux_libc() -> &'static str {
                 if parts.len() == 2
                     && let (Ok(major), Ok(minor)) =
                         (parts[0].parse::<u32>(), parts[1].parse::<u32>())
-                    {
-                        if major > 2 || (major == 2 && minor >= 35) {
-                            return "gnu";
-                        }
-                        return "musl";
+                {
+                    if major > 2 || (major == 2 && minor >= 35) {
+                        return "gnu";
                     }
+                    return "musl";
+                }
             }
         }
     }

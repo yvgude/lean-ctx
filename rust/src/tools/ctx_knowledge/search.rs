@@ -34,85 +34,86 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
     let mut results = Vec::new();
 
     if knowledge_dir.exists()
-        && let Ok(entries) = std::fs::read_dir(&knowledge_dir) {
-            for entry in entries.flatten() {
-                let dir_name = entry.file_name().to_string_lossy().to_string();
+        && let Ok(entries) = std::fs::read_dir(&knowledge_dir)
+    {
+        for entry in entries.flatten() {
+            let dir_name = entry.file_name().to_string_lossy().to_string();
 
-                if !allow_cross_project
-                    && let Some(ref current_hash) = current_project_hash
-                        && &dir_name != current_hash {
-                            continue;
-                        }
+            if !allow_cross_project
+                && let Some(ref current_hash) = current_project_hash
+                && &dir_name != current_hash
+            {
+                continue;
+            }
 
-                if let Some(ref current_hash) = current_project_hash
-                    && dir_name != *current_hash {
-                        let policy = crate::core::config::Config::load().boundary_policy;
-                        let allowed = crate::core::memory_boundary::check_boundary(
-                            current_hash,
-                            &dir_name,
-                            &policy,
-                            &crate::core::memory_boundary::CrossProjectEventType::Search,
-                        );
-                        crate::core::memory_boundary::record_audit_event(
-                            &crate::core::memory_boundary::CrossProjectAuditEvent {
-                                timestamp: Utc::now().to_rfc3339(),
-                                event_type:
-                                    crate::core::memory_boundary::CrossProjectEventType::Search,
-                                source_project_hash: current_hash.clone(),
-                                target_project_hash: dir_name.clone(),
-                                tool: "ctx_knowledge".to_string(),
-                                action: "search".to_string(),
-                                facts_accessed: 0,
-                                allowed,
-                                policy_reason: if allowed {
-                                    "boundary_policy_allowed".to_string()
-                                } else {
-                                    "boundary_policy_denied".to_string()
-                                },
-                            },
-                        );
-                        if !allowed {
-                            continue;
-                        }
+            if let Some(ref current_hash) = current_project_hash
+                && dir_name != *current_hash
+            {
+                let policy = crate::core::config::Config::load().boundary_policy;
+                let allowed = crate::core::memory_boundary::check_boundary(
+                    current_hash,
+                    &dir_name,
+                    &policy,
+                    &crate::core::memory_boundary::CrossProjectEventType::Search,
+                );
+                crate::core::memory_boundary::record_audit_event(
+                    &crate::core::memory_boundary::CrossProjectAuditEvent {
+                        timestamp: Utc::now().to_rfc3339(),
+                        event_type: crate::core::memory_boundary::CrossProjectEventType::Search,
+                        source_project_hash: current_hash.clone(),
+                        target_project_hash: dir_name.clone(),
+                        tool: "ctx_knowledge".to_string(),
+                        action: "search".to_string(),
+                        facts_accessed: 0,
+                        allowed,
+                        policy_reason: if allowed {
+                            "boundary_policy_allowed".to_string()
+                        } else {
+                            "boundary_policy_denied".to_string()
+                        },
+                    },
+                );
+                if !allowed {
+                    continue;
+                }
+            }
+
+            let knowledge_file = entry.path().join("knowledge.json");
+            if let Ok(content) = std::fs::read_to_string(&knowledge_file)
+                && let Ok(knowledge) = serde_json::from_str::<ProjectKnowledge>(&content)
+            {
+                let is_foreign = current_project_hash
+                    .as_ref()
+                    .is_some_and(|h| h != &knowledge.project_hash);
+
+                for fact in &knowledge.facts {
+                    if is_foreign
+                        && fact.privacy == crate::core::memory_boundary::FactPrivacy::ProjectOnly
+                    {
+                        continue;
                     }
 
-                let knowledge_file = entry.path().join("knowledge.json");
-                if let Ok(content) = std::fs::read_to_string(&knowledge_file)
-                    && let Ok(knowledge) = serde_json::from_str::<ProjectKnowledge>(&content) {
-                        let is_foreign = current_project_hash
-                            .as_ref()
-                            .is_some_and(|h| h != &knowledge.project_hash);
-
-                        for fact in &knowledge.facts {
-                            if is_foreign
-                                && fact.privacy
-                                    == crate::core::memory_boundary::FactPrivacy::ProjectOnly
-                            {
-                                continue;
-                            }
-
-                            let searchable = format!(
-                                "{} {} {}",
-                                fact.category.to_lowercase(),
-                                fact.key.to_lowercase(),
-                                fact.value.to_lowercase()
-                            );
-                            let match_count =
-                                terms.iter().filter(|t| searchable.contains(**t)).count();
-                            if match_count > 0 {
-                                results.push((
-                                    knowledge.project_root.clone(),
-                                    fact.category.clone(),
-                                    fact.key.clone(),
-                                    fact.value.clone(),
-                                    fact.confidence,
-                                    match_count as f32 / terms.len() as f32,
-                                ));
-                            }
-                        }
+                    let searchable = format!(
+                        "{} {} {}",
+                        fact.category.to_lowercase(),
+                        fact.key.to_lowercase(),
+                        fact.value.to_lowercase()
+                    );
+                    let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
+                    if match_count > 0 {
+                        results.push((
+                            knowledge.project_root.clone(),
+                            fact.category.clone(),
+                            fact.key.clone(),
+                            fact.value.clone(),
+                            fact.confidence,
+                            match_count as f32 / terms.len() as f32,
+                        ));
                     }
+                }
             }
         }
+    }
 
     if let Ok(entries) = std::fs::read_dir(&sessions_dir) {
         for entry in entries.flatten() {
@@ -124,44 +125,45 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
                 continue;
             }
             if let Ok(json) = std::fs::read_to_string(&path)
-                && let Ok(session) = serde_json::from_str::<SessionState>(&json) {
-                    for finding in &session.findings {
-                        let searchable = finding.summary.to_lowercase();
-                        let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
-                        if match_count > 0 {
-                            let project = session
-                                .project_root
-                                .clone()
-                                .unwrap_or_else(|| "unknown".to_string());
-                            results.push((
-                                project,
-                                "session-finding".to_string(),
-                                session.id.clone(),
-                                finding.summary.clone(),
-                                0.6,
-                                match_count as f32 / terms.len() as f32,
-                            ));
-                        }
-                    }
-                    for decision in &session.decisions {
-                        let searchable = decision.summary.to_lowercase();
-                        let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
-                        if match_count > 0 {
-                            let project = session
-                                .project_root
-                                .clone()
-                                .unwrap_or_else(|| "unknown".to_string());
-                            results.push((
-                                project,
-                                "session-decision".to_string(),
-                                session.id.clone(),
-                                decision.summary.clone(),
-                                0.7,
-                                match_count as f32 / terms.len() as f32,
-                            ));
-                        }
+                && let Ok(session) = serde_json::from_str::<SessionState>(&json)
+            {
+                for finding in &session.findings {
+                    let searchable = finding.summary.to_lowercase();
+                    let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
+                    if match_count > 0 {
+                        let project = session
+                            .project_root
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_string());
+                        results.push((
+                            project,
+                            "session-finding".to_string(),
+                            session.id.clone(),
+                            finding.summary.clone(),
+                            0.6,
+                            match_count as f32 / terms.len() as f32,
+                        ));
                     }
                 }
+                for decision in &session.decisions {
+                    let searchable = decision.summary.to_lowercase();
+                    let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
+                    if match_count > 0 {
+                        let project = session
+                            .project_root
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_string());
+                        results.push((
+                            project,
+                            "session-decision".to_string(),
+                            session.id.clone(),
+                            decision.summary.clone(),
+                            0.7,
+                            match_count as f32 / terms.len() as f32,
+                        ));
+                    }
+                }
+            }
         }
     }
 

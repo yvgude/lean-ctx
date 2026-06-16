@@ -147,9 +147,10 @@ pub fn capture() {
     };
     migrate_legacy_key_file(&path);
     if let Some((existing, _)) = read_store(&path)
-        && existing == vars {
-            return;
-        }
+        && existing == vars
+    {
+        return;
+    }
     let payload = serde_json::json!({ "vars": vars, "captured_at": now_secs() });
     let Ok(json) = serde_json::to_string_pretty(&payload) else {
         return;

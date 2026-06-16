@@ -125,16 +125,18 @@ pub fn cmd_tee(args: &[String]) {
 pub fn cmd_filter(args: &[String]) {
     let action = args.first().map_or("list", std::string::String::as_str);
     match action {
-        "list" | "ls" => if let Some(engine) = crate::core::filters::FilterEngine::load() {
-            let rules = engine.list_rules();
-            println!("Loaded {} filter rule(s):\n", rules.len());
-            for rule in &rules {
-                println!("{rule}");
+        "list" | "ls" => {
+            if let Some(engine) = crate::core::filters::FilterEngine::load() {
+                let rules = engine.list_rules();
+                println!("Loaded {} filter rule(s):\n", rules.len());
+                for rule in &rules {
+                    println!("{rule}");
+                }
+            } else {
+                println!("No custom filters found.");
+                println!("Create one: lean-ctx filter init");
             }
-        } else {
-            println!("No custom filters found.");
-            println!("Create one: lean-ctx filter init");
-        },
+        }
         "validate" => {
             let Some(path) = args.get(1) else {
                 eprintln!("Usage: lean-ctx filter validate <file.toml>");

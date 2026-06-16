@@ -100,9 +100,10 @@ fn get_cached_query(file_ext: &str) -> Option<&'static Query> {
         ];
         for &ext in exts {
             if let (Some(lang), Some(src)) = (get_language(ext), get_chunk_query(ext))
-                && let Ok(q) = Query::new(&lang, src) {
-                    map.insert(ext, q);
-                }
+                && let Ok(q) = Query::new(&lang, src)
+            {
+                map.insert(ext, q);
+            }
         }
         map
     });
@@ -149,9 +150,10 @@ pub(crate) fn for_each_chunk_node(
             if cap.index == chunk_idx {
                 chunk_node = Some(cap.node);
             } else if cap.index == name_idx
-                && let Ok(text) = cap.node.utf8_text(source) {
-                    name_text = text.to_string();
-                }
+                && let Ok(text) = cap.node.utf8_text(source)
+            {
+                name_text = text.to_string();
+            }
         }
 
         if let Some(node) = chunk_node {

@@ -97,7 +97,7 @@ fn find_body_node<'a>(node: &Node<'a>) -> Option<Node<'a>> {
         return Some(block);
     }
     let mut cursor = node.walk();
-    
+
     node.children(&mut cursor).find(|c| {
         matches!(
             c.kind(),

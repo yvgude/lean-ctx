@@ -78,9 +78,10 @@ fn luau_return_type(node: &Node, source: &[u8]) -> String {
         if child.start_byte() >= params_end
             && child.kind() != "block"
             && (child.kind() == "type" || child.kind().ends_with("_type"))
-            && let Ok(t) = child.utf8_text(source) {
-                return t.trim().to_string();
-            }
+            && let Ok(t) = child.utf8_text(source)
+        {
+            return t.trim().to_string();
+        }
     }
     String::new()
 }

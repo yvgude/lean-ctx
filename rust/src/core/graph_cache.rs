@@ -68,10 +68,11 @@ pub fn get_cached(project_root: &str) -> Option<Arc<ProjectIndex>> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(entry) = map.get_mut(project_root)
-            && entry.fingerprint == fingerprint {
-                entry.last_access = Instant::now();
-                return Some(Arc::clone(&entry.index));
-            }
+            && entry.fingerprint == fingerprint
+        {
+            entry.last_access = Instant::now();
+            return Some(Arc::clone(&entry.index));
+        }
     }
 
     let idx = ProjectIndex::load(project_root).filter(|i| !i.files.is_empty())?;
@@ -82,14 +83,15 @@ pub fn get_cached(project_root: &str) -> Option<Arc<ProjectIndex>> {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     // LRU-evict before inserting a *new* root so the cap holds. Re-inserting an
     // existing root (fingerprint changed) just overwrites and doesn't grow the map.
-    if !map.contains_key(project_root) && map.len() >= MAX_ROOTS
+    if !map.contains_key(project_root)
+        && map.len() >= MAX_ROOTS
         && let Some(lru_key) = map
             .iter()
             .min_by_key(|(_, e)| e.last_access)
             .map(|(k, _)| k.clone())
-        {
-            map.remove(&lru_key);
-        }
+    {
+        map.remove(&lru_key);
+    }
     map.insert(
         project_root.to_string(),
         Entry {

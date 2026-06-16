@@ -88,14 +88,14 @@ fn handle_list(project_root: &str) -> String {
             let p = entry.path();
             if p.extension().and_then(|e| e.to_str()) == Some("json")
                 && let Ok(json) = std::fs::read_to_string(&p)
-                    && let Ok(pkg) = serde_json::from_str::<context_package::ContextPackage>(&json)
-                    {
-                        entries.push(format!(
-                            "  {} — {}",
-                            p.file_name().unwrap_or_default().to_string_lossy(),
-                            pkg.summary_line()
-                        ));
-                    }
+                && let Ok(pkg) = serde_json::from_str::<context_package::ContextPackage>(&json)
+            {
+                entries.push(format!(
+                    "  {} — {}",
+                    p.file_name().unwrap_or_default().to_string_lossy(),
+                    pkg.summary_line()
+                ));
+            }
         }
     }
     if entries.is_empty() {

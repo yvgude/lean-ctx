@@ -129,12 +129,13 @@ pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
             continue;
         }
         if let Ok(content) = std::fs::read_to_string(path)
-            && content.contains(needle) {
-                hits.push(path.to_path_buf());
-                if hits.len() >= MAX_HITS {
-                    break;
-                }
+            && content.contains(needle)
+        {
+            hits.push(path.to_path_buf());
+            if hits.len() >= MAX_HITS {
+                break;
             }
+        }
     }
 
     if hits.is_empty() {

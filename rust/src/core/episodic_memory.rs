@@ -227,9 +227,10 @@ impl EpisodicStore {
                     prev_tokens = cumulative;
                 }
                 if ep.duration_secs == 0
-                    && let Some(p) = prev_ts {
-                        ep.duration_secs = (ts - p).num_seconds().max(0) as u64;
-                    }
+                    && let Some(p) = prev_ts
+                {
+                    ep.duration_secs = (ts - p).num_seconds().max(0) as u64;
+                }
                 prev_ts = Some(ts);
             }
         }

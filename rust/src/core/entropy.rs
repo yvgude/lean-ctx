@@ -323,9 +323,10 @@ fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
         let key = std::hash::Hasher::finish(&hasher);
 
         if let Ok(mut guard) = LINE_EMBED_CACHE.lock()
-            && let Some(hit) = guard.get_or_insert_with(HashMap::new).get(&key) {
-                return Some(hit.clone());
-            }
+            && let Some(hit) = guard.get_or_insert_with(HashMap::new).get(&key)
+        {
+            return Some(hit.clone());
+        }
         let emb = engine.embed(line).ok()?;
         if let Ok(mut guard) = LINE_EMBED_CACHE.lock() {
             let map = guard.get_or_insert_with(HashMap::new);

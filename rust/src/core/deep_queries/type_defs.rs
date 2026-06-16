@@ -275,9 +275,10 @@ pub(super) fn extract_exports(root: Node, src: &str, ext: &str) -> Vec<String> {
     let mut exports = Vec::new();
     crate::core::ast_walk::for_each_descendant(root, |node| {
         if is_exported_node(node, src, ext)
-            && let Some(name) = get_declaration_name(node, src) {
-                exports.push(name);
-            }
+            && let Some(name) = get_declaration_name(node, src)
+        {
+            exports.push(name);
+        }
     });
     exports
 }

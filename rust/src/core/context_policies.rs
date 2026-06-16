@@ -142,9 +142,10 @@ impl PolicySet {
                     agent_id,
                     role,
                     content,
-                ) {
-                    continue;
-                }
+                )
+            {
+                continue;
+            }
             results.push(PolicyEvalResult {
                 policy_name: policy.name.clone(),
                 action: policy.action.clone(),

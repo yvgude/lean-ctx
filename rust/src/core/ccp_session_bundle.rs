@@ -127,9 +127,10 @@ pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpS
         }
         for finding in &mut excerpt.findings {
             if let Some(ref file) = finding.file.clone()
-                && let Some(rel) = strip_root_prefix(&root, file) {
-                    finding.file = Some(rel);
-                }
+                && let Some(rel) = strip_root_prefix(&root, file)
+            {
+                finding.file = Some(rel);
+            }
         }
     }
 

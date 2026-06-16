@@ -111,43 +111,45 @@ impl BounceTracker {
         };
 
         if let Some(ev) = events.iter().next_back()
-            && ev.was_compressed && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW {
-                let wasted = ev.tokens_sent;
-                self.total_bounces += 1;
-                self.total_wasted_tokens += wasted;
+            && ev.was_compressed
+            && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW
+        {
+            let wasted = ev.tokens_sent;
+            self.total_bounces += 1;
+            self.total_wasted_tokens += wasted;
 
-                let ext = extension_of(norm_path);
-                if !ext.is_empty() {
-                    let stats = self.per_extension.entry(ext).or_default();
-                    stats.bounces += 1;
-                    stats.wasted_tokens += wasted;
-                }
-
-                if self.persist {
-                    crate::core::savings_ledger::record_bounce_event(wasted);
-                    // Long-term per-path memory (#496): remember which exact
-                    // files keep bouncing so auto-mode learns across restarts.
-                    crate::core::path_mode_memory::record_bounce(norm_path);
-                    // Quality signal (#538): bounces push the learned entropy
-                    // threshold down for this extension (compress less) and
-                    // penalize the bandit arm that produced the read (#593).
-                    crate::core::adaptive_thresholds::record_quality_signal(
-                        norm_path,
-                        crate::core::threshold_learning::QualitySignal::Bounce,
-                    );
-                    // Stigmergy (#540): a bounce marks this path as Stuck so
-                    // other agents see friction here. Background: lock may block.
-                    let scent_path = norm_path.to_string();
-                    std::thread::spawn(move || {
-                        crate::core::scent_field::deposit(
-                            crate::core::scent_field::scent_agent_id(),
-                            crate::core::scent_field::ScentKind::Stuck,
-                            &scent_path,
-                            0.5,
-                        );
-                    });
-                }
+            let ext = extension_of(norm_path);
+            if !ext.is_empty() {
+                let stats = self.per_extension.entry(ext).or_default();
+                stats.bounces += 1;
+                stats.wasted_tokens += wasted;
             }
+
+            if self.persist {
+                crate::core::savings_ledger::record_bounce_event(wasted);
+                // Long-term per-path memory (#496): remember which exact
+                // files keep bouncing so auto-mode learns across restarts.
+                crate::core::path_mode_memory::record_bounce(norm_path);
+                // Quality signal (#538): bounces push the learned entropy
+                // threshold down for this extension (compress less) and
+                // penalize the bandit arm that produced the read (#593).
+                crate::core::adaptive_thresholds::record_quality_signal(
+                    norm_path,
+                    crate::core::threshold_learning::QualitySignal::Bounce,
+                );
+                // Stigmergy (#540): a bounce marks this path as Stuck so
+                // other agents see friction here. Background: lock may block.
+                let scent_path = norm_path.to_string();
+                std::thread::spawn(move || {
+                    crate::core::scent_field::deposit(
+                        crate::core::scent_field::scent_agent_id(),
+                        crate::core::scent_field::ScentKind::Stuck,
+                        &scent_path,
+                        0.5,
+                    );
+                });
+            }
+        }
     }
 
     pub fn record_shell_file_access(&mut self, path: &str) {
@@ -180,19 +182,21 @@ impl BounceTracker {
         let norm = crate::core::pathutil::normalize_tool_path(path);
 
         if let Some(&edit_seq) = self.recently_edited.get(&norm)
-            && self.seq_counter.saturating_sub(edit_seq) <= 10 {
-                return true;
-            }
+            && self.seq_counter.saturating_sub(edit_seq) <= 10
+        {
+            return true;
+        }
 
         let ext = extension_of(path);
         if !ext.is_empty()
             && let Some(stats) = self.per_extension.get(&ext)
-                && stats.total_reads >= 3 {
-                    let rate = stats.bounces as f64 / stats.total_reads as f64;
-                    if rate >= BOUNCE_RATE_THRESHOLD {
-                        return true;
-                    }
-                }
+            && stats.total_reads >= 3
+        {
+            let rate = stats.bounces as f64 / stats.total_reads as f64;
+            if rate >= BOUNCE_RATE_THRESHOLD {
+                return true;
+            }
+        }
 
         false
     }

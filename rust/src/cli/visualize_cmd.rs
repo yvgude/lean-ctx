@@ -49,14 +49,16 @@ fn extract_output_path(args: &[String]) -> String {
     let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
         if let Some(v) = a.strip_prefix("--output=")
-            && !v.trim().is_empty() {
-                return v.to_string();
-            }
+            && !v.trim().is_empty()
+        {
+            return v.to_string();
+        }
         if (a == "--output" || a == "-o")
             && let Some(v) = it.peek()
-                && !v.starts_with("--") {
-                    return (*v).clone();
-                }
+            && !v.starts_with("--")
+        {
+            return (*v).clone();
+        }
     }
     "lean-ctx-report.html".to_string()
 }

@@ -175,10 +175,9 @@ pub fn position_optimize_with_share(session: &SessionState, begin_share: f64) ->
     // Recency rescue (#539): when begin is weak, repeat the task line at the
     // end — ~10 tokens to keep the single most critical item in the strong
     // position for this client.
-    if begin_weak
-        && let Some(ref task) = session.task {
-            end_lines.push(format!("Task (active): {}", task.description));
-        }
+    if begin_weak && let Some(ref task) = session.task {
+        end_lines.push(format!("Task (active): {}", task.description));
+    }
 
     // Session stats at end — changes every call, placing here preserves prefix-cache stability
     end_lines.push(format!(

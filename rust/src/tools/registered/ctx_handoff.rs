@@ -393,19 +393,18 @@ fn handle_pull(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String, E
     let apply_session = get_bool(args, "apply_session").unwrap_or(true);
     let apply_knowledge = get_bool(args, "apply_knowledge").unwrap_or(true);
 
-    if apply_workflow
-        && let Some(wf_lock) = ctx.workflow.as_ref() {
-            let mut wf = wf_lock.blocking_write();
-            if ledger
-                .workflow
-                .as_ref()
-                .is_some_and(|r| r.current == "done")
-            {
-                *wf = None;
-            } else {
-                wf.clone_from(&ledger.workflow);
-            }
+    if apply_workflow && let Some(wf_lock) = ctx.workflow.as_ref() {
+        let mut wf = wf_lock.blocking_write();
+        if ledger
+            .workflow
+            .as_ref()
+            .is_some_and(|r| r.current == "done")
+        {
+            *wf = None;
+        } else {
+            wf.clone_from(&ledger.workflow);
         }
+    }
 
     if apply_session {
         let session_handle = ctx
@@ -543,19 +542,18 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
     let apply_session = get_bool(args, "apply_session").unwrap_or(true);
     let apply_knowledge = get_bool(args, "apply_knowledge").unwrap_or(true);
 
-    if apply_workflow
-        && let Some(wf_lock) = ctx.workflow.as_ref() {
-            let mut wf = wf_lock.blocking_write();
-            if ledger
-                .workflow
-                .as_ref()
-                .is_some_and(|r| r.current == "done")
-            {
-                *wf = None;
-            } else {
-                wf.clone_from(&ledger.workflow);
-            }
+    if apply_workflow && let Some(wf_lock) = ctx.workflow.as_ref() {
+        let mut wf = wf_lock.blocking_write();
+        if ledger
+            .workflow
+            .as_ref()
+            .is_some_and(|r| r.current == "done")
+        {
+            *wf = None;
+        } else {
+            wf.clone_from(&ledger.workflow);
         }
+    }
 
     if apply_session {
         let session_handle = ctx

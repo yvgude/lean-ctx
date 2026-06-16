@@ -204,14 +204,15 @@ fn git_changed_files(root: &str) -> Vec<String> {
     let mut files: BTreeSet<String> = BTreeSet::new();
 
     if let Ok(o) = output
-        && o.status.success() {
-            for line in String::from_utf8_lossy(&o.stdout).lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    files.insert(trimmed.to_string());
-                }
+        && o.status.success()
+    {
+        for line in String::from_utf8_lossy(&o.stdout).lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                files.insert(trimmed.to_string());
             }
         }
+    }
 
     let staged = std::process::Command::new("git")
         .args(["diff", "--name-only", "--cached"])
@@ -221,14 +222,15 @@ fn git_changed_files(root: &str) -> Vec<String> {
         .output();
 
     if let Ok(o) = staged
-        && o.status.success() {
-            for line in String::from_utf8_lossy(&o.stdout).lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    files.insert(trimmed.to_string());
-                }
+        && o.status.success()
+    {
+        for line in String::from_utf8_lossy(&o.stdout).lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                files.insert(trimmed.to_string());
             }
         }
+    }
 
     let untracked = std::process::Command::new("git")
         .args(["ls-files", "--others", "--exclude-standard"])
@@ -238,14 +240,15 @@ fn git_changed_files(root: &str) -> Vec<String> {
         .output();
 
     if let Ok(o) = untracked
-        && o.status.success() {
-            for line in String::from_utf8_lossy(&o.stdout).lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    files.insert(trimmed.to_string());
-                }
+        && o.status.success()
+    {
+        for line in String::from_utf8_lossy(&o.stdout).lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                files.insert(trimmed.to_string());
             }
         }
+    }
 
     files.into_iter().collect()
 }

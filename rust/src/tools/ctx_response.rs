@@ -62,9 +62,10 @@ fn compress_standard(text: &str, input_context: Option<&str>) -> String {
             continue;
         }
         if let Some(ref echoes) = echo_lines
-            && is_context_echo(trimmed, echoes) {
-                continue;
-            }
+            && is_context_echo(trimmed, echoes)
+        {
+            continue;
+        }
 
         result.push(line.to_string());
     }
@@ -96,9 +97,10 @@ fn compress_tdd(text: &str, input_context: Option<&str>) -> String {
             continue;
         }
         if let Some(ref echoes) = echo_lines
-            && is_context_echo(trimmed, echoes) {
-                continue;
-            }
+            && is_context_echo(trimmed, echoes)
+        {
+            continue;
+        }
 
         let compressed = apply_tdd_shortcuts(trimmed);
         result.push(compressed);

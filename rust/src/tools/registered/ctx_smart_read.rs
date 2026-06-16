@@ -40,15 +40,16 @@ impl McpTool for CtxSmartReadTool {
         {
             let cap = crate::core::limits::max_read_bytes() as u64;
             if let Ok(meta) = std::fs::metadata(&path)
-                && meta.len() > cap {
-                    let msg = format!(
-                        "File too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
+                && meta.len() > cap
+            {
+                let msg = format!(
+                    "File too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
                          Use mode=\"lines:1-100\" for partial reads or increase the limit.",
-                        meta.len(),
-                        cap
-                    );
-                    return Err(ErrorData::invalid_params(msg, None));
-                }
+                    meta.len(),
+                    cap
+                );
+                return Err(ErrorData::invalid_params(msg, None));
+            }
         }
 
         tokio::task::block_in_place(|| {

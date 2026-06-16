@@ -42,9 +42,10 @@ fn handle_start(args: Option<&serde_json::Map<String, Value>>, agent_id: Option<
     };
 
     if let Some(name) = name_override
-        && !name.trim().is_empty() {
-            spec.name = name;
-        }
+        && !name.trim().is_empty()
+    {
+        spec.name = name;
+    }
 
     if let Err(e) = workflow::validate_spec(&spec) {
         return format!("Invalid WorkflowSpec: {e}");
@@ -84,16 +85,17 @@ fn handle_status(session: &SessionState, agent_id: Option<&str>) -> String {
     }
 
     if let Some(state) = run.spec.state(&run.current)
-        && let Some(ref tools) = state.allowed_tools {
-            let mut tools = tools.clone();
-            tools.sort();
-            let tools = tools.into_iter().take(30).collect::<Vec<_>>();
-            lines.push(format!(
-                "  Allowed tools ({} shown): {}",
-                tools.len(),
-                tools.join(", ")
-            ));
-        }
+        && let Some(ref tools) = state.allowed_tools
+    {
+        let mut tools = tools.clone();
+        tools.sort();
+        let tools = tools.into_iter().take(30).collect::<Vec<_>>();
+        lines.push(format!(
+            "  Allowed tools ({} shown): {}",
+            tools.len(),
+            tools.join(", ")
+        ));
+    }
 
     let transitions = workflow::allowed_transitions(&run.spec, &run.current);
     if transitions.is_empty() {

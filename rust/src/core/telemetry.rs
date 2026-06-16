@@ -537,9 +537,10 @@ pub(crate) fn ledger_totals_cached() -> (u64, f64) {
         return (0, 0.0);
     };
     if let Some((at, totals)) = *guard
-        && at.elapsed() < Duration::from_secs(30) {
-            return totals;
-        }
+        && at.elapsed() < Duration::from_secs(30)
+    {
+        return totals;
+    }
     let summary = crate::core::savings_ledger::summary();
     let totals = (summary.net_saved_tokens(), summary.saved_usd);
     *guard = Some((Instant::now(), totals));

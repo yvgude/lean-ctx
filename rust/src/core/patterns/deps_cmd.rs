@@ -31,9 +31,10 @@ pub fn detect_and_compress(dir: &str) -> Option<String> {
     for name in &candidates {
         let path = format!("{}/{}", dir.trim_end_matches('/'), name);
         if Path::new(&path).exists()
-            && let Some(result) = compress(&path) {
-                return Some(result);
-            }
+            && let Some(result) = compress(&path)
+        {
+            return Some(result);
+        }
     }
 
     None
@@ -100,18 +101,24 @@ fn compress_cargo_toml(content: &str) -> Option<String> {
         }
 
         if trimmed.starts_with("name")
-            && let Some(v) = extract_toml_string(trimmed) {
-                name = v;
-            }
-        if trimmed.starts_with("version") && !in_deps
-            && let Some(v) = extract_toml_string(trimmed) {
-                version = v;
-            }
+            && let Some(v) = extract_toml_string(trimmed)
+        {
+            name = v;
+        }
+        if trimmed.starts_with("version")
+            && !in_deps
+            && let Some(v) = extract_toml_string(trimmed)
+        {
+            version = v;
+        }
 
-        if in_deps && !trimmed.is_empty() && !trimmed.starts_with('#')
-            && let Some(dep_name) = trimmed.split('=').next() {
-                deps.push(dep_name.trim().to_string());
-            }
+        if in_deps
+            && !trimmed.is_empty()
+            && !trimmed.starts_with('#')
+            && let Some(dep_name) = trimmed.split('=').next()
+        {
+            deps.push(dep_name.trim().to_string());
+        }
     }
 
     if deps.is_empty() {
@@ -173,12 +180,14 @@ fn compress_go_mod(content: &str) -> Option<String> {
         if trimmed == ")" && in_require {
             in_require = false;
         }
-        if in_require && !trimmed.is_empty()
+        if in_require
+            && !trimmed.is_empty()
             && let Some(name) = trimmed.split_whitespace().next()
-                && !name.contains("// indirect") {
-                    let short = name.rsplit('/').next().unwrap_or(name);
-                    deps.push(short.to_string());
-                }
+            && !name.contains("// indirect")
+        {
+            let short = name.rsplit('/').next().unwrap_or(name);
+            deps.push(short.to_string());
+        }
     }
 
     if deps.is_empty() {

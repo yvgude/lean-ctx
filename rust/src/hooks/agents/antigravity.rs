@@ -72,21 +72,22 @@ fn install_antigravity_mcp_config(home: &std::path::Path, subdir: &str) {
             &serde_json::to_string_pretty(&config).unwrap_or_default(),
         );
     } else if let Ok(mut existing_json) = crate::core::jsonc::parse_jsonc(&existing)
-        && let Some(obj) = existing_json.as_object_mut() {
-            let servers = obj
-                .entry("mcpServers")
-                .or_insert_with(|| serde_json::json!({}));
-            if let Some(servers_obj) = servers.as_object_mut() {
-                servers_obj.insert(
-                    "lean-ctx".to_string(),
-                    serde_json::json!({ "command": binary }),
-                );
-            }
-            write_file(
-                &config_path,
-                &serde_json::to_string_pretty(&existing_json).unwrap_or_default(),
+        && let Some(obj) = existing_json.as_object_mut()
+    {
+        let servers = obj
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        if let Some(servers_obj) = servers.as_object_mut() {
+            servers_obj.insert(
+                "lean-ctx".to_string(),
+                serde_json::json!({ "command": binary }),
             );
         }
+        write_file(
+            &config_path,
+            &serde_json::to_string_pretty(&existing_json).unwrap_or_default(),
+        );
+    }
 
     if !mcp_server_quiet_mode() {
         eprintln!(
@@ -154,25 +155,26 @@ fn install_antigravity_gemini_hooks(home: &std::path::Path) {
             &serde_json::to_string_pretty(&hook_config).unwrap_or_default(),
         );
     } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content)
-        && let Some(obj) = existing.as_object_mut() {
-            if has_hooks && !has_observe {
-                let hooks = obj
-                    .entry("hooks".to_string())
-                    .or_insert_with(|| serde_json::json!({}));
-                if let Some(hooks_obj) = hooks.as_object_mut() {
-                    hooks_obj.insert(
-                        "AfterTool".to_string(),
-                        hook_config["hooks"]["AfterTool"].clone(),
-                    );
-                }
-            } else {
-                obj.insert("hooks".to_string(), hook_config["hooks"].clone());
+        && let Some(obj) = existing.as_object_mut()
+    {
+        if has_hooks && !has_observe {
+            let hooks = obj
+                .entry("hooks".to_string())
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(hooks_obj) = hooks.as_object_mut() {
+                hooks_obj.insert(
+                    "AfterTool".to_string(),
+                    hook_config["hooks"]["AfterTool"].clone(),
+                );
             }
-            write_file(
-                &settings_path,
-                &serde_json::to_string_pretty(&existing).unwrap_or_default(),
-            );
+        } else {
+            obj.insert("hooks".to_string(), hook_config["hooks"].clone());
         }
+        write_file(
+            &settings_path,
+            &serde_json::to_string_pretty(&existing).unwrap_or_default(),
+        );
+    }
 
     if !mcp_server_quiet_mode() {
         eprintln!(
@@ -359,17 +361,18 @@ pub(crate) fn uninstall_antigravity_cli_plugin(home: &std::path::Path) -> bool {
     let manifest_path = antigravity_cli_config_dir(home).join("import_manifest.json");
     if let Ok(content) = std::fs::read_to_string(&manifest_path)
         && let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
-            && let Some(arr) = json.get_mut("imports").and_then(|i| i.as_array_mut()) {
-                let before = arr.len();
-                arr.retain(|e| e.get("name").and_then(|n| n.as_str()) != Some("lean-ctx"));
-                if arr.len() != before {
-                    changed = true;
-                    let _ = std::fs::write(
-                        &manifest_path,
-                        serde_json::to_string_pretty(&json).unwrap_or_default(),
-                    );
-                }
-            }
+        && let Some(arr) = json.get_mut("imports").and_then(|i| i.as_array_mut())
+    {
+        let before = arr.len();
+        arr.retain(|e| e.get("name").and_then(|n| n.as_str()) != Some("lean-ctx"));
+        if arr.len() != before {
+            changed = true;
+            let _ = std::fs::write(
+                &manifest_path,
+                serde_json::to_string_pretty(&json).unwrap_or_default(),
+            );
+        }
+    }
     changed
 }
 

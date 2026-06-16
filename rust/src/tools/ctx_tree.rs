@@ -103,9 +103,10 @@ fn generate_compact_tree(
         std::collections::HashMap::new();
     for e in &entries {
         if !e.is_dir
-            && let Some(parent) = e.path.parent() {
-                *dir_file_counts.entry(parent).or_default() += 1;
-            }
+            && let Some(parent) = e.path.parent()
+        {
+            *dir_file_counts.entry(parent).or_default() += 1;
+        }
     }
 
     for e in &entries {

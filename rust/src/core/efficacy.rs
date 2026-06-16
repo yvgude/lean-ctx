@@ -57,9 +57,10 @@ fn store_path() -> std::path::PathBuf {
 impl EfficacyStore {
     fn load() -> Self {
         if let Ok(content) = std::fs::read_to_string(store_path())
-            && let Ok(s) = serde_json::from_str::<EfficacyStore>(&content) {
-                return s;
-            }
+            && let Ok(s) = serde_json::from_str::<EfficacyStore>(&content)
+        {
+            return s;
+        }
         EfficacyStore {
             schema_version: 1,
             ..Default::default()
@@ -200,42 +201,44 @@ pub fn report() -> Vec<String> {
 
     let store = EfficacyStore::load();
     if let (Some(first), Some(last)) = (store.snapshots.first(), store.snapshots.last())
-        && first.day != last.day {
-            let hit_rate = |s: &EfficacySnapshot| {
-                let hits = u64::from(s.litm_begin_hits) + u64::from(s.litm_end_hits);
-                let total = hits + u64::from(s.litm_begin_misses) + u64::from(s.litm_end_misses);
-                if total == 0 {
-                    None
-                } else {
-                    Some(hits as f64 / total as f64)
-                }
-            };
-            if let (Some(a), Some(b)) = (hit_rate(first), hit_rate(last)) {
-                out.push(format!(
-                    "litm placement hits: {} ({}) -> {} ({})",
-                    fmt_pct(a),
-                    first.day,
-                    fmt_pct(b),
-                    last.day
-                ));
+        && first.day != last.day
+    {
+        let hit_rate = |s: &EfficacySnapshot| {
+            let hits = u64::from(s.litm_begin_hits) + u64::from(s.litm_end_hits);
+            let total = hits + u64::from(s.litm_begin_misses) + u64::from(s.litm_end_misses);
+            if total == 0 {
+                None
+            } else {
+                Some(hits as f64 / total as f64)
             }
-            let delta = last.claims_rejected.saturating_sub(first.claims_rejected);
-            if delta > 0 {
-                out.push(format!(
-                    "duplicate work prevented: {delta} rejected claim(s) since {}",
-                    first.day
-                ));
-            }
-        }
-    if let Some(last) = store.snapshots.last()
-        && last.playbook_aged_total > 0 {
+        };
+        if let (Some(a), Some(b)) = (hit_rate(first), hit_rate(last)) {
             out.push(format!(
-                "playbook survival: {}/{} aged entries net-helpful ({})",
-                last.playbook_aged_helpful,
-                last.playbook_aged_total,
-                fmt_pct(last.playbook_aged_helpful as f64 / last.playbook_aged_total as f64)
+                "litm placement hits: {} ({}) -> {} ({})",
+                fmt_pct(a),
+                first.day,
+                fmt_pct(b),
+                last.day
             ));
         }
+        let delta = last.claims_rejected.saturating_sub(first.claims_rejected);
+        if delta > 0 {
+            out.push(format!(
+                "duplicate work prevented: {delta} rejected claim(s) since {}",
+                first.day
+            ));
+        }
+    }
+    if let Some(last) = store.snapshots.last()
+        && last.playbook_aged_total > 0
+    {
+        out.push(format!(
+            "playbook survival: {}/{} aged entries net-helpful ({})",
+            last.playbook_aged_helpful,
+            last.playbook_aged_total,
+            fmt_pct(last.playbook_aged_helpful as f64 / last.playbook_aged_total as f64)
+        ));
+    }
 
     out
 }

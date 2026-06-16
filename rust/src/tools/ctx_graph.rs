@@ -346,17 +346,18 @@ fn file_path_to_module_prefixes(
             && let Some(package_name) = content.lines().map(str::trim).find_map(|line| {
                 line.strip_prefix("package ")
                     .map(|rest| rest.trim().trim_end_matches(';').to_string())
-            }) {
-                prefixes.push(package_name.clone());
-                if let Some(entry) = provider.get_file_entry(rel_path) {
-                    for export in &entry.exports {
-                        prefixes.push(format!("{package_name}.{export}"));
-                    }
-                }
-                if let Some(file_stem) = Path::new(rel_path).file_stem().and_then(|s| s.to_str()) {
-                    prefixes.push(format!("{package_name}.{file_stem}"));
+            })
+        {
+            prefixes.push(package_name.clone());
+            if let Some(entry) = provider.get_file_entry(rel_path) {
+                for export in &entry.exports {
+                    prefixes.push(format!("{package_name}.{export}"));
                 }
             }
+            if let Some(file_stem) = Path::new(rel_path).file_stem().and_then(|s| s.to_str()) {
+                prefixes.push(format!("{package_name}.{file_stem}"));
+            }
+        }
     }
 
     prefixes.sort();
@@ -601,12 +602,13 @@ fn handle_context_query(query: Option<&str>, root: &str) -> String {
             }
 
             if let Ok(impact) = graph.impact_analysis(query, 3)
-                && !impact.affected_files.is_empty() {
-                    result.push(format!(
-                        "**Impact radius:** {} files within 3 hops",
-                        impact.affected_files.len()
-                    ));
-                }
+                && !impact.affected_files.is_empty()
+            {
+                result.push(format!(
+                    "**Impact radius:** {} files within 3 hops",
+                    impact.affected_files.len()
+                ));
+            }
         }
     } else {
         result.push(format!("## Search: `{query}`\n"));

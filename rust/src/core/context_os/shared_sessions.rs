@@ -101,9 +101,10 @@ impl SharedSessionStore {
 
         if let Some(key) = lru_key
             && let Some(entry) = map.remove(&key)
-                && let Ok(session) = entry.session.try_read() {
-                    persist_session_to_disk(&key, &entry.project_root, &session);
-                }
+            && let Ok(session) = entry.session.try_read()
+        {
+            persist_session_to_disk(&key, &entry.project_root, &session);
+        }
     }
 
     pub fn active_count(&self) -> usize {

@@ -52,10 +52,10 @@ fn try_pytest(output: &str) -> Option<String> {
                     } else {
                         None
                     }
-                })
-                    && let Ok(v) = n.trim().parse::<u32>() {
-                        passed = v;
-                    }
+                }) && let Ok(v) = n.trim().parse::<u32>()
+                {
+                    passed = v;
+                }
             }
             passed = extract_pytest_counter(trimmed, " passed").unwrap_or(passed);
             failed = extract_pytest_counter(trimmed, " failed").unwrap_or(failed);
@@ -336,9 +336,10 @@ fn try_mocha(output: &str) -> Option<String> {
             }
             if let Some(start) = trimmed.rfind('(')
                 && let Some(end) = trimmed.rfind(')')
-                    && start < end {
-                        duration = trimmed[start + 1..end].to_string();
-                    }
+                && start < end
+            {
+                duration = trimmed[start + 1..end].to_string();
+            }
         }
         if trimmed.contains(" failing") {
             let before_failing = trimmed.split(" failing").next().unwrap_or("");
@@ -347,10 +348,13 @@ fn try_mocha(output: &str) -> Option<String> {
                 in_failure = true;
             }
         }
-        if in_failure && trimmed.starts_with(|c: char| c.is_ascii_digit()) && trimmed.contains(')')
-            && let Some((_, desc)) = trimmed.split_once(')') {
-                failures.push(desc.trim().to_string());
-            }
+        if in_failure
+            && trimmed.starts_with(|c: char| c.is_ascii_digit())
+            && trimmed.contains(')')
+            && let Some((_, desc)) = trimmed.split_once(')')
+        {
+            failures.push(desc.trim().to_string());
+        }
     }
 
     let mut result = format!("mocha: {passing} passed");

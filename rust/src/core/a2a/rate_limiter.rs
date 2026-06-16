@@ -129,9 +129,10 @@ pub fn global_rate_limiter() -> std::sync::MutexGuard<'static, Option<RateLimite
 fn env_u32(keys: &[&str]) -> Option<u32> {
     for k in keys {
         if let Ok(v) = std::env::var(k)
-            && let Ok(n) = v.trim().parse::<u32>() {
-                return Some(n);
-            }
+            && let Ok(n) = v.trim().parse::<u32>()
+        {
+            return Some(n);
+        }
     }
     None
 }

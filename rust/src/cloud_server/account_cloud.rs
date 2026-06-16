@@ -72,14 +72,15 @@ pub(super) async fn get_account_cloud(
                 "knowledge" => Some("knowledge_blobs"),
                 "gotchas" => Some("gotcha_blobs"),
                 _ => None,
-            } {
-                let sql =
-                    format!("SELECT entry_count, updated_at FROM {blob_table} WHERE user_id = $1");
-                if let Ok(Some(row)) = client.query_opt(&sql, &[&user_id]).await {
-                    count = row.get(0);
-                    last = row.get(1);
-                }
             }
+        {
+            let sql =
+                format!("SELECT entry_count, updated_at FROM {blob_table} WHERE user_id = $1");
+            if let Ok(Some(row)) = client.query_opt(&sql, &[&user_id]).await {
+                count = row.get(0);
+                last = row.get(1);
+            }
+        }
         merge_latest(&mut latest, last);
         buckets.insert(
             key.to_string(),

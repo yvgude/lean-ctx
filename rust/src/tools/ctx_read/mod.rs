@@ -180,14 +180,15 @@ fn open_nofollow(path: &str) -> Result<std::fs::File, std::io::Error> {
     // symlink-following attacks on the target file while allowing legitimate
     // directory symlinks (e.g., /tmp → /private/tmp on macOS).
     if let (Some(parent), Some(filename)) = (p.parent(), p.file_name())
-        && parent.exists() {
-            let canonical_parent = crate::core::pathutil::safe_canonicalize_bounded(parent, 2000);
-            let canonical_path = canonical_parent.join(filename);
-            return std::fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(&canonical_path);
-        }
+        && parent.exists()
+    {
+        let canonical_parent = crate::core::pathutil::safe_canonicalize_bounded(parent, 2000);
+        let canonical_path = canonical_parent.join(filename);
+        return std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&canonical_path);
+    }
 
     // Fallback: direct open with O_NOFOLLOW
     std::fs::OpenOptions::new()
@@ -309,14 +310,13 @@ fn handle_with_options_resolved(
         result.resolved_mode.as_str(),
         "map" | "signatures" | "aggressive" | "entropy" | "task"
     );
-    if dedup_allowed
-        && let Some(deduped) = cache.apply_dedup(path, &result.content) {
-            let new_tokens = count_tokens(&deduped);
-            if new_tokens < result.output_tokens {
-                result.content = deduped;
-                result.output_tokens = new_tokens;
-            }
+    if dedup_allowed && let Some(deduped) = cache.apply_dedup(path, &result.content) {
+        let new_tokens = count_tokens(&deduped);
+        if new_tokens < result.output_tokens {
+            result.content = deduped;
+            result.output_tokens = new_tokens;
         }
+    }
 
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         let original_tokens = cache.get(path).map_or(0, |e| e.original_tokens);
@@ -489,16 +489,17 @@ fn handle_with_options_inner(
     }
 
     if mode != "full"
-        && let Some(existing) = cache.get(path) {
-            let stale = crate::core::cache::is_cache_entry_stale_verified(
-                path,
-                existing.stored_mtime,
-                &existing.hash,
-            );
-            if stale {
-                cache.invalidate(path);
-            }
+        && let Some(existing) = cache.get(path)
+    {
+        let stale = crate::core::cache::is_cache_entry_stale_verified(
+            path,
+            existing.stored_mtime,
+            &existing.hash,
+        );
+        if stale {
+            cache.invalidate(path);
         }
+    }
 
     // Snapshot the minimal immutable data the miss paths need, then drop the
     // borrow before any mutable operations (set_compressed, invalidate, store).
@@ -825,17 +826,18 @@ fn handle_full_with_auto_delta(
         cache.record_cache_hit(path);
         if let Some(existing) = cache.get(path) {
             if !crate::core::protocol::meta_visible()
-                && let Some(cached) = existing.content() {
-                    return format_full_output(
-                        file_ref,
-                        short,
-                        ext,
-                        &cached,
-                        existing.original_tokens,
-                        existing.line_count,
-                        task,
-                    );
-                }
+                && let Some(cached) = existing.content()
+            {
+                return format_full_output(
+                    file_ref,
+                    short,
+                    ext,
+                    &cached,
+                    existing.original_tokens,
+                    existing.line_count,
+                    task,
+                );
+            }
             let out = format!(
                 "[using cached version — file read failed]\n{file_ref}={short} cached {}t {}L",
                 existing.read_count(),

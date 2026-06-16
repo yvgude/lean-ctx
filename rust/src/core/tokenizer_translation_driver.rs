@@ -223,13 +223,14 @@ fn is_synthetic_tdd_signature_line(line: &str) -> bool {
 
     // Unicode TDD signature markers: λ/§/∂/τ/ε/ν + visibility +/-.
     if let Some(first) = t.chars().next()
-        && matches!(first, 'λ' | '§' | '∂' | 'τ' | 'ε' | 'ν') {
-            let mut it = t.chars();
-            let _ = it.next();
-            if matches!(it.next(), Some('+' | '-')) {
-                return true;
-            }
+        && matches!(first, 'λ' | '§' | '∂' | 'τ' | 'ε' | 'ν')
+    {
+        let mut it = t.chars();
+        let _ = it.next();
+        if matches!(it.next(), Some('+' | '-')) {
+            return true;
         }
+    }
 
     // ASCII translated variants (after symbol mapping).
     let ascii_prefixes = [

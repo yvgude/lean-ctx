@@ -148,43 +148,43 @@ fn cmd_apply() {
 
     if let Some(path) = config::Config::path()
         && path.exists()
-            && let Ok(raw) = std::fs::read_to_string(&path)
-                && let Ok(table) = raw.parse::<toml::Table>() {
-                    let mut user_keys = Vec::new();
-                    fn collect_flat(table: &toml::Table, prefix: &str, out: &mut Vec<String>) {
-                        for (k, v) in table {
-                            let full = if prefix.is_empty() {
-                                k.clone()
-                            } else {
-                                format!("{prefix}.{k}")
-                            };
-                            if let toml::Value::Table(sub) = v {
-                                collect_flat(sub, &full, out);
-                            } else {
-                                out.push(full);
-                            }
-                        }
-                    }
-                    collect_flat(&table, "", &mut user_keys);
-                    let warnings: Vec<_> = user_keys
-                        .iter()
-                        .filter(|uk| {
-                            !known.contains(uk)
-                                && !known.iter().any(|k| uk.starts_with(&format!("{k}.")))
-                        })
-                        .collect();
-                    if warnings.is_empty() {
-                        println!("  ✓ All config keys valid.");
-                    } else {
-                        for w in &warnings {
-                            eprintln!("  [WARN] Unknown key: {w}");
-                        }
-                        eprintln!(
-                            "  {} unknown key(s) found. Continuing anyway…",
-                            warnings.len()
-                        );
-                    }
+        && let Ok(raw) = std::fs::read_to_string(&path)
+        && let Ok(table) = raw.parse::<toml::Table>()
+    {
+        let mut user_keys = Vec::new();
+        fn collect_flat(table: &toml::Table, prefix: &str, out: &mut Vec<String>) {
+            for (k, v) in table {
+                let full = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                if let toml::Value::Table(sub) = v {
+                    collect_flat(sub, &full, out);
+                } else {
+                    out.push(full);
                 }
+            }
+        }
+        collect_flat(&table, "", &mut user_keys);
+        let warnings: Vec<_> = user_keys
+            .iter()
+            .filter(|uk| {
+                !known.contains(uk) && !known.iter().any(|k| uk.starts_with(&format!("{k}.")))
+            })
+            .collect();
+        if warnings.is_empty() {
+            println!("  ✓ All config keys valid.");
+        } else {
+            for w in &warnings {
+                eprintln!("  [WARN] Unknown key: {w}");
+            }
+            eprintln!(
+                "  {} unknown key(s) found. Continuing anyway…",
+                warnings.len()
+            );
+        }
+    }
 
     // 2. Restart processes
     println!("\n[2/4] Restarting processes…");
@@ -756,16 +756,17 @@ pub fn prune_bm25_caches() -> PruneResult {
             dir.join("bm25_index.json")
         };
         if let Ok(meta) = std::fs::metadata(&index_path)
-            && meta.len() > max_bytes {
-                result.bytes_freed += meta.len();
-                let _ = std::fs::remove_file(&index_path);
-                result.removed += 1;
-                println!(
-                    "  Removed oversized ({:.1} MB): {}",
-                    meta.len() as f64 / 1_048_576.0,
-                    index_path.display()
-                );
-            }
+            && meta.len() > max_bytes
+        {
+            result.bytes_freed += meta.len();
+            let _ = std::fs::remove_file(&index_path);
+            result.removed += 1;
+            println!(
+                "  Removed oversized ({:.1} MB): {}",
+                meta.len() as f64 / 1_048_576.0,
+                index_path.display()
+            );
+        }
 
         let marker = dir.join("project_root.txt");
         if let Ok(root_str) = std::fs::read_to_string(&marker) {
@@ -826,31 +827,34 @@ pub fn prune_graph_caches() -> PruneResult {
 
         let root_from_index = try_read_project_root_from_graph(idx_file);
         if let Some(root) = root_from_index
-            && !root.is_empty() && !std::path::Path::new(&root).exists() {
-                let freed = dir_size(&dir);
-                result.bytes_freed += freed;
-                let _ = std::fs::remove_dir_all(&dir);
-                result.removed += 1;
-                println!(
-                    "  Removed orphaned graph ({:.1} MB, project gone: {}): {}",
-                    freed as f64 / 1_048_576.0,
-                    root,
-                    dir.display()
-                );
-                continue;
-            }
+            && !root.is_empty()
+            && !std::path::Path::new(&root).exists()
+        {
+            let freed = dir_size(&dir);
+            result.bytes_freed += freed;
+            let _ = std::fs::remove_dir_all(&dir);
+            result.removed += 1;
+            println!(
+                "  Removed orphaned graph ({:.1} MB, project gone: {}): {}",
+                freed as f64 / 1_048_576.0,
+                root,
+                dir.display()
+            );
+            continue;
+        }
 
         if let Ok(meta) = std::fs::metadata(idx_file)
-            && meta.len() > 100 * 1024 * 1024 {
-                result.bytes_freed += meta.len();
-                let _ = std::fs::remove_file(idx_file);
-                result.removed += 1;
-                println!(
-                    "  Removed oversized graph ({:.1} MB): {}",
-                    meta.len() as f64 / 1_048_576.0,
-                    idx_file.display()
-                );
-            }
+            && meta.len() > 100 * 1024 * 1024
+        {
+            result.bytes_freed += meta.len();
+            let _ = std::fs::remove_file(idx_file);
+            result.removed += 1;
+            println!(
+                "  Removed oversized graph ({:.1} MB): {}",
+                meta.len() as f64 / 1_048_576.0,
+                idx_file.display()
+            );
+        }
     }
 
     result

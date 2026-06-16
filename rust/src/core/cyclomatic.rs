@@ -161,9 +161,10 @@ fn python_boolean_operator(node: Node, source: &[u8]) -> u32 {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if let Ok(t) = child.utf8_text(source)
-            && (t == "and" || t == "or") {
-                return 1;
-            }
+            && (t == "and" || t == "or")
+        {
+            return 1;
+        }
     }
     0
 }

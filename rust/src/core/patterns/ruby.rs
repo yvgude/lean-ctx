@@ -146,9 +146,10 @@ fn compress_minitest(output: &str) -> Option<String> {
                         errors = n;
                     }
                 } else if part.ends_with("skips")
-                    && let Some(n) = part.split_whitespace().next().and_then(|w| w.parse().ok()) {
-                        skips = n;
-                    }
+                    && let Some(n) = part.split_whitespace().next().and_then(|w| w.parse().ok())
+                {
+                    skips = n;
+                }
             }
             if let Some(pos) = trimmed.find(" in ") {
                 time = trimmed[pos + 4..]

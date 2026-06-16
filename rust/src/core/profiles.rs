@@ -687,9 +687,10 @@ fn load_profile_recursive(name: &str, depth: usize) -> Option<Profile> {
     profile.profile.name = name.to_string();
 
     if let Some(ref parent_name) = profile.profile.inherits.clone()
-        && let Some(parent) = load_profile_recursive(parent_name, depth + 1) {
-            profile = merge_profiles(parent, profile);
-        }
+        && let Some(parent) = load_profile_recursive(parent_name, depth + 1)
+    {
+        profile = merge_profiles(parent, profile);
+    }
 
     Some(profile)
 }
@@ -1066,26 +1067,28 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
         (ProfileSource::Project, profiles_dir_project()),
     ] {
         if let Some(dir) = dir
-            && let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) == Some("toml")
-                        && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            let name = stem.to_string();
-                            let desc = try_load_toml(&path)
-                                .map(|p| p.profile.description)
-                                .unwrap_or_default();
-                            profiles.insert(
-                                name.clone(),
-                                ProfileInfo {
-                                    name,
-                                    description: desc,
-                                    source,
-                                },
-                            );
-                        }
+            && let Ok(entries) = std::fs::read_dir(&dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("toml")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    let name = stem.to_string();
+                    let desc = try_load_toml(&path)
+                        .map(|p| p.profile.description)
+                        .unwrap_or_default();
+                    profiles.insert(
+                        name.clone(),
+                        ProfileInfo {
+                            name,
+                            description: desc,
+                            source,
+                        },
+                    );
                 }
             }
+        }
     }
 
     let mut result: Vec<ProfileInfo> = profiles.into_values().collect();

@@ -104,16 +104,16 @@ fn compress_content_field(
                     && let Some(text) = item
                         .get_mut("text")
                         .and_then(|t| t.as_str().map(String::from))
-                    {
-                        if should_protect(kind, &text) {
-                            continue;
-                        }
-                        let compressed = compress_tool_result(&text, tool_name);
-                        if compressed.len() < text.len() {
-                            item["text"] = Value::String(compressed);
-                            modified = true;
-                        }
+                {
+                    if should_protect(kind, &text) {
+                        continue;
                     }
+                    let compressed = compress_tool_result(&text, tool_name);
+                    if compressed.len() < text.len() {
+                        item["text"] = Value::String(compressed);
+                        modified = true;
+                    }
+                }
             }
             modified
         }

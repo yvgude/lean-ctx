@@ -150,37 +150,45 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
             }
             // Also extract counters from summary as fallback
             if let Some(n) = extract_counter(trimmed, " passed")
-                && passed.is_empty() && n > 0 {
-                    // Use counter from summary if we didn't see individual lines
-                    for _ in 0..n {
-                        passed.push(String::new());
-                    }
+                && passed.is_empty()
+                && n > 0
+            {
+                // Use counter from summary if we didn't see individual lines
+                for _ in 0..n {
+                    passed.push(String::new());
                 }
+            }
             if let Some(n) = extract_counter(trimmed, " failed")
-                && failed.is_empty() && n > 0 {
-                    for _ in 0..n {
-                        failed.push(String::new());
-                    }
+                && failed.is_empty()
+                && n > 0
+            {
+                for _ in 0..n {
+                    failed.push(String::new());
                 }
+            }
             if let Some(n) = extract_counter(trimmed, " skipped")
-                && skipped == 0 {
-                    skipped = n;
-                }
+                && skipped == 0
+            {
+                skipped = n;
+            }
             if let Some(n) = extract_counter(trimmed, " xfailed")
-                && xfailed == 0 {
-                    xfailed = n;
-                }
+                && xfailed == 0
+            {
+                xfailed = n;
+            }
             if let Some(n) = extract_counter(trimmed, " xpassed")
-                && xpassed == 0 {
-                    xpassed = n;
-                }
+                && xpassed == 0
+            {
+                xpassed = n;
+            }
             if let Some(n) = extract_counter(trimmed, " warning") {
                 warnings = n;
             }
             if let Some(n) = extract_counter(trimmed, " error")
-                && errors == 0 {
-                    errors = n;
-                }
+                && errors == 0
+            {
+                errors = n;
+            }
         }
     }
 

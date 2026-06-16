@@ -48,16 +48,18 @@ pub fn extract_signatures_ts(content: &str, file_ext: &str) -> Option<Vec<Signat
             if cap.index == def_idx {
                 def_node = Some(cap.node);
             } else if cap.index == name_idx
-                && let Ok(text) = cap.node.utf8_text(source) {
-                    name_text = text.to_string();
-                }
+                && let Ok(text) = cap.node.utf8_text(source)
+            {
+                name_text = text.to_string();
+            }
         }
 
         if let Some(node) = def_node
             && !name_text.is_empty()
-                && let Some(sig) = node_to_signature(&node, &name_text, file_ext, source) {
-                    sigs.push(sig);
-                }
+            && let Some(sig) = node_to_signature(&node, &name_text, file_ext, source)
+        {
+            sigs.push(sig);
+        }
     }
 
     Some(sigs)

@@ -290,11 +290,12 @@ impl CallGraph {
 
         // Try serving from disk cache first
         if let Some(cached) = Self::load(project_root)
-            && !cache_looks_stale(&cached, &index) {
-                let arc = Arc::new(cached);
-                *guard = BuildState::Ready(Arc::clone(&arc));
-                return Ok(arc);
-            }
+            && !cache_looks_stale(&cached, &index)
+        {
+            let arc = Arc::new(cached);
+            *guard = BuildState::Ready(Arc::clone(&arc));
+            return Ok(arc);
+        }
 
         let files_total = index.files.len();
         let files_done = Arc::new(AtomicUsize::new(0));
@@ -797,9 +798,10 @@ fn rank_callee_def_file(
     if let Some(imported) = imports.get(caller_file) {
         let mut in_scope = def_files.iter().filter(|f| imported.contains(**f));
         if let Some(first) = in_scope.next()
-            && in_scope.next().is_none() {
-                return Some((*first).to_string());
-            }
+            && in_scope.next().is_none()
+        {
+            return Some((*first).to_string());
+        }
     }
     if def_files.len() == 1 {
         return Some(def_files[0].to_string());
@@ -855,12 +857,13 @@ pub fn resolve_callee_files(index: &ProjectIndex, edges: &[CallEdge]) -> HashMap
     let mut resolved: HashMap<&str, HashSet<String>> = HashMap::new();
     for e in edges {
         if let Some(defs) = name_files.get(e.callee_name.as_str())
-            && let Some(file) = rank_callee_def_file(defs, &e.caller_file, &imports) {
-                resolved
-                    .entry(e.callee_name.as_str())
-                    .or_default()
-                    .insert(file);
-            }
+            && let Some(file) = rank_callee_def_file(defs, &e.caller_file, &imports)
+        {
+            resolved
+                .entry(e.callee_name.as_str())
+                .or_default()
+                .insert(file);
+        }
     }
 
     resolved

@@ -93,9 +93,10 @@ fn rotate_wakeup_manifest(session: &crate::core::session::SessionState, profile_
 
     for entry in &updated.wakeup_manifest {
         if !entry.missed
-            && let Some(pos) = Position::parse(&entry.position) {
-                record_outcome(&entry.profile, pos, true);
-            }
+            && let Some(pos) = Position::parse(&entry.position)
+        {
+            record_outcome(&entry.profile, pos, true);
+        }
     }
 
     let mut manifest: Vec<ManifestEntry> = Vec::new();

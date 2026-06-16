@@ -350,20 +350,21 @@ pub(super) async fn forgot_password(
         .map_err(internal_error)?;
 
     if let Some((user_id, _)) = user
-        && let Some(ref mailer) = state.mailer {
-            let token = generate_token();
-            let token_sha = sha256_hex(&token);
-            let expires_at = Utc::now() + Duration::hours(1);
-            store_password_reset(&state.pool, &token_sha, user_id, expires_at)
-                .await
-                .map_err(internal_error)?;
-            let link = format!(
-                "{}/login?reset_token={}",
-                state.cfg.public_base_url.trim_end_matches('/'),
-                token
-            );
-            let _ = mailer.send_password_reset(&email, &link).await;
-        }
+        && let Some(ref mailer) = state.mailer
+    {
+        let token = generate_token();
+        let token_sha = sha256_hex(&token);
+        let expires_at = Utc::now() + Duration::hours(1);
+        store_password_reset(&state.pool, &token_sha, user_id, expires_at)
+            .await
+            .map_err(internal_error)?;
+        let link = format!(
+            "{}/login?reset_token={}",
+            state.cfg.public_base_url.trim_end_matches('/'),
+            token
+        );
+        let _ = mailer.send_password_reset(&email, &link).await;
+    }
 
     Ok(Json(
         serde_json::json!({ "message": "If an account exists, a reset email has been sent." }),
@@ -485,24 +486,23 @@ pub(super) async fn resend_verification(
         let verified = is_email_verified(&state.pool, user_id)
             .await
             .map_err(internal_error)?;
-        if !verified
-            && let Some(ref mailer) = state.mailer {
-                let token = generate_token();
-                let token_sha = sha256_hex(&token);
-                let expires_at = Utc::now() + Duration::hours(2);
-                invalidate_pending_verifications(&state.pool, user_id)
-                    .await
-                    .map_err(internal_error)?;
-                store_email_verification(&state.pool, &token_sha, user_id, expires_at)
-                    .await
-                    .map_err(internal_error)?;
-                let link = format!(
-                    "{}/api/auth/verify-email?token={}",
-                    state.cfg.api_base_url.trim_end_matches('/'),
-                    token
-                );
-                let _ = mailer.send_verification(&email, &link).await;
-            }
+        if !verified && let Some(ref mailer) = state.mailer {
+            let token = generate_token();
+            let token_sha = sha256_hex(&token);
+            let expires_at = Utc::now() + Duration::hours(2);
+            invalidate_pending_verifications(&state.pool, user_id)
+                .await
+                .map_err(internal_error)?;
+            store_email_verification(&state.pool, &token_sha, user_id, expires_at)
+                .await
+                .map_err(internal_error)?;
+            let link = format!(
+                "{}/api/auth/verify-email?token={}",
+                state.cfg.api_base_url.trim_end_matches('/'),
+                token
+            );
+            let _ = mailer.send_verification(&email, &link).await;
+        }
     }
 
     Ok(Json(
@@ -552,22 +552,23 @@ pub(super) async fn auth_user(
 ) -> Result<(Uuid, String), (StatusCode, String)> {
     if let Some(v) = headers.get(axum::http::header::AUTHORIZATION)
         && let Ok(s) = v.to_str()
-            && let Some(key) = s.strip_prefix("Bearer ").map(str::trim) {
-                let sha = sha256_hex(key);
-                if let Some((user_id, email)) = lookup_api_key(&state.pool, &sha)
-                    .await
-                    .map_err(internal_error)?
-                {
-                    return Ok((user_id, email));
-                }
-                if let Some((user_id, email)) = super::oauth::lookup_access_token(&state.pool, &sha)
-                    .await
-                    .map_err(internal_error)?
-                {
-                    return Ok((user_id, email));
-                }
-                return Err((StatusCode::UNAUTHORIZED, "Invalid token".into()));
-            }
+        && let Some(key) = s.strip_prefix("Bearer ").map(str::trim)
+    {
+        let sha = sha256_hex(key);
+        if let Some((user_id, email)) = lookup_api_key(&state.pool, &sha)
+            .await
+            .map_err(internal_error)?
+        {
+            return Ok((user_id, email));
+        }
+        if let Some((user_id, email)) = super::oauth::lookup_access_token(&state.pool, &sha)
+            .await
+            .map_err(internal_error)?
+        {
+            return Ok((user_id, email));
+        }
+        return Err((StatusCode::UNAUTHORIZED, "Invalid token".into()));
+    }
 
     Err((StatusCode::UNAUTHORIZED, "Unauthorized".into()))
 }
