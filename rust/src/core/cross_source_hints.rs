@@ -109,9 +109,11 @@ mod tests {
         let hints = hints_for_file("src/auth.rs", &edges, ROOT);
         assert_eq!(hints.len(), 2);
         assert!(hints.iter().any(|h| h.source_uri.contains("issues/42")));
-        assert!(hints
-            .iter()
-            .any(|h| h.source_uri.contains("schemas/sessions")));
+        assert!(
+            hints
+                .iter()
+                .any(|h| h.source_uri.contains("schemas/sessions"))
+        );
     }
 
     #[test]

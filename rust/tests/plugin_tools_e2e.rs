@@ -8,8 +8,8 @@
 
 use std::fs;
 
-use lean_ctx::core::plugins::tools::invoke;
 use lean_ctx::core::plugins::PluginManager;
+use lean_ctx::core::plugins::tools::invoke;
 use lean_ctx::server::registry::build_registry;
 
 #[test]
@@ -29,7 +29,7 @@ fn manifest_tool_is_discovered_registered_and_invocable() {
     )
     .expect("manifest");
 
-    std::env::set_var("LEAN_CTX_PLUGINS_DIR", root.path());
+    unsafe { std::env::set_var("LEAN_CTX_PLUGINS_DIR", root.path()) };
     PluginManager::init();
 
     // 1) Discovered from the manifest (no fork).

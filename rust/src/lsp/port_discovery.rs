@@ -110,9 +110,9 @@ mod tests {
     fn port_file_path_honors_data_dir_env() {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join("lc_jb_portfile_env");
-        std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
         let p = port_file_path("/some/project").unwrap();
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         assert_eq!(p, dir.join("jetbrains-a0317725f24b01df.port"));
     }
 }

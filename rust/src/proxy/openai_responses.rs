@@ -6,10 +6,10 @@ use axum::{
 };
 use serde_json::Value;
 
+use super::ProxyState;
 use super::compress::compress_tool_result;
 use super::forward;
-use super::tool_kind::{self, should_protect, ToolResultKind};
-use super::ProxyState;
+use super::tool_kind::{self, ToolResultKind, should_protect};
 
 /// Proxy handler for OpenAI's Responses API (`POST /v1/responses`).
 ///

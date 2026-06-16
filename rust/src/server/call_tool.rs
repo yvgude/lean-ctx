@@ -699,7 +699,7 @@ impl LeanCtxServer {
                 let my_agent = self.agent_id.read().await.clone();
                 let category = helpers::get_str(args, "category");
                 let key = helpers::get_str(args, "key");
-                if let (Some(ref cat), Some(ref k)) = (&category, &key) {
+                if let (Some(cat), Some(k)) = (&category, &key) {
                     let recent = rt.bus.recent_by_kind(
                         &self.workspace_id,
                         &self.channel_id,

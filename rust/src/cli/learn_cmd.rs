@@ -1,4 +1,4 @@
-use crate::core::gotcha_tracker::{self, learn, GotchaStore};
+use crate::core::gotcha_tracker::{self, GotchaStore, learn};
 
 pub(crate) fn cmd_learn(args: &[String]) {
     let project_root = super::common::detect_project_root(args);

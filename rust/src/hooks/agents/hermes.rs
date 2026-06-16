@@ -1,4 +1,4 @@
-use super::super::{install_project_rules, resolve_binary_path, HookMode};
+use super::super::{HookMode, install_project_rules, resolve_binary_path};
 
 pub(super) const HERMES_RULES_TEMPLATE: &str = "\
 # lean-ctx — Context Engineering Layer

@@ -96,8 +96,8 @@ mod tests {
     impl Drop for EnvRestore {
         fn drop(&mut self) {
             match &self.0 {
-                Some(v) => std::env::set_var("LEAN_CTX_DATA_DIR", v),
-                None => std::env::remove_var("LEAN_CTX_DATA_DIR"),
+                Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
+                None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
             }
         }
     }
@@ -115,7 +115,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         // Restore runs before `tmp` is removed and while the lock is still held.
         let _restore = EnvRestore(std::env::var("LEAN_CTX_DATA_DIR").ok());
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
         body();
     }
 

@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::core::git::shadow::{self, Checkpoint};
 use crate::core::tokens::count_tokens;
-use crate::server::tool_trait::{get_int, get_str, McpTool, ToolContext, ToolOutput};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_int, get_str};
 use crate::tool_defs::tool_def;
 
 const DEFAULT_LOG_LIMIT: usize = 20;

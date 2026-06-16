@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::deep_queries;
-use super::graph_index::{normalize_project_root, ProjectIndex, SymbolEntry};
+use super::graph_index::{ProjectIndex, SymbolEntry, normalize_project_root};
 
 // ---------------------------------------------------------------------------
 // Data types

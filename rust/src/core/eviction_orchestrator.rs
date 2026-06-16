@@ -150,11 +150,12 @@ impl EvictionOrchestrator {
         F: FnOnce(&mut SessionCache) -> R,
         R: Default,
     {
-        if let Ok(mut guard) = self.cache.try_write() {
-            f(&mut guard)
-        } else {
-            tracing::debug!("[eviction] cache write lock contended, skipping");
-            R::default()
+        match self.cache.try_write() {
+            Ok(mut guard) => f(&mut guard),
+            _ => {
+                tracing::debug!("[eviction] cache write lock contended, skipping");
+                R::default()
+            }
         }
     }
 }

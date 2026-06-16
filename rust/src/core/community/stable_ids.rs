@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use super::graph::{cohesion_of, AdjGraph};
+use super::graph::{AdjGraph, cohesion_of};
 use crate::core::graph_index::ProjectIndex;
 
 /// Relabel an assignment into a deterministic `0..k` ordering.

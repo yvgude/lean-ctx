@@ -284,8 +284,8 @@ async fn events_endpoint_replays_tool_call_event_for_workspace_channel() {
 /// with the honest aggregated roll-up read back from the savings store.
 #[tokio::test]
 async fn savings_summary_scope_gated_and_aggregated() {
-    use crate::core::savings_ledger::signed_batch::BatchTotals;
     use crate::core::savings_ledger::SignedSavingsBatchV1;
+    use crate::core::savings_ledger::signed_batch::BatchTotals;
 
     let tmp = tempfile::tempdir().unwrap();
     let cfg = cfg_savings(&tmp);
@@ -387,8 +387,8 @@ async fn savings_summary_scope_gated_and_aggregated() {
 /// payload carries its own series + breakdowns.
 #[tokio::test]
 async fn savings_member_drilldown_scope_gated() {
-    use crate::core::savings_ledger::signed_batch::BatchTotals;
     use crate::core::savings_ledger::SignedSavingsBatchV1;
+    use crate::core::savings_ledger::signed_batch::BatchTotals;
 
     let tmp = tempfile::tempdir().unwrap();
     let cfg = cfg_savings(&tmp);
@@ -494,8 +494,8 @@ async fn savings_member_drilldown_scope_gated() {
 /// camelCase on storage; snake_case `storage.used_bytes` inside usage).
 #[tokio::test]
 async fn storage_and_usage_scope_gated_with_metering_shapes() {
-    use crate::core::savings_ledger::signed_batch::BatchTotals;
     use crate::core::savings_ledger::SignedSavingsBatchV1;
+    use crate::core::savings_ledger::signed_batch::BatchTotals;
 
     let tmp = tempfile::tempdir().unwrap();
     let cfg = cfg_savings(&tmp);

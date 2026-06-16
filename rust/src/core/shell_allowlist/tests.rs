@@ -142,7 +142,7 @@ fn redirect_ampersand_forms_not_separators() {
     assert!(check_all_segments("cmd 1>&2", &list).is_ok()); // N>&M
     assert!(check_all_segments("cmd &>out.log", &list).is_ok()); // &>file
     assert!(check_all_segments("cmd &>>out.log", &list).is_ok()); // &>>file
-                                                                  // The redirect must not leak the fd/target as a new segment.
+    // The redirect must not leak the fd/target as a new segment.
     assert_eq!(split_on_operators("pnpm run compile 2>&1").len(), 1);
     assert_eq!(split_on_operators("cmd &>out.log").len(), 1);
 }
@@ -216,11 +216,13 @@ fn allows_dollar_paren_in_arguments() {
 #[test]
 fn allows_git_commit_with_cat_heredoc() {
     let list = allow(&["git", "cat"]);
-    assert!(check_all_segments(
-        "git commit -m \"$(cat <<'EOF'\nfix: something\nEOF\n)\"",
-        &list,
-    )
-    .is_ok());
+    assert!(
+        check_all_segments(
+            "git commit -m \"$(cat <<'EOF'\nfix: something\nEOF\n)\"",
+            &list,
+        )
+        .is_ok()
+    );
 }
 
 #[test]

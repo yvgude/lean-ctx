@@ -3,7 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use crate::core::plugins::{executor::HookPoint, PluginManager};
+use crate::core::plugins::{PluginManager, executor::HookPoint};
 
 pub(crate) fn handle_remember(
     project_root: &str,
@@ -544,7 +544,7 @@ pub(crate) fn rehydrate_from_archives(
 /// item that the last wakeup injection already placed means the placement did
 /// not register with the model — record a miss for that position.
 fn score_placement_misses(query: &str) {
-    use crate::core::litm_calibration::{key_matches, record_outcome, Position};
+    use crate::core::litm_calibration::{Position, key_matches, record_outcome};
 
     let Some(mut session) = crate::core::session::SessionState::load_latest() else {
         return;

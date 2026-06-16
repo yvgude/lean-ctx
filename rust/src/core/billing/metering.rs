@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::savings_ledger::{roi_report, RoiReport};
+use crate::core::savings_ledger::{RoiReport, roi_report};
 
 /// A billable usage record for a metering period. Carries only counts, sums,
 /// and provenance hashes — no paths, prompts, or content (inherited from

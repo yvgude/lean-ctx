@@ -219,7 +219,7 @@ pub fn verify_chain() -> ChainVerifyResult {
                     total_entries: total,
                     valid: false,
                     first_invalid_at: Some(total),
-                }
+                };
             }
         };
 

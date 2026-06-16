@@ -93,7 +93,7 @@ impl FilterEngine {
                 }
             }
 
-            if let (Some(ref pat_re), Some(ref replacement)) = (&rule.pattern_re, &rule.replace) {
+            if let (Some(pat_re), Some(replacement)) = (&rule.pattern_re, &rule.replace) {
                 let result = pat_re.replace_all(output, replacement.as_str());
                 if result != output {
                     return Some(result.to_string());

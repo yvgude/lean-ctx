@@ -11,11 +11,11 @@
 //!   8. ChunkKind extensions for external sources
 
 use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, CodeChunk};
-use lean_ctx::core::content_chunk::{extract_file_references, ContentChunk, ContentSource};
+use lean_ctx::core::content_chunk::{ContentChunk, ContentSource, extract_file_references};
 use lean_ctx::core::context_column::{
     ColumnContext, ColumnOutput, ContextColumn, FilesystemColumn, ProviderColumn,
 };
-use lean_ctx::core::providers::registry::{global_registry, result_to_chunks, ProviderRegistry};
+use lean_ctx::core::providers::registry::{ProviderRegistry, global_registry, result_to_chunks};
 use lean_ctx::core::providers::{ContextProvider, ProviderItem, ProviderParams, ProviderResult};
 use std::sync::Arc;
 
@@ -555,9 +555,11 @@ fn result_to_chunks_extracts_file_references_from_body() {
     };
 
     let chunks = result_to_chunks(&result);
-    assert!(chunks[0]
-        .references
-        .contains(&"src/auth/handler.rs".to_string()));
+    assert!(
+        chunks[0]
+            .references
+            .contains(&"src/auth/handler.rs".to_string())
+    );
     assert!(chunks[0].references.contains(&"lib/utils.ts".to_string()));
 }
 

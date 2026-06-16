@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 use glob::Pattern;
 use ignore::WalkBuilder;
 
-use crate::tools::ctx_search::{is_binary_ext, is_generated_file, MAX_FILE_SIZE, MAX_WALK_DEPTH};
+use crate::tools::ctx_search::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
 
 /// Freshness window before a background rebuild is triggered. Matches the
 /// bounded-staleness model already used by the BM25 cache.

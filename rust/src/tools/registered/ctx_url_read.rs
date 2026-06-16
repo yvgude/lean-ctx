@@ -1,11 +1,11 @@
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::core::protocol::append_savings;
 use crate::core::tokens::count_tokens;
 use crate::core::web::{self, ReadMode, ReadOptions};
-use crate::server::tool_trait::{get_int, get_str, McpTool, ToolContext, ToolOutput};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_int, get_str};
 use crate::tool_defs::tool_def;
 
 /// `ctx_url_read` — fetch a web page, PDF, or YouTube video and return

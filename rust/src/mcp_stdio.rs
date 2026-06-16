@@ -9,7 +9,7 @@ use rmcp::{
     service::{RoleServer, RxJsonRpcMessage, ServiceRole, TxJsonRpcMessage},
     transport::Transport,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -410,16 +410,17 @@ impl<T: DeserializeOwned> Decoder for HybridJsonRpcMessageCodec<T> {
     fn decode_eof(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
         match self.protocol.get() {
             Some(WireProtocol::ContentLength) if !buf.is_empty() => self.decode_content_length(buf),
-            _ => Ok(if let Some(frame) = self.decode(buf)? {
-                Some(frame)
-            } else {
-                self.next_index = 0;
-                if buf.is_empty() || buf == &b"\r"[..] {
-                    None
-                } else {
-                    let line = buf.split_to(buf.len());
-                    let payload = without_carriage_return(&line);
-                    try_parse_with_compatibility(payload, "decode_eof")?
+            _ => Ok(match self.decode(buf)? {
+                Some(frame) => Some(frame),
+                _ => {
+                    self.next_index = 0;
+                    if buf.is_empty() || buf == &b"\r"[..] {
+                        None
+                    } else {
+                        let line = buf.split_to(buf.len());
+                        let payload = without_carriage_return(&line);
+                        try_parse_with_compatibility(payload, "decode_eof")?
+                    }
                 }
             }),
         }
@@ -511,8 +512,10 @@ mod tests {
             )
             .unwrap();
 
-        assert!(std::str::from_utf8(&buf)
-            .unwrap()
-            .starts_with("Content-Length: "));
+        assert!(
+            std::str::from_utf8(&buf)
+                .unwrap()
+                .starts_with("Content-Length: ")
+        );
     }
 }

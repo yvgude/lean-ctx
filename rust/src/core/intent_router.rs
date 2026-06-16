@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::core::budget_tracker::{BudgetLevel, BudgetSnapshot};
 use crate::core::context_ledger::PressureAction;
-use crate::core::intent_engine::{classify, route_intent, IntentDimension, ModelTier, TaskType};
+use crate::core::intent_engine::{IntentDimension, ModelTier, TaskType, classify, route_intent};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct IntentRouteV1 {

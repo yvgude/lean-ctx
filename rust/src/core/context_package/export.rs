@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 
-use super::bundle::{ContextPackage, KnowledgeFact, PackageMetadata, SessionSlice, FORMAT_VERSION};
+use super::bundle::{ContextPackage, FORMAT_VERSION, KnowledgeFact, PackageMetadata, SessionSlice};
 use crate::core::session::SessionState;
 use crate::core::session_summary;
 

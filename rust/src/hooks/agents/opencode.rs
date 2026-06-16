@@ -1,4 +1,4 @@
-use super::super::{mcp_server_quiet_mode, resolve_binary_path, HookMode};
+use super::super::{HookMode, mcp_server_quiet_mode, resolve_binary_path};
 use crate::core::config::{Config, RulesInjection, RulesScope};
 
 pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
@@ -53,8 +53,8 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
                                 let _ = std::fs::write(&config_path, formatted);
                                 if !mcp_server_quiet_mode() {
                                     eprintln!(
-                                    "  \x1b[32m✓\x1b[0m OpenCode MCP configured at {display_path}"
-                                );
+                                        "  \x1b[32m✓\x1b[0m OpenCode MCP configured at {display_path}"
+                                    );
                                 }
                             }
                         }

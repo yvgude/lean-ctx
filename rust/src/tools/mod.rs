@@ -95,7 +95,7 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     async fn resolve_path_can_reroot_to_trusted_startup_root_when_session_root_is_stale() {
-        std::env::set_var("LEAN_CTX_ALLOW_REROOT", "1");
+        unsafe { std::env::set_var("LEAN_CTX_ALLOW_REROOT", "1") };
         let tmp = tempfile::tempdir().unwrap();
         let stale = tmp.path().join("stale");
         let real = tmp.path().join("real");
@@ -177,7 +177,7 @@ mod resolve_path_tests {
         let _data = tempfile::tempdir().unwrap();
         let _tmp = tempfile::tempdir().unwrap();
 
-        std::env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", _data.path()) };
 
         let repo_a = _tmp.path().join("repo-a");
         let repo_b = _tmp.path().join("repo-b");
@@ -205,7 +205,7 @@ mod resolve_path_tests {
             "default",
             "default",
         );
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
@@ -223,7 +223,7 @@ mod resolve_path_tests {
         let _data = tempfile::tempdir().unwrap();
         let _tmp = tempfile::tempdir().unwrap();
 
-        std::env::set_var("LEAN_CTX_DATA_DIR", _data.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", _data.path()) };
 
         let repo_a = _tmp.path().join("repo-a");
         let repo_b = _tmp.path().join("repo-b");
@@ -247,7 +247,7 @@ mod resolve_path_tests {
             "default",
             "default",
         );
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));

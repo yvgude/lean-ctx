@@ -16,15 +16,18 @@ pub(super) fn get_route(path: &str) -> Option<(&'static str, &'static str, Strin
 }
 
 fn bounce() -> (&'static str, &'static str, String) {
-    let payload = if let Ok(bt) = crate::core::bounce_tracker::global().lock() {
-        serde_json::json!({
-            "summary": bt.format_summary(),
-            "total_bounces": bt.total_bounces(),
-            "total_wasted_tokens": bt.total_wasted_tokens(),
-            "per_extension": bt.per_extension_json(),
-        })
-    } else {
-        serde_json::json!({ "error": "lock failed" })
+    let payload = match crate::core::bounce_tracker::global().lock() {
+        Ok(bt) => {
+            serde_json::json!({
+                "summary": bt.format_summary(),
+                "total_bounces": bt.total_bounces(),
+                "total_wasted_tokens": bt.total_wasted_tokens(),
+                "per_extension": bt.per_extension_json(),
+            })
+        }
+        _ => {
+            serde_json::json!({ "error": "lock failed" })
+        }
     };
     let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
     ("200 OK", "application/json", json)
@@ -49,14 +52,17 @@ fn client() -> (&'static str, &'static str, String) {
 }
 
 fn dynamic_tools() -> (&'static str, &'static str, String) {
-    let payload = if let Ok(state) = crate::server::dynamic_tools::global().lock() {
-        serde_json::json!({
-            "active_categories": state.active_categories(),
-            "all_categories": crate::server::dynamic_tools::DynamicToolState::all_categories(),
-            "supports_list_changed": state.supports_list_changed(),
-        })
-    } else {
-        serde_json::json!({ "error": "lock failed" })
+    let payload = match crate::server::dynamic_tools::global().lock() {
+        Ok(state) => {
+            serde_json::json!({
+                "active_categories": state.active_categories(),
+                "all_categories": crate::server::dynamic_tools::DynamicToolState::all_categories(),
+                "supports_list_changed": state.supports_list_changed(),
+            })
+        }
+        _ => {
+            serde_json::json!({ "error": "lock failed" })
+        }
     };
     let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
     ("200 OK", "application/json", json)

@@ -1,9 +1,9 @@
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    get_bool, get_str, get_str_array, McpTool, ToolContext, ToolOutput,
+    McpTool, ToolContext, ToolOutput, get_bool, get_str, get_str_array,
 };
 use crate::tool_defs::tool_def;
 
@@ -48,8 +48,9 @@ impl McpTool for CtxMultiReadTool {
     ) -> Result<ToolOutput, ErrorData> {
         // Panic guard (mirrors ctx_read): a panic in tree-sitter / compression must
         // never unwind through the dispatch `block_in_place` and kill the MCP server.
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle_inner(args, ctx)))
-        {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.handle_inner(args, ctx)
+        })) {
             Ok(result) => result,
             Err(_) => Err(ErrorData::internal_error(
                 "ctx_multi_read panicked while processing the batch. This is a bug — please report it.",

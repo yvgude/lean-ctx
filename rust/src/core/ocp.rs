@@ -11,7 +11,7 @@
 
 use crate::core::capabilities::{check_capabilities, role_capabilities};
 use crate::core::events::{EventKind, LeanCtxEvent};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Project a runtime event onto the OCP Part 5 wire shape.
 ///

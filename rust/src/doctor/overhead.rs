@@ -282,7 +282,9 @@ pub(super) fn run_overhead(json: bool) -> i32 {
                 "  {YELLOW}⚠ {client}: {n} files contain lean-ctx rules — the same guidance is billed {n}× per session.{RST}"
             );
         }
-        println!("  {DIM}Fix: `lean-ctx rules dedup --apply` keeps one canonical source per client (#578).{RST}");
+        println!(
+            "  {DIM}Fix: `lean-ctx rules dedup --apply` keeps one canonical source per client (#578).{RST}"
+        );
     }
 
     println!();

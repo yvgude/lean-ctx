@@ -239,11 +239,7 @@ fn git_out(project_root: &Path, args: &[&str]) -> Option<String> {
     }
     let s = String::from_utf8(out.stdout).ok()?;
     let s = s.trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 fn now_ms() -> u64 {

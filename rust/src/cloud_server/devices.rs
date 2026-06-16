@@ -6,13 +6,13 @@
 //! Labels are display metadata only: they never participate in auth, quota,
 //! or billing decisions, and a user can forget a device at any time.
 
+use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::auth::{auth_user, AppState};
+use super::auth::{AppState, auth_user};
 use super::helpers::internal_error;
 
 /// Maximum accepted label length (characters). Hostnames are ≤253 by RFC but

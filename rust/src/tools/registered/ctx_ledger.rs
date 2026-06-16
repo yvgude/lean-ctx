@@ -1,12 +1,12 @@
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::core::context_field::ContextItemId;
 use crate::core::context_overlay::{
     ContextOverlay, OverlayAuthor, OverlayOp, OverlayScope, OverlayStore,
 };
-use crate::server::tool_trait::{get_str, McpTool, ToolContext, ToolOutput};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_str};
 use crate::tool_defs::tool_def;
 
 pub struct CtxLedgerTool;
@@ -104,11 +104,12 @@ impl McpTool for CtxLedgerTool {
                 ledger.reset();
                 ledger.save();
                 let flags_cleared = if let Some(cache_lock) = ctx.cache.as_ref() {
-                    if let Ok(mut cache) = cache_lock.try_write() {
-                        cache.reset_delivery_flags();
-                        true
-                    } else {
-                        false
+                    match cache_lock.try_write() {
+                        Ok(mut cache) => {
+                            cache.reset_delivery_flags();
+                            true
+                        }
+                        _ => false,
                     }
                 } else {
                     false

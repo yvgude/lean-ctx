@@ -43,7 +43,7 @@ async fn call_tool(
 async fn anomaly_detector_is_persisted_from_tool_call_pipeline() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let data_dir = tempfile::tempdir().expect("data dir");
-    std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
     let dir = tempfile::tempdir().expect("project dir");
     let file_path = dir.path().join("a.txt");
@@ -83,7 +83,7 @@ async fn anomaly_detector_is_persisted_from_tool_call_pipeline() {
         "expected anomaly_detector.json to be persisted"
     );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 #[allow(clippy::await_holding_lock)]
@@ -91,7 +91,7 @@ async fn anomaly_detector_is_persisted_from_tool_call_pipeline() {
 async fn episodic_and_procedural_memory_persist_via_ctx_session_actions() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let data_dir = tempfile::tempdir().expect("data dir");
-    std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
     let dir = tempfile::tempdir().expect("project dir");
     let file_path = dir.path().join("a.txt");
@@ -160,5 +160,5 @@ async fn episodic_and_procedural_memory_persist_via_ctx_session_actions() {
         "expected at least one procedural store file"
     );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

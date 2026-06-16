@@ -597,9 +597,13 @@ pub fn run() {
     // Shadow mode status
     let cfg = crate::core::config::Config::load();
     let shadow_line = if cfg.shadow_mode {
-        format!("{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools intercepted → ctx_*){RST}")
+        format!(
+            "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools intercepted → ctx_*){RST}"
+        )
     } else {
-        format!("{BOLD}Shadow mode{RST}  {DIM}disabled{RST}  {DIM}(enable: lean-ctx config set shadow_mode true){RST}")
+        format!(
+            "{BOLD}Shadow mode{RST}  {DIM}disabled{RST}  {DIM}(enable: lean-ctx config set shadow_mode true){RST}"
+        )
     };
     println!("  {shadow_line}");
 
@@ -638,7 +642,9 @@ pub fn run() {
 
     let needs_attention = effective_total.saturating_sub(passed);
     println!();
-    println!("  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{effective_total}{RST} checks passed");
+    println!(
+        "  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{effective_total}{RST} checks passed"
+    );
     if needs_attention > 0 {
         println!(
             "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}lean-ctx doctor --fix{RST}"
@@ -854,7 +860,7 @@ mod tests {
     fn bashrc_not_active_on_windows_even_with_bash_in_shell_env() {
         // Issue #214: On Windows, Git Bash sets $SHELL globally to bash.exe.
         // .bashrc should NOT be flagged on Windows unless actually inside bash.
-        std::env::remove_var("BASH_VERSION");
+        unsafe { std::env::remove_var("BASH_VERSION") };
         assert!(!is_active_shell_impl(
             "~/.bashrc",
             "C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe",
@@ -888,7 +894,7 @@ mod tests {
     fn bashrc_not_active_on_windows_without_powershell_detection() {
         // Windows + $SHELL=bash but NOT in actual bash session (no BASH_VERSION).
         // This is the exact scenario from issue #214: Git Bash sets $SHELL globally.
-        std::env::remove_var("BASH_VERSION");
+        unsafe { std::env::remove_var("BASH_VERSION") };
         assert!(!is_active_shell_impl(
             "~/.bashrc",
             "/usr/bin/bash",

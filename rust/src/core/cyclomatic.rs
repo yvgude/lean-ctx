@@ -61,11 +61,7 @@ fn cyclomatic_per_function_impl(source: &str, extension: &str) -> Option<Vec<Fun
         },
     )?;
 
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() { None } else { Some(out) }
 }
 
 #[cfg(feature = "tree-sitter")]

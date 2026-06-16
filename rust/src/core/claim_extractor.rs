@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use super::context_proof_v2::{
-    deterministic_claim, lean_proved_claim, policy_claim, Claim, ClaimKind, ClaimStatus,
-    ContextProofV2, VerifierKind,
+    Claim, ClaimKind, ClaimStatus, ContextProofV2, VerifierKind, deterministic_claim,
+    lean_proved_claim, policy_claim,
 };
 
 pub struct ClaimExtractor {

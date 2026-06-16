@@ -24,7 +24,9 @@ pub(crate) fn install_kiro_steering(home: &std::path::Path) {
 
     let _ = std::fs::create_dir_all(&steering_dir);
     let _ = std::fs::write(&steering_file, crate::hooks::KIRO_STEERING_TEMPLATE);
-    println!("  \x1b[32m✓\x1b[0m Created .kiro/steering/lean-ctx.md (Kiro will now prefer lean-ctx tools)");
+    println!(
+        "  \x1b[32m✓\x1b[0m Created .kiro/steering/lean-ctx.md (Kiro will now prefer lean-ctx tools)"
+    );
 }
 
 pub(crate) fn configure_plan_mode_settings(newly_configured: &[&str], already_configured: &[&str]) {
@@ -238,9 +240,15 @@ pub(crate) fn configure_premium_features(home: &std::path::Path) {
     println!("  {dim}Applies to tool output, agent prompts, and protocol mode.{rst}");
     println!();
     println!("  {cyan}off{rst}      — No compression (full verbose output)");
-    println!("  {cyan}lite{rst}     — Light: concise output, basic terse filtering {dim}(~25% savings){rst}");
-    println!("  {cyan}standard{rst} — Dense output + compact protocol + pattern-aware {dim}(~45% savings){rst}");
-    println!("  {cyan}max{rst}      — Expert mode: TDD protocol, all layers active {dim}(~65% savings){rst}");
+    println!(
+        "  {cyan}lite{rst}     — Light: concise output, basic terse filtering {dim}(~25% savings){rst}"
+    );
+    println!(
+        "  {cyan}standard{rst} — Dense output + compact protocol + pattern-aware {dim}(~45% savings){rst}"
+    );
+    println!(
+        "  {cyan}max{rst}      — Expert mode: TDD protocol, all layers active {dim}(~65% savings){rst}"
+    );
     println!();
     print!("  Compression level? {bold}[off/lite/standard/max]{rst} {dim}(default: off){rst} ");
     std::io::stdout().flush().ok();

@@ -86,7 +86,7 @@ fn is_codebuddy_client(client_name: &str) -> bool {
 /// stores the manifest for the injection built from `session` right now:
 /// task + decisions go to the begin block, findings + next steps to the end.
 fn rotate_wakeup_manifest(session: &crate::core::session::SessionState, profile_name: &str) {
-    use crate::core::litm_calibration::{record_outcome, Position};
+    use crate::core::litm_calibration::{Position, record_outcome};
     use crate::core::session::ManifestEntry;
 
     let mut updated = session.clone();

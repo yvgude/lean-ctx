@@ -5,8 +5,8 @@
 //! All deterministic — no env, no config files, no global state.
 
 use lean_ctx::core::sensitivity::{
-    classify, classify_content, enforce_text, Enforced, FloorAction, SensitivityConfig,
-    SensitivityLevel,
+    Enforced, FloorAction, SensitivityConfig, SensitivityLevel, classify, classify_content,
+    enforce_text,
 };
 use std::path::Path;
 

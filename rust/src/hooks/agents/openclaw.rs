@@ -1,6 +1,6 @@
 use super::super::resolve_binary_path;
 use crate::core::editor_registry::{
-    write_config_with_options, ConfigType, EditorTarget, WriteAction, WriteOptions,
+    ConfigType, EditorTarget, WriteAction, WriteOptions, write_config_with_options,
 };
 
 /// Configure the OpenClaw MCP entry via the shared editor-registry writer —

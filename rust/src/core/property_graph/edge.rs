@@ -1,6 +1,6 @@
 //! Edge types and CRUD operations for graph edges.
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EdgeKind {

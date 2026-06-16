@@ -314,11 +314,7 @@ pub fn handle(
             .iter()
             .filter_map(|m| {
                 let file = extract_file_from_match(m);
-                if seen.insert(file) {
-                    Some(file)
-                } else {
-                    None
-                }
+                if seen.insert(file) { Some(file) } else { None }
             })
             .collect()
     };
@@ -698,7 +694,7 @@ mod tests {
     #[test]
     fn symbol_substitution_is_off_by_default() {
         let _lock = crate::core::data_dir::test_env_lock();
-        std::env::remove_var("LEAN_CTX_SYMBOL_MAP");
+        unsafe { std::env::remove_var("LEAN_CTX_SYMBOL_MAP") };
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("a.rs");
         std::fs::write(
@@ -805,11 +801,11 @@ mod tests {
     #[test]
     fn search_deadline_env_override_is_respected() {
         let _lock = crate::core::data_dir::test_env_lock();
-        std::env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "0");
+        unsafe { std::env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "0") };
         assert!(search_deadline().is_none(), "0 must disable the deadline");
-        std::env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "250");
+        unsafe { std::env::set_var("LEAN_CTX_SEARCH_DEADLINE_MS", "250") };
         assert_eq!(search_deadline(), Some(Duration::from_millis(250)));
-        std::env::remove_var("LEAN_CTX_SEARCH_DEADLINE_MS");
+        unsafe { std::env::remove_var("LEAN_CTX_SEARCH_DEADLINE_MS") };
         assert_eq!(
             search_deadline(),
             Some(Duration::from_secs(10)),

@@ -21,10 +21,15 @@ pub(crate) enum CallError {
 impl std::fmt::Display for CallError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CallError::Usage(m) => write!(f, "error: {m}\nusage: lean-ctx call <tool> --project-root <path> --json '<json>' [--json-file <path>]"),
+            CallError::Usage(m) => write!(
+                f,
+                "error: {m}\nusage: lean-ctx call <tool> --project-root <path> --json '<json>' [--json-file <path>]"
+            ),
             CallError::UnknownTool(t) => write!(f, "error: unknown tool '{t}'"),
             CallError::BadJson(m) => write!(f, "error: invalid --json: {m}"),
-            CallError::UnsafeRoot(p) => write!(f, "error: refusing broad/unsafe --project-root '{p}'"),
+            CallError::UnsafeRoot(p) => {
+                write!(f, "error: refusing broad/unsafe --project-root '{p}'")
+            }
             CallError::Dispatch(m) => write!(f, "error: {m}"),
         }
     }
@@ -106,7 +111,7 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
         (Some(_), Some(_)) => {
             return Err(CallError::Usage(
                 "use either --json or --json-file, not both".into(),
-            ))
+            ));
         }
         (Some(j), None) => j,
         (None, Some(path)) => std::fs::read_to_string(&path)

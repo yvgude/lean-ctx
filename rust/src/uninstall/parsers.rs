@@ -637,7 +637,7 @@ pub(super) fn remove_lean_ctx_from_toml(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::super::agents::{
-        remove_lean_ctx_from_hooks_json, remove_lean_ctx_section_from_rules, HookCleanupResult,
+        HookCleanupResult, remove_lean_ctx_from_hooks_json, remove_lean_ctx_section_from_rules,
     };
     use super::super::{backup_before_modify, bak_path_for, remove_marked_block};
     use super::*;

@@ -1,6 +1,6 @@
 // Auto-split from the former monolithic doctor/mod.rs.
 
-use super::{Outcome, BOLD, DIM, GREEN, RED, RST, WHITE};
+use super::{BOLD, DIM, GREEN, Outcome, RED, RST, WHITE};
 use std::path::PathBuf;
 
 /// Human-readable byte size for doctor output (MB / KB / B).

@@ -74,16 +74,18 @@ pub fn spawn_if_enabled() -> bool {
     }
     std::thread::Builder::new()
         .name("dd-push".into())
-        .spawn(|| loop {
-            match push_once() {
-                Ok(sent) => {
-                    tracing::debug!("datadog push: {sent} series sent");
+        .spawn(|| {
+            loop {
+                match push_once() {
+                    Ok(sent) => {
+                        tracing::debug!("datadog push: {sent} series sent");
+                    }
+                    Err(e) => {
+                        tracing::warn!("datadog push failed (will retry): {e}");
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("datadog push failed (will retry): {e}");
-                }
+                std::thread::sleep(interval());
             }
-            std::thread::sleep(interval());
         })
         .is_ok()
 }

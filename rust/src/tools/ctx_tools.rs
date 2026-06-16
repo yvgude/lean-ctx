@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn disabled_gateway_returns_hint() {
         // Ensure no env override flips it on.
-        std::env::remove_var("LEAN_CTX_GATEWAY");
+        unsafe { std::env::remove_var("LEAN_CTX_GATEWAY") };
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()

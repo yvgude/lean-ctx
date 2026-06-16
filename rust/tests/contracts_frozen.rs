@@ -16,7 +16,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use lean_ctx::core::contracts::{contract_docs, ContractStatus};
+use lean_ctx::core::contracts::{ContractStatus, contract_docs};
 use sha2::{Digest, Sha256};
 
 fn contracts_dir() -> PathBuf {

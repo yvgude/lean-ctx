@@ -410,9 +410,11 @@ title = "t"
     fn providers_toml_paths_includes_project_root() {
         let root = Path::new("/tmp/myproject");
         let paths = providers_toml_paths(Some(root));
-        assert!(paths
-            .iter()
-            .any(|p| p.ends_with("myproject/.lean-ctx/providers.toml")));
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.ends_with("myproject/.lean-ctx/providers.toml"))
+        );
     }
 
     #[test]
@@ -426,8 +428,9 @@ title = "t"
     fn config_directories_includes_project_root() {
         let root = Path::new("/tmp/myproject");
         let dirs = config_directories(Some(root));
-        assert!(dirs
-            .iter()
-            .any(|d| d.ends_with("myproject/.lean-ctx/providers")));
+        assert!(
+            dirs.iter()
+                .any(|d| d.ends_with("myproject/.lean-ctx/providers"))
+        );
     }
 }

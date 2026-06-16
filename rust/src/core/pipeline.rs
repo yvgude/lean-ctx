@@ -390,16 +390,16 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let state = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_STATE_DIR", state.path());
-        std::env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        unsafe { std::env::set_var("LEAN_CTX_STATE_DIR", state.path()) };
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.path()) };
 
         PipelineStats::default().save();
 
         let in_state = state.path().join("pipeline_stats.json").exists();
         let in_data = data.path().join("pipeline_stats.json").exists();
 
-        std::env::remove_var("LEAN_CTX_STATE_DIR");
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_STATE_DIR") };
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         assert!(in_state, "pipeline_stats.json must be written to state_dir");
         assert!(

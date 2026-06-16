@@ -14,13 +14,13 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::auth::{sha256_hex, AppState};
+use super::auth::{AppState, sha256_hex};
 
 /// Attempts allowed per client IP within [`WINDOW`].
 const MAX_ATTEMPTS: usize = 10;

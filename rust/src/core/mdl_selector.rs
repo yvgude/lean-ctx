@@ -2,7 +2,7 @@
 
 use super::compressor::aggressive_compress;
 use super::entropy::entropy_compress;
-use super::signatures::{extract_file_map, extract_signatures, Signature};
+use super::signatures::{Signature, extract_file_map, extract_signatures};
 use super::tokens::count_tokens;
 
 #[derive(Clone, Copy)]

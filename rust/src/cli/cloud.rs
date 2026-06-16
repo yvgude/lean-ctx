@@ -570,7 +570,9 @@ fn cmd_cloud_autosync(arg: Option<&str>) {
                 tracing::error!("Could not save config: {e}");
                 std::process::exit(1);
             }
-            println!("Auto-sync enabled — your Personal Cloud (knowledge, commands, CEP, gotchas, buddy, feedback)");
+            println!(
+                "Auto-sync enabled — your Personal Cloud (knowledge, commands, CEP, gotchas, buddy, feedback)"
+            );
             println!(
                 "is pushed silently once per day at session end. Requires Pro and an active login."
             );

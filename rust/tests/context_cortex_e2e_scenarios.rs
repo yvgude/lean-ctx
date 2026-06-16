@@ -23,11 +23,11 @@ use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::consolidation::{apply_artifacts, consolidate};
 use lean_ctx::core::content_chunk::ContentChunk;
 use lean_ctx::core::cross_source_hints::{format_hints, hints_for_file};
-use lean_ctx::core::free_energy_budget::{allocate_budget, free_energy, ColumnBudgetRequest};
+use lean_ctx::core::free_energy_budget::{ColumnBudgetRequest, allocate_budget, free_energy};
 use lean_ctx::core::graph_index::IndexEdge;
 use lean_ctx::core::knowledge_provider_extract::extract_facts;
 use lean_ctx::core::provider_bandit::ProviderBandit;
-use lean_ctx::core::saliency::{compute_ecs_scores, mig_select, EcsWeights};
+use lean_ctx::core::saliency::{EcsWeights, compute_ecs_scores, mig_select};
 
 // ---------------------------------------------------------------------------
 // Helpers: realistic data generators
@@ -399,11 +399,22 @@ fn scenario_bug_investigation_full_pipeline() {
 fn scenario_feature_development_cross_source() {
     let chunks = vec![
         // Existing code
-        code_chunk("src/models/user.rs", "User", "pub struct User { id: i64, email: String, name: String }", ChunkKind::Struct),
-        code_chunk("src/api/users.rs", "get_user", "pub async fn get_user(id: i64) -> Result<User, ApiError>", ChunkKind::Function),
+        code_chunk(
+            "src/models/user.rs",
+            "User",
+            "pub struct User { id: i64, email: String, name: String }",
+            ChunkKind::Struct,
+        ),
+        code_chunk(
+            "src/api/users.rs",
+            "get_user",
+            "pub async fn get_user(id: i64) -> Result<User, ApiError>",
+            ChunkKind::Function,
+        ),
         // Jira ticket
         jira_ticket(
-            "PROJ-42", "Add user avatar upload feature",
+            "PROJ-42",
+            "Add user avatar upload feature",
             "As a user, I want to upload an avatar image. Must support JPEG/PNG. \
              Store in S3. Update src/models/user.rs to add avatar_url field.",
             &["feature", "user-profile"],
@@ -411,12 +422,16 @@ fn scenario_feature_development_cross_source() {
         ),
         // Wiki documentation
         wiki_page(
-            "file-upload-guide", "File Upload Architecture",
+            "file-upload-guide",
+            "File Upload Architecture",
             "Our file upload system uses presigned S3 URLs. See src/storage/s3.rs for the implementation.",
             vec!["src/storage/s3.rs"],
         ),
         // DB schema
-        db_schema("users", "id SERIAL PRIMARY KEY, email VARCHAR(255), name VARCHAR(100), avatar_url TEXT"),
+        db_schema(
+            "users",
+            "id SERIAL PRIMARY KEY, email VARCHAR(255), name VARCHAR(100), avatar_url TEXT",
+        ),
     ];
 
     // Consolidate
@@ -606,17 +621,28 @@ fn scenario_budget_optimization_under_constraint() {
 #[test]
 fn scenario_dedup_duplicate_issues_from_different_sources() {
     // Same bug reported in GitHub AND Jira (common in real orgs)
-    let chunks =
-        vec![
-        github_issue("100", "Auth token expires too early",
+    let chunks = vec![
+        github_issue(
+            "100",
+            "Auth token expires too early",
             "JWT authentication tokens expire after 30 minutes instead of 24 hours in production",
-            &["bug"], vec!["src/auth/jwt.rs"]),
-        jira_ticket("PROJ-50", "Authentication token expiry broken",
+            &["bug"],
+            vec!["src/auth/jwt.rs"],
+        ),
+        jira_ticket(
+            "PROJ-50",
+            "Authentication token expiry broken",
             "JWT authentication tokens expire after 30 minutes instead of the expected 24 hours",
-            &["bug", "defect"], vec!["src/auth/jwt.rs"]),
-        github_issue("101", "Homepage loads slowly",
+            &["bug", "defect"],
+            vec!["src/auth/jwt.rs"],
+        ),
+        github_issue(
+            "101",
+            "Homepage loads slowly",
             "The main page takes 5 seconds to load due to unoptimized database queries",
-            &["performance"], vec!["src/api/home.rs"]),
+            &["performance"],
+            vec!["src/api/home.rs"],
+        ),
     ];
 
     let keywords = vec!["authentication".into(), "token".into(), "expiry".into()];

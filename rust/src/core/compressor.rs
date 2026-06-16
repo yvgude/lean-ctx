@@ -1,7 +1,7 @@
 use similar::{ChangeTag, TextDiff};
 
 macro_rules! static_regex {
-    ($pattern:expr) => {{
+    ($pattern:expr_2021) => {{
         static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         RE.get_or_init(|| {
             regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
@@ -330,7 +330,7 @@ pub fn task_aware_compress(
 
 fn flush_repeats(lines: &mut [String], prev_line: &mut Option<String>, count: &mut u32) {
     if *count > 1 {
-        if let Some(ref prev) = prev_line {
+        if let &mut Some(ref prev) = prev_line {
             let last_idx = lines.len().saturating_sub(1);
             if last_idx < lines.len() {
                 lines[last_idx] = format!("[{count}x] {prev}");

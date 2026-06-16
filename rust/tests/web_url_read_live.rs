@@ -6,7 +6,7 @@
 //! sources: fetch → SSRF guard → HTML→Markdown / transcript → distill →
 //! citation footer.
 
-use lean_ctx::core::web::{read_url, ReadMode, ReadOptions};
+use lean_ctx::core::web::{ReadMode, ReadOptions, read_url};
 
 fn opts(url: &str, mode: ReadMode) -> ReadOptions<'_> {
     let mut o = ReadOptions::new(url);

@@ -11,7 +11,7 @@ pub use context_bus::{
 };
 
 pub mod redaction;
-pub use redaction::{redact_event_payload, redact_payload_value, RedactionLevel};
+pub use redaction::{RedactionLevel, redact_event_payload, redact_payload_value};
 
 /// Wraps either a plain `broadcast::Receiver` or a `FilteredSubscription`
 /// so the SSE route can handle both with the same code path.

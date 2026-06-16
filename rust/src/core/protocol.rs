@@ -555,9 +555,9 @@ mod tests {
 
         // Test: always mode shows box-drawing format
         super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
-        std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "always");
-        std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "1");
-        std::env::remove_var("LEAN_CTX_QUIET");
+        unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "always") };
+        unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "1") };
+        unsafe { std::env::remove_var("LEAN_CTX_QUIET") };
 
         let s = super::format_savings(100, 50);
         assert!(s.contains("\u{2192}"), "expected arrow: {s}");
@@ -573,8 +573,8 @@ mod tests {
         assert!(s.contains("\u{2193}80%"), "expected 80%: {s}");
 
         // Test: never mode suppresses
-        std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never");
-        std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+        unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never") };
+        unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "0") };
         let s = super::format_savings(100, 50);
         assert!(s.is_empty(), "expected empty with never: {s}");
 
@@ -583,22 +583,22 @@ mod tests {
 
         // Test: MCP auto mode suppresses
         super::MCP_CONTEXT.store(true, std::sync::atomic::Ordering::Relaxed);
-        std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "auto");
-        std::env::remove_var("LEAN_CTX_SHOW_SAVINGS");
+        unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "auto") };
+        unsafe { std::env::remove_var("LEAN_CTX_SHOW_SAVINGS") };
         let s = super::format_savings(100, 50);
         assert!(s.is_empty(), "expected empty in MCP+auto: {s}");
         super::MCP_CONTEXT.store(false, std::sync::atomic::Ordering::Relaxed);
 
         // Test: SHOW_SAVINGS overrides config
-        std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never");
-        std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "1");
+        unsafe { std::env::set_var("LEAN_CTX_SAVINGS_FOOTER", "never") };
+        unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "1") };
         assert!(super::savings_footer_visible());
-        std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
+        unsafe { std::env::set_var("LEAN_CTX_SHOW_SAVINGS", "0") };
         assert!(!super::savings_footer_visible());
 
         // Restore ALL touched env — leaking LEAN_CTX_SAVINGS_FOOTER made
         // footers visible in unrelated tests (GL #556 flakiness).
-        std::env::remove_var("LEAN_CTX_SHOW_SAVINGS");
-        std::env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
+        unsafe { std::env::remove_var("LEAN_CTX_SHOW_SAVINGS") };
+        unsafe { std::env::remove_var("LEAN_CTX_SAVINGS_FOOTER") };
     }
 }

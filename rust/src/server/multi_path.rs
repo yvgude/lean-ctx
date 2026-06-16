@@ -1,6 +1,6 @@
 use serde_json::{Map, Value};
 
-use crate::server::tool_trait::{get_str, get_str_array, ToolContext};
+use crate::server::tool_trait::{ToolContext, get_str, get_str_array};
 
 #[derive(Debug)]
 pub struct ResolvedPaths {

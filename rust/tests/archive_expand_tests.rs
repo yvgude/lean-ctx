@@ -6,11 +6,11 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 fn with_test_dir<F: FnOnce()>(f: F) {
     let _guard = ENV_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("LEAN_CTX_DATA_DIR", dir.path());
-    std::env::set_var("LEAN_CTX_ARCHIVE", "1");
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE", "1") };
     f();
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
-    std::env::remove_var("LEAN_CTX_ARCHIVE");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE") };
 }
 
 #[test]
@@ -107,9 +107,11 @@ fn archive_session_filtering() {
 
         let sess_a = archive::list_entries(Some("session-a"));
         assert_eq!(sess_a.len(), 2);
-        assert!(sess_a
-            .iter()
-            .all(|e| e.session_id.as_deref() == Some("session-a")));
+        assert!(
+            sess_a
+                .iter()
+                .all(|e| e.session_id.as_deref() == Some("session-a"))
+        );
     });
 }
 
@@ -158,20 +160,20 @@ fn archive_format_hint_contains_expand() {
 #[test]
 fn archive_should_archive_respects_threshold() {
     let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("LEAN_CTX_ARCHIVE", "1");
-    std::env::set_var("LEAN_CTX_ARCHIVE_THRESHOLD", "100");
+    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE", "1") };
+    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE_THRESHOLD", "100") };
     assert!(!archive::should_archive("short"));
     assert!(archive::should_archive(&"x".repeat(101)));
-    std::env::remove_var("LEAN_CTX_ARCHIVE_THRESHOLD");
-    std::env::remove_var("LEAN_CTX_ARCHIVE");
+    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE_THRESHOLD") };
+    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE") };
 }
 
 #[test]
 fn archive_disabled_returns_false() {
     let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("LEAN_CTX_ARCHIVE", "0");
+    unsafe { std::env::set_var("LEAN_CTX_ARCHIVE", "0") };
     assert!(!archive::should_archive(&"x".repeat(99999)));
-    std::env::remove_var("LEAN_CTX_ARCHIVE");
+    unsafe { std::env::remove_var("LEAN_CTX_ARCHIVE") };
 }
 
 #[test]

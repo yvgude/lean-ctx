@@ -9,7 +9,7 @@ use chrono::{Duration, Utc};
 use lean_ctx::core::protocol::CrpMode;
 use lean_ctx::core::workflow::types::{StateSpec, TransitionSpec, WorkflowRun, WorkflowSpec};
 use lean_ctx::core::workflow::{load_active, save_active};
-use lean_ctx::server::{is_workflow_stale, WORKFLOW_PASSTHROUGH_TOOLS};
+use lean_ctx::server::{WORKFLOW_PASSTHROUGH_TOOLS, is_workflow_stale};
 use serial_test::serial;
 use std::io::Write;
 

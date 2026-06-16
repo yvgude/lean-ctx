@@ -33,7 +33,7 @@ pub fn resolve_handle_ref(id: &str) -> Option<String> {
     let ledger = ContextLedger::load();
     let mut registry = HandleRegistry::new();
     for entry in &ledger.entries {
-        if let (Some(ref item_id), Some(ref kind)) = (&entry.id, &entry.kind) {
+        if let (Some(item_id), Some(kind)) = (&entry.id, &entry.kind) {
             let phi = entry.phi.unwrap_or(0.5);
             let view_costs = entry.view_costs.clone().unwrap_or_else(|| {
                 crate::core::context_field::ViewCosts::from_full_tokens(entry.original_tokens)
@@ -97,7 +97,9 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
     if let Some(pattern) = args.get("search").and_then(|v| v.as_str()) {
         return match archive::retrieve_with_search(id, pattern) {
             Some(result) => result,
-            None => format!("Archive '{id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."),
+            None => format!(
+                "Archive '{id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."
+            ),
         };
     }
 

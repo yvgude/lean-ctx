@@ -16,16 +16,16 @@
 //!   stored hashed and rotated on every send — the newest email's link always
 //!   works, older links go stale.
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse};
-use axum::Json;
 use chrono::{Datelike, NaiveDate, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::auth::{auth_user, AppState};
+use super::auth::{AppState, auth_user};
 use super::billing_edge;
 use crate::core::billing::plans::Plan;
 

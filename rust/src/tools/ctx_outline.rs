@@ -1,5 +1,5 @@
 use crate::core::cache::SessionCache;
-use crate::core::signatures::{extract_signatures, Signature};
+use crate::core::signatures::{Signature, extract_signatures};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 

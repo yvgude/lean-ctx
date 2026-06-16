@@ -33,8 +33,8 @@ use std::collections::HashMap;
 
 use schema::ProviderConfig;
 
-use super::provider_trait::{ContextProvider, ProviderParams};
 use super::ProviderResult;
+use super::provider_trait::{ContextProvider, ProviderParams};
 use http::ResolvedAuth;
 
 /// A context provider dynamically created from a TOML/JSON config file.

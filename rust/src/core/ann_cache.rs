@@ -17,7 +17,7 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::hnsw::{brute_force_topk, AnnIndex};
+use super::hnsw::{AnnIndex, brute_force_topk};
 
 /// Minimum corpus size before an HNSW graph is worth building and caching.
 /// Below this, exact SIMD brute force is faster *and* exact (no recall loss).
@@ -88,7 +88,7 @@ fn topk_gated(
 fn fingerprint(embeddings: &[Vec<f32>]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     macro_rules! mix {
-        ($x:expr) => {{
+        ($x:expr_2021) => {{
             h ^= $x;
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }};

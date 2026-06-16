@@ -345,12 +345,16 @@ mod tests {
         let ps = PolicySet::defaults();
         let small = ps.evaluate("src/main.rs", false, 500);
         let large = ps.evaluate("src/main.rs", false, 10000);
-        assert!(!small
-            .iter()
-            .any(|r| matches!(&r.action, PolicyAction::SetView { view } if view == "signatures")),);
-        assert!(large
-            .iter()
-            .any(|r| matches!(&r.action, PolicyAction::SetView { view } if view == "signatures")),);
+        assert!(
+            !small.iter().any(
+                |r| matches!(&r.action, PolicyAction::SetView { view } if view == "signatures")
+            ),
+        );
+        assert!(
+            large.iter().any(
+                |r| matches!(&r.action, PolicyAction::SetView { view } if view == "signatures")
+            ),
+        );
     }
 
     #[test]

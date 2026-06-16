@@ -176,7 +176,9 @@ fn spreading_activation_improves_retrieval_without_regression() {
 
     eprintln!("────────────────────────────────────────────────────────");
     eprintln!("mean lexical    recall@{K}={lex_recall:.2}  mrr={lex_mrr:.2}");
-    eprintln!("mean associative recall@{K}={assoc_recall:.2}  mrr={assoc_mrr:.2}  r-precision={assoc_precision:.2}\n");
+    eprintln!(
+        "mean associative recall@{K}={assoc_recall:.2}  mrr={assoc_mrr:.2}  r-precision={assoc_precision:.2}\n"
+    );
 
     // Real gain: lexical alone retrieves none of the (non-seed) relevant files.
     assert_eq!(

@@ -15,7 +15,7 @@ const BRUTE_FORCE_THRESHOLD: usize = 1000;
 const M: usize = 16; // max connections per node per layer
 const EF_CONSTRUCTION: usize = 200; // search width during build
 const EF_SEARCH: usize = 64; // search width during query
-                             // ML = 1/ln(M) = 1/ln(16) ≈ 0.3607
+// ML = 1/ln(M) = 1/ln(16) ≈ 0.3607
 const ML: f64 = 0.360_674_0;
 
 /// A scored item for the min-heap (lowest similarity first for top-k pruning).

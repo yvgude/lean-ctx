@@ -499,11 +499,11 @@ mod tests {
     #[test]
     fn model_directory_env_override_and_availability() {
         let unique = "/tmp/lean_ctx_test_embed_42xyz";
-        std::env::set_var("LEAN_CTX_MODELS_DIR", unique);
+        unsafe { std::env::set_var("LEAN_CTX_MODELS_DIR", unique) };
         let dir = EmbeddingEngine::model_directory();
         assert_eq!(dir.to_string_lossy(), unique);
         assert!(!EmbeddingEngine::is_available());
-        std::env::remove_var("LEAN_CTX_MODELS_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_MODELS_DIR") };
     }
 
     /// GL #452: the EmbeddingBag detection is purely name-based — exactly two

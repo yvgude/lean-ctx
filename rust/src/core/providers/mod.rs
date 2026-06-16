@@ -12,7 +12,7 @@ pub mod provider_trait;
 pub mod registry;
 
 pub use provider_trait::{ContextPacket, ContextProvider, ProviderParams};
-pub use registry::{global_registry, ProviderRegistry};
+pub use registry::{ProviderRegistry, global_registry};
 
 use serde::{Deserialize, Serialize};
 

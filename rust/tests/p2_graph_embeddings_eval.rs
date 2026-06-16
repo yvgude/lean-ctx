@@ -1,4 +1,4 @@
-use lean_ctx::core::graph_context::{build_graph_context, GraphContextOptions};
+use lean_ctx::core::graph_context::{GraphContextOptions, build_graph_context};
 
 #[test]
 fn graph_context_must_include_direct_and_transitive_deps() {
@@ -10,7 +10,7 @@ fn graph_context_must_include_direct_and_transitive_deps() {
 
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("mkdir data");
-    std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(project_root.join("src")).expect("mkdir src");
@@ -57,7 +57,7 @@ export const b = c + 1;
         "expected transitive dependency src/c.ts, got {paths:?}"
     );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 #[cfg(feature = "embeddings")]

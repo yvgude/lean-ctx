@@ -15,10 +15,10 @@ pub mod snapshot;
 
 pub use edge::{Edge, EdgeKind};
 pub use file_catalog::FileCatalogEntry;
-pub use meta::{load_meta, meta_path, write_meta, PropertyGraphMetaV1};
+pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
 pub use node::{Node, NodeKind};
 pub use queries::{
-    edge_weight, file_connectivity, related_files, DependencyChain, GraphQuery, ImpactResult,
+    DependencyChain, GraphQuery, ImpactResult, edge_weight, file_connectivity, related_files,
 };
 
 use rusqlite::Connection;
@@ -431,13 +431,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let dir = graph_dir(project.to_str().unwrap());
         assert!(dir.starts_with(&data_dir));
         assert!(dir.to_string_lossy().contains("graphs"));
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
@@ -450,14 +450,14 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let dir1 = graph_dir(project.to_str().unwrap());
         let dir2 = graph_dir(project.to_str().unwrap());
         assert_eq!(dir1, dir2, "graph_dir should be deterministic");
         assert!(dir1.to_string_lossy().contains("graphs"));
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
@@ -515,13 +515,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let g = CodeGraph::open(project.to_str().unwrap()).unwrap();
         assert!(g.db_path().starts_with(&data_dir));
         assert!(g.db_path().to_string_lossy().contains("graph.db"));
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
@@ -534,12 +534,12 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap()) };
 
         let mp = meta::meta_path(project.to_str().unwrap());
         assert!(mp.starts_with(&data_dir));
         assert!(mp.to_string_lossy().contains("graph.meta.json"));
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

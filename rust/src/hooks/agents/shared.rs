@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use super::super::{
-    generate_compact_rewrite_script, is_inside_git_repo, make_executable,
-    resolve_binary_path_for_bash, write_file, REDIRECT_SCRIPT_GENERIC,
+    REDIRECT_SCRIPT_GENERIC, generate_compact_rewrite_script, is_inside_git_repo, make_executable,
+    resolve_binary_path_for_bash, write_file,
 };
 
 pub(super) fn install_standard_hook_scripts(

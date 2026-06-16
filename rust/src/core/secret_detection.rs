@@ -5,7 +5,7 @@ use regex::Regex;
 use crate::core::config::{Config, SecretDetectionConfig};
 
 macro_rules! static_regex {
-    ($pattern:expr) => {{
+    ($pattern:expr_2021) => {{
         static RE: OnceLock<Regex> = OnceLock::new();
         RE.get_or_init(|| Regex::new($pattern).expect(concat!("invalid regex: ", $pattern)))
     }};
@@ -300,9 +300,11 @@ mod tests {
     fn detects_github_fine_grained() {
         let input = "token = github_pat_ABCDEFGHIJKLMNOPQRSTuvwx";
         let matches = detect_secrets(input);
-        assert!(matches
-            .iter()
-            .any(|m| m.pattern_name == "github_fine_grained"));
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.pattern_name == "github_fine_grained")
+        );
     }
 
     #[test]

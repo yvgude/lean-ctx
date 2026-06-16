@@ -312,7 +312,7 @@ impl LoopDetector {
         let mut entries: Vec<(String, u32)> = self
             .duplicate_counts
             .iter()
-            .filter(|(_, &count)| count > 1)
+            .filter(|&(_, &count)| count > 1)
             .map(|(k, &v)| (k.clone(), v))
             .collect();
         entries.sort_by_key(|x| std::cmp::Reverse(x.1));
@@ -567,7 +567,7 @@ mod tests {
     #[test]
     fn repeated_calls_trigger_reduced() {
         let _lock = crate::core::data_dir::test_env_lock();
-        std::env::set_var("LEAN_CTX_META", "1");
+        unsafe { std::env::set_var("LEAN_CTX_META", "1") };
         let cfg = LoopDetectionConfig::default();
         let mut detector = LoopDetector::with_config(&cfg);
         for _ in 0..cfg.normal_threshold {
@@ -576,7 +576,7 @@ mod tests {
         let result = detector.record_call("ctx_read", "same_fp");
         assert_eq!(result.level, ThrottleLevel::Reduced);
         assert!(result.message.is_some());
-        std::env::remove_var("LEAN_CTX_META");
+        unsafe { std::env::remove_var("LEAN_CTX_META") };
     }
 
     #[test]

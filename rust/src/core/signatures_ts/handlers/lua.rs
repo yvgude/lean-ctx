@@ -1,6 +1,6 @@
 use tree_sitter::Node;
 
-use crate::core::signatures::{compact_params, Signature};
+use crate::core::signatures::{Signature, compact_params};
 
 use super::super::helpers::strip_parens;
 

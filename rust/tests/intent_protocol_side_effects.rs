@@ -3,10 +3,12 @@ use lean_ctx::core::intent_protocol;
 #[test]
 fn ctx_intent_knowledge_fact_routes_to_project_knowledge() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    std::env::set_var(
-        "LEAN_CTX_DATA_DIR",
-        tmp.path().to_string_lossy().to_string(),
-    );
+    unsafe {
+        std::env::set_var(
+            "LEAN_CTX_DATA_DIR",
+            tmp.path().to_string_lossy().to_string(),
+        )
+    };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("mkdir");
@@ -19,10 +21,12 @@ fn ctx_intent_knowledge_fact_routes_to_project_knowledge() {
 
     let knowledge = lean_ctx::core::knowledge::ProjectKnowledge::load(&project_root_str)
         .expect("knowledge should exist");
-    assert!(knowledge
-        .facts
-        .iter()
-        .any(|f| f.is_current() && f.category == "decision" && f.key == "k1" && f.value == "v1"));
+    assert!(
+        knowledge.facts.iter().any(|f| f.is_current()
+            && f.category == "decision"
+            && f.key == "k1"
+            && f.value == "v1")
+    );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

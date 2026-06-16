@@ -11,8 +11,7 @@ const DEFAULT_PROXY_PORT: u16 = 4444;
 /// key is detectable. A Claude Pro/Max subscription authenticates via OAuth against
 /// `api.anthropic.com` directly and is rejected by any custom base URL, so we must not
 /// route it through the proxy.
-const ANTHROPIC_OMITTED_NOTE: &str =
-    "ANTHROPIC_BASE_URL omitted: Claude Pro/Max subscription authenticates against api.anthropic.com directly (set ANTHROPIC_API_KEY to route Claude through the proxy)";
+const ANTHROPIC_OMITTED_NOTE: &str = "ANTHROPIC_BASE_URL omitted: Claude Pro/Max subscription authenticates against api.anthropic.com directly (set ANTHROPIC_API_KEY to route Claude through the proxy)";
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     let cfg = crate::core::config::Config::load();
@@ -453,7 +452,7 @@ fn install_claude_env(home: &Path, port: u16, quiet: bool) {
 }
 
 fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, force: bool) {
-    use crate::core::config::{is_local_proxy_url, normalize_url_opt, Config};
+    use crate::core::config::{Config, is_local_proxy_url, normalize_url_opt};
 
     let base = format!("http://127.0.0.1:{port}");
 

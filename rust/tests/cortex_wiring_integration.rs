@@ -344,7 +344,7 @@ fn mcp_handler_flow_provider_then_read_hints() {
 /// Verify the free-energy budget allocator works with realistic data.
 #[test]
 fn free_energy_budget_allocation() {
-    use lean_ctx::core::free_energy_budget::{allocate_budget, ColumnBudgetRequest};
+    use lean_ctx::core::free_energy_budget::{ColumnBudgetRequest, allocate_budget};
 
     let requests = vec![
         ColumnBudgetRequest {
@@ -387,7 +387,7 @@ fn free_energy_budget_allocation() {
 /// ECS saliency ranking respects task relevance.
 #[test]
 fn saliency_ranks_relevant_chunks_higher() {
-    use lean_ctx::core::saliency::{compute_ecs_scores, EcsWeights};
+    use lean_ctx::core::saliency::{EcsWeights, compute_ecs_scores};
 
     let chunks = vec![
         github_issue_chunk(

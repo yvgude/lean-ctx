@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use chrono::{Datelike, Utc};
 
-use super::savings_summary::{aggregate, member_drilldown, TeamSavingsSummary};
+use super::savings_summary::{TeamSavingsSummary, aggregate, member_drilldown};
 use super::team::TeamAppState;
 
 /// Hourly tick: cheap enough to be negligible, frequent enough that a
@@ -453,9 +453,11 @@ mod tests {
         let bodies = handle.join().unwrap();
         assert!(bodies[0].contains("POST /hook"));
         // ureq normalizes header casing — compare case-insensitively.
-        assert!(bodies[0]
-            .to_ascii_lowercase()
-            .contains("content-type: application/json"));
+        assert!(
+            bodies[0]
+                .to_ascii_lowercase()
+                .contains("content-type: application/json")
+        );
         assert!(bodies[0].contains("lean-ctx team ROI"));
     }
 }

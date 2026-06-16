@@ -530,8 +530,8 @@ fn compute_stats(content: &PackageContent) -> PackageStats {
 
     let raw_json = serde_json::to_string(content).unwrap_or_default();
     let compression_ratio = {
-        use flate2::write::GzEncoder;
         use flate2::Compression;
+        use flate2::write::GzEncoder;
         use std::io::Write;
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         let _ = encoder.write_all(raw_json.as_bytes());

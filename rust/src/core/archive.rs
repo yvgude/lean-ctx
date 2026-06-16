@@ -503,7 +503,7 @@ mod tests {
     fn cleanup_removes_expired_keeps_fresh() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let now = Utc::now();
         write_test_entry("aa_old", now - chrono::Duration::hours(100), 100);
@@ -516,14 +516,14 @@ mod tests {
         assert!(!meta_path("aa_old").exists());
         assert!(content_path("bb_new").exists());
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
     fn cleanup_enforces_disk_budget_oldest_first() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let now = Utc::now();
         write_test_entry("c1_oldest", now - chrono::Duration::minutes(30), 10_000);
@@ -538,6 +538,6 @@ mod tests {
         assert!(content_path("c2_middle").exists());
         assert!(content_path("c3_newest").exists());
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

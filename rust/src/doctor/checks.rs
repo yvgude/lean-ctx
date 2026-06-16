@@ -2,7 +2,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::common::*;
-use super::{Outcome, BOLD, DIM, GREEN, RED, RST, YELLOW};
+use super::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 use std::net::TcpListener;
 
 /// Reports the shell allowlist exactly as the MCP tools enforce it — and, crucially,
@@ -93,7 +93,11 @@ pub(super) fn path_jail_outcome() -> Outcome {
             line: format!(
                 "{BOLD}Path jail{RST}  {RED}{} allow_paths entr{} never match{RST}  {DIM}({} — unset $VAR or missing path){RST}",
                 dead.len(),
-                if dead.len() == 1 { "y will" } else { "ies will" },
+                if dead.len() == 1 {
+                    "y will"
+                } else {
+                    "ies will"
+                },
                 dead.join(", ")
             ),
         };
@@ -286,7 +290,9 @@ pub(super) fn mcp_config_outcome() -> Outcome {
     } else if !exists_no_ref.is_empty() {
         let has_claude = exists_no_ref.iter().any(|n| n.starts_with("Claude Code"));
         let cause = if has_claude {
-            format!("{DIM}(Claude Code may overwrite ~/.claude.json on startup — lean-ctx entry missing from mcpServers){RST}")
+            format!(
+                "{DIM}(Claude Code may overwrite ~/.claude.json on startup — lean-ctx entry missing from mcpServers){RST}"
+            )
         } else {
             String::new()
         };
@@ -383,14 +389,15 @@ pub(super) fn provider_outcome() -> Outcome {
     }
     let labels: Vec<String> = ids
         .iter()
-        .map(|id| {
-            if let Some(p) = registry.get(id) {
+        .map(|id| match registry.get(id) {
+            Some(p) => {
                 if p.is_available() {
                     format!("{GREEN}{id}{RST}")
                 } else {
                     format!("{YELLOW}{id}(no auth){RST}")
                 }
-            } else {
+            }
+            _ => {
                 format!("{RED}{id}(missing){RST}")
             }
         })
@@ -413,7 +420,9 @@ pub(super) fn mcp_bridge_outcomes() -> Vec<Outcome> {
     let auto_idx = if cfg.providers.auto_index {
         format!("{GREEN}auto_index=true{RST}")
     } else {
-        format!("{YELLOW}auto_index=false (provider data won't be indexed into BM25/Graph/Knowledge){RST}")
+        format!(
+            "{YELLOW}auto_index=false (provider data won't be indexed into BM25/Graph/Knowledge){RST}"
+        )
     };
     results.push(Outcome {
         ok: cfg.providers.auto_index,
@@ -493,14 +502,8 @@ pub(super) fn session_state_outcome() -> Outcome {
 
     match SessionState::load_latest() {
         Some(session) => {
-            let root = session
-                .project_root
-                .as_deref()
-                .unwrap_or("(not set)");
-            let cwd = session
-                .shell_cwd
-                .as_deref()
-                .unwrap_or("(not tracked)");
+            let root = session.project_root.as_deref().unwrap_or("(not set)");
+            let cwd = session.shell_cwd.as_deref().unwrap_or("(not tracked)");
             Outcome {
                 ok: true,
                 line: format!(
@@ -807,7 +810,7 @@ pub(super) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
 }
 
 pub(super) fn proxy_upstream_outcome() -> Outcome {
-    use crate::core::config::{is_local_proxy_url, Config, ProxyProvider};
+    use crate::core::config::{Config, ProxyProvider, is_local_proxy_url};
 
     let cfg = Config::load();
     let checks = [
@@ -1211,12 +1214,16 @@ pub(super) fn semantic_index_outcome() -> Option<Outcome> {
         }
         "ready" => Outcome {
             ok: true,
-            line: format!("{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}{timing}){RST}"),
+            line: format!(
+                "{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}{timing}){RST}"
+            ),
         },
         // idle: never asked to build this session — report disk state only.
         _ if disk.bm25_index.exists => Outcome {
             ok: true,
-            line: format!("{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}, on disk){RST}"),
+            line: format!(
+                "{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}, on disk){RST}"
+            ),
         },
         _ => Outcome {
             ok: true,
@@ -1604,7 +1611,7 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
 }
 
 pub(super) fn lsp_server_outcomes() -> Vec<Outcome> {
-    use crate::lsp::config::{find_binary_in_path, KNOWN_SERVERS};
+    use crate::lsp::config::{KNOWN_SERVERS, find_binary_in_path};
 
     KNOWN_SERVERS
         .iter()

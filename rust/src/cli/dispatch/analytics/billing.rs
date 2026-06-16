@@ -17,7 +17,9 @@ pub(in crate::cli::dispatch) fn cmd_billing(rest: &[String]) {
         "entitlements" => cmd_billing_entitlements(rest.get(1).map(String::as_str), json),
         "usage" => cmd_billing_usage(json),
         other => {
-            eprintln!("unknown billing action '{other}'. Use: status | plans | entitlements <plan> | usage [--json]");
+            eprintln!(
+                "unknown billing action '{other}'. Use: status | plans | entitlements <plan> | usage [--json]"
+            );
             std::process::exit(1);
         }
     }
@@ -94,7 +96,9 @@ fn cmd_billing_status(json: bool) {
             println!("  ! Cached plan expired — reconnect: lean-ctx login, then lean-ctx sync");
         }
         PlanSource::None if !logged_in => {
-            println!("  Upgrade:      lean-ctx cloud upgrade   (Pro: hosted sync · Team: shared ROI rollup)");
+            println!(
+                "  Upgrade:      lean-ctx cloud upgrade   (Pro: hosted sync · Team: shared ROI rollup)"
+            );
         }
         _ => println!("  Manage:       lean-ctx cloud upgrade"),
     }
@@ -131,11 +135,7 @@ fn plan_source_detail(eff: &crate::cloud_client::EffectivePlan) -> String {
 }
 
 fn yesno(b: bool) -> &'static str {
-    if b {
-        "yes"
-    } else {
-        "no"
-    }
+    if b { "yes" } else { "no" }
 }
 
 fn cmd_billing_plans(json: bool) {

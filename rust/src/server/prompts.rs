@@ -102,10 +102,9 @@ fn get_context_focus(
 fn get_context_review(ledger: &crate::core::context_ledger::ContextLedger) -> GetPromptResult {
     let summary = ledger.format_summary();
     let adjusted = ledger.adjusted_total_saved();
-    let bounce_info = if let Ok(bt) = crate::core::bounce_tracker::global().lock() {
-        bt.format_summary()
-    } else {
-        String::new()
+    let bounce_info = match crate::core::bounce_tracker::global().lock() {
+        Ok(bt) => bt.format_summary(),
+        _ => String::new(),
     };
     let msg = format!(
         "Context Review:\n{summary}\nAdjusted savings: {adjusted} tokens\n{bounce_info}\n\n\

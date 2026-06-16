@@ -66,7 +66,9 @@ pub fn handle(
         }
 
         "post" => {
-            let Some(msg) = message else { return "Error: message is required for post".to_string() };
+            let Some(msg) = message else {
+                return "Error: message is required for post".to_string();
+            };
             let cat = category.unwrap_or("status");
             let from = current_agent_id.unwrap_or("anonymous");
             let msg_privacy = privacy.map_or(PrivacyLevel::Team, PrivacyLevel::parse_str);
@@ -95,9 +97,8 @@ pub fn handle(
 
         "read" => {
             let Some(agent_id) = current_agent_id else {
-                    return "Error: agent must be registered first (use action=register)"
-                        .to_string()
-                };
+                return "Error: agent must be registered first (use action=register)".to_string();
+            };
             let mut registry = AgentRegistry::load_or_create();
             let messages = registry.read_unread(agent_id);
 
@@ -117,19 +118,23 @@ pub fn handle(
                 ));
             }
             if let Err(e) = registry.save() {
-                tracing::warn!("lean-ctx: failed to persist agent registry (messages may reappear): {e}");
+                tracing::warn!(
+                    "lean-ctx: failed to persist agent registry (messages may reappear): {e}"
+                );
             }
             out
         }
 
         "status" => {
-            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
+            let Some(agent_id) = current_agent_id else {
+                return "Error: agent must be registered first".to_string();
+            };
             let new_status = match status {
                 Some("active") => AgentStatus::Active,
                 Some("idle") => AgentStatus::Idle,
                 Some("finished") => AgentStatus::Finished,
                 Some(other) => {
-                    return format!("Unknown status: {other}. Use: active, idle, finished")
+                    return format!("Unknown status: {other}. Use: active, idle, finished");
                 }
                 None => return "Error: status value is required".to_string(),
             };
@@ -164,8 +169,12 @@ pub fn handle(
         }
 
         "handoff" => {
-            let Some(from) = current_agent_id else { return "Error: agent must be registered first".to_string() };
-            let Some(target) = to_agent else { return "Error: to_agent is required for handoff".to_string() };
+            let Some(from) = current_agent_id else {
+                return "Error: agent must be registered first".to_string();
+            };
+            let Some(target) = to_agent else {
+                return "Error: to_agent is required for handoff".to_string();
+            };
             let summary = message.unwrap_or("(no summary provided)");
 
             let mut registry = AgentRegistry::load_or_create();
@@ -205,7 +214,9 @@ pub fn handle(
             );
             let normalized = crate::core::pathutil::normalize_tool_path(target);
             match crate::core::scent_field::claim(&agent, &normalized) {
-                Ok(()) => format!("Claimed: {normalized} (by {agent}, decays in ~10m unless re-claimed)"),
+                Ok(()) => {
+                    format!("Claimed: {normalized} (by {agent}, decays in ~10m unless re-claimed)")
+                }
                 Err(e) => format!("Claim REJECTED: {normalized} — {e}"),
             }
         }
@@ -271,7 +282,14 @@ pub fn handle(
                 project_root,
                 |knowledge| {
                     for f in &facts {
-                        knowledge.remember(&f.category, &f.key, &f.value, session_label, 0.8, &policy);
+                        knowledge.remember(
+                            &f.category,
+                            &f.key,
+                            &f.value,
+                            session_label,
+                            0.8,
+                            &policy,
+                        );
                     }
                 },
             );
@@ -324,8 +342,7 @@ pub fn handle(
                 .join("shared");
 
             let shared_count = if shared_dir.exists() {
-                std::fs::read_dir(&shared_dir)
-                    .map_or(0, std::iter::Iterator::count)
+                std::fs::read_dir(&shared_dir).map_or(0, std::iter::Iterator::count)
             } else {
                 0
             };
@@ -480,9 +497,7 @@ pub fn handle(
             let mut messages: Vec<ExportMessageV1> = registry
                 .scratchpad
                 .iter()
-                .filter(|e| {
-                    e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id)
-                })
+                .filter(|e| e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
                 .take(200)
                 .map(|m| ExportMessageV1 {
                     id: m.id.clone(),
@@ -502,11 +517,7 @@ pub fn handle(
                     read_by_count: m.read_by.len(),
                 })
                 .collect();
-            messages.sort_by(|a, b| {
-                a.timestamp
-                    .cmp(&b.timestamp)
-                    .then_with(|| a.id.cmp(&b.id))
-            });
+            messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.cmp(&b.id)));
 
             let mut task_store = TaskStore::load();
             task_store.cleanup_old(72);
@@ -623,15 +634,23 @@ pub fn handle(
         }
 
         "diary" => {
-            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
-            let Some(content) = message else { return "Error: message is required for diary entry".to_string() };
+            let Some(agent_id) = current_agent_id else {
+                return "Error: agent must be registered first".to_string();
+            };
+            let Some(content) = message else {
+                return "Error: message is required for diary entry".to_string();
+            };
             let entry_type = match category.unwrap_or("progress") {
                 "discovery" | "found" => DiaryEntryType::Discovery,
                 "decision" | "decided" => DiaryEntryType::Decision,
                 "blocker" | "blocked" => DiaryEntryType::Blocker,
                 "progress" | "done" => DiaryEntryType::Progress,
                 "insight" => DiaryEntryType::Insight,
-                other => return format!("Unknown diary type: {other}. Use: discovery, decision, blocker, progress, insight"),
+                other => {
+                    return format!(
+                        "Unknown diary type: {other}. Use: discovery, decision, blocker, progress, insight"
+                    );
+                }
             };
             let atype = agent_type.unwrap_or("unknown");
             let mut diary = AgentDiary::load_or_create(agent_id, atype, project_root);
@@ -677,7 +696,9 @@ pub fn handle(
 
         "share_knowledge" => {
             let cat = category.unwrap_or("general");
-            let Some(msg_text) = message else { return "Error: message required (format: key1=value1;key2=value2)".to_string() };
+            let Some(msg_text) = message else {
+                return "Error: message required (format: key1=value1;key2=value2)".to_string();
+            };
             let facts: Vec<(String, String)> = msg_text
                 .split(';')
                 .filter_map(|kv| {
@@ -698,7 +719,9 @@ pub fn handle(
         }
 
         "receive_knowledge" => {
-            let Some(agent_id) = current_agent_id else { return "Error: agent must be registered first".to_string() };
+            let Some(agent_id) = current_agent_id else {
+                return "Error: agent must be registered first".to_string();
+            };
             let mut registry = AgentRegistry::load_or_create();
             let facts = registry.receive_shared_knowledge(agent_id);
             let _ = registry.save();
@@ -750,7 +773,10 @@ pub fn handle(
                 let actor = ev.actor.as_deref().unwrap_or("-");
                 out.push_str(&format!(
                     "  #{} [{}] actor={} cl={} ({})\n",
-                    ev.id, ev.kind, actor, ev.consistency_level,
+                    ev.id,
+                    ev.kind,
+                    actor,
+                    ev.consistency_level,
                     ev.timestamp.format("%H:%M:%S")
                 ));
             }
@@ -760,6 +786,8 @@ pub fn handle(
             out
         }
 
-        _ => format!("Unknown action: {action}. Use: register, list, post, read, status, info, handoff, sync, poll_events, diary, recall_diary, diaries, share_knowledge, receive_knowledge"),
+        _ => format!(
+            "Unknown action: {action}. Use: register, list, post, read, status, info, handoff, sync, poll_events, diary, recall_diary, diaries, share_knowledge, receive_knowledge"
+        ),
     }
 }

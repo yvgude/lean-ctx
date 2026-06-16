@@ -24,9 +24,9 @@ mod tests;
 mod write;
 
 pub use content::{
-    canonical_rules_block, dedicated_session_summary, gemini_dedicated_rules_path,
-    opencode_dedicated_rules_path, rules_dedicated_markdown, rules_shared_content,
-    GEMINI_DEDICATED_CONTEXT_FILENAME,
+    GEMINI_DEDICATED_CONTEXT_FILENAME, canonical_rules_block, dedicated_session_summary,
+    gemini_dedicated_rules_path, opencode_dedicated_rules_path, rules_dedicated_markdown,
+    rules_shared_content,
 };
 pub use skills::{install_all_skills, install_skill_for_agent};
 

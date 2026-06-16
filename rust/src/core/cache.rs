@@ -1,7 +1,7 @@
 use md5::{Digest, Md5};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use super::tokens::count_tokens;
@@ -975,7 +975,7 @@ mod tests {
 
     #[test]
     fn evict_if_needed_removes_lowest_score() {
-        std::env::set_var("LEAN_CTX_CACHE_MAX_TOKENS", "50");
+        unsafe { std::env::set_var("LEAN_CTX_CACHE_MAX_TOKENS", "50") };
         let mut cache = SessionCache::new();
         let big_content = "a]".repeat(30); // ~30 tokens
         cache.store("/old.rs", &big_content);
@@ -991,7 +991,7 @@ mod tests {
             cache.total_cached_tokens() <= 60,
             "eviction should have kicked in"
         );
-        std::env::remove_var("LEAN_CTX_CACHE_MAX_TOKENS");
+        unsafe { std::env::remove_var("LEAN_CTX_CACHE_MAX_TOKENS") };
     }
 
     #[test]

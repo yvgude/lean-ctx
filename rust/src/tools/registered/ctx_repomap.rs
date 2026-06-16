@@ -1,9 +1,9 @@
 //! MCP wrapper for `ctx_repomap` — Personalized PageRank repo map.
 
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{get_int, get_str_array, McpTool, ToolContext, ToolOutput};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_int, get_str_array};
 use crate::tool_defs::tool_def;
 
 pub struct CtxRepomapTool;

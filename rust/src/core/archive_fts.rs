@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -269,7 +269,7 @@ mod tests {
     fn fts_roundtrip() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         // Force re-open by directly testing open_db
         let conn = open_db().expect("should open");
@@ -297,7 +297,7 @@ mod tests {
     fn open_db_bounds_the_wal() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let conn = open_db().expect("should open");
 

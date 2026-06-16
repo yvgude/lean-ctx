@@ -1,6 +1,6 @@
 //! Node types and CRUD operations for graph nodes.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {

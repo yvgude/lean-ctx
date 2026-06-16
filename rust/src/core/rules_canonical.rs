@@ -16,7 +16,9 @@ pub fn tool_table(mode: Mode) -> &'static str {
 pub fn dedicated_rules(mode: Mode) -> String {
     let table = tool_table(mode);
     let shell_note = match mode {
-        Mode::Hybrid => "Shell commands: use `lean-ctx -c \"<cmd>\"` via your Shell tool. NEVER use `ctx_shell` in Hybrid mode.",
+        Mode::Hybrid => {
+            "Shell commands: use `lean-ctx -c \"<cmd>\"` via your Shell tool. NEVER use `ctx_shell` in Hybrid mode."
+        }
         Mode::Mcp => "Shell commands: use `ctx_shell(command)`. NEVER use raw Shell/bash.",
     };
 

@@ -167,12 +167,14 @@ pub fn c() { 3 }
         let old2 = r"pub fn only() {}";
         let new2 = r"pub fn renamed() {}";
         let d2 = structural_symbol_diff(old2, new2, "rs");
-        assert!(d2
-            .iter()
-            .any(|x| x.change == StructuralChangeKind::Removed && x.name == "only"));
-        assert!(d2
-            .iter()
-            .any(|x| x.change == StructuralChangeKind::Added && x.name == "renamed"));
+        assert!(
+            d2.iter()
+                .any(|x| x.change == StructuralChangeKind::Removed && x.name == "only")
+        );
+        assert!(
+            d2.iter()
+                .any(|x| x.change == StructuralChangeKind::Added && x.name == "renamed")
+        );
     }
 
     #[cfg(not(feature = "tree-sitter"))]

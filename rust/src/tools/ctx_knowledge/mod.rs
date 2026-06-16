@@ -513,7 +513,7 @@ fn handle_health(project_root: &str) -> String {
     if !room_counts.is_empty() {
         out.push_str("\nRoom Balance:\n");
         let mut rooms: Vec<_> = room_counts.into_iter().collect();
-        rooms.sort_by_key(|x| std::cmp::Reverse(x.1 .0));
+        rooms.sort_by_key(|x| std::cmp::Reverse(x.1.0));
         for (cat, (count, total_q)) in &rooms {
             let avg = if *count > 0 {
                 total_q / *count as f32

@@ -1,8 +1,8 @@
+use lean_ctx::core::editor_registry::WriteAction;
 use lean_ctx::core::editor_registry::plan_mode::{
     check_plan_mode_status_for_paths, plan_mode_tools, write_claude_code_plan_permissions_to,
     write_vscode_plan_settings_to,
 };
-use lean_ctx::core::editor_registry::WriteAction;
 use lean_ctx::server::dynamic_tools::is_readonly_tool;
 use serde_json::Value;
 

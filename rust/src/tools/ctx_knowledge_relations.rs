@@ -1,7 +1,7 @@
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::knowledge_relations::{
-    format_mermaid, parse_node_ref, KnowledgeEdge, KnowledgeEdgeKind, KnowledgeNodeRef,
-    KnowledgeRelationGraph,
+    KnowledgeEdge, KnowledgeEdgeKind, KnowledgeNodeRef, KnowledgeRelationGraph, format_mermaid,
+    parse_node_ref,
 };
 
 fn load_policy_or_error() -> Result<crate::core::memory_policy::MemoryPolicy, String> {

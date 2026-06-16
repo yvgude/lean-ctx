@@ -58,13 +58,17 @@ pub struct BundleFileEntry {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BundleError {
-    #[error("no index artifacts found in {0} — run a search once (or `lean-ctx index`) to build the local index first")]
+    #[error(
+        "no index artifacts found in {0} — run a search once (or `lean-ctx index`) to build the local index first"
+    )]
     NothingToBundle(String),
     #[error("not a lean-ctx index bundle (bad magic)")]
     BadMagic,
     #[error("corrupt bundle: {0}")]
     Corrupt(String),
-    #[error("decryption failed — bundle was encrypted with a different account key (re-push from a logged-in device)")]
+    #[error(
+        "decryption failed — bundle was encrypted with a different account key (re-push from a logged-in device)"
+    )]
     Decrypt,
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
@@ -292,7 +296,7 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let root = data_dir.path().join("proj");
         std::fs::create_dir_all(root.join(".git")).unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
         let vectors = crate::core::index_namespace::vectors_dir(&root);
         std::fs::create_dir_all(&vectors).unwrap();
@@ -334,7 +338,7 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let root = data_dir.path().join("empty");
         std::fs::create_dir_all(root.join(".git")).unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
         match pack(&root) {
             Err(BundleError::NothingToBundle(_)) => {}

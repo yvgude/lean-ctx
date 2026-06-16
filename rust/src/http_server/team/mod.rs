@@ -1,18 +1,18 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use axum::{
+    Router,
     body::{self, Body},
     extract::{Extension, Json, Query, State},
-    http::{header, Request, StatusCode},
+    http::{Request, StatusCode, header},
     middleware::{self, Next},
     response::sse::{Event as SseEvent, KeepAlive, Sse},
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
 use futures::Stream;
 use md5::{Digest, Md5};
@@ -22,11 +22,11 @@ use rmcp::{
         CallToolRequest, CallToolRequestParams, CallToolResult, ClientJsonRpcMessage,
         ClientRequest, JsonRpcRequest, NumberOrString, ServerJsonRpcMessage, ServerResult,
     },
-    service::{serve_directly, RequestContext, RoleServer},
+    service::{RequestContext, RoleServer, serve_directly},
     transport::{OneshotTransport, StreamableHttpService},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::Sha256;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::broadcast;
@@ -451,7 +451,7 @@ impl TeamContextEngine {
             Some(other) => {
                 return Err(anyhow!(
                     "tool arguments must be a JSON object (got {other})"
-                ))
+                ));
             }
         };
 
@@ -1198,12 +1198,14 @@ async fn v1_events(
 
     let rt = crate::core::context_os::runtime();
     let replay = rt.bus.read(&ws, &ch, since, limit);
-    let rx = if let Some(rx) = rt.bus.subscribe(&ws, &ch) {
-        rx
-    } else {
-        tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
-        let (_, rx) = tokio::sync::broadcast::channel::<crate::core::context_os::ContextEventV1>(1);
-        rx
+    let rx = match rt.bus.subscribe(&ws, &ch) {
+        Some(rx) => rx,
+        _ => {
+            tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
+            let (_, rx) =
+                tokio::sync::broadcast::channel::<crate::core::context_os::ContextEventV1>(1);
+            rx
+        }
     };
     rt.metrics.record_sse_connect();
     rt.metrics.record_events_replayed(replay.len() as u64);
@@ -1214,7 +1216,7 @@ async fn v1_events(
     let pending: std::collections::VecDeque<crate::core::context_os::ContextEventV1> =
         replay.into();
 
-    use crate::core::context_os::{redact_event_payload, RedactionLevel};
+    use crate::core::context_os::{RedactionLevel, redact_event_payload};
     let redaction = RedactionLevel::RefsOnly;
 
     let stream = futures::stream::unfold(

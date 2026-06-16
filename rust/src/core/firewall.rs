@@ -137,8 +137,8 @@ mod tests {
         cfg.archive.ephemeral = true;
         cfg.archive.ephemeral_min_tokens = 2000;
         // Env can override ephemeral; clear it for a deterministic test.
-        std::env::remove_var("LEAN_CTX_EPHEMERAL");
-        std::env::remove_var("LEAN_CTX_EPHEMERAL_MIN_TOKENS");
+        unsafe { std::env::remove_var("LEAN_CTX_EPHEMERAL") };
+        unsafe { std::env::remove_var("LEAN_CTX_EPHEMERAL_MIN_TOKENS") };
 
         assert!(should_firewall("ctx_shell", 5000, &cfg));
         assert!(!should_firewall("ctx_shell", 1000, &cfg)); // below threshold

@@ -3,8 +3,8 @@
 //! Compares accumulated session counters with the active role's `RoleLimits`
 //! and produces `BudgetStatus` verdicts (Ok / Warning / Exhausted).
 
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use serde::Serialize;
 

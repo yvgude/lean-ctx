@@ -425,8 +425,7 @@ mod tests {
 
     #[test]
     fn auth_flow_detects_gh_auth_one_time_code() {
-        let output =
-            "! First copy your one-time code: ABCD-1234\n- Press Enter to open github.com in your browser...";
+        let output = "! First copy your one-time code: ABCD-1234\n- Press Enter to open github.com in your browser...";
         assert!(contains_auth_flow(output));
     }
 

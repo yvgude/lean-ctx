@@ -50,26 +50,26 @@ mod tests {
     #[test]
     fn resolve_codex_dir_respects_env_var() {
         let _guard = env_lock();
-        std::env::set_var("CODEX_HOME", "/tmp/custom-codex");
+        unsafe { std::env::set_var("CODEX_HOME", "/tmp/custom-codex") };
         let result = resolve_codex_dir();
         assert_eq!(result, Some(PathBuf::from("/tmp/custom-codex")));
-        std::env::remove_var("CODEX_HOME");
+        unsafe { std::env::remove_var("CODEX_HOME") };
     }
 
     #[test]
     fn resolve_codex_dir_ignores_empty_env() {
         let _guard = env_lock();
-        std::env::set_var("CODEX_HOME", "  ");
+        unsafe { std::env::set_var("CODEX_HOME", "  ") };
         let result = resolve_codex_dir();
         assert!(result.is_some());
         assert!(result.unwrap().ends_with(".codex"));
-        std::env::remove_var("CODEX_HOME");
+        unsafe { std::env::remove_var("CODEX_HOME") };
     }
 
     #[test]
     fn resolve_codex_dir_falls_back_to_home() {
         let _guard = env_lock();
-        std::env::remove_var("CODEX_HOME");
+        unsafe { std::env::remove_var("CODEX_HOME") };
         let result = resolve_codex_dir();
         assert!(result.is_some());
         assert!(result.unwrap().ends_with(".codex"));

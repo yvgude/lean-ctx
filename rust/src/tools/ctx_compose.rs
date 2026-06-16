@@ -377,7 +377,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
     //    with maximal keyword coverage under a token budget via submodular
     //    greedy (1−1/e optimal). Two keywords resolving to the same symbol, or
     //    a symbol whose body adds no new keyword, are naturally pruned.
-    use crate::core::context_packing::{greedy_max_coverage, CoverageItem};
+    use crate::core::context_packing::{CoverageItem, greedy_max_coverage};
     let mut snippets: Vec<String> = Vec::new();
     let mut items: Vec<CoverageItem> = Vec::new();
     for kw in &keywords {

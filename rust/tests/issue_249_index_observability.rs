@@ -37,8 +37,8 @@ fn oversized_index_records_observable_not_persisted_note() {
 
     // Isolate the index store and force the "too large" branch for any non-empty
     // index by setting the disk ceiling to 0 MB.
-    std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-    std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0");
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
+    unsafe { std::env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "0") };
 
     // A small but non-empty source tree so the build produces real chunks.
     for i in 0..5 {
@@ -81,6 +81,6 @@ fn oversized_index_records_observable_not_persisted_note() {
         "status_json must expose the non-persistence note, got: {status}"
     );
 
-    std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

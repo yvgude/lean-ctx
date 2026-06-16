@@ -37,7 +37,7 @@ fn assert_valid(v: &jsonschema::Validator, instance: &serde_json::Value, what: &
 #[test]
 fn engine_output_validates_against_ocp_schemas() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
     part1_context_ir();
     part2_capabilities();
@@ -45,7 +45,7 @@ fn engine_output_validates_against_ocp_schemas() {
     part4_evidence_chain();
     part5_events();
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 fn part1_context_ir() {

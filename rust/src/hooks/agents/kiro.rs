@@ -1,4 +1,4 @@
-use super::super::{install_mcp_json_agent, write_file, KIRO_STEERING_TEMPLATE};
+use super::super::{KIRO_STEERING_TEMPLATE, install_mcp_json_agent, write_file};
 
 pub(crate) fn install_kiro_hook() {
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();

@@ -59,11 +59,7 @@ fn git_branch(project_root: &Path) -> Option<String> {
     }
     let s = String::from_utf8(out.stdout).ok()?;
     let s = s.trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 fn legacy_vectors_hash(project_root: &Path) -> String {
@@ -157,7 +153,7 @@ mod tests {
     fn vectors_dir_migrates_legacy_path_hash_directory() {
         let _env = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(project.path().join(".git")).unwrap();

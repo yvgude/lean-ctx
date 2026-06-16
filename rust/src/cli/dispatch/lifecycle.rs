@@ -219,7 +219,7 @@ pub(super) fn cmd_dev_install() {
 /// each build, voiding the TCC grant; a stable identity keeps it.
 #[cfg(target_os = "macos")]
 pub(super) fn cmd_codesign_setup() {
-    use crate::core::codesign::{setup_identity, sign_binary, SetupOutcome};
+    use crate::core::codesign::{SetupOutcome, setup_identity, sign_binary};
 
     eprintln!("Setting up a stable code-signing identity for lean-ctx (#356)…");
     eprintln!(

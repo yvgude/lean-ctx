@@ -330,9 +330,9 @@ fn no_index_env_skips_scan() {
     std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
     std::fs::write(tmp.path().join("main.rs"), "fn main() {}").unwrap();
 
-    std::env::set_var("LEAN_CTX_NO_INDEX", "1");
+    unsafe { std::env::set_var("LEAN_CTX_NO_INDEX", "1") };
     let idx = scan(&tmp.path().to_string_lossy());
-    std::env::remove_var("LEAN_CTX_NO_INDEX");
+    unsafe { std::env::remove_var("LEAN_CTX_NO_INDEX") };
     assert!(idx.files.is_empty(), "LEAN_CTX_NO_INDEX should skip scan");
 }
 
@@ -493,13 +493,13 @@ fn safe_scan_root_refused_for_standalone_under_documents() {
     let doc_proj = home.join("Documents/some-project");
     let doc_proj_str = doc_proj.to_string_lossy().to_string();
 
-    std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+    unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
     assert!(
         !is_safe_scan_root(&doc_proj_str),
         "standalone process must refuse ~/Documents scan roots"
     );
     assert!(!is_safe_scan_root_public(&doc_proj_str));
-    std::env::remove_var("LEAN_CTX_TCC_STANDALONE");
+    unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
 }
 
 #[test]

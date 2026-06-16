@@ -3,7 +3,7 @@ use crate::core::providers::cache as provider_cache;
 use crate::core::providers::config::GitLabConfig;
 use crate::core::providers::provider_trait::ProviderParams;
 use crate::core::providers::registry::global_registry;
-use crate::core::providers::{gitlab, ProviderResult};
+use crate::core::providers::{ProviderResult, gitlab};
 use crate::server::tool_trait::ToolContext;
 
 pub fn handle(args: &serde_json::Map<String, serde_json::Value>, ctx: &ToolContext) -> String {
@@ -168,28 +168,31 @@ fn handle_refresh(args: &serde_json::Map<String, serde_json::Value>, ctx: &ToolC
     } else if let Some(pid) = provider_id {
         // Refresh all actions for a single provider
         let registry = global_registry();
-        if let Some(provider) = registry.get(pid) {
-            let mut total = 0;
-            for action in provider.supported_actions() {
-                let params = ProviderParams {
-                    limit: Some(20),
-                    ..Default::default()
-                };
-                match registry.execute_as_chunks(pid, action, &params) {
-                    Ok(chunks) => {
-                        consolidate_to_session(&chunks, ctx);
-                        total += chunks.len();
-                    }
-                    Err(e) => {
-                        tracing::debug!("[ctx_provider] refresh {pid}/{action} failed: {e}");
+        match registry.get(pid) {
+            Some(provider) => {
+                let mut total = 0;
+                for action in provider.supported_actions() {
+                    let params = ProviderParams {
+                        limit: Some(20),
+                        ..Default::default()
+                    };
+                    match registry.execute_as_chunks(pid, action, &params) {
+                        Ok(chunks) => {
+                            consolidate_to_session(&chunks, ctx);
+                            total += chunks.len();
+                        }
+                        Err(e) => {
+                            tracing::debug!("[ctx_provider] refresh {pid}/{action} failed: {e}");
+                        }
                     }
                 }
+                out.push_str(&format!(
+                    "Re-fetched all actions for '{pid}': {total} items consolidated\n"
+                ));
             }
-            out.push_str(&format!(
-                "Re-fetched all actions for '{pid}': {total} items consolidated\n"
-            ));
-        } else {
-            out.push_str(&format!("Provider '{pid}' not found\n"));
+            _ => {
+                out.push_str(&format!("Provider '{pid}' not found\n"));
+            }
         }
     } else {
         out.push_str("Specify provider= to also re-fetch data after cache invalidation\n");

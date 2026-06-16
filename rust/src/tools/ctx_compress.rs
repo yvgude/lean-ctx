@@ -2,8 +2,8 @@ use crate::core::cache::SessionCache;
 use crate::core::protocol;
 use crate::core::signatures;
 use crate::core::tokens::count_tokens;
-use crate::tools::ctx_response;
 use crate::tools::CrpMode;
+use crate::tools::ctx_response;
 
 pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode) -> String {
     let entries = cache.get_all_entries();
@@ -116,7 +116,9 @@ pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode)
     let compressed_tokens = count_tokens(&cleaned_output) + count_tokens(&legend);
     let savings = protocol::format_savings(total_original, compressed_tokens);
 
-    format!("{cleaned_output}{legend}\nCOMPRESSION: {total_original} → {compressed_tokens} tok\n{savings}")
+    format!(
+        "{cleaned_output}{legend}\nCOMPRESSION: {total_original} → {compressed_tokens} tok\n{savings}"
+    )
 }
 
 /// Grow-and-refine (#541): fold the latest session findings, decisions and

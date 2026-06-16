@@ -13,8 +13,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use super::provider_trait::{ContextProvider, ProviderParams};
 use super::ProviderResult;
+use super::provider_trait::{ContextProvider, ProviderParams};
 use crate::core::bm25_index::ChunkKind;
 use crate::core::content_chunk::ContentChunk;
 

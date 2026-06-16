@@ -4,9 +4,9 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use super::backend::LspBackend;
-use super::client::{file_path_to_uri, LspClient};
+use super::client::{LspClient, file_path_to_uri};
 use super::config::{
-    check_server_available, default_servers, language_for_extension, LspServerConfig,
+    LspServerConfig, check_server_available, default_servers, language_for_extension,
 };
 use super::jetbrains_backend::JetBrainsHttpBackend;
 use super::port_discovery;

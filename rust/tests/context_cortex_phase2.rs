@@ -11,8 +11,8 @@ use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::consolidation::{apply_artifacts, consolidate};
 use lean_ctx::core::content_chunk::ContentChunk;
 use lean_ctx::core::cross_source_edges::{
-    extract_cross_source_edges, merge_edges, EDGE_DOCUMENTS, EDGE_MENTIONS, EDGE_QUERIES,
-    EDGE_RESOLVES,
+    EDGE_DOCUMENTS, EDGE_MENTIONS, EDGE_QUERIES, EDGE_RESOLVES, extract_cross_source_edges,
+    merge_edges,
 };
 use lean_ctx::core::graph_index::IndexEdge;
 use lean_ctx::core::knowledge_provider_extract::extract_facts;

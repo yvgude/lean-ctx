@@ -21,9 +21,9 @@ mod shell_security {
     /// Override the allowlist completely (bypasses config defaults) for deterministic tests.
     fn check(command: &str, allowlist: &[&str]) -> Result<(), String> {
         let val = allowlist.join(",");
-        std::env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", &val);
+        unsafe { std::env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", &val) };
         let result = check_shell_allowlist(command);
-        std::env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        unsafe { std::env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") };
         result
     }
 
@@ -95,11 +95,13 @@ mod shell_security {
     #[serial_test::serial]
     fn scenario_complex_legitimate_pipeline() {
         let al = &["git", "grep", "sort", "uniq", "head", "wc", "awk", "sed"];
-        assert!(check(
-            "git log --format='%ae' | sort | uniq -c | sort -rn | head -10",
-            al
-        )
-        .is_ok());
+        assert!(
+            check(
+                "git log --format='%ae' | sort | uniq -c | sort -rn | head -10",
+                al
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -113,13 +115,13 @@ mod shell_security {
     #[test]
     #[serial_test::serial]
     fn scenario_empty_allowlist_passes_safe_commands() {
-        std::env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "");
+        unsafe { std::env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "") };
         assert!(check_shell_allowlist("anything goes here").is_ok());
         assert!(check_shell_allowlist("ls -la").is_ok());
         // Unconditionally blocked commands (eval, exec, source) are still rejected
         assert!(check_shell_allowlist("eval 'rm -rf /'").is_err());
         assert!(check_shell_allowlist("exec /bin/bash").is_err());
-        std::env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        unsafe { std::env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") };
     }
 }
 
@@ -128,7 +130,7 @@ mod shell_security {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod hnsw_performance {
-    use lean_ctx::core::hnsw::{brute_force_topk, AnnIndex};
+    use lean_ctx::core::hnsw::{AnnIndex, brute_force_topk};
 
     fn deterministic_vec(dim: usize, seed: u64) -> Vec<f32> {
         let mut v = Vec::with_capacity(dim);
@@ -726,9 +728,21 @@ mod attention_assembly {
     #[test]
     fn scenario_definitions_get_more_budget_than_boilerplate() {
         let chunks = vec![
-            (0, "pub struct AuthService { pub fn authenticate(&self, user: &str, pass: &str) -> Result<Token, Error> { validate_credentials(user, pass)?; let token = generate_jwt(user); Ok(token) } }", true),
-            (1, "use std::io; use std::fmt; use std::collections::HashMap; use serde::{Serialize, Deserialize}; use tokio::sync::RwLock;", false),
-            (2, "// TODO: implement // TODO: implement // TODO: implement // placeholder // placeholder", false),
+            (
+                0,
+                "pub struct AuthService { pub fn authenticate(&self, user: &str, pass: &str) -> Result<Token, Error> { validate_credentials(user, pass)?; let token = generate_jwt(user); Ok(token) } }",
+                true,
+            ),
+            (
+                1,
+                "use std::io; use std::fmt; use std::collections::HashMap; use serde::{Serialize, Deserialize}; use tokio::sync::RwLock;",
+                false,
+            ),
+            (
+                2,
+                "// TODO: implement // TODO: implement // TODO: implement // placeholder // placeholder",
+                false,
+            ),
         ];
 
         let result = attention_weighted_assembly(&chunks, 3000);
@@ -755,7 +769,11 @@ mod attention_assembly {
         let chunks = vec![
             (0, common_content, true),
             (1, common_content, false), // exact duplicate
-            (2, "fn totally_different_function() { let x = compute_something_unique(); transform(x); emit(x) }", true),
+            (
+                2,
+                "fn totally_different_function() { let x = compute_something_unique(); transform(x); emit(x) }",
+                true,
+            ),
         ];
 
         let result = attention_weighted_assembly(&chunks, 3000);

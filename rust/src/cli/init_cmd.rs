@@ -184,7 +184,7 @@ pub fn cmd_init(args: &[String]) {
 }
 
 pub fn cmd_init_quiet(args: &[String]) {
-    std::env::set_var("LEAN_CTX_QUIET", "1");
+    unsafe { std::env::set_var("LEAN_CTX_QUIET", "1") };
     cmd_init(args);
-    std::env::remove_var("LEAN_CTX_QUIET");
+    unsafe { std::env::remove_var("LEAN_CTX_QUIET") };
 }

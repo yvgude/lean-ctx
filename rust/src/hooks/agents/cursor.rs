@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::super::{
-    make_executable, mcp_server_quiet_mode, resolve_binary_path, write_file, HookMode,
+    HookMode, make_executable, mcp_server_quiet_mode, resolve_binary_path, write_file,
 };
 use super::shared::install_standard_hook_scripts;
 
@@ -281,9 +281,10 @@ mod tests {
             .pointer("/hooks/preToolUse")
             .and_then(|x| x.as_array())
             .unwrap();
-        assert!(pre
-            .iter()
-            .any(|e| e.get("matcher").and_then(|m| m.as_str()) == Some("Other")));
+        assert!(
+            pre.iter()
+                .any(|e| e.get("matcher").and_then(|m| m.as_str()) == Some("Other"))
+        );
         assert!(pre.iter().any(|e| {
             e.get("matcher").and_then(|m| m.as_str()) == Some("Shell")
                 && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook rewrite")

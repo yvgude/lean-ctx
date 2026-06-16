@@ -10,7 +10,7 @@
 use lean_ctx::core::compliance::{self, Coverage, RowStatus};
 use lean_ctx::core::events::{EventKind, LeanCtxEvent};
 use lean_ctx::core::ocp;
-use lean_ctx::core::policy::{builtin, resolve, ResolvedPolicy};
+use lean_ctx::core::policy::{ResolvedPolicy, builtin, resolve};
 
 fn resolved(pack_name: &str) -> ResolvedPolicy {
     let pack = builtin::get(pack_name).unwrap_or_else(|| panic!("builtin pack {pack_name}"));
@@ -84,14 +84,14 @@ fn eu_ai_act_reference_report_has_ten_plus_enforced_full_controls() {
 #[test]
 fn audit_chain_proofs_run_sequentially() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
     aia_12_1_logging_is_automatic_and_chained();
     aia_12_2_actions_attribute_agent_and_role();
     // Destroys the chain — must run last.
     aia_12_1_tampered_log_fails_verification(tmp.path());
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 fn aia_12_1_logging_is_automatic_and_chained() {

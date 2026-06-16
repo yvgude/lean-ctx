@@ -1,9 +1,9 @@
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    get_bool, get_int, get_str, require_resolved_path, McpTool, ToolContext, ToolOutput,
+    McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, require_resolved_path,
 };
 use crate::tool_defs::tool_def;
 
@@ -95,7 +95,9 @@ impl McpTool for CtxEditTool {
                     }
                     if std::time::Instant::now() >= deadline {
                         return Err(ErrorData::internal_error(
-                            format!("per-file edit lock contention for {path} — another edit to the same file is in progress, retry in a moment"),
+                            format!(
+                                "per-file edit lock contention for {path} — another edit to the same file is in progress, retry in a moment"
+                            ),
                             None,
                         ));
                     }

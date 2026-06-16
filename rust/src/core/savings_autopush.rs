@@ -13,7 +13,7 @@
 use std::time::Duration;
 
 use crate::core::config::Config;
-use crate::core::savings_ledger::push::{push_batch, PushError};
+use crate::core::savings_ledger::push::{PushError, push_batch};
 
 /// How often the daemon re-snapshots + pushes. The batch is a cumulative
 /// whole-ledger snapshot, so re-pushing is idempotent on the server.
@@ -120,14 +120,14 @@ mod tests {
     fn enabled_when_fully_configured() {
         // Guard against a CI env that sets the token override.
         let prior = std::env::var("LEAN_CTX_TEAM_TOKEN").ok();
-        std::env::remove_var("LEAN_CTX_TEAM_TOKEN");
+        unsafe { std::env::remove_var("LEAN_CTX_TEAM_TOKEN") };
         let resolved = resolve(base());
         assert!(resolved.is_some());
         let cfg = resolved.unwrap();
         assert_eq!(cfg.url, "https://team.example.com");
         assert_eq!(cfg.token, "tok");
         if let Some(v) = prior {
-            std::env::set_var("LEAN_CTX_TEAM_TOKEN", v);
+            unsafe { std::env::set_var("LEAN_CTX_TEAM_TOKEN", v) };
         }
     }
 }

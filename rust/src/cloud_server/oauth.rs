@@ -1,12 +1,12 @@
+use axum::Json;
 use axum::extract::{Form, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
 use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Pool;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::auth::{auth_user, constant_time_eq, generate_token, sha256_hex, AppState};
+use super::auth::{AppState, auth_user, constant_time_eq, generate_token, sha256_hex};
 use super::helpers::internal_error;
 
 #[derive(Debug, Deserialize)]

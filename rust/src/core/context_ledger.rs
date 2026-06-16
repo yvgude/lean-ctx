@@ -216,7 +216,7 @@ impl ContextLedger {
         window_size: usize,
         task: Option<&str>,
     ) -> f64 {
-        use crate::core::context_field::{compute_signals_for_path, ContextField};
+        use crate::core::context_field::{ContextField, compute_signals_for_path};
 
         let (signals, _costs) =
             compute_signals_for_path(path, task, None, window_size, original_tokens);
@@ -579,10 +579,9 @@ impl ContextLedger {
     }
 
     pub fn adjusted_total_saved(&self) -> isize {
-        if let Ok(bt) = crate::core::bounce_tracker::global().lock() {
-            bt.adjusted_savings(self.total_tokens_saved)
-        } else {
-            self.total_tokens_saved as isize
+        match crate::core::bounce_tracker::global().lock() {
+            Ok(bt) => bt.adjusted_savings(self.total_tokens_saved),
+            _ => self.total_tokens_saved as isize,
         }
     }
 }

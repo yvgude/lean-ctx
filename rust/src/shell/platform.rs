@@ -40,7 +40,7 @@ fn decode_windows_output(bytes: &[u8]) -> String {
         return lossy.into_owned();
     }
 
-    extern "system" {
+    unsafe extern "system" {
         fn GetACP() -> u32;
         fn MultiByteToWideChar(
             cp: u32,
@@ -92,7 +92,7 @@ fn decode_windows_output(bytes: &[u8]) -> String {
 
 #[cfg(windows)]
 pub(super) fn set_console_utf8() {
-    extern "system" {
+    unsafe extern "system" {
         fn SetConsoleOutputCP(id: u32) -> i32;
     }
     // SAFETY: `SetConsoleOutputCP` takes a code-page id (65001 = UTF-8) by

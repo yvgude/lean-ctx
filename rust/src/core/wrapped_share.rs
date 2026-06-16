@@ -10,7 +10,7 @@
 //! a sibling `lean-ctx-wrapped.png` under the supplied `--base-url`; we never fabricate a
 //! URL — image meta is emitted only when a base URL is provided.
 
-use crate::core::wrapped::{format_tokens, WrappedReport};
+use crate::core::wrapped::{WrappedReport, format_tokens};
 
 impl WrappedReport {
     /// Renders the self-contained share page. `base_url` (optional) is the location the
@@ -172,7 +172,9 @@ mod tests {
     #[test]
     fn with_base_url_emits_absolute_image_meta() {
         let html = sample().to_share_html(Some("https://me.dev/wrapped/"));
-        assert!(html.contains("og:image\" content=\"https://me.dev/wrapped/lean-ctx-wrapped.png\""));
+        assert!(
+            html.contains("og:image\" content=\"https://me.dev/wrapped/lean-ctx-wrapped.png\"")
+        );
         assert!(html.contains("summary_large_image"));
         // Trailing slash on the base must be normalised (no double slash).
         assert!(!html.contains("wrapped//lean-ctx-wrapped.png"));

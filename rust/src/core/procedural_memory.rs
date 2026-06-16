@@ -464,7 +464,7 @@ mod tests {
         // Isolated data dir so the test never touches the real memory stores.
         let dir = std::env::temp_dir().join(format!("lctx-procauto-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
 
         let hash = "auto-detect-test";
         let policy = crate::core::memory_policy::MemoryPolicy::default();
@@ -486,7 +486,7 @@ mod tests {
         let reloaded = ProceduralStore::load(hash).expect("procedural store persisted");
         assert!(!reloaded.procedures.is_empty());
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 

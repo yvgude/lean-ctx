@@ -9,7 +9,7 @@
 //! from the published spec. `tests/openapi_contract_up_to_date.rs` binds this
 //! inventory to that contract's Endpoints table.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 /// One documented, public endpoint of the `/v1` surface.
 pub struct EndpointDoc {

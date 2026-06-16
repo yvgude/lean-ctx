@@ -285,16 +285,16 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let cache = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_CACHE_DIR", cache.path());
-        std::env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        unsafe { std::env::set_var("LEAN_CTX_CACHE_DIR", cache.path()) };
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.path()) };
 
         AnomalyDetector::default().save();
 
         let in_cache = cache.path().join("anomaly_detector.json").exists();
         let in_data = data.path().join("anomaly_detector.json").exists();
 
-        std::env::remove_var("LEAN_CTX_CACHE_DIR");
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_CACHE_DIR") };
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         assert!(
             in_cache,

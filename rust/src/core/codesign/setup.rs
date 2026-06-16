@@ -8,7 +8,7 @@
 
 use std::process::Command;
 
-use super::{keychain_path, password_path, IDENTITY_CN};
+use super::{IDENTITY_CN, keychain_path, password_path};
 
 /// Result of [`setup_identity`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -55,7 +55,10 @@ pub fn handle_proof(format: Option<&str>) -> Result<String, String> {
                 s.total_claims,
                 proof.quality_level as u8,
                 proof.quality_level,
-                s.proved, s.passed, s.failed, s.skipped,
+                s.proved,
+                s.passed,
+                s.failed,
+                s.skipped,
             ))
         }
         _ => serde_json::to_string_pretty(&proof).map_err(|e| e.to_string()),

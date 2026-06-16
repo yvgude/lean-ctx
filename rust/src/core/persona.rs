@@ -446,7 +446,7 @@ intent_taxonomy = ["prospect", "qualify", "enrich"]
             "name = \"research\"\ntool_profile = \"standard\"\ndefault_read_mode = \"map\"\n",
         )
         .unwrap();
-        std::env::set_var("LEAN_CTX_PERSONAS_DIR", dir.path());
+        unsafe { std::env::set_var("LEAN_CTX_PERSONAS_DIR", dir.path()) };
 
         let loaded = load_from_dir("research").unwrap().unwrap();
         assert_eq!(loaded.name, "research");
@@ -456,6 +456,6 @@ intent_taxonomy = ["prospect", "qualify", "enrich"]
         assert!(names.contains(&"research".to_string()));
         assert!(names.contains(&"coding".to_string()));
 
-        std::env::remove_var("LEAN_CTX_PERSONAS_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_PERSONAS_DIR") };
     }
 }

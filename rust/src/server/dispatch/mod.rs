@@ -75,7 +75,7 @@ impl LeanCtxServer {
                         return Err(ErrorData::invalid_params(
                             "arguments must be an object",
                             None,
-                        ))
+                        ));
                     }
                 };
 
@@ -115,12 +115,16 @@ impl LeanCtxServer {
                                     let mut shown = allowed.clone();
                                     shown.sort();
                                     shown.truncate(30);
-                                    return Ok((format!(
-                                        "Tool '{inner}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
-                                        run.spec.name,
-                                        run.current,
-                                        shown.join(", ")
-                                    ), 0, None));
+                                    return Ok((
+                                        format!(
+                                            "Tool '{inner}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
+                                            run.spec.name,
+                                            run.current,
+                                            shown.join(", ")
+                                        ),
+                                        0,
+                                        None,
+                                    ));
                                 }
                             }
                         }
@@ -180,7 +184,9 @@ impl LeanCtxServer {
                         match self.resolve_path(raw).await {
                             Ok(resolved) => {
                                 if !["path", "project_root", "root"].contains(key) {
-                                    tracing::trace!("[pathjail] resolved non-standard path key '{key}': {raw} -> {resolved}");
+                                    tracing::trace!(
+                                        "[pathjail] resolved non-standard path key '{key}': {raw} -> {resolved}"
+                                    );
                                 }
                                 resolved_paths.insert(key.to_string(), resolved);
                             }

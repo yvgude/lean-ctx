@@ -4,7 +4,7 @@ pub mod registry;
 pub mod sandbox;
 pub mod tools;
 
-use executor::{execute_hooks_for_point, HookPoint, HookResult};
+use executor::{HookPoint, HookResult, execute_hooks_for_point};
 use registry::PluginRegistry;
 use std::sync::Mutex;
 use std::sync::OnceLock;

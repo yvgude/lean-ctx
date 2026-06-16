@@ -94,7 +94,7 @@ pub(crate) fn resolve_path_sync(
 #[cfg(test)]
 mod adoption_tests {
     use super::*;
-    use crate::core::terse::mcp_compress::{compress_description, DescriptionMode};
+    use crate::core::terse::mcp_compress::{DescriptionMode, compress_description};
     use crate::server::tool_trait::McpTool;
 
     /// Tools that compete with native harness tools must steer the agent toward

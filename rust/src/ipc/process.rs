@@ -97,7 +97,7 @@ pub fn is_alive(pid: u32) -> bool {
     {
         use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE, WAIT_TIMEOUT};
         use windows_sys::Win32::System::Threading::{
-            GetExitCodeProcess, OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, WaitForSingleObject,
         };
 
         // SAFETY: every Win32 call below takes integer args plus the local
@@ -162,7 +162,7 @@ pub fn force_kill(pid: u32) -> Result<()> {
     {
         use windows_sys::Win32::Foundation::CloseHandle;
         use windows_sys::Win32::System::Threading::{
-            OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+            OpenProcess, PROCESS_TERMINATE, TerminateProcess,
         };
 
         // SAFETY: the Win32 calls take integer args only; the handle is

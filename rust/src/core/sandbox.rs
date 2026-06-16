@@ -35,12 +35,14 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
 
     let Some(runtime) = resolve_runtime(language) else {
         return SandboxResult {
-                stdout: String::new(),
-                stderr: format!("Unsupported language: {language}. Supported: javascript, typescript, python, shell, ruby, go, rust, php, perl, r, elixir"),
-                exit_code: 1,
-                language: language.to_string(),
-                duration_ms: 0,
-            };
+            stdout: String::new(),
+            stderr: format!(
+                "Unsupported language: {language}. Supported: javascript, typescript, python, shell, ruby, go, rust, php, perl, r, elixir"
+            ),
+            exit_code: 1,
+            language: language.to_string(),
+            duration_ms: 0,
+        };
     };
 
     let sandbox_level = std::env::var("LEAN_CTX_SANDBOX_LEVEL")
@@ -91,7 +93,9 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
         }
 
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        eprintln!("[lean-ctx] sandbox_level=1 requested but sandboxing not available on this platform; falling back to Level 0");
+        eprintln!(
+            "[lean-ctx] sandbox_level=1 requested but sandboxing not available on this platform; falling back to Level 0"
+        );
     }
 
     let result = if runtime.needs_temp_file {

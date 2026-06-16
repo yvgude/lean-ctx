@@ -8,15 +8,15 @@
 //!   plane); only then does the `users` row go, taking every synced table with
 //!   it via `ON DELETE CASCADE`.
 
-use axum::extract::State;
-use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
 use axum::Json;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::auth::{auth_user, AppState};
+use super::auth::{AppState, auth_user};
 
 /// Tables exported verbatim (sensitive columns excluded per query). Token
 /// stores (api_keys, oauth_*, magic_links, …) are deliberately absent: hashes

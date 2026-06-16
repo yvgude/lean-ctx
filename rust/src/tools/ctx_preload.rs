@@ -1,7 +1,7 @@
 use crate::core::cache::SessionCache;
 use crate::core::graph_provider::{self, GraphProvider};
 use crate::core::protocol;
-use crate::core::task_relevance::{compute_relevance, parse_task_hints, RelevanceScore};
+use crate::core::task_relevance::{RelevanceScore, compute_relevance, parse_task_hints};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -272,7 +272,9 @@ pub fn handle(
     if crp_mode.is_tdd() {
         format!("{preload_result}\n{savings}")
     } else {
-        format!("{preload_result}\n\nNext: ctx_read(path, mode=\"full\") for any file above.\n{savings}")
+        format!(
+            "{preload_result}\n\nNext: ctx_read(path, mode=\"full\") for any file above.\n{savings}"
+        )
     }
 }
 

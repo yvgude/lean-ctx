@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use axum::Extension;
-use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, extract::Query, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
-use crate::core::context_os::redaction::{redact_event_payload, RedactionLevel};
+use crate::core::context_os::redaction::{RedactionLevel, redact_event_payload};
 use crate::core::context_os::{ContextEventKindV1, ContextEventV1};
 
 use super::team::TeamRequestContext;

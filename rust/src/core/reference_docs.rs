@@ -16,8 +16,7 @@ use serde_json::Value;
 
 use crate::core::config::schema::ConfigSchema;
 
-const DO_NOT_EDIT: &str =
-    "<!-- GENERATED FILE — do not edit by hand. Run: `cargo run --example gen_docs --features dev-tools` -->";
+const DO_NOT_EDIT: &str = "<!-- GENERATED FILE — do not edit by hand. Run: `cargo run --example gen_docs --features dev-tools` -->";
 
 /// Directory the generated reference docs live in (`docs/reference/generated`).
 pub fn generated_dir() -> PathBuf {

@@ -97,7 +97,7 @@ mod tests {
         // `journal.md` is STATE (GH #408); isolated_data_dir collapses all four
         // category dirs onto one temp dir so the write/read pair stays valid.
         let iso = crate::core::data_dir::isolated_data_dir();
-        std::env::set_var("LEAN_CTX_JOURNAL", "1");
+        unsafe { std::env::set_var("LEAN_CTX_JOURNAL", "1") };
 
         log("test", "hello world");
 
@@ -107,13 +107,13 @@ mod tests {
         assert!(content.contains("[test] hello world"));
         assert!(content.contains("# lean-ctx Activity Journal"));
 
-        std::env::remove_var("LEAN_CTX_JOURNAL");
+        unsafe { std::env::remove_var("LEAN_CTX_JOURNAL") };
     }
 
     #[test]
     fn read_journal_tail() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        std::env::set_var("LEAN_CTX_JOURNAL", "1");
+        unsafe { std::env::set_var("LEAN_CTX_JOURNAL", "1") };
 
         for i in 0..5 {
             log("test", &format!("entry {i}"));
@@ -126,6 +126,6 @@ mod tests {
             "should not contain header"
         );
 
-        std::env::remove_var("LEAN_CTX_JOURNAL");
+        unsafe { std::env::remove_var("LEAN_CTX_JOURNAL") };
     }
 }

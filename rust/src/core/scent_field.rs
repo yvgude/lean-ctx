@@ -219,10 +219,10 @@ impl ScentField {
         }
         let mut rows: Vec<(SyncKey<'_>, SyncAgg<'_>)> = groups.into_iter().collect();
         rows.sort_by(|a, b| {
-            b.1 .0
-                .partial_cmp(&a.1 .0)
+            b.1.0
+                .partial_cmp(&a.1.0)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.0 .1.cmp(b.0 .1))
+                .then_with(|| a.0.1.cmp(b.0.1))
         });
 
         let mut out = String::from("Scent field (decaying, zero-token coordination):\n");
@@ -427,8 +427,9 @@ mod tests {
         // Claims between distinct PIDs are mutually foreign.
         let mut f = ScentField::default();
         f.deposit("local-1111", ScentKind::Claimed, "src/x.rs", 2.0, NOW);
-        assert!(f
-            .foreign_claim("src/x.rs", "local-2222", NOW + 30)
-            .is_some());
+        assert!(
+            f.foreign_claim("src/x.rs", "local-2222", NOW + 30)
+                .is_some()
+        );
     }
 }

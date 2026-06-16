@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use rmcp::model::Tool;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::core::contracts::MCP_MANIFEST_SCHEMA_VERSION;
 

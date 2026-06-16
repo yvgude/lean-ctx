@@ -1,12 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    get_bool, get_int, get_str, require_resolved_path, McpTool, ToolContext, ToolOutput,
+    McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, require_resolved_path,
 };
 use crate::tool_defs::tool_def;
 
@@ -68,7 +68,9 @@ impl McpTool for CtxReadTool {
         })) {
             Ok(result) => result,
             Err(_) => Err(ErrorData::internal_error(
-                format!("ctx_read panicked while processing '{path}'. This is a bug — please report it."),
+                format!(
+                    "ctx_read panicked while processing '{path}'. This is a bug — please report it."
+                ),
                 None,
             )),
         }
@@ -126,14 +128,17 @@ impl CtxReadTool {
         let mut mode = if let Some(m) = explicit_mode_arg {
             m
         } else if profile.read.default_mode_effective() == "auto" {
-            if let Ok(cache) = cache_lock.try_read() {
-                crate::tools::ctx_smart_read::select_mode_with_task(&cache, path, task_ref)
-            } else {
-                tracing::debug!(
-                    "cache lock contested during auto-mode selection for {path}; \
+            match cache_lock.try_read() {
+                Ok(cache) => {
+                    crate::tools::ctx_smart_read::select_mode_with_task(&cache, path, task_ref)
+                }
+                _ => {
+                    tracing::debug!(
+                        "cache lock contested during auto-mode selection for {path}; \
                      falling back to full"
-                );
-                "full".to_string()
+                    );
+                    "full".to_string()
+                }
             }
         } else {
             profile.read.default_mode_effective().to_string()
@@ -343,8 +348,14 @@ impl CtxReadTool {
                                     "ctx_read: cache write-lock timeout after 25s for {path_owned}"
                                 );
                                 let _ = tx.send((
-                                    format!("cache lock contention for {path_owned} — retry in a moment"),
-                                    "error".to_string(), 0, false, None, (0, 0),
+                                    format!(
+                                        "cache lock contention for {path_owned} — retry in a moment"
+                                    ),
+                                    "error".to_string(),
+                                    0,
+                                    false,
+                                    None,
+                                    (0, 0),
                                 ));
                                 return;
                             }

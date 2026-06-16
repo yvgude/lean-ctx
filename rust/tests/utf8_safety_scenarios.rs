@@ -153,8 +153,8 @@ fn floor_char_boundary_stress_test() {
         vec![make_cyrillic_string, make_mixed_multibyte, make_emoji_heavy];
     let boundaries = [32, 47, 50, 57, 77, 80, 117, 200, 4096, 50000];
 
-    for gen in &generators {
-        let s = gen(60_000);
+    for r#gen in &generators {
+        let s = r#gen(60_000);
         for &b in &boundaries {
             if b < s.len() {
                 let end = s.floor_char_boundary(b);

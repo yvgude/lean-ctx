@@ -8,7 +8,7 @@
 //! local feature must be paid for.
 
 use crate::cloud_client;
-use crate::core::billing::{min_plan_for, Plan};
+use crate::core::billing::{Plan, min_plan_for};
 
 /// Human-facing name for a gated *hosted* capability. Unknown keys fall back to
 /// the raw feature id, hence the [`Cow`](std::borrow::Cow).

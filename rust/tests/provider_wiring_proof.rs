@@ -16,8 +16,8 @@ use lean_ctx::core::cross_source_hints;
 use lean_ctx::core::graph_index::IndexEdge;
 use lean_ctx::core::knowledge::ProjectKnowledge;
 use lean_ctx::core::knowledge_provider_extract;
-use lean_ctx::core::providers::mcp_bridge::McpBridgeProvider;
 use lean_ctx::core::providers::ContextProvider;
+use lean_ctx::core::providers::mcp_bridge::McpBridgeProvider;
 
 // ===========================================================================
 // PROOF 1: consolidate() produces ALL artifact types (not just some)
@@ -254,7 +254,7 @@ fn proof_cache_stores_provider_uris() {
 
 #[test]
 fn proof_bm25_search_attributes_external_results() {
-    use lean_ctx::core::bm25_index::{format_search_results, SearchResult};
+    use lean_ctx::core::bm25_index::{SearchResult, format_search_results};
 
     let results = vec![SearchResult {
         chunk_idx: 0,

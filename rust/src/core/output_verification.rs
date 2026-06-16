@@ -528,10 +528,11 @@ mod tests {
         let src = "import { foo } from src/utils/helper.ts";
         let compressed = "import foo";
         let r = verify_output(src, compressed, &cfg());
-        assert!(r
-            .warnings
-            .iter()
-            .any(|w| w.kind == WarningKind::MissingPath));
+        assert!(
+            r.warnings
+                .iter()
+                .any(|w| w.kind == WarningKind::MissingPath)
+        );
     }
 
     #[test]
@@ -539,10 +540,11 @@ mod tests {
         let src = "fn calculate_monthly_revenue(data: &[f64]) -> f64 { data.iter().sum() }";
         let compressed = "fn calc() -> f64 { sum }";
         let r = verify_output(src, compressed, &cfg());
-        assert!(r
-            .warnings
-            .iter()
-            .any(|w| w.kind == WarningKind::MangledIdentifier));
+        assert!(
+            r.warnings
+                .iter()
+                .any(|w| w.kind == WarningKind::MangledIdentifier)
+        );
     }
 
     #[test]
@@ -550,10 +552,11 @@ mod tests {
         let src = "fn a() { if true { b(); } } fn c() { d(); } fn e() { f(); }";
         let compressed = "fn a() { if true { b(); fn c() { d(); fn e() { f();";
         let r = verify_output(src, compressed, &cfg());
-        assert!(r
-            .warnings
-            .iter()
-            .any(|w| w.kind == WarningKind::TruncatedBlock));
+        assert!(
+            r.warnings
+                .iter()
+                .any(|w| w.kind == WarningKind::TruncatedBlock)
+        );
     }
 
     #[test]

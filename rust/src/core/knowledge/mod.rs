@@ -9,8 +9,8 @@ mod query;
 mod ranking;
 mod types;
 
-pub use import_export::{parse_import_data, ImportMerge, ImportResult, SimpleFactEntry};
-pub use ranking::{find_cross_key_similar, SimilarFact};
+pub use import_export::{ImportMerge, ImportResult, SimpleFactEntry, parse_import_data};
+pub use ranking::{SimilarFact, find_cross_key_similar};
 pub use types::*;
 
 #[cfg(test)]

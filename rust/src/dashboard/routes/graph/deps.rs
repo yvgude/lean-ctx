@@ -237,31 +237,34 @@ fn enrich() -> (&'static str, &'static str, String) {
 
 fn stats() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let result = if let Some(open) = crate::core::graph_provider::open_best_effort(&root) {
-        let nc = open.provider.node_count().unwrap_or(0);
-        let ec = open.provider.edge_count().unwrap_or(0);
-        match open.source {
-            crate::core::graph_provider::GraphProviderSource::PropertyGraph => {
-                serde_json::json!({
-                    "source": "property_graph",
-                    "node_count": nc,
-                    "edge_count": ec,
-                })
-            }
-            crate::core::graph_provider::GraphProviderSource::GraphIndex => {
-                serde_json::json!({
-                    "source": "graph_index",
-                    "node_count": nc,
-                    "edge_count": ec,
-                })
+    let result = match crate::core::graph_provider::open_best_effort(&root) {
+        Some(open) => {
+            let nc = open.provider.node_count().unwrap_or(0);
+            let ec = open.provider.edge_count().unwrap_or(0);
+            match open.source {
+                crate::core::graph_provider::GraphProviderSource::PropertyGraph => {
+                    serde_json::json!({
+                        "source": "property_graph",
+                        "node_count": nc,
+                        "edge_count": ec,
+                    })
+                }
+                crate::core::graph_provider::GraphProviderSource::GraphIndex => {
+                    serde_json::json!({
+                        "source": "graph_index",
+                        "node_count": nc,
+                        "edge_count": ec,
+                    })
+                }
             }
         }
-    } else {
-        serde_json::json!({
-            "source": "none",
-            "node_count": 0,
-            "edge_count": 0,
-        })
+        _ => {
+            serde_json::json!({
+                "source": "none",
+                "node_count": 0,
+                "edge_count": 0,
+            })
+        }
     };
     let json = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
     ("200 OK", "application/json", json)

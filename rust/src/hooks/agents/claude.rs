@@ -1,6 +1,6 @@
 use super::super::{
-    generate_rewrite_script, make_executable, mcp_server_quiet_mode, resolve_binary_path,
-    resolve_binary_path_for_bash, write_file, HookMode, REDIRECT_SCRIPT_CLAUDE,
+    HookMode, REDIRECT_SCRIPT_CLAUDE, generate_rewrite_script, make_executable,
+    mcp_server_quiet_mode, resolve_binary_path, resolve_binary_path_for_bash, write_file,
 };
 
 pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {

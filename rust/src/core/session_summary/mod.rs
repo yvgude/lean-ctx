@@ -13,7 +13,7 @@ pub mod recall;
 pub mod record;
 pub mod store;
 
-pub use recall::{recall, RecallHit};
+pub use recall::{RecallHit, recall};
 pub use record::{SummaryCandidate, SummaryRecord};
 
 use crate::core::session::SessionState;
@@ -82,7 +82,7 @@ mod tests {
 
     fn isolated() -> (tempfile::TempDir, String) {
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path().join("data"));
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path().join("data")) };
         let root = tmp.path().join("proj").to_string_lossy().to_string();
         (tmp, root)
     }
@@ -110,7 +110,7 @@ mod tests {
         assert!(maybe_record_periodic(&root, c).is_some());
         assert_eq!(list(&root).len(), 1);
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
@@ -125,6 +125,6 @@ mod tests {
         assert!(!hits.is_empty(), "should recall the summary lexically");
         assert!(hits[0].record.title.contains("traversal"));
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

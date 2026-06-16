@@ -17,7 +17,7 @@
 //!   category for granted reductions) — never mixed into Usage so budgets
 //!   stay clean.
 
-use super::{csv_field, DailyCostRow};
+use super::{DailyCostRow, csv_field};
 use chrono::{Datelike, Duration, NaiveDate};
 
 /// The 21 FOCUS 1.2 Mandatory columns (spec order: alphabetical), the v1.0

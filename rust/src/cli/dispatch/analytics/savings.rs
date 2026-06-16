@@ -142,7 +142,7 @@ pub(super) fn savings_agent_id() -> String {
 /// `lean-ctx savings sign [--out FILE]` — builds + Ed25519-signs a portable savings batch and
 /// writes the JSON artifact (offline-verifiable with `savings verify-batch`).
 fn cmd_savings_sign(args: &[String]) {
-    use core::savings_ledger::{signed_batch, SignedSavingsBatchV1};
+    use core::savings_ledger::{SignedSavingsBatchV1, signed_batch};
 
     let out_override = args.iter().find_map(|a| {
         a.strip_prefix("--out=")
@@ -162,7 +162,9 @@ fn cmd_savings_sign(args: &[String]) {
     let agent_id = savings_agent_id();
     let mut batch = SignedSavingsBatchV1::build_all(&agent_id);
     if batch.totals.total_events == 0 {
-        eprintln!("Savings ledger is empty — nothing to sign yet. It fills as lean-ctx compresses your reads.");
+        eprintln!(
+            "Savings ledger is empty — nothing to sign yet. It fills as lean-ctx compresses your reads."
+        );
         std::process::exit(1);
     }
     if let Err(e) = batch.sign(&agent_id) {
@@ -239,7 +241,7 @@ fn resolve_team_token(args: &[String]) -> Option<String> {
 }
 
 fn cmd_savings_push(args: &[String]) {
-    use core::savings_ledger::push::{ingest_endpoint, push_batch, PushError};
+    use core::savings_ledger::push::{PushError, ingest_endpoint, push_batch};
 
     let Some(url) = resolve_team_url(args) else {
         eprintln!("No team URL configured. Use --team-url or set team_url in config.toml");

@@ -12,8 +12,7 @@ use std::process::{Command, Output};
 
 /// Source laced with terse triggers: dictionary words (`execution`, `command`,
 /// `return`), duplicate lines (line-drop dedup bait) and blank lines.
-const SAMPLE: &str =
-    "fn run() {\n\n    let command = execution();\n    let command = execution();\n    // command execution pipeline\n    return command;\n}\n";
+const SAMPLE: &str = "fn run() {\n\n    let command = execution();\n    let command = execution();\n    // command execution pipeline\n    return command;\n}\n";
 
 fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lean-ctx"))

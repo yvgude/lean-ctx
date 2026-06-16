@@ -318,7 +318,7 @@ mod tests {
     fn store_save_load_roundtrip() {
         let _env = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.path()) };
 
         let project = tempfile::tempdir().unwrap();
         let root = project.path().to_string_lossy().to_string();

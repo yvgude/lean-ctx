@@ -87,7 +87,7 @@ mod tests {
     fn prune_removes_quarantined_files() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         let idx_dir = tmp.path().join("vectors").join("proj_abc");
         std::fs::create_dir_all(&idx_dir).unwrap();
@@ -103,6 +103,6 @@ mod tests {
             "live index must be preserved"
         );
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

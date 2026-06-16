@@ -201,10 +201,12 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
     let stats_path = lean_ctx_dir.join("stats.json");
     let _ = std::fs::remove_file(&stats_path);
 
-    std::env::set_var(
-        "LEAN_CTX_DATA_DIR",
-        lean_ctx_dir.to_string_lossy().to_string(),
-    );
+    unsafe {
+        std::env::set_var(
+            "LEAN_CTX_DATA_DIR",
+            lean_ctx_dir.to_string_lossy().to_string(),
+        )
+    };
 
     let mut modes = HashMap::new();
     modes.insert("full".to_string(), 5u64);
@@ -249,7 +251,7 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
     eprintln!("  Without fix: totals would be 3000/1800 (1000+2000 / 600+1200)");
 
     let _ = std::fs::remove_dir_all(&test_dir);
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 #[test]

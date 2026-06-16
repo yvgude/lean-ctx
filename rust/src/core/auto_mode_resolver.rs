@@ -505,7 +505,7 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-flush-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
         let _ = std::fs::remove_file(dir.join("auto_mode_sources.json"));
 
         // Unique test-only keys: parallel resolve() tests count real sources
@@ -532,7 +532,7 @@ mod tests {
         );
         assert_eq!(get("test_flush_beta"), 1);
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -605,7 +605,7 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-suspect-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
 
         // An explore-style task that would otherwise map (cf.
         // intent_explore_returns_map) — but it names the file, so the suspect
@@ -620,7 +620,7 @@ mod tests {
         assert_eq!(result.mode, "full");
         assert_eq!(result.source, "task_suspect_file");
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -664,8 +664,8 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-sf-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        std::env::set_var("LEAN_CTX_STRUCTURE_FIRST", "1");
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
+        unsafe { std::env::set_var("LEAN_CTX_STRUCTURE_FIRST", "1") };
 
         let suspect = AutoModeContext {
             path: "src/versioncmp.c",
@@ -685,8 +685,8 @@ mod tests {
         };
         assert_eq!(resolve(&tiny).mode, "full");
 
-        std::env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_STRUCTURE_FIRST") };
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -695,8 +695,8 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-sfoff-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        std::env::set_var("LEAN_CTX_STRUCTURE_FIRST", "0");
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
+        unsafe { std::env::set_var("LEAN_CTX_STRUCTURE_FIRST", "0") };
 
         let ctx = AutoModeContext {
             path: "src/versioncmp.c",
@@ -708,8 +708,8 @@ mod tests {
         assert_eq!(result.mode, "full");
         assert_eq!(result.source, "heuristic");
 
-        std::env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_STRUCTURE_FIRST") };
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

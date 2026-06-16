@@ -11,8 +11,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::config_provider::discovery::discover_configs;
 use super::config_provider::ConfigProvider;
+use super::config_provider::discovery::discover_configs;
 use super::github::GitHubProvider;
 use super::gitlab::GitLabProvider;
 use super::jira::JiraProvider;

@@ -4,7 +4,7 @@ use crate::core::cache::SessionCache;
 use crate::core::compressor;
 use crate::core::deps;
 use crate::core::entropy;
-use crate::core::plugins::{executor::HookPoint, PluginManager};
+use crate::core::plugins::{PluginManager, executor::HookPoint};
 use crate::core::protocol;
 use crate::core::signatures;
 use crate::core::symbol_map::{self, SymbolMap};

@@ -23,7 +23,7 @@ pub mod suite;
 
 use anyhow::Result;
 
-use conditions::{assemble, Condition, DEFAULT_BUDGET_TOKENS};
+use conditions::{Condition, DEFAULT_BUDGET_TOKENS, assemble};
 use model::{ModelRequest, ModelRunner};
 use report::{AbReport, PairRecord, ReportConfig};
 use scorers::score_task;
@@ -38,8 +38,7 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Identical framing for both conditions — only the CONTEXT block differs between A and B.
-const SYSTEM_PROMPT: &str =
-    "You are a precise engineering assistant. Answer using only the provided CONTEXT. \
+const SYSTEM_PROMPT: &str = "You are a precise engineering assistant. Answer using only the provided CONTEXT. \
 If the context does not contain the answer, say so. Be concise and correct.";
 
 /// Configuration for one A/B run.

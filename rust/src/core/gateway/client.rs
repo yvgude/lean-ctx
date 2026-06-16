@@ -9,11 +9,11 @@
 
 use std::time::Duration;
 
+use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParams, CallToolResult, Tool};
 use rmcp::service::{RoleClient, RunningService};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{StreamableHttpClientTransport, TokioChildProcess};
-use rmcp::ServiceExt;
 use serde_json::{Map, Value};
 
 use super::config::ResolvedTransport;

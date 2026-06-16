@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::core::editor_registry::{ConfigType, EditorTarget, WriteAction, WriteOptions};
 use crate::core::portable_binary::resolve_portable_binary;
 use crate::core::setup_report::{PlatformInfo, SetupItem, SetupReport, SetupStepReport};
-use crate::hooks::{recommend_hook_mode, HookMode};
+use crate::hooks::{HookMode, recommend_hook_mode};
 use chrono::Utc;
 use std::ffi::OsString;
 mod mcp;
@@ -27,7 +27,7 @@ pub(crate) struct EnvVarGuard {
 impl EnvVarGuard {
     pub(crate) fn set(key: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(key);
-        std::env::set_var(key, value);
+        unsafe { std::env::set_var(key, value) };
         Self { key, previous }
     }
 }
@@ -35,9 +35,9 @@ impl EnvVarGuard {
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         if let Some(previous) = &self.previous {
-            std::env::set_var(self.key, previous);
+            unsafe { std::env::set_var(self.key, previous) };
         } else {
-            std::env::remove_var(self.key);
+            unsafe { std::env::remove_var(self.key) };
         }
     }
 }
@@ -61,9 +61,15 @@ fn first_run_setup_level() -> (bool, bool) {
     println!("  lean-ctx compresses AI context by 60-99%, saving tokens and money.");
     println!();
     println!("  Choose your setup level:");
-    println!("    \x1b[36m[1]\x1b[0m Minimal  \x1b[2m— Just MCP tools, no config file changes (recommended)\x1b[0m");
-    println!("    \x1b[36m[2]\x1b[0m Standard \x1b[2m— MCP tools + agent instructions for optimal mode selection\x1b[0m");
-    println!("    \x1b[36m[3]\x1b[0m Full     \x1b[2m— Everything (tools + rules + skills + shell hooks)\x1b[0m");
+    println!(
+        "    \x1b[36m[1]\x1b[0m Minimal  \x1b[2m— Just MCP tools, no config file changes (recommended)\x1b[0m"
+    );
+    println!(
+        "    \x1b[36m[2]\x1b[0m Standard \x1b[2m— MCP tools + agent instructions for optimal mode selection\x1b[0m"
+    );
+    println!(
+        "    \x1b[36m[3]\x1b[0m Full     \x1b[2m— Everything (tools + rules + skills + shell hooks)\x1b[0m"
+    );
     println!();
     print!("  Your choice \x1b[1m[1]\x1b[0m: ");
     std::io::stdout().flush().ok();
@@ -95,7 +101,9 @@ pub fn run_setup() {
 
     if crate::shell::is_non_interactive() {
         eprintln!("Non-interactive terminal detected (no TTY on stdin).");
-        eprintln!("Running in non-interactive mode (equivalent to: lean-ctx setup --non-interactive --yes)");
+        eprintln!(
+            "Running in non-interactive mode (equivalent to: lean-ctx setup --non-interactive --yes)"
+        );
         eprintln!();
         let opts = SetupOptions {
             non_interactive: true,
@@ -143,8 +151,13 @@ pub fn run_setup() {
         if let Err(e) = crate::daemon::start_daemon(&[]) {
             terminal_ui::print_status_warn(&format!("Daemon restart failed: {e}"));
         }
-    } else if let Err(e) = crate::daemon::start_daemon(&[]) {
-        terminal_ui::print_status_warn(&format!("Daemon start failed: {e}"));
+    } else {
+        match crate::daemon::start_daemon(&[]) {
+            Err(e) => {
+                terminal_ui::print_status_warn(&format!("Daemon start failed: {e}"));
+            }
+            _ => {}
+        }
     }
 
     // Step 3: Editor auto-detection + configuration
@@ -474,7 +487,9 @@ pub fn run_setup() {
         if std::io::stdin().read_line(&mut root_input).is_ok() {
             let root_trimmed = root_input.trim();
             if root_trimmed.is_empty() {
-                terminal_ui::print_status_skip("No project root set. Set later: lean-ctx config set project_root /path/to/project");
+                terminal_ui::print_status_skip(
+                    "No project root set. Set later: lean-ctx config set project_root /path/to/project",
+                );
             } else {
                 let root_path = std::path::Path::new(root_trimmed);
                 if root_path.exists() && root_path.is_dir() {
@@ -636,7 +651,9 @@ pub fn run_onboard() {
 
     println!();
     println!("  {bold}Connecting lean-ctx to your AI tools…{rst}");
-    println!("  {dim}No questions — using recommended defaults. Run `lean-ctx setup` for full control.{rst}");
+    println!(
+        "  {dim}No questions — using recommended defaults. Run `lean-ctx setup` for full control.{rst}"
+    );
     println!();
 
     let opts = SetupOptions {
@@ -698,7 +715,9 @@ pub fn run_onboard() {
         );
     }
     println!();
-    println!("  {dim}Check anytime:{rst}  {bold}lean-ctx doctor{rst}  {dim}·{rst}  {bold}lean-ctx gain{rst}");
+    println!(
+        "  {dim}Check anytime:{rst}  {bold}lean-ctx doctor{rst}  {dim}·{rst}  {bold}lean-ctx gain{rst}"
+    );
     println!();
     terminal_ui::print_command_box();
 
@@ -1322,8 +1341,10 @@ mod tests {
                     .as_path(),
             ]
         );
-        assert!(targets
-            .iter()
-            .all(|t| t.config_type == ConfigType::QoderSettings));
+        assert!(
+            targets
+                .iter()
+                .all(|t| t.config_type == ConfigType::QoderSettings)
+        );
     }
 }

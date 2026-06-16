@@ -91,7 +91,7 @@ fn main() {
     println!("# ctx_search efficiency bench ({n_files} files, {ITERS} iters)\n");
 
     // --- Walk path (legacy): force index off so numbers are uncontaminated ---
-    std::env::set_var("LEAN_CTX_DISABLE_SEARCH_INDEX", "1");
+    unsafe { std::env::set_var("LEAN_CTX_DISABLE_SEARCH_INDEX", "1") };
     println!("## Walk path (legacy)\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");
@@ -103,7 +103,7 @@ fn main() {
     }
 
     // --- Resident index path: warm synchronously, then measure ---
-    std::env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX");
+    unsafe { std::env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX") };
     let warmed = lean_ctx::core::search_index::warm_blocking(&corpus_str, true, false);
     println!("\n## Resident index path (warm={warmed})\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");

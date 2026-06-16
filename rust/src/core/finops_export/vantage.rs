@@ -12,7 +12,7 @@
 //! previous upload in Vantage (Settings → Integrations) before re-sending;
 //! there is no replace operation to call.
 
-use super::{csv_field, DailyCostRow};
+use super::{DailyCostRow, csv_field};
 
 pub const HEADER: &[&str] = &[
     "ChargePeriodStart",

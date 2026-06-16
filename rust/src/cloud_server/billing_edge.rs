@@ -7,17 +7,17 @@
 //! [`Plan::Free`](crate::core::billing::Plan) — so the open backend runs fully
 //! standalone and **no local capability is ever gated** (Local-Free Invariant).
 
-use axum::extract::{Path, Query, State};
-use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::core::billing::Plan;
 
-use super::auth::{auth_user, AppState};
+use super::auth::{AppState, auth_user};
 use super::config::Config;
 
 /// Resolve a user's effective plan via the private billing service. Any failure

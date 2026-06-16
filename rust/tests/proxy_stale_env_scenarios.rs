@@ -16,9 +16,9 @@ impl TestEnv {
         let home = tmp.path().to_path_buf();
         let data_dir = home.join(".lean-ctx");
         std::fs::create_dir_all(&data_dir).unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir);
-        std::env::set_var("CLAUDE_CONFIG_DIR", home.join(".claude"));
-        std::env::set_var("CODEX_HOME", home.join(".codex"));
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir) };
+        unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", home.join(".claude")) };
+        unsafe { std::env::set_var("CODEX_HOME", home.join(".codex")) };
         Self { _tmp: tmp, home }
     }
 
@@ -37,9 +37,9 @@ impl TestEnv {
 
 impl Drop for TestEnv {
     fn drop(&mut self) {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
-        std::env::remove_var("CLAUDE_CONFIG_DIR");
-        std::env::remove_var("CODEX_HOME");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+        unsafe { std::env::remove_var("CLAUDE_CONFIG_DIR") };
+        unsafe { std::env::remove_var("CODEX_HOME") };
     }
 }
 

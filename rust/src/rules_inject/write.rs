@@ -1,8 +1,8 @@
 //! Write primitives: marker-section replace, shared append, dedicated write.
 //! All writes go through `config_io::write_atomic_with_backup`.
 
-use super::content::{rules_content, RULES_SHARED};
-use super::{RulesFormat, RulesResult, RulesTarget, END_MARKER, MARKER, RULES_VERSION};
+use super::content::{RULES_SHARED, rules_content};
+use super::{END_MARKER, MARKER, RULES_VERSION, RulesFormat, RulesResult, RulesTarget};
 
 pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> {
     if target.path.exists() {

@@ -38,7 +38,7 @@ mod tests {
         // marker-probed at load time when the process is TCC-standalone: the
         // probe itself would trip the privacy prompt (#356). The repair
         // heuristic only ever fires for agent/temp roots.
-        std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
         let mut session = SessionState::new();
         let docs_root = dirs::home_dir()
             .unwrap_or_default()
@@ -50,7 +50,7 @@ mod tests {
         let normalized = super::heuristics::normalize_loaded_session(session);
         // Root is not an agent/temp dir → kept as-is, no probe needed.
         assert_eq!(normalized.project_root.as_deref(), Some(docs_root.as_str()));
-        std::env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
     }
 
     #[test]

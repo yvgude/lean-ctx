@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
-use crate::core::pagerank::{compute as pagerank_compute, PageRankInput};
+use crate::core::pagerank::{PageRankInput, compute as pagerank_compute};
 
 /// Aggregated graph-derived features per file node.
 #[derive(Debug, Clone, PartialEq)]

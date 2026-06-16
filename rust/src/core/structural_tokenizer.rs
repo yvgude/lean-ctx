@@ -415,17 +415,19 @@ mod tests {
     fn rust_for_in_loop_pattern() {
         let src = "for item in items.iter() {";
         let toks = structural_tokenize(src, "rust");
-        assert!(toks
-            .iter()
-            .any(|t| t.kind == TokenKind::Pattern && t.text.starts_with("for ")));
+        assert!(
+            toks.iter()
+                .any(|t| t.kind == TokenKind::Pattern && t.text.starts_with("for "))
+        );
     }
 
     #[test]
     fn go_err_nil_pattern() {
         let toks = structural_tokenize("if err != nil { return err }", "go");
-        assert!(toks
-            .iter()
-            .any(|t| t.kind == TokenKind::Pattern && t.text.contains("err")));
+        assert!(
+            toks.iter()
+                .any(|t| t.kind == TokenKind::Pattern && t.text.contains("err"))
+        );
         let pat = toks
             .iter()
             .find(|t| t.kind == TokenKind::Pattern)
@@ -449,12 +451,14 @@ mod tests {
     #[test]
     fn comment_is_noise() {
         let toks = structural_tokenize("// hello\nlet x = 1;", "rust");
-        assert!(toks
-            .iter()
-            .any(|t| t.kind == TokenKind::Noise && t.text.starts_with("//")));
-        assert!(toks
-            .iter()
-            .any(|t| t.kind == TokenKind::Keyword && t.text == "let"));
+        assert!(
+            toks.iter()
+                .any(|t| t.kind == TokenKind::Noise && t.text.starts_with("//"))
+        );
+        assert!(
+            toks.iter()
+                .any(|t| t.kind == TokenKind::Keyword && t.text == "let")
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::core::intent_engine::{classify, TaskClassification, TaskType};
+use crate::core::intent_engine::{TaskClassification, TaskType, classify};
 
 #[derive(Debug)]
 pub struct TaskBriefing {

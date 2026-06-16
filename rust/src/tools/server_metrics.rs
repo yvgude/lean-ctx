@@ -517,11 +517,7 @@ impl LeanCtxServer {
                     let is_cache_hit = call.saved_tokens > 0
                         && call.original_tokens > 0
                         && call.saved_tokens == call.original_tokens;
-                    if is_cache_hit {
-                        (0, false)
-                    } else {
-                        (1, false)
-                    }
+                    if is_cache_hit { (0, false) } else { (1, false) }
                 }
                 _ => (1, false),
             };

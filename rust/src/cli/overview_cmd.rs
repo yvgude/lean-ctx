@@ -1,5 +1,5 @@
 use crate::core::cache::SessionCache;
-use crate::tools::{ctx_overview, CrpMode};
+use crate::tools::{CrpMode, ctx_overview};
 
 pub(crate) fn cmd_overview(args: &[String]) {
     let project_root = super::common::detect_project_root(args);

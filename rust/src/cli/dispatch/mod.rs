@@ -60,9 +60,9 @@ pub fn run() {
                     passthrough(&command);
                 }
                 if raw {
-                    std::env::set_var("LEAN_CTX_RAW", "1");
+                    unsafe { std::env::set_var("LEAN_CTX_RAW", "1") };
                 } else {
-                    std::env::set_var("LEAN_CTX_COMPRESS", "1");
+                    unsafe { std::env::set_var("LEAN_CTX_COMPRESS", "1") };
                 }
                 let code = shell::exec(&command);
                 core::stats::flush();
@@ -596,8 +596,12 @@ pub fn run() {
                     "codex-session-start" => hook_handlers::handle_codex_session_start(),
                     "rewrite-inline" => hook_handlers::handle_rewrite_inline(),
                     _ => {
-                        eprintln!("Usage: lean-ctx hook <rewrite|redirect|observe|copilot|codex-pretooluse|codex-session-start|rewrite-inline>");
-                        eprintln!("  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)");
+                        eprintln!(
+                            "Usage: lean-ctx hook <rewrite|redirect|observe|copilot|codex-pretooluse|codex-session-start|rewrite-inline>"
+                        );
+                        eprintln!(
+                            "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"
+                        );
                         std::process::exit(1);
                     }
                 }
@@ -625,7 +629,7 @@ pub fn run() {
                 } else {
                     shell::join_command(&args[2..])
                 };
-                std::env::set_var("LEAN_CTX_RAW", "1");
+                unsafe { std::env::set_var("LEAN_CTX_RAW", "1") };
                 let code = shell::exec(&command);
                 std::process::exit(code);
             }
@@ -853,37 +857,37 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_clamps_low() {
-        std::env::remove_var("LEAN_CTX_WORKER_THREADS");
+        unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
         assert_eq!(resolve_worker_threads(1), 1);
     }
 
     #[test]
     #[serial]
     fn worker_threads_default_clamps_high() {
-        std::env::remove_var("LEAN_CTX_WORKER_THREADS");
+        unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
         assert_eq!(resolve_worker_threads(32), 4);
     }
 
     #[test]
     #[serial]
     fn worker_threads_default_passthrough() {
-        std::env::remove_var("LEAN_CTX_WORKER_THREADS");
+        unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
         assert_eq!(resolve_worker_threads(3), 3);
     }
 
     #[test]
     #[serial]
     fn worker_threads_env_override() {
-        std::env::set_var("LEAN_CTX_WORKER_THREADS", "12");
+        unsafe { std::env::set_var("LEAN_CTX_WORKER_THREADS", "12") };
         assert_eq!(resolve_worker_threads(2), 12);
-        std::env::remove_var("LEAN_CTX_WORKER_THREADS");
+        unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
     }
 
     #[test]
     #[serial]
     fn worker_threads_env_invalid_falls_back() {
-        std::env::set_var("LEAN_CTX_WORKER_THREADS", "not_a_number");
+        unsafe { std::env::set_var("LEAN_CTX_WORKER_THREADS", "not_a_number") };
         assert_eq!(resolve_worker_threads(3), 3);
-        std::env::remove_var("LEAN_CTX_WORKER_THREADS");
+        unsafe { std::env::remove_var("LEAN_CTX_WORKER_THREADS") };
     }
 }

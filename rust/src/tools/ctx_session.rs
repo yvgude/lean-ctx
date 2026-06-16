@@ -38,15 +38,14 @@ pub fn handle(
             }
         }
 
-        "save" => {
-            match session.save() {
-                Ok(()) => format!("Session {} saved (v{}).", session.id, session.version),
-                Err(e) => format!("Save failed: {e}"),
-            }
-        }
+        "save" => match session.save() {
+            Ok(()) => format!("Session {} saved (v{}).", session.id, session.version),
+            Err(e) => format!("Save failed: {e}"),
+        },
 
         "export" => {
-            let requested_privacy = crate::core::ccp_session_bundle::BundlePrivacyV1::parse(opts.privacy);
+            let requested_privacy =
+                crate::core::ccp_session_bundle::BundlePrivacyV1::parse(opts.privacy);
             if requested_privacy == crate::core::ccp_session_bundle::BundlePrivacyV1::Full
                 && crate::core::roles::active_role_name() != "admin"
             {
@@ -64,10 +63,8 @@ pub fn handle(
                 .format
                 .unwrap_or(if opts.write { "summary" } else { "json" });
             let root = session.project_root.clone().unwrap_or_else(|| {
-                std::env::current_dir().map_or_else(
-                    |_| ".".to_string(),
-                    |p| p.to_string_lossy().to_string(),
-                )
+                std::env::current_dir()
+                    .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
             });
             let root_path = std::path::PathBuf::from(&root);
 
@@ -76,12 +73,19 @@ pub fn handle(
                 let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
                 let candidate = if let Some(p) = opts.path.or(value) {
                     let p = std::path::PathBuf::from(p);
-                    if p.is_absolute() { p } else { root_path.join(p) }
+                    if p.is_absolute() {
+                        p
+                    } else {
+                        root_path.join(p)
+                    }
                 } else {
                     root_path
                         .join(".lean-ctx")
                         .join("session_bundles")
-                        .join(format!("ccp-session-bundle-v1_{}_{}.json", bundle.session.id, ts))
+                        .join(format!(
+                            "ccp-session-bundle-v1_{}_{}.json",
+                            bundle.session.id, ts
+                        ))
                 };
 
                 let jailed = match crate::core::io_boundary::jail_and_check_path(
@@ -134,10 +138,8 @@ bytes: {}\n",
 
         "import" => {
             let root = session.project_root.clone().unwrap_or_else(|| {
-                std::env::current_dir().map_or_else(
-                    |_| ".".to_string(),
-                    |p| p.to_string_lossy().to_string(),
-                )
+                std::env::current_dir()
+                    .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
             });
             let root_path = std::path::PathBuf::from(&root);
 
@@ -147,7 +149,11 @@ bytes: {}\n",
 
             let candidate = {
                 let p = std::path::PathBuf::from(p);
-                if p.is_absolute() { p } else { root_path.join(p) }
+                if p.is_absolute() {
+                    p
+                } else {
+                    root_path.join(p)
+                }
             };
             let jailed = match crate::core::io_boundary::jail_and_check_path(
                 "ctx_session.import",
@@ -180,9 +186,10 @@ bytes: {}\n",
                     warning = Some("WARNING: project_root_hash mismatch (importing into different project root).".to_string());
                 }
             }
-            if let (Some(exported), Some(current)) =
-                (bundle.project.project_identity_hash.as_ref(), current_identity_hash.as_ref())
-            {
+            if let (Some(exported), Some(current)) = (
+                bundle.project.project_identity_hash.as_ref(),
+                current_identity_hash.as_ref(),
+            ) {
                 if exported != current {
                     warning = Some("WARNING: project_identity_hash mismatch (importing into different project identity).".to_string());
                 }
@@ -216,9 +223,8 @@ stale_files: {}\n",
             // Without this, Episodes only fill via an explicit
             // `action=episodes value=record` call that nobody makes (#477).
             let lower = desc.to_lowercase();
-            let completed = desc.contains("[100%]")
-                || lower.contains("[done]")
-                || lower.contains("[complete]");
+            let completed =
+                desc.contains("[100%]") || lower.contains("[done]") || lower.contains("[complete]");
             let mut note = String::new();
             if completed {
                 match auto_record_episode(session, tool_calls) {
@@ -338,8 +344,10 @@ stale_files: {}\n",
                         p.compression.output_density_effective(),
                     )
                 } else {
-                    let available: Vec<String> =
-                        profiles::list_profiles().iter().map(|p| p.name.clone()).collect();
+                    let available: Vec<String> = profiles::list_profiles()
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect();
                     format!(
                         "Profile '{name}' not found. Available: {}",
                         available.join(", ")
@@ -474,37 +482,35 @@ stale_files: {}\n",
             }
         }
 
-        "slo" => {
-            match value {
-                Some("reload") => {
-                    crate::core::slo::reload();
-                    "SLO definitions reloaded from disk.".to_string()
-                }
-                Some("history") => {
-                    let hist = crate::core::slo::violation_history(20);
-                    if hist.is_empty() {
-                        "No SLO violations recorded.".to_string()
-                    } else {
-                        let mut out = format!("SLO violations (last {}):\n", hist.len());
-                        for v in &hist {
-                            out.push_str(&format!(
-                                "  {} {} ({}) {:.2} vs {:.2} → {}\n",
-                                v.timestamp, v.slo_name, v.metric, v.actual, v.threshold, v.action
-                            ));
-                        }
-                        out
+        "slo" => match value {
+            Some("reload") => {
+                crate::core::slo::reload();
+                "SLO definitions reloaded from disk.".to_string()
+            }
+            Some("history") => {
+                let hist = crate::core::slo::violation_history(20);
+                if hist.is_empty() {
+                    "No SLO violations recorded.".to_string()
+                } else {
+                    let mut out = format!("SLO violations (last {}):\n", hist.len());
+                    for v in &hist {
+                        out.push_str(&format!(
+                            "  {} {} ({}) {:.2} vs {:.2} → {}\n",
+                            v.timestamp, v.slo_name, v.metric, v.actual, v.threshold, v.action
+                        ));
                     }
-                }
-                Some("clear") => {
-                    crate::core::slo::clear_violations();
-                    "SLO violation history cleared.".to_string()
-                }
-                _ => {
-                    let snap = crate::core::slo::evaluate_quiet();
-                    snap.format_compact()
+                    out
                 }
             }
-        }
+            Some("clear") => {
+                crate::core::slo::clear_violations();
+                "SLO violation history cleared.".to_string()
+            }
+            _ => {
+                let snap = crate::core::slo::evaluate_quiet();
+                snap.format_compact()
+            }
+        },
 
         "output_stats" => {
             let snap = crate::core::output_verification::stats_snapshot();
@@ -553,8 +559,7 @@ stale_files: {}\n",
             match value {
                 Some("record") => {
                     let ep = crate::core::episodic_memory::create_episode_from_session(
-                        session,
-                        tool_calls,
+                        session, tool_calls,
                     );
                     let id = ep.id.clone();
                     store.record_episode(ep, &policy.episodic);
@@ -574,7 +579,9 @@ stale_files: {}\n",
                     );
                     match learned {
                         Some(n) if n > 0 => {
-                            format!("Episode recorded: {id} (procedures auto-updated: {n} known workflows)")
+                            format!(
+                                "Episode recorded: {id} (procedures auto-updated: {n} known workflows)"
+                            )
                         }
                         _ => format!("Episode recorded: {id}"),
                     }
@@ -724,7 +731,10 @@ stale_files: {}\n",
                     );
 
                     if !task.is_empty() {
-                        out.push_str(&format!("\nTask: {}", task.chars().take(80).collect::<String>()));
+                        out.push_str(&format!(
+                            "\nTask: {}",
+                            task.chars().take(80).collect::<String>()
+                        ));
                         if !suggestions.is_empty() {
                             out.push_str("\n\nSuggested:");
                             for p in suggestions.into_iter().take(5) {
@@ -745,7 +755,9 @@ stale_files: {}\n",
             }
         }
 
-        _ => format!("Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, profile, role, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"),
+        _ => format!(
+            "Unknown action: {action}. Use: status, load, save, task, finding, decision, reset, list, cleanup, snapshot, restore, resume, configure, profile, role, budget, slo, diff, output_stats, verify, export, import, episodes, procedures"
+        ),
     }
 }
 

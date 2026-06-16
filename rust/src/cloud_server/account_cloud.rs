@@ -17,13 +17,13 @@
 //! A failing bucket query degrades to an empty bucket rather than failing the
 //! whole dashboard, and accounts without the entitlement get the upsell payload.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
-use super::auth::{auth_user, AppState};
+use super::auth::{AppState, auth_user};
 use super::billing_edge::{cloud_sync_allowed, resolve_plan};
 use super::helpers::internal_error;
 
@@ -287,7 +287,7 @@ fn merge_latest(latest: &mut Option<DateTime<Utc>>, candidate: Option<DateTime<U
 
 #[cfg(test)]
 mod tests {
-    use super::{fill_series, merge_latest, DayRow};
+    use super::{DayRow, fill_series, merge_latest};
     use chrono::{Duration, TimeZone, Utc};
 
     #[test]

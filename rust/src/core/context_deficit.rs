@@ -207,10 +207,12 @@ mod tests {
         let known = vec!["src/auth.rs".to_string(), "src/db.rs".to_string()];
         let deficit = detect_deficit(&ledger, &intent, &known);
         assert!(!deficit.missing_targets.is_empty());
-        assert!(deficit
-            .suggested_files
-            .iter()
-            .any(|s| s.path.contains("auth")));
+        assert!(
+            deficit
+                .suggested_files
+                .iter()
+                .any(|s| s.path.contains("auth"))
+        );
     }
 
     #[test]

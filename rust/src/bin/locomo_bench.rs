@@ -112,7 +112,7 @@ fn main() {
     let workspace = temp.join("ws");
     std::fs::create_dir_all(&data_dir).ok();
     std::fs::create_dir_all(&workspace).ok();
-    std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir);
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir) };
 
     let report = locomo::run(&suite_name, &samples, &workspace, args.top_k);
 

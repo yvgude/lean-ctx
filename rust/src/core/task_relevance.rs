@@ -790,9 +790,11 @@ mod tests {
         let (files, keywords) =
             parse_task_hints("Fix the authentication bug in src/auth.rs and update tests");
         assert!(files.iter().any(|f| f.contains("auth.rs")));
-        assert!(keywords
-            .iter()
-            .any(|k| k.to_lowercase().contains("authentication")));
+        assert!(
+            keywords
+                .iter()
+                .any(|k| k.to_lowercase().contains("authentication"))
+        );
     }
 
     #[test]

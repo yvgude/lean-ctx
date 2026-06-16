@@ -28,19 +28,19 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect};
-use axum::Json;
 use base64::Engine;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::auth::{
-    generate_api_key, generate_token, mark_email_verified, rotate_api_key, sha256_hex, upsert_user,
-    AppState,
+    AppState, generate_api_key, generate_token, mark_email_verified, rotate_api_key, sha256_hex,
+    upsert_user,
 };
 use super::config::Config;
 use super::helpers::internal_error;
@@ -325,7 +325,11 @@ pub(super) async fn sso_start(
     );
     let authorize_url = format!(
         "{authorize_endpoint}{}response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256&login_hint={}",
-        if authorize_endpoint.contains('?') { "&" } else { "?" },
+        if authorize_endpoint.contains('?') {
+            "&"
+        } else {
+            "?"
+        },
         urlencode(&org.client_id),
         urlencode(&redirect_uri),
         urlencode("openid email profile"),
@@ -575,7 +579,7 @@ fn verify_id_token(
     issuer: &str,
     client_id: &str,
 ) -> Result<Value, String> {
-    use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+    use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 
     let header = decode_header(id_token).map_err(|e| format!("jwt header: {e}"))?;
     let kid = header.kid.as_deref();

@@ -160,9 +160,9 @@ mod tests {
     fn cache_dir_nests_host_owner_repo_ref() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join("lc_clone_cache_test");
-        std::env::set_var("LEAN_CTX_DATA_DIR", &tmp);
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &tmp) };
         let dir = repo_cache_dir(&rr("https://github.com/o/r/blob/main/x.rs")).unwrap();
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 
         // Normalize separators so the assertion holds on Windows (`\`) too.
         let s = dir.to_string_lossy().replace('\\', "/");
@@ -173,9 +173,9 @@ mod tests {
     fn cache_dir_uses_head_marker_without_ref() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join("lc_clone_cache_test2");
-        std::env::set_var("LEAN_CTX_DATA_DIR", &tmp);
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &tmp) };
         let dir = repo_cache_dir(&rr("https://github.com/o/r")).unwrap();
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         // Component-wise check is separator-agnostic (Windows uses `\`).
         assert!(dir.ends_with("_HEAD"), "got {}", dir.display());
     }
@@ -194,18 +194,20 @@ mod tests {
     #[test]
     fn ensure_repo_rejects_non_https_and_loopback() {
         // url_guard must reject these before any network/git work.
-        assert!(ensure_repo(
-            &RepoRef {
-                host: "localhost".into(),
-                owner: "o".into(),
-                repo: "r".into(),
-                clone_url: "http://localhost/o/r.git".into(),
-                git_ref: None,
-                subpath: None,
-            },
-            Duration::from_secs(5)
-        )
-        .is_err());
+        assert!(
+            ensure_repo(
+                &RepoRef {
+                    host: "localhost".into(),
+                    owner: "o".into(),
+                    repo: "r".into(),
+                    clone_url: "http://localhost/o/r.git".into(),
+                    git_ref: None,
+                    subpath: None,
+                },
+                Duration::from_secs(5)
+            )
+            .is_err()
+        );
     }
 
     #[test]

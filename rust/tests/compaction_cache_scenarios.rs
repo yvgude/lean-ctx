@@ -138,7 +138,7 @@ mod cache_delivery_flags {
 
 mod compaction_sync_scenarios {
     use super::*;
-    use lean_ctx::server::compaction_sync::{sync_if_compacted, LAST_COMPACTION_TS};
+    use lean_ctx::server::compaction_sync::{LAST_COMPACTION_TS, sync_if_compacted};
     use serial_test::serial;
     use std::io::Write;
     use std::sync::atomic::Ordering;

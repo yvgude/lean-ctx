@@ -1,5 +1,5 @@
 use crate::core::cache::SessionCache;
-use crate::tools::{ctx_compress, CrpMode};
+use crate::tools::{CrpMode, ctx_compress};
 
 pub(crate) fn cmd_compress(args: &[String]) {
     let signatures = args.iter().any(|a| a == "--signatures" || a == "-s");

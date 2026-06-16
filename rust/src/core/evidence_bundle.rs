@@ -10,7 +10,7 @@
 //! order, Stored compression, ZIP-epoch timestamps, canonical JSON, no
 //! wall-clock fields in the manifest).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 

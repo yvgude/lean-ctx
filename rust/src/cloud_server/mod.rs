@@ -25,8 +25,8 @@ mod stats;
 mod team_join;
 mod wrapped;
 
-use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
+use axum::routing::{delete, get, patch, post, put};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub async fn run() -> anyhow::Result<()> {

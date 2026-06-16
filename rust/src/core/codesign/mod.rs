@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod setup;
-pub use setup::{setup_identity, SetupOutcome};
+pub use setup::{SetupOutcome, setup_identity};
 
 /// Common Name of the signing certificate (stable across builds).
 pub(crate) const IDENTITY_CN: &str = "lean-ctx-codesign";

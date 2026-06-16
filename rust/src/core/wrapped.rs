@@ -303,9 +303,16 @@ impl WrappedReport {
         };
         format!(
             "WRAPPED [{}]: {} tok saved, {} avoided{}, {} sessions, {} cmds | Top: {} | Compression: {:.1}% | Energy: {} | model={}",
-            self.period, saved_str, cost_str, est_marker, self.sessions_count,
-            self.total_commands, top_str, self.compression_rate_pct,
-            crate::core::energy::format_for_tokens(self.tokens_saved), self.model_key,
+            self.period,
+            saved_str,
+            cost_str,
+            est_marker,
+            self.sessions_count,
+            self.total_commands,
+            top_str,
+            self.compression_rate_pct,
+            crate::core::energy::format_for_tokens(self.tokens_saved),
+            self.model_key,
         )
     }
 }

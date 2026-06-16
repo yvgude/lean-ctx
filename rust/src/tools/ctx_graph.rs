@@ -151,7 +151,9 @@ fn handle_symbol(
             .provider
             .find_symbols(symbol_name, Some(&rel_file), None);
         if available.is_empty() {
-            return format!("Symbol '{symbol_name}' not found in {rel_file}. Run ctx_graph action='build' to update the index.");
+            return format!(
+                "Symbol '{symbol_name}' not found in {rel_file}. Run ctx_graph action='build' to update the index."
+            );
         }
         let names: Vec<String> = available
             .iter()
@@ -519,139 +521,142 @@ fn handle_context_query(query: Option<&str>, root: &str) -> String {
     let gp = graph_provider::open_or_build(root);
     let mut result = Vec::new();
 
-    if let Ok(Some(node)) = graph.get_node_by_path(query) {
-        result.push(format!("## Context for `{query}`\n"));
+    match graph.get_node_by_path(query) {
+        Ok(Some(node)) => {
+            result.push(format!("## Context for `{query}`\n"));
 
-        if let Some(node_id) = node.id {
-            let edges_out = graph.edges_from(node_id).unwrap_or_default();
-            let edges_in = graph.edges_to(node_id).unwrap_or_default();
+            if let Some(node_id) = node.id {
+                let edges_out = graph.edges_from(node_id).unwrap_or_default();
+                let edges_in = graph.edges_to(node_id).unwrap_or_default();
 
-            let mut tests: Vec<String> = Vec::new();
-            let mut commits: Vec<String> = Vec::new();
-            let mut knowledge: Vec<String> = Vec::new();
-            let mut imports: Vec<String> = Vec::new();
-            let mut dependents: Vec<String> = Vec::new();
+                let mut tests: Vec<String> = Vec::new();
+                let mut commits: Vec<String> = Vec::new();
+                let mut knowledge: Vec<String> = Vec::new();
+                let mut imports: Vec<String> = Vec::new();
+                let mut dependents: Vec<String> = Vec::new();
 
-            for edge in &edges_out {
-                let target = resolve_node_name(&graph, edge.target_id);
-                match edge.kind {
-                    crate::core::property_graph::EdgeKind::TestedBy => tests.push(target),
-                    crate::core::property_graph::EdgeKind::ChangedIn => commits.push(target),
-                    crate::core::property_graph::EdgeKind::MentionedIn => {
-                        knowledge.push(target);
+                for edge in &edges_out {
+                    let target = resolve_node_name(&graph, edge.target_id);
+                    match edge.kind {
+                        crate::core::property_graph::EdgeKind::TestedBy => tests.push(target),
+                        crate::core::property_graph::EdgeKind::ChangedIn => commits.push(target),
+                        crate::core::property_graph::EdgeKind::MentionedIn => {
+                            knowledge.push(target);
+                        }
+                        crate::core::property_graph::EdgeKind::Imports => imports.push(target),
+                        _ => {}
                     }
-                    crate::core::property_graph::EdgeKind::Imports => imports.push(target),
-                    _ => {}
                 }
-            }
 
-            for edge in &edges_in {
-                let source = resolve_node_name(&graph, edge.source_id);
-                if edge.kind == crate::core::property_graph::EdgeKind::Imports {
-                    dependents.push(source);
+                for edge in &edges_in {
+                    let source = resolve_node_name(&graph, edge.source_id);
+                    if edge.kind == crate::core::property_graph::EdgeKind::Imports {
+                        dependents.push(source);
+                    }
                 }
-            }
 
-            if !tests.is_empty() {
-                result.push(format!("**Tests ({}):** {}", tests.len(), tests.join(", ")));
-            }
-            if !commits.is_empty() {
-                result.push(format!(
-                    "**Recent commits ({}):** {}",
-                    commits.len(),
-                    commits
-                        .iter()
-                        .take(5)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-            if !knowledge.is_empty() {
-                result.push(format!(
-                    "**Knowledge ({}):** {}",
-                    knowledge.len(),
-                    knowledge.join(", ")
-                ));
-            }
-            if !imports.is_empty() {
-                result.push(format!(
-                    "**Imports ({}):** {}",
-                    imports.len(),
-                    imports
-                        .iter()
-                        .take(10)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-            if !dependents.is_empty() {
-                result.push(format!(
-                    "**Depended on by ({}):** {}",
-                    dependents.len(),
-                    dependents
-                        .iter()
-                        .take(10)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-
-            if let Ok(impact) = graph.impact_analysis(query, 3) {
-                if !impact.affected_files.is_empty() {
+                if !tests.is_empty() {
+                    result.push(format!("**Tests ({}):** {}", tests.len(), tests.join(", ")));
+                }
+                if !commits.is_empty() {
                     result.push(format!(
-                        "**Impact radius:** {} files within 3 hops",
-                        impact.affected_files.len()
+                        "**Recent commits ({}):** {}",
+                        commits.len(),
+                        commits
+                            .iter()
+                            .take(5)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                if !knowledge.is_empty() {
+                    result.push(format!(
+                        "**Knowledge ({}):** {}",
+                        knowledge.len(),
+                        knowledge.join(", ")
+                    ));
+                }
+                if !imports.is_empty() {
+                    result.push(format!(
+                        "**Imports ({}):** {}",
+                        imports.len(),
+                        imports
+                            .iter()
+                            .take(10)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                if !dependents.is_empty() {
+                    result.push(format!(
+                        "**Depended on by ({}):** {}",
+                        dependents.len(),
+                        dependents
+                            .iter()
+                            .take(10)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+
+                if let Ok(impact) = graph.impact_analysis(query, 3) {
+                    if !impact.affected_files.is_empty() {
+                        result.push(format!(
+                            "**Impact radius:** {} files within 3 hops",
+                            impact.affected_files.len()
+                        ));
+                    }
+                }
+            }
+        }
+        _ => {
+            result.push(format!("## Search: `{query}`\n"));
+
+            // Symbol names (e.g. GDScript `_ready`, or any function/type) live in the
+            // GraphIndex, not the PropertyGraph node table, so resolve them here — a
+            // bare concept query should return hits instead of "nothing found" (#314).
+            let mut symbols = gp
+                .as_ref()
+                .map(|o| o.provider.find_symbols(query, None, None))
+                .unwrap_or_default();
+            let q_lower = query.to_lowercase();
+            symbols.sort_by(|a, b| {
+                (a.name.to_lowercase() != q_lower)
+                    .cmp(&(b.name.to_lowercase() != q_lower))
+                    .then_with(|| a.file.cmp(&b.file))
+                    .then_with(|| a.start_line.cmp(&b.start_line))
+            });
+            if !symbols.is_empty() {
+                result.push(format!("**Symbols ({}):**", symbols.len()));
+                for s in symbols.iter().take(15) {
+                    result.push(format!(
+                        "  - {}::{} ({}, {}:{})",
+                        crate::core::protocol::shorten_path(&s.file),
+                        s.name,
+                        s.kind,
+                        s.start_line,
+                        s.end_line
                     ));
                 }
             }
-        }
-    } else {
-        result.push(format!("## Search: `{query}`\n"));
 
-        // Symbol names (e.g. GDScript `_ready`, or any function/type) live in the
-        // GraphIndex, not the PropertyGraph node table, so resolve them here — a
-        // bare concept query should return hits instead of "nothing found" (#314).
-        let mut symbols = gp
-            .as_ref()
-            .map(|o| o.provider.find_symbols(query, None, None))
-            .unwrap_or_default();
-        let q_lower = query.to_lowercase();
-        symbols.sort_by(|a, b| {
-            (a.name.to_lowercase() != q_lower)
-                .cmp(&(b.name.to_lowercase() != q_lower))
-                .then_with(|| a.file.cmp(&b.file))
-                .then_with(|| a.start_line.cmp(&b.start_line))
-        });
-        if !symbols.is_empty() {
-            result.push(format!("**Symbols ({}):**", symbols.len()));
-            for s in symbols.iter().take(15) {
-                result.push(format!(
-                    "  - {}::{} ({}, {}:{})",
-                    crate::core::protocol::shorten_path(&s.file),
-                    s.name,
-                    s.kind,
-                    s.start_line,
-                    s.end_line
-                ));
+            let related = gp
+                .as_ref()
+                .map(|o| o.provider.related(query, 2))
+                .unwrap_or_default();
+            if !related.is_empty() {
+                result.push(format!("**Related files ({}):**", related.len()));
+                for f in related.iter().take(15) {
+                    result.push(format!("  - {f}"));
+                }
             }
-        }
 
-        let related = gp
-            .as_ref()
-            .map(|o| o.provider.related(query, 2))
-            .unwrap_or_default();
-        if !related.is_empty() {
-            result.push(format!("**Related files ({}):**", related.len()));
-            for f in related.iter().take(15) {
-                result.push(format!("  - {f}"));
+            if symbols.is_empty() && related.is_empty() {
+                result.push("No matching nodes found in graph.".to_string());
             }
-        }
-
-        if symbols.is_empty() && related.is_empty() {
-            result.push("No matching nodes found in graph.".to_string());
         }
     }
 
@@ -744,7 +749,7 @@ mod gdscript_p0_tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tmp.path().join("data");
         std::fs::create_dir_all(&data).unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string()) };
 
         let proj = tmp.path().join("game");
         std::fs::create_dir_all(&proj).unwrap();
@@ -788,7 +793,7 @@ mod gdscript_p0_tests {
             "context should surface _ready symbols: {out}"
         );
         assert!(!out.contains("No matching nodes found"), "got: {out}");
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
@@ -805,7 +810,7 @@ mod gdscript_p0_tests {
             out.contains("Enemy.gd"),
             "Base.gd dependents should include Enemy: {out}"
         );
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
@@ -825,6 +830,6 @@ mod gdscript_p0_tests {
         assert!(out.contains("_ready"), "bare symbol should resolve: {out}");
         assert!(!out.contains("Invalid symbol spec"), "got: {out}");
         assert!(!out.to_lowercase().contains("not found"), "got: {out}");
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

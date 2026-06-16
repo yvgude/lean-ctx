@@ -109,7 +109,9 @@ fn flag(args: &[String], prefix: &str) -> Option<String> {
 }
 
 fn print_help() {
-    println!("Usage: lean-ctx finops export [--target=focus|cbf|vantage] [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--out=FILE] [--upload]");
+    println!(
+        "Usage: lean-ctx finops export [--target=focus|cbf|vantage] [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--out=FILE] [--upload]"
+    );
     println!();
     println!("Exports daily cost/savings rows derived from the hash-chained savings");
     println!("ledger (verified numbers; model price pinned per event at record time).");

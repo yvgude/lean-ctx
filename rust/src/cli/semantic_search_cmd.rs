@@ -10,7 +10,7 @@
 //! model. `--mode hybrid` / `--mode dense` add embedding-based ranking for the
 //! best relevance, at the cost of a slower first run while embeddings build.
 
-use crate::core::hybrid_search::{format_hybrid_results, HybridResult};
+use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
 use crate::tools::ctx_semantic_search;
 
 /// Parsed `semantic-search` invocation. Kept separate from execution so the

@@ -470,9 +470,9 @@ mod tests {
             "JIRA_DEPLOYMENT",
             "JIRA_AUTH",
         ] {
-            std::env::remove_var(var);
+            unsafe { std::env::remove_var(var) };
         }
-        std::env::set_var("JIRA_DATA_SOURCE", "lean-ctx-test-no-such-source");
+        unsafe { std::env::set_var("JIRA_DATA_SOURCE", "lean-ctx-test-no-such-source") };
     }
 
     #[test]
@@ -486,7 +486,7 @@ mod tests {
         assert!(!provider.is_available());
         assert_eq!(provider.id(), "jira");
         assert!(provider.requires_auth());
-        std::env::remove_var("JIRA_DATA_SOURCE");
+        unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 
     #[test]
@@ -502,14 +502,14 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_jira_env();
-        std::env::set_var("JIRA_URL", "https://test.atlassian.net");
-        std::env::set_var("JIRA_EMAIL", "test@test.com");
-        std::env::set_var("JIRA_TOKEN", "token");
+        unsafe { std::env::set_var("JIRA_URL", "https://test.atlassian.net") };
+        unsafe { std::env::set_var("JIRA_EMAIL", "test@test.com") };
+        unsafe { std::env::set_var("JIRA_TOKEN", "token") };
         let cfg = JiraConfig::from_env().unwrap();
         assert_eq!(cfg.deployment, JiraDeployment::Cloud);
         assert!(matches!(cfg.auth, JiraAuth::Basic { .. }));
         reset_jira_env();
-        std::env::remove_var("JIRA_DATA_SOURCE");
+        unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 
     #[test]
@@ -519,15 +519,15 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for val in &["server", "dc", "datacenter", "SERVER", "DC"] {
             reset_jira_env();
-            std::env::set_var("JIRA_URL", "https://jira.internal");
-            std::env::set_var("JIRA_EMAIL", "u@e.com");
-            std::env::set_var("JIRA_TOKEN", "t");
-            std::env::set_var("JIRA_DEPLOYMENT", val);
+            unsafe { std::env::set_var("JIRA_URL", "https://jira.internal") };
+            unsafe { std::env::set_var("JIRA_EMAIL", "u@e.com") };
+            unsafe { std::env::set_var("JIRA_TOKEN", "t") };
+            unsafe { std::env::set_var("JIRA_DEPLOYMENT", val) };
             let cfg = JiraConfig::from_env().unwrap();
             assert_eq!(cfg.deployment, JiraDeployment::Server, "failed for {val}");
         }
         reset_jira_env();
-        std::env::remove_var("JIRA_DATA_SOURCE");
+        unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 
     #[test]
@@ -536,12 +536,12 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_jira_env();
-        std::env::set_var("JIRA_AUTH", "oauth");
+        unsafe { std::env::set_var("JIRA_AUTH", "oauth") };
         let cfg = JiraConfig::from_env().unwrap();
         assert!(matches!(cfg.auth, JiraAuth::OAuth { .. }));
         assert_eq!(cfg.deployment, JiraDeployment::Cloud);
         reset_jira_env();
-        std::env::remove_var("JIRA_DATA_SOURCE");
+        unsafe { std::env::remove_var("JIRA_DATA_SOURCE") };
     }
 
     fn basic_cfg(base_url: &str, project: Option<&str>) -> JiraConfig {

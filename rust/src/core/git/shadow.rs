@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::{run_git, GitOutput};
+use super::{GitOutput, run_git};
 
 const FIELD: char = '\u{1f}'; // ASCII unit separator for safe log parsing
 
@@ -318,7 +318,7 @@ mod tests {
         }
         let _lock = crate::core::data_dir::test_env_lock();
         let data = temp_project("data");
-        std::env::set_var("LEAN_CTX_DATA_DIR", &data);
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data) };
         let project = temp_project("proj");
 
         std::fs::write(project.join("a.txt"), "v1\n").unwrap();
@@ -350,7 +350,7 @@ mod tests {
             "shadow history must not touch the user's project .git"
         );
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&project);
     }

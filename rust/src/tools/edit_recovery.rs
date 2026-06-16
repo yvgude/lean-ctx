@@ -150,7 +150,7 @@ pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
 }
 
 /// Builds the bounded, `.gitignore`-aware walker shared by both helpers.
-fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
+fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> + use<> {
     WalkBuilder::new(root)
         .hidden(true)
         .git_ignore(true)

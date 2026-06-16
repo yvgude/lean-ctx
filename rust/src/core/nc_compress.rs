@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use super::extension_registry::{truncate_to_budget, Compressor, ExtensionRegistry};
+use super::extension_registry::{Compressor, ExtensionRegistry, truncate_to_budget};
 
 /// `prose`: whitespace + adjacent-duplicate-line compaction for prose corpora.
 struct ProseCompressor;

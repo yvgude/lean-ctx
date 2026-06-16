@@ -54,11 +54,7 @@ fn mean(values: impl Iterator<Item = f64>) -> f64 {
         sum += v;
         n += 1;
     }
-    if n == 0 {
-        0.0
-    } else {
-        sum / n as f64
-    }
+    if n == 0 { 0.0 } else { sum / n as f64 }
 }
 
 fn round3(x: f64) -> f64 {

@@ -526,12 +526,16 @@ path = "/home/user/frontend"
         let dir = std::env::temp_dir().join("multi_repo_dup_test");
         let _ = std::fs::create_dir_all(&dir);
         let mut manager = MultiRepoManager::new();
-        assert!(manager
-            .add_root(&dir.to_string_lossy(), Some("first"))
-            .is_ok());
-        assert!(manager
-            .add_root(&dir.to_string_lossy(), Some("second"))
-            .is_err());
+        assert!(
+            manager
+                .add_root(&dir.to_string_lossy(), Some("first"))
+                .is_ok()
+        );
+        assert!(
+            manager
+                .add_root(&dir.to_string_lossy(), Some("second"))
+                .is_err()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

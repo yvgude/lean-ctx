@@ -3,7 +3,7 @@ pub mod learn;
 mod model;
 mod persist;
 
-pub use detect::{detect_error_pattern, normalize_error_signature, DetectedError};
+pub use detect::{DetectedError, detect_error_pattern, normalize_error_signature};
 pub use model::{
     ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStats,
     GotchaStore, PendingError, SessionErrorLog,
@@ -12,7 +12,7 @@ pub use persist::{load_universal_gotchas, save_universal_gotchas};
 
 use chrono::{DateTime, Utc};
 use detect::command_base;
-use model::{gotcha_id, DECAY_ARCHIVE_THRESHOLD, MAX_GOTCHAS, MAX_PENDING, MAX_SESSION_LOGS};
+use model::{DECAY_ARCHIVE_THRESHOLD, MAX_GOTCHAS, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
 
 impl GotchaStore {
     // -- Detection ----------------------------------------------------------

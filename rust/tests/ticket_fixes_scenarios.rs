@@ -176,7 +176,7 @@ fn crash_loop_constants_are_resilient_for_slow_ides() {
 fn crash_loop_scenario_normal_ide_startup() {
     let _env = lean_ctx::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("LEAN_CTX_DATA_DIR", dir.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
 
     let start = std::time::Instant::now();
     for _ in 0..7 {
@@ -188,14 +188,14 @@ fn crash_loop_scenario_normal_ide_startup() {
         "7 starts within window should NOT trigger backoff, took {elapsed:?}"
     );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 #[test]
 fn crash_loop_reset_allows_fresh_start() {
     let _env = lean_ctx::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("LEAN_CTX_DATA_DIR", dir.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
 
     for _ in 0..7 {
         lean_ctx::core::startup_guard::crash_loop_backoff("scenario-reset");
@@ -213,7 +213,7 @@ fn crash_loop_reset_allows_fresh_start() {
         "after reset, first call should be instant"
     );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 // ──────────────────────────────────────────────────────────
@@ -597,7 +597,7 @@ fn crash_loop_process_name_constant_matches_usage() {
 fn crash_loop_reset_uses_same_name_as_backoff() {
     let _env = lean_ctx::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
-    std::env::set_var("LEAN_CTX_DATA_DIR", dir.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
 
     let name = lean_ctx::core::startup_guard::MCP_PROCESS_NAME;
 
@@ -617,7 +617,7 @@ fn crash_loop_reset_uses_same_name_as_backoff() {
         "reset_crash_loop with same name must delete the log"
     );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 #[test]
@@ -670,9 +670,11 @@ fn uninstall_bak_cleanup_handles_temp_files() {
 fn uninstall_invalid_bak_pattern_detected() {
     let name = "settings.json.lean-ctx.invalid.20260525.bak";
     assert!(name.contains(".lean-ctx.invalid."));
-    assert!(std::path::Path::new(name)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("bak")));
+    assert!(
+        std::path::Path::new(name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"))
+    );
 }
 
 // ──────────────────────────────────────────────────────────

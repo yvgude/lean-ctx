@@ -1022,7 +1022,7 @@ export EDITOR=vim
         // env.sh is a config artifact (#408) → written under config_dir().
         let config_dir = tmp.path().join("config");
         std::fs::create_dir_all(&config_dir).expect("mkdir config");
-        std::env::set_var("LEAN_CTX_CONFIG_DIR", &config_dir);
+        unsafe { std::env::set_var("LEAN_CTX_CONFIG_DIR", &config_dir) };
 
         write_env_sh_for_containers("alias git='lean-ctx -c git'\n");
         let env_sh = config_dir.join("env.sh");
@@ -1061,7 +1061,7 @@ export EDITOR=vim
             "env.sh self-heal must be gated to container environments"
         );
 
-        std::env::remove_var("LEAN_CTX_CONFIG_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_CONFIG_DIR") };
     }
 
     #[cfg(unix)]
@@ -1071,7 +1071,7 @@ export EDITOR=vim
         let tmp = tempfile::tempdir().expect("tempdir");
         let home = tmp.path();
         let prev = std::env::var_os("HOME");
-        std::env::set_var("HOME", home);
+        unsafe { std::env::set_var("HOME", home) };
 
         std::fs::write(home.join(".bashrc"), "# bashrc\n").expect("write .bashrc");
         // No login profile yet → the function must create ~/.bash_profile.
@@ -1095,8 +1095,8 @@ export EDITOR=vim
         );
 
         match prev {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
+            Some(v) => unsafe { std::env::set_var("HOME", v) },
+            None => unsafe { std::env::remove_var("HOME") },
         }
     }
 

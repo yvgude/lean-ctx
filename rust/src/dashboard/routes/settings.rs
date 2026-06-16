@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn tool_profile_value_distinguishes_lean_from_power() {
         // Avoid env interference from the host running the suite.
-        std::env::remove_var("LEAN_CTX_TOOL_PROFILE");
+        unsafe { std::env::remove_var("LEAN_CTX_TOOL_PROFILE") };
 
         let unpinned = Config {
             tool_profile: None,

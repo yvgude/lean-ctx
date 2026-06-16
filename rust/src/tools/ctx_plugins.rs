@@ -1,4 +1,4 @@
-use crate::core::plugins::{executor::HookPoint, registry::PluginRegistry, PluginManager};
+use crate::core::plugins::{PluginManager, executor::HookPoint, registry::PluginRegistry};
 
 pub fn handle(action: &str, name: Option<&str>) -> String {
     match action {
@@ -122,9 +122,15 @@ fn handle_hooks() -> String {
         let desc = match *name {
             "on_session_start" => "Called when a new session begins",
             "on_session_end" => "Called when a session ends",
-            "pre_read" => "Called before a file is read (stdin: {\"hook\":\"pre_read\",\"path\":\"...\"})",
-            "post_compress" => "Called after compression (stdin: {\"hook\":\"post_compress\",\"path\":\"...\",\"original_tokens\":N,\"compressed_tokens\":N})",
-            "on_knowledge_update" => "Called when knowledge is updated (stdin: {\"hook\":\"on_knowledge_update\",\"fact_id\":\"...\"})",
+            "pre_read" => {
+                "Called before a file is read (stdin: {\"hook\":\"pre_read\",\"path\":\"...\"})"
+            }
+            "post_compress" => {
+                "Called after compression (stdin: {\"hook\":\"post_compress\",\"path\":\"...\",\"original_tokens\":N,\"compressed_tokens\":N})"
+            }
+            "on_knowledge_update" => {
+                "Called when knowledge is updated (stdin: {\"hook\":\"on_knowledge_update\",\"fact_id\":\"...\"})"
+            }
             _ => "",
         };
         out.push_str(&format!("• {name}\n  {desc}\n\n"));

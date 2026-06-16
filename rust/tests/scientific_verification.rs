@@ -520,7 +520,7 @@ fn full_scientific_audit() {
     let mut total = 0;
 
     macro_rules! check {
-        ($name:expr, $cond:expr) => {
+        ($name:expr_2021, $cond:expr_2021) => {
             total += 1;
             let ok = $cond;
             if ok {

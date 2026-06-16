@@ -593,10 +593,12 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let report = load_package(&manifest, &content, dir.path().to_str().unwrap()).unwrap();
-        assert!(report
-            .warnings
-            .iter()
-            .any(|w| w.contains("requires lean-ctx >= 99.0.0")));
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("requires lean-ctx >= 99.0.0"))
+        );
     }
 
     #[test]
@@ -620,10 +622,12 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let report = load_package(&manifest, &content, dir.path().to_str().unwrap()).unwrap();
-        assert!(report
-            .warnings
-            .iter()
-            .any(|w| w.contains("unresolved dependency: missing-pkg")));
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("unresolved dependency: missing-pkg"))
+        );
     }
 
     #[test]

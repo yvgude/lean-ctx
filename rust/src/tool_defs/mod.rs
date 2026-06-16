@@ -116,7 +116,9 @@ pub fn discover_tools(query: &str) -> String {
         .collect();
 
     if matches.is_empty() {
-        return format!("No tools found matching '{query}'. Try broader terms like: graph, cost, session, search, compress, agent, workflow, gain.");
+        return format!(
+            "No tools found matching '{query}'. Try broader terms like: graph, cost, session, search, compress, agent, workflow, gain."
+        );
     }
 
     let mut out = format!("{} tools matching '{query}':\n", matches.len());

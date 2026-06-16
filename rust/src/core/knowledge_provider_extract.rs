@@ -260,9 +260,11 @@ mod tests {
 
         let facts = extract_facts(&[chunk]);
         assert!(facts.iter().any(|f| f.category == "recent_changes"));
-        assert!(facts
-            .iter()
-            .any(|f| f.category == "changed_files" && f.key == "src/auth.rs"));
+        assert!(
+            facts
+                .iter()
+                .any(|f| f.category == "changed_files" && f.key == "src/auth.rs")
+        );
     }
 
     #[test]

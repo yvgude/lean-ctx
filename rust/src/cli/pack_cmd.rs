@@ -326,7 +326,9 @@ fn cmd_pack_create(args: &[String], project_root: &str) {
                                 findings.len()
                             );
                             print_secret_findings(&findings);
-                            eprintln!("  Remove them and re-create — export and ctxpkg.com publishing will refuse this pack.");
+                            eprintln!(
+                                "  Remove them and re-create — export and ctxpkg.com publishing will refuse this pack."
+                            );
                         }
                     }
                 }
@@ -740,9 +742,13 @@ fn cmd_pack_export(args: &[String]) {
         print_secret_findings(&findings);
         if !allow_secrets {
             eprintln!("ERROR: export blocked.");
-            eprintln!("  Remove the secrets (e.g. `lean-ctx knowledge remove --category <cat> --key <key>`),");
+            eprintln!(
+                "  Remove the secrets (e.g. `lean-ctx knowledge remove --category <cat> --key <key>`),"
+            );
             eprintln!("  rotate them if they were live, then re-create and export.");
-            eprintln!("  `--allow-secrets` forces a local-only export — ctxpkg.com rejects it at publish anyway.");
+            eprintln!(
+                "  `--allow-secrets` forces a local-only export — ctxpkg.com rejects it at publish anyway."
+            );
             return;
         }
         eprintln!("WARNING: continuing because of --allow-secrets — do NOT publish this artifact.");
@@ -839,7 +845,7 @@ fn cmd_pack_import(args: &[String], project_root: &str) {
 /// `pack verify` — standalone conformance check (spec §8/§9), no install.
 /// Exit code 0 = all files valid, 1 = any failure (CI-friendly).
 fn cmd_pack_verify(args: &[String]) {
-    use crate::core::context_package::verify::{verify_package_file, CheckOutcome};
+    use crate::core::context_package::verify::{CheckOutcome, verify_package_file};
 
     let files: Vec<&String> = args
         .iter()
@@ -1047,7 +1053,7 @@ fn cmd_pack_publish(args: &[String]) {
 /// import path (manifest validation + content integrity + local signature
 /// re-verification) and pin the result in `.lean-ctx/ctxpkg.lock`.
 fn cmd_pack_install_remote(raw_ref: &str, registry_flag: Option<&str>, project_root: &str) {
-    use crate::core::context_package::{lockfile, remote, LocalRegistry};
+    use crate::core::context_package::{LocalRegistry, lockfile, remote};
 
     let Some(remote_ref) = remote::parse_remote_ref(raw_ref) else {
         eprintln!("ERROR: '{raw_ref}' is not a valid ns/name[@version] reference");
@@ -1150,7 +1156,7 @@ fn cmd_pack_install_remote(raw_ref: &str, registry_flag: Option<&str>, project_r
 
 fn cmd_pack_send(args: &[String], project_root: &str) {
     use crate::core::a2a_transport::{
-        serialize_envelope, AgentIdentityV1, TransportContentType, TransportEnvelopeV1,
+        AgentIdentityV1, TransportContentType, TransportEnvelopeV1, serialize_envelope,
     };
 
     let file: Option<String> = args
@@ -1239,7 +1245,7 @@ fn cmd_pack_send(args: &[String], project_root: &str) {
 }
 
 fn cmd_pack_receive(args: &[String], project_root: &str) {
-    use crate::core::a2a_transport::{parse_envelope, TransportContentType};
+    use crate::core::a2a_transport::{TransportContentType, parse_envelope};
 
     let file: Option<String> = args
         .iter()

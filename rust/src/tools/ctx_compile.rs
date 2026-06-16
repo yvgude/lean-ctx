@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use crate::core::context_compiler::{compile, format_compile_result, CompileMode};
+use crate::core::context_compiler::{CompileMode, compile, format_compile_result};
 use crate::core::context_field::TokenBudget;
 use crate::core::context_handles::HandleRegistry;
 use crate::core::context_ledger::ContextLedger;

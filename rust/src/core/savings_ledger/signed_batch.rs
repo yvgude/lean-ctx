@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 
-use super::store::GENESIS;
 use super::LedgerSummary;
+use super::store::GENESIS;
 
 const SCHEMA_VERSION: u32 = 1;
 const KIND: &str = "lean-ctx.savings-batch";

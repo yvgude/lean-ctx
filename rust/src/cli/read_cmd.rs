@@ -451,8 +451,12 @@ pub fn cmd_ls(args: &[String]) {
             respect_gitignore = false;
         } else if arg.starts_with('-') {
             eprintln!("Error: lean-ctx ls does not support flag '{arg}'.\n");
-            eprintln!("lean-ctx ls is a compressed directory tree viewer for AI context, not a drop-in ls replacement.");
-            eprintln!("The shell hook (lean-ctx -t ls {arg} ...) passes flags to system ls transparently.\n");
+            eprintln!(
+                "lean-ctx ls is a compressed directory tree viewer for AI context, not a drop-in ls replacement."
+            );
+            eprintln!(
+                "The shell hook (lean-ctx -t ls {arg} ...) passes flags to system ls transparently.\n"
+            );
             eprintln!("Usage: lean-ctx ls [path] [--depth N] [--all] [--no-gitignore]");
             std::process::exit(1);
         } else {

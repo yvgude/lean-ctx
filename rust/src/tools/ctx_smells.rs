@@ -6,7 +6,7 @@
 use crate::core::property_graph::CodeGraph;
 use crate::core::smells::{self, Severity, SmellConfig, SmellFinding};
 use crate::core::tokens::count_tokens;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn handle(
     action: &str,

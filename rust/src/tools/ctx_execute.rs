@@ -46,7 +46,7 @@ pub fn handle_file(
             return (
                 format!("Error reading {path_str}: {e}"),
                 ShellOutcome::Blocked,
-            )
+            );
         }
     };
     if meta.len() > cap as u64 {
@@ -64,7 +64,7 @@ pub fn handle_file(
             return (
                 format!("Error reading {path_str}: {e}"),
                 ShellOutcome::Blocked,
-            )
+            );
         }
     };
 

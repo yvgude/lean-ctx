@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use rmcp::model::Tool;
 use rmcp::ErrorData;
+use rmcp::model::Tool;
 use serde_json::{Map, Value};
 
 use crate::core::plugins::tools::PluginToolSpec;

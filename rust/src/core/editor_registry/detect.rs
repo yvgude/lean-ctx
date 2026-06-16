@@ -694,7 +694,7 @@ fn detect_vscode_global_storage(home: &Path, suffix: &str) -> Option<PathBuf> {
 mod augment_tests {
     use super::*;
     use crate::core::editor_registry::writers::{
-        remove_lean_ctx_server, write_config_with_options, WriteAction, WriteOptions,
+        WriteAction, WriteOptions, remove_lean_ctx_server, write_config_with_options,
     };
 
     #[test]

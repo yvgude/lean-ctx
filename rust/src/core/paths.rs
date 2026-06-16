@@ -301,9 +301,9 @@ mod tests {
     fn xdg_base_honors_env_then_home_fallback() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.path()) };
         let from_env = xdg_base("XDG_CONFIG_HOME", ".config").unwrap();
-        std::env::remove_var("XDG_CONFIG_HOME");
+        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
         assert_eq!(from_env, tmp.path());
 
         // Unset var → falls back to $HOME/<home_fallback>.
@@ -315,9 +315,9 @@ mod tests {
     fn single_dir_override_honors_data_dir_env() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
         let got = single_dir_override();
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
         assert_eq!(got, Some(tmp.path().to_path_buf()));
     }
 
@@ -325,9 +325,9 @@ mod tests {
     fn config_dir_honors_explicit_override() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_CONFIG_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_CONFIG_DIR", tmp.path()) };
         let got = config_dir().unwrap();
-        std::env::remove_var("LEAN_CTX_CONFIG_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_CONFIG_DIR") };
         assert_eq!(got, tmp.path());
     }
 
@@ -336,12 +336,12 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let state = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_STATE_DIR", state.path());
-        std::env::set_var("LEAN_CTX_CACHE_DIR", cache.path());
+        unsafe { std::env::set_var("LEAN_CTX_STATE_DIR", state.path()) };
+        unsafe { std::env::set_var("LEAN_CTX_CACHE_DIR", cache.path()) };
         let got_state = state_dir().unwrap();
         let got_cache = cache_dir().unwrap();
-        std::env::remove_var("LEAN_CTX_STATE_DIR");
-        std::env::remove_var("LEAN_CTX_CACHE_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_STATE_DIR") };
+        unsafe { std::env::remove_var("LEAN_CTX_CACHE_DIR") };
         assert_eq!(got_state, state.path());
         assert_eq!(got_cache, cache.path());
     }
@@ -359,9 +359,9 @@ mod tests {
     fn runtime_dir_honors_xdg_runtime_dir() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("XDG_RUNTIME_DIR", tmp.path());
+        unsafe { std::env::set_var("XDG_RUNTIME_DIR", tmp.path()) };
         let got = runtime_dir().unwrap();
-        std::env::remove_var("XDG_RUNTIME_DIR");
+        unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
         assert_eq!(got, tmp.path().join("lean-ctx"));
     }
 }

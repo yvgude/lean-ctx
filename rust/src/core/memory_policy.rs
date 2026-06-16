@@ -486,8 +486,8 @@ mod tests {
 
     fn restore_env(key: &str, prev: Option<String>) {
         match prev {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
         }
     }
 
@@ -505,9 +505,9 @@ mod tests {
         let prev_stale = std::env::var("LEAN_CTX_LIFECYCLE_STALE_DAYS").ok();
         let prev_rep = std::env::var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS").ok();
 
-        std::env::set_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS", "123");
-        std::env::set_var("LEAN_CTX_LIFECYCLE_STALE_DAYS", "7");
-        std::env::set_var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS", "4");
+        unsafe { std::env::set_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS", "123") };
+        unsafe { std::env::set_var("LEAN_CTX_LIFECYCLE_STALE_DAYS", "7") };
+        unsafe { std::env::set_var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS", "4") };
 
         let mut p = MemoryPolicy::default();
         p.apply_env_overrides();

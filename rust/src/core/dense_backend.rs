@@ -430,16 +430,16 @@ mod tests {
     fn set_env(key: &str, value: Option<&str>) -> Option<String> {
         let old = std::env::var(key).ok();
         match value {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
         }
         old
     }
 
     fn restore_env(key: &str, old: Option<String>) {
         match old {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
         }
     }
 

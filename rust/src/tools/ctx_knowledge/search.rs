@@ -311,11 +311,7 @@ pub(crate) fn short_path(path: &str) -> String {
 }
 
 pub(crate) fn short_hash(hash: &str) -> &str {
-    if hash.len() > 8 {
-        &hash[..8]
-    } else {
-        hash
-    }
+    if hash.len() > 8 { &hash[..8] } else { hash }
 }
 
 pub(crate) fn sort_fact_for_output(

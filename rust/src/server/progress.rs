@@ -1,6 +1,6 @@
+use rmcp::RoleServer;
 use rmcp::model::{ProgressNotificationParam, ProgressToken};
 use rmcp::service::Peer;
-use rmcp::RoleServer;
 
 /// Sends MCP progress notifications to the client during long-running tool operations.
 #[derive(Clone)]

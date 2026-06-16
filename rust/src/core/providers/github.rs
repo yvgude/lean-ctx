@@ -399,9 +399,9 @@ mod tests {
 
     #[test]
     fn provider_unavailable_without_token() {
-        std::env::remove_var("GITHUB_TOKEN");
-        std::env::remove_var("GH_TOKEN");
-        std::env::remove_var("LEAN_CTX_GITHUB_TOKEN");
+        unsafe { std::env::remove_var("GITHUB_TOKEN") };
+        unsafe { std::env::remove_var("GH_TOKEN") };
+        unsafe { std::env::remove_var("LEAN_CTX_GITHUB_TOKEN") };
         let provider = GitHubProvider::new();
         assert!(!provider.is_available());
     }

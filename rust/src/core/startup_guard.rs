@@ -192,7 +192,7 @@ mod tests {
     impl EnvVarGuard {
         fn set(key: &'static str, value: &std::path::Path) -> Self {
             let prev = std::env::var(key).ok();
-            std::env::set_var(key, value);
+            unsafe { std::env::set_var(key, value) };
             Self { key, prev }
         }
     }
@@ -200,8 +200,8 @@ mod tests {
     impl Drop for EnvVarGuard {
         fn drop(&mut self) {
             match self.prev.as_deref() {
-                Some(v) => std::env::set_var(self.key, v),
-                None => std::env::remove_var(self.key),
+                Some(v) => unsafe { std::env::set_var(self.key, v) },
+                None => unsafe { std::env::remove_var(self.key) },
             }
         }
     }

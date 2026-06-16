@@ -1075,7 +1075,7 @@ mod tests {
     fn cached_resolve_grants_within_grace_then_expires_to_free() {
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         // A fresh save is served from cache, within grace, at full plan.
         save_plan("pro").unwrap();
@@ -1093,18 +1093,18 @@ mod tests {
         assert_eq!(eff.plan, Plan::Free);
         assert_eq!(eff.source, PlanSource::Expired);
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
     fn no_cache_resolves_to_free_none() {
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
         let eff = resolve_effective_plan_cached();
         assert_eq!(eff.plan, Plan::Free);
         assert_eq!(eff.source, PlanSource::None);
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     // P0-2 (#414): credentials must be owner-only on disk.
@@ -1114,7 +1114,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         save_credentials("sk-test-key", "user-1", "a@b.c").unwrap();
 
@@ -1140,7 +1140,7 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty(), "atomic write must not leak tmp files");
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     // P0-2 (#414): pre-existing world-readable credentials are tightened on load.
@@ -1150,7 +1150,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         std::fs::create_dir_all(config_dir()).unwrap();
         let path = credentials_path();
@@ -1166,14 +1166,14 @@ mod tests {
             "legacy file must be tightened to 0o600"
         );
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]
     fn legacy_plan_txt_is_migrated_but_treated_as_stale() {
         let _env = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
         // Only the legacy flat file exists (no timestamp) → past grace until refresh.
         std::fs::create_dir_all(config_dir()).unwrap();
         std::fs::write(config_dir().join("plan.txt"), "team").unwrap();
@@ -1181,6 +1181,6 @@ mod tests {
         assert_eq!(cache.plan, "team");
         assert_eq!(cache.verified_at, 0);
         assert_eq!(resolve_effective_plan_cached().source, PlanSource::Expired);
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

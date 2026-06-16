@@ -128,7 +128,7 @@ fn learn_filters_low_confidence() {
 
 #[test]
 fn learn_format_agents_section_has_markers() {
-    use lean_ctx::core::gotcha_tracker::learn::{format_agents_section, Learning};
+    use lean_ctx::core::gotcha_tracker::learn::{Learning, format_agents_section};
 
     let learnings = vec![Learning {
         category: "build".into(),

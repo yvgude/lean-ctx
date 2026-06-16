@@ -21,7 +21,7 @@ mod stable_ids;
 #[cfg(test)]
 mod tests;
 
-use graph::{edge_counts, AdjGraph};
+use graph::{AdjGraph, edge_counts};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Community {

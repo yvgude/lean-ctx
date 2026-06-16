@@ -8,7 +8,7 @@
 use crate::core::call_graph::CallEdge;
 use crate::core::graph_index::ProjectIndex;
 use crate::core::language_capabilities::{
-    language_capability_matrix_realized, LanguageCapabilityRow,
+    LanguageCapabilityRow, language_capability_matrix_realized,
 };
 
 /// Build the realized capability matrix from an index. `call_edges` is `Some`

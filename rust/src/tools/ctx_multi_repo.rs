@@ -1,5 +1,5 @@
 use crate::core::multi_repo::{
-    format_fused_results, global_manager, MultiRepoConfig, RepoRootConfig,
+    MultiRepoConfig, RepoRootConfig, format_fused_results, global_manager,
 };
 
 /// Handle `ctx_multi_repo` tool calls with action-based dispatch.
@@ -18,7 +18,12 @@ pub fn handle(
         "search" => handle_search(query, max_results, roots_filter),
         "status" => handle_status(),
         "save_config" => handle_save_config(),
-        _ => (format!("Unknown action: {action}. Valid: add_root, remove_root, list_roots, search, status, save_config"), 0),
+        _ => (
+            format!(
+                "Unknown action: {action}. Valid: add_root, remove_root, list_roots, search, status, save_config"
+            ),
+            0,
+        ),
     }
 }
 

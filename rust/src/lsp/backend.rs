@@ -610,24 +610,30 @@ mod tests {
             },
             keep_definition: false,
         };
-        assert!(Bare2
-            .inline_preview(&q)
-            .unwrap_err()
-            .contains("BACKEND_REQUIRED"));
-        assert!(Bare2
-            .inline_apply(&InlineApply { query: q.clone() })
-            .unwrap_err()
-            .contains("BACKEND_REQUIRED"));
+        assert!(
+            Bare2
+                .inline_preview(&q)
+                .unwrap_err()
+                .contains("BACKEND_REQUIRED")
+        );
+        assert!(
+            Bare2
+                .inline_apply(&InlineApply { query: q.clone() })
+                .unwrap_err()
+                .contains("BACKEND_REQUIRED")
+        );
         let rq = ReformatQuery {
             abs_path: "/a".into(),
             rel_path: "a".into(),
             scope: ReformatScope::File,
             optimize_imports: false,
         };
-        assert!(Bare2
-            .reformat(&rq)
-            .unwrap_err()
-            .contains("BACKEND_REQUIRED"));
+        assert!(
+            Bare2
+                .reformat(&rq)
+                .unwrap_err()
+                .contains("BACKEND_REQUIRED")
+        );
     }
 
     #[test]
@@ -656,10 +662,11 @@ mod tests {
             new_name: "y".into(),
             force: false,
         };
-        assert!(be
-            .rename_apply(&a)
-            .unwrap_err()
-            .starts_with("BACKEND_REQUIRED"));
+        assert!(
+            be.rename_apply(&a)
+                .unwrap_err()
+                .starts_with("BACKEND_REQUIRED")
+        );
     }
 
     #[test]
@@ -718,17 +725,19 @@ mod tests {
                 rel_path: "x".into(),
             },
         };
-        assert!(b
-            .move_preview(&mq)
-            .unwrap_err()
-            .starts_with("BACKEND_REQUIRED"));
-        assert!(b
-            .move_apply(&MoveApply {
+        assert!(
+            b.move_preview(&mq)
+                .unwrap_err()
+                .starts_with("BACKEND_REQUIRED")
+        );
+        assert!(
+            b.move_apply(&MoveApply {
                 query: mq,
                 force: false
             })
             .unwrap_err()
-            .starts_with("BACKEND_REQUIRED"));
+            .starts_with("BACKEND_REQUIRED")
+        );
         let sq = SafeDeleteQuery {
             abs_path: "/p/a.kt".into(),
             rel_path: "a.kt".into(),
@@ -739,17 +748,19 @@ mod tests {
                 end_char: 1,
             },
         };
-        assert!(b
-            .safe_delete_preview(&sq)
-            .unwrap_err()
-            .starts_with("BACKEND_REQUIRED"));
-        assert!(b
-            .safe_delete_apply(&SafeDeleteApply {
+        assert!(
+            b.safe_delete_preview(&sq)
+                .unwrap_err()
+                .starts_with("BACKEND_REQUIRED")
+        );
+        assert!(
+            b.safe_delete_apply(&SafeDeleteApply {
                 query: sq,
                 force: false,
                 propagate: false
             })
             .unwrap_err()
-            .starts_with("BACKEND_REQUIRED"));
+            .starts_with("BACKEND_REQUIRED")
+        );
     }
 }

@@ -1,4 +1,4 @@
-use super::super::{resolve_binary_path, write_file, HookMode, HYBRID_RULES};
+use super::super::{HYBRID_RULES, HookMode, resolve_binary_path, write_file};
 
 pub(crate) fn install_crush_hook() {
     // #281: only the MCP-server entry is gated; `install_crush_hook_with_mode`

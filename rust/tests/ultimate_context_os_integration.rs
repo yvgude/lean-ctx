@@ -489,7 +489,7 @@ mod metrics {
 // ═══════════════════════════════════════════════════════════════════
 
 mod redaction {
-    use lean_ctx::core::context_os::{redact_event_payload, ContextEventV1, RedactionLevel};
+    use lean_ctx::core::context_os::{ContextEventV1, RedactionLevel, redact_event_payload};
 
     fn make_event(tool: &str, content: &str) -> ContextEventV1 {
         ContextEventV1 {

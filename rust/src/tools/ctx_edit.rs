@@ -289,7 +289,7 @@ fn write_atomic_bytes_with_permissions(
 }
 
 macro_rules! static_regex {
-    ($pattern:expr) => {{
+    ($pattern:expr_2021) => {{
         static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         RE.get_or_init(|| {
             regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
@@ -694,8 +694,7 @@ fn do_replace(
         return (
             format!(
                 "ERROR: old_string found {} times in {}. \
-                 Use replace_all=true to replace all, or provide more context to make old_string unique."
-                ,
+                 Use replace_all=true to replace all, or provide more context to make old_string unique.",
                 args.occurrences,
                 path.display()
             ),

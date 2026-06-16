@@ -1,12 +1,12 @@
+use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
-use axum::Json;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::auth::{auth_user, AppState};
+use super::auth::{AppState, auth_user};
 use super::helpers::internal_error;
 
 #[derive(Deserialize)]

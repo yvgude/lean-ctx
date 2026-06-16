@@ -7,7 +7,7 @@ fn recall_rehydrates_from_archive_when_active_set_empty() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_dir = tmp.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("mkdir");
-    std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
 
     let project_root = tmp.path().join("proj");
     std::fs::create_dir_all(&project_root).expect("mkdir proj");
@@ -41,5 +41,5 @@ fn recall_rehydrates_from_archive_when_active_set_empty() {
         "expected rehydrated recall result, got: {out}"
     );
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

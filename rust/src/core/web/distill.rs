@@ -423,11 +423,7 @@ fn jaccard(a: &str, b: &str) -> f64 {
     }
     let inter = sa.intersection(&sb).count() as f64;
     let union = sa.union(&sb).count() as f64;
-    if union == 0.0 {
-        0.0
-    } else {
-        inter / union
-    }
+    if union == 0.0 { 0.0 } else { inter / union }
 }
 
 fn strip_filler(sentence: &str) -> String {
@@ -516,9 +512,11 @@ mod tests {
                     Energy markets respond to climate policy and carbon pricing.";
         let q = names(quotes_scored(text, Some("climate energy"), 2));
         assert_eq!(q.len(), 2);
-        assert!(q
-            .iter()
-            .all(|s| s.to_lowercase().contains("energy") || s.to_lowercase().contains("climate")));
+        assert!(
+            q.iter().all(
+                |s| s.to_lowercase().contains("energy") || s.to_lowercase().contains("climate")
+            )
+        );
     }
 
     #[test]

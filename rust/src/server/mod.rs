@@ -22,13 +22,13 @@ pub mod tool_trait;
 pub mod tool_visibility;
 
 use futures::FutureExt;
+use rmcp::ErrorData;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, Content, Implementation, InitializeRequestParams,
     InitializeResult, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::{RequestContext, RoleServer};
-use rmcp::ErrorData;
 
 use crate::tools::{CrpMode, LeanCtxServer};
 mod call_tool;
@@ -145,7 +145,7 @@ fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
         } else {
             format!("{existing}{sep}{}", child_projects.join(sep))
         };
-        std::env::set_var("LEAN_CTX_ALLOW_PATH", &merged);
+        unsafe { std::env::set_var("LEAN_CTX_ALLOW_PATH", &merged) };
         tracing::info!(
             "Multi-root workspace detected at {}: auto-allowing {} child projects",
             dir.display(),
@@ -339,7 +339,7 @@ mod tests {
             "should detect workspace with 2 child projects"
         );
 
-        std::env::remove_var("LEAN_CTX_ALLOW_PATH");
+        unsafe { std::env::remove_var("LEAN_CTX_ALLOW_PATH") };
     }
 
     #[test]

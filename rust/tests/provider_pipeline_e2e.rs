@@ -397,8 +397,8 @@ fn scenario_cache_stores_provider_uris() {
 
 #[test]
 fn scenario_mcp_bridge_unique_ids() {
-    use lean_ctx::core::providers::mcp_bridge::McpBridgeProvider;
     use lean_ctx::core::providers::ContextProvider;
+    use lean_ctx::core::providers::mcp_bridge::McpBridgeProvider;
 
     let kb = McpBridgeProvider::new("knowledge-base", "http://localhost:8080");
     let gh = McpBridgeProvider::new("github-issues", "http://localhost:9090");
@@ -438,7 +438,7 @@ fn scenario_mcp_bridge_unique_ids() {
 
 #[test]
 fn scenario_search_result_formatting_external_vs_code() {
-    use lean_ctx::core::bm25_index::{format_search_results, SearchResult};
+    use lean_ctx::core::bm25_index::{SearchResult, format_search_results};
 
     let external_result = SearchResult {
         chunk_idx: 0,

@@ -3,16 +3,16 @@ use crate::core::gain::gain_score::GainScore;
 use crate::core::gain::model_pricing::ModelPricing;
 use crate::core::gain::task_classifier::{TaskCategory, TaskClassifier};
 use crate::tui::event_reader::EventTail;
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
+use ratatui::Terminal;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Row, Table};
-use ratatui::Terminal;
 use std::io::stdout;
 use std::time::{Duration, Instant};
 
@@ -1004,8 +1004,8 @@ mod tests {
     /// is laid out without panicking. Run with `--nocapture` to eyeball the grid.
     #[test]
     fn dashboard_snapshot_renders_all_panels() {
-        use ratatui::backend::TestBackend;
         use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
 
         let mut state = mk_state();
         state.total_saved = 515_300_000;

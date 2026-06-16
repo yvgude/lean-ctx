@@ -1,10 +1,10 @@
+use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Serialize;
 
-use super::auth::{auth_user, AppState};
+use super::auth::{AppState, auth_user};
 use super::helpers::internal_error;
 
 #[derive(Serialize)]

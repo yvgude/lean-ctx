@@ -4,7 +4,7 @@
 //! and verifies that recall/MRR metrics meet minimum thresholds.
 
 use lean_ctx::core::bm25_index::BM25Index;
-use lean_ctx::core::eval_harness::{run_eval, EvalQuery};
+use lean_ctx::core::eval_harness::{EvalQuery, run_eval};
 use lean_ctx::core::hybrid_search::HybridConfig;
 use std::fs;
 use tempfile::TempDir;

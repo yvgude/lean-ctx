@@ -379,11 +379,7 @@ impl SessionState {
             }
         }
         let q = bits.join(" ").trim().to_string();
-        if q.is_empty() {
-            None
-        } else {
-            Some(q)
-        }
+        if q.is_empty() { None } else { Some(q) }
     }
 
     fn task_keyword_stem(text: &str) -> String {

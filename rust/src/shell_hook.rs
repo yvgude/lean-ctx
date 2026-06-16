@@ -775,9 +775,11 @@ mod tests {
         // sits as a sibling, not at the parent root.
         let name = baks[0].file_name().unwrap().to_str().unwrap();
         assert!(name.starts_with(".zshenv.lean-ctx-"), "got: {name}");
-        assert!(std::path::Path::new(name)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("bak")));
+        assert!(
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"))
+        );
         // Sanity-check the timestamp is in the YYYYMMDDTHHMMSSZ slot.
         let stamp = name
             .trim_start_matches(".zshenv.lean-ctx-")
@@ -1022,7 +1024,7 @@ mod tests {
         let _g = SHELL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
+        unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") };
         assert!(!shell_available("fish"));
         assert!(!shell_available("nushell"));
         assert!(!shell_available(""));
@@ -1034,7 +1036,7 @@ mod tests {
         let _g = SHELL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
+        unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") };
         // On any Unix CI/dev machine at least one of bash/zsh should exist.
         let has_bash = Path::new("/bin/bash").exists() || Path::new("/usr/bin/bash").exists();
         let has_zsh = Path::new("/bin/zsh").exists() || Path::new("/usr/bin/zsh").exists();
@@ -1056,16 +1058,16 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // `all` forces every shell, even ones not on disk.
-        std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "all");
+        unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "all") };
         assert!(shell_available("zsh"));
         assert!(shell_available("bash"));
 
         // A comma list forces only the named shells.
-        std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "zsh");
+        unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "zsh") };
         assert!(shell_available("zsh"));
         // `bash` falls back to filesystem detection here; assert only the
         // forced-on guarantee to stay host-independent.
 
-        std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE");
+        unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") };
     }
 }

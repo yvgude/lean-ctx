@@ -100,9 +100,11 @@ mod tests {
     fn test_instruction_suffix_not_empty() {
         assert!(!TaskComplexity::Mechanical.instruction_suffix().is_empty());
         assert!(!TaskComplexity::Standard.instruction_suffix().is_empty());
-        assert!(!TaskComplexity::Architectural
-            .instruction_suffix()
-            .is_empty());
+        assert!(
+            !TaskComplexity::Architectural
+                .instruction_suffix()
+                .is_empty()
+        );
     }
 
     #[test]

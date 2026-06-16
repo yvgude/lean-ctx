@@ -4,10 +4,10 @@
 //! The pipeline orchestrates Layer 1 + Layer 2 and produces a `TerseResult`
 //! with full attribution.
 
+use super::TerseResult;
 use super::counter;
 use super::engine;
 use super::residual;
-use super::TerseResult;
 use crate::core::config::CompressionLevel;
 
 const MAX_TERSE_INPUT_BYTES: usize = 64_000;

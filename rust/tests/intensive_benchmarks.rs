@@ -3,8 +3,8 @@ use lean_ctx::core::entropy::entropy_compress;
 use lean_ctx::core::protocol::instruction_decoder_block;
 use lean_ctx::core::signatures::extract_signatures;
 use lean_ctx::core::tokens::count_tokens;
-use lean_ctx::tools::ctx_response;
 use lean_ctx::tools::CrpMode;
+use lean_ctx::tools::ctx_response;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -196,8 +196,8 @@ fn bench_lazy_default_vs_full_overhead() {
     let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
     let prev_minimal = std::env::var("LEAN_CTX_MINIMAL").ok();
 
-    std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
-    std::env::set_var("LEAN_CTX_MINIMAL", "1");
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
+    unsafe { std::env::set_var("LEAN_CTX_MINIMAL", "1") };
 
     let lazy_tools = lean_ctx::tool_defs::lazy_tool_defs();
     let full_tools = lean_ctx::tool_defs::granular_tool_defs();
@@ -275,12 +275,12 @@ fn bench_lazy_default_vs_full_overhead() {
     );
 
     match prev_data_dir {
-        Some(v) => std::env::set_var("LEAN_CTX_DATA_DIR", v),
-        None => std::env::remove_var("LEAN_CTX_DATA_DIR"),
+        Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
+        None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
     }
     match prev_minimal {
-        Some(v) => std::env::set_var("LEAN_CTX_MINIMAL", v),
-        None => std::env::remove_var("LEAN_CTX_MINIMAL"),
+        Some(v) => unsafe { std::env::set_var("LEAN_CTX_MINIMAL", v) },
+        None => unsafe { std::env::remove_var("LEAN_CTX_MINIMAL") },
     }
 }
 
@@ -1150,7 +1150,9 @@ fn generate_verbose_llm_response() -> String {
 }
 
 fn generate_git_status() -> String {
-    let mut s = String::from("On branch feature/new-auth\nYour branch is ahead of 'origin/feature/new-auth' by 3 commits.\n  (use \"git push\" to publish your local commits)\n\nChanges to be committed:\n  (use \"git restore --staged <file>...\" to unstage)\n");
+    let mut s = String::from(
+        "On branch feature/new-auth\nYour branch is ahead of 'origin/feature/new-auth' by 3 commits.\n  (use \"git push\" to publish your local commits)\n\nChanges to be committed:\n  (use \"git restore --staged <file>...\" to unstage)\n",
+    );
     for i in 0..8 {
         s.push_str(&format!("\tmodified:   src/auth/handler_{i}.rs\n"));
     }
@@ -1282,7 +1284,7 @@ fn generate_cargo_clippy(count: usize) -> String {
 
 fn generate_docker_ps(count: usize) -> String {
     let mut s = String::from(
-        "CONTAINER ID   IMAGE                    COMMAND                  CREATED        STATUS        PORTS                    NAMES\n"
+        "CONTAINER ID   IMAGE                    COMMAND                  CREATED        STATUS        PORTS                    NAMES\n",
     );
     for i in 0..count {
         s.push_str(&format!(
@@ -1530,7 +1532,7 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
     // benchmarks (cf. bench_lazy_default_vs_full_overhead) so a parallel test can't
     // clear it between set_var and build_instructions_for_test.
     let _lock = lean_ctx::core::data_dir::test_env_lock();
-    std::env::set_var("LEAN_CTX_MINIMAL", "1");
+    unsafe { std::env::set_var("LEAN_CTX_MINIMAL", "1") };
 
     let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
     let instr_tokens = count_tokens(&instructions);
@@ -1545,7 +1547,7 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
         "minimal_overhead should suppress session block"
     );
 
-    std::env::remove_var("LEAN_CTX_MINIMAL");
+    unsafe { std::env::remove_var("LEAN_CTX_MINIMAL") };
 
     let full_instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
     let full_tokens = count_tokens(&full_instructions);
@@ -1779,9 +1781,9 @@ fn bench_full_per_call_overhead_budget() {
     let full_tools = lean_ctx::tool_defs::granular_tool_defs();
 
     let instructions_minimal = {
-        std::env::set_var("LEAN_CTX_MINIMAL", "1");
+        unsafe { std::env::set_var("LEAN_CTX_MINIMAL", "1") };
         let i = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-        std::env::remove_var("LEAN_CTX_MINIMAL");
+        unsafe { std::env::remove_var("LEAN_CTX_MINIMAL") };
         i
     };
     let instructions_full = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);

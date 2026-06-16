@@ -15,7 +15,7 @@
 //! on (`all_passed()` in `tests/conformance_suite.rs`).
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// A representative corpus the extension invariants run against. Mixes blank
 /// lines, multibyte UTF-8, and paragraph boundaries to stress edge cases.

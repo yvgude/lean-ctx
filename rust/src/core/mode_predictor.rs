@@ -176,8 +176,8 @@ impl ModePredictor {
         mode_scores
             .into_iter()
             .max_by(|a, b| {
-                let avg_a = a.1 .0 / a.1 .1 as f64;
-                let avg_b = b.1 .0 / b.1 .1 as f64;
+                let avg_a = a.1.0 / a.1.1 as f64;
+                let avg_b = b.1.0 / b.1.1 as f64;
                 avg_a
                     .partial_cmp(&avg_b)
                     .unwrap_or(std::cmp::Ordering::Equal)

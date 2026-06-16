@@ -14,7 +14,7 @@ pub fn handle(
         None if action == "list" || action == "info" => "unknown",
         None => {
             return "Error: agent must be registered first (use ctx_agent action=register)"
-                .to_string()
+                .to_string();
         }
     };
 
@@ -68,7 +68,11 @@ fn handle_update(
     let new_state = match state {
         Some(s) => match TaskState::parse_str(s) {
             Some(st) => st,
-            None => return format!("Error: invalid state '{s}'. Use: working, input-required, completed, failed, canceled"),
+            None => {
+                return format!(
+                    "Error: invalid state '{s}'. Use: working, input-required, completed, failed, canceled"
+                );
+            }
         },
         None => return "Error: state is required for update".to_string(),
     };

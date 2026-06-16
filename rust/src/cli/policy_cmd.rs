@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::core::compliance;
-use crate::core::policy::{self, builtin, coverage, PolicyPack, ResolvedPolicy};
+use crate::core::policy::{self, PolicyPack, ResolvedPolicy, builtin, coverage};
 
 /// Project-local pack location, relative to the working directory.
 const PROJECT_PACK_PATH: &str = ".lean-ctx/policy.toml";

@@ -1,6 +1,6 @@
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput};
 use crate::tool_defs::tool_def;

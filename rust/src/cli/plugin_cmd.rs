@@ -1,7 +1,7 @@
 use crate::core::plugins::{
-    executor::HookPoint,
-    registry::{default_plugin_dir, PluginRegistry},
     PluginManager,
+    executor::HookPoint,
+    registry::{PluginRegistry, default_plugin_dir},
 };
 
 pub fn cmd_plugin(args: &[String]) {

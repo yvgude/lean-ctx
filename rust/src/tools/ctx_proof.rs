@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::core::context_ir::{write_project_context_ir, ContextIrV1};
-use crate::core::context_proof::{collect_v1, write_project_proof, ProofOptions, ProofSources};
+use crate::core::context_ir::{ContextIrV1, write_project_context_ir};
+use crate::core::context_proof::{ProofOptions, ProofSources, collect_v1, write_project_proof};
 use crate::core::degradation_policy::{evaluate_v1_for_tool, write_project_degradation_policy};
 
 pub fn handle_export(

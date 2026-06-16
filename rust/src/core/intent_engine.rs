@@ -76,9 +76,15 @@ impl ThinkingBudget {
     pub fn instruction(&self) -> &'static str {
         match self {
             Self::Minimal => "THINKING: Skip analysis. The task is clear — generate code directly.",
-            Self::Medium => "THINKING: 2-3 step analysis max. Identify what to change, then act. Do not over-analyze.",
-            Self::Trace => "THINKING: Short trace only. Identify root cause in 3 steps max, then generate fix.",
-            Self::Deep => "THINKING: Analyze structure and dependencies. Summarize findings concisely.",
+            Self::Medium => {
+                "THINKING: 2-3 step analysis max. Identify what to change, then act. Do not over-analyze."
+            }
+            Self::Trace => {
+                "THINKING: Short trace only. Identify root cause in 3 steps max, then generate fix."
+            }
+            Self::Deep => {
+                "THINKING: Analyze structure and dependencies. Summarize findings concisely."
+            }
         }
     }
 

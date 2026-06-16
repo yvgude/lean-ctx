@@ -171,11 +171,15 @@ pub fn print_command_box() {
     println!(
         "  {dim}│{rst}  {cmd}{bold}lean-ctx update{rst}      {m}Self-update to latest{rst}           {dim}│{rst}"
     );
-    println!("  {dim}│{rst}  {cmd}{bold}lean-ctx off{rst} / {cmd}{bold}on{rst}    {m}Toggle compression{rst}              {dim}│{rst}");
+    println!(
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx off{rst} / {cmd}{bold}on{rst}    {m}Toggle compression{rst}              {dim}│{rst}"
+    );
     println!(
         "  {dim}│{rst}  {cmd}{bold}lean-ctx report-issue{rst} {m}Report a bug (auto-diagnostics){rst} {dim}│{rst}"
     );
-    println!("  {dim}│{rst}  {cmd}{bold}lean-ctx contribute{rst}  {m}Share anonymized compression stats{rst}{dim}│{rst}");
+    println!(
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx contribute{rst}  {m}Share anonymized compression stats{rst}{dim}│{rst}"
+    );
     println!(
         "  {dim}│{rst}  {cmd}{bold}lean-ctx uninstall{rst}   {m}Clean removal{rst}                   {dim}│{rst}"
     );

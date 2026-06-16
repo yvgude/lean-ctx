@@ -14,7 +14,7 @@ use lean_ctx::core::content_chunk::ContentChunk;
 use lean_ctx::core::cross_source_hints::{format_hints, hints_for_file};
 use lean_ctx::core::graph_index::IndexEdge;
 use lean_ctx::core::provider_bandit::ProviderBandit;
-use lean_ctx::core::saliency::{compute_ecs_scores, mig_select, EcsWeights};
+use lean_ctx::core::saliency::{EcsWeights, compute_ecs_scores, mig_select};
 
 fn github_issue(id: &str, title: &str, content: &str, refs: Vec<&str>) -> ContentChunk {
     ContentChunk::from_provider(
@@ -215,9 +215,11 @@ fn hints_surface_related_issues_for_code_file() {
     let hints = hints_for_file("src/auth.rs", &edges, "/project");
     assert_eq!(hints.len(), 2);
     assert!(hints.iter().any(|h| h.source_uri.contains("issues/42")));
-    assert!(hints
-        .iter()
-        .any(|h| h.source_uri.contains("pull_requests/100")));
+    assert!(
+        hints
+            .iter()
+            .any(|h| h.source_uri.contains("pull_requests/100"))
+    );
 }
 
 #[test]

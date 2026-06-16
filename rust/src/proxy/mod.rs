@@ -11,16 +11,16 @@ pub mod openai_responses;
 pub mod tool_kind;
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::{
+    Router,
     body::Body,
     extract::State,
     http::{Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, get},
-    Router,
 };
 
 #[derive(Clone)]
@@ -311,9 +311,13 @@ async fn proxy_auth_guard(
 
     let cfg = crate::core::config::Config::load();
     let hint = match cfg.proxy_enabled {
-        Some(true) => "lean-ctx proxy requires authentication. Use a Bearer token (LEAN_CTX_PROXY_TOKEN) or configure your AI tool's API key.",
+        Some(true) => {
+            "lean-ctx proxy requires authentication. Use a Bearer token (LEAN_CTX_PROXY_TOKEN) or configure your AI tool's API key."
+        }
         Some(false) => "lean-ctx proxy is disabled but still running. Run: lean-ctx proxy cleanup",
-        None => "lean-ctx proxy is not configured. Your AI tool's ANTHROPIC_BASE_URL may be pointing here by mistake. Fix: lean-ctx proxy cleanup  OR  lean-ctx proxy enable",
+        None => {
+            "lean-ctx proxy is not configured. Your AI tool's ANTHROPIC_BASE_URL may be pointing here by mistake. Fix: lean-ctx proxy cleanup  OR  lean-ctx proxy enable"
+        }
     };
 
     let body = serde_json::json!({
@@ -481,7 +485,7 @@ mod auth_tests {
     fn effective_auth_token_never_yields_empty() {
         let _env = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
         assert_eq!(effective_auth_token(Some("tok".into())), "tok");
         let auto = effective_auth_token(None);
@@ -489,7 +493,7 @@ mod auth_tests {
         let blank = effective_auth_token(Some("   ".into()));
         assert!(!blank.trim().is_empty(), "blank tokens must be replaced");
 
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 
     #[test]

@@ -149,7 +149,7 @@ fn move_overwrite(from: &Path, to: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use filetime::{set_file_mtime, FileTime};
+    use filetime::{FileTime, set_file_mtime};
 
     fn write(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {

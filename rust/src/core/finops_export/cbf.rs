@@ -10,7 +10,7 @@
 //! which replaces all previously dropped data for the same month — re-running
 //! an export overwrites instead of duplicating (CloudZero-side guarantee).
 
-use super::{csv_field, DailyCostRow};
+use super::{DailyCostRow, csv_field};
 
 pub const HEADER: &[&str] = &[
     "lineitem/type",

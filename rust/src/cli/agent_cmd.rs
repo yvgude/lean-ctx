@@ -62,7 +62,9 @@ pub(crate) fn cmd_agent(args: &[String]) {
                 return;
             }
             if records.is_empty() {
-                println!("no registered agents — start with:\n  lean-ctx agent register --id <agent-id> --role developer --owner you@org");
+                println!(
+                    "no registered agents — start with:\n  lean-ctx agent register --id <agent-id> --role developer --owner you@org"
+                );
                 return;
             }
             println!(

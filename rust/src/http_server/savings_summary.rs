@@ -23,10 +23,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use axum::{
+    Json,
     extract::{Path as AxumPath, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use chrono::{Days, NaiveDate, Utc};
 use serde::Serialize;

@@ -1,6 +1,6 @@
 use tree_sitter::Node;
 
-use crate::core::signatures::{compact_params, Signature};
+use crate::core::signatures::{Signature, compact_params};
 
 use super::super::helpers::{clean_return_type, field_text, has_modifier, strip_parens};
 use super::kotlin_swift::csharp_has_modifier_text;

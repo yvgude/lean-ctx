@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use serde::Serialize;
@@ -85,15 +85,16 @@ impl ContextOsMetrics {
     pub fn snapshot(&self) -> MetricsSnapshot {
         let opened = self.sse_connections_opened.load(Ordering::Relaxed);
         let closed = self.sse_connections_closed.load(Ordering::Relaxed);
-        let active_workspace_count = if let Ok(mut map) = self.active_workspaces.lock() {
-            if let Some(cutoff) = Instant::now()
-                .checked_sub(std::time::Duration::from_secs(WORKSPACE_ACTIVE_TTL_SECS))
-            {
-                map.retain(|_, last_seen| *last_seen > cutoff);
+        let active_workspace_count = match self.active_workspaces.lock() {
+            Ok(mut map) => {
+                if let Some(cutoff) = Instant::now()
+                    .checked_sub(std::time::Duration::from_secs(WORKSPACE_ACTIVE_TTL_SECS))
+                {
+                    map.retain(|_, last_seen| *last_seen > cutoff);
+                }
+                map.len()
             }
-            map.len()
-        } else {
-            0
+            _ => 0,
         };
         MetricsSnapshot {
             events_appended: self.events_appended.load(Ordering::Relaxed),

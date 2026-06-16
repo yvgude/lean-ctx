@@ -49,8 +49,8 @@ pub fn per_file_lock(path: &str) -> Arc<Mutex<()>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Barrier;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn same_path_returns_same_mutex() {

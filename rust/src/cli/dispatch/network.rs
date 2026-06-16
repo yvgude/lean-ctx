@@ -139,7 +139,9 @@ pub(super) fn cmd_team(rest: &[String]) {
                         "knowledge" => crate::http_server::team::TeamScope::Knowledge,
                         "audit" => crate::http_server::team::TeamScope::Audit,
                         _ => {
-                            eprintln!("Unknown scope: {p}. Valid: search, graph, artifacts, index, events, sessionmutations, knowledge, audit");
+                            eprintln!(
+                                "Unknown scope: {p}. Valid: search, graph, artifacts, index, events, sessionmutations, knowledge, audit"
+                            );
                             std::process::exit(1);
                         }
                     };
@@ -437,7 +439,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
         .find_map(|p| p.strip_prefix("--project="))
         .map(String::from);
     if let Some(ref p) = project {
-        std::env::set_var("LEAN_CTX_DASHBOARD_PROJECT", p);
+        unsafe { std::env::set_var("LEAN_CTX_DASHBOARD_PROJECT", p) };
     }
     // `--base-path` / `--prefix`: mount the dashboard behind a reverse-proxy
     // subpath (e.g. `/dashboard`). See dashboard::base_path (#355).
@@ -496,7 +498,9 @@ pub(super) fn cmd_proxy(rest: &[String]) {
             );
             println!();
             println!("Commands:");
-            println!("  start     Run the compression proxy (foreground; --autostart installs a service)");
+            println!(
+                "  start     Run the compression proxy (foreground; --autostart installs a service)"
+            );
             println!("  stop      Stop the proxy on the given port");
             println!("  status    Show proxy config, process and compression stats");
             println!("  enable    Enable the proxy: config flag, autostart service, env wiring");
@@ -548,7 +552,9 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                                 }
                             }
                         }
-                        println!("Proxy on port {port} running but could not parse PID. Use `lean-ctx stop` to kill all.");
+                        println!(
+                            "Proxy on port {port} running but could not parse PID. Use `lean-ctx stop` to kill all."
+                        );
                     }
                     Err(_) => {
                         println!("No proxy running on port {port}.");
@@ -569,20 +575,23 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                     None => println!("  Config:  undecided (not yet configured)"),
                 }
                 println!("  Port:    {port}");
-                if let Ok(resp) = ureq::get(&format!("http://127.0.0.1:{port}/status")).call() {
-                    let body = resp.into_body().read_to_string().unwrap_or_default();
-                    println!("  Process: running");
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                        println!("  Requests:    {}", v["requests_total"]);
-                        println!("  Compressed:  {}", v["requests_compressed"]);
-                        println!("  Tokens saved: {}", v["tokens_saved"]);
-                        println!(
-                            "  Compression: {}%",
-                            v["compression_ratio_pct"].as_str().unwrap_or("0.0")
-                        );
+                match ureq::get(&format!("http://127.0.0.1:{port}/status")).call() {
+                    Ok(resp) => {
+                        let body = resp.into_body().read_to_string().unwrap_or_default();
+                        println!("  Process: running");
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                            println!("  Requests:    {}", v["requests_total"]);
+                            println!("  Compressed:  {}", v["requests_compressed"]);
+                            println!("  Tokens saved: {}", v["tokens_saved"]);
+                            println!(
+                                "  Compression: {}%",
+                                v["compression_ratio_pct"].as_str().unwrap_or("0.0")
+                            );
+                        }
                     }
-                } else {
-                    println!("  Process: not running");
+                    _ => {
+                        println!("  Process: not running");
+                    }
                 }
                 if cfg.proxy_enabled == Some(false) || cfg.proxy_enabled.is_none() {
                     println!();
@@ -591,8 +600,12 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                     let home = dirs::home_dir().unwrap_or_default();
                     if crate::proxy_setup::has_stale_proxy_url(&home) {
                         println!();
-                        println!("  \x1b[33m⚠ WARNING: Claude Code ANTHROPIC_BASE_URL points to the local proxy,\x1b[0m");
-                        println!("  \x1b[33m  but proxy is not enabled. This causes 401 auth failures.\x1b[0m");
+                        println!(
+                            "  \x1b[33m⚠ WARNING: Claude Code ANTHROPIC_BASE_URL points to the local proxy,\x1b[0m"
+                        );
+                        println!(
+                            "  \x1b[33m  but proxy is not enabled. This causes 401 auth failures.\x1b[0m"
+                        );
                         println!("  Fix:  lean-ctx proxy cleanup   (remove stale URL)");
                         println!("        lean-ctx proxy enable    (enable the proxy)");
                     }
@@ -720,11 +733,16 @@ pub(super) fn cmd_daemon(rest: &[String]) {
             if crate::daemon_autostart::is_installed() {
                 crate::daemon_autostart::start();
                 println!("\x1b[32m✓\x1b[0m Daemon restarted via autostart service.");
-            } else if let Err(e) = crate::daemon::start_daemon(&rest[1..]) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
             } else {
-                println!("\x1b[32m✓\x1b[0m Daemon restarted.");
+                match crate::daemon::start_daemon(&rest[1..]) {
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    }
+                    _ => {
+                        println!("\x1b[32m✓\x1b[0m Daemon restarted.");
+                    }
+                }
             }
         }
         "status" => {

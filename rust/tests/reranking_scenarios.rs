@@ -6,7 +6,7 @@
 use lean_ctx::core::bm25_index::ChunkKind;
 use lean_ctx::core::hybrid_search::HybridResult;
 use lean_ctx::core::search_reranking::{
-    classify_query, rerank_pipeline, resolve_weights, QueryType,
+    QueryType, classify_query, rerank_pipeline, resolve_weights,
 };
 
 fn make_result(file: &str, symbol: &str, kind: ChunkKind, score: f64) -> HybridResult {

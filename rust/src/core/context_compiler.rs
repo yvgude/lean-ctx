@@ -15,7 +15,7 @@
 use serde::Serialize;
 
 use super::context_field::{
-    efficiency, ContextItemId, ContextKind, ContextState, TokenBudget, ViewCosts, ViewKind,
+    ContextItemId, ContextKind, ContextState, TokenBudget, ViewCosts, ViewKind, efficiency,
 };
 use super::entropy::jaccard_similarity;
 

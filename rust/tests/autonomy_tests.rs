@@ -1,17 +1,17 @@
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::config::AutonomyConfig;
-use lean_ctx::tools::autonomy::{
-    enrich_after_read, maybe_auto_dedup, session_lifecycle_pre_hook, shell_efficiency_hint,
-    AutonomyState,
-};
 use lean_ctx::tools::CrpMode;
-use std::sync::atomic::Ordering;
+use lean_ctx::tools::autonomy::{
+    AutonomyState, enrich_after_read, maybe_auto_dedup, session_lifecycle_pre_hook,
+    shell_efficiency_hint,
+};
 use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 
 fn init_test_data_dir() {
     static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
     let dir = DIR.get_or_init(|| tempfile::tempdir().expect("tempdir"));
-    std::env::set_var("LEAN_CTX_DATA_DIR", dir.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
 }
 
 fn make_state() -> AutonomyState {

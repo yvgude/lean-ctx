@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::core::config::HistoryMode;
 
-use super::tool_kind::{classify_tool_name, should_protect, ToolResultKind};
+use super::tool_kind::{ToolResultKind, classify_tool_name, should_protect};
 
 /// Minimum number of messages at the tail that are never pruned in
 /// cache-aware mode. The boundary staircase keeps between `KEEP_MIN` and
@@ -313,10 +313,12 @@ mod tests {
         let block = &messages[0]["content"][0];
         assert_eq!(block["cache_control"]["type"], "ephemeral");
         assert_eq!(block["content"][0]["cache_control"]["type"], "ephemeral");
-        assert!(block["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("pruned by lean-ctx"));
+        assert!(
+            block["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("pruned by lean-ctx")
+        );
     }
 
     #[test]

@@ -572,9 +572,9 @@ mod exec_tests {
 
     #[test]
     fn exec_argv_passes_through_when_disabled() {
-        std::env::set_var("LEAN_CTX_DISABLED", "1");
+        unsafe { std::env::set_var("LEAN_CTX_DISABLED", "1") };
         let code = super::exec_argv(&["true".to_string()]);
-        std::env::remove_var("LEAN_CTX_DISABLED");
+        unsafe { std::env::remove_var("LEAN_CTX_DISABLED") };
         assert_eq!(code, 0);
     }
 

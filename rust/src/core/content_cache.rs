@@ -280,8 +280,8 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn fresh_cache(budget_bytes: usize) {
-        std::env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
-        std::env::remove_var("LEAN_CTX_DISABLE_CONTENT_CACHE");
+        unsafe { std::env::remove_var("LEAN_CTX_CONTENT_CACHE_MB") };
+        unsafe { std::env::remove_var("LEAN_CTX_DISABLE_CONTENT_CACHE") };
         let mut c = lock();
         *c = Cache::new(budget_bytes);
     }
@@ -402,12 +402,12 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         fresh_cache(1024 * 1024);
-        std::env::set_var("LEAN_CTX_CONTENT_CACHE_MB", "0");
+        unsafe { std::env::set_var("LEAN_CTX_CONTENT_CACHE_MB", "0") };
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "x\n");
         let state = FileState::from_path(&p).unwrap();
         insert(&p, state, Arc::from("x\n"));
         assert!(get(&p, state).is_none(), "zero-budget cache is a no-op");
-        std::env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
+        unsafe { std::env::remove_var("LEAN_CTX_CONTENT_CACHE_MB") };
     }
 }

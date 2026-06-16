@@ -8,7 +8,7 @@ async fn ctx_feedback_record_report_reset() {
     let data_dir = dir.path().join("data");
     std::fs::create_dir_all(&data_dir).expect("create data dir");
 
-    std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir);
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir) };
     let engine = lean_ctx::engine::ContextEngine::with_project_root(dir.path());
 
     let _ = engine
@@ -60,5 +60,5 @@ async fn ctx_feedback_record_report_reset() {
         .expect("report2");
     assert!(report2.contains("No LLM feedback"), "report2: {report2}");
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

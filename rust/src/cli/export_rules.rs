@@ -31,7 +31,9 @@ pub fn run(args: &[String]) {
         .collect();
 
     if high_confidence.is_empty() {
-        eprintln!("No high-confidence knowledge facts found (need confidence >= 0.6 and at least 2 retrievals).");
+        eprintln!(
+            "No high-confidence knowledge facts found (need confidence >= 0.6 and at least 2 retrievals)."
+        );
         std::process::exit(0);
     }
 

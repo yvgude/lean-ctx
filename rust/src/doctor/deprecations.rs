@@ -5,7 +5,7 @@
 //! CONTRACTS.md every surface is announced at least 2 minor releases before
 //! removal, and `lean-ctx doctor` is the user-facing warning channel.
 
-use super::{Outcome, BOLD, DIM, GREEN, RST, YELLOW};
+use super::{BOLD, DIM, GREEN, Outcome, RST, YELLOW};
 
 const REGISTER: &str = include_str!("../../data/DEPRECATIONS.toml");
 

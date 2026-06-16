@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::core::context_radar::RadarEvent;
 

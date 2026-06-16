@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::graph::{cohesion_of, AdjGraph};
+use super::graph::{AdjGraph, cohesion_of};
 use super::leiden;
 
 const HUB_MIN_NODES: usize = 16;

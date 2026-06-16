@@ -7,7 +7,7 @@
 //! capability, so it is never gated by a plan (the paid surface is the *team*
 //! roll-up across many developers, not your own numbers).
 
-use crate::core::savings_ledger::{roi_report, RoiReport};
+use crate::core::savings_ledger::{RoiReport, roi_report};
 
 /// Entry point for `lean-ctx roi [report] [--json|--md] [--export <path>]`.
 pub(crate) fn cmd_roi(args: &[String]) {

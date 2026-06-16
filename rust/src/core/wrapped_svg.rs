@@ -5,7 +5,7 @@
 //! output is portable, diff-friendly, and can be posted directly or rasterised to PNG
 //! by any standard SVG tool. All data-derived text is XML-escaped.
 
-use crate::core::wrapped::{format_tokens, WrappedReport};
+use crate::core::wrapped::{WrappedReport, format_tokens};
 
 /// Social/OG card dimensions.
 const CARD_W: u32 = 1200;

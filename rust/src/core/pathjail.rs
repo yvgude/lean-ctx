@@ -242,9 +242,9 @@ pub fn jail_path_with_roots(
             );
             let hint = if crate::core::protocol::meta_visible() {
                 format!(
-                ". Hint: set LEAN_CTX_ALLOW_PATH={} or add it to allow_paths in ~/.lean-ctx/config.toml",
-                candidate.parent().unwrap_or(candidate).display()
-            )
+                    ". Hint: set LEAN_CTX_ALLOW_PATH={} or add it to allow_paths in ~/.lean-ctx/config.toml",
+                    candidate.parent().unwrap_or(candidate).display()
+                )
             } else {
                 String::new()
             };
@@ -488,19 +488,19 @@ mod tests {
         assert_eq!(expand_user_path("$HOME/code"), home.join("code"));
         assert_eq!(expand_user_path("${HOME}/code"), home.join("code"));
         // Multiple variables in one entry.
-        std::env::set_var("LEAN_CTX_TEST_SUB", "sub");
+        unsafe { std::env::set_var("LEAN_CTX_TEST_SUB", "sub") };
         assert_eq!(
             expand_user_path("$HOME/$LEAN_CTX_TEST_SUB/x"),
             PathBuf::from(format!("{home_s}/sub/x"))
         );
-        std::env::remove_var("LEAN_CTX_TEST_SUB");
+        unsafe { std::env::remove_var("LEAN_CTX_TEST_SUB") };
         // Absolute paths pass through untouched.
         assert_eq!(expand_user_path("/etc"), PathBuf::from("/etc"));
     }
 
     #[test]
     fn expand_user_path_leaves_unset_vars_verbatim() {
-        std::env::remove_var("LEAN_CTX_TEST_UNSET_VAR");
+        unsafe { std::env::remove_var("LEAN_CTX_TEST_UNSET_VAR") };
         let p = expand_user_path("$LEAN_CTX_TEST_UNSET_VAR/code");
         assert_eq!(p, PathBuf::from("$LEAN_CTX_TEST_UNSET_VAR/code"));
     }
@@ -522,9 +522,9 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         std::fs::write(other.join("b.txt"), "allowed").unwrap();
 
-        std::env::set_var("LEAN_CTX_ALLOW_PATH", "/");
+        unsafe { std::env::set_var("LEAN_CTX_ALLOW_PATH", "/") };
         let result = jail_path(&other.join("b.txt"), &root);
-        std::env::remove_var("LEAN_CTX_ALLOW_PATH");
+        unsafe { std::env::remove_var("LEAN_CTX_ALLOW_PATH") };
 
         assert!(result.is_ok(), "allow path '/' must permit all: {result:?}");
     }
@@ -540,9 +540,9 @@ mod tests {
         std::fs::write(other.join("b.txt"), "allowed").unwrap();
 
         let canon = canonicalize_or_self(&other);
-        std::env::set_var("LEAN_CTX_ALLOW_PATH", canon.to_string_lossy().as_ref());
+        unsafe { std::env::set_var("LEAN_CTX_ALLOW_PATH", canon.to_string_lossy().as_ref()) };
         let result = jail_path(&other.join("b.txt"), &root);
-        std::env::remove_var("LEAN_CTX_ALLOW_PATH");
+        unsafe { std::env::remove_var("LEAN_CTX_ALLOW_PATH") };
 
         assert!(
             result.is_ok(),

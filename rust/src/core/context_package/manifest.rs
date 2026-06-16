@@ -306,9 +306,10 @@ mod tests {
         let mut m = minimal_manifest();
         m.schema_version = 99;
         let errs = m.validate().unwrap_err();
-        assert!(errs
-            .iter()
-            .any(|e| e.contains("unsupported schema_version")));
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("unsupported schema_version"))
+        );
     }
 
     #[test]

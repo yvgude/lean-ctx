@@ -495,7 +495,7 @@ mod tests {
         };
         let doc_proj = home.join("Documents/some-project");
 
-        std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
         assert!(process_is_tcc_standalone());
         assert!(!may_probe_path(&doc_proj));
         // Non-protected paths stay probeable even for standalone processes.
@@ -503,10 +503,10 @@ mod tests {
         // has_project_marker must refuse without touching the filesystem.
         assert!(!has_project_marker(&doc_proj));
 
-        std::env::set_var("LEAN_CTX_TCC_STANDALONE", "0");
+        unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "0") };
         assert!(!process_is_tcc_standalone());
         assert!(may_probe_path(&doc_proj));
-        std::env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
     }
 
     #[test]
@@ -523,7 +523,7 @@ mod tests {
         // every heuristic canonicalize funnels through here.
         let missing = home.join("Documents/lean-ctx-tcc-test-does-not-exist-xyzzy");
 
-        std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
         let guarded = safe_canonicalize(&missing);
         assert!(
             guarded.is_ok(),
@@ -538,10 +538,10 @@ mod tests {
 
         // Without standalone the guard is inactive: a missing ~/Documents path
         // Errs from the real `std::fs::canonicalize` as before.
-        std::env::set_var("LEAN_CTX_TCC_STANDALONE", "0");
+        unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "0") };
         assert!(safe_canonicalize(&missing).is_err());
 
-        std::env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
     }
 
     #[test]
@@ -559,7 +559,7 @@ mod tests {
         };
         let missing = home.join("Documents/lean-ctx-secure-canon-does-not-exist-xyzzy");
 
-        std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        unsafe { std::env::set_var("LEAN_CTX_TCC_STANDALONE", "1") };
         // Guarded sink short-circuits (no fs access).
         assert_eq!(safe_canonicalize(&missing).unwrap(), missing);
         // Security sink ignores the guard and actually stats -> Err on a missing
@@ -570,7 +570,7 @@ mod tests {
             "canonicalize_secure must bypass the TCC guard and touch the filesystem"
         );
         assert_eq!(canonicalize_secure_or_self(&missing), missing);
-        std::env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        unsafe { std::env::remove_var("LEAN_CTX_TCC_STANDALONE") };
     }
 
     #[test]

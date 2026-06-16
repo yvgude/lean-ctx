@@ -6,8 +6,8 @@
 //! Single test in its own binary: it sets `LEAN_CTX_DATA_DIR` process-wide
 //! before the edit-quality store's `OnceLock` is first touched.
 
-use lean_ctx::core::auto_mode_resolver::{resolve, AutoModeContext};
-use lean_ctx::tools::ctx_edit::{record_outcome, run_io, EditParams};
+use lean_ctx::core::auto_mode_resolver::{AutoModeContext, resolve};
+use lean_ctx::tools::ctx_edit::{EditParams, record_outcome, run_io};
 
 fn params_for(path: &str, old_string: &str) -> EditParams {
     EditParams {
@@ -30,7 +30,7 @@ fn params_for(path: &str, old_string: &str) -> EditParams {
 #[test]
 fn edit_fail_after_map_read_escalates_and_penalizes() {
     let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
     let file = tmp.path().join("golden.rs");
     std::fs::write(&file, "fn real_function() { 1 }\n".repeat(60)).unwrap();

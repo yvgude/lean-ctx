@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use axum::Json;
 use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Pool;
 use lettre::message::{Mailbox, Message};
@@ -777,8 +777,8 @@ async fn consume_password_reset(pool: &Pool, token_sha: &str) -> Result<Uuid, Co
 
 fn hash_password(password: &str) -> String {
     use argon2::{
-        password_hash::{PasswordHasher, SaltString},
         Algorithm, Argon2, Params, Version,
+        password_hash::{PasswordHasher, SaltString},
     };
     let mut raw = [0u8; 16];
     getrandom::fill(&mut raw).expect("CSPRNG unavailable");
@@ -800,8 +800,8 @@ fn dummy_verify(password: &str) -> bool {
 fn verify_password(password: &str, stored: &str) -> bool {
     if stored.starts_with("$argon2") {
         use argon2::{
-            password_hash::{PasswordHash, PasswordVerifier},
             Argon2,
+            password_hash::{PasswordHash, PasswordVerifier},
         };
         let Ok(parsed) = PasswordHash::new(stored) else {
             return false;

@@ -11,9 +11,9 @@
 //! Not to be confused with [`crate::core::capabilities`], which models RBAC
 //! permissions (`fs:read`, …). This module describes *server* capabilities.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::core::contracts::{status_kv, versions_kv, CAPABILITIES_CONTRACT_VERSION};
+use crate::core::contracts::{CAPABILITIES_CONTRACT_VERSION, status_kv, versions_kv};
 
 /// Stable, documented top-level keys of the capabilities document.
 pub const TOP_LEVEL_KEYS: [&str; 11] = [
@@ -199,12 +199,16 @@ mod tests {
         assert!(ext["plugins"].is_array());
         let compressors = ext["compressors"].as_array().expect("compressors array");
         assert!(compressors.iter().any(|c| c == "identity"));
-        assert!(ext["read_modes"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|m| m == "full")));
-        assert!(ext["chunkers"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|c| c == "lines")));
+        assert!(
+            ext["read_modes"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|m| m == "full"))
+        );
+        assert!(
+            ext["chunkers"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|c| c == "lines"))
+        );
     }
 
     #[test]

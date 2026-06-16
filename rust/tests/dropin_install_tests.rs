@@ -19,7 +19,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use lean_ctx::shell_hook::{install_all, install_all_with_style, uninstall_all, Style};
+use lean_ctx::shell_hook::{Style, install_all, install_all_with_style, uninstall_all};
 
 /// Serialises tests in this file so concurrent `$HOME` mutation doesn't
 /// race. Cargo runs each integration test binary's tests in parallel by
@@ -378,7 +378,7 @@ fn no_backups_on_clean_install_through_install_all() {
     });
 }
 
-fn walkdir(root: &Path) -> impl Iterator<Item = std::path::PathBuf> {
+fn walkdir(root: &Path) -> impl Iterator<Item = std::path::PathBuf> + use<> {
     let mut stack = vec![root.to_path_buf()];
     std::iter::from_fn(move || {
         while let Some(dir) = stack.pop() {

@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::bm25_index::{tokenize_for_index, BM25Index};
+use crate::core::bm25_index::{BM25Index, tokenize_for_index};
 
 /// Result row after hybrid retrieval + re-ranking.
 #[derive(Debug, Clone, PartialEq)]
@@ -201,20 +201,8 @@ pub fn hybrid_retrieve(query: &str, bm25_index: &BM25Index, top_k: usize) -> Vec
     let max_bm25 = bm25_by_chunk.values().copied().fold(0.0_f64, f64::max);
     let max_exp = expansion_scores.values().copied().fold(0.0_f64, f64::max);
 
-    let norm_bm25 = |s: f64| -> f64 {
-        if max_bm25 > 1e-12 {
-            s / max_bm25
-        } else {
-            0.0
-        }
-    };
-    let norm_exp = |s: f64| -> f64 {
-        if max_exp > 1e-12 {
-            s / max_exp
-        } else {
-            0.0
-        }
-    };
+    let norm_bm25 = |s: f64| -> f64 { if max_bm25 > 1e-12 { s / max_bm25 } else { 0.0 } };
+    let norm_exp = |s: f64| -> f64 { if max_exp > 1e-12 { s / max_exp } else { 0.0 } };
 
     const W_BM25: f64 = 0.65;
     const W_EXP: f64 = 0.35;

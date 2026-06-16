@@ -8,8 +8,8 @@
 //! reproducible for any user or reviewer, with a machine-checkable exit code.
 
 use crate::core::cache::SessionCache;
-use crate::tools::ctx_read;
 use crate::tools::CrpMode;
+use crate::tools::ctx_read;
 
 /// Tokens below which a re-read counts as a cache "stub". The marker itself is
 /// ~13 tokens; the ceiling is generous to absorb long paths / file-ref labels

@@ -7,8 +7,8 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use lean_ctx::tools::ctx_compose;
 use lean_ctx::tools::CrpMode;
+use lean_ctx::tools::ctx_compose;
 
 /// `LEAN_CTX_COMPOSE_BUDGET_MS` is process-global; serialize tests that set it.
 static ENV_GUARD: Mutex<()> = Mutex::new(());
@@ -36,7 +36,7 @@ fn compose_returns_all_sections_with_symbol_body() {
     let _guard = ENV_GUARD
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS");
+    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
     let dir = write_corpus();
 
     let (out, tokens) = ctx_compose::handle(
@@ -68,7 +68,7 @@ fn compose_degrades_under_tight_budget_without_stalling() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     // A 1 ms budget guarantees the semantic worker cannot finish in time, so the
     // call must degrade gracefully instead of blocking on the (cold) build.
-    std::env::set_var("LEAN_CTX_COMPOSE_BUDGET_MS", "1");
+    unsafe { std::env::set_var("LEAN_CTX_COMPOSE_BUDGET_MS", "1") };
     let dir = write_corpus();
 
     let start = Instant::now();
@@ -78,7 +78,7 @@ fn compose_degrades_under_tight_budget_without_stalling() {
         CrpMode::Off,
     );
     let elapsed = start.elapsed();
-    std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS");
+    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
 
     // The exact-match + symbol stages are synchronous and index-backed, so the
     // whole call should still return promptly even when ranking is deferred.
@@ -111,9 +111,9 @@ fn compose_surfaces_associative_neighbours() {
     let _guard = ENV_GUARD
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS");
+    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
     // Generous graph budget so the (tiny) index build never times out here.
-    std::env::set_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS", "8000");
+    unsafe { std::env::set_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS", "8000") };
     let dir = write_corpus();
 
     // `authenticate_user` lives in auth.rs; config.rs is a same-dir sibling, so
@@ -124,7 +124,7 @@ fn compose_surfaces_associative_neighbours() {
         &dir.path().to_string_lossy(),
         CrpMode::Off,
     );
-    std::env::remove_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS");
+    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS") };
 
     assert!(
         out.contains("## Related (associative"),

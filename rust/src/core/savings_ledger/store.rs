@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 
-use super::event::{compute_hash, SavingsEvent};
+use super::event::{SavingsEvent, compute_hash};
 
 pub const GENESIS: &str = "genesis";
 const TAIL_READ_BYTES: u64 = 8192;

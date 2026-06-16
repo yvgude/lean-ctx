@@ -239,10 +239,12 @@ mod tests {
             target.task.as_ref().map(|t| t.description.as_str()),
             Some("implement feature X")
         );
-        assert!(target
-            .decisions
-            .iter()
-            .any(|d| d.summary == "use bounded_lock for cache"));
+        assert!(
+            target
+                .decisions
+                .iter()
+                .any(|d| d.summary == "use bounded_lock for cache")
+        );
     }
 
     #[test]

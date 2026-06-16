@@ -162,7 +162,7 @@ impl ViewCosts {
         self.estimates
             .iter()
             .filter(|(v, _)| **v != ViewKind::Handle)
-            .min_by_key(|(_, &tokens)| tokens)
+            .min_by_key(|&(_, &tokens)| tokens)
             .map(|(&v, &t)| (v, t))
     }
 

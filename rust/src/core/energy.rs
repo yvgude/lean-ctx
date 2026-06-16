@@ -159,7 +159,7 @@ mod tests {
     fn grid_intensity_default_when_no_override() {
         // The override is read from the environment; without it we use the constant.
         // (Env mutation is covered indirectly; here we assert the documented default.)
-        std::env::remove_var("LEAN_CTX_GRID_CO2_G_PER_KWH");
+        unsafe { std::env::remove_var("LEAN_CTX_GRID_CO2_G_PER_KWH") };
         assert!((grid_co2_g_per_kwh() - G_CO2_PER_KWH).abs() < 1e-9);
     }
 }

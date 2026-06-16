@@ -196,11 +196,7 @@ fn mean(values: impl Iterator<Item = f64>) -> f64 {
         sum += v;
         count += 1;
     }
-    if count == 0 {
-        0.0
-    } else {
-        sum / count as f64
-    }
+    if count == 0 { 0.0 } else { sum / count as f64 }
 }
 
 fn compute_stats(records: &[PairRecord], cfg: ReportConfig) -> AbStats {

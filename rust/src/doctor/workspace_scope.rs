@@ -8,7 +8,7 @@
 //! "Tool … was not contributed". This module gives `doctor` a clear, early
 //! diagnosis instead of leaving the user to trace a Copilot runtime failure.
 
-use super::{Outcome, BOLD, DIM, GREEN, RED, RST, YELLOW};
+use super::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
 /// A workspace-scope MCP config location, relative to the project root (cwd).
 struct WorkspaceLocation {

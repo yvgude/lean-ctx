@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use super::deep_queries::{self, ImportKind};
 
 macro_rules! static_regex {
-    ($pattern:expr) => {{
+    ($pattern:expr_2021) => {{
         static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         RE.get_or_init(|| {
             regex::Regex::new($pattern).expect(concat!("BUG: invalid static regex: ", $pattern))
@@ -508,9 +508,10 @@ class Feature
 fun build(): Feature = Feature()
 ";
         let deps = extract_deps(content, "kt");
-        assert!(deps
-            .imports
-            .contains(&"com.example.services.UserService".to_string()));
+        assert!(
+            deps.imports
+                .contains(&"com.example.services.UserService".to_string())
+        );
         assert!(deps.imports.contains(&"com.example.shared.*".to_string()));
         assert!(deps.exports.contains(&"Feature".to_string()));
         assert!(deps.exports.contains(&"build".to_string()));

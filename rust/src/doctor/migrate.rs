@@ -13,9 +13,9 @@
 
 use std::collections::BTreeSet;
 
-use super::{Outcome, BOLD, DIM, GREEN, RED, RST, YELLOW};
-use crate::core::config::schema::ConfigSchema;
+use super::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 use crate::core::config::Config;
+use crate::core::config::schema::ConfigSchema;
 
 pub(super) struct MigrateReport {
     outcomes: Vec<Outcome>,
@@ -109,7 +109,7 @@ fn config_schema_outcome() -> (Outcome, String) {
                     ),
                 },
                 format!("unreadable: {e}"),
-            )
+            );
         }
     };
     let parsed: toml::Value = match toml::from_str(&raw) {
@@ -123,7 +123,7 @@ fn config_schema_outcome() -> (Outcome, String) {
                     ),
                 },
                 format!("parse error: {e}"),
-            )
+            );
         }
     };
 

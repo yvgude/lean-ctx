@@ -1,14 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::core::git::{clone, repo_url, run_git};
 use crate::core::protocol::append_savings;
 use crate::core::tokens::count_tokens;
-use crate::server::tool_trait::{get_int, get_str, McpTool, ToolContext, ToolOutput};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_int, get_str};
 use crate::tool_defs::tool_def;
 
 const DEFAULT_MAX_TOKENS: usize = 6000;

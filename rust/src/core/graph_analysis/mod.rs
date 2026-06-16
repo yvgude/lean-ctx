@@ -11,11 +11,11 @@ mod god_nodes;
 mod surprising;
 
 pub use centrality::{
-    compute_bridge_centrality, compute_bridge_nodes, BridgeCentrality, BridgeNode,
+    BridgeCentrality, BridgeNode, compute_bridge_centrality, compute_bridge_nodes,
 };
-pub use cycles::{find_import_cycles, ImportCycle};
-pub use god_nodes::{compute_god_nodes, GodNode};
-pub use surprising::{find_surprising_connections, SurprisingConnection};
+pub use cycles::{ImportCycle, find_import_cycles};
+pub use god_nodes::{GodNode, compute_god_nodes};
+pub use surprising::{SurprisingConnection, find_surprising_connections};
 
 use crate::core::graph_provider::EdgeInfo;
 

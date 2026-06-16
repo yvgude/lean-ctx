@@ -287,7 +287,7 @@ mod file_locking {
     fn save_and_load_roundtrip_with_locking() {
         let dir = std::env::temp_dir().join(format!("lean_ctx_test_lock_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
 
         let mut ledger = ContextLedger::with_window_size(50000);
         ledger.record("test.rs", "full", 1000, 1000);
@@ -300,7 +300,7 @@ mod file_locking {
 
         // Clean up
         let _ = std::fs::remove_dir_all(&dir);
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }
 

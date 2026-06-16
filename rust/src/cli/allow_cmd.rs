@@ -88,7 +88,9 @@ fn remove(cmds: &[String]) {
     let removed: Vec<&String> = before.iter().filter(|e| !after.contains(e)).collect();
     if removed.is_empty() {
         println!("None of those were in shell_allowlist_extra (nothing changed).");
-        println!("Note: built-in defaults can't be removed here — set `shell_allowlist` explicitly to override the whole list.");
+        println!(
+            "Note: built-in defaults can't be removed here — set `shell_allowlist` explicitly to override the whole list."
+        );
         return;
     }
 

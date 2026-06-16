@@ -737,7 +737,9 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
         _ => {
             eprintln!("Unknown agent: {agent}");
             eprintln!("  Supported: aider, amazonq, amp, antigravity, antigravity-cli, augment,");
-            eprintln!("    claude, cline, codebuddy, codex, continue, copilot, crush, cursor, emacs, gemini,");
+            eprintln!(
+                "    claude, cline, codebuddy, codex, continue, copilot, crush, cursor, emacs, gemini,"
+            );
             eprintln!("    hermes, jetbrains, kiro, neovim, openclaw, opencode, pi, qoder,");
             eprintln!("    qoderwork, qwen, roo, sublime, trae, verdent, vscode, windsurf, zed");
             std::process::exit(1);
@@ -910,8 +912,8 @@ mod tests {
         // server entry, otherwise the long-lived server rejects explicit paths
         // under sibling worktrees as jail escapes.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        std::env::set_var("LEAN_CTX_PROJECT_ROOT", "/work/main");
-        std::env::set_var("LEAN_CTX_EXTRA_ROOTS", "/work/wt-a:/work/wt-b");
+        unsafe { std::env::set_var("LEAN_CTX_PROJECT_ROOT", "/work/main") };
+        unsafe { std::env::set_var("LEAN_CTX_EXTRA_ROOTS", "/work/wt-a:/work/wt-b") };
 
         let pairs = mcp_server_env_pairs();
         let get = |k: &str| pairs.iter().find(|(p, _)| p == k).map(|(_, v)| v.as_str());
@@ -926,8 +928,8 @@ mod tests {
         let json = mcp_server_env_json();
         assert_eq!(json["LEAN_CTX_PROJECT_ROOT"].as_str(), Some("/work/main"));
 
-        std::env::remove_var("LEAN_CTX_PROJECT_ROOT");
-        std::env::remove_var("LEAN_CTX_EXTRA_ROOTS");
+        unsafe { std::env::remove_var("LEAN_CTX_PROJECT_ROOT") };
+        unsafe { std::env::remove_var("LEAN_CTX_EXTRA_ROOTS") };
     }
 
     #[test]
@@ -935,8 +937,8 @@ mod tests {
         // No project context configured anywhere ⇒ only the data dir is emitted,
         // so we never write empty/placeholder root keys into agent configs.
         let _iso = crate::core::data_dir::isolated_data_dir();
-        std::env::remove_var("LEAN_CTX_PROJECT_ROOT");
-        std::env::remove_var("LEAN_CTX_EXTRA_ROOTS");
+        unsafe { std::env::remove_var("LEAN_CTX_PROJECT_ROOT") };
+        unsafe { std::env::remove_var("LEAN_CTX_EXTRA_ROOTS") };
 
         let pairs = mcp_server_env_pairs();
         let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_str()).collect();

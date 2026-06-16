@@ -91,7 +91,9 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                 })
                 .unwrap_or_else(|| ".".to_string());
             let Some(out) = out else {
-                eprintln!("Usage: lean-ctx graph export-html --out <path> [--root <path>] [--max-nodes <n>]");
+                eprintln!(
+                    "Usage: lean-ctx graph export-html --out <path> [--root <path>] [--max-nodes <n>]"
+                );
                 std::process::exit(1);
             };
             if max_nodes == 0 {

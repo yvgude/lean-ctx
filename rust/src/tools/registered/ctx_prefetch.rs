@@ -1,9 +1,9 @@
-use rmcp::model::Tool;
 use rmcp::ErrorData;
-use serde_json::{json, Map, Value};
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    get_int, get_str, get_str_array, McpTool, ToolContext, ToolOutput,
+    McpTool, ToolContext, ToolOutput, get_int, get_str, get_str_array,
 };
 use crate::tool_defs::tool_def;
 

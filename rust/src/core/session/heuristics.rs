@@ -9,7 +9,7 @@ pub(crate) fn normalize_loaded_session(mut session: SessionState) -> SessionStat
         session.shell_cwd = None;
     }
 
-    if let (Some(ref root), Some(ref cwd)) = (&session.project_root, &session.shell_cwd) {
+    if let (Some(root), Some(cwd)) = (&session.project_root, &session.shell_cwd) {
         let root_p = std::path::Path::new(root);
         let cwd_p = std::path::Path::new(cwd);
 

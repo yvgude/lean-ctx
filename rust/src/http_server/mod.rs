@@ -2,17 +2,17 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use axum::{
+    Router,
     extract::Json,
     extract::Query,
     extract::State,
-    http::{header, Request, StatusCode},
+    http::{Request, StatusCode, header},
     middleware::{self, Next},
     response::sse::{Event as SseEvent, KeepAlive, Sse},
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
 use futures::Stream;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
@@ -453,7 +453,7 @@ async fn v1_events(
     State(state): State<AppState>,
     Query(q): Query<EventsQuery>,
 ) -> Sse<impl Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
-    use crate::core::context_os::{redact_event_payload, ContextEventV1, RedactionLevel};
+    use crate::core::context_os::{ContextEventV1, RedactionLevel, redact_event_payload};
 
     let ws = sanitize_id(&q.workspace_id.unwrap_or_else(|| "default".to_string()));
     let ch = sanitize_id(&q.channel_id.unwrap_or_else(|| "default".to_string()));
@@ -482,19 +482,23 @@ async fn v1_events(
     let rx = if let Some(ref kinds) = kind_filter {
         let kind_refs: Vec<&str> = kinds.iter().map(String::as_str).collect();
         let filter = crate::core::context_os::TopicFilter::kinds(&kind_refs);
-        if let Some(sub) = rt.bus.subscribe_filtered(&ws, &ch, filter) {
-            crate::core::context_os::SubscriptionKind::Filtered(sub)
-        } else {
-            tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
-            let (_, rx) = broadcast::channel::<ContextEventV1>(1);
-            crate::core::context_os::SubscriptionKind::Unfiltered(rx)
+        match rt.bus.subscribe_filtered(&ws, &ch, filter) {
+            Some(sub) => crate::core::context_os::SubscriptionKind::Filtered(sub),
+            _ => {
+                tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
+                let (_, rx) = broadcast::channel::<ContextEventV1>(1);
+                crate::core::context_os::SubscriptionKind::Unfiltered(rx)
+            }
         }
-    } else if let Some(sub) = rt.bus.subscribe(&ws, &ch) {
-        crate::core::context_os::SubscriptionKind::Unfiltered(sub)
     } else {
-        tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
-        let (_, rx) = broadcast::channel::<ContextEventV1>(1);
-        crate::core::context_os::SubscriptionKind::Unfiltered(rx)
+        match rt.bus.subscribe(&ws, &ch) {
+            Some(sub) => crate::core::context_os::SubscriptionKind::Unfiltered(sub),
+            _ => {
+                tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
+                let (_, rx) = broadcast::channel::<ContextEventV1>(1);
+                crate::core::context_os::SubscriptionKind::Unfiltered(rx)
+            }
+        }
     };
 
     rt.metrics.record_sse_connect();
@@ -908,8 +912,8 @@ async fn v1_agents_deregister(Json(body): Json<Value>) -> impl IntoResponse {
     Json(serde_json::json!({"status": "deregistered"}))
 }
 
-async fn v1_agents_events_sse(
-) -> Sse<impl Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+async fn v1_agents_events_sse()
+-> Sse<impl Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
     let stream = futures::stream::unfold(0usize, |last_count| async move {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;

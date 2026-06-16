@@ -123,11 +123,13 @@ mod tests {
     fn push_error_display_is_actionable() {
         assert!(PushError::Empty.to_string().contains("empty"));
         assert!(PushError::Unauthorized.to_string().contains("401/403"));
-        assert!(PushError::Rejected {
-            status: 500,
-            body: "boom".into()
-        }
-        .to_string()
-        .contains("500"));
+        assert!(
+            PushError::Rejected {
+                status: 500,
+                body: "boom".into()
+            }
+            .to_string()
+            .contains("500")
+        );
     }
 }

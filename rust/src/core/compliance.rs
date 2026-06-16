@@ -17,8 +17,8 @@
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-use super::policy::coverage::{CREDENTIAL_FIXTURES, DOMAIN_FIXTURES};
 use super::policy::ResolvedPolicy;
+use super::policy::coverage::{CREDENTIAL_FIXTURES, DOMAIN_FIXTURES};
 
 /// `(framework id, mapping TOML)` — pinned editions, see each file header.
 const MAPPING_SOURCES: &[(&str, &str)] = &[
@@ -313,7 +313,10 @@ fn verify_pack_rule(control: &ControlMapping, p: &ResolvedPolicy) -> (RowStatus,
             {
                 (
                     RowStatus::Enforced,
-                    format!("partial by design — unredacted classes: {}", missing.join(", ")),
+                    format!(
+                        "partial by design — unredacted classes: {}",
+                        missing.join(", ")
+                    ),
                 )
             } else {
                 (
@@ -416,7 +419,9 @@ fn verify_pack_rule(control: &ControlMapping, p: &ResolvedPolicy) -> (RowStatus,
         }
         other => (
             RowStatus::NotVerified,
-            format!("no live check wired for pack-rule control {other} — fix the mapping or add a check"),
+            format!(
+                "no live check wired for pack-rule control {other} — fix the mapping or add a check"
+            ),
         ),
     }
 }
@@ -537,15 +542,17 @@ mod tests {
     fn report_without_pack_marks_pack_rules_not_verified() {
         let m = get("soc2").unwrap();
         let rep = report(m, None);
-        assert!(rep
-            .rows
-            .iter()
-            .filter(|r| r.mechanism == Mechanism::PackRule)
-            .all(|r| r.status == RowStatus::NotVerified));
+        assert!(
+            rep.rows
+                .iter()
+                .filter(|r| r.mechanism == Mechanism::PackRule)
+                .all(|r| r.status == RowStatus::NotVerified)
+        );
         // Engine guarantees stay engine guarantees without a pack.
-        assert!(rep
-            .rows
-            .iter()
-            .any(|r| r.status == RowStatus::EngineGuarantee));
+        assert!(
+            rep.rows
+                .iter()
+                .any(|r| r.status == RowStatus::EngineGuarantee)
+        );
     }
 }

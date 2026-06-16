@@ -6,10 +6,10 @@ use axum::{
 };
 use serde_json::Value;
 
+use super::ProxyState;
 use super::compress::compress_tool_result;
 use super::forward;
-use super::tool_kind::{self, should_protect, ToolResultKind};
-use super::ProxyState;
+use super::tool_kind::{self, ToolResultKind, should_protect};
 
 pub async fn handler(
     State(state): State<ProxyState>,
@@ -97,9 +97,11 @@ mod tests {
         let bytes = serde_json::to_vec(&body).unwrap();
         let (out, _orig, _comp) = compress_request_body(body, bytes.len());
         let parsed: Value = serde_json::from_slice(&out).unwrap();
-        assert!(parsed["messages"][1]["content"]
-            .as_str()
-            .unwrap()
-            .contains("value59"));
+        assert!(
+            parsed["messages"][1]["content"]
+                .as_str()
+                .unwrap()
+                .contains("value59")
+        );
     }
 }

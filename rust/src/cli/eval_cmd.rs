@@ -11,7 +11,7 @@ use crate::core::eval_ab::artifact::{self, SignedAbReportV1};
 use crate::core::eval_ab::model::{OpenAiRunner, RecordedRunner, RecordingRunner};
 use crate::core::eval_ab::report::ReportConfig;
 use crate::core::eval_ab::suite::EvalSuite;
-use crate::core::eval_ab::{run_ab, AbRunConfig};
+use crate::core::eval_ab::{AbRunConfig, run_ab};
 
 /// Entry point dispatched from `cli::dispatch`.
 pub fn cmd_eval(args: &[String]) {
@@ -105,7 +105,9 @@ fn cmd_ab(args: &[String]) {
         let live = match OpenAiRunner::from_env() {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("eval ab: no live model configured: {e:#}\n(use --replay <file> for an offline run)");
+                eprintln!(
+                    "eval ab: no live model configured: {e:#}\n(use --replay <file> for an offline run)"
+                );
                 std::process::exit(1);
             }
         };

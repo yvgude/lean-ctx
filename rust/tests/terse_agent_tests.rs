@@ -12,15 +12,15 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 fn set_compression(compression: &str) {
-    std::env::set_var("LEAN_CTX_COMPRESSION", compression);
-    std::env::remove_var("LEAN_CTX_TERSE_AGENT");
-    std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY");
+    unsafe { std::env::set_var("LEAN_CTX_COMPRESSION", compression) };
+    unsafe { std::env::remove_var("LEAN_CTX_TERSE_AGENT") };
+    unsafe { std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY") };
 }
 
 fn set_legacy_terse(terse: &str) {
-    std::env::remove_var("LEAN_CTX_COMPRESSION");
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", terse);
-    std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY");
+    unsafe { std::env::remove_var("LEAN_CTX_COMPRESSION") };
+    unsafe { std::env::set_var("LEAN_CTX_TERSE_AGENT", terse) };
+    unsafe { std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY") };
     isolate_config_with_compression_off();
 }
 
@@ -28,14 +28,14 @@ fn isolate_config_with_compression_off() {
     let tmp = std::env::temp_dir().join("lean_ctx_test_config_legacy");
     let _ = std::fs::create_dir_all(&tmp);
     let _ = std::fs::write(tmp.join("config.toml"), "compression_level = \"off\"\n");
-    std::env::set_var("LEAN_CTX_DATA_DIR", &tmp);
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &tmp) };
 }
 
 fn cleanup_env() {
-    std::env::remove_var("LEAN_CTX_COMPRESSION");
-    std::env::remove_var("LEAN_CTX_TERSE_AGENT");
-    std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY");
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_COMPRESSION") };
+    unsafe { std::env::remove_var("LEAN_CTX_TERSE_AGENT") };
+    unsafe { std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY") };
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 // ── TerseAgent unit tests ──
@@ -49,16 +49,16 @@ fn terse_agent_default_is_off() {
 #[test]
 fn terse_agent_from_env() {
     let _g = lock();
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", "full");
+    unsafe { std::env::set_var("LEAN_CTX_TERSE_AGENT", "full") };
     assert!(matches!(TerseAgent::from_env(), TerseAgent::Full));
 
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", "lite");
+    unsafe { std::env::set_var("LEAN_CTX_TERSE_AGENT", "lite") };
     assert!(matches!(TerseAgent::from_env(), TerseAgent::Lite));
 
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", "ultra");
+    unsafe { std::env::set_var("LEAN_CTX_TERSE_AGENT", "ultra") };
     assert!(matches!(TerseAgent::from_env(), TerseAgent::Ultra));
 
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", "off");
+    unsafe { std::env::set_var("LEAN_CTX_TERSE_AGENT", "off") };
     assert!(matches!(TerseAgent::from_env(), TerseAgent::Off));
 
     cleanup_env();
@@ -119,8 +119,8 @@ fn legacy_terse_off_no_output_style() {
 #[test]
 fn compression_env_overrides_legacy_terse_agent() {
     let _g = lock();
-    std::env::set_var("LEAN_CTX_COMPRESSION", "max");
-    std::env::set_var("LEAN_CTX_TERSE_AGENT", "lite");
+    unsafe { std::env::set_var("LEAN_CTX_COMPRESSION", "max") };
+    unsafe { std::env::set_var("LEAN_CTX_TERSE_AGENT", "lite") };
     let text = instructions::build_instructions_for_test(CrpMode::Off);
     assert!(
         text.contains("expert-terse"),

@@ -387,7 +387,9 @@ pub(crate) fn process_mode(
                 crate::core::task_relevance::information_bottleneck_filter(content, &keywords, 0.3);
             let filtered_lines = filtered.lines().count();
             let header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-                format!("{file_ref}={short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]")
+                format!(
+                    "{file_ref}={short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]"
+                )
             } else {
                 format!("{short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]")
             };

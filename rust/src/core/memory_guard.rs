@@ -5,8 +5,8 @@
 //! At critical levels, performs aggressive eviction and signals background tasks
 //! to abort. It never exits the process — recovery is always via eviction.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 static PEAK_RSS: AtomicU64 = AtomicU64::new(0);
 static GUARD_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -393,11 +393,7 @@ fn macos_memsize() -> Option<u64> {
             0,
         )
     };
-    if ret == 0 {
-        Some(memsize)
-    } else {
-        None
-    }
+    if ret == 0 { Some(memsize) } else { None }
 }
 
 #[cfg(test)]

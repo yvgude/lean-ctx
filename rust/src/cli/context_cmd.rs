@@ -11,7 +11,9 @@ pub(crate) fn cmd_control(args: &[String]) {
             "Usage: lean-ctx control <action> [target] [--scope session|project|call] \
              [--reason \"...\"] [--value \"...\"]"
         );
-        eprintln!("Actions: exclude, include, pin, unpin, set_view, set_priority, mark_outdated, reset, list, history");
+        eprintln!(
+            "Actions: exclude, include, pin, unpin, set_view, set_priority, mark_outdated, reset, list, history"
+        );
         std::process::exit(1);
     }
 

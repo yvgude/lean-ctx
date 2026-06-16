@@ -158,11 +158,7 @@ impl CoAccessMatrix {
 
 /// Normalize key so (a,b) == (b,a).
 fn normalized_key(a: u64, b: u64) -> (u64, u64) {
-    if a <= b {
-        (a, b)
-    } else {
-        (b, a)
-    }
+    if a <= b { (a, b) } else { (b, a) }
 }
 
 /// Compute a fast hash for a file path.

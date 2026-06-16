@@ -80,14 +80,17 @@ fn capabilities() -> (&'static str, &'static str, String) {
     let caps = crate::core::client_capabilities::load_persisted(86400)
         .unwrap_or_else(crate::core::client_capabilities::current);
 
-    let dyn_tools = if let Ok(state) = crate::server::dynamic_tools::global().lock() {
-        serde_json::json!({
-            "active_categories": state.active_categories(),
-            "all_categories": crate::server::dynamic_tools::DynamicToolState::all_categories(),
-            "supports_list_changed": state.supports_list_changed(),
-        })
-    } else {
-        serde_json::json!({ "error": "lock failed" })
+    let dyn_tools = match crate::server::dynamic_tools::global().lock() {
+        Ok(state) => {
+            serde_json::json!({
+                "active_categories": state.active_categories(),
+                "all_categories": crate::server::dynamic_tools::DynamicToolState::all_categories(),
+                "supports_list_changed": state.supports_list_changed(),
+            })
+        }
+        _ => {
+            serde_json::json!({ "error": "lock failed" })
+        }
     };
 
     let payload = serde_json::json!({
@@ -172,15 +175,18 @@ fn history() -> (&'static str, &'static str, String) {
         ("unknown".to_string(), w)
     });
 
-    let bounce = if let Ok(bt) = crate::core::bounce_tracker::global().lock() {
-        serde_json::json!({
-            "summary": bt.format_summary(),
-            "total_bounces": bt.total_bounces(),
-            "total_wasted_tokens": bt.total_wasted_tokens(),
-            "per_extension": bt.per_extension_json(),
-        })
-    } else {
-        serde_json::json!({ "error": "lock failed" })
+    let bounce = match crate::core::bounce_tracker::global().lock() {
+        Ok(bt) => {
+            serde_json::json!({
+                "summary": bt.format_summary(),
+                "total_bounces": bt.total_bounces(),
+                "total_wasted_tokens": bt.total_wasted_tokens(),
+                "per_extension": bt.per_extension_json(),
+            })
+        }
+        _ => {
+            serde_json::json!({ "error": "lock failed" })
+        }
     };
 
     let payload = serde_json::json!({

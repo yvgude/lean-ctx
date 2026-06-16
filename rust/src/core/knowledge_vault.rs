@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::index_bundle::{decrypt, encrypt, BundleError};
+use super::index_bundle::{BundleError, decrypt, encrypt};
 
 /// Envelope version inside the ciphertext.
 pub const VAULT_VERSION: u32 = 1;

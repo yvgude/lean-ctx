@@ -141,10 +141,9 @@ fn build_pinned(ledger: &crate::core::context_ledger::ContextLedger) -> String {
 }
 
 fn build_bounce() -> String {
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock() {
-        bt.format_summary()
-    } else {
-        "Bounce tracker unavailable.".to_string()
+    match crate::core::bounce_tracker::global().lock() {
+        Ok(bt) => bt.format_summary(),
+        _ => "Bounce tracker unavailable.".to_string(),
     }
 }
 

@@ -1,5 +1,5 @@
-use rmcp::model::Tool;
 use rmcp::ErrorData;
+use rmcp::model::Tool;
 use serde_json::{Map, Value};
 
 /// Outcome of a shell execution, carried alongside the rendered text so the
@@ -114,7 +114,7 @@ pub trait McpTool: Send + Sync {
     /// Execute the tool. Args are the raw JSON-RPC arguments.
     /// `ctx` provides access to resolved paths and project state.
     fn handle(&self, args: &Map<String, Value>, ctx: &ToolContext)
-        -> Result<ToolOutput, ErrorData>;
+    -> Result<ToolOutput, ErrorData>;
 }
 
 /// Context passed to tool handlers. Contains pre-resolved values that

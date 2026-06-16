@@ -43,7 +43,7 @@ fn plugin_observes_real_read_event() {
     .expect("manifest");
 
     // Point the global registry at our isolated root, then activate it.
-    std::env::set_var("LEAN_CTX_PLUGINS_DIR", root.path());
+    unsafe { std::env::set_var("LEAN_CTX_PLUGINS_DIR", root.path()) };
     PluginManager::init();
     assert!(
         PluginManager::has_listener("pre_read"),

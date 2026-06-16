@@ -1,8 +1,8 @@
 use crate::core::cache::SessionCache;
 use crate::core::heatmap;
 use crate::core::tokens::count_tokens;
-use crate::tools::ctx_read;
 use crate::tools::CrpMode;
+use crate::tools::ctx_read;
 
 pub fn handle(cache: &mut SessionCache, paths: &[String], mode: &str, crp_mode: CrpMode) -> String {
     handle_with_task(cache, paths, mode, crp_mode, None)

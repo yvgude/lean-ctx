@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::core::bm25_index::{format_search_results, BM25Index};
+use crate::core::bm25_index::{BM25Index, format_search_results};
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
-use crate::core::hybrid_search::{format_hybrid_results, HybridConfig, HybridResult};
+use crate::core::hybrid_search::{HybridConfig, HybridResult, format_hybrid_results};
 use crate::tools::CrpMode;
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.

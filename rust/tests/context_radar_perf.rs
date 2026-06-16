@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::Instant;
 
-use lean_ctx::core::context_radar::{default_window_for_client, ContextRadar, RadarEvent};
+use lean_ctx::core::context_radar::{ContextRadar, RadarEvent, default_window_for_client};
 
 fn make_event(event_type: &str, tokens: usize, tool_name: Option<&str>) -> RadarEvent {
     RadarEvent {
@@ -231,7 +231,7 @@ fn default_window_all_ides() {
 
 #[test]
 fn introspect_anthropic_large_request() {
-    use lean_ctx::proxy::introspect::{analyze_request, Provider};
+    use lean_ctx::proxy::introspect::{Provider, analyze_request};
 
     let system = "a]".repeat(10_000);
     let user_text = "b".repeat(20_000);
@@ -283,7 +283,7 @@ fn introspect_anthropic_large_request() {
 
 #[test]
 fn introspect_openai_with_tool_results() {
-    use lean_ctx::proxy::introspect::{analyze_request, Provider};
+    use lean_ctx::proxy::introspect::{Provider, analyze_request};
 
     let body = serde_json::json!({
         "model": "gpt-4o",
@@ -308,7 +308,7 @@ fn introspect_openai_with_tool_results() {
 
 #[test]
 fn introspect_gemini_with_function_response() {
-    use lean_ctx::proxy::introspect::{analyze_request, Provider};
+    use lean_ctx::proxy::introspect::{Provider, analyze_request};
 
     let body = serde_json::json!({
         "systemInstruction": {
@@ -353,7 +353,7 @@ fn introspect_gemini_with_function_response() {
 
 #[test]
 fn introspect_state_concurrent_recording() {
-    use lean_ctx::proxy::introspect::{analyze_request, IntrospectState, Provider};
+    use lean_ctx::proxy::introspect::{IntrospectState, Provider, analyze_request};
     use std::sync::Arc;
 
     let state = Arc::new(IntrospectState::default());

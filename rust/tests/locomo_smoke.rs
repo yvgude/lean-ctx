@@ -10,7 +10,7 @@ fn reference_suite_recall_and_savings() {
     let _g = lean_ctx::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let data_dir = tmp.path().join("data");
-    std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir);
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &data_dir) };
     let ws = tmp.path().join("ws");
     std::fs::create_dir_all(&ws).unwrap();
 
@@ -36,14 +36,14 @@ fn reference_suite_recall_and_savings() {
     assert_eq!(report.questions, expected_questions);
     assert!(!report.by_category.is_empty());
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 #[test]
 fn determinism_same_numbers_twice() {
     let _g = lean_ctx::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path().join("data"));
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path().join("data")) };
     let samples = dataset::reference_samples();
 
     let ws1 = tmp.path().join("ws1");
@@ -56,5 +56,5 @@ fn determinism_same_numbers_twice() {
     assert_eq!(a.overall.containment_rate, b.overall.containment_rate);
     assert_eq!(a.overall.mean_f1, b.overall.mean_f1);
 
-    std::env::remove_var("LEAN_CTX_DATA_DIR");
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

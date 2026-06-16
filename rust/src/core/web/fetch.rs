@@ -206,11 +206,7 @@ fn base_path(base: &SafeUrl) -> &str {
     let prefix_len = base.scheme.len() + 3 + base.authority.len();
     let path = base.normalized.get(prefix_len..).unwrap_or("");
     let path = path.split(['?', '#']).next().unwrap_or("");
-    if path.is_empty() {
-        "/"
-    } else {
-        path
-    }
+    if path.is_empty() { "/" } else { path }
 }
 
 #[cfg(test)]

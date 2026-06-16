@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::core::property_graph::CodeGraph;
 use crate::core::tokens::count_tokens;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Dispatches architecture analysis actions (overview, clusters, layers, cycles, entrypoints, module).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1159,7 +1159,7 @@ fn compute_layers(data: &GraphData) -> Vec<Layer> {
     for d in 0..=max_depth {
         let mut files: Vec<String> = depth_map
             .iter()
-            .filter(|(_, &depth)| depth == d)
+            .filter(|&(_, &depth)| depth == d)
             .map(|(f, _)| f.clone())
             .collect();
         if !files.is_empty() {
@@ -1349,11 +1349,7 @@ fn git_out(project_root: &Path, args: &[&str]) -> Option<String> {
     }
     let s = String::from_utf8(out.stdout).ok()?;
     let s = s.trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 #[cfg(test)]

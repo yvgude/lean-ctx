@@ -164,9 +164,11 @@ mod tests {
         );
 
         assert!(!predictions.is_empty());
-        assert!(predictions
-            .iter()
-            .any(|p| p.provider_id == "github" && p.action == "issues"));
+        assert!(
+            predictions
+                .iter()
+                .any(|p| p.provider_id == "github" && p.action == "issues")
+        );
     }
 
     #[test]
@@ -181,9 +183,11 @@ mod tests {
             5,
         );
 
-        assert!(predictions
-            .iter()
-            .any(|p| p.provider_id == "postgres" && p.action == "schemas"));
+        assert!(
+            predictions
+                .iter()
+                .any(|p| p.provider_id == "postgres" && p.action == "schemas")
+        );
     }
 
     #[test]
@@ -198,9 +202,11 @@ mod tests {
             5,
         );
 
-        assert!(predictions
-            .iter()
-            .any(|p| p.provider_id == "github" && p.action == "pull_requests"));
+        assert!(
+            predictions
+                .iter()
+                .any(|p| p.provider_id == "github" && p.action == "pull_requests")
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::super::{
-    mcp_server_quiet_mode, resolve_binary_path, write_file, HookMode, HYBRID_RULES,
+    HYBRID_RULES, HookMode, mcp_server_quiet_mode, resolve_binary_path, write_file,
 };
 
 pub(crate) fn install_qoder_hook_with_mode(mode: HookMode) {

@@ -43,7 +43,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use wasmi::{Engine, Linker, Module, Store, TypedFunc};
 
-use crate::core::extension_registry::{truncate_to_budget, Compressor, ExtensionRegistry};
+use crate::core::extension_registry::{Compressor, ExtensionRegistry, truncate_to_budget};
 use crate::core::providers::{ContextProvider, ProviderItem, ProviderParams, ProviderResult};
 
 /// Well-known ABI entrypoint names.

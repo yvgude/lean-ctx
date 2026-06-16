@@ -198,11 +198,7 @@ impl KnowledgeBridge {
 }
 
 fn short_hash(hash: &str) -> &str {
-    if hash.len() > 8 {
-        &hash[..8]
-    } else {
-        hash
-    }
+    if hash.len() > 8 { &hash[..8] } else { hash }
 }
 
 #[cfg(test)]
