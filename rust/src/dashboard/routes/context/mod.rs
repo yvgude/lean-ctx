@@ -9,11 +9,10 @@ pub(super) fn handle(
     method: &str,
     body: &str,
 ) -> Option<(&'static str, &'static str, String)> {
-    if method.eq_ignore_ascii_case("POST") {
-        if let result @ Some(_) = overlay::post_route(path, body) {
+    if method.eq_ignore_ascii_case("POST")
+        && let result @ Some(_) = overlay::post_route(path, body) {
             return result;
         }
-    }
 
     aggregated::get_route(path)
         .or_else(|| core::get_route(path))

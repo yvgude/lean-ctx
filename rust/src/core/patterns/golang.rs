@@ -66,14 +66,13 @@ fn compress_test(output: &str) -> String {
             let name = line.replace("--- FAIL:", "").trim().to_string();
             failed_tests.push(name);
         }
-        if line.contains("--- PASS:") {
-            if let Some(name) = line.split("--- PASS:").nth(1) {
+        if line.contains("--- PASS:")
+            && let Some(name) = line.split("--- PASS:").nth(1) {
                 let name = name.split_whitespace().next().unwrap_or("");
                 if !name.is_empty() {
                     passed_tests.push(name.to_string());
                 }
             }
-        }
     }
 
     if results.is_empty() {

@@ -121,11 +121,10 @@ pub fn scent_agent_id() -> &'static str {
 
 impl ScentField {
     fn load_unlocked(path: &PathBuf) -> Self {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(f) = serde_json::from_str::<ScentField>(&content) {
+        if let Ok(content) = std::fs::read_to_string(path)
+            && let Ok(f) = serde_json::from_str::<ScentField>(&content) {
                 return f;
             }
-        }
         ScentField {
             schema_version: 1,
             ..Default::default()

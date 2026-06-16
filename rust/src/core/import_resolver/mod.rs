@@ -242,8 +242,8 @@ fn load_tsconfig_paths(root: &Path) -> HashMap<String, String> {
     for name in &candidates {
         let tsconfig_path = root.join(name);
         if let Ok(content) = std::fs::read_to_string(&tsconfig_path) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(compiler) = json.get("compilerOptions") {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+                && let Some(compiler) = json.get("compilerOptions") {
                     let base_url = compiler
                         .get("baseUrl")
                         .and_then(|v| v.as_str())
@@ -266,7 +266,6 @@ fn load_tsconfig_paths(root: &Path) -> HashMap<String, String> {
                         }
                     }
                 }
-            }
             break;
         }
     }

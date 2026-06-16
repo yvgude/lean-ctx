@@ -185,11 +185,10 @@ fn enforce_cap_locked(conn: &Connection) {
 /// Public entry point to enforce the archive DB size cap on demand (e.g. from
 /// idle maintenance or `doctor`). Returns the resulting size in bytes.
 pub fn enforce_cap() -> u64 {
-    if let Ok(guard) = DB.lock() {
-        if let Some(conn) = guard.as_ref() {
+    if let Ok(guard) = DB.lock()
+        && let Some(conn) = guard.as_ref() {
             enforce_cap_locked(conn);
         }
-    }
     db_size_bytes()
 }
 
@@ -233,7 +232,9 @@ pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
         return Vec::new();
     };
 
-    let results = stmt
+    
+
+    stmt
         .query_map(params![query, limit as i64], |row| {
             Ok(FtsResult {
                 archive_id: row.get(0)?,
@@ -245,9 +246,7 @@ pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
         })
         .ok()
         .map(|rows| rows.flatten().collect::<Vec<_>>())
-        .unwrap_or_default();
-
-    results
+        .unwrap_or_default()
 }
 
 pub fn entry_count() -> usize {

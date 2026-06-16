@@ -236,15 +236,12 @@ pub fn infer_from_tool_call(
 pub fn intent_from_query(query: &str, project_root: Option<&str>) -> IntentRecord {
     let now = Utc::now();
     let q = query.trim();
-    if let Ok(v) = serde_json::from_str::<Value>(q) {
-        if let Some(obj) = v.as_object() {
-            if let Some(intent_type) = obj.get("intent_type").and_then(|v| v.as_str()) {
-                if let Some(intent) = intent_from_json(intent_type, obj, project_root, now) {
+    if let Ok(v) = serde_json::from_str::<Value>(q)
+        && let Some(obj) = v.as_object()
+            && let Some(intent_type) = obj.get("intent_type").and_then(|v| v.as_str())
+                && let Some(intent) = intent_from_json(intent_type, obj, project_root, now) {
                     return intent;
                 }
-            }
-        }
-    }
 
     // Plain text → deterministic intent classification (short, no reads).
     let multi = crate::core::intent_engine::detect_multi_intent(q);
@@ -375,11 +372,10 @@ fn intent_from_json(
 
 fn evidence_keys_for(tool: &str, action: Option<&str>) -> Vec<String> {
     let mut keys = vec![format!("tool:{tool}")];
-    if let Some(a) = action {
-        if !a.is_empty() {
+    if let Some(a) = action
+        && !a.is_empty() {
             keys.push(format!("tool:{tool}:{a}"));
         }
-    }
     keys
 }
 

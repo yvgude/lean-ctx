@@ -1433,8 +1433,8 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
 
         let mut checks: Vec<(String, usize, usize)> = Vec::new();
 
-        if let Ok(content) = std::fs::read_to_string(hash_dir.join("knowledge.json")) {
-            if let Ok(k) =
+        if let Ok(content) = std::fs::read_to_string(hash_dir.join("knowledge.json"))
+            && let Ok(k) =
                 serde_json::from_str::<crate::core::knowledge::ProjectKnowledge>(&content)
             {
                 checks.push((
@@ -1453,10 +1453,9 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
                     policy.knowledge.max_history,
                 ));
             }
-        }
 
-        if let Ok(content) = std::fs::read_to_string(hash_dir.join("embeddings.json")) {
-            if let Ok(idx) = serde_json::from_str::<
+        if let Ok(content) = std::fs::read_to_string(hash_dir.join("embeddings.json"))
+            && let Ok(idx) = serde_json::from_str::<
                 crate::core::knowledge_embedding::KnowledgeEmbeddingIndex,
             >(&content)
             {
@@ -1466,10 +1465,9 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
                     policy.embeddings.max_facts,
                 ));
             }
-        }
 
-        if let Ok(content) = std::fs::read_to_string(hash_dir.join("gotchas.json")) {
-            if let Ok(g) =
+        if let Ok(content) = std::fs::read_to_string(hash_dir.join("gotchas.json"))
+            && let Ok(g) =
                 serde_json::from_str::<crate::core::gotcha_tracker::GotchaStore>(&content)
             {
                 checks.push((
@@ -1478,14 +1476,13 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
                     policy.gotcha.max_gotchas_per_project,
                 ));
             }
-        }
 
         let episodes_path = data_dir
             .join("memory")
             .join("episodes")
             .join(format!("{hash}.json"));
-        if let Ok(content) = std::fs::read_to_string(&episodes_path) {
-            if let Ok(e) =
+        if let Ok(content) = std::fs::read_to_string(&episodes_path)
+            && let Ok(e) =
                 serde_json::from_str::<crate::core::episodic_memory::EpisodicStore>(&content)
             {
                 checks.push((
@@ -1494,14 +1491,13 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
                     policy.episodic.max_episodes,
                 ));
             }
-        }
 
         let procedures_path = data_dir
             .join("memory")
             .join("procedures")
             .join(format!("{hash}.json"));
-        if let Ok(content) = std::fs::read_to_string(&procedures_path) {
-            if let Ok(p) =
+        if let Ok(content) = std::fs::read_to_string(&procedures_path)
+            && let Ok(p) =
                 serde_json::from_str::<crate::core::procedural_memory::ProceduralStore>(&content)
             {
                 checks.push((
@@ -1510,7 +1506,6 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
                     policy.procedural.max_procedures,
                 ));
             }
-        }
 
         let mut warnings: Vec<String> = Vec::new();
         let mut critical = false;
@@ -1574,9 +1569,9 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
 
     // Graph index file count vs limit
     let graph_max_files = cfg.graph_index_max_files;
-    if graph_max_files > 0 {
-        if let Some(session) = crate::core::session::SessionState::load_latest() {
-            if let Some(ref project_root) = session.project_root {
+    if graph_max_files > 0
+        && let Some(session) = crate::core::session::SessionState::load_latest()
+            && let Some(ref project_root) = session.project_root {
                 let disk_status = crate::core::index_orchestrator::disk_status(project_root);
                 if let Some(graph_files) = disk_status.graph_index.file_count {
                     let pct = (graph_files as f64 / graph_max_files as f64 * 100.0) as u32;
@@ -1597,8 +1592,6 @@ pub(super) fn capacity_warnings() -> Vec<Outcome> {
                     }
                 }
             }
-        }
-    }
 
     if results.is_empty() {
         results.push(Outcome {

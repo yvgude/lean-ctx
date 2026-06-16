@@ -108,12 +108,11 @@ diary (log discovery/decision/blocker/progress/insight), recall_diary, diaries, 
         if action == "register" {
             if let Some(id) = result.split(':').nth(1) {
                 let id = id.split_whitespace().next().unwrap_or("").to_string();
-                if !id.is_empty() {
-                    if let Some(handle) = agent_id_handle {
+                if !id.is_empty()
+                    && let Some(handle) = agent_id_handle {
                         let mut guard = handle.blocking_write();
                         *guard = Some(id);
                     }
-                }
             }
 
             let agent_role =

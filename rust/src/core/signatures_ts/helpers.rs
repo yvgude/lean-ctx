@@ -67,16 +67,16 @@ pub(crate) fn clean_return_type(ret: &str) -> String {
 
 pub(crate) fn has_named_child(node: &Node, kind: &str) -> bool {
     let mut cursor = node.walk();
-    let result = node.children(&mut cursor).any(|c| c.kind() == kind);
-    result
+    
+    node.children(&mut cursor).any(|c| c.kind() == kind)
 }
 
 pub(crate) fn has_keyword_child(node: &Node, keyword: &str) -> bool {
     let mut cursor = node.walk();
-    let result = node
+    
+    node
         .children(&mut cursor)
-        .any(|c| !c.is_named() && c.kind() == keyword);
-    result
+        .any(|c| !c.is_named() && c.kind() == keyword)
 }
 
 pub(crate) fn is_in_export(node: &Node) -> bool {

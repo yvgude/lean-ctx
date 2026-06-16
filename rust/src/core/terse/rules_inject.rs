@@ -37,22 +37,21 @@ pub fn inject(level: &CompressionLevel) -> usize {
         home.join(".qoder/rules/lean-ctx.md"),
     ];
 
-    if global_cursor_mdc.exists() {
-        if let Ok(content) = std::fs::read_to_string(&global_cursor_mdc) {
+    if global_cursor_mdc.exists()
+        && let Ok(content) = std::fs::read_to_string(&global_cursor_mdc) {
             let new_content = upsert_block(&content, &block(&prompt_ascii));
             if new_content != content {
                 let _ = std::fs::write(&global_cursor_mdc, &new_content);
                 updated += 1;
             }
         }
-    }
 
     // `.cursorrules` is Cursor-only and Cursor also auto-loads the global mdc.
     // When the mdc carries the block, a second copy here is pure duplication
     // (#578): remove an existing block instead of refreshing it, and never
     // append a new one. Without the mdc, `.cursorrules` stays the carrier.
-    if cursorrules.exists() {
-        if let Ok(content) = std::fs::read_to_string(&cursorrules) {
+    if cursorrules.exists()
+        && let Ok(content) = std::fs::read_to_string(&cursorrules) {
             let desired = if global_cursor_mdc.exists() {
                 remove_block(&content)
             } else {
@@ -63,18 +62,16 @@ pub fn inject(level: &CompressionLevel) -> usize {
                 updated += 1;
             }
         }
-    }
 
     for path in other_paths {
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(&path) {
                 let new_content = upsert_block(&content, &block(&prompt));
                 if new_content != content {
                     let _ = std::fs::write(&path, &new_content);
                     updated += 1;
                 }
             }
-        }
     }
 
     updated

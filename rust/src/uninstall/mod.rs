@@ -498,14 +498,12 @@ fn cleanup_bak_files(home: &Path) {
                 // config_io). Removed whether or not the original still exists:
                 // when uninstall deletes a config file that only contained
                 // lean-ctx content, its backup would otherwise be orphaned.
-                if name_str.ends_with(".bak") && !name_str.contains(".lean-ctx") {
-                    if let Ok(bak_content) = fs::read_to_string(entry.path()) {
-                        if bak_content.contains("lean-ctx") {
+                if name_str.ends_with(".bak") && !name_str.contains(".lean-ctx")
+                    && let Ok(bak_content) = fs::read_to_string(entry.path())
+                        && bak_content.contains("lean-ctx") {
                             let _ = fs::remove_file(entry.path());
                             cleaned += 1;
                         }
-                    }
-                }
             }
         }
     }
@@ -527,12 +525,11 @@ fn cleanup_bak_files(home: &Path) {
                 .to_string();
             let original = bak.with_file_name(original_name);
             if original.exists() {
-                if let Ok(c) = fs::read_to_string(&original) {
-                    if !c.contains("lean-ctx") {
+                if let Ok(c) = fs::read_to_string(&original)
+                    && !c.contains("lean-ctx") {
                         let _ = fs::remove_file(bak);
                         cleaned += 1;
                     }
-                }
             } else {
                 let _ = fs::remove_file(bak);
                 cleaned += 1;

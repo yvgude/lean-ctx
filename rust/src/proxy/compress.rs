@@ -25,11 +25,10 @@ pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
         return content.to_string();
     }
 
-    if extract_command_hint(content).is_none() && looks_like_prose(content) {
-        if let Some(out) = squeeze_research_prose(content) {
+    if extract_command_hint(content).is_none() && looks_like_prose(content)
+        && let Some(out) = squeeze_research_prose(content) {
             return out;
         }
-    }
 
     let cmd = infer_command(content, tool_name);
 

@@ -119,8 +119,8 @@ fn compress_ec2_instances(output: &str) -> String {
 }
 
 fn compress_lambda_list(output: &str) -> String {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output) {
-        if let Some(fns) = val.get("Functions").and_then(|f| f.as_array()) {
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output)
+        && let Some(fns) = val.get("Functions").and_then(|f| f.as_array()) {
             let items: Vec<String> = fns
                 .iter()
                 .map(|f| {
@@ -138,13 +138,12 @@ fn compress_lambda_list(output: &str) -> String {
                 .collect();
             return format!("{} functions:\n{}", items.len(), items.join("\n"));
         }
-    }
     compact_lines(output, 15)
 }
 
 fn compress_cfn(output: &str) -> String {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output) {
-        if let Some(stacks) = val.get("Stacks").and_then(|s| s.as_array()) {
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output)
+        && let Some(stacks) = val.get("Stacks").and_then(|s| s.as_array()) {
             let items: Vec<String> = stacks
                 .iter()
                 .map(|s| {
@@ -155,7 +154,6 @@ fn compress_cfn(output: &str) -> String {
                 .collect();
             return format!("{} stacks:\n{}", items.len(), items.join("\n"));
         }
-    }
     compact_lines(output, 10)
 }
 

@@ -103,8 +103,8 @@ pub fn check_and_read(path: &str) -> CacheResult {
 
     store.total_reads += 1;
 
-    if let Some(entry) = store.entries.get_mut(&key) {
-        if entry.hash == hash && (now - entry.timestamp) < CACHE_TTL_SECS {
+    if let Some(entry) = store.entries.get_mut(&key)
+        && entry.hash == hash && (now - entry.timestamp) < CACHE_TTL_SECS {
             entry.read_count += 1;
             entry.timestamp = now;
             store.total_hits += 1;
@@ -115,7 +115,6 @@ pub fn check_and_read(path: &str) -> CacheResult {
             save_store(&store);
             return result;
         }
-    }
 
     let line_count = content.lines().count();
     let original_tokens = crate::core::tokens::count_tokens(&content);

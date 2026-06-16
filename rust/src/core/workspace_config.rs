@@ -147,7 +147,7 @@ mod tests {
             std::env::set_var(
                 "LEAN_CTX_ALLOW_PATH",
                 other.path().to_string_lossy().to_string(),
-            )
+            );
         };
         let res = load_linked_projects(root.path());
         assert_eq!(res.roots.len(), 1);

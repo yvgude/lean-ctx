@@ -23,8 +23,8 @@ pub(crate) fn install_crush_hook() {
 
     if config_path.exists() {
         let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-        if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
-            if let Some(obj) = json.as_object_mut() {
+        if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
+            && let Some(obj) = json.as_object_mut() {
                 let servers = obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
                 if let Some(servers_obj) = servers.as_object_mut() {
                     if servers_obj.get("lean-ctx") == Some(&desired) {
@@ -39,7 +39,6 @@ pub(crate) fn install_crush_hook() {
                     return;
                 }
             }
-        }
     }
 
     let content = serde_json::to_string_pretty(&serde_json::json!({

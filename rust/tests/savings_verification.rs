@@ -205,7 +205,7 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
         std::env::set_var(
             "LEAN_CTX_DATA_DIR",
             lean_ctx_dir.to_string_lossy().to_string(),
-        )
+        );
     };
 
     let mut modes = HashMap::new();

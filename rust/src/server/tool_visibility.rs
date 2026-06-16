@@ -122,15 +122,14 @@ pub fn advertised_tool_defs_default() -> Vec<rmcp::model::Tool> {
         .collect();
 
     let already = tools.iter().any(|t| t.name.as_ref() == INVOKER);
-    if needs_invoker(full_mode, already, true, &disabled) {
-        if let Some(def) = registry
+    if needs_invoker(full_mode, already, true, &disabled)
+        && let Some(def) = registry
             .tool_defs()
             .into_iter()
             .find(|t| t.name.as_ref() == INVOKER)
         {
             tools.push(def);
         }
-    }
 
     let level = crate::core::config::CompressionLevel::effective(&cfg);
     let mode = crate::core::terse::mcp_compress::DescriptionMode::from_compression_level(&level);

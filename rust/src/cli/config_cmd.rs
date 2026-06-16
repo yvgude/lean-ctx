@@ -146,10 +146,10 @@ fn cmd_apply() {
     let known = schema.known_keys();
     let cfg = config::Config::load();
 
-    if let Some(path) = config::Config::path() {
-        if path.exists() {
-            if let Ok(raw) = std::fs::read_to_string(&path) {
-                if let Ok(table) = raw.parse::<toml::Table>() {
+    if let Some(path) = config::Config::path()
+        && path.exists()
+            && let Ok(raw) = std::fs::read_to_string(&path)
+                && let Ok(table) = raw.parse::<toml::Table>() {
                     let mut user_keys = Vec::new();
                     fn collect_flat(table: &toml::Table, prefix: &str, out: &mut Vec<String>) {
                         for (k, v) in table {
@@ -185,9 +185,6 @@ fn cmd_apply() {
                         );
                     }
                 }
-            }
-        }
-    }
 
     // 2. Restart processes
     println!("\n[2/4] Restarting processes…");
@@ -758,8 +755,8 @@ pub fn prune_bm25_caches() -> PruneResult {
         } else {
             dir.join("bm25_index.json")
         };
-        if let Ok(meta) = std::fs::metadata(&index_path) {
-            if meta.len() > max_bytes {
+        if let Ok(meta) = std::fs::metadata(&index_path)
+            && meta.len() > max_bytes {
                 result.bytes_freed += meta.len();
                 let _ = std::fs::remove_file(&index_path);
                 result.removed += 1;
@@ -769,7 +766,6 @@ pub fn prune_bm25_caches() -> PruneResult {
                     index_path.display()
                 );
             }
-        }
 
         let marker = dir.join("project_root.txt");
         if let Ok(root_str) = std::fs::read_to_string(&marker) {
@@ -829,8 +825,8 @@ pub fn prune_graph_caches() -> PruneResult {
         };
 
         let root_from_index = try_read_project_root_from_graph(idx_file);
-        if let Some(root) = root_from_index {
-            if !root.is_empty() && !std::path::Path::new(&root).exists() {
+        if let Some(root) = root_from_index
+            && !root.is_empty() && !std::path::Path::new(&root).exists() {
                 let freed = dir_size(&dir);
                 result.bytes_freed += freed;
                 let _ = std::fs::remove_dir_all(&dir);
@@ -843,10 +839,9 @@ pub fn prune_graph_caches() -> PruneResult {
                 );
                 continue;
             }
-        }
 
-        if let Ok(meta) = std::fs::metadata(idx_file) {
-            if meta.len() > 100 * 1024 * 1024 {
+        if let Ok(meta) = std::fs::metadata(idx_file)
+            && meta.len() > 100 * 1024 * 1024 {
                 result.bytes_freed += meta.len();
                 let _ = std::fs::remove_file(idx_file);
                 result.removed += 1;
@@ -856,7 +851,6 @@ pub fn prune_graph_caches() -> PruneResult {
                     idx_file.display()
                 );
             }
-        }
     }
 
     result

@@ -278,26 +278,24 @@ pub fn project_identity_warning(
         .as_deref()
         .map(crate::core::hasher::hash_str);
 
-    if let Some(ref exported) = bundle.project.project_root_hash {
-        if exported != &current_root_hash {
+    if let Some(ref exported) = bundle.project.project_root_hash
+        && exported != &current_root_hash {
             return Some(
                 "WARNING: project_root_hash mismatch (importing into different project root)."
                     .to_string(),
             );
         }
-    }
 
     if let (Some(exported), Some(current)) = (
         bundle.project.project_identity_hash.as_ref(),
         current_identity_hash.as_ref(),
-    ) {
-        if exported != current {
+    )
+        && exported != current {
             return Some(
                 "WARNING: project_identity_hash mismatch (importing into different project identity)."
                     .to_string(),
             );
         }
-    }
 
     None
 }

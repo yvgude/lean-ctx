@@ -845,11 +845,10 @@ impl Config {
     }
 
     fn find_project_root_inner() -> Option<String> {
-        if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT") {
-            if !env_root.is_empty() {
+        if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
+            && !env_root.is_empty() {
                 return Some(env_root);
             }
-        }
 
         let cwd = std::env::current_dir().ok();
 
@@ -938,13 +937,11 @@ impl Config {
         let global_hash = global_content.as_deref().map(crate::core::hasher::hash_str);
         let local_hash = local_content.as_deref().map(crate::core::hasher::hash_str);
 
-        if let Ok(guard) = CACHE.lock() {
-            if let Some((ref cfg, ref cached_global, ref cached_local)) = *guard {
-                if *cached_global == global_hash && *cached_local == local_hash {
+        if let Ok(guard) = CACHE.lock()
+            && let Some((ref cfg, ref cached_global, ref cached_local)) = *guard
+                && *cached_global == global_hash && *cached_local == local_hash {
                     return cfg.clone();
                 }
-            }
-        }
 
         let mut cfg: Config = if let Some(ref content) = global_content {
             match toml::from_str(content) {

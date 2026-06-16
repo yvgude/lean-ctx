@@ -260,8 +260,8 @@ pub fn format_cost_report(store: &CostStore, limit: usize) -> String {
     lines.push(format!(
         "Total: {total_in} input + {total_out} output + {total_cached} cached tokens = ${total_cost:.4}"
     ));
-    if let Ok(m) = std::env::var("LEAN_CTX_MODEL").or_else(|_| std::env::var("LCTX_MODEL")) {
-        if !m.trim().is_empty() {
+    if let Ok(m) = std::env::var("LEAN_CTX_MODEL").or_else(|_| std::env::var("LCTX_MODEL"))
+        && !m.trim().is_empty() {
             let pricing = crate::core::gain::model_pricing::ModelPricing::load();
             let q = pricing.quote(Some(&m));
             lines.push(format!(
@@ -280,7 +280,6 @@ pub fn format_cost_report(store: &CostStore, limit: usize) -> String {
                 "Input split: uncached {total_in} tok = ${uncached_cost:.4} | cached {total_cached} tok = ${cached_cost:.4} (cache-read rate)"
             ));
         }
-    }
     lines.push(String::new());
 
     let top_agents = store.top_agents(limit);

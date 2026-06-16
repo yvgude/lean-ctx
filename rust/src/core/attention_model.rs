@@ -164,11 +164,10 @@ pub fn attention_optimize(lines: &[&str], _alpha: f64, _beta: f64, _gamma: f64) 
     // Fill any remaining empty slots with original order
     let mut remaining: Vec<String> = lines.iter().map(std::string::ToString::to_string).collect();
     for slot in &mut result {
-        if slot.is_empty() {
-            if let Some(line) = remaining.pop() {
+        if slot.is_empty()
+            && let Some(line) = remaining.pop() {
                 *slot = line;
             }
-        }
     }
 
     result

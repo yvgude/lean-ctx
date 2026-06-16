@@ -20,13 +20,11 @@ impl PageRankInput {
 
         if let Ok(mut stmt) =
             conn.prepare("SELECT DISTINCT file_path FROM nodes WHERE kind = 'file'")
-        {
-            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+            && let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
                 for f in rows.flatten() {
                     files.insert(f);
                 }
             }
-        }
 
         let edge_sql = "
             SELECT DISTINCT n1.file_path, n2.file_path
@@ -36,8 +34,8 @@ impl PageRankInput {
             WHERE n1.kind = 'file' AND n2.kind = 'file'
               AND n1.file_path != n2.file_path
         ";
-        if let Ok(mut stmt) = conn.prepare(edge_sql) {
-            if let Ok(rows) = stmt.query_map([], |row| {
+        if let Ok(mut stmt) = conn.prepare(edge_sql)
+            && let Ok(rows) = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             }) {
                 for row in rows.flatten() {
@@ -45,7 +43,6 @@ impl PageRankInput {
                     forward.entry(src).or_default().push(tgt);
                 }
             }
-        }
 
         for deps in forward.values_mut() {
             deps.sort();

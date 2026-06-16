@@ -93,11 +93,10 @@ pub fn check_background() {
     }
 
     let cache = read_cache();
-    if let Some(ref c) = cache {
-        if !is_cache_stale(c) {
+    if let Some(ref c) = cache
+        && !is_cache_stale(c) {
             return;
         }
-    }
 
     std::thread::spawn(|| {
         if let Ok(latest) = fetch_latest_version() {

@@ -351,8 +351,8 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 start_line: Some(line_no),
                 end_line: Some(line_no),
             });
-        } else if let Some(caps) = const_re().captures(line) {
-            if caps.get(2).is_some() {
+        } else if let Some(caps) = const_re().captures(line)
+            && caps.get(2).is_some() {
                 sigs.push(Signature {
                     kind: "const",
                     name: caps[4].to_string(),
@@ -367,7 +367,6 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                     end_line: Some(line_no),
                 });
             }
-        }
     }
 
     sigs

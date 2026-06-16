@@ -88,8 +88,8 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
         // Secret-like paths are denied by default for artifacts unless explicitly allowed.
         // Artifacts tend to be indexed/shared; prefer safety over convenience.
         let role = crate::core::roles::active_role();
-        if !role.io.allow_secret_paths {
-            if let Some(reason) = crate::core::io_boundary::is_secret_like(&abs) {
+        if !role.io.allow_secret_paths
+            && let Some(reason) = crate::core::io_boundary::is_secret_like(&abs) {
                 let role_name = crate::core::roles::active_role_name();
                 let msg = format!(
                     "artifact rejected ({name}): {rel} (secret-like path: {reason}; role: {role_name})"
@@ -98,7 +98,6 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
                 out.warnings.push(msg);
                 continue;
             }
-        }
 
         let (exists, is_dir) = match abs.metadata() {
             Ok(m) => (true, m.is_dir()),

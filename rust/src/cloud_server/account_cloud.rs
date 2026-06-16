@@ -67,8 +67,8 @@ pub(super) async fn get_account_cloud(
         // E2E buckets (GL #467): once an account pushed a vault, its legacy
         // plaintext rows are purged — the count lives in the blob's
         // client-declared metadata instead.
-        if count == 0 {
-            if let Some(blob_table) = match key {
+        if count == 0
+            && let Some(blob_table) = match key {
                 "knowledge" => Some("knowledge_blobs"),
                 "gotchas" => Some("gotcha_blobs"),
                 _ => None,
@@ -80,7 +80,6 @@ pub(super) async fn get_account_cloud(
                     last = row.get(1);
                 }
             }
-        }
         merge_latest(&mut latest, last);
         buckets.insert(
             key.to_string(),

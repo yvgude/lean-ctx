@@ -109,13 +109,11 @@ fn try_pattern(rest: &str, lang: &str) -> Option<(usize, String)> {
         }
     }
 
-    if lang == "rust" || lang == "rs" {
-        if let Some(m) = for_in_rust_re().find(rest) {
-            if m.start() == 0 {
+    if (lang == "rust" || lang == "rs")
+        && let Some(m) = for_in_rust_re().find(rest)
+            && m.start() == 0 {
                 return Some((m.end(), m.as_str().to_string()));
             }
-        }
-    }
 
     None
 }

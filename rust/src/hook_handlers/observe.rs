@@ -33,11 +33,10 @@ pub fn handle_observe() {
     // Output-echo analysis (#501): measure how much of the agent's reply
     // re-quotes content lean-ctx already delivered, and feed the adaptive
     // mode policy with an automatic feedback event.
-    if event.event_type == "agent_response" {
-        if let Some(text) = event.content.as_deref() {
+    if event.event_type == "agent_response"
+        && let Some(text) = event.content.as_deref() {
             crate::core::output_echo::analyze_and_record(text);
         }
-    }
 }
 
 fn emit_dedicated_session_context(input: &str) {
@@ -207,8 +206,8 @@ fn detect_event_type(v: &serde_json::Value, ts: u64) -> Option<ObserveEvent> {
     if let Some(prompt) = v.get("prompt").and_then(|p| p.as_str()) {
         let tokens = prompt.len() / 4;
         let mut full = prompt.to_string();
-        if let Some(attachments) = v.get("attachments").and_then(|a| a.as_array()) {
-            if !attachments.is_empty() {
+        if let Some(attachments) = v.get("attachments").and_then(|a| a.as_array())
+            && !attachments.is_empty() {
                 full.push_str(&format!("\n\n[{} attachments]", attachments.len()));
                 for att in attachments {
                     if let Some(name) = att.get("name").and_then(|n| n.as_str()) {
@@ -216,7 +215,6 @@ fn detect_event_type(v: &serde_json::Value, ts: u64) -> Option<ObserveEvent> {
                     }
                 }
             }
-        }
         return Some(ObserveEvent {
             ts,
             event_type: "user_message",
@@ -457,15 +455,14 @@ fn append_radar_event(event: &ObserveEvent) {
     };
     let radar_path = data_dir.join("context_radar.jsonl");
 
-    if event.event_type == "session" {
-        if let Ok(meta) = std::fs::metadata(&radar_path) {
+    if event.event_type == "session"
+        && let Ok(meta) = std::fs::metadata(&radar_path) {
             const MAX_RADAR_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
             if meta.len() > MAX_RADAR_SIZE {
                 let prev = data_dir.join("context_radar.prev.jsonl");
                 let _ = std::fs::rename(&radar_path, &prev);
             }
         }
-    }
 
     let Ok(line) = serde_json::to_string(event) else {
         return;

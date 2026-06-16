@@ -60,14 +60,13 @@ fn compress_build(output: &str) -> String {
 
     for line in output.lines() {
         let trimmed = line.trim();
-        if trimmed.contains("up-to-date") || trimmed.contains("Build completed") {
-            if let Some(n) = trimmed
+        if (trimmed.contains("up-to-date") || trimmed.contains("Build completed"))
+            && let Some(n) = trimmed
                 .split_whitespace()
                 .find_map(|w| w.parse::<u32>().ok())
             {
                 targets = n;
             }
-        }
         if trimmed.starts_with("ERROR:") || trimmed.starts_with("error:") {
             errors.push(trimmed.to_string());
         }

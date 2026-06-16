@@ -164,11 +164,10 @@ fn binary_sha256() -> String {
     let mut slot = cache
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some((cached_key, hash)) = slot.as_ref() {
-        if *cached_key == key {
+    if let Some((cached_key, hash)) = slot.as_ref()
+        && *cached_key == key {
             return hash.clone();
         }
-    }
     let hash = std::fs::read(&exe)
         .map(|bytes| sha256_hex(&bytes))
         .unwrap_or_default();

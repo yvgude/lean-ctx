@@ -62,11 +62,10 @@ fn normalize_model(raw: &str, provider: Provider) -> String {
     };
 
     if is_routing_id {
-        if let Ok(guard) = LAST_REAL.lock() {
-            if let Some(ref real) = guard[idx] {
+        if let Ok(guard) = LAST_REAL.lock()
+            && let Some(ref real) = guard[idx] {
                 return real.clone();
             }
-        }
         return raw.to_string();
     }
 
@@ -744,11 +743,10 @@ impl IntrospectState {
 
         let target = data_dir.join("proxy-introspect.json");
         let tmp = data_dir.join("proxy-introspect.json.tmp");
-        if let Ok(json) = serde_json::to_string_pretty(&payload) {
-            if std::fs::write(&tmp, &json).is_ok() {
+        if let Ok(json) = serde_json::to_string_pretty(&payload)
+            && std::fs::write(&tmp, &json).is_ok() {
                 let _ = std::fs::rename(&tmp, &target);
             }
-        }
     }
 }
 

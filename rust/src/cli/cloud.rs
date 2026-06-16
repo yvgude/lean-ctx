@@ -420,9 +420,9 @@ pub fn cmd_contribute() {
 
     if let Some(home) = dirs::home_dir() {
         let mode_stats_path = home.join(".lean-ctx").join("mode_stats.json");
-        if let Ok(data) = std::fs::read_to_string(&mode_stats_path) {
-            if let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data) {
-                if let Some(history) = predictor["history"].as_object() {
+        if let Ok(data) = std::fs::read_to_string(&mode_stats_path)
+            && let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data)
+                && let Some(history) = predictor["history"].as_object() {
                     for (_sig_key, outcomes) in history {
                         if let Some(arr) = outcomes.as_array() {
                             for outcome in arr.iter().rev().take(5) {
@@ -457,8 +457,6 @@ pub fn cmd_contribute() {
                         }
                     }
                 }
-            }
-        }
     }
 
     if entries.is_empty() {

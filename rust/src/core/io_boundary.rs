@@ -117,11 +117,10 @@ impl BoundaryMode {
 }
 
 pub fn boundary_mode_effective(role: &roles::Role) -> BoundaryMode {
-    if let Ok(v) = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE") {
-        if !v.trim().is_empty() {
+    if let Ok(v) = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE")
+        && !v.trim().is_empty() {
             return BoundaryMode::parse(&v);
         }
-    }
     BoundaryMode::parse(&role.io.boundary_mode)
 }
 

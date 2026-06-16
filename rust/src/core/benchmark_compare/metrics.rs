@@ -162,11 +162,10 @@ fn measure_cold_start(root: &Path) -> ColdStartTiming {
     let bm25_build_us = bm25_start.elapsed().as_micros() as u64;
 
     let read_start = Instant::now();
-    if let Some(first_file) = files.first() {
-        if let Ok(content) = std::fs::read_to_string(first_file) {
+    if let Some(first_file) = files.first()
+        && let Ok(content) = std::fs::read_to_string(first_file) {
             let _ = count_tokens(&content);
         }
-    }
     let first_read_us = read_start.elapsed().as_micros() as u64;
 
     ColdStartTiming {

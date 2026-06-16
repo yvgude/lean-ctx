@@ -133,8 +133,8 @@ impl PolicySet {
             if !path_matches(&policy.match_pattern, path) {
                 continue;
             }
-            if let Some(ref condition) = policy.condition {
-                if !check_condition(
+            if let Some(ref condition) = policy.condition
+                && !check_condition(
                     condition,
                     seen_before,
                     token_count,
@@ -145,7 +145,6 @@ impl PolicySet {
                 ) {
                     continue;
                 }
-            }
             results.push(PolicyEvalResult {
                 policy_name: policy.name.clone(),
                 action: policy.action.clone(),

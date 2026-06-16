@@ -99,13 +99,11 @@ impl SharedSessionStore {
             .min_by_key(|(_, e)| e.last_accessed)
             .map(|(k, _)| k.clone());
 
-        if let Some(key) = lru_key {
-            if let Some(entry) = map.remove(&key) {
-                if let Ok(session) = entry.session.try_read() {
+        if let Some(key) = lru_key
+            && let Some(entry) = map.remove(&key)
+                && let Ok(session) = entry.session.try_read() {
                     persist_session_to_disk(&key, &entry.project_root, &session);
                 }
-            }
-        }
     }
 
     pub fn active_count(&self) -> usize {

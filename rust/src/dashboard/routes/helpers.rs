@@ -85,15 +85,14 @@ pub fn is_windows_absolute_path(path: &str) -> bool {
 }
 
 pub fn detect_project_root_for_dashboard() -> String {
-    if let Ok(explicit) = std::env::var("LEAN_CTX_DASHBOARD_PROJECT") {
-        if !explicit.trim().is_empty() {
+    if let Ok(explicit) = std::env::var("LEAN_CTX_DASHBOARD_PROJECT")
+        && !explicit.trim().is_empty() {
             return promote_to_git_root(&explicit);
         }
-    }
 
     if let Some(session) = crate::core::session::SessionState::load_latest() {
-        if let Some(root) = session.project_root.as_deref() {
-            if !root.trim().is_empty() && Path::new(root).is_dir() {
+        if let Some(root) = session.project_root.as_deref()
+            && !root.trim().is_empty() && Path::new(root).is_dir() {
                 if let Some(git_root) = git_root_for(root) {
                     return git_root;
                 }
@@ -104,25 +103,21 @@ pub fn detect_project_root_for_dashboard() -> String {
                     "[dashboard] session root '{root}' is not a recognized project, skipping"
                 );
             }
-        }
-        if let Some(cwd) = session.shell_cwd.as_deref() {
-            if !cwd.trim().is_empty() && Path::new(cwd).is_dir() {
+        if let Some(cwd) = session.shell_cwd.as_deref()
+            && !cwd.trim().is_empty() && Path::new(cwd).is_dir() {
                 let r = crate::core::protocol::detect_project_root_or_cwd(cwd);
                 return promote_to_git_root(&r);
             }
-        }
-        if let Some(last) = session.files_touched.last() {
-            if !last.path.trim().is_empty() {
+        if let Some(last) = session.files_touched.last()
+            && !last.path.trim().is_empty() {
                 let p_path = Path::new(&last.path);
-                if let Some(parent) = p_path.parent() {
-                    if parent.is_dir() {
+                if let Some(parent) = p_path.parent()
+                    && parent.is_dir() {
                         let p = parent.to_string_lossy().to_string();
                         let r = crate::core::protocol::detect_project_root_or_cwd(&p);
                         return promote_to_git_root(&r);
                     }
-                }
             }
-        }
     }
 
     let cwd = std::env::current_dir()

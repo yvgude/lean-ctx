@@ -16,11 +16,10 @@ pub(crate) fn get_cached_sig_query(file_ext: &str) -> Option<&'static Query> {
             "ex", "exs", "zig", "gd", "lua", "luau",
         ];
         for &ext in exts {
-            if let (Some(lang), Some(src)) = (get_language(ext), get_query(ext)) {
-                if let Ok(q) = Query::new(&lang, src) {
+            if let (Some(lang), Some(src)) = (get_language(ext), get_query(ext))
+                && let Ok(q) = Query::new(&lang, src) {
                     map.insert(ext, q);
                 }
-            }
         }
         map
     });

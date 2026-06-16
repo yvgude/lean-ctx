@@ -25,17 +25,16 @@ pub fn resolve_tool_paths(
     args: &Map<String, Value>,
     ctx: &ToolContext,
 ) -> Result<ResolvedPaths, String> {
-    if let Some(repo) = get_str(args, "repo") {
-        if let Some(root) = crate::core::multi_repo::resolve_repo_root(&repo) {
+    if let Some(repo) = get_str(args, "repo")
+        && let Some(root) = crate::core::multi_repo::resolve_repo_root(&repo) {
             return Ok(ResolvedPaths {
                 roots: vec![root],
                 is_multi: false,
             });
         }
-    }
 
-    if let Some(paths) = get_str_array(args, "paths") {
-        if !paths.is_empty() {
+    if let Some(paths) = get_str_array(args, "paths")
+        && !paths.is_empty() {
             let resolved = resolve_paths_sync(ctx, &paths);
             if !resolved.is_empty() {
                 return Ok(ResolvedPaths {
@@ -51,7 +50,6 @@ pub fn resolve_tool_paths(
                 paths.join(", ")
             ));
         }
-    }
 
     if let Some(path) = ctx.resolved_path("path") {
         return Ok(ResolvedPaths {

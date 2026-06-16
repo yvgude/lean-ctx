@@ -64,13 +64,11 @@ impl McpTool for CtxIndexTool {
         // MCP tool runs in the process that owns this session's `SessionCache`, so
         // clear it in-process here. Otherwise `ctx_read` map/signatures keep
         // serving pre-rebuild output from the long-lived cache.
-        if action == "build-full" {
-            if let Some(cache) = ctx.cache.as_ref() {
-                if let Some(mut guard) = crate::server::bounded_lock::write(cache, "ctx_index") {
+        if action == "build-full"
+            && let Some(cache) = ctx.cache.as_ref()
+                && let Some(mut guard) = crate::server::bounded_lock::write(cache, "ctx_index") {
                     guard.clear();
                 }
-            }
-        }
 
         Ok(ToolOutput::simple(result))
     }

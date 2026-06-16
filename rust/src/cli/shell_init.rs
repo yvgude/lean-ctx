@@ -1028,8 +1028,8 @@ export EDITOR=vim
         write_env_sh_for_containers("alias git='lean-ctx -c git'\n");
         let env_sh = config_dir.join("env.sh");
         let content = std::fs::read_to_string(&env_sh).expect("env.sh exists");
-        if !cfg!(windows) {
-            if let Ok(mut bash) = std::process::Command::new("bash")
+        if !cfg!(windows)
+            && let Ok(mut bash) = std::process::Command::new("bash")
                 .arg("-n")
                 .arg(&env_sh)
                 .spawn()
@@ -1037,7 +1037,6 @@ export EDITOR=vim
                 let ok = bash.wait().is_ok_and(|s| s.success());
                 assert!(ok, "generated env.sh must be valid bash");
             }
-        }
         assert!(
             content.contains(r#"_lc()          { command "$@"; }"#),
             "env.sh must contain _lc passthrough stub for non-interactive shells"

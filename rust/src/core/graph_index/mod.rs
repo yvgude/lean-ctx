@@ -499,29 +499,26 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
     }
 
     // Try the absolute/root-normalized path first.
-    if let Some(idx) = ProjectIndex::load(&root_abs) {
-        if !idx.files.is_empty() {
+    if let Some(idx) = ProjectIndex::load(&root_abs)
+        && !idx.files.is_empty() {
             if index_looks_stale(&idx, &root_abs) {
                 tracing::warn!("[graph_index: stale index detected for {root_abs}; rebuilding]");
                 return scan(&root_abs);
             }
             return idx;
         }
-    }
 
     // CWD fallback: only use if CWD is a subdirectory of root_abs (same project)
     if let Ok(cwd) = std::env::current_dir() {
         let cwd_str = normalize_project_root(&cwd.to_string_lossy());
-        if cwd_str != root_abs && cwd_str.starts_with(&root_abs) {
-            if let Some(idx) = ProjectIndex::load(&cwd_str) {
-                if !idx.files.is_empty() {
+        if cwd_str != root_abs && cwd_str.starts_with(&root_abs)
+            && let Some(idx) = ProjectIndex::load(&cwd_str)
+                && !idx.files.is_empty() {
                     if index_looks_stale(&idx, &cwd_str) {
                         return scan(&cwd_str);
                     }
                     return idx;
                 }
-            }
-        }
     }
 
     scan(&root_abs)
@@ -606,11 +603,10 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
 fn index_file_mtime(root_abs: &str) -> Option<std::time::SystemTime> {
     let dir = ProjectIndex::index_dir(root_abs)?;
     for name in ["index.json.zst", "index.json"] {
-        if let Ok(meta) = std::fs::metadata(dir.join(name)) {
-            if let Ok(modified) = meta.modified() {
+        if let Ok(meta) = std::fs::metadata(dir.join(name))
+            && let Ok(modified) = meta.modified() {
                 return Some(modified);
             }
-        }
     }
     None
 }
@@ -884,9 +880,9 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         let hash = compute_hash(&content);
         let rel_path = make_relative(&file_path, &project_root);
 
-        if let Some((old_hash, old_syms)) = old_files.get(&rel_path) {
-            if *old_hash == hash {
-                if let Some(old_entry) = existing.as_ref().and_then(|p| p.files.get(&rel_path)) {
+        if let Some((old_hash, old_syms)) = old_files.get(&rel_path)
+            && *old_hash == hash
+                && let Some(old_entry) = existing.as_ref().and_then(|p| p.files.get(&rel_path)) {
                     index.files.insert(rel_path.clone(), old_entry.clone());
                     for (key, sym) in old_syms {
                         index.symbols.insert(key.clone(), sym.clone());
@@ -895,8 +891,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
                     reused += 1;
                     continue;
                 }
-            }
-        }
 
         let sigs = signatures::extract_signatures(&content, ext);
         let line_count = content.lines().count();

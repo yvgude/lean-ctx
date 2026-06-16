@@ -48,11 +48,10 @@ pub fn record_focus(path: &str) -> Result<(), String> {
 
     let mut signal = load_raw().unwrap_or_default();
     signal.recent_files.retain(|(p, _)| p != &norm);
-    if let Some(prev) = signal.active_file.take() {
-        if prev != norm {
+    if let Some(prev) = signal.active_file.take()
+        && prev != norm {
             signal.recent_files.insert(0, (prev, signal.updated_at));
         }
-    }
     signal.recent_files.truncate(MAX_RECENT);
     signal.active_file = Some(norm);
     signal.updated_at = now;
@@ -95,11 +94,10 @@ pub fn load_raw_for_status() -> Option<EditorSignal> {
 /// Ranking boost for a path: 0.30 for the active file, 0.10 for recent tabs.
 pub fn boost_for(signal: &EditorSignal, path: &str) -> f64 {
     let norm = crate::core::pathutil::normalize_tool_path(path);
-    if let Some(active) = &signal.active_file {
-        if paths_match(active, &norm) {
+    if let Some(active) = &signal.active_file
+        && paths_match(active, &norm) {
             return 0.30;
         }
-    }
     if signal
         .recent_files
         .iter()
@@ -186,11 +184,10 @@ mod tests {
         for i in 0..15 {
             let norm = format!("f{i}.rs");
             signal.recent_files.retain(|(p, _)| p != &norm);
-            if let Some(prev) = signal.active_file.take() {
-                if prev != norm {
+            if let Some(prev) = signal.active_file.take()
+                && prev != norm {
                     signal.recent_files.insert(0, (prev, signal.updated_at));
                 }
-            }
             signal.recent_files.truncate(MAX_RECENT);
             signal.active_file = Some(norm);
             signal.updated_at = 1000 + i;

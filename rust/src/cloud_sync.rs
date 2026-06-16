@@ -121,12 +121,11 @@ pub fn cloud_background_tasks() {
             }
         }
 
-        if !already_pulled {
-            if let Ok(data) = crate::cloud_client::pull_cloud_models() {
+        if !already_pulled
+            && let Ok(data) = crate::cloud_client::pull_cloud_models() {
                 let _ = crate::cloud_client::save_cloud_models(&data);
                 config.cloud.last_model_pull = Some(today.clone());
             }
-        }
 
         // Opt-in Personal-Cloud auto-push (GL #384): silent, once per day,
         // offline-tolerant. A network failure leaves the slot open so the
@@ -438,9 +437,9 @@ pub fn collect_gotcha_entries() -> Vec<serde_json::Value> {
         if let Ok(entries) = std::fs::read_dir(&knowledge_dir) {
             for entry in entries.flatten() {
                 let gotcha_path = entry.path().join("gotchas.json");
-                if gotcha_path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&gotcha_path) {
-                        if let Ok(store) = serde_json::from_str::<
+                if gotcha_path.exists()
+                    && let Ok(content) = std::fs::read_to_string(&gotcha_path)
+                        && let Ok(store) = serde_json::from_str::<
                             crate::core::gotcha_tracker::GotchaStore,
                         >(&content)
                         {
@@ -453,8 +452,6 @@ pub fn collect_gotcha_entries() -> Vec<serde_json::Value> {
                                 }
                             }
                         }
-                    }
-                }
             }
         }
     }
@@ -499,9 +496,9 @@ pub fn collect_contribute_entries() -> Vec<serde_json::Value> {
         let mode_stats_path = crate::core::data_dir::lean_ctx_data_dir()
             .unwrap_or_else(|_| home.join(".lean-ctx"))
             .join("mode_stats.json");
-        if let Ok(data) = std::fs::read_to_string(&mode_stats_path) {
-            if let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data) {
-                if let Some(history) = predictor["history"].as_object() {
+        if let Ok(data) = std::fs::read_to_string(&mode_stats_path)
+            && let Ok(predictor) = serde_json::from_str::<serde_json::Value>(&data)
+                && let Some(history) = predictor["history"].as_object() {
                     for (_key, outcomes) in history {
                         if let Some(arr) = outcomes.as_array() {
                             for outcome in arr.iter().rev().take(3) {
@@ -533,8 +530,6 @@ pub fn collect_contribute_entries() -> Vec<serde_json::Value> {
                         }
                     }
                 }
-            }
-        }
     }
 
     if entries.is_empty() {

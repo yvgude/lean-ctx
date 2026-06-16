@@ -489,24 +489,20 @@ pub fn format_buddy_full(state: &BuddyState, theme: &super::super::theme::Theme)
 
 pub(super) fn detect_project_root_for_buddy() -> String {
     if let Some(session) = super::super::session::SessionState::load_latest() {
-        if let Some(root) = session.project_root.as_deref() {
-            if !root.trim().is_empty() {
+        if let Some(root) = session.project_root.as_deref()
+            && !root.trim().is_empty() {
                 return root.to_string();
             }
-        }
-        if let Some(cwd) = session.shell_cwd.as_deref() {
-            if !cwd.trim().is_empty() {
+        if let Some(cwd) = session.shell_cwd.as_deref()
+            && !cwd.trim().is_empty() {
                 return super::super::protocol::detect_project_root_or_cwd(cwd);
             }
-        }
-        if let Some(last) = session.files_touched.last() {
-            if !last.path.trim().is_empty() {
-                if let Some(parent) = std::path::Path::new(&last.path).parent() {
+        if let Some(last) = session.files_touched.last()
+            && !last.path.trim().is_empty()
+                && let Some(parent) = std::path::Path::new(&last.path).parent() {
                     let p = parent.to_string_lossy().to_string();
                     return super::super::protocol::detect_project_root_or_cwd(&p);
                 }
-            }
-        }
     }
     std::env::current_dir()
         .map(|p| super::super::protocol::detect_project_root_or_cwd(&p.to_string_lossy()))

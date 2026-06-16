@@ -29,11 +29,10 @@ pub fn list_issues(
     }
 
     let cache_key = format!("gitlab:issues:{project}:{state:?}:{labels:?}:{per_page}");
-    if let Some(cached) = cache::get_cached(&cache_key) {
-        if let Ok(result) = serde_json::from_str::<ProviderResult>(&cached) {
+    if let Some(cached) = cache::get_cached(&cache_key)
+        && let Ok(result) = serde_json::from_str::<ProviderResult>(&cached) {
             return Ok(result);
         }
-    }
 
     let body = api_get(config, &url)?;
     let items: Vec<serde_json::Value> =
@@ -94,11 +93,10 @@ pub fn list_mrs(
     }
 
     let cache_key = format!("gitlab:mrs:{project}:{state:?}:{per_page}");
-    if let Some(cached) = cache::get_cached(&cache_key) {
-        if let Ok(result) = serde_json::from_str::<ProviderResult>(&cached) {
+    if let Some(cached) = cache::get_cached(&cache_key)
+        && let Ok(result) = serde_json::from_str::<ProviderResult>(&cached) {
             return Ok(result);
         }
-    }
 
     let body = api_get(config, &url)?;
     let items: Vec<serde_json::Value> =

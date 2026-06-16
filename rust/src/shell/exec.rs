@@ -506,13 +506,11 @@ fn exec_buffered(command: &str, shell: &str, shell_flag: &str, cfg: &config::Con
         }
         config::TeeMode::Never => false,
     };
-    if should_tee {
-        if let Some(path) = super::redact::save_tee(command, &full_output) {
-            if !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
+    if should_tee
+        && let Some(path) = super::redact::save_tee(command, &full_output)
+            && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
                 eprintln!("[lean-ctx: full output -> {path} (redacted, 24h TTL)]");
             }
-        }
-    }
 
     let threshold = cfg.slow_command_threshold_ms;
     if threshold > 0 && duration_ms >= threshold as u128 {

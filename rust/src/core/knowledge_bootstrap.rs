@@ -147,14 +147,13 @@ fn detect_build_markers(project_root: &str) -> Vec<&'static str> {
         out.push("cmake");
     }
 
-    if let Ok(entries) = std::fs::read_dir(root) {
-        if entries
+    if let Ok(entries) = std::fs::read_dir(root)
+        && entries
             .flatten()
             .any(|e| e.path().extension().is_some_and(|ext| ext == "sln"))
         {
             out.push("dotnet");
         }
-    }
 
     out
 }

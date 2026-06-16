@@ -172,13 +172,12 @@ impl ProjectKnowledge {
         let old_hash = crate::core::project_hash::hash_path_only(project_root);
         if old_hash != hash {
             crate::core::project_hash::migrate_if_needed(&old_hash, &hash, project_root);
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(mut k) = serde_json::from_str::<Self>(&content) {
+            if let Ok(content) = std::fs::read_to_string(&path)
+                && let Ok(mut k) = serde_json::from_str::<Self>(&content) {
                     k.project_hash = hash;
                     let _ = k.save();
                     return Some(k);
                 }
-            }
         }
 
         // Migrate stores created before path normalization (issue #325): on
@@ -190,13 +189,12 @@ impl ProjectKnowledge {
                 continue;
             }
             crate::core::project_hash::migrate_if_needed(&legacy_hash, &hash, project_root);
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(mut k) = serde_json::from_str::<Self>(&content) {
+            if let Ok(content) = std::fs::read_to_string(&path)
+                && let Ok(mut k) = serde_json::from_str::<Self>(&content) {
                     k.project_hash = hash;
                     let _ = k.save();
                     return Some(k);
                 }
-            }
         }
 
         None

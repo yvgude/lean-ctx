@@ -33,21 +33,19 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
     let terms: Vec<&str> = q_lower.split_whitespace().collect();
     let mut results = Vec::new();
 
-    if knowledge_dir.exists() {
-        if let Ok(entries) = std::fs::read_dir(&knowledge_dir) {
+    if knowledge_dir.exists()
+        && let Ok(entries) = std::fs::read_dir(&knowledge_dir) {
             for entry in entries.flatten() {
                 let dir_name = entry.file_name().to_string_lossy().to_string();
 
-                if !allow_cross_project {
-                    if let Some(ref current_hash) = current_project_hash {
-                        if &dir_name != current_hash {
+                if !allow_cross_project
+                    && let Some(ref current_hash) = current_project_hash
+                        && &dir_name != current_hash {
                             continue;
                         }
-                    }
-                }
 
-                if let Some(ref current_hash) = current_project_hash {
-                    if dir_name != *current_hash {
+                if let Some(ref current_hash) = current_project_hash
+                    && dir_name != *current_hash {
                         let policy = crate::core::config::Config::load().boundary_policy;
                         let allowed = crate::core::memory_boundary::check_boundary(
                             current_hash,
@@ -77,11 +75,10 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
                             continue;
                         }
                     }
-                }
 
                 let knowledge_file = entry.path().join("knowledge.json");
-                if let Ok(content) = std::fs::read_to_string(&knowledge_file) {
-                    if let Ok(knowledge) = serde_json::from_str::<ProjectKnowledge>(&content) {
+                if let Ok(content) = std::fs::read_to_string(&knowledge_file)
+                    && let Ok(knowledge) = serde_json::from_str::<ProjectKnowledge>(&content) {
                         let is_foreign = current_project_hash
                             .as_ref()
                             .is_some_and(|h| h != &knowledge.project_hash);
@@ -114,10 +111,8 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
                             }
                         }
                     }
-                }
             }
         }
-    }
 
     if let Ok(entries) = std::fs::read_dir(&sessions_dir) {
         for entry in entries.flatten() {
@@ -128,8 +123,8 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
             if path.file_name().and_then(|n| n.to_str()) == Some("latest.json") {
                 continue;
             }
-            if let Ok(json) = std::fs::read_to_string(&path) {
-                if let Ok(session) = serde_json::from_str::<SessionState>(&json) {
+            if let Ok(json) = std::fs::read_to_string(&path)
+                && let Ok(session) = serde_json::from_str::<SessionState>(&json) {
                     for finding in &session.findings {
                         let searchable = finding.summary.to_lowercase();
                         let match_count = terms.iter().filter(|t| searchable.contains(**t)).count();
@@ -167,7 +162,6 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
                         }
                     }
                 }
-            }
         }
     }
 

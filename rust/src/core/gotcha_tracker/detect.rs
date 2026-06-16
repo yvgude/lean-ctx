@@ -98,15 +98,14 @@ pub fn detect_error_pattern(output: &str, command: &str, exit_code: i32) -> Opti
     }
 
     // TypeScript / tsc
-    if cmd_lower.contains("tsc") || cmd_lower.contains("typescript") {
-        if let Some(msg) = extract_pattern(output, r"TS\d{4}: .+") {
+    if (cmd_lower.contains("tsc") || cmd_lower.contains("typescript"))
+        && let Some(msg) = extract_pattern(output, r"TS\d{4}: .+") {
             return Some(DetectedError {
                 category: GotchaCategory::Build,
                 severity: GotchaSeverity::Critical,
                 raw_message: msg,
             });
         }
-    }
 
     // Docker
     if cmd_lower.starts_with("docker ")

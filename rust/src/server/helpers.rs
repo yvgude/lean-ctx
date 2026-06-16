@@ -17,15 +17,14 @@ pub fn get_str_array(
 
     // Fallback: some MCP bridges serialize arrays as JSON-encoded strings.
     // Example: { "paths": "[\"src/main.rs\",\"src/lib.rs\"]" }
-    if let Some(s) = val.as_str() {
-        if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(s) {
+    if let Some(s) = val.as_str()
+        && let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(s) {
             let mut out = Vec::with_capacity(arr.len());
             for v in &arr {
                 out.push(v.as_str()?.to_string());
             }
             return Some(out);
         }
-    }
 
     None
 }

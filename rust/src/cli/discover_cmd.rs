@@ -40,11 +40,10 @@ fn card_target(args: &[String]) -> Option<String> {
             path = Some(v.to_string());
         } else if a == "--card" {
             requested = true;
-            if let Some(next) = args.get(i + 1) {
-                if !next.starts_with('-') {
+            if let Some(next) = args.get(i + 1)
+                && !next.starts_with('-') {
                     path = Some(next.clone());
                 }
-            }
         }
     }
     requested.then(|| path.unwrap_or_else(|| "lean-ctx-before.svg".to_string()))

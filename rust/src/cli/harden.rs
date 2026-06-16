@@ -25,12 +25,11 @@ fn apply_harden(level: &str) {
         applied.push("Set LEAN_CTX_HARDEN=1 in MCP configs");
     }
 
-    if level == "hard" {
-        if let Some(msg) = apply_claude_permissions_deny() {
+    if level == "hard"
+        && let Some(msg) = apply_claude_permissions_deny() {
             applied.push("Claude Code: added Bash to permissions.deny");
             println!("  {msg}");
         }
-    }
 
     if applied.is_empty() {
         println!("  Nothing to harden (no supported editors detected).");
@@ -60,9 +59,9 @@ fn set_env_in_mcp_configs() -> bool {
     let mut any_set = false;
 
     for path in targets {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
-                if let Some(servers) = find_lean_ctx_server_mut(&mut json) {
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
+                && let Some(servers) = find_lean_ctx_server_mut(&mut json) {
                     let env = servers
                         .as_object_mut()
                         .and_then(|s| s.get_mut("env"))
@@ -88,18 +87,16 @@ fn set_env_in_mcp_configs() -> bool {
                         println!("  [OK] {}", path.display());
                     }
                 }
-            }
-        }
     }
     any_set
 }
 
 fn remove_env_from_mcp_configs() {
     for path in discover_mcp_configs() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
-                if let Some(servers) = find_lean_ctx_server_mut(&mut json) {
-                    if let Some(env) = servers
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
+                && let Some(servers) = find_lean_ctx_server_mut(&mut json)
+                    && let Some(env) = servers
                         .as_object_mut()
                         .and_then(|s| s.get_mut("env"))
                         .and_then(|e| e.as_object_mut())
@@ -109,9 +106,6 @@ fn remove_env_from_mcp_configs() {
                             let _ = std::fs::write(&path, out);
                         }
                     }
-                }
-            }
-        }
     }
 }
 
@@ -194,10 +188,9 @@ fn discover_mcp_configs() -> Vec<PathBuf> {
 }
 
 fn find_lean_ctx_server_mut(json: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
-    if let Some(servers) = json.get_mut("mcpServers") {
-        if let Some(lctx) = servers.get_mut("lean-ctx") {
+    if let Some(servers) = json.get_mut("mcpServers")
+        && let Some(lctx) = servers.get_mut("lean-ctx") {
             return Some(lctx);
         }
-    }
     None
 }

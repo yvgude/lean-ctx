@@ -165,11 +165,10 @@ pub fn normalize_tool_path_lexical(path: &str) -> String {
         None => path.to_string(),
     };
 
-    if cfg!(windows) {
-        if let Some(translated) = translate_msys_drive_prefix(&p) {
+    if cfg!(windows)
+        && let Some(translated) = translate_msys_drive_prefix(&p) {
             p = translated;
         }
-    }
 
     p = p.replace('\\', "/");
 
@@ -205,14 +204,12 @@ pub fn normalize_tool_path(path: &str) -> String {
         && !is_root_only
         && !crate::core::io_health::is_slow_mount(&p)
         && may_probe_path(Path::new(&*p))
-    {
-        if let Ok(canonical) = safe_canonicalize(Path::new(&*p)) {
+        && let Ok(canonical) = safe_canonicalize(Path::new(&*p)) {
             let canonical_str = canonical.to_string_lossy().replace('\\', "/");
             if !canonical_str.is_empty() {
                 p = canonical_str;
             }
         }
-    }
 
     p
 }
@@ -222,11 +219,10 @@ pub fn normalize_tool_path(path: &str) -> String {
 /// directories (`.claude`, `.codex`). Used to prevent writing project-scoped
 /// data (overlays, policies) into the global `~/.lean-ctx/` data directory.
 pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
-    if let Some(home) = dirs::home_dir() {
-        if dir == home {
+    if let Some(home) = dirs::home_dir()
+        && dir == home {
             return true;
         }
-    }
     let s = dir.to_string_lossy();
     if s == "/" || s == "\\" || s == "." {
         return true;

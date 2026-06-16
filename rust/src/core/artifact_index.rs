@@ -161,15 +161,14 @@ fn rebuild_incremental(
         };
 
         let unchanged = prev.files.get(rel).is_some_and(|old| *old == state);
-        if unchanged {
-            if let Some(chunks) = old_by_file.get(rel) {
+        if unchanged
+            && let Some(chunks) = old_by_file.get(rel) {
                 for chunk in chunks {
                     add_chunk(&mut idx, chunk.clone());
                 }
                 idx.files.insert(rel.clone(), state);
                 continue;
             }
-        }
 
         let content = match std::fs::read_to_string(&abs) {
             Ok(s) => s,
@@ -270,11 +269,10 @@ fn list_artifact_files(project_root: &Path) -> (Vec<String>, Vec<String>) {
                 if !is_artifact_text_file(path) {
                     continue;
                 }
-                if let Ok(meta) = path.metadata() {
-                    if meta.len() > MAX_ARTIFACT_BYTES {
+                if let Ok(meta) = path.metadata()
+                    && meta.len() > MAX_ARTIFACT_BYTES {
                         continue;
                     }
-                }
                 let rel = path
                     .strip_prefix(project_root)
                     .unwrap_or(path)
@@ -295,11 +293,10 @@ fn list_artifact_files(project_root: &Path) -> (Vec<String>, Vec<String>) {
             if !is_artifact_text_file(&abs) {
                 continue;
             }
-            if let Ok(meta) = abs.metadata() {
-                if meta.len() > MAX_ARTIFACT_BYTES {
+            if let Ok(meta) = abs.metadata()
+                && meta.len() > MAX_ARTIFACT_BYTES {
                     continue;
                 }
-            }
             if extra_ignores.iter().any(|p| p.matches(&a.path)) {
                 continue;
             }

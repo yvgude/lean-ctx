@@ -125,16 +125,14 @@ pub fn redact_text(input: &str) -> String {
         out = rule
             .re
             .replace_all(&out, |caps: &regex::Captures| {
-                if rule.guard_value {
-                    if let Some(value) = caps.get(2) {
-                        if is_non_secret_literal(value.as_str()) {
+                if rule.guard_value
+                    && let Some(value) = caps.get(2)
+                        && is_non_secret_literal(value.as_str()) {
                             // Not a secret (e.g. `password: undefined`) — keep verbatim.
                             return caps
                                 .get(0)
                                 .map_or(String::new(), |m| m.as_str().to_string());
                         }
-                    }
-                }
                 match caps.get(1) {
                     Some(prefix) => format!("{}[REDACTED:{}]", prefix.as_str(), rule.label),
                     None => format!("[REDACTED:{}]", rule.label),

@@ -140,13 +140,11 @@ fn extract_changed_files(diff_text: &str) -> Vec<String> {
     for line in diff_text.lines() {
         if let Some(rest) = line.strip_prefix("+++ b/") {
             files.push(rest.to_string());
-        } else if let Some(rest) = line.strip_prefix("diff --git a/") {
-            if let Some(b_part) = rest.split(" b/").nth(1) {
-                if !files.contains(&b_part.to_string()) {
+        } else if let Some(rest) = line.strip_prefix("diff --git a/")
+            && let Some(b_part) = rest.split(" b/").nth(1)
+                && !files.contains(&b_part.to_string()) {
                     files.push(b_part.to_string());
                 }
-            }
-        }
     }
     files.dedup();
     files

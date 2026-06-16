@@ -122,11 +122,10 @@ pub fn prune_orphaned_stores_in(data_dir: &Path) -> PruneReport {
             .join("memory")
             .join("episodes")
             .join(format!("{}.json", orphan.hash));
-        if let Ok(meta) = std::fs::metadata(&episodes) {
-            if std::fs::remove_file(&episodes).is_ok() {
+        if let Ok(meta) = std::fs::metadata(&episodes)
+            && std::fs::remove_file(&episodes).is_ok() {
                 freed = freed.saturating_add(meta.len());
             }
-        }
 
         report.removed += 1;
         report.reclaimed_bytes = report.reclaimed_bytes.saturating_add(freed);

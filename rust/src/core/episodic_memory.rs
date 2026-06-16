@@ -226,11 +226,10 @@ impl EpisodicStore {
                     ep.tokens_used = cumulative.saturating_sub(prev_tokens);
                     prev_tokens = cumulative;
                 }
-                if ep.duration_secs == 0 {
-                    if let Some(p) = prev_ts {
+                if ep.duration_secs == 0
+                    && let Some(p) = prev_ts {
                         ep.duration_secs = (ts - p).num_seconds().max(0) as u64;
                     }
-                }
                 prev_ts = Some(ts);
             }
         }

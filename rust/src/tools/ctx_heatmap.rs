@@ -45,13 +45,11 @@ fn collect_project_files(path: Option<&str>) -> Vec<String> {
                 && name != ".git"
         });
     for entry in walker.flatten() {
-        if entry.file_type().is_file() {
-            if let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
-                if is_source_ext(ext) {
+        if entry.file_type().is_file()
+            && let Some(ext) = entry.path().extension().and_then(|e| e.to_str())
+                && is_source_ext(ext) {
                     files.push(entry.path().to_string_lossy().to_string());
                 }
-            }
-        }
     }
     files
 }

@@ -91,22 +91,19 @@ impl McpTool for CtxPreloadTool {
         if let Some(ref session_lock) = ctx.session {
             if let Some(mut session_guard) =
                 crate::server::bounded_lock::write(session_lock, "ctx_preload:session_write")
-            {
-                if session_guard.active_structured_intent.is_none()
+                && (session_guard.active_structured_intent.is_none()
                     || session_guard
                         .active_structured_intent
                         .as_ref()
-                        .is_none_or(|i| i.confidence < 0.6)
+                        .is_none_or(|i| i.confidence < 0.6))
                 {
                     session_guard.set_task(&task, Some("preload"));
                 }
-            }
 
             if let Some(session_guard) =
                 crate::server::bounded_lock::read(session_lock, "ctx_preload:session_read")
-            {
-                if let Some(ref intent) = session_guard.active_structured_intent {
-                    if let Some(ref ledger_lock) = ctx.ledger {
+                && let Some(ref intent) = session_guard.active_structured_intent
+                    && let Some(ref ledger_lock) = ctx.ledger {
                         let Some(ledger) =
                             crate::server::bounded_lock::read(ledger_lock, "ctx_preload:ledger")
                         else {
@@ -154,8 +151,6 @@ impl McpTool for CtxPreloadTool {
                             }
                         }
                     }
-                }
-            }
         }
 
         Ok(ToolOutput {

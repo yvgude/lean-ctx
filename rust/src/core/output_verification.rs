@@ -280,17 +280,15 @@ fn check_line_numbers(source: &str, compressed: &str) -> Vec<VerificationWarning
 
     if let Some(re_like) = re_like {
         for cap in re_like.captures_iter(compressed) {
-            if let Some(m) = cap.get(1) {
-                if let Ok(n) = m.as_str().parse::<usize>() {
-                    if n > source_max && n < 999_999 {
+            if let Some(m) = cap.get(1)
+                && let Ok(n) = m.as_str().parse::<usize>()
+                    && n > source_max && n < 999_999 {
                         warnings.push(VerificationWarning {
                             kind: WarningKind::LineNumberDrift,
                             detail: format!("Line {n} exceeds source max {source_max}"),
                             severity: WarningSeverity::Low,
                         });
                     }
-                }
-            }
         }
     }
 

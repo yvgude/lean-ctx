@@ -260,12 +260,10 @@ pub fn init_from_config(categories: &[String]) {
     if GLOBAL
         .set(Mutex::new(DynamicToolState::from_config(categories)))
         .is_err()
-    {
-        if let Ok(mut state) = global().lock() {
+        && let Ok(mut state) = global().lock() {
             let desired = DynamicToolState::from_config(categories);
             *state = desired;
         }
-    }
 }
 
 #[cfg(test)]

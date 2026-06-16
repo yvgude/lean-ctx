@@ -79,8 +79,8 @@ fn extract_imports_gd(root: Node, src: &str) -> Vec<ImportInfo> {
 
     let mut cursor = root.walk();
     for node in root.children(&mut cursor) {
-        if node.kind() == "extends_statement" {
-            if let Some(s) = find_descendant_by_kind(node, "string") {
+        if node.kind() == "extends_statement"
+            && let Some(s) = find_descendant_by_kind(node, "string") {
                 let source_text = unquote(node_text(s, src));
                 if !source_text.is_empty() {
                     imports.push(ImportInfo {
@@ -92,7 +92,6 @@ fn extract_imports_gd(root: Node, src: &str) -> Vec<ImportInfo> {
                     });
                 }
             }
-        }
     }
 
     crate::core::ast_walk::for_each_descendant(root, |node| {
@@ -103,12 +102,12 @@ fn extract_imports_gd(root: Node, src: &str) -> Vec<ImportInfo> {
 
 #[cfg(feature = "tree-sitter")]
 fn collect_gd_preload(node: Node, src: &str, imports: &mut Vec<ImportInfo>) {
-    if node.kind() == "call" {
-        if let Some(callee) = find_child_by_kind(node, "identifier") {
+    if node.kind() == "call"
+        && let Some(callee) = find_child_by_kind(node, "identifier") {
             let name = node_text(callee, src);
-            if name == "preload" || name == "load" {
-                if let Some(args) = find_child_by_kind(node, "arguments") {
-                    if let Some(s) = find_descendant_by_kind(args, "string") {
+            if (name == "preload" || name == "load")
+                && let Some(args) = find_child_by_kind(node, "arguments")
+                    && let Some(s) = find_descendant_by_kind(args, "string") {
                         let source_text = unquote(node_text(s, src));
                         if !source_text.is_empty() {
                             imports.push(ImportInfo {
@@ -120,10 +119,7 @@ fn collect_gd_preload(node: Node, src: &str, imports: &mut Vec<ImportInfo>) {
                             });
                         }
                     }
-                }
-            }
         }
-    }
 }
 
 #[cfg(feature = "tree-sitter")]
@@ -132,8 +128,8 @@ fn extract_imports_c_like(root: Node, src: &str) -> Vec<ImportInfo> {
     let mut cursor = root.walk();
 
     for node in root.children(&mut cursor) {
-        if node.kind() == "preproc_include" {
-            if let Some(s) = find_descendant_by_kind(node, "string_literal")
+        if node.kind() == "preproc_include"
+            && let Some(s) = find_descendant_by_kind(node, "string_literal")
                 .or_else(|| find_descendant_by_kind(node, "system_lib_string"))
             {
                 let raw = node_text(s, src);
@@ -154,7 +150,6 @@ fn extract_imports_c_like(root: Node, src: &str) -> Vec<ImportInfo> {
                     });
                 }
             }
-        }
     }
     imports
 }
@@ -165,8 +160,8 @@ fn extract_imports_ruby(root: Node, src: &str) -> Vec<ImportInfo> {
     let mut cursor = root.walk();
     for node in root.children(&mut cursor) {
         let text = node_text(node, src).trim_start().to_string();
-        if text.starts_with("require ") || text.starts_with("require_relative ") {
-            if let Some(s) = find_descendant_by_kind(node, "string") {
+        if (text.starts_with("require ") || text.starts_with("require_relative "))
+            && let Some(s) = find_descendant_by_kind(node, "string") {
                 let source_text = unquote(node_text(s, src));
                 if !source_text.is_empty() {
                     imports.push(ImportInfo {
@@ -178,7 +173,6 @@ fn extract_imports_ruby(root: Node, src: &str) -> Vec<ImportInfo> {
                     });
                 }
             }
-        }
     }
     imports
 }
@@ -196,11 +190,10 @@ fn extract_imports_csharp(root: Node, src: &str) -> Vec<ImportInfo> {
 
 #[cfg(feature = "tree-sitter")]
 fn collect_csharp_using(node: Node, src: &str, imports: &mut Vec<ImportInfo>) {
-    if node.kind() == "using_directive" {
-        if let Some(info) = parse_csharp_using(node, src) {
+    if node.kind() == "using_directive"
+        && let Some(info) = parse_csharp_using(node, src) {
             imports.push(info);
         }
-    }
 }
 
 /// Normalize a `using_directive` to the imported namespace, handling every form:
@@ -318,8 +311,8 @@ fn extract_imports_php(root: Node, src: &str) -> Vec<ImportInfo> {
     let mut cursor = root.walk();
     for node in root.children(&mut cursor) {
         let kind = node.kind();
-        if kind.contains("include") || kind.contains("require") {
-            if let Some(s) = find_descendant_by_kind(node, "string") {
+        if (kind.contains("include") || kind.contains("require"))
+            && let Some(s) = find_descendant_by_kind(node, "string") {
                 let source_text = unquote(node_text(s, src));
                 if !source_text.is_empty() {
                     imports.push(ImportInfo {
@@ -331,7 +324,6 @@ fn extract_imports_php(root: Node, src: &str) -> Vec<ImportInfo> {
                     });
                 }
             }
-        }
     }
     imports
 }
@@ -368,8 +360,8 @@ fn extract_imports_dart(root: Node, src: &str) -> Vec<ImportInfo> {
     let mut imports = Vec::new();
     let mut cursor = root.walk();
     for node in root.children(&mut cursor) {
-        if node.kind() == "import_or_export" || node.kind() == "library_import" {
-            if let Some(s) = find_descendant_by_kind(node, "string_literal")
+        if (node.kind() == "import_or_export" || node.kind() == "library_import")
+            && let Some(s) = find_descendant_by_kind(node, "string_literal")
                 .or_else(|| find_descendant_by_kind(node, "string"))
             {
                 let source_text = unquote(node_text(s, src));
@@ -383,7 +375,6 @@ fn extract_imports_dart(root: Node, src: &str) -> Vec<ImportInfo> {
                     });
                 }
             }
-        }
     }
     imports
 }
@@ -452,8 +443,8 @@ fn extract_imports_zig(root: Node, src: &str) -> Vec<ImportInfo> {
     let mut cursor = root.walk();
     for node in root.children(&mut cursor) {
         let text = node_text(node, src);
-        if text.contains("@import") {
-            if let Some(s) = find_descendant_by_kind(node, "string_literal")
+        if text.contains("@import")
+            && let Some(s) = find_descendant_by_kind(node, "string_literal")
                 .or_else(|| find_descendant_by_kind(node, "string"))
             {
                 let source_text = unquote(node_text(s, src));
@@ -467,7 +458,6 @@ fn extract_imports_zig(root: Node, src: &str) -> Vec<ImportInfo> {
                     });
                 }
             }
-        }
     }
     imports
 }
@@ -581,9 +571,9 @@ fn classify_ts_import_clause(clause: Node, src: &str) -> (ImportKind, Vec<String
 fn collect_dynamic_import(node: Node, src: &str, imports: &mut Vec<ImportInfo>) {
     if node.kind() == "call_expression" {
         let callee = find_child_by_kind(node, "import");
-        if callee.is_some() {
-            if let Some(args) = find_child_by_kind(node, "arguments") {
-                if let Some(first_arg) = find_child_by_kind(args, "string") {
+        if callee.is_some()
+            && let Some(args) = find_child_by_kind(node, "arguments")
+                && let Some(first_arg) = find_child_by_kind(args, "string") {
                     imports.push(ImportInfo {
                         source: unquote(node_text(first_arg, src)),
                         names: Vec::new(),
@@ -592,14 +582,12 @@ fn collect_dynamic_import(node: Node, src: &str, imports: &mut Vec<ImportInfo>) 
                         is_type_only: false,
                     });
                 }
-            }
-        }
 
         // CommonJS require("...") / require.resolve("...")
-        if let Some(func_node) = find_child_by_kind(node, "identifier") {
-            if node_text(func_node, src) == "require" {
-                if let Some(args) = find_child_by_kind(node, "arguments") {
-                    if let Some(first_arg) = find_child_by_kind(args, "string") {
+        if let Some(func_node) = find_child_by_kind(node, "identifier")
+            && node_text(func_node, src) == "require"
+                && let Some(args) = find_child_by_kind(node, "arguments")
+                    && let Some(first_arg) = find_child_by_kind(args, "string") {
                         imports.push(ImportInfo {
                             source: unquote(node_text(first_arg, src)),
                             names: Vec::new(),
@@ -608,14 +596,11 @@ fn collect_dynamic_import(node: Node, src: &str, imports: &mut Vec<ImportInfo>) 
                             is_type_only: false,
                         });
                     }
-                }
-            }
-        }
         if let Some(member) = find_child_by_kind(node, "member_expression") {
             let text = node_text(member, src);
-            if text.starts_with("require.resolve") {
-                if let Some(args) = find_child_by_kind(node, "arguments") {
-                    if let Some(first_arg) = find_child_by_kind(args, "string") {
+            if text.starts_with("require.resolve")
+                && let Some(args) = find_child_by_kind(node, "arguments")
+                    && let Some(first_arg) = find_child_by_kind(args, "string") {
                         imports.push(ImportInfo {
                             source: unquote(node_text(first_arg, src)),
                             names: Vec::new(),
@@ -624,8 +609,6 @@ fn collect_dynamic_import(node: Node, src: &str, imports: &mut Vec<ImportInfo>) 
                             is_type_only: false,
                         });
                     }
-                }
-            }
         }
     }
 }
@@ -638,8 +621,8 @@ fn extract_imports_rust(root: Node, src: &str) -> Vec<ImportInfo> {
     for node in root.children(&mut cursor) {
         if node.kind() == "mod_item" {
             let text = node_text(node, src);
-            if !text.contains('{') {
-                if let Some(name_node) = find_child_by_kind(node, "identifier") {
+            if !text.contains('{')
+                && let Some(name_node) = find_child_by_kind(node, "identifier") {
                     let mod_name = node_text(name_node, src).to_string();
                     imports.push(ImportInfo {
                         source: mod_name.clone(),
@@ -649,7 +632,6 @@ fn extract_imports_rust(root: Node, src: &str) -> Vec<ImportInfo> {
                         is_type_only: false,
                     });
                 }
-            }
         } else if node.kind() == "use_declaration" {
             let is_pub = node_text(node, src).trim_start().starts_with("pub");
             let kind = if is_pub {
@@ -759,13 +741,12 @@ fn extract_imports_python(root: Node, src: &str) -> Vec<ImportInfo> {
                         && child.start_position() != node.start_position()
                     {
                         names.push(node_text(child, src).to_string());
-                    } else if child.kind() == "aliased_import" {
-                        if let Some(n) = find_child_by_kind(child, "dotted_name")
+                    } else if child.kind() == "aliased_import"
+                        && let Some(n) = find_child_by_kind(child, "dotted_name")
                             .or_else(|| find_child_by_kind(child, "identifier"))
                         {
                             names.push(node_text(n, src).to_string());
                         }
-                    }
                 }
 
                 imports.push(ImportInfo {
@@ -822,8 +803,8 @@ fn extract_imports_go(root: Node, src: &str) -> Vec<ImportInfo> {
                     "import_spec_list" => {
                         let mut spec_cursor = child.walk();
                         for spec in child.children(&mut spec_cursor) {
-                            if spec.kind() == "import_spec" {
-                                if let Some(path_node) =
+                            if spec.kind() == "import_spec"
+                                && let Some(path_node) =
                                     find_child_by_kind(spec, "interpreted_string_literal")
                                 {
                                     let source = unquote(node_text(path_node, src));
@@ -843,7 +824,6 @@ fn extract_imports_go(root: Node, src: &str) -> Vec<ImportInfo> {
                                         is_type_only: false,
                                     });
                                 }
-                            }
                         }
                     }
                     "interpreted_string_literal" => {
@@ -916,11 +896,10 @@ fn collect_named_imports(node: Node, src: &str) -> Vec<String> {
     if let Some(named) = find_descendant_by_kind(node, "named_imports") {
         let mut cursor = named.walk();
         for child in named.children(&mut cursor) {
-            if child.kind() == "import_specifier" || child.kind() == "export_specifier" {
-                if let Some(id) = find_child_by_kind(child, "identifier") {
+            if (child.kind() == "import_specifier" || child.kind() == "export_specifier")
+                && let Some(id) = find_child_by_kind(child, "identifier") {
                     names.push(node_text(id, src).to_string());
                 }
-            }
         }
     }
     names

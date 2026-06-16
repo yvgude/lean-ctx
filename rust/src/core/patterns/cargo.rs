@@ -118,8 +118,8 @@ fn compress_test(output: &str) -> String {
             let name = line.split_whitespace().nth(1).unwrap_or("?");
             failed_tests.push(name.to_string());
         }
-        if line.starts_with("test ") && line.ends_with(" ... ok") {
-            if let Some(name) = line
+        if line.starts_with("test ") && line.ends_with(" ... ok")
+            && let Some(name) = line
                 .strip_prefix("test ")
                 .and_then(|s| s.strip_suffix(" ... ok"))
             {
@@ -130,7 +130,6 @@ fn compress_test(output: &str) -> String {
                 };
                 passed_tests.push(short_name.to_string());
             }
-        }
         if let Some(caps) = finished_re().captures(line) {
             time = caps[1].to_string();
         }
@@ -528,8 +527,8 @@ fn compress_metadata(output: &str) -> String {
         }
     }
 
-    if let Some(resolve) = json.get("resolve") {
-        if let Some(nodes) = resolve.get("nodes").and_then(|v| v.as_array()) {
+    if let Some(resolve) = json.get("resolve")
+        && let Some(nodes) = resolve.get("nodes").and_then(|v| v.as_array()) {
             let total_deps: usize = nodes
                 .iter()
                 .map(|n| {
@@ -544,7 +543,6 @@ fn compress_metadata(output: &str) -> String {
                 total_deps
             ));
         }
-    }
 
     if parts.is_empty() {
         "cargo metadata: ok (empty)".to_string()

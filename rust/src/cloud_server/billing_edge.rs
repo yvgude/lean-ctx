@@ -726,11 +726,10 @@ pub(super) struct AuditQuery {
 /// untrusted is ever spliced into the upstream URL.
 fn build_audit_query(q: &AuditQuery) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if let Some(b) = q.before {
-        if b > 0 {
+    if let Some(b) = q.before
+        && b > 0 {
             parts.push(format!("before={b}"));
         }
-    }
     if let Some(l) = q.limit {
         parts.push(format!("limit={}", l.clamp(1, 200)));
     }

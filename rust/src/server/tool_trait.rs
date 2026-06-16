@@ -234,8 +234,8 @@ pub fn require_resolved_path(
     if let Some(err) = ctx.path_error(key) {
         return Err(ErrorData::invalid_params(format!("{key}: {err}"), None));
     }
-    if let Some(val) = args.get(key) {
-        if !val.is_string() {
+    if let Some(val) = args.get(key)
+        && !val.is_string() {
             let type_name = match val {
                 Value::Number(_) => "number",
                 Value::Bool(_) => "boolean",
@@ -249,7 +249,6 @@ pub fn require_resolved_path(
                 None,
             ));
         }
-    }
     Err(ErrorData::invalid_params(
         format!("{key} is required"),
         None,

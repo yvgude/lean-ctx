@@ -101,11 +101,10 @@ pub fn handle_create(
     if requested_layers.contains(&"graph") {
         builder = builder.add_graph_from_project(project_root);
     }
-    if requested_layers.contains(&"session") {
-        if let Some(session) = crate::core::session::SessionState::load_latest() {
+    if requested_layers.contains(&"session")
+        && let Some(session) = crate::core::session::SessionState::load_latest() {
             builder = builder.add_session(&session);
         }
-    }
     if requested_layers.contains(&"gotchas") {
         builder = builder.add_gotchas_from_project(project_root);
     }

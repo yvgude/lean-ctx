@@ -100,8 +100,8 @@ fn compress_content_field(
         Value::Array(arr) => {
             let mut modified = false;
             for item in arr.iter_mut() {
-                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                    if let Some(text) = item
+                if item.get("type").and_then(|t| t.as_str()) == Some("text")
+                    && let Some(text) = item
                         .get_mut("text")
                         .and_then(|t| t.as_str().map(String::from))
                     {
@@ -114,7 +114,6 @@ fn compress_content_field(
                             modified = true;
                         }
                     }
-                }
             }
             modified
         }

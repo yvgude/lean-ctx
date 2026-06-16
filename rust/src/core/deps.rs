@@ -125,11 +125,10 @@ fn extract_ts_deps(content: &str) -> DepInfo {
             }
         }
 
-        if trimmed.starts_with("export ") {
-            if let Some(name) = extract_export_name(trimmed) {
+        if trimmed.starts_with("export ")
+            && let Some(name) = extract_export_name(trimmed) {
                 exports.push(name);
             }
-        }
     }
 
     DepInfo {
@@ -160,15 +159,13 @@ fn extract_rust_deps(content: &str) -> DepInfo {
             {
                 exports.push(name.to_string());
             }
-        } else if trimmed.starts_with("pub struct ")
+        } else if (trimmed.starts_with("pub struct ")
             || trimmed.starts_with("pub enum ")
-            || trimmed.starts_with("pub trait ")
-        {
-            if let Some(name) = trimmed.split_whitespace().nth(2) {
+            || trimmed.starts_with("pub trait "))
+            && let Some(name) = trimmed.split_whitespace().nth(2) {
                 let clean = name.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
                 exports.push(clean.to_string());
             }
-        }
     }
 
     DepInfo {
@@ -184,8 +181,8 @@ fn extract_python_deps(content: &str) -> DepInfo {
     for line in content.lines() {
         let trimmed = line.trim();
 
-        if let Some(caps) = py_import_re().captures(trimmed) {
-            if let Some(m) = caps.get(1).or(caps.get(2)) {
+        if let Some(caps) = py_import_re().captures(trimmed)
+            && let Some(m) = caps.get(1).or(caps.get(2)) {
                 let module = m.as_str();
                 if !module.starts_with("os")
                     && !module.starts_with("sys")
@@ -194,7 +191,6 @@ fn extract_python_deps(content: &str) -> DepInfo {
                     imports.insert(module.to_string());
                 }
             }
-        }
 
         if trimmed.starts_with("def ") && !trimmed.contains('_') {
             if let Some(name) = trimmed
@@ -203,14 +199,13 @@ fn extract_python_deps(content: &str) -> DepInfo {
             {
                 exports.push(name.to_string());
             }
-        } else if trimmed.starts_with("class ") {
-            if let Some(name) = trimmed
+        } else if trimmed.starts_with("class ")
+            && let Some(name) = trimmed
                 .strip_prefix("class ")
                 .and_then(|s| s.split(['(', ':']).next())
             {
                 exports.push(name.to_string());
             }
-        }
     }
 
     DepInfo {

@@ -117,11 +117,10 @@ pub fn transcript_summary(text: &str, max_chars: usize) -> String {
         if cleaned.chars().count() < 8 {
             continue;
         }
-        if let Some(last) = kept.last() {
-            if jaccard(last, cleaned) > 0.8 {
+        if let Some(last) = kept.last()
+            && jaccard(last, cleaned) > 0.8 {
                 continue;
             }
-        }
         if total + cleaned.len() > max_chars && !kept.is_empty() {
             break;
         }

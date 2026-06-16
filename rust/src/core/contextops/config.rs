@@ -77,14 +77,13 @@ impl RulesConfig {
             if status.state == "up_to_date" || status.state == "outdated" {
                 let key = status.name.to_lowercase().replace(' ', "_");
                 let path = Path::new(&status.path);
-                if path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(path) {
+                if path.exists()
+                    && let Ok(content) = std::fs::read_to_string(path) {
                         let extra = extract_user_content(&content);
                         if !extra.is_empty() {
                             agent_rules.insert(key, AgentRules { extra });
                         }
                     }
-                }
             }
         }
 

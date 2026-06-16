@@ -128,17 +128,14 @@ impl CtxReadTool {
         let mut mode = if let Some(m) = explicit_mode_arg {
             m
         } else if profile.read.default_mode_effective() == "auto" {
-            match cache_lock.try_read() {
-                Ok(cache) => {
-                    crate::tools::ctx_smart_read::select_mode_with_task(&cache, path, task_ref)
-                }
-                _ => {
-                    tracing::debug!(
-                        "cache lock contested during auto-mode selection for {path}; \
-                     falling back to full"
-                    );
-                    "full".to_string()
-                }
+            if let Ok(cache) = cache_lock.try_read() {
+                crate::tools::ctx_smart_read::select_mode_with_task(&cache, path, task_ref)
+            } else {
+                tracing::debug!(
+                    "cache lock contested during auto-mode selection for {path}; \
+                 falling back to full"
+                );
+                "full".to_string()
             }
         } else {
             profile.read.default_mode_effective().to_string()
@@ -201,8 +198,8 @@ impl CtxReadTool {
         }
         {
             let cap = crate::core::limits::max_read_bytes() as u64;
-            if let Ok(meta) = std::fs::metadata(path) {
-                if meta.len() > cap {
+            if let Ok(meta) = std::fs::metadata(path)
+                && meta.len() > cap {
                     let msg = format!(
                         "File too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
                          Use mode=\"lines:1-100\" for partial reads or increase the limit.",
@@ -211,18 +208,15 @@ impl CtxReadTool {
                     );
                     return Err(ErrorData::invalid_params(msg, None));
                 }
-            }
         }
 
         // Compaction-aware: if host compacted since last check, reset delivery flags
         // so post-compaction reads deliver full content instead of stubs.
-        if !fresh {
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                if let Ok(mut cache) = cache_lock.try_write() {
+        if !fresh
+            && let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir()
+                && let Ok(mut cache) = cache_lock.try_write() {
                     crate::server::compaction_sync::sync_if_compacted(&mut cache, &data_dir);
                 }
-            }
-        }
 
         // Fast path: if both per-file lock and cache write-lock are immediately
         // available, execute inline without spawning a thread. This avoids thread +
@@ -243,9 +237,9 @@ impl CtxReadTool {
                 // unchanged file in full mode. Serve that stub under a *read*
                 // lock so parallel reads of distinct files run concurrently
                 // instead of serializing on the global write lock.
-                if !fresh && mode == "full" {
-                    if let Ok(cache) = cache_lock.try_read() {
-                        if let Some(read_output) =
+                if !fresh && mode == "full"
+                    && let Ok(cache) = cache_lock.try_read()
+                        && let Some(read_output) =
                             crate::tools::ctx_read::try_stub_hit_readonly(&cache, path)
                         {
                             let content = read_output.content;
@@ -259,8 +253,6 @@ impl CtxReadTool {
                             let stats_snapshot = (stats.total_reads(), stats.cache_hits());
                             break 'fast Some((content, rmode, orig, hit, fref, stats_snapshot));
                         }
-                    }
-                }
 
                 // Phase 2 (write lock): cache miss, changed file, or non-stub
                 // modes (map/signatures/diff/lines) that mutate cache state.
@@ -458,12 +450,11 @@ impl CtxReadTool {
                     .project_root
                     .as_deref()
                     .is_none_or(|r| r.trim().is_empty());
-                if root_missing {
-                    if let Some(root) = crate::core::protocol::detect_project_root(path) {
+                if root_missing
+                    && let Some(root) = crate::core::protocol::detect_project_root(path) {
                         session.project_root = Some(root.clone());
                         ensured_root = Some(root);
                     }
-                }
                 project_root_snapshot = session
                     .project_root
                     .clone()

@@ -105,11 +105,10 @@ pub(crate) fn unregister_gemini_context_filename(home: &std::path::Path) {
     }
     if arr.len() == 1 && arr[0].as_str() == Some("GEMINI.md") {
         context.remove("fileName");
-        if context.is_empty() {
-            if let Some(obj) = json.as_object_mut() {
+        if context.is_empty()
+            && let Some(obj) = json.as_object_mut() {
                 obj.remove("context");
             }
-        }
     }
     if let Ok(formatted) = serde_json::to_string_pretty(&json) {
         write_file(&gemini_settings_path(home), &formatted);
@@ -206,15 +205,14 @@ pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
             &settings_path,
             &serde_json::to_string_pretty(&hook_config).unwrap_or_default(),
         );
-    } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content) {
-        if let Some(obj) = existing.as_object_mut() {
+    } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content)
+        && let Some(obj) = existing.as_object_mut() {
             obj.insert("hooks".to_string(), hook_config["hooks"].clone());
             write_file(
                 &settings_path,
                 &serde_json::to_string_pretty(&existing).unwrap_or_default(),
             );
         }
-    }
     if !mcp_server_quiet_mode() {
         eprintln!(
             "Installed Gemini CLI hooks at {}",

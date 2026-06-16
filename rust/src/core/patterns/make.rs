@@ -92,11 +92,10 @@ fn compress_make_output(output: &str) -> String {
         }
     }
 
-    if let Some(ref last) = last_significant {
-        if !kept_non_warning.iter().any(|k| k == last) {
+    if let Some(ref last) = last_significant
+        && !kept_non_warning.iter().any(|k| k == last) {
             kept_non_warning.push(format!("result: {last}"));
         }
-    }
 
     let mut sections: Vec<String> = Vec::new();
 

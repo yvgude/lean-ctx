@@ -53,14 +53,13 @@ pub fn init_with_project_root(project_root: Option<&Path>) {
 
     // --- MCP Bridge providers (user-defined external MCP servers) ---
     for (name, entry) in &cfg.providers.mcp_bridges {
-        if let Some(url) = &entry.url {
-            if !url.is_empty() {
+        if let Some(url) = &entry.url
+            && !url.is_empty() {
                 registry.register(Arc::new(McpBridgeProvider::new(name, url)));
                 continue;
             }
-        }
-        if let Some(command) = &entry.command {
-            if !command.is_empty() {
+        if let Some(command) = &entry.command
+            && !command.is_empty() {
                 registry.register(Arc::new(McpBridgeProvider::new_stdio(
                     name,
                     command,
@@ -68,7 +67,6 @@ pub fn init_with_project_root(project_root: Option<&Path>) {
                 )));
                 continue;
             }
-        }
         tracing::warn!("[providers] MCP bridge '{name}' has neither url nor command — skipping");
     }
 

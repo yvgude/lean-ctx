@@ -82,17 +82,15 @@ fn is_project_root_marker(dir: &Path) -> bool {
 /// Checks LEAN_CTX_PROJECT_ROOT env var and config.toml `project_root` first.
 /// Logs a warning when the fallback is a broad directory (home, root).
 pub fn detect_project_root_or_cwd(file_path: &str) -> String {
-    if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT") {
-        if !env_root.is_empty() {
+    if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
+        && !env_root.is_empty() {
             return env_root;
         }
-    }
     let cfg = crate::core::config::Config::load();
-    if let Some(ref cfg_root) = cfg.project_root {
-        if !cfg_root.is_empty() {
+    if let Some(ref cfg_root) = cfg.project_root
+        && !cfg_root.is_empty() {
             return cfg_root.clone();
         }
-    }
     if let Some(ide_root) = resolve_ide_path(&cfg, file_path) {
         return ide_root;
     }
@@ -194,13 +192,11 @@ pub fn shorten_path_relative(path: &str, root: &str) -> String {
     let norm_path = display_path(path);
     let norm_root = display_path(root);
     let norm_root = norm_root.strip_suffix('/').unwrap_or(&norm_root);
-    if let Some(rest) = norm_path.strip_prefix(norm_root) {
-        if let Some(rel) = rest.strip_prefix('/') {
-            if !rel.is_empty() {
+    if let Some(rest) = norm_path.strip_prefix(norm_root)
+        && let Some(rel) = rest.strip_prefix('/')
+            && !rel.is_empty() {
                 return rel.to_string();
             }
-        }
-    }
     shorten_path(&norm_path)
 }
 

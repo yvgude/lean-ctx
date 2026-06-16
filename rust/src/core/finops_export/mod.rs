@@ -51,16 +51,14 @@ pub struct DateRange {
 
 impl DateRange {
     fn contains(&self, date: &str) -> bool {
-        if let Some(f) = &self.from {
-            if date < f.as_str() {
+        if let Some(f) = &self.from
+            && date < f.as_str() {
                 return false;
             }
-        }
-        if let Some(t) = &self.to {
-            if date > t.as_str() {
+        if let Some(t) = &self.to
+            && date > t.as_str() {
                 return false;
             }
-        }
         true
     }
 }

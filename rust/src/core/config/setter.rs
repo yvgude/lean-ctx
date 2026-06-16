@@ -67,14 +67,13 @@ fn parse_value(value: &str, schema: &KeySchema) -> Result<toml::Value, String> {
         }
         "string" | "string?" => Ok(toml::Value::String(value.to_string())),
         "enum" => {
-            if let Some(ref allowed) = schema.values {
-                if !allowed.iter().any(|v| v == value) {
+            if let Some(ref allowed) = schema.values
+                && !allowed.iter().any(|v| v == value) {
                     return Err(format!(
                         "Invalid value '{value}'. Allowed: {}",
                         allowed.join(", ")
                     ));
                 }
-            }
             Ok(toml::Value::String(value.to_string()))
         }
         "string[]" | "array" => {

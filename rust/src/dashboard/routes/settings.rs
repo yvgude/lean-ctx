@@ -236,11 +236,10 @@ fn tool_profile_value(cfg: &Config) -> &'static str {
     // A real pin (minimal/standard/power) takes precedence. Unpin aliases
     // (`lean`/`lazy`/`reset`) and unknown literals fail to parse and fall
     // through to the same default resolution `from_config` uses.
-    if let Some(name) = cfg.tool_profile.as_deref() {
-        if let Some(profile) = ToolProfile::parse(name) {
+    if let Some(name) = cfg.tool_profile.as_deref()
+        && let Some(profile) = ToolProfile::parse(name) {
             return tool_profile_canon(&profile);
         }
-    }
     if !cfg.tools_enabled.is_empty() {
         return "custom";
     }

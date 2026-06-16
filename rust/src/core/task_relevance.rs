@@ -185,8 +185,8 @@ pub fn compute_relevance_from_intent(
             "java" => Some("java"),
             _ => None,
         };
-        if let Some(ext) = lang_ext {
-            if file_seeds.is_empty() {
+        if let Some(ext) = lang_ext
+            && file_seeds.is_empty() {
                 for path in &file_paths {
                     if path.ends_with(&format!(".{ext}")) {
                         extra_keywords.push(
@@ -200,7 +200,6 @@ pub fn compute_relevance_from_intent(
                     }
                 }
             }
-        }
     }
 
     let mut result = compute_relevance(gp, &file_seeds, &extra_keywords);
@@ -237,8 +236,8 @@ fn resolve_symbol_to_files(gp: &GraphProvider, symbol: &str) -> Vec<String> {
     if matches.is_empty() {
         let sym_lower = symbol.to_lowercase();
         for path in gp.file_paths() {
-            if let Some(entry) = gp.get_file_entry(&path) {
-                if entry
+            if let Some(entry) = gp.get_file_entry(&path)
+                && entry
                     .exports
                     .iter()
                     .any(|e| e.to_lowercase().contains(&sym_lower))
@@ -246,7 +245,6 @@ fn resolve_symbol_to_files(gp: &GraphProvider, symbol: &str) -> Vec<String> {
                 {
                     matches.push(path);
                 }
-            }
         }
     }
     matches

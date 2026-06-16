@@ -219,16 +219,14 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
     if pack.description.trim().is_empty() {
         return Err(PolicyError::EmptyDescription);
     }
-    if let Some(mode) = pack.context.default_read_mode.as_deref() {
-        if !KNOWN_READ_MODES.contains(&mode) {
+    if let Some(mode) = pack.context.default_read_mode.as_deref()
+        && !KNOWN_READ_MODES.contains(&mode) {
             return Err(PolicyError::UnknownReadMode(mode.to_string()));
         }
-    }
-    if let Some(max) = pack.context.max_context_tokens {
-        if max == 0 {
+    if let Some(max) = pack.context.max_context_tokens
+        && max == 0 {
             return Err(PolicyError::ZeroMaxTokens);
         }
-    }
     if let Some(allow) = &pack.context.allow_tools {
         let deny: BTreeSet<&str> = pack.context.deny_tools.iter().map(String::as_str).collect();
         let overlap: Vec<String> = allow

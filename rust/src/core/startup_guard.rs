@@ -41,22 +41,18 @@ impl StartupLockGuard {
 /// If the owner is alive, or the lock predates PID tracking (legacy 0-byte
 /// file), we fall back to the long-standing mtime staleness safety valve.
 fn lock_is_reclaimable(path: &std::path::Path, stale_after: Duration) -> bool {
-    if let Ok(content) = std::fs::read_to_string(path) {
-        if let Some(pid) = content
+    if let Ok(content) = std::fs::read_to_string(path)
+        && let Some(pid) = content
             .lines()
             .next()
             .and_then(|l| l.trim().parse::<u32>().ok())
-        {
-            if !crate::ipc::process::is_alive(pid) {
+            && !crate::ipc::process::is_alive(pid) {
                 return true;
             }
-        }
-    }
-    if let Ok(meta) = std::fs::metadata(path) {
-        if let Ok(modified) = meta.modified() {
+    if let Ok(meta) = std::fs::metadata(path)
+        && let Ok(modified) = meta.modified() {
             return modified.elapsed().unwrap_or_default() > stale_after;
         }
-    }
     false
 }
 

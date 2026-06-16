@@ -81,12 +81,11 @@ pub fn cmd_init(args: &[String]) {
     let eval_shell = args
         .iter()
         .find(|a| matches!(a.as_str(), "bash" | "zsh" | "fish" | "powershell" | "pwsh"));
-    if let Some(shell) = eval_shell {
-        if !global {
+    if let Some(shell) = eval_shell
+        && !global {
             super::shell_init::print_hook_stdout(shell);
             return;
         }
-    }
 
     let shell_name = std::env::var("SHELL").unwrap_or_default();
     let is_zsh = shell_name.contains("zsh");
@@ -143,12 +142,11 @@ pub fn cmd_init(args: &[String]) {
         }
     }
 
-    if let Ok(lean_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-        if !lean_dir.exists() {
+    if let Ok(lean_dir) = crate::core::data_dir::lean_ctx_data_dir()
+        && !lean_dir.exists() {
             let _ = std::fs::create_dir_all(&lean_dir);
             qprintln!("Created {}", lean_dir.display());
         }
-    }
 
     let rc = if is_powershell {
         "$PROFILE"

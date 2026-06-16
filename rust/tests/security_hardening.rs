@@ -377,8 +377,16 @@ fn raw_shell_skips_all_postprocessing() {
             && src.contains("skip_terse"),
         "skip_terse must include is_raw_shell and double-compression guard"
     );
+    // verify_output must be gated by `!is_raw_shell`. Tolerate the edition-2024
+    // collapsed guard `if !is_raw_shell && ... verify_footer() { ... }`; rustfmt's
+    // single-line guard plus the intervening `let verify_cfg = …` line pushes the
+    // flag ~202 bytes ahead of the call, so the look-back window must clear 200.
+    let verify_pos = src
+        .find("verify_output")
+        .expect("verify_output call must exist");
+    let verify_guard = &src[verify_pos.saturating_sub(300)..verify_pos];
     assert!(
-        src.contains("if !is_raw_shell {") && src.contains("verify_output"),
+        verify_guard.contains("!is_raw_shell"),
         "output verification must be skipped for raw shell"
     );
     assert!(

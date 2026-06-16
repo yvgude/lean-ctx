@@ -56,11 +56,10 @@ fn store_path() -> std::path::PathBuf {
 
 impl EfficacyStore {
     fn load() -> Self {
-        if let Ok(content) = std::fs::read_to_string(store_path()) {
-            if let Ok(s) = serde_json::from_str::<EfficacyStore>(&content) {
+        if let Ok(content) = std::fs::read_to_string(store_path())
+            && let Ok(s) = serde_json::from_str::<EfficacyStore>(&content) {
                 return s;
             }
-        }
         EfficacyStore {
             schema_version: 1,
             ..Default::default()
@@ -200,8 +199,8 @@ pub fn report() -> Vec<String> {
     }
 
     let store = EfficacyStore::load();
-    if let (Some(first), Some(last)) = (store.snapshots.first(), store.snapshots.last()) {
-        if first.day != last.day {
+    if let (Some(first), Some(last)) = (store.snapshots.first(), store.snapshots.last())
+        && first.day != last.day {
             let hit_rate = |s: &EfficacySnapshot| {
                 let hits = u64::from(s.litm_begin_hits) + u64::from(s.litm_end_hits);
                 let total = hits + u64::from(s.litm_begin_misses) + u64::from(s.litm_end_misses);
@@ -228,9 +227,8 @@ pub fn report() -> Vec<String> {
                 ));
             }
         }
-    }
-    if let Some(last) = store.snapshots.last() {
-        if last.playbook_aged_total > 0 {
+    if let Some(last) = store.snapshots.last()
+        && last.playbook_aged_total > 0 {
             out.push(format!(
                 "playbook survival: {}/{} aged entries net-helpful ({})",
                 last.playbook_aged_helpful,
@@ -238,7 +236,6 @@ pub fn report() -> Vec<String> {
                 fmt_pct(last.playbook_aged_helpful as f64 / last.playbook_aged_total as f64)
             ));
         }
-    }
 
     out
 }

@@ -185,11 +185,10 @@ fn policy_for(client_id: &str, project_root: Option<&str>) -> IdePermissionPolic
     let key = format!("{client_id}|{}", project_root.unwrap_or(""));
     let cache = POLICY_CACHE.get_or_init(|| Mutex::new(None));
     let mut guard = cache.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(entry) = guard.as_ref() {
-        if entry.key == key && entry.at.elapsed() < CACHE_TTL {
+    if let Some(entry) = guard.as_ref()
+        && entry.key == key && entry.at.elapsed() < CACHE_TTL {
             return entry.policy.clone();
         }
-    }
     let policy = load_policy(client_id, project_root);
     *guard = Some(CacheEntry {
         key,

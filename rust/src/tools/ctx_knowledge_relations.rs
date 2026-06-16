@@ -47,8 +47,8 @@ fn derived_supersedes_edges(
 
     for f in knowledge.facts.iter().filter(|f| f.is_current()) {
         if f.category == focus.category && f.key == focus.key {
-            if let Some(s) = &f.supersedes {
-                if let Some(to) = parse_node_ref(s) {
+            if let Some(s) = &f.supersedes
+                && let Some(to) = parse_node_ref(s) {
                     if to == *focus {
                         continue;
                     }
@@ -64,7 +64,6 @@ fn derived_supersedes_edges(
                         decay_rate: 0.02,
                     });
                 }
-            }
         } else if f.supersedes.as_deref() == Some(&focus_id) {
             out.push(KnowledgeEdge {
                 from: KnowledgeNodeRef::new(&f.category, &f.key),

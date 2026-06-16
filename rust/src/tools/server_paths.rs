@@ -5,11 +5,10 @@ use super::startup::{
 
 impl LeanCtxServer {
     pub fn checkpoint_interval_effective() -> usize {
-        if let Ok(v) = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL") {
-            if let Ok(parsed) = v.trim().parse::<usize>() {
+        if let Ok(v) = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL")
+            && let Ok(parsed) = v.trim().parse::<usize>() {
                 return parsed;
             }
-        }
         let profile_interval = crate::core::profiles::active_profile()
             .autonomy
             .checkpoint_interval_effective();

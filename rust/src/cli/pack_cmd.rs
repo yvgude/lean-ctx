@@ -8,12 +8,11 @@ fn parse_pkg_ref(s: &str) -> (&str, Option<&str>) {
     if s.starts_with('@') {
         if let Some(slash_pos) = s.find('/') {
             let after_scope = &s[slash_pos..];
-            if let Some(at_pos) = after_scope.rfind('@') {
-                if at_pos > 0 {
+            if let Some(at_pos) = after_scope.rfind('@')
+                && at_pos > 0 {
                     let split = slash_pos + at_pos;
                     return (&s[..split], Some(&s[split + 1..]));
                 }
-            }
         }
         (s, None)
     } else if let Some(at_pos) = s.rfind('@') {
@@ -69,12 +68,11 @@ fn cmd_pack_pr(args: &[String], project_root: &str) {
             continue;
         }
         if a == "--base" {
-            if let Some(v) = it.peek() {
-                if !v.starts_with("--") {
+            if let Some(v) = it.peek()
+                && !v.starts_with("--") {
                     base = Some((*v).clone());
                     it.next();
                 }
-            }
             continue;
         }
         if let Some(v) = a.strip_prefix("--format=") {
@@ -82,12 +80,11 @@ fn cmd_pack_pr(args: &[String], project_root: &str) {
             continue;
         }
         if a == "--format" {
-            if let Some(v) = it.peek() {
-                if !v.starts_with("--") {
+            if let Some(v) = it.peek()
+                && !v.starts_with("--") {
                     format = Some((*v).clone());
                     it.next();
                 }
-            }
             continue;
         }
         if a == "--json" {
@@ -99,12 +96,11 @@ fn cmd_pack_pr(args: &[String], project_root: &str) {
             continue;
         }
         if a == "--depth" {
-            if let Some(v) = it.peek() {
-                if !v.starts_with("--") {
+            if let Some(v) = it.peek()
+                && !v.starts_with("--") {
                     depth = (*v).parse::<usize>().ok();
                     it.next();
                 }
-            }
             continue;
         }
         if a == "--diff-from-stdin" {
@@ -249,11 +245,10 @@ fn cmd_pack_create(args: &[String], project_root: &str) {
     if requested_layers.contains(&"graph") {
         builder = builder.add_graph_from_project(project_root);
     }
-    if requested_layers.contains(&"session") {
-        if let Some(session) = crate::core::session::SessionState::load_latest() {
+    if requested_layers.contains(&"session")
+        && let Some(session) = crate::core::session::SessionState::load_latest() {
             builder = builder.add_session(&session);
         }
-    }
     if requested_layers.contains(&"gotchas") {
         builder = builder.add_gotchas_from_project(project_root);
     }
@@ -1359,13 +1354,11 @@ fn parse_flag(args: &[String], flag: &str) -> Option<String> {
         if let Some(v) = a.strip_prefix(&prefix) {
             return Some(v.to_string());
         }
-        if a == flag {
-            if let Some(next) = iter.next() {
-                if !next.starts_with("--") {
+        if a == flag
+            && let Some(next) = iter.next()
+                && !next.starts_with("--") {
                     return Some(next.clone());
                 }
-            }
-        }
     }
     None
 }

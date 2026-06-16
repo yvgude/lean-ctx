@@ -28,11 +28,10 @@ const IDE_CONFIG_DIRS: &[&str] = &[
 pub fn expand_user_path(raw: &str) -> PathBuf {
     let mut s = raw.to_string();
 
-    if s == "~" || s.starts_with("~/") {
-        if let Some(home) = dirs::home_dir() {
+    if (s == "~" || s.starts_with("~/"))
+        && let Some(home) = dirs::home_dir() {
             s = format!("{}{}", home.to_string_lossy(), &s[1..]);
         }
-    }
 
     while let Some(start) = s.find('$') {
         let rest = &s[start + 1..];

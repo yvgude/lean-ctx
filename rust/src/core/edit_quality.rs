@@ -316,11 +316,10 @@ pub fn metrics_snapshot() -> serde_json::Value {
 }
 
 pub fn flush() {
-    if let Ok(store) = global().lock() {
-        if store.dirty {
+    if let Ok(store) = global().lock()
+        && store.dirty {
             let _ = store.save();
         }
-    }
 }
 
 fn maybe_flush(store: &mut EditQualityStore) {

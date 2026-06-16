@@ -294,8 +294,8 @@ WantedBy=default.target
     }
 
     // Hint about linger for headless/server use (needed for boot-time start without login)
-    if !quiet {
-        if let Ok(o) = std::process::Command::new("loginctl")
+    if !quiet
+        && let Ok(o) = std::process::Command::new("loginctl")
             .args(["show-user", &whoami(), "-p", "Linger", "--value"])
             .output()
         {
@@ -308,7 +308,6 @@ WantedBy=default.target
                 );
             }
         }
-    }
 }
 
 #[cfg(target_os = "linux")]

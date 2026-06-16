@@ -686,11 +686,10 @@ fn load_profile_recursive(name: &str, depth: usize) -> Option<Profile> {
     let mut profile = load_profile_from_disk(name).or_else(|| builtin_profiles().remove(name))?;
     profile.profile.name = name.to_string();
 
-    if let Some(ref parent_name) = profile.profile.inherits.clone() {
-        if let Some(parent) = load_profile_recursive(parent_name, depth + 1) {
+    if let Some(ref parent_name) = profile.profile.inherits.clone()
+        && let Some(parent) = load_profile_recursive(parent_name, depth + 1) {
             profile = merge_profiles(parent, profile);
         }
-    }
 
     Some(profile)
 }
@@ -1066,12 +1065,12 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
         (ProfileSource::Global, profiles_dir_global()),
         (ProfileSource::Project, profiles_dir_project()),
     ] {
-        if let Some(dir) = dir {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
+        if let Some(dir) = dir
+            && let Ok(entries) = std::fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) == Some("toml") {
-                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if path.extension().and_then(|e| e.to_str()) == Some("toml")
+                        && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                             let name = stem.to_string();
                             let desc = try_load_toml(&path)
                                 .map(|p| p.profile.description)
@@ -1085,10 +1084,8 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
                                 },
                             );
                         }
-                    }
                 }
             }
-        }
     }
 
     let mut result: Vec<ProfileInfo> = profiles.into_values().collect();

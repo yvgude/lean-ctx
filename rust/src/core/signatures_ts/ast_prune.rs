@@ -97,7 +97,8 @@ fn find_body_node<'a>(node: &Node<'a>) -> Option<Node<'a>> {
         return Some(block);
     }
     let mut cursor = node.walk();
-    let result = node.children(&mut cursor).find(|c| {
+    
+    node.children(&mut cursor).find(|c| {
         matches!(
             c.kind(),
             "block"
@@ -108,8 +109,7 @@ fn find_body_node<'a>(node: &Node<'a>) -> Option<Node<'a>> {
                 | "enum_body"
                 | "statement_block"
         )
-    });
-    result
+    })
 }
 
 fn is_import_line(trimmed: &str, ext: &str) -> bool {

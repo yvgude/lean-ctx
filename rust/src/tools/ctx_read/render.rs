@@ -165,8 +165,8 @@ pub(crate) fn process_mode(
             )
         }
         "map" => {
-            if ext == "php" {
-                if let Some(php_map) = crate::core::patterns::php::compress_php_map(content, short)
+            if ext == "php"
+                && let Some(php_map) = crate::core::patterns::php::compress_php_map(content, short)
                 {
                     let output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
                         format!("{file_ref}={short} {line_count}L\n{php_map}")
@@ -177,7 +177,6 @@ pub(crate) fn process_mode(
                     let output = protocol::append_savings(&output, original_tokens, sent);
                     return (append_compressed_hint(&output, file_path), sent);
                 }
-            }
 
             let structured = match ext {
                 "md" | "mdx" | "rst" => {
@@ -331,11 +330,10 @@ pub(crate) fn process_mode(
                 .filter(|kws| !kws.is_empty())
                 .or_else(|| {
                     let session = crate::core::session::SessionState::load_latest()?;
-                    if let Some(intent) = session.active_structured_intent {
-                        if !intent.keywords.is_empty() {
+                    if let Some(intent) = session.active_structured_intent
+                        && !intent.keywords.is_empty() {
                             return Some(intent.keywords);
                         }
-                    }
                     let q = session.last_semantic_query?;
                     let kws = crate::core::task_relevance::parse_task_hints(&q).1;
                     (!kws.is_empty()).then_some(kws)
@@ -570,11 +568,10 @@ pub(crate) fn extract_line_range(content: &str, range_str: &str) -> String {
                     selected.push(format!("{i:>4}| {}", lines[i - 1]));
                 }
             }
-        } else if let Ok(n) = part.parse::<usize>() {
-            if n >= 1 && n <= total {
+        } else if let Ok(n) = part.parse::<usize>()
+            && n >= 1 && n <= total {
                 selected.push(format!("{n:>4}| {}", lines[n - 1]));
             }
-        }
     }
 
     if selected.is_empty() {

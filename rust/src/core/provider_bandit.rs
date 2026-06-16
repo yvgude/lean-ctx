@@ -127,11 +127,10 @@ impl ProviderBandit {
     /// model that genuinely learns which providers pay off for which task types.
     pub fn load(project_root: &str) -> Self {
         let path = provider_bandit_path(project_root);
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(bandit) = serde_json::from_str::<ProviderBandit>(&content) {
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(bandit) = serde_json::from_str::<ProviderBandit>(&content) {
                 return bandit;
             }
-        }
         Self::new()
     }
 

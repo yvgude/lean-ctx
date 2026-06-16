@@ -247,11 +247,10 @@ fn unwrap_mcp_tool_text(body: &str) -> Option<String> {
     if let Some(content) = result.get("content").and_then(|c| c.as_array()) {
         let mut texts: Vec<String> = Vec::new();
         for item in content {
-            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                if !text.is_empty() {
+            if let Some(text) = item.get("text").and_then(|t| t.as_str())
+                && !text.is_empty() {
                     texts.push(text.to_string());
                 }
-            }
         }
         if !texts.is_empty() {
             return Some(texts.join("\n"));

@@ -405,17 +405,15 @@ impl BM25Index {
             };
 
             let unchanged = prev.files.get(rel).is_some_and(|old| *old == state);
-            if unchanged {
-                if let Some(chunks) = old_by_file.get(rel) {
-                    if chunks.first().is_some_and(|c| !c.content.is_empty()) {
+            if unchanged
+                && let Some(chunks) = old_by_file.get(rel)
+                    && chunks.first().is_some_and(|c| !c.content.is_empty()) {
                         for chunk in chunks {
                             index.add_chunk(chunk.clone());
                         }
                         index.files.insert(rel.clone(), state);
                         continue;
                     }
-                }
-            }
 
             if state.size_bytes > MAX_FILE_SIZE_BYTES {
                 continue;

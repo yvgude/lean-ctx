@@ -6,8 +6,8 @@ use super::super::helpers::{clean_return_type, field_text, strip_parens};
 
 fn child_by_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
-    let found = node.children(&mut cursor).find(|c| c.kind() == kind);
-    found
+    
+    node.children(&mut cursor).find(|c| c.kind() == kind)
 }
 
 fn params_text(node: &Node, source: &[u8]) -> String {

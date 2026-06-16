@@ -22,9 +22,9 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
     let mut removed = false;
 
     // AGENTS.md: surgical marker-based removal (already correct)
-    if agents.exists() {
-        if let Ok(content) = fs::read_to_string(&agents) {
-            if content.contains(START) {
+    if agents.exists()
+        && let Ok(content) = fs::read_to_string(&agents)
+            && content.contains(START) {
                 let cleaned = remove_marked_block(&content, START, END);
                 if cleaned != content {
                     backup_before_modify(&agents, dry_run);
@@ -37,13 +37,11 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
                     }
                 }
             }
-        }
-    }
 
     // LEAN-CTX.md: only delete if we own it
-    if lean_ctx_md.exists() {
-        if let Ok(content) = fs::read_to_string(&lean_ctx_md) {
-            if content.contains(OWNED) {
+    if lean_ctx_md.exists()
+        && let Ok(content) = fs::read_to_string(&lean_ctx_md)
+            && content.contains(OWNED) {
                 if let Err(e) = safe_remove(&lean_ctx_md, dry_run) {
                     tracing::warn!("Failed to remove project LEAN-CTX.md: {e}");
                 } else {
@@ -52,8 +50,6 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
                     removed = true;
                 }
             }
-        }
-    }
 
     // Dedicated lean-ctx files in project: safe to delete entirely
     let dedicated_project_files = [
@@ -64,16 +60,14 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
     ];
     for rel in &dedicated_project_files {
         let path = cwd.join(rel);
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if content.contains("lean-ctx") {
+        if path.exists()
+            && let Ok(content) = fs::read_to_string(&path)
+                && content.contains("lean-ctx") {
                     let _ = safe_remove(&path, dry_run);
                     let verb = if dry_run { "Would remove" } else { "✓" };
                     println!("  {verb} Project: removed {rel}");
                     removed = true;
                 }
-            }
-        }
     }
 
     // Shared project files: surgically remove lean-ctx content, keep user content
@@ -131,9 +125,9 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
 
     // Project-level .claude/settings.local.json: surgically remove lean-ctx hooks
     let claude_settings = cwd.join(".claude/settings.local.json");
-    if claude_settings.exists() {
-        if let Ok(content) = fs::read_to_string(&claude_settings) {
-            if content.contains("lean-ctx") {
+    if claude_settings.exists()
+        && let Ok(content) = fs::read_to_string(&claude_settings)
+            && content.contains("lean-ctx") {
                 backup_before_modify(&claude_settings, dry_run);
                 removed |= apply_hook_cleanup(
                     &claude_settings,
@@ -142,14 +136,12 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
                     dry_run,
                 );
             }
-        }
-    }
 
     // Project-level .codebuddy/settings.local.json: surgically remove lean-ctx hooks
     let codebuddy_settings = cwd.join(".codebuddy/settings.local.json");
-    if codebuddy_settings.exists() {
-        if let Ok(content) = fs::read_to_string(&codebuddy_settings) {
-            if content.contains("lean-ctx") {
+    if codebuddy_settings.exists()
+        && let Ok(content) = fs::read_to_string(&codebuddy_settings)
+            && content.contains("lean-ctx") {
                 backup_before_modify(&codebuddy_settings, dry_run);
                 removed |= apply_hook_cleanup(
                     &codebuddy_settings,
@@ -158,8 +150,6 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
                     dry_run,
                 );
             }
-        }
-    }
 
     removed
 }
@@ -408,15 +398,13 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
             let mut cleaned = remove_lean_ctx_from_json(&content);
             // OpenClaw (GitHub #390): a leftover empty `mcpServers` object
             // still fails the strict 2026.6.1 validator — drop it entirely.
-            if *name == "OpenClaw" {
-                if let Some(ref c) = cleaned {
-                    if let Some(stripped) =
+            if *name == "OpenClaw"
+                && let Some(ref c) = cleaned
+                    && let Some(stripped) =
                         super::parsers::remove_empty_json_object_key(c, "mcpServers")
                     {
                         cleaned = Some(stripped);
                     }
-                }
-            }
             cleaned
         };
 
@@ -434,9 +422,9 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
 
     // Zed: uses `context_servers` key — handled by remove_lean_ctx_from_json
     let zed_path = crate::core::editor_registry::zed_settings_path(home);
-    if zed_path.exists() {
-        if let Ok(content) = fs::read_to_string(&zed_path) {
-            if content.contains("lean-ctx") {
+    if zed_path.exists()
+        && let Ok(content) = fs::read_to_string(&zed_path)
+            && content.contains("lean-ctx") {
                 backup_before_modify(&zed_path, dry_run);
                 if let Some(cleaned) = remove_lean_ctx_from_json(&content) {
                     if let Err(e) = safe_write(&zed_path, &cleaned, dry_run) {
@@ -448,14 +436,12 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
                     }
                 }
             }
-        }
-    }
 
     let vscode_path = crate::core::editor_registry::vscode_mcp_path();
-    if vscode_path.exists() {
-        if let Ok(content) = fs::read_to_string(&vscode_path) {
-            if content.contains("lean-ctx") {
-                if let Some(cleaned) = remove_lean_ctx_from_json(&content) {
+    if vscode_path.exists()
+        && let Ok(content) = fs::read_to_string(&vscode_path)
+            && content.contains("lean-ctx")
+                && let Some(cleaned) = remove_lean_ctx_from_json(&content) {
                     backup_before_modify(&vscode_path, dry_run);
                     if let Err(e) = safe_write(&vscode_path, &cleaned, dry_run) {
                         tracing::warn!("Failed to update VS Code config: {e}");
@@ -465,9 +451,6 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
                         removed = true;
                     }
                 }
-            }
-        }
-    }
 
     removed
 }
@@ -480,11 +463,11 @@ pub(super) fn remove_plan_mode_settings(_home: &Path, dry_run: bool) -> bool {
     let mut removed = false;
 
     // VS Code settings.json: remove lean-ctx plan tools from additionalTools array
-    if let Some(vscode_settings) = crate::core::editor_registry::plan_mode::vscode_settings_path() {
-        if vscode_settings.exists() {
-            if let Ok(content) = fs::read_to_string(&vscode_settings) {
-                if content.contains("lean-ctx") {
-                    if let Ok(mut parsed) = crate::core::jsonc::parse_jsonc(&content) {
+    if let Some(vscode_settings) = crate::core::editor_registry::plan_mode::vscode_settings_path()
+        && vscode_settings.exists()
+            && let Ok(content) = fs::read_to_string(&vscode_settings)
+                && content.contains("lean-ctx")
+                    && let Ok(mut parsed) = crate::core::jsonc::parse_jsonc(&content) {
                         let mut modified = false;
                         let key = "github.copilot.chat.planAgent.additionalTools";
                         if let Some(tools) = parsed.get_mut(key).and_then(|t| t.as_array_mut()) {
@@ -506,10 +489,6 @@ pub(super) fn remove_plan_mode_settings(_home: &Path, dry_run: bool) -> bool {
                             }
                         }
                     }
-                }
-            }
-        }
-    }
 
     // Claude Code: permissions.allow cleaned via hook cleanup (already handled there)
 
@@ -651,8 +630,8 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         if !path.exists() {
             continue;
         }
-        if let Ok(content) = fs::read_to_string(path) {
-            if content.contains("lean-ctx") {
+        if let Ok(content) = fs::read_to_string(path)
+            && content.contains("lean-ctx") {
                 if let Err(e) = safe_remove(path, dry_run) {
                     tracing::warn!("Failed to remove {name} rules: {e}");
                 } else {
@@ -661,7 +640,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
                     removed = true;
                 }
             }
-        }
     }
 
     // --- Shared: surgically remove lean-ctx section, keep user content ---
@@ -707,9 +685,9 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
 
     // --- Hermes Agent: block-based removal from shared HERMES.md ---
     let hermes_md = home.join(".hermes/HERMES.md");
-    if hermes_md.exists() {
-        if let Ok(content) = fs::read_to_string(&hermes_md) {
-            if content.contains("lean-ctx") {
+    if hermes_md.exists()
+        && let Ok(content) = fs::read_to_string(&hermes_md)
+            && content.contains("lean-ctx") {
                 let cleaned = remove_lean_ctx_block_from_md(&content);
                 backup_before_modify(&hermes_md, dry_run);
                 if cleaned.trim().is_empty() {
@@ -721,14 +699,12 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
                 println!("  {verb} Rules removed from Hermes Agent");
                 removed = true;
             }
-        }
-    }
 
     if let Ok(cwd) = std::env::current_dir() {
         let project_hermes = cwd.join(".hermes.md");
-        if project_hermes.exists() {
-            if let Ok(content) = fs::read_to_string(&project_hermes) {
-                if content.contains("lean-ctx") {
+        if project_hermes.exists()
+            && let Ok(content) = fs::read_to_string(&project_hermes)
+                && content.contains("lean-ctx") {
                     let cleaned = remove_lean_ctx_block_from_md(&content);
                     backup_before_modify(&project_hermes, dry_run);
                     if cleaned.trim().is_empty() {
@@ -740,8 +716,6 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
                     println!("  {verb} Rules removed from .hermes.md");
                     removed = true;
                 }
-            }
-        }
     }
 
     if !removed {
@@ -978,11 +952,10 @@ fn flat_entry_is_lean_ctx(entry: &serde_json::Value) -> bool {
         return false;
     };
     for key in ["command", "bash"] {
-        if let Some(serde_json::Value::String(s)) = obj.get(key) {
-            if str_is_lean_ctx(s) {
+        if let Some(serde_json::Value::String(s)) = obj.get(key)
+            && str_is_lean_ctx(s) {
                 return true;
             }
-        }
     }
     false
 }
@@ -1043,11 +1016,10 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
 
                 // Remove entries that are now empty nested groups
                 arr.retain(|entry| {
-                    if let Some(sub) = entry.get("hooks").and_then(|h| h.as_array()) {
-                        if sub.is_empty() {
+                    if let Some(sub) = entry.get("hooks").and_then(|h| h.as_array())
+                        && sub.is_empty() {
                             return false;
                         }
-                    }
                     true
                 });
 

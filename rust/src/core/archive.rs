@@ -57,20 +57,18 @@ pub fn is_enabled() -> bool {
 }
 
 fn threshold_chars() -> usize {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_THRESHOLD") {
-        if let Ok(n) = v.parse::<usize>() {
+    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_THRESHOLD")
+        && let Ok(n) = v.parse::<usize>() {
             return n;
         }
-    }
     super::config::Config::load().archive.threshold_chars
 }
 
 fn max_age_hours() -> u64 {
-    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_TTL") {
-        if let Ok(n) = v.parse::<u64>() {
+    if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE_TTL")
+        && let Ok(n) = v.parse::<u64>() {
             return n;
         }
-    }
     super::config::Config::load().archive_max_age_hours_effective()
 }
 
@@ -330,16 +328,14 @@ pub fn list_entries(session_id: Option<&str>) -> Vec<ArchiveEntry> {
                     if path.extension().and_then(|e| e.to_str()) != Some("json") {
                         continue;
                     }
-                    if let Ok(data) = std::fs::read_to_string(&path) {
-                        if let Ok(entry) = serde_json::from_str::<ArchiveEntry>(&data) {
-                            if let Some(sid) = session_id {
-                                if entry.session_id.as_deref() != Some(sid) {
+                    if let Ok(data) = std::fs::read_to_string(&path)
+                        && let Ok(entry) = serde_json::from_str::<ArchiveEntry>(&data) {
+                            if let Some(sid) = session_id
+                                && entry.session_id.as_deref() != Some(sid) {
                                     continue;
                                 }
-                            }
                             entries.push(entry);
                         }
-                    }
                 }
             }
         }

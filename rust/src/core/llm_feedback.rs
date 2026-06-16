@@ -54,11 +54,10 @@ impl LlmFeedbackStore {
         if event.llm_output_tokens == 0 {
             return Err("llm_output_tokens must be > 0".to_string());
         }
-        if let Some(n) = event.note.as_ref() {
-            if n.len() > 2000 {
+        if let Some(n) = event.note.as_ref()
+            && n.len() > 2000 {
                 event.note = Some(n.chars().take(2000).collect());
             }
-        }
 
         let path = feedback_path();
         ensure_parent_dir(&path)?;

@@ -109,16 +109,14 @@ pub fn is_container() -> bool {
         if std::path::Path::new("/.dockerenv").exists() {
             return true;
         }
-        if let Ok(cgroup) = std::fs::read_to_string("/proc/1/cgroup") {
-            if cgroup.contains("/docker/") || cgroup.contains("/lxc/") {
+        if let Ok(cgroup) = std::fs::read_to_string("/proc/1/cgroup")
+            && (cgroup.contains("/docker/") || cgroup.contains("/lxc/")) {
                 return true;
             }
-        }
-        if let Ok(mounts) = std::fs::read_to_string("/proc/self/mountinfo") {
-            if mounts.contains("/docker/containers/") {
+        if let Ok(mounts) = std::fs::read_to_string("/proc/self/mountinfo")
+            && mounts.contains("/docker/containers/") {
                 return true;
             }
-        }
         false
     }
     #[cfg(not(unix))]

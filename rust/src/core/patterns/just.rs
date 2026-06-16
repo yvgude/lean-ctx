@@ -120,11 +120,10 @@ fn compress_run(output: &str) -> String {
             "\n({dedup_count} repeated line groups suppressed)"
         ));
     }
-    if let Some(err) = last_error {
-        if !result.contains(&err) {
+    if let Some(err) = last_error
+        && !result.contains(&err) {
             result.push_str(&format!("\nlast error: {err}"));
         }
-    }
     result
 }
 

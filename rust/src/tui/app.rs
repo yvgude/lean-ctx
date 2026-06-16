@@ -247,9 +247,9 @@ pub fn run() -> anyhow::Result<()> {
         terminal.draw(|f| draw(f, &state))?;
 
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press {
                     if state.search_active {
                         match key.code {
                             KeyCode::Esc | KeyCode::Enter => state.search_active = false,
@@ -277,8 +277,6 @@ pub fn run() -> anyhow::Result<()> {
                         }
                     }
                 }
-            }
-        }
 
         if last_tick.elapsed() >= tick_rate {
             let new = tail.poll();

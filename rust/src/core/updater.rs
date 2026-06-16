@@ -913,8 +913,8 @@ fn detect_linux_libc() -> &'static str {
         for line in combined.lines() {
             if let Some(ver) = line.split_whitespace().last() {
                 let parts: Vec<&str> = ver.split('.').collect();
-                if parts.len() == 2 {
-                    if let (Ok(major), Ok(minor)) =
+                if parts.len() == 2
+                    && let (Ok(major), Ok(minor)) =
                         (parts[0].parse::<u32>(), parts[1].parse::<u32>())
                     {
                         if major > 2 || (major == 2 && minor >= 35) {
@@ -922,7 +922,6 @@ fn detect_linux_libc() -> &'static str {
                         }
                         return "musl";
                     }
-                }
             }
         }
     }

@@ -126,23 +126,19 @@ pub(crate) fn cli_track_tree(original_tokens: usize, output_tokens: usize) {
 pub(crate) fn detect_project_root(args: &[String]) -> String {
     let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
-        if let Some(v) = a.strip_prefix("--root=") {
-            if !v.trim().is_empty() {
+        if let Some(v) = a.strip_prefix("--root=")
+            && !v.trim().is_empty() {
                 return promote_to_git_root(v);
             }
-        }
-        if let Some(v) = a.strip_prefix("--project-root=") {
-            if !v.trim().is_empty() {
+        if let Some(v) = a.strip_prefix("--project-root=")
+            && !v.trim().is_empty() {
                 return promote_to_git_root(v);
             }
-        }
-        if a == "--root" || a == "--project-root" {
-            if let Some(v) = it.peek() {
-                if !v.starts_with("--") && !v.trim().is_empty() {
+        if (a == "--root" || a == "--project-root")
+            && let Some(v) = it.peek()
+                && !v.starts_with("--") && !v.trim().is_empty() {
                     return promote_to_git_root(v);
                 }
-            }
-        }
     }
     let cwd = std::env::current_dir()
         .ok()

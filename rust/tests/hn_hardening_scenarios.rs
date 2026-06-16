@@ -532,7 +532,7 @@ mod first_contact {
         let src = crate::server_dispatch_src();
         // Find the auto_context section
         let auto_ctx_pos = src
-            .find("if let Some(ctx) = auto_context")
+            .find("let Some(ctx) = auto_context")
             .expect("auto_context block must exist");
         let block = &src[auto_ctx_pos..auto_ctx_pos + 200];
 
@@ -547,7 +547,7 @@ mod first_contact {
     fn scenario_token_budget_enforced() {
         let src = crate::server_dispatch_src();
         let auto_ctx_pos = src
-            .find("if let Some(ctx) = auto_context")
+            .find("let Some(ctx) = auto_context")
             .expect("auto_context block must exist");
         let block = &src[auto_ctx_pos..auto_ctx_pos + 300];
 
@@ -561,8 +561,15 @@ mod first_contact {
     fn scenario_raw_shell_still_skips_auto_context() {
         let src = crate::server_dispatch_src();
         let normalized = src.replace("\r\n", "\n");
+        // auto_context must be gated by `!is_raw_shell`. Tolerate both the legacy
+        // nested form `if !is_raw_shell { if let Some(ctx) = ... }` and the
+        // edition-2024 let-chain `if !is_raw_shell && let Some(ctx) = ...`.
+        let pos = normalized
+            .find("let Some(ctx) = auto_context")
+            .expect("auto_context block must exist");
+        let guard = &normalized[pos.saturating_sub(60)..pos];
         assert!(
-            normalized.contains("if !is_raw_shell {\n            if let Some(ctx) = auto_context"),
+            guard.contains("!is_raw_shell"),
             "auto_context must still be skipped for raw shell"
         );
     }

@@ -94,11 +94,10 @@ pub fn create_ledger(input: CreateLedgerInput) -> Result<(HandoffLedgerV1, PathB
     let mut by_mode: BTreeMap<String, u64> = BTreeMap::new();
     for call in &input.tool_calls {
         *by_tool.entry(call.tool.clone()).or_insert(0) += 1;
-        if call.tool == "ctx_read" {
-            if let Some(m) = call.mode.as_deref() {
+        if call.tool == "ctx_read"
+            && let Some(m) = call.mode.as_deref() {
                 *by_mode.entry(m.to_string()).or_insert(0) += 1;
             }
-        }
     }
 
     let session_excerpt = SessionExcerpt {

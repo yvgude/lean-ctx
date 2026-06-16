@@ -29,11 +29,10 @@ impl GitCache {
 
     fn get(&self, key: &str) -> Option<&str> {
         let now = Instant::now();
-        if let Some(entry) = self.entries.get(key) {
-            if now.duration_since(entry.inserted) < entry.ttl {
+        if let Some(entry) = self.entries.get(key)
+            && now.duration_since(entry.inserted) < entry.ttl {
                 return Some(&entry.output);
             }
-        }
         None
     }
 
@@ -77,11 +76,10 @@ impl GitCache {
 pub fn git_cached(args: &[&str], cwd: &str, ttl: Duration) -> Option<String> {
     let key = format!("{cwd}:{}", args.join(" "));
 
-    if let Ok(cache) = CACHE.lock() {
-        if let Some(cached) = cache.get(&key) {
+    if let Ok(cache) = CACHE.lock()
+        && let Some(cached) = cache.get(&key) {
             return Some(cached.to_string());
         }
-    }
 
     let output = std::process::Command::new("git")
         .args(args)

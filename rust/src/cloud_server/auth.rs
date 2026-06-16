@@ -349,8 +349,8 @@ pub(super) async fn forgot_password(
         .await
         .map_err(internal_error)?;
 
-    if let Some((user_id, _)) = user {
-        if let Some(ref mailer) = state.mailer {
+    if let Some((user_id, _)) = user
+        && let Some(ref mailer) = state.mailer {
             let token = generate_token();
             let token_sha = sha256_hex(&token);
             let expires_at = Utc::now() + Duration::hours(1);
@@ -364,7 +364,6 @@ pub(super) async fn forgot_password(
             );
             let _ = mailer.send_password_reset(&email, &link).await;
         }
-    }
 
     Ok(Json(
         serde_json::json!({ "message": "If an account exists, a reset email has been sent." }),
@@ -486,8 +485,8 @@ pub(super) async fn resend_verification(
         let verified = is_email_verified(&state.pool, user_id)
             .await
             .map_err(internal_error)?;
-        if !verified {
-            if let Some(ref mailer) = state.mailer {
+        if !verified
+            && let Some(ref mailer) = state.mailer {
                 let token = generate_token();
                 let token_sha = sha256_hex(&token);
                 let expires_at = Utc::now() + Duration::hours(2);
@@ -504,7 +503,6 @@ pub(super) async fn resend_verification(
                 );
                 let _ = mailer.send_verification(&email, &link).await;
             }
-        }
     }
 
     Ok(Json(
@@ -552,9 +550,9 @@ pub(super) async fn auth_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<(Uuid, String), (StatusCode, String)> {
-    if let Some(v) = headers.get(axum::http::header::AUTHORIZATION) {
-        if let Ok(s) = v.to_str() {
-            if let Some(key) = s.strip_prefix("Bearer ").map(str::trim) {
+    if let Some(v) = headers.get(axum::http::header::AUTHORIZATION)
+        && let Ok(s) = v.to_str()
+            && let Some(key) = s.strip_prefix("Bearer ").map(str::trim) {
                 let sha = sha256_hex(key);
                 if let Some((user_id, email)) = lookup_api_key(&state.pool, &sha)
                     .await
@@ -570,8 +568,6 @@ pub(super) async fn auth_user(
                 }
                 return Err((StatusCode::UNAUTHORIZED, "Invalid token".into()));
             }
-        }
-    }
 
     Err((StatusCode::UNAUTHORIZED, "Unauthorized".into()))
 }

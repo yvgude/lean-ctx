@@ -79,8 +79,8 @@ fn read_file_bytes_limited(
 ) -> Result<(Vec<u8>, std::fs::Metadata), String> {
     reject_symlink(path)?;
 
-    if let Ok(meta) = std::fs::metadata(path) {
-        if meta.len() > cap as u64 {
+    if let Ok(meta) = std::fs::metadata(path)
+        && meta.len() > cap as u64 {
             return Err(format!(
                 "ERROR: file too large ({} bytes, cap {} via LCTX_MAX_READ_BYTES): {}",
                 meta.len(),
@@ -88,7 +88,6 @@ fn read_file_bytes_limited(
                 path.display()
             ));
         }
-    }
 
     let mut opts = std::fs::OpenOptions::new();
     opts.read(true);
@@ -165,30 +164,27 @@ fn read_preimage(path: &Path, cap: usize, allow_lossy_utf8: bool) -> Result<File
 }
 
 fn verify_expected_preimage(pre: &FilePreimage, params: &EditParams) -> Result<(), String> {
-    if let Some(expected) = params.expected_size {
-        if expected != pre.fp.size {
+    if let Some(expected) = params.expected_size
+        && expected != pre.fp.size {
             return Err(format!(
                 "ERROR: preimage mismatch for {}: expected_size={}, actual_size={}",
                 params.path, expected, pre.fp.size
             ));
         }
-    }
-    if let Some(expected) = params.expected_mtime_ms {
-        if expected != pre.fp.mtime_ms {
+    if let Some(expected) = params.expected_mtime_ms
+        && expected != pre.fp.mtime_ms {
             return Err(format!(
                 "ERROR: preimage mismatch for {}: expected_mtime_ms={}, actual_mtime_ms={}",
                 params.path, expected, pre.fp.mtime_ms
             ));
         }
-    }
-    if let Some(expected) = params.expected_md5.as_deref() {
-        if expected != pre.fp.md5 {
+    if let Some(expected) = params.expected_md5.as_deref()
+        && expected != pre.fp.md5 {
             return Err(format!(
                 "ERROR: preimage mismatch for {}: expected_md5={}, actual_md5={}",
                 params.path, expected, pre.fp.md5
             ));
         }
-    }
     Ok(())
 }
 
@@ -816,16 +812,14 @@ fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String
         preimage = Some(pre);
     }
 
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+            && let Err(e) = std::fs::create_dir_all(parent) {
                 return (
                     format!("ERROR: cannot create directory {}: {e}", parent.display()),
                     CacheEffect::None,
                 );
             }
-        }
-    }
 
     let backup_path = if params.backup {
         if let Some(pre) = &preimage {

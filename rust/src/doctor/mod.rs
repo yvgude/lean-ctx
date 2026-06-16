@@ -367,9 +367,9 @@ pub fn run() {
     }
     if let Some(log_path) = crate::core::startup_guard::crash_loop_log_path(
         crate::core::startup_guard::MCP_PROCESS_NAME,
-    ) {
-        if log_path.exists() {
-            if let Ok(contents) = std::fs::read_to_string(&log_path) {
+    )
+        && log_path.exists()
+            && let Ok(contents) = std::fs::read_to_string(&log_path) {
                 let lines: Vec<&str> = contents.lines().collect();
                 if lines.len() >= 5 {
                     println!(
@@ -379,8 +379,6 @@ pub fn run() {
                     );
                 }
             }
-        }
-    }
 
     // Providers
     let provider_outcome = provider_outcome();

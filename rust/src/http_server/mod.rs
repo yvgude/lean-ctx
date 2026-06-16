@@ -127,11 +127,10 @@ impl HttpServerConfig {
     }
 
     pub fn effective_auth_token(&self) -> Option<String> {
-        if let Some(ref token) = self.auth_token {
-            if !token.is_empty() {
+        if let Some(ref token) = self.auth_token
+            && !token.is_empty() {
                 return Some(token.clone());
             }
-        }
         let host = self.host.trim().to_lowercase();
         let is_loopback = host == "127.0.0.1" || host == "localhost" || host == "::1";
         if is_loopback {
@@ -482,23 +481,15 @@ async fn v1_events(
     let rx = if let Some(ref kinds) = kind_filter {
         let kind_refs: Vec<&str> = kinds.iter().map(String::as_str).collect();
         let filter = crate::core::context_os::TopicFilter::kinds(&kind_refs);
-        match rt.bus.subscribe_filtered(&ws, &ch, filter) {
-            Some(sub) => crate::core::context_os::SubscriptionKind::Filtered(sub),
-            _ => {
-                tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
-                let (_, rx) = broadcast::channel::<ContextEventV1>(1);
-                crate::core::context_os::SubscriptionKind::Unfiltered(rx)
-            }
+        if let Some(sub) = rt.bus.subscribe_filtered(&ws, &ch, filter) { crate::core::context_os::SubscriptionKind::Filtered(sub) } else {
+            tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
+            let (_, rx) = broadcast::channel::<ContextEventV1>(1);
+            crate::core::context_os::SubscriptionKind::Unfiltered(rx)
         }
-    } else {
-        match rt.bus.subscribe(&ws, &ch) {
-            Some(sub) => crate::core::context_os::SubscriptionKind::Unfiltered(sub),
-            _ => {
-                tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
-                let (_, rx) = broadcast::channel::<ContextEventV1>(1);
-                crate::core::context_os::SubscriptionKind::Unfiltered(rx)
-            }
-        }
+    } else if let Some(sub) = rt.bus.subscribe(&ws, &ch) { crate::core::context_os::SubscriptionKind::Unfiltered(sub) } else {
+        tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
+        let (_, rx) = broadcast::channel::<ContextEventV1>(1);
+        crate::core::context_os::SubscriptionKind::Unfiltered(rx)
     };
 
     rt.metrics.record_sse_connect();

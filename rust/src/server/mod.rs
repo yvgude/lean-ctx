@@ -45,11 +45,10 @@ pub fn build_claude_code_instructions_for_test() -> String {
 }
 
 fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {
-    if let Some(home) = dirs::home_dir() {
-        if dir == home {
+    if let Some(home) = dirs::home_dir()
+        && dir == home {
             return true;
         }
-    }
     let dir_str = dir.to_string_lossy();
     dir_str.ends_with("/.claude")
         || dir_str.ends_with("/.codebuddy")

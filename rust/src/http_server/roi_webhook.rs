@@ -122,11 +122,10 @@ fn save_state(path: &Path, state: &WebhookState) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(json) = serde_json::to_string_pretty(state) {
-        if let Err(e) = std::fs::write(path, json) {
+    if let Ok(json) = serde_json::to_string_pretty(state)
+        && let Err(e) = std::fs::write(path, json) {
             tracing::warn!("could not persist ROI webhook state: {e}");
         }
-    }
 }
 
 /// The member with the largest net-token gain over the trailing 7 days,

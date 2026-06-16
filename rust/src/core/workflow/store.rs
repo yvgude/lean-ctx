@@ -46,9 +46,9 @@ pub fn load_active_for_agent(agent_id: Option<&str>) -> Result<Option<WorkflowRu
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             // Backward compat: if agent-scoped file missing, try legacy active.json (read-only migration)
-            if agent_id.is_some() {
-                if let Some(legacy) = workflow_path_for_agent(None) {
-                    if let Ok(lc) = std::fs::read_to_string(&legacy) {
+            if agent_id.is_some()
+                && let Some(legacy) = workflow_path_for_agent(None)
+                    && let Ok(lc) = std::fs::read_to_string(&legacy) {
                         let run: WorkflowRun = serde_json::from_str(&lc)
                             .map_err(|e| format!("Invalid legacy workflow JSON: {e}"))?;
                         let elapsed = chrono::Utc::now()
@@ -58,8 +58,6 @@ pub fn load_active_for_agent(agent_id: Option<&str>) -> Result<Option<WorkflowRu
                             return Ok(Some(run));
                         }
                     }
-                }
-            }
             return Ok(None);
         }
         Err(e) => return Err(format!("read {}: {e}", path.display())),

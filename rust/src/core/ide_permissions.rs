@@ -142,8 +142,8 @@ impl IdePermissionPolicy {
         // at the top level (e.g. `"rm *": "ask"`); we accept both so the guard
         // is never silently ineffective when proxied through `ctx_shell`. A
         // command pattern is more specific than a blanket `bash: "allow"`.
-        if tool_key == "bash" {
-            if let Some(cmd) = input {
+        if tool_key == "bash"
+            && let Some(cmd) = input {
                 for (key, value) in &self.rules {
                     if OPENCODE_TOOL_KEYS.contains(&key.as_str()) {
                         continue;
@@ -151,14 +151,12 @@ impl IdePermissionPolicy {
                     if !key.contains(' ') && !key.contains('*') {
                         continue;
                     }
-                    if let Some(action) = value.as_str().and_then(PermAction::parse) {
-                        if wildcard_match(key, cmd) {
+                    if let Some(action) = value.as_str().and_then(PermAction::parse)
+                        && wildcard_match(key, cmd) {
                             consider(&mut best, specificity(key), action, format!("bash:{key}"));
                         }
-                    }
                 }
             }
-        }
 
         if let Some(action) = self
             .rules
@@ -191,11 +189,10 @@ fn collect_from_value(value: &Value, input: Option<&str>, key: &str, best: &mut 
             if pat == "*" {
                 continue;
             }
-            if let Some(action) = av.as_str().and_then(PermAction::parse) {
-                if wildcard_match(pat, inp) {
+            if let Some(action) = av.as_str().and_then(PermAction::parse)
+                && wildcard_match(pat, inp) {
                     consider(best, specificity(pat), action, format!("{key}:{pat}"));
                 }
-            }
         }
     }
     if let Some(action) = obj

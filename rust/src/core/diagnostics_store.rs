@@ -251,12 +251,11 @@ fn parse_cargo(output: &str) -> Vec<Diagnostic> {
         let trimmed = line.trim_start();
         if let Some(msg) = trimmed.strip_prefix("error") {
             // `error[E0308]: ...`, `error: ...` — but not `error_count` etc.
-            if let Some(rest) = msg.split_once(':').map(|(_, r)| r) {
-                if msg.starts_with('[') || msg.starts_with(':') {
+            if let Some(rest) = msg.split_once(':').map(|(_, r)| r)
+                && (msg.starts_with('[') || msg.starts_with(':')) {
                     pending = Some((Severity::Error, cap_message(rest)));
                     continue;
                 }
-            }
         }
         if let Some(msg) = trimmed.strip_prefix("warning:") {
             // Skip cargo's summary lines ("warning: `x` generated 3 warnings").
@@ -265,8 +264,8 @@ fn parse_cargo(output: &str) -> Vec<Diagnostic> {
             }
             continue;
         }
-        if let Some(loc) = trimmed.strip_prefix("--> ") {
-            if let Some((severity, message)) = pending.take() {
+        if let Some(loc) = trimmed.strip_prefix("--> ")
+            && let Some((severity, message)) = pending.take() {
                 let mut parts = loc.rsplitn(3, ':');
                 let _col = parts.next();
                 let line_no = parts.next().and_then(|l| l.parse::<u32>().ok());
@@ -282,7 +281,6 @@ fn parse_cargo(output: &str) -> Vec<Diagnostic> {
                     });
                 }
             }
-        }
     }
     out
 }

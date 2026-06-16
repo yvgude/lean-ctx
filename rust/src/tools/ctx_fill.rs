@@ -69,8 +69,8 @@ pub fn handle(
     });
 
     let mut pop_lines: Vec<String> = Vec::new();
-    if let Some(t) = task {
-        if let Some(root) = paths
+    if let Some(t) = task
+        && let Some(root) = paths
             .first()
             .and_then(|p| crate::core::protocol::detect_project_root(p))
         {
@@ -103,7 +103,6 @@ pub fn handle(
                 }
             }
         }
-    }
 
     let mut used_tokens = 0usize;
     let mut selections: Vec<(String, String)> = Vec::new();

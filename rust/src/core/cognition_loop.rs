@@ -613,7 +613,7 @@ mod tests {
             std::env::set_var(
                 "LEAN_CTX_DATA_DIR",
                 tmp.path().to_string_lossy().to_string(),
-            )
+            );
         };
 
         let project_root = tmp.path().join("proj");

@@ -108,8 +108,8 @@ impl LeanCtxServer {
                             let mut wf = self.workflow.write().await;
                             *wf = None;
                             let _ = crate::core::workflow::clear_active();
-                        } else if let Some(state) = run.spec.state(&run.current) {
-                            if let Some(allowed) = &state.allowed_tools {
+                        } else if let Some(state) = run.spec.state(&run.current)
+                            && let Some(allowed) = &state.allowed_tools {
                                 let ok = allowed.iter().any(|t| t == &inner);
                                 if !ok {
                                     let mut shown = allowed.clone();
@@ -127,7 +127,6 @@ impl LeanCtxServer {
                                     ));
                                 }
                             }
-                        }
                     }
                 }
 
@@ -251,11 +250,10 @@ impl LeanCtxServer {
             // the watchdog always return a response.
             let output = self.run_tool_handler(name, tool, args_map, ctx).await?;
 
-            if output.changed {
-                if let Some(peer) = self.peer.read().await.as_ref() {
+            if output.changed
+                && let Some(peer) = self.peer.read().await.as_ref() {
                     super::notifications::send_tools_list_changed(peer).await;
                 }
-            }
 
             let headers_only =
                 crate::core::config::ResponseVerbosity::effective().is_headers_only();

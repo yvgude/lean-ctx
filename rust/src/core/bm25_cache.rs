@@ -64,11 +64,10 @@ pub fn get_or_load(cache: &SharedBm25Cache, root: &Path) -> Arc<BM25Index> {
         let guard = cache
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(ref entry) = *guard {
-            if entry.root == root && entry.is_fresh() {
+        if let Some(ref entry) = *guard
+            && entry.root == root && entry.is_fresh() {
                 return Arc::clone(&entry.index);
             }
-        }
     }
 
     let index = Arc::new(BM25Index::load_or_build_fast(root));

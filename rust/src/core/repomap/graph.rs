@@ -63,8 +63,8 @@ impl RepoGraph {
         // Call edges from the call graph
         let symbols_by_name = build_symbol_location_map(index);
         for call_edge in &call_graph.edges {
-            if let Some(target_file) = symbols_by_name.get(&call_edge.callee_name.to_lowercase()) {
-                if files.contains(&call_edge.caller_file)
+            if let Some(target_file) = symbols_by_name.get(&call_edge.callee_name.to_lowercase())
+                && files.contains(&call_edge.caller_file)
                     && files.contains(target_file)
                     && call_edge.caller_file != *target_file
                 {
@@ -73,7 +73,6 @@ impl RepoGraph {
                         .or_default()
                         .push(target_file.clone());
                 }
-            }
         }
 
         // Deduplicate edges

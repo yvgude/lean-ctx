@@ -99,11 +99,10 @@ impl PublishPayload {
                 return Err(bad_payload());
             }
         }
-        if let Some(m) = &self.model_key {
-            if m.chars().count() > MAX_LABEL_LEN || has_markup(m) {
+        if let Some(m) = &self.model_key
+            && (m.chars().count() > MAX_LABEL_LEN || has_markup(m)) {
                 return Err(bad_payload());
             }
-        }
         if let Some(name) = &self.display_name {
             let len = name.chars().count();
             if len == 0 || len > MAX_LABEL_LEN || has_markup(name) {

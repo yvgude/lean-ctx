@@ -231,14 +231,13 @@ impl TeamServerConfig {
                 .with_context(|| format!("token '{id}' invalid sha256Hex"))?;
         }
 
-        if let Some(parent) = self.audit_log_path.parent() {
-            if !parent.as_os_str().is_empty() && !parent.exists() {
+        if let Some(parent) = self.audit_log_path.parent()
+            && !parent.as_os_str().is_empty() && !parent.exists() {
                 return Err(anyhow!(
                     "auditLogPath parent does not exist: {}",
                     parent.display()
                 ));
             }
-        }
         Ok(())
     }
 
@@ -1065,14 +1064,13 @@ async fn v1_tool_call(
             WORKSPACE_ARG_KEY.to_string(),
             Value::String(workspace_id.clone()),
         );
-        if let Some(ch) = body.channel_id.as_deref() {
-            if !ch.trim().is_empty() {
+        if let Some(ch) = body.channel_id.as_deref()
+            && !ch.trim().is_empty() {
                 m.insert(
                     CHANNEL_ARG_KEY.to_string(),
                     Value::String(ch.trim().to_string()),
                 );
             }
-        }
     }
 
     let required = required_scopes(&body.name, Some(&args));
@@ -1198,14 +1196,11 @@ async fn v1_events(
 
     let rt = crate::core::context_os::runtime();
     let replay = rt.bus.read(&ws, &ch, since, limit);
-    let rx = match rt.bus.subscribe(&ws, &ch) {
-        Some(rx) => rx,
-        _ => {
-            tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
-            let (_, rx) =
-                tokio::sync::broadcast::channel::<crate::core::context_os::ContextEventV1>(1);
-            rx
-        }
+    let rx = if let Some(rx) = rt.bus.subscribe(&ws, &ch) { rx } else {
+        tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
+        let (_, rx) =
+            tokio::sync::broadcast::channel::<crate::core::context_os::ContextEventV1>(1);
+        rx
     };
     rt.metrics.record_sse_connect();
     rt.metrics.record_events_replayed(replay.len() as u64);

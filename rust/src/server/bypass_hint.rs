@@ -121,11 +121,10 @@ fn count_native_since(data_dir: &Path, since_ts: u64, session_id: Option<&str>) 
             if !is_read_grep_tool(event.tool_name.as_ref()) {
                 continue;
             }
-            if let Some(ref name) = event.tool_name {
-                if name.starts_with("ctx_") || name.starts_with("mcp__lean-ctx__") {
+            if let Some(ref name) = event.tool_name
+                && (name.starts_with("ctx_") || name.starts_with("mcp__lean-ctx__")) {
                     continue;
                 }
-            }
             count += 1;
         }
         if event.event_type == "file_read" && is_read_grep_tool(event.tool_name.as_ref()) {

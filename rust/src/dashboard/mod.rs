@@ -107,14 +107,13 @@ pub async fn start(
     // Only safe to auto-detect for local dashboards without auth.
     if is_local && dashboard_responding(&host, port) {
         println!("\n  lean-ctx dashboard already running → http://{host}:{port}{base_path}");
-        if let Some(req) = requested_token.as_deref() {
-            if load_saved_token().as_deref() != Some(req) {
+        if let Some(req) = requested_token.as_deref()
+            && load_saved_token().as_deref() != Some(req) {
                 eprintln!(
                     "  \x1b[33m⚠\x1b[0m The running instance uses a different token — your {token_src} \
                      will be rejected. Stop it (Ctrl+C) and restart to apply the new token."
                 );
             }
-        }
         println!("  Tip: use Ctrl+C in the existing terminal to stop it.\n");
         if let Some(t) = load_saved_token() {
             open_dashboard_url(
@@ -621,14 +620,13 @@ async fn handle_request(
         // scrape `/metrics` without holding the full dashboard token. Valid
         // for the metrics endpoint only — every other API stays gated on the
         // dashboard token.
-        if !has_header_auth && path == "/metrics" {
-            if let Ok(scrape) = std::env::var(SCRAPE_TOKEN_ENV) {
+        if !has_header_auth && path == "/metrics"
+            && let Ok(scrape) = std::env::var(SCRAPE_TOKEN_ENV) {
                 let scrape = scrape.trim();
                 if !scrape.is_empty() && check_auth(&header_text, scrape) {
                     has_header_auth = true;
                 }
             }
-        }
 
         if requires_auth && !has_header_auth {
             let body = r#"{"error":"unauthorized"}"#;

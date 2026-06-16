@@ -125,14 +125,13 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved("full", "binary");
     }
 
-    if let Some(cache) = ctx.cache {
-        if let Some(cached) = cache.get(ctx.path) {
+    if let Some(cache) = ctx.cache
+        && let Some(cached) = cache.get(ctx.path) {
             if file_unchanged(ctx.path, cached) {
                 return resolved("full", "cache_hit");
             }
             return resolved("diff", "cache_changed");
         }
-    }
 
     if ctx.token_count <= 200 {
         return resolved("full", "small_file");
@@ -147,11 +146,10 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved("full", "config_data");
     }
 
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock() {
-        if bt.should_force_full(ctx.path) {
+    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
+        && bt.should_force_full(ctx.path) {
             return resolved("full", "bounce_tracker");
         }
-    }
 
     // Per-path long-term memory (#496): a file that historically bounced in
     // the majority of its reads will bounce again — compression is a proven
@@ -187,18 +185,17 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         predicted = "full".to_string();
     }
 
-    if predicted != "full" {
-        if let Some(bandit_override) = bandit_explore(ctx.path, ctx.token_count) {
+    if predicted != "full"
+        && let Some(bandit_override) = bandit_explore(ctx.path, ctx.token_count) {
             predicted = bandit_override;
         }
-    }
 
     // Heatmap signal (#496): a frequently-read file where compression barely
     // saves anything will likely trigger a follow-up read — step one mode more
     // conservative. avg_compression_ratio is the historical fraction saved.
-    if predicted != "full" {
-        if let Some((access_count, avg_ratio)) = crate::core::heatmap::entry_stats(ctx.path) {
-            if access_count >= 5 && avg_ratio < 0.30 {
+    if predicted != "full"
+        && let Some((access_count, avg_ratio)) = crate::core::heatmap::entry_stats(ctx.path)
+            && access_count >= 5 && avg_ratio < 0.30 {
                 let conservative = match predicted.as_str() {
                     "signatures" | "aggressive" | "entropy" => "map".to_string(),
                     "map" if ctx.token_count <= 6000 => "full".to_string(),
@@ -208,8 +205,6 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
                     return resolved(&conservative, "heatmap_conservative");
                 }
             }
-        }
-    }
 
     let policy = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load();
     let chosen = policy.choose_auto_mode(ctx.task, &predicted);

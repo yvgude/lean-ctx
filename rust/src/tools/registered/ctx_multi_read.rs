@@ -102,11 +102,10 @@ impl CtxMultiReadTool {
                 if crate::core::binary_detect::is_binary_file(&resolved) {
                     continue;
                 }
-                if let Ok(meta) = std::fs::metadata(&resolved) {
-                    if meta.len() > cap {
+                if let Ok(meta) = std::fs::metadata(&resolved)
+                    && meta.len() > cap {
                         continue;
                     }
-                }
                 paths.push(resolved);
             }
             let current_task = session.task.as_ref().map(|t| t.description.clone());

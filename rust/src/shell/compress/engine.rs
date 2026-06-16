@@ -94,19 +94,18 @@ pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
 
     if has_structural_output(command) {
         let cl = command.to_ascii_lowercase();
-        if let Some(compressed) = patterns::try_specific_pattern(&cl, output) {
-            if !compressed.trim().is_empty() {
+        if let Some(compressed) = patterns::try_specific_pattern(&cl, output)
+            && !compressed.trim().is_empty() {
                 let compressed_tokens = count_tokens(&compressed);
                 if compressed_tokens >= min_output_tokens && compressed_tokens < original_tokens {
                     return shell_savings_footer(&compressed, original_tokens, compressed_tokens);
                 }
             }
-        }
         return output.to_string();
     }
 
-    if let Some(mut compressed) = patterns::compress_output(command, output) {
-        if !compressed.trim().is_empty() {
+    if let Some(mut compressed) = patterns::compress_output(command, output)
+        && !compressed.trim().is_empty() {
             let config = crate::core::config::Config::load();
             let level = crate::core::config::CompressionLevel::effective(&config);
             if level.is_active() {
@@ -130,7 +129,6 @@ pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
                 return output.to_string();
             }
         }
-    }
 
     {
         let config = crate::core::config::Config::load();
@@ -163,11 +161,10 @@ pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
     }
 
     let lines: Vec<&str> = output.lines().collect();
-    if lines.len() > 30 {
-        if let Some(c) = truncate_with_safety_scan(&lines, original_tokens) {
+    if lines.len() > 30
+        && let Some(c) = truncate_with_safety_scan(&lines, original_tokens) {
             return c;
         }
-    }
 
     output.to_string()
 }

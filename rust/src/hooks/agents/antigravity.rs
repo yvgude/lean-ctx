@@ -71,8 +71,8 @@ fn install_antigravity_mcp_config(home: &std::path::Path, subdir: &str) {
             &config_path,
             &serde_json::to_string_pretty(&config).unwrap_or_default(),
         );
-    } else if let Ok(mut existing_json) = crate::core::jsonc::parse_jsonc(&existing) {
-        if let Some(obj) = existing_json.as_object_mut() {
+    } else if let Ok(mut existing_json) = crate::core::jsonc::parse_jsonc(&existing)
+        && let Some(obj) = existing_json.as_object_mut() {
             let servers = obj
                 .entry("mcpServers")
                 .or_insert_with(|| serde_json::json!({}));
@@ -87,7 +87,6 @@ fn install_antigravity_mcp_config(home: &std::path::Path, subdir: &str) {
                 &serde_json::to_string_pretty(&existing_json).unwrap_or_default(),
             );
         }
-    }
 
     if !mcp_server_quiet_mode() {
         eprintln!(
@@ -154,8 +153,8 @@ fn install_antigravity_gemini_hooks(home: &std::path::Path) {
             &settings_path,
             &serde_json::to_string_pretty(&hook_config).unwrap_or_default(),
         );
-    } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content) {
-        if let Some(obj) = existing.as_object_mut() {
+    } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content)
+        && let Some(obj) = existing.as_object_mut() {
             if has_hooks && !has_observe {
                 let hooks = obj
                     .entry("hooks".to_string())
@@ -174,7 +173,6 @@ fn install_antigravity_gemini_hooks(home: &std::path::Path) {
                 &serde_json::to_string_pretty(&existing).unwrap_or_default(),
             );
         }
-    }
 
     if !mcp_server_quiet_mode() {
         eprintln!(
@@ -359,9 +357,9 @@ pub(crate) fn uninstall_antigravity_cli_plugin(home: &std::path::Path) -> bool {
     }
 
     let manifest_path = antigravity_cli_config_dir(home).join("import_manifest.json");
-    if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-        if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
-            if let Some(arr) = json.get_mut("imports").and_then(|i| i.as_array_mut()) {
+    if let Ok(content) = std::fs::read_to_string(&manifest_path)
+        && let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
+            && let Some(arr) = json.get_mut("imports").and_then(|i| i.as_array_mut()) {
                 let before = arr.len();
                 arr.retain(|e| e.get("name").and_then(|n| n.as_str()) != Some("lean-ctx"));
                 if arr.len() != before {
@@ -372,8 +370,6 @@ pub(crate) fn uninstall_antigravity_cli_plugin(home: &std::path::Path) -> bool {
                     );
                 }
             }
-        }
-    }
     changed
 }
 

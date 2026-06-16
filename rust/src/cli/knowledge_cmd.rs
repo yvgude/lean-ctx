@@ -581,11 +581,10 @@ fn positional_after(args: &[String], subcommand: &str) -> Option<String> {
             .position(|x| std::ptr::eq(x, a))
             .and_then(|i| i.checked_sub(1))
             .map(|i| &args[i]);
-        if let Some(p) = prev {
-            if p.starts_with("--") || p == "-c" || p == "-k" || p == "-m" {
+        if let Some(p) = prev
+            && (p.starts_with("--") || p == "-c" || p == "-k" || p == "-m") {
                 continue;
             }
-        }
         return Some(a.clone());
     }
     None

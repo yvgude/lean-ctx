@@ -211,8 +211,8 @@ pub(crate) fn handle_recall(
             } else {
                 embedding_engine_nonblocking()
             };
-            if let Some(engine) = engine_opt {
-                if let Some(idx) = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
+            if let Some(engine) = engine_opt
+                && let Some(idx) = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                     &knowledge.project_hash,
                 ) {
                     let limit = policy.knowledge.recall_facts_limit;
@@ -264,7 +264,6 @@ pub(crate) fn handle_recall(
                         }
                     }
                 }
-            }
         }
 
         if mode == "semantic" {
@@ -465,11 +464,10 @@ pub(crate) fn rehydrate_from_archives(
             continue;
         };
         for f in facts {
-            if let Some(cat) = category {
-                if f.category != cat {
+            if let Some(cat) = category
+                && f.category != cat {
                     continue;
                 }
-            }
             if terms.is_empty() {
                 cands.push(Cand {
                     category: f.category,

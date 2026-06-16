@@ -244,13 +244,11 @@ fn radar_tail_sources() -> (Vec<String>, u64) {
             "agent_response" | "thinking" => {}
             _ => turn_tokens = turn_tokens.saturating_add(tokens),
         }
-        if matches!(event_type, "file_read" | "mcp_call" | "shell") {
-            if let Some(content) = v.get("content").and_then(|c| c.as_str()) {
-                if !content.is_empty() {
+        if matches!(event_type, "file_read" | "mcp_call" | "shell")
+            && let Some(content) = v.get("content").and_then(|c| c.as_str())
+                && !content.is_empty() {
                     sources.push(content.to_string());
                 }
-            }
-        }
     }
     if sources.len() > MAX_SOURCES {
         let excess = sources.len() - MAX_SOURCES;

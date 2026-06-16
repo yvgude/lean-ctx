@@ -82,25 +82,22 @@ pub fn configure_agent_mcp(agent: &str) -> Result<(), String> {
         install_kiro_steering(&home);
     }
 
-    if agent == "vscode" || agent == "copilot" {
-        if let Err(e) = crate::core::editor_registry::plan_mode::write_vscode_plan_settings() {
+    if (agent == "vscode" || agent == "copilot")
+        && let Err(e) = crate::core::editor_registry::plan_mode::write_vscode_plan_settings() {
             eprintln!("\x1b[33m⚠\x1b[0m  VS Code plan mode: {e}");
         }
-    }
-    if agent == "claude" || agent == "claude-code" {
-        if let Err(e) =
+    if (agent == "claude" || agent == "claude-code")
+        && let Err(e) =
             crate::core::editor_registry::plan_mode::write_claude_code_plan_permissions()
         {
             eprintln!("\x1b[33m⚠\x1b[0m  Claude Code plan mode: {e}");
         }
-    }
-    if agent == "codebuddy" {
-        if let Err(e) =
+    if agent == "codebuddy"
+        && let Err(e) =
             crate::core::editor_registry::plan_mode::write_claude_code_plan_permissions()
         {
             eprintln!("\x1b[33m⚠\x1b[0m  CodeBuddy plan mode: {e}");
         }
-    }
 
     if errors.is_empty() {
         Ok(())

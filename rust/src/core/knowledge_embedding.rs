@@ -438,7 +438,7 @@ mod tests {
             std::env::set_var(
                 "LEAN_CTX_DATA_DIR",
                 tmp.path().to_string_lossy().to_string(),
-            )
+            );
         };
 
         let idx = KnowledgeEmbeddingIndex {
@@ -475,7 +475,7 @@ mod tests {
             std::env::set_var(
                 "LEAN_CTX_DATA_DIR",
                 tmp.path().to_string_lossy().to_string(),
-            )
+            );
         };
 
         let project = tmp.path().join("proj");

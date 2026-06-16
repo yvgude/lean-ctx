@@ -111,11 +111,10 @@ impl ContextEngine {
                 out.push_str(&t.text);
             }
         }
-        if out.is_empty() {
-            if let Some(v) = result.structured_content {
+        if out.is_empty()
+            && let Some(v) = result.structured_content {
                 out = v.to_string();
             }
-        }
         Ok(out)
     }
 }

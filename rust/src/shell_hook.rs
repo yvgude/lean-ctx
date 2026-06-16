@@ -304,11 +304,10 @@ fn strip_other_style(
             // markers (and any unrelated user edits to the same file)
             // is recoverable from `<rc>.lean-ctx-<stamp>.bak`.
             let rc_path = home.join(slot.rc_file);
-            if let Ok(existing) = std::fs::read_to_string(&rc_path) {
-                if existing.contains(slot.marker_start) {
+            if let Ok(existing) = std::fs::read_to_string(&rc_path)
+                && existing.contains(slot.marker_start) {
                     save_migration_backup(&rc_path, quiet, stamp);
                 }
-            }
             marked_block::remove_from_file(
                 &rc_path,
                 slot.marker_start,

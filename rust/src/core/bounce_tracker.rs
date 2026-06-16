@@ -110,8 +110,8 @@ impl BounceTracker {
             return;
         };
 
-        if let Some(ev) = events.iter().next_back() {
-            if ev.was_compressed && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW {
+        if let Some(ev) = events.iter().next_back()
+            && ev.was_compressed && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW {
                 let wasted = ev.tokens_sent;
                 self.total_bounces += 1;
                 self.total_wasted_tokens += wasted;
@@ -148,7 +148,6 @@ impl BounceTracker {
                     });
                 }
             }
-        }
     }
 
     pub fn record_shell_file_access(&mut self, path: &str) {
@@ -180,23 +179,20 @@ impl BounceTracker {
     pub fn should_force_full(&self, path: &str) -> bool {
         let norm = crate::core::pathutil::normalize_tool_path(path);
 
-        if let Some(&edit_seq) = self.recently_edited.get(&norm) {
-            if self.seq_counter.saturating_sub(edit_seq) <= 10 {
+        if let Some(&edit_seq) = self.recently_edited.get(&norm)
+            && self.seq_counter.saturating_sub(edit_seq) <= 10 {
                 return true;
             }
-        }
 
         let ext = extension_of(path);
-        if !ext.is_empty() {
-            if let Some(stats) = self.per_extension.get(&ext) {
-                if stats.total_reads >= 3 {
+        if !ext.is_empty()
+            && let Some(stats) = self.per_extension.get(&ext)
+                && stats.total_reads >= 3 {
                     let rate = stats.bounces as f64 / stats.total_reads as f64;
                     if rate >= BOUNCE_RATE_THRESHOLD {
                         return true;
                     }
                 }
-            }
-        }
 
         false
     }

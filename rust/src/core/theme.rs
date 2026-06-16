@@ -636,15 +636,12 @@ pub fn theme_file_path() -> Option<PathBuf> {
 }
 
 pub fn load_theme(config_theme: &str) -> Theme {
-    if let Some(path) = theme_file_path() {
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(theme) = toml::from_str::<Theme>(&content) {
+    if let Some(path) = theme_file_path()
+        && path.exists()
+            && let Ok(content) = std::fs::read_to_string(&path)
+                && let Ok(theme) = toml::from_str::<Theme>(&content) {
                     return theme;
                 }
-            }
-        }
-    }
 
     from_preset(config_theme).unwrap_or_default()
 }

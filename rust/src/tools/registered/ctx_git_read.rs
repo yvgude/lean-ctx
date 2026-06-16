@@ -309,11 +309,10 @@ fn find_and_read_readme(dir: &Path) -> Option<String> {
         "README.txt",
     ] {
         let p = dir.join(name);
-        if p.is_file() {
-            if let Ok(s) = std::fs::read_to_string(&p) {
+        if p.is_file()
+            && let Ok(s) = std::fs::read_to_string(&p) {
                 return Some(s);
             }
-        }
     }
     None
 }

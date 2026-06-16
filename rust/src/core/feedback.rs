@@ -61,16 +61,14 @@ impl FeedbackStore {
         drop(guard);
 
         let path = feedback_path();
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(mut store) = serde_json::from_str::<FeedbackStore>(&content) {
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(&path)
+                && let Ok(mut store) = serde_json::from_str::<FeedbackStore>(&content) {
                     store.project_root = std::env::current_dir()
                         .ok()
                         .map(|p| p.to_string_lossy().to_string());
                     return store;
                 }
-            }
-        }
         Self {
             project_root: std::env::current_dir()
                 .ok()

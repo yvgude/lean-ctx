@@ -27,8 +27,8 @@ pub(crate) fn install_jetbrains_hook() {
             return;
         }
 
-        if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
-            if let Some(obj) = json.as_object_mut() {
+        if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
+            && let Some(obj) = json.as_object_mut() {
                 let servers = obj
                     .entry("mcpServers")
                     .or_insert_with(|| serde_json::json!({}));
@@ -42,7 +42,6 @@ pub(crate) fn install_jetbrains_hook() {
                     return;
                 }
             }
-        }
     }
 
     let config = serde_json::json!({ "mcpServers": { "lean-ctx": entry } });

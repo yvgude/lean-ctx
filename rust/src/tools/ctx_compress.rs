@@ -167,8 +167,8 @@ fn update_playbook_from_session() -> Option<String> {
     }
     // Pitfalls from live bounce evidence: extensions that keep bouncing are
     // exactly the "this bit us" knowledge ACE wants preserved verbatim.
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock() {
-        if bt.total_bounces() > 0 {
+    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
+        && bt.total_bounces() > 0 {
             for ext_stat in bt.per_extension_json() {
                 let (Some(ext), Some(rate)) = (
                     ext_stat.get("ext").and_then(|v| v.as_str()),
@@ -188,7 +188,6 @@ fn update_playbook_from_session() -> Option<String> {
                 }
             }
         }
-    }
     session.playbook.evict(turn);
 
     let rendered = session.playbook.render(20);

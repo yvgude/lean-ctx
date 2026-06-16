@@ -393,8 +393,8 @@ fn handle_pull(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String, E
     let apply_session = get_bool(args, "apply_session").unwrap_or(true);
     let apply_knowledge = get_bool(args, "apply_knowledge").unwrap_or(true);
 
-    if apply_workflow {
-        if let Some(wf_lock) = ctx.workflow.as_ref() {
+    if apply_workflow
+        && let Some(wf_lock) = ctx.workflow.as_ref() {
             let mut wf = wf_lock.blocking_write();
             if ledger
                 .workflow
@@ -406,7 +406,6 @@ fn handle_pull(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String, E
                 wf.clone_from(&ledger.workflow);
             }
         }
-    }
 
     if apply_session {
         let session_handle = ctx
@@ -544,8 +543,8 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
     let apply_session = get_bool(args, "apply_session").unwrap_or(true);
     let apply_knowledge = get_bool(args, "apply_knowledge").unwrap_or(true);
 
-    if apply_workflow {
-        if let Some(wf_lock) = ctx.workflow.as_ref() {
+    if apply_workflow
+        && let Some(wf_lock) = ctx.workflow.as_ref() {
             let mut wf = wf_lock.blocking_write();
             if ledger
                 .workflow
@@ -557,7 +556,6 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
                 wf.clone_from(&ledger.workflow);
             }
         }
-    }
 
     if apply_session {
         let session_handle = ctx

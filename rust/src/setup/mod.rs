@@ -154,13 +154,8 @@ pub fn run_setup() {
         if let Err(e) = crate::daemon::start_daemon(&[]) {
             terminal_ui::print_status_warn(&format!("Daemon restart failed: {e}"));
         }
-    } else {
-        match crate::daemon::start_daemon(&[]) {
-            Err(e) => {
-                terminal_ui::print_status_warn(&format!("Daemon start failed: {e}"));
-            }
-            _ => {}
-        }
+    } else if let Err(e) = crate::daemon::start_daemon(&[]) {
+        terminal_ui::print_status_warn(&format!("Daemon start failed: {e}"));
     }
 
     // Step 3: Editor auto-detection + configuration
@@ -378,15 +373,14 @@ pub fn run_setup() {
         let _ = std::fs::create_dir_all(&lean_dir);
         terminal_ui::print_status_new(&format!("Created {}", lean_dir.display()));
     }
-    if let Some(report) = crate::core::data_consolidate::consolidate() {
-        if report.files_moved > 0 {
+    if let Some(report) = crate::core::data_consolidate::consolidate()
+        && report.files_moved > 0 {
             terminal_ui::print_status_new(&format!(
                 "Consolidated {} file(s) from a split data dir into {}",
                 report.files_moved,
                 report.canonical.display()
             ));
         }
-    }
     crate::doctor::run_compact();
 
     // Step 8: Data sharing
@@ -1204,8 +1198,8 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             .is_some_and(|v| !v.is_empty());
         let cfg = crate::core::config::Config::load();
         let has_cfg_root = cfg.project_root.as_ref().is_some_and(|v| !v.is_empty());
-        if !has_env_root && !has_cfg_root {
-            if let Ok(cwd) = std::env::current_dir() {
+        if !has_env_root && !has_cfg_root
+            && let Ok(cwd) = std::env::current_dir() {
                 let is_home = dirs::home_dir().is_some_and(|h| cwd == h);
                 if is_home {
                     let mut root_step = SetupStepReport {
@@ -1230,17 +1224,15 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
                     steps.push(root_step);
                 }
             }
-        }
     }
 
     // Auto-build property graph if inside any recognized project. The marker
     // probe is TCC-guarded (#356): a launchd-standalone setup run never stats
     // markers under ~/Documents.
-    if let Ok(cwd) = std::env::current_dir() {
-        if crate::core::pathutil::has_project_marker(&cwd) {
+    if let Ok(cwd) = std::env::current_dir()
+        && crate::core::pathutil::has_project_marker(&cwd) {
             spawn_index_build_background(&cwd);
         }
-    }
 
     let finished_at = Utc::now();
     let success = steps.iter().all(|s| s.ok);

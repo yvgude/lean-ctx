@@ -81,15 +81,14 @@ pub fn check_elicitation_needed(
         }
     }
 
-    if let (Some(path), Some(tokens)) = (current_path, current_tokens) {
-        if tokens > LARGE_FILE_TOKENS {
+    if let (Some(path), Some(tokens)) = (current_path, current_tokens)
+        && tokens > LARGE_FILE_TOKENS {
             LAST_ELICITATION_SEQ.store(current_seq, Ordering::Relaxed);
             return Some(ElicitationSuggestion::LargeFileMode {
                 path: path.to_string(),
                 tokens,
             });
         }
-    }
 
     if pressure.utilization > 0.95 {
         LAST_ELICITATION_SEQ.store(current_seq, Ordering::Relaxed);
