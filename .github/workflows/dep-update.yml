@@ -1,0 +1,51 @@
+# Dependency Auto-Update — laufende patch/minor-Pflege der Cargo-Dependencies.
+#
+# Ergaenzt die einmaligen, manuellen Major-Upgrades
+# (docs/superpowers/specs/2026-06-17-dependency-upgrades-plan-a/b-design.md):
+# jene holen aufgelaufene Major-Drift auf; DIESER Workflow haelt danach
+# patch + kompatible minor aktuell. Er fasst NIE `--incompatible`/Major an —
+# Breaking-Change-Bumps bleiben bewusst manuell.
+#
+# Trigger: ausschliesslich manuell (workflow_dispatch) — kein cron. Der
+# Maintainer loest den Lauf gezielt aus (z.B. nach einem Security-Advisory).
+#
+# Token / CI-Gate: PR + Push laufen ueber
+# `${{ secrets.DEP_UPDATE_TOKEN || github.token }}`.
+# WICHTIG: ein mit dem default GITHUB_TOKEN erzeugter PR triggert KEINE
+# weiteren Workflows — die volle CI-Suite (ci.yml: 3-OS-Matrix, clippy, fmt,
+# deny, ...) laeuft dann NICHT automatisch. Maintainer-Opt-in fuer
+# automatisches Gating: ein fine-grained PAT als Repo-Secret DEP_UPDATE_TOKEN
+# anlegen (contents:write + pull-requests:write), analog HOMEBREW_GITHUB_TOKEN.
+# Ohne PAT schuetzt der Smoke-Step unten vor grob kaputten PRs.
+
+name: Dependency Auto-Update
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Compatible patch/minor update
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: rust -> target
+
+      - uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2
+        with:
+          tool: cargo-edit
