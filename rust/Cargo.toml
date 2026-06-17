@@ -177,7 +177,7 @@ hmac = "0.13"
 sha2 = "0.11"
 hkdf = "0.13"
 chacha20poly1305 = "0.10"
-rand = { version = "0.9.3", optional = true }
+rand = { version = "0.10", optional = true }
 argon2 = { version = "0.5", optional = true }
 glob = "0.3.3"
 urlencoding = "2"
@@ -185,7 +185,7 @@ ratatui = "0.30"
 crossterm = "0.29"
 rpassword = "7.4.0"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
-getrandom = "0.3"
+getrandom = "0.4"
 tempfile = "3"
 reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream", "json"], optional = true }
 bytecount = "0.6.9"
