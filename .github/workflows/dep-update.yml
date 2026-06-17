@@ -1,22 +1,22 @@
-# Dependency Auto-Update — laufende patch/minor-Pflege der Cargo-Dependencies.
+# Dependency Auto-Update — ongoing patch/minor maintenance of the Cargo dependencies.
 #
-# Ergaenzt die einmaligen, manuellen Major-Upgrades
+# Complements the one-off, manual major upgrades
 # (docs/superpowers/specs/2026-06-17-dependency-upgrades-plan-a/b-design.md):
-# jene holen aufgelaufene Major-Drift auf; DIESER Workflow haelt danach
-# patch + kompatible minor aktuell. Er fasst NIE `--incompatible`/Major an —
-# Breaking-Change-Bumps bleiben bewusst manuell.
+# those catch up accumulated major drift; THIS workflow then keeps
+# patch + compatible minor current. It NEVER touches `--incompatible`/major —
+# breaking-change bumps stay deliberately manual.
 #
-# Trigger: ausschliesslich manuell (workflow_dispatch) — kein cron. Der
-# Maintainer loest den Lauf gezielt aus (z.B. nach einem Security-Advisory).
+# Trigger: manual only (workflow_dispatch) — no cron. The maintainer
+# triggers the run deliberately (e.g. after a security advisory).
 #
-# Token / CI-Gate: PR + Push laufen ueber
+# Token / CI gate: PR + push run via
 # `${{ secrets.DEP_UPDATE_TOKEN || github.token }}`.
-# WICHTIG: ein mit dem default GITHUB_TOKEN erzeugter PR triggert KEINE
-# weiteren Workflows — die volle CI-Suite (ci.yml: 3-OS-Matrix, clippy, fmt,
-# deny, ...) laeuft dann NICHT automatisch. Maintainer-Opt-in fuer
-# automatisches Gating: ein fine-grained PAT als Repo-Secret DEP_UPDATE_TOKEN
-# anlegen (contents:write + pull-requests:write), analog HOMEBREW_GITHUB_TOKEN.
-# Ohne PAT schuetzt der Smoke-Step unten vor grob kaputten PRs.
+# IMPORTANT: a PR created with the default GITHUB_TOKEN does NOT trigger
+# further workflows — the full CI suite (ci.yml: 3-OS matrix, clippy, fmt,
+# deny, ...) then does NOT run automatically. Maintainer opt-in for
+# automatic gating: create a fine-grained PAT as the repo secret DEP_UPDATE_TOKEN
+# (contents:write + pull-requests:write), analogous to HOMEBREW_GITHUB_TOKEN.
+# Without a PAT, the smoke step below guards against grossly broken PRs.
 
 name: Dependency Auto-Update
 
