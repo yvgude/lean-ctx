@@ -155,7 +155,7 @@ pdf-extract = "0.10"
 tar = "0.4.46"
 zip = "8.4.0"
 tree-sitter-bash = { version = "0.25", optional = true }
-tree-sitter-scala = { version = "0.25", optional = true }
+tree-sitter-scala = { version = "0.26", optional = true }
 tree-sitter-elixir = { version = "0.3", optional = true }
 tree-sitter-zig = { version = "1.1", optional = true }
 tree-sitter-dart = { version = "0.1", optional = true }
