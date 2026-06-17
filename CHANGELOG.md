@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- **`ctx_impact` now sees C# types used only in expression position (GH #398 follow-up)** —
+  the v3.8.3 fix linked same-namespace C# consumers to definers for types in
+  *declaration* positions (fields, parameters, return types, `base_list`,
+  generics, casts, `typeof`), but a type referenced **only in expression
+  position** still produced no `TypeRef` edge, so `ctx_impact` reported the
+  defining file as a false-negative leaf. Now covered in
+  `deep_queries::type_uses`: static calls/fields and enum values via a
+  member-access receiver (`Engine.Create()`, `Engine.Default`, `Status.Active`)
+  and attributes (`[ApiController]`, which additionally resolves to the
+  `…Attribute` class name). Only PascalCase receivers are collected and the
+  existing def-index resolution discards any name that is not a real project
+  type, so precision is unchanged. The new end-to-end regression is gated on
+  `tree-sitter` rather than `embeddings`, so it also exercises the
+  `index_graph_file_minimal` builder path that the earlier #398 e2e tests never
+  reached. (Extension-method hosts and namespace-aware resolution remain
+  follow-ups.)
 - **`lean-ctx update` / `config init --full` no longer reset or leak config values (#443)** —
   persisting a single setting could silently rewrite *other* customized keys in the
   global `config.toml` (e.g. `compression_level` → `lite`, `max_ram_percent` → 5).

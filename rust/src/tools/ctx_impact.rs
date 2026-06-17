@@ -1633,4 +1633,100 @@ mod tests {
             "self-heal must re-stamp the current engine version"
         );
     }
+
+    /// End-to-end regression for GH #398 (expression-position follow-up): a C#
+    /// file that consumes types only through static calls, enum values or
+    /// attributes — no `using`, no `new`, no field/param of that type — must
+    /// still land in the blast radius of the defining file.
+    ///
+    /// Gated on `tree-sitter` (not `embeddings`) on purpose: the existing #398
+    /// e2e tests only run under `embeddings`, leaving the
+    /// `index_graph_file_minimal` builder path untested. This test exercises
+    /// both builder paths (it runs whenever the C# grammar is available).
+    #[cfg(feature = "tree-sitter")]
+    #[test]
+    fn csharp_expression_position_type_use_is_not_a_leaf() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("Models")).unwrap();
+        std::fs::create_dir_all(root.join("Attributes")).unwrap();
+        std::fs::create_dir_all(root.join("Services")).unwrap();
+
+        // Static factory + static field, used by a consumer via `Engine.X`.
+        std::fs::write(
+            root.join("Models/Engine.cs"),
+            "namespace App.Core;\n\n\
+             public class Engine\n{\n\
+             \x20   public static Engine Create() => new Engine();\n\
+             \x20   public static readonly int Default = 0;\n}\n",
+        )
+        .unwrap();
+        // Enum, consumed only as `Status.Active`.
+        std::fs::write(
+            root.join("Models/Status.cs"),
+            "namespace App.Core;\n\npublic enum Status { Active, Inactive }\n",
+        )
+        .unwrap();
+        // Attribute class, consumed only as `[ApiController]`.
+        std::fs::write(
+            root.join("Attributes/ApiControllerAttribute.cs"),
+            "using System;\n\nnamespace App.Core;\n\n\
+             public class ApiControllerAttribute : Attribute { }\n",
+        )
+        .unwrap();
+        // Consumer: ONLY expression-position usage — no using/new/field/param.
+        std::fs::write(
+            root.join("Services/Garage.cs"),
+            "namespace App.Core;\n\n\
+             [ApiController]\n\
+             public class Garage\n{\n\
+             \x20   public void Boot()\n    {\n\
+             \x20       var e = Engine.Create();\n\
+             \x20       var s = Status.Active;\n    }\n}\n",
+        )
+        .unwrap();
+        // Unrelated control: must NOT appear in any blast radius (non-vacuous).
+        std::fs::write(
+            root.join("Services/Logger.cs"),
+            "namespace App.Core;\n\n\
+             public class Logger\n{\n    public void Log(string m) { }\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let affected = |file: &str| -> Vec<String> {
+            graph
+                .impact_analysis(file, 5)
+                .expect("impact analysis")
+                .affected_files
+        };
+
+        let engine_aff = affected("Models/Engine.cs");
+        assert!(
+            engine_aff.contains(&"Services/Garage.cs".to_string()),
+            "static-call consumer (no using/new) must be affected by Engine.cs; got: {engine_aff:?}"
+        );
+        assert!(
+            !engine_aff.contains(&"Services/Logger.cs".to_string()),
+            "unrelated file must NOT be affected by Engine.cs; got: {engine_aff:?}"
+        );
+
+        let status_aff = affected("Models/Status.cs");
+        assert!(
+            status_aff.contains(&"Services/Garage.cs".to_string()),
+            "enum-value consumer must be affected by Status.cs; got: {status_aff:?}"
+        );
+
+        let attr_aff = affected("Attributes/ApiControllerAttribute.cs");
+        assert!(
+            attr_aff.contains(&"Services/Garage.cs".to_string()),
+            "attribute consumer must be affected by ApiControllerAttribute.cs; got: {attr_aff:?}"
+        );
+    }
 }

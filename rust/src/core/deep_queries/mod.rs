@@ -698,6 +698,48 @@ public class Motor : VehiclePart, IStartable
         assert!(!names.contains(&"var"), "var is not a type use: {names:?}");
     }
 
+    /// GH #398 follow-up: types consumed only in *expression position* —
+    /// static calls/fields, enum values and attributes — carry no `type`
+    /// field, so the declaration-position walk missed them. They must still
+    /// surface as `type_uses` so the property graph can link consumer ->
+    /// definer. Instance receivers (lowercase locals) must stay out.
+    #[test]
+    fn csharp_type_uses_in_expression_position() {
+        let src = r#"
+namespace App.Core;
+
+[ApiController]
+[Route("api")]
+public class Garage
+{
+    public void Boot()
+    {
+        var engine = Engine.Create();
+        var fallback = Engine.Default;
+        var status = Status.Active;
+        var limit = Constants.Max;
+        engine.Start();
+    }
+}
+"#;
+        let analysis = analyze(src, "cs");
+        let names: Vec<&str> = analysis.type_uses.iter().map(|u| u.name.as_str()).collect();
+        for expected in ["Engine", "Status", "Constants", "ApiController", "Route"] {
+            assert!(names.contains(&expected), "missing {expected}: {names:?}");
+        }
+        // `[Foo]` resolves to the class `FooAttribute`; the canonical class
+        // name must be emitted too so the def index matches either form.
+        assert!(
+            names.contains(&"ApiControllerAttribute"),
+            "attribute suffix variant must be present: {names:?}"
+        );
+        // Instance receivers are values, not types, and must be skipped.
+        assert!(
+            !names.contains(&"engine"),
+            "instance receiver must not be a type use: {names:?}"
+        );
+    }
+
     /// GH #398 (Java flavour): same-package types are visible without import;
     /// `type_identifier` nodes cover fields, params, returns and extends.
     #[test]
