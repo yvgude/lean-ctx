@@ -69,12 +69,13 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         working-directory: rust
         shell: bash
+        # relink other gh actions?
         run: |
           set -euo pipefail
           cargo build
           cargo test
           cargo clippy -- -D warnings
-
+      # or set to workflow_run?
       - name: Create or update pull request
         if: steps.update.outputs.changed == 'true'
         shell: bash
