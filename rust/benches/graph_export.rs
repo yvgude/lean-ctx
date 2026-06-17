@@ -1,4 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 fn bench_graph_export_html(c: &mut Criterion) {
     let tmp = tempfile::tempdir().expect("tempdir");
