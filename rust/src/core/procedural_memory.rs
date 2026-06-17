@@ -284,7 +284,7 @@ fn generate_procedure_name(steps: &[ProcedureStep]) -> String {
 fn md5_short(input: &str) -> String {
     use md5::{Digest, Md5};
     let result = Md5::digest(input.as_bytes());
-    format!("{result:x}")[..8].to_string()
+    crate::core::agent_identity::hex_encode(&result)[..8].to_string()
 }
 
 fn usage_recency(proc: &Procedure) -> f32 {

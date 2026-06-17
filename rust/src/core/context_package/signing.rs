@@ -59,7 +59,7 @@ fn signing_message(manifest: &PackageManifest) -> String {
         "ctxpkg-sign-v1:{}:{}:{}",
         manifest.name, manifest.version, manifest.integrity.sha256
     ));
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 fn to_hex(bytes: &[u8]) -> String {

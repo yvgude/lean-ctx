@@ -296,7 +296,7 @@ fn legacy_index_path(project_root: &str) -> PathBuf {
     use md5::{Digest, Md5};
     let mut hasher = Md5::new();
     hasher.update(project_root.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = crate::core::agent_identity::hex_encode(&hasher.finalize());
     crate::core::paths::cache_dir()
         .unwrap_or_default()
         .join("semantic_cache")

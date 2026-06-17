@@ -215,5 +215,5 @@ pub(super) fn fact_version_id_v1(f: &KnowledgeFact) -> String {
     hasher.update(f.source_session.as_bytes());
     hasher.update(b"\n");
     hasher.update(f.created_at.to_rfc3339().as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }

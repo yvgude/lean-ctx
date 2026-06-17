@@ -1197,7 +1197,8 @@ fn cmd_pack_send(args: &[String], project_root: &str) {
 
     {
         use sha2::{Digest, Sha256};
-        let hash = format!("{:x}", Sha256::digest(project_root.as_bytes()));
+        let hash =
+            crate::core::agent_identity::hex_encode(&Sha256::digest(project_root.as_bytes()));
         envelope
             .metadata
             .insert("project_root_hash".to_string(), hash[..16].to_string());

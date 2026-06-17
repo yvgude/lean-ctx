@@ -94,7 +94,7 @@ impl TransportEnvelopeV1 {
     }
 
     fn compute_hmac(&self, secret: &[u8]) -> Vec<u8> {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
 
         let recipient_str = self.recipient.as_deref().unwrap_or("");
@@ -185,7 +185,7 @@ fn compute_daemon_fingerprint() -> String {
     if let Ok(exe) = std::env::current_exe() {
         hasher.update(exe.to_string_lossy().as_bytes());
     }
-    format!("{:x}", hasher.finalize())[..16].to_string()
+    crate::core::agent_identity::hex_encode(&hasher.finalize())[..16].to_string()
 }
 
 fn default_capabilities() -> Vec<String> {

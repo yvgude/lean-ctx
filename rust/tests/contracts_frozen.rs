@@ -44,7 +44,11 @@ fn content_hash(path: &Path) -> String {
     };
     let mut hasher = Sha256::new();
     hasher.update(&normalized);
-    format!("{:x}", hasher.finalize())
+    use std::fmt::Write;
+    hasher.finalize().iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
 }
 
 #[test]

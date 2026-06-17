@@ -177,7 +177,7 @@ bytes: {}\n",
                     use md5::{Digest, Md5};
                     let mut h = Md5::new();
                     h.update(s.as_bytes());
-                    format!("{:x}", h.finalize())
+                    crate::core::agent_identity::hex_encode(&h.finalize())
                 });
 
             let mut warning: Option<String> = None;

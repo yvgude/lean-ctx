@@ -318,7 +318,7 @@ fn verify_integrity(manifest: &PackageManifest, content_text: &str) -> Result<()
 
     let mut h1 = Sha256::new();
     h1.update(content_bytes);
-    let actual_content_hash = format!("{:x}", h1.finalize());
+    let actual_content_hash = crate::core::agent_identity::hex_encode(&h1.finalize());
 
     if actual_content_hash != manifest.integrity.content_hash {
         return Err(format!(
@@ -334,7 +334,7 @@ fn verify_integrity(manifest: &PackageManifest, content_text: &str) -> Result<()
         );
         let mut h2 = Sha256::new();
         h2.update(composite.as_bytes());
-        format!("{:x}", h2.finalize())
+        crate::core::agent_identity::hex_encode(&h2.finalize())
     };
 
     if manifest.integrity.sha256 != expected_sha256 {
@@ -407,11 +407,11 @@ mod tests {
                 let j = serde_json::to_string(&c).unwrap();
                 let mut h = Sha256::new();
                 h.update(j.as_bytes());
-                let ch = format!("{:x}", h.finalize());
+                let ch = crate::core::agent_identity::hex_encode(&h.finalize());
                 let composite = format!("test-pkg:1.0.0:{ch}");
                 let mut h2 = Sha256::new();
                 h2.update(composite.as_bytes());
-                let sha = format!("{:x}", h2.finalize());
+                let sha = crate::core::agent_identity::hex_encode(&h2.finalize());
                 super::super::manifest::PackageIntegrity {
                     sha256: sha,
                     content_hash: ch,
@@ -455,7 +455,7 @@ mod tests {
         let content_json = serde_json::to_string(&content).unwrap();
         let mut h = Sha256::new();
         h.update(content_json.as_bytes());
-        let content_hash = format!("{:x}", h.finalize());
+        let content_hash = crate::core::agent_identity::hex_encode(&h.finalize());
 
         let manifest = PackageManifest {
             schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
@@ -476,7 +476,7 @@ mod tests {
                 let mut h2 = Sha256::new();
                 h2.update(composite.as_bytes());
                 super::super::manifest::PackageIntegrity {
-                    sha256: format!("{:x}", h2.finalize()),
+                    sha256: crate::core::agent_identity::hex_encode(&h2.finalize()),
                     content_hash,
                     byte_size: content_json.len() as u64,
                 }
@@ -517,7 +517,7 @@ mod tests {
         let content_json = serde_json::to_string(&content).unwrap();
         let mut h = Sha256::new();
         h.update(content_json.as_bytes());
-        let content_hash = format!("{:x}", h.finalize());
+        let content_hash = crate::core::agent_identity::hex_encode(&h.finalize());
         let composite = format!("signed-test:1.0.0:{content_hash}");
         let mut h2 = Sha256::new();
         h2.update(composite.as_bytes());
@@ -537,7 +537,7 @@ mod tests {
             tags: vec![],
             visibility: None,
             integrity: super::super::manifest::PackageIntegrity {
-                sha256: format!("{:x}", h2.finalize()),
+                sha256: crate::core::agent_identity::hex_encode(&h2.finalize()),
                 content_hash,
                 byte_size: content_json.len() as u64,
             },
@@ -594,7 +594,7 @@ mod tests {
         let content_json = serde_json::to_string(&content).unwrap();
         let mut h = Sha256::new();
         h.update(content_json.as_bytes());
-        let content_hash = format!("{:x}", h.finalize());
+        let content_hash = crate::core::agent_identity::hex_encode(&h.finalize());
         let composite = format!("legacy-test:1.0.0:{content_hash}");
         let mut h2 = Sha256::new();
         h2.update(composite.as_bytes());
@@ -614,7 +614,7 @@ mod tests {
             tags: vec![],
             visibility: None,
             integrity: super::super::manifest::PackageIntegrity {
-                sha256: format!("{:x}", h2.finalize()),
+                sha256: crate::core::agent_identity::hex_encode(&h2.finalize()),
                 content_hash,
                 byte_size: content_json.len() as u64,
             },

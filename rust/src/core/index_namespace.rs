@@ -20,7 +20,7 @@ pub(crate) fn namespace_hash(project_root: &Path) -> String {
     let seed = namespace_seed(project_root);
     let mut hasher = Md5::new();
     hasher.update(seed.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 fn namespace_seed(project_root: &Path) -> String {
@@ -65,7 +65,7 @@ fn git_branch(project_root: &Path) -> Option<String> {
 fn legacy_vectors_hash(project_root: &Path) -> String {
     let mut hasher = Md5::new();
     hasher.update(project_root.to_string_lossy().as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 fn migrate_dir_if_needed(old_dir: &Path, new_dir: &Path) {

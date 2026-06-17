@@ -854,7 +854,7 @@ fn index_graph_file_minimal(
         use md5::{Digest, Md5};
         let mut h = Md5::new();
         h.update(content.as_bytes());
-        format!("{:x}", h.finalize())
+        crate::core::agent_identity::hex_encode(&h.finalize())
     };
     let _ = graph.upsert_file_catalog(&crate::core::property_graph::FileCatalogEntry {
         path: rel_path.to_string(),

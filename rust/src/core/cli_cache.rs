@@ -54,7 +54,7 @@ fn now_secs() -> u64 {
 fn compute_md5(content: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 fn normalize_key(path: &str) -> String {

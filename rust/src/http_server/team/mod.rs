@@ -924,7 +924,7 @@ async fn audit_write(
             let s = a.to_string();
             let mut hasher = Md5::new();
             hasher.update(s.as_bytes());
-            format!("{:x}", hasher.finalize())
+            crate::core::agent_identity::hex_encode(&hasher.finalize())
         })
         .unwrap_or_default();
 

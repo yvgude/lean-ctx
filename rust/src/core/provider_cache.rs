@@ -152,7 +152,7 @@ pub fn render_with_cache_hints(sections: &[CacheableSection]) -> String {
 fn content_hash(content: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 #[cfg(test)]

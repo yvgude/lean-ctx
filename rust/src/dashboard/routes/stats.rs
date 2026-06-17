@@ -48,10 +48,9 @@ pub(super) fn handle(
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map_or(0, |d| d.as_secs());
             use md5::Digest;
-            let hash = format!(
-                "{:x}",
-                md5::Md5::digest(format!("{size}-{mtime}").as_bytes())
-            );
+            let hash = crate::core::agent_identity::hex_encode(&md5::Md5::digest(
+                format!("{size}-{mtime}").as_bytes(),
+            ));
             let json = format!(r#"{{"hash":"{hash}","ts":{mtime}}}"#);
             Some(("200 OK", "application/json", json))
         }

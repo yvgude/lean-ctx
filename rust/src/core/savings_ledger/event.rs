@@ -121,7 +121,7 @@ pub fn compute_hash(prev_hash: &str, content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(prev_hash.as_bytes());
     hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 #[cfg(test)]

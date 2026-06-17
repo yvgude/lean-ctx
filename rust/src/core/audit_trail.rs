@@ -117,7 +117,7 @@ fn compute_entry_hash(prev_hash: &str, data_json: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(prev_hash.as_bytes());
     hasher.update(data_json.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 pub fn record(data: AuditEntryData) {
@@ -266,5 +266,5 @@ pub fn hash_input(args: &serde_json::Map<String, serde_json::Value>) -> String {
     let serialized = serde_json::to_string(args).unwrap_or_default();
     let mut hasher = Sha256::new();
     hasher.update(serialized.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }

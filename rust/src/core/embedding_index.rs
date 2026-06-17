@@ -291,7 +291,7 @@ fn index_dir(root: &Path) -> PathBuf {
 fn legacy_embedding_dir(root: &Path) -> PathBuf {
     let mut hasher = Md5::new();
     hasher.update(root.to_string_lossy().as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = crate::core::agent_identity::hex_encode(&hasher.finalize());
     crate::core::data_dir::lean_ctx_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("vectors")
@@ -301,7 +301,7 @@ fn legacy_embedding_dir(root: &Path) -> PathBuf {
 fn hash_content(content: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
@@ -332,7 +332,10 @@ fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
             hasher.update([kind_tag(&c.kind)]);
             hasher.update(c.content.as_bytes());
         }
-        out.insert(file.to_string(), format!("{:x}", hasher.finalize()));
+        out.insert(
+            file.to_string(),
+            crate::core::agent_identity::hex_encode(&hasher.finalize()),
+        );
     }
     out
 }

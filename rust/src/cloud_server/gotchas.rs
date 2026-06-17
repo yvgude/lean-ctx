@@ -136,7 +136,7 @@ async fn post_vault(
 
     let mut h = Sha256::new();
     h.update(body);
-    let sha = format!("{:x}", h.finalize());
+    let sha = crate::core::agent_identity::hex_encode(&h.finalize());
 
     let client = state.pool.get().await.map_err(internal_error)?;
     client

@@ -306,7 +306,7 @@ fn http_get_bytes(url: &str, token: Option<&str>) -> Result<Vec<u8>, String> {
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
-    format!("{:x}", h.finalize())
+    crate::core::agent_identity::hex_encode(&h.finalize())
 }
 
 #[cfg(test)]

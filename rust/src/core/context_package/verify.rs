@@ -188,7 +188,7 @@ impl VerifyReport {
 fn sha256_hex(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);
-    format!("{:x}", h.finalize())
+    crate::core::agent_identity::hex_encode(&h.finalize())
 }
 
 /// Verify a `.ctxpkg` document without installing anything.

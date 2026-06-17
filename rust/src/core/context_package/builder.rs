@@ -556,7 +556,7 @@ fn compute_stats(content: &PackageContent) -> PackageStats {
 fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
-    format!("{:x}", hasher.finalize())
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
 #[cfg(test)]

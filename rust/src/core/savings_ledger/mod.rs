@@ -58,7 +58,7 @@ fn repo_hash() -> &'static str {
             .unwrap_or_default();
         let mut hasher = Sha256::new();
         hasher.update(cwd.as_bytes());
-        let hex = format!("{:x}", hasher.finalize());
+        let hex = crate::core::agent_identity::hex_encode(&hasher.finalize());
         hex.get(..16).unwrap_or(&hex).to_string()
     })
 }
