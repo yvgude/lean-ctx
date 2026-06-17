@@ -127,7 +127,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["codec"] }
-dirs = "5"
+dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8"
 toml_edit = "0.22"
