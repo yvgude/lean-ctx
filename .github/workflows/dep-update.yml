@@ -49,3 +49,28 @@ jobs:
       - uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2
         with:
           tool: cargo-edit
+
+      - name: Run compatible updates
+        id: update
+        working-directory: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo upgrade --compatible
+          cargo update
+          if git diff --quiet -- Cargo.toml Cargo.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No compatible updates available — nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Smoke verify (default features)
+        if: steps.update.outputs.changed == 'true'
+        working-directory: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build
+          cargo test
+          cargo clippy -- -D warnings
