@@ -212,8 +212,15 @@ fn write_pid_file(pid: u32) -> Result<()> {
     Ok(())
 }
 
-/// Write the current process's PID. Called from the foreground-daemon process.
+/// Initialize the foreground-daemon process. Commits the XDG layout pin (and
+/// drains a residual `~/.lean-ctx`) *before* the daemon writes anything, so this
+/// long-running, possibly launchd/systemd-autostarted writer can never
+/// re-collapse config/data/state/cache onto a stray legacy dir (GL #623). The
+/// MCP server pins on its own start; the daemon is the other independent entry
+/// point (e.g. `serve --_foreground-daemon`), so it must heal too. `heal()` is
+/// idempotent and cheap — a no-op once pinned and when no residual dir exists.
 pub fn init_foreground_daemon() -> Result<()> {
+    crate::core::layout_pin::heal();
     let pid = std::process::id();
     write_pid_file(pid)?;
     Ok(())
