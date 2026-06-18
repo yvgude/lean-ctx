@@ -23,6 +23,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   head-to-head benchmark harness (vs. import-guarded `ContextCompressor`/`hermes-lcm`),
   and a dedicated CI job (pytest + offline benchmark smoke). `lean-ctx init --agent
   hermes` now also points to the engine plugin.
+- **ACE-inspired auto-learning loop — gotchas now learn themselves, distil, and
+  surface** (study of `kayba-ai/agentic-context-engine`). Previously the
+  `GotchaStore` could *correlate* an error with its later fix but nothing ever fed
+  it real shell outcomes, so it stayed empty in production. The loop is now wired
+  end to end:
+  - **Live capture** — `shell::exec` hands every finished command to
+    `gotcha_tracker::record_shell_outcome`, gated by a cheap `is_correlatable_command`
+    filter (cargo/npm/pytest/go/docker/git…) so only build/test/run output is
+    inspected. A process-global in-memory store keyed by project hash keeps the
+    `pending_errors` (which are `#[serde(skip)]`) alive across commands inside a
+    long-lived daemon, mirroring `diagnostics_store`; durable gotchas are persisted
+    when a fix is correlated.
+  - **Reflector** — a deterministic `reflect()` distils the store into Playbook
+    deltas: recurring fixes (≥2 occurrences with a resolution) become *proven
+    strategies*, error signatures that recur across ≥2 distinct sessions with no
+    recorded fix become *recurring pitfalls*. It folds into the session Playbook
+    during `ctx_compress` via the existing dedup/stable-ID `add_delta`.
+  - **Offline mining** — `lean-ctx learn --mine <dir>` scans a directory of
+    `.jsonl` transcripts/logs for high-precision error markers (Rust E-codes,
+    tsc/pytest/npm signatures), aggregating recurring signatures across files
+    read-only — it never mutates stored state.
+  - **Learning Ledger** — `lean-ctx gotchas ledger` renders a human-readable
+    summary (errors observed, fixes correlated, repeats avoided, promoted to
+    knowledge) plus the distilled strategies/pitfalls, making the learning visible.
 
 ### Fixed
 - **High idle CPU when no session is running (#453)** — on v3.8.8 (macOS, Claude

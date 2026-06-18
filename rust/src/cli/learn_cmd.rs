@@ -1,6 +1,14 @@
 use crate::core::gotcha_tracker::{self, GotchaStore, learn};
 
 pub(crate) fn cmd_learn(args: &[String]) {
+    // Offline mining mode: `lean-ctx learn --mine <dir>` distills recurring
+    // error signatures from a directory of .jsonl transcripts/logs.
+    if let Some(pos) = args.iter().position(|a| a == "--mine") {
+        let dir = args.get(pos + 1).map(String::as_str);
+        cmd_learn_mine(dir);
+        return;
+    }
+
     let project_root = super::common::detect_project_root(args);
     let apply = args.iter().any(|a| a == "--apply");
 
@@ -38,4 +46,24 @@ pub(crate) fn cmd_learn(args: &[String]) {
     } else {
         println!("\nUse `lean-ctx learn --apply` to write these to AGENTS.md.");
     }
+}
+
+/// `lean-ctx learn --mine <dir>`: distill recurring error signatures from a
+/// directory of `.jsonl` transcripts/logs. Read-only — it surfaces the project's
+/// recurring pain points for review, it never mutates stored state.
+fn cmd_learn_mine(dir: Option<&str>) {
+    let Some(dir) = dir else {
+        eprintln!("Usage: lean-ctx learn --mine <dir>  (directory of .jsonl transcripts/logs)");
+        return;
+    };
+    let path = std::path::Path::new(dir);
+    if !path.is_dir() {
+        eprintln!("Error: '{dir}' is not a directory");
+        return;
+    }
+    let mined = gotcha_tracker::mining::mine_jsonl_dir(path);
+    println!(
+        "{}",
+        gotcha_tracker::mining::format_mining_report(&mined, 2)
+    );
 }

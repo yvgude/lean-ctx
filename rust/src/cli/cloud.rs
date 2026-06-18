@@ -961,8 +961,12 @@ pub fn cmd_gotchas(args: &[String]) {
             println!("  Decayed/archived:    {}", store.stats.gotchas_decayed);
             println!("  Session logs:        {}", store.error_log.len());
         }
+        "reflect" | "ledger" => {
+            let store = core::gotcha_tracker::GotchaStore::load(&project_root);
+            println!("{}", core::gotcha_tracker::format_ledger(&store));
+        }
         _ => {
-            println!("Usage: lean-ctx gotchas [list|clear|export|stats]");
+            println!("Usage: lean-ctx gotchas [list|clear|export|stats|reflect]");
         }
     }
 }

@@ -189,6 +189,16 @@ fn update_playbook_from_session() -> Option<String> {
             }
         }
     }
+    // Reflector (ACE analog): distill the gotcha trace — proven error→fix
+    // strategies and recurring unresolved pitfalls — into playbook deltas, so
+    // hard-won shell-outcome knowledge survives checkpoints next to live
+    // session findings. Deterministic and dedup-confirmed by `add_delta`.
+    if let Some(root) = session.project_root.as_deref() {
+        let store = crate::core::gotcha_tracker::GotchaStore::load(root);
+        let insights = crate::core::gotcha_tracker::reflect(&store);
+        crate::core::gotcha_tracker::fold_into_playbook(&insights, &mut session.playbook, turn);
+    }
+
     session.playbook.evict(turn);
 
     let rendered = session.playbook.render(20);

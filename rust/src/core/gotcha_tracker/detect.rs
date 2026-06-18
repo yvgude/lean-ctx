@@ -207,6 +207,26 @@ pub fn normalize_error_signature(raw: &str) -> String {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// True for the build/test/dependency/runtime command families this module can
+/// correlate (mirrors the per-tool gates in `detect_error_pattern`). The
+/// shell-layer hook uses it to skip all disk work for ordinary commands
+/// (`ls`, `cat`, `echo`, …) — a false positive only costs a cheap store load,
+/// never a wrong gotcha (`detect_error_pattern` still gates the real signal).
+pub fn is_correlatable_command(command: &str) -> bool {
+    let c = command.trim_start().to_lowercase();
+    const PREFIXES: &[&str] = &[
+        "cargo ", "rustc", "npm ", "pnpm ", "yarn ", "node ", "tsx ", "ts-node", "python", "pip ",
+        "uv ", "go ", "docker ", "git ", "make", "cmake", "gradle", "mvn ",
+    ];
+    if PREFIXES.iter().any(|p| c.starts_with(p)) {
+        return true;
+    }
+    // Tools usually invoked via a runner (`npx tsc`, `poetry run pytest`, …).
+    ["tsc", "pytest", "jest", "vitest", "eslint"]
+        .iter()
+        .any(|t| c.contains(t))
+}
+
 pub(super) fn command_base(cmd: &str) -> String {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.len() >= 2 {

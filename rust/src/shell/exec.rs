@@ -482,6 +482,10 @@ fn exec_buffered(command: &str, shell: &str, shell_flag: &str, cfg: &config::Con
     // files as context-priority; succeeding runs clear them.
     crate::core::diagnostics_store::record_from_shell(command, &full_output, exit_code);
 
+    // Gotcha learning: a failing build/test pushes a pending error; the next
+    // green run of the same command base correlates the fix into a gotcha.
+    crate::core::gotcha_tracker::record_shell_outcome(command, &full_output, exit_code);
+
     let (compressed, output_tokens) =
         super::compress::compress_and_measure(command, &stdout, &stderr);
 
